@@ -18,6 +18,7 @@ type Config struct {
 	NapCatWSURL        string
 	NapCatReverseAddr  string
 	NapCatReversePath  string
+	DBPath             string
 	CommandPrefix      string
 	HTTPClientTimeout  time.Duration
 	EnableOneBotServer bool
@@ -36,6 +37,7 @@ func FromEnv() Config {
 		NapCatWSURL:        os.Getenv("NAPCAT_WS_URL"),
 		NapCatReverseAddr:  envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
 		NapCatReversePath:  envString("NAPCAT_REVERSE_PATH", "/ws"),
+		DBPath:             envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
 		CommandPrefix:      envString("BOT_COMMAND_PREFIX", "/life"),
 		HTTPClientTimeout:  time.Duration(envInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
 		EnableOneBotServer: envBool("BOT_ENABLE_ONEBOT_SERVER", true),

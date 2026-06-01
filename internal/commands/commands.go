@@ -2,27 +2,49 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 type Handler struct {
 	Life   *life.Client
+	Auth   *auth.Manager
+	Store  *store.Store
 	Prefix string
 }
 
-func (h Handler) Handle(ctx context.Context, text string) (string, bool) {
-	fields := strings.Fields(strings.TrimSpace(text))
+type Input struct {
+	Text     string
+	Identity store.Identity
+}
+
+func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
+	fields := strings.Fields(strings.TrimSpace(input.Text))
 	if len(fields) == 0 || fields[0] != h.Prefix {
 		return "", false
 	}
+	h.recordState(ctx, input.Identity, fields)
 	if len(fields) == 1 || fields[1] == "help" {
 		return h.help(), true
 	}
 
 	switch fields[1] {
+	case "login":
+		return h.login(ctx, input.Identity, fields[2:]), true
+	case "logout":
+		return h.logout(ctx, input.Identity), true
+	case "me":
+		return h.me(ctx, input.Identity), true
+	case "todo":
+		return h.todo(ctx, input.Identity, fields[2:]), true
+	case "sub", "subs", "subscription":
+		return h.subscription(ctx, input.Identity), true
 	case "ping":
 		if err := h.Life.Health(ctx); err != nil {
 			return "Life @ USTC API unavailable: " + err.Error(), true
@@ -45,11 +67,161 @@ func (h Handler) help() string {
 	return strings.Join([]string{
 		"Life @ USTC commands:",
 		h.Prefix + " ping",
+		h.Prefix + " login",
+		h.Prefix + " login status",
+		h.Prefix + " logout",
+		h.Prefix + " me",
+		h.Prefix + " todo",
+		h.Prefix + " todo add <title>",
+		h.Prefix + " sub",
 		h.Prefix + " semester",
 		h.Prefix + " course <keyword>",
 		h.Prefix + " section <keyword>",
 		h.Prefix + " bus",
 	}, "\n")
+}
+
+func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
+	if h.Auth == nil {
+		return "Login is not configured."
+	}
+	if len(args) > 0 && args[0] == "status" {
+		result, err := h.Auth.PollDeviceLogin(ctx, ident)
+		if err != nil {
+			return "Login status failed: " + err.Error()
+		}
+		return result.Message
+	}
+	session, err := h.Auth.BeginDeviceLogin(ctx, ident)
+	if err != nil {
+		return "Login failed: " + err.Error()
+	}
+	link := session.VerificationURIComplete
+	if link == "" {
+		link = session.VerificationURI
+	}
+	return strings.Join([]string{
+		"Open this link to sign in to Life @ USTC:",
+		link,
+		"Code: " + session.UserCode,
+		fmt.Sprintf("Then send: %s login status", h.Prefix),
+	}, "\n")
+}
+
+func (h Handler) logout(ctx context.Context, ident store.Identity) string {
+	if h.Auth == nil {
+		return "Login is not configured."
+	}
+	if err := h.Auth.Logout(ctx, ident); err != nil {
+		return "Logout failed: " + err.Error()
+	}
+	return "Logged out."
+}
+
+func (h Handler) me(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	me, err := h.Life.Me(ctx, token)
+	if err != nil {
+		return "Failed to load profile: " + err.Error()
+	}
+	name := firstString(me, "name", "username", "email")
+	if name == "" {
+		name = firstString(me, "id")
+	}
+	return "Signed in as: " + name
+}
+
+func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	if len(args) > 0 && args[0] == "add" {
+		title := strings.TrimSpace(strings.Join(args[1:], " "))
+		if title == "" {
+			return "Usage: " + h.Prefix + " todo add <title>"
+		}
+		created, err := h.Life.CreateTodo(ctx, token, title)
+		if err != nil {
+			return "Failed to create todo: " + err.Error()
+		}
+		id := firstString(created, "id")
+		if id == "" {
+			id = fmt.Sprint(created["id"])
+		}
+		return "Created todo: " + id
+	}
+	todos, err := h.Life.Todos(ctx, token, "false")
+	if err != nil {
+		return "Failed to load todos: " + err.Error()
+	}
+	if len(todos) == 0 {
+		return "No pending todos."
+	}
+	lines := []string{"Pending todos:"}
+	for i, todo := range todos {
+		if i >= 8 {
+			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
+			break
+		}
+		lines = append(lines, "- "+firstString(todo, "title"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) subscription(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := h.Life.CurrentSubscription(ctx, token)
+	if err != nil {
+		return "Failed to load subscriptions: " + err.Error()
+	}
+	sub, _ := data["subscription"].(map[string]any)
+	sections, _ := sub["sections"].([]any)
+	if len(sections) == 0 {
+		return "No subscribed sections."
+	}
+	lines := []string{"Subscribed sections:"}
+	for i, item := range sections {
+		if i >= 8 {
+			lines = append(lines, fmt.Sprintf("...and %d more", len(sections)-i))
+			break
+		}
+		section, _ := item.(map[string]any)
+		lines = append(lines, formatSection(section))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string, bool) {
+	if h.Auth == nil {
+		return "", false
+	}
+	token, err := h.Auth.AccessToken(ctx, ident)
+	if err == nil {
+		return token, true
+	}
+	return "", !errors.Is(err, auth.ErrNotLoggedIn) && false
+}
+
+func (h Handler) loginRequired() string {
+	return "This command requires login. Send: " + h.Prefix + " login"
+}
+
+func (h Handler) recordState(ctx context.Context, ident store.Identity, fields []string) {
+	if h.Store == nil || ident.Platform == "" || ident.UserID == "" {
+		return
+	}
+	command := ""
+	if len(fields) > 1 {
+		command = fields[1]
+	}
+	_ = h.Store.RecordConversationState(ctx, ident, command, strconv.Quote(strings.Join(fields, " ")))
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {

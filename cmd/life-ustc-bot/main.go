@@ -8,11 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/napcat"
 	"github.com/Life-USTC/Bot/internal/onebot12"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 func main() {
@@ -20,7 +22,17 @@ func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	httpClient := &http.Client{Timeout: cfg.HTTPClientTimeout}
 	lifeClient := life.NewClient(cfg.LifeServer, httpClient)
-	handler := commands.Handler{Life: lifeClient, Prefix: cfg.CommandPrefix}
+	stateStore, err := store.Open(cfg.DBPath)
+	if err != nil {
+		logger.Fatalf("open sqlite store: %v", err)
+	}
+	defer func() { _ = stateStore.Close() }()
+	authManager := &auth.Manager{
+		Server:     cfg.LifeServer,
+		HTTPClient: httpClient,
+		Store:      stateStore,
+	}
+	handler := commands.Handler{Life: lifeClient, Auth: authManager, Store: stateStore, Prefix: cfg.CommandPrefix}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -31,6 +43,7 @@ func main() {
 			Port:        cfg.OneBotHTTPPort,
 			AccessToken: cfg.OneBotAccessToken,
 			SelfID:      cfg.OneBotSelfID,
+			Auth:        authManager,
 		}, lifeClient)
 		go server.Run()
 		defer server.Shutdown()

@@ -9,7 +9,9 @@ import (
 
 	libob "github.com/botuniverse/go-libonebot"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 const actionPrefix = "life_ustc"
@@ -17,6 +19,7 @@ const actionPrefix = "life_ustc"
 type Server struct {
 	onebot *libob.OneBot
 	life   *life.Client
+	auth   *auth.Manager
 }
 
 type Config struct {
@@ -24,6 +27,7 @@ type Config struct {
 	Port        uint16
 	AccessToken string
 	SelfID      string
+	Auth        *auth.Manager
 }
 
 func New(cfg Config, lifeClient *life.Client) *Server {
@@ -46,6 +50,7 @@ func New(cfg Config, lifeClient *life.Client) *Server {
 	s := &Server{
 		onebot: libob.NewOneBot("life-ustc-bot", self, config),
 		life:   lifeClient,
+		auth:   cfg.Auth,
 	}
 	s.onebot.Handle(s.mux())
 	return s
@@ -69,6 +74,10 @@ func (s *Server) mux() *libob.ActionMux {
 	mux.HandleFunc(actionPrefix+".search_courses", s.searchCourses)
 	mux.HandleFunc(actionPrefix+".search_sections", s.searchSections)
 	mux.HandleFunc(actionPrefix+".get_bus", s.bus)
+	mux.HandleFunc(actionPrefix+".begin_login", s.beginLogin)
+	mux.HandleFunc(actionPrefix+".poll_login", s.pollLogin)
+	mux.HandleFunc(actionPrefix+".get_me", s.me)
+	mux.HandleFunc(actionPrefix+".list_todos", s.todos)
 	return mux
 }
 
@@ -100,6 +109,93 @@ func (s *Server) searchSections(w libob.ResponseWriter, r *libob.Request) {
 func (s *Server) bus(w libob.ResponseWriter, r *libob.Request) {
 	data, err := s.life.Bus(context.Background())
 	write(w, data, err)
+}
+
+func (s *Server) beginLogin(w libob.ResponseWriter, r *libob.Request) {
+	if s.auth == nil {
+		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("login is not configured"))
+		return
+	}
+	ident, ok := identityFromParams(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.auth.BeginDeviceLogin(context.Background(), ident)
+	write(w, data, err)
+}
+
+func (s *Server) pollLogin(w libob.ResponseWriter, r *libob.Request) {
+	if s.auth == nil {
+		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("login is not configured"))
+		return
+	}
+	ident, ok := identityFromParams(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.auth.PollDeviceLogin(context.Background(), ident)
+	write(w, data, err)
+}
+
+func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
+	token, ok := s.accessTokenForAction(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.life.Me(context.Background(), token)
+	write(w, data, err)
+}
+
+func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
+	token, ok := s.accessTokenForAction(w, r)
+	if !ok {
+		return
+	}
+	data, err := s.life.Todos(context.Background(), token, "false")
+	write(w, data, err)
+}
+
+func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) (string, bool) {
+	if s.auth == nil {
+		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("login is not configured"))
+		return "", false
+	}
+	ident, ok := identityFromParams(w, r)
+	if !ok {
+		return "", false
+	}
+	token, err := s.auth.AccessToken(context.Background(), ident)
+	if err != nil {
+		w.WriteFailed(libob.RetCodeBadParam, err)
+		return "", false
+	}
+	return token, true
+}
+
+func identityFromParams(w libob.ResponseWriter, r *libob.Request) (store.Identity, bool) {
+	p := libob.NewParamGetter(w, r)
+	userID, ok := p.GetString("user_id")
+	if !ok {
+		return store.Identity{}, false
+	}
+	platform := "onebot"
+	if value, exists := p.GetString("platform"); exists {
+		platform = value
+	}
+	conversationType := "private"
+	if value, exists := p.GetString("conversation_type"); exists {
+		conversationType = value
+	}
+	conversationID := userID
+	if value, exists := p.GetString("conversation_id"); exists {
+		conversationID = value
+	}
+	return store.Identity{
+		Platform:         platform,
+		UserID:           userID,
+		ConversationType: conversationType,
+		ConversationID:   conversationID,
+	}, true
 }
 
 func write(w libob.ResponseWriter, data any, err error) {

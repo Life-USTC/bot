@@ -17,7 +17,7 @@ func TestHandleCourseSearch(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
-	reply, ok := handler.Handle(context.Background(), "/life course calculus")
+	reply, ok := handler.Handle(context.Background(), Input{Text: "/life course calculus"})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
@@ -28,7 +28,7 @@ func TestHandleCourseSearch(t *testing.T) {
 
 func TestHandleIgnoresOtherMessages(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
-	reply, ok := handler.Handle(context.Background(), "hello")
+	reply, ok := handler.Handle(context.Background(), Input{Text: "hello"})
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}

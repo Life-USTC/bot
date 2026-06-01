@@ -12,6 +12,13 @@ Message commands use `/life` by default:
 
 ```text
 /life ping
+/life login
+/life login status
+/life logout
+/life me
+/life todo
+/life todo add <title>
+/life sub
 /life semester
 /life course <keyword>
 /life section <keyword>
@@ -25,7 +32,16 @@ life_ustc.get_current_semester
 life_ustc.search_courses      {"search":"calculus"}
 life_ustc.search_sections     {"search":"calculus"}
 life_ustc.get_bus
+life_ustc.begin_login         {"platform":"napcat","user_id":"123"}
+life_ustc.poll_login          {"platform":"napcat","user_id":"123"}
+life_ustc.get_me              {"platform":"napcat","user_id":"123"}
+life_ustc.list_todos          {"platform":"napcat","user_id":"123"}
 ```
+
+`/life login` starts an OAuth device-code login and replies with the
+verification link and user code. After approving in the browser, send
+`/life login status`; the bot persists the token for that chat user in SQLite.
+Authenticated commands refresh tokens automatically when possible.
 
 ## Run
 
@@ -41,6 +57,7 @@ BOT_ONEBOT_HTTP_HOST=127.0.0.1
 BOT_ONEBOT_HTTP_PORT=6700
 BOT_ONEBOT_ACCESS_TOKEN=
 BOT_COMMAND_PREFIX=/life
+BOT_DB_PATH=.run/life-ustc-bot.db
 
 # NapCat reverse WebSocket. The local container is configured for /ws on 2280.
 NAPCAT_REVERSE_ADDR=0.0.0.0:2280

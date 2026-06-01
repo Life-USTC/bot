@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 type Bridge struct {
@@ -56,7 +57,10 @@ func (b *Bridge) Run(ctx context.Context) error {
 		if event.PostType != "message" {
 			continue
 		}
-		reply, ok := b.Handler.Handle(ctx, event.RawMessage)
+		reply, ok := b.Handler.Handle(ctx, commands.Input{
+			Text:     event.RawMessage,
+			Identity: event.identity(),
+		})
 		if !ok {
 			continue
 		}
@@ -111,13 +115,29 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		if event.PostType != "message" {
 			continue
 		}
-		reply, ok := b.Handler.Handle(ctx, event.RawMessage)
+		reply, ok := b.Handler.Handle(ctx, commands.Input{
+			Text:     event.RawMessage,
+			Identity: event.identity(),
+		})
 		if !ok {
 			continue
 		}
 		if err := sendReverseReply(conn, event, reply); err != nil && b.Logger != nil {
 			b.Logger.Printf("reverse websocket send failed: %v", err)
 		}
+	}
+}
+
+func (e messageEvent) identity() store.Identity {
+	conversationID := fmt.Sprint(e.UserID)
+	if e.MessageType == "group" {
+		conversationID = fmt.Sprint(e.GroupID)
+	}
+	return store.Identity{
+		Platform:         "napcat",
+		UserID:           fmt.Sprint(e.UserID),
+		ConversationType: e.MessageType,
+		ConversationID:   conversationID,
 	}
 }
 
