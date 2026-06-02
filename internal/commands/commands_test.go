@@ -50,6 +50,55 @@ func TestHandleCasualCourseSearch(t *testing.T) {
 	}
 }
 
+func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[
+				{"id":1,"stops":[
+					{"campus":{"nameCn":"东区"}},
+					{"campus":{"nameCn":"北区"}},
+					{"campus":{"nameCn":"西区"}}
+				]}
+			],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"09:20","departureMinutes":560,"arrivalTime":"09:35","stopTimes":[
+					{"campusName":"东区","time":"09:20"},
+					{"campusName":"北区"},
+					{"campusName":"西区","time":"09:35"}
+				]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	groupInput := Input{
+		Text: "东区到西区校车还有吗",
+		Identity: store.Identity{
+			Platform:         "napcat",
+			UserID:           "42",
+			ConversationType: "group",
+			ConversationID:   "100",
+		},
+	}
+	reply, ok := handler.Handle(context.Background(), groupInput)
+	if !ok {
+		t.Fatal("group bus message was not handled")
+	}
+	if !strings.Contains(reply, "东区 𝟶𝟿:𝟸𝟶 → 北区 → 西区 𝟶𝟿:𝟹𝟻") {
+		t.Fatalf("reply = %q", reply)
+	}
+
+	groupInput.Text = "/life td"
+	reply, ok = handler.Handle(context.Background(), groupInput)
+	if ok || reply != "" {
+		t.Fatalf("group personal command reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestHandleHelpAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{"/help", "/?", "帮助", "/life -h"} {

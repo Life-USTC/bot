@@ -28,7 +28,13 @@ type Input struct {
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	cmd, ok := h.parse(input.Text)
+	if !ok && isGroup(input.Identity) {
+		cmd, ok = parseGroupBus(input.Text)
+	}
 	if !ok {
+		return "", false
+	}
+	if isGroup(input.Identity) && cmd.Name != "bus" {
 		return "", false
 	}
 	h.recordState(ctx, input.Identity, cmd)
@@ -79,6 +85,10 @@ type parsedCommand struct {
 	Name string
 	Args []string
 	Raw  string
+}
+
+func isGroup(ident store.Identity) bool {
+	return ident.ConversationType == "group"
 }
 
 func (h Handler) parse(text string) (parsedCommand, bool) {
@@ -174,6 +184,53 @@ func normalizeTodoArgs(args []string) []string {
 		next := append([]string(nil), args...)
 		next[0] = "done"
 		return next
+	}
+	return args
+}
+
+func parseGroupBus(text string) (parsedCommand, bool) {
+	raw := strings.TrimSpace(text)
+	if raw == "" || !containsBusKeyword(raw) {
+		return parsedCommand{}, false
+	}
+	return parsedCommand{Name: "bus", Args: busArgsFromText(raw), Raw: raw}, true
+}
+
+func containsBusKeyword(text string) bool {
+	lower := strings.ToLower(text)
+	for _, keyword := range []string{"校车", "班车", "xc", "bus"} {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func busArgsFromText(text string) []string {
+	type match struct {
+		index  int
+		campus string
+	}
+	matches := make([]match, 0, 2)
+	seen := map[string]bool{}
+	for _, alias := range campusAliases() {
+		if index := strings.Index(text, alias); index >= 0 {
+			campus := campusName(alias)
+			if campus != "" && !seen[campus] {
+				matches = append(matches, match{index: index, campus: campus})
+				seen[campus] = true
+			}
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].index < matches[j].index
+	})
+	args := make([]string, 0, 2)
+	for _, match := range matches {
+		if len(args) >= 2 {
+			break
+		}
+		args = append(args, match.campus)
 	}
 	return args
 }
@@ -832,6 +889,15 @@ func campusRank(campus string) int {
 	}
 }
 
+func campusAliases() []string {
+	return []string{
+		"高新区", "高新园区", "高新",
+		"先研院",
+		"东区", "西区", "中区", "北区", "南区",
+		"东", "西", "中", "北", "南",
+	}
+}
+
 func campusName(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "东", "东区", "east", "east campus":
@@ -846,6 +912,8 @@ func campusName(value string) string {
 		return "南区"
 	case "高新", "高新区", "高新园区", "gx":
 		return "高新区"
+	case "先研院":
+		return "先研院"
 	}
 	return strings.TrimSpace(value)
 }

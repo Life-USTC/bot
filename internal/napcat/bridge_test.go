@@ -124,9 +124,8 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 
 	err = conn.WriteJSON(map[string]any{
 		"post_type":    "message",
-		"message_type": "group",
+		"message_type": "private",
 		"raw_message":  "/life course calculus",
-		"group_id":     123,
 		"user_id":      456,
 	})
 	if err != nil {
@@ -136,7 +135,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	if err := conn.ReadJSON(&frame); err != nil {
 		t.Fatal(err)
 	}
-	if frame["action"] != "send_group_msg" {
+	if frame["action"] != "send_private_msg" {
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
