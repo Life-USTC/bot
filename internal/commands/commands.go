@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
@@ -127,7 +128,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		switch joined {
 		case "今天课表", "今日课表":
 			return parsedCommand{Name: "schedule", Args: []string{"today"}, Raw: raw}, true
-		case "明天课表", "明天课标":
+		case "明天课表", "明日课表", "明天课标":
 			return parsedCommand{Name: "schedule", Args: []string{"tomorrow"}, Raw: raw}, true
 		case "下一节课":
 			return parsedCommand{Name: "nextclass", Raw: raw}, true
@@ -165,7 +166,7 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "schedule", normalizeScheduleArgs(args)
 	case "今天课表", "今日课表":
 		return "schedule", []string{"today"}
-	case "明天课表", "明天课标":
+	case "明天课表", "明日课表", "明天课标":
 		return "schedule", []string{"tomorrow"}
 	case "订阅", "sub", "subs", "subscription":
 		return "subscription", args
@@ -655,9 +656,9 @@ func formatHomework(homework map[string]any) string {
 		parts = append(parts, "截止 "+due)
 	}
 	if len(parts) == 0 {
-		return firstString(homework, "id")
+		return monospaceDigits(firstString(homework, "id"))
 	}
-	return strings.Join(parts, " · ")
+	return monospaceDigits(strings.Join(parts, " · "))
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
@@ -694,10 +695,10 @@ func formatHomeworkList(homeworks []map[string]any) string {
 		lines = append(lines, group.title+"：")
 		for _, homework := range group.items {
 			if shown >= 8 {
-				lines = append(lines, fmt.Sprintf("...and %d more", len(homeworks)-shown))
+				lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(homeworks)-shown)))
 				return strings.Join(lines, "\n")
 			}
-			lines = append(lines, fmt.Sprintf("%d. %s", index, formatHomework(homework)))
+			lines = append(lines, monospaceDigits(fmt.Sprintf("%d. %s", index, formatHomework(homework))))
 			index++
 			shown++
 		}
@@ -766,7 +767,7 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 	lines := []string{title}
 	for i, schedule := range schedules {
 		if i >= 8 {
-			lines = append(lines, fmt.Sprintf("...and %d more", len(schedules)-i))
+			lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
 			break
 		}
 		lines = append(lines, formatSchedule(schedule))
@@ -796,7 +797,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 			if offset == 1 {
 				prefix = "明天下一节："
 			} else if offset > 1 {
-				prefix = day.Format("01-02") + " 下一节："
+				prefix = monospaceDigits(day.Format("01-02")) + " 下一节："
 			}
 			return prefix + "\n" + formatSchedule(schedule)
 		}
@@ -819,31 +820,65 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if len(sectionIDs) == 0 {
 		return nil, nil
 	}
-	all := make([]map[string]any, 0)
-	for _, sectionID := range sectionIDs {
-		values := url.Values{}
-		values.Set("sectionId", sectionID)
-		start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
-		end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
-		values.Set("dateFrom", start.UTC().Format(time.RFC3339))
-		values.Set("dateTo", end.UTC().Format(time.RFC3339))
-		values.Set("limit", "100")
-		schedules, fetchErr := h.Life.Schedules(ctx, token, values)
-		if fetchErr != nil && strings.Contains(fetchErr.Error(), " returned 401:") {
-			token, refreshErr := h.Auth.Refresh(ctx, ident)
-			if refreshErr == nil {
-				schedules, fetchErr = h.Life.Schedules(ctx, token, values)
-			}
+	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
 		}
-		if fetchErr != nil {
-			return nil, fetchErr
-		}
-		all = append(all, schedules...)
+	}
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(all, func(i, j int) bool {
 		return firstString(all[i], "startTime") < firstString(all[j], "startTime")
 	})
 	return all, nil
+}
+
+func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, sectionIDs []string, day time.Time) ([]map[string]any, error) {
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
+	dateFrom := start.UTC().Format(time.RFC3339)
+	dateTo := end.UTC().Format(time.RFC3339)
+
+	var mu sync.Mutex
+	var firstErr error
+	all := make([]map[string]any, 0)
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for _, sectionID := range sectionIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		sectionID := sectionID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			values := url.Values{}
+			values.Set("sectionId", sectionID)
+			values.Set("dateFrom", dateFrom)
+			values.Set("dateTo", dateTo)
+			values.Set("limit", "100")
+			schedules, err := h.Life.Schedules(ctx, token, values)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			all = append(all, schedules...)
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return all, ctx.Err()
 }
 
 func subscriptionSectionIDs(data map[string]any) []string {
@@ -880,7 +915,7 @@ func formatSchedule(schedule map[string]any) string {
 	if place != "" {
 		line += " @ " + place
 	}
-	return strings.TrimSpace(line)
+	return monospaceDigits(strings.TrimSpace(line))
 }
 
 func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {

@@ -222,7 +222,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "数据库系统 · Problem Set 1 · 截止 06-03 12:00") {
+	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "数据库系统 · Problem Set 𝟷 · 截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -264,7 +264,7 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "09:50-11:25  数据库系统 @ 西区 3A204") {
+	if !strings.Contains(reply, "𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻  数据库系统 @ 西区 𝟹A𝟸𝟶𝟺") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
