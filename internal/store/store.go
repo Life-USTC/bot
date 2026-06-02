@@ -40,6 +40,15 @@ type LoginSession struct {
 	Status                  string
 }
 
+type Interaction struct {
+	RawText string
+	Command string
+	Args    string
+	Handled bool
+	Reply   string
+	Error   string
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -116,6 +125,22 @@ func (s *Store) migrate(ctx context.Context) error {
 			state TEXT,
 			created_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS interactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			platform TEXT NOT NULL,
+			conversation_type TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			raw_text TEXT NOT NULL,
+			command TEXT,
+			args TEXT,
+			handled INTEGER NOT NULL,
+			reply TEXT,
+			error TEXT,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_interactions_conversation_created
+			ON interactions(platform, conversation_type, conversation_id, created_at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -254,5 +279,19 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 		(platform, conversation_type, conversation_id, user_id, last_command, state, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, command, state, now)
+	return err
+}
+
+func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interaction Interaction) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	handled := 0
+	if interaction.Handled {
+		handled = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO interactions
+		(platform, conversation_type, conversation_id, user_id, raw_text, command, args, handled, reply, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID,
+		interaction.RawText, interaction.Command, interaction.Args, handled, interaction.Reply, interaction.Error, now)
 	return err
 }

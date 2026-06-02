@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
@@ -30,39 +32,47 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		return "", false
 	}
 	h.recordState(ctx, input.Identity, cmd)
+	var reply string
 	if cmd.Name == "help" {
-		return h.help(), true
+		reply = h.help()
+		h.recordInteraction(ctx, input.Identity, cmd, reply)
+		return reply, true
 	}
 
 	switch cmd.Name {
 	case "login":
-		return h.login(ctx, input.Identity, cmd.Args), true
+		reply = h.login(ctx, input.Identity, cmd.Args)
 	case "logout":
-		return h.logout(ctx, input.Identity), true
+		reply = h.logout(ctx, input.Identity)
 	case "me":
-		return h.me(ctx, input.Identity), true
+		reply = h.me(ctx, input.Identity)
 	case "todo":
-		return h.todo(ctx, input.Identity, cmd.Args), true
+		reply = h.todo(ctx, input.Identity, cmd.Args)
 	case "sub", "subs", "subscription":
-		return h.subscription(ctx, input.Identity), true
+		reply = h.subscription(ctx, input.Identity)
 	case "ping":
 		if err := h.Life.Health(ctx); err != nil {
-			return "Life @ USTC API unavailable: " + err.Error(), true
+			reply = "Life @ USTC API unavailable: " + err.Error()
+			break
 		}
-		return "Life @ USTC API is reachable.", true
+		reply = "Life @ USTC API is reachable."
+	case "status":
+		reply = h.status(ctx, input.Identity)
 	case "semester":
-		return h.currentSemester(ctx), true
+		reply = h.currentSemester(ctx)
 	case "course":
-		return h.searchCourses(ctx, strings.Join(cmd.Args, " ")), true
+		reply = h.searchCourses(ctx, strings.Join(cmd.Args, " "))
 	case "section":
-		return h.searchSections(ctx, strings.Join(cmd.Args, " ")), true
+		reply = h.searchSections(ctx, strings.Join(cmd.Args, " "))
 	case "bus":
-		return h.bus(ctx), true
+		reply = h.bus(ctx, cmd.Args)
 	case "schedule":
-		return h.subscription(ctx, input.Identity), true
+		reply = h.subscription(ctx, input.Identity)
 	default:
-		return h.help(), true
+		reply = h.help()
 	}
+	h.recordInteraction(ctx, input.Identity, cmd, reply)
+	return reply, true
 }
 
 type parsedCommand struct {
@@ -108,8 +118,10 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "-h", "--help", "help", "?", "？", "帮助", "菜单":
 		return "help", args
-	case "p", "ping", "状态":
+	case "p", "ping":
 		return "ping", args
+	case "status", "zt", "状态":
+		return "status", args
 	case "login", "登录", "dl":
 		return "login", normalizeLoginArgs(args)
 	case "logout", "退出", "登出":
@@ -158,6 +170,10 @@ func normalizeTodoArgs(args []string) []string {
 		next := append([]string(nil), args...)
 		next[0] = "add"
 		return next
+	case "done", "finish", "complete", "ok", "x", "完成", "好了":
+		next := append([]string(nil), args...)
+		next[0] = "done"
+		return next
 	}
 	return args
 }
@@ -166,9 +182,12 @@ func (h Handler) help() string {
 	return strings.Join([]string{
 		"可以直接发：",
 		"待办 / td",
-		"待办 add 写报告",
+		"td 写报告",
+		"td done 1",
 		"校车 / xc",
+		"xc 东区 西区",
 		"日程 / rc",
+		"状态 / status",
 		"我 / me",
 		"课程 数学分析",
 		"教学班 高等数学",
@@ -242,7 +261,9 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			"待办",
 			"td",
 			"待办 add 写报告",
+			"td 写报告",
 			"td + 买咖啡",
+			"td done 1",
 		}, "\n")
 	}
 	token, ok := h.accessToken(ctx, ident)
@@ -254,32 +275,48 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		if title == "" {
 			return "想加什么？例如：待办 add 写报告"
 		}
-		created, err := h.Life.CreateTodo(ctx, token, title)
+		return h.createTodo(ctx, ident, token, title)
+	}
+	if len(args) > 0 && args[0] == "done" {
+		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		if target == "" {
+			return "想完成哪条？例如：td done 1"
+		}
+		todos, err := h.pendingTodos(ctx, ident, token)
+		if err != nil {
+			return "待办查不到：" + friendlyError(err)
+		}
+		todo, ok := resolveTodo(todos, target)
+		if !ok {
+			return "没找到这条待办。发 td 看编号，再试：td done 1"
+		}
+		id := firstString(todo, "id")
+		if id == "" {
+			id = fmt.Sprint(todo["id"])
+		}
+		if id == "" || id == "<nil>" {
+			return "这条待办没有可用 ID，暂时完成不了。"
+		}
+		err = h.Life.CompleteTodo(ctx, token, id)
 		if err != nil && strings.Contains(err.Error(), " returned 401:") {
 			token, refreshErr := h.Auth.Refresh(ctx, ident)
 			if refreshErr == nil {
-				created, err = h.Life.CreateTodo(ctx, token, title)
+				err = h.Life.CompleteTodo(ctx, token, id)
 			}
 		}
 		if err != nil {
-			return "待办添加失败：" + friendlyError(err)
+			return "待办完成失败：" + friendlyError(err)
 		}
-		id := firstString(created, "id")
-		if id == "" {
-			id = fmt.Sprint(created["id"])
+		title := firstString(todo, "title")
+		if title == "" {
+			return "已完成。"
 		}
-		if id != "" {
-			return "已加待办：" + title
-		}
-		return "已加待办"
+		return "已完成：" + title
 	}
-	todos, err := h.Life.Todos(ctx, token, "false")
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			todos, err = h.Life.Todos(ctx, token, "false")
-		}
+	if len(args) > 0 {
+		return h.createTodo(ctx, ident, token, strings.Join(args, " "))
 	}
+	todos, err := h.pendingTodos(ctx, ident, token)
 	if err != nil {
 		return "待办查不到：" + friendlyError(err)
 	}
@@ -292,9 +329,61 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
 			break
 		}
-		lines = append(lines, "- "+firstString(todo, "title"))
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, firstString(todo, "title")))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "想加什么？例如：td 写报告"
+	}
+	created, err := h.Life.CreateTodo(ctx, token, title)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			created, err = h.Life.CreateTodo(ctx, token, title)
+		}
+	}
+	if err != nil {
+		return "待办添加失败：" + friendlyError(err)
+	}
+	id := firstString(created, "id")
+	if id == "" {
+		id = fmt.Sprint(created["id"])
+	}
+	if id != "" {
+		return "已加待办：" + title
+	}
+	return "已加待办"
+}
+
+func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
+	todos, err := h.Life.Todos(ctx, token, "false")
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			todos, err = h.Life.Todos(ctx, token, "false")
+		}
+	}
+	return todos, err
+}
+
+func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
+	target = strings.TrimSpace(target)
+	if index, err := strconv.Atoi(target); err == nil && index >= 1 && index <= len(todos) {
+		return todos[index-1], true
+	}
+	needle := strings.ToLower(target)
+	for _, todo := range todos {
+		id := strings.ToLower(firstString(todo, "id"))
+		title := strings.ToLower(firstString(todo, "title"))
+		if needle == id || needle == title || strings.Contains(title, needle) {
+			return todo, true
+		}
+	}
+	return nil, false
 }
 
 func (h Handler) subscription(ctx context.Context, ident store.Identity) string {
@@ -351,6 +440,19 @@ func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd pars
 	_ = h.Store.RecordConversationState(ctx, ident, cmd.Name, strconv.Quote(cmd.Raw))
 }
 
+func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd parsedCommand, reply string) {
+	if h.Store == nil || ident.Platform == "" || ident.UserID == "" {
+		return
+	}
+	_ = h.Store.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: cmd.Raw,
+		Command: cmd.Name,
+		Args:    strings.Join(cmd.Args, " "),
+		Handled: true,
+		Reply:   reply,
+	})
+}
+
 func (h Handler) currentSemester(ctx context.Context) string {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
@@ -399,14 +501,238 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) bus(ctx context.Context) string {
+func (h Handler) status(ctx context.Context, ident store.Identity) string {
+	api := "OK"
+	if err := h.Life.Health(ctx); err != nil {
+		api = friendlyError(err)
+	}
+	login := "未登录"
+	if h.Auth != nil {
+		if _, err := h.Auth.AccessToken(ctx, ident); err == nil {
+			login = "已登录"
+		}
+	}
+	return strings.Join([]string{
+		"状态：",
+		"Life API：" + api,
+		"登录：" + login,
+	}, "\n")
+}
+
+func (h Handler) bus(ctx context.Context, args []string) string {
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
 		return "校车查不到：" + friendlyError(err)
 	}
+	items := nextBusItems(data, args, time.Now())
+	if len(items) == 0 {
+		return "今天后面没查到校车。"
+	}
+	title := "下一班校车："
+	from, to := busFilter(args)
+	if from != "" && to != "" {
+		title = from + " -> " + to + " 下一班："
+	}
+	lines := []string{title}
+	for i, item := range items {
+		if i >= 5 {
+			break
+		}
+		line := item.DepartureTime + " " + item.Route
+		if item.Arrival != "" {
+			line += "（到 " + item.Arrival + "）"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+type busItem struct {
+	DepartureMinutes int
+	DepartureTime    string
+	Arrival          string
+	Route            string
+}
+
+func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err == nil {
+		now = now.In(loc)
+	}
+	from, to := busFilter(args)
+	dayType := "weekday"
+	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+		dayType = "weekend"
+	}
+	nowMinutes := now.Hour()*60 + now.Minute()
+	routes := busRouteMap(data["routes"])
 	trips, _ := data["trips"].([]any)
-	routes, _ := data["routes"].([]any)
-	return fmt.Sprintf("校车数据已加载：%d 条线路，%d 班车。之后可以继续做成“下一班校车”。", len(routes), len(trips))
+	items := make([]busItem, 0, len(trips))
+	for _, raw := range trips {
+		trip, _ := raw.(map[string]any)
+		if trip == nil || firstString(trip, "dayType") != dayType {
+			continue
+		}
+		departure := intNumber(trip["departureMinutes"])
+		if departure < nowMinutes {
+			continue
+		}
+		route := routes[firstString(trip, "routeId")]
+		routeStops := route.StopNames
+		if len(routeStops) == 0 {
+			routeStops = tripStopNames(trip)
+		}
+		if !routeMatches(routeStops, from, to) {
+			continue
+		}
+		items = append(items, busItem{
+			DepartureMinutes: departure,
+			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
+			Arrival:          firstString(trip, "arrivalTime"),
+			Route:            busRouteLabel(route, routeStops),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].DepartureMinutes < items[j].DepartureMinutes
+	})
+	return items
+}
+
+type busRoute struct {
+	Name      string
+	StopNames []string
+}
+
+func busRouteMap(raw any) map[string]busRoute {
+	out := map[string]busRoute{}
+	routes, _ := raw.([]any)
+	for _, item := range routes {
+		route, _ := item.(map[string]any)
+		if route == nil {
+			continue
+		}
+		stops := make([]string, 0)
+		for _, rawStop := range anySlice(route["stops"]) {
+			stop, _ := rawStop.(map[string]any)
+			if stop == nil {
+				continue
+			}
+			name := campusName(firstString(stop, "nameCn", "name", "namePrimary"))
+			if name == "" {
+				name = campusName(nestedString(stop, "campus", "nameCn", "namePrimary", "name"))
+			}
+			if name != "" {
+				stops = append(stops, name)
+			}
+		}
+		out[firstString(route, "id")] = busRoute{
+			Name:      firstString(route, "nameCn", "namePrimary", "name"),
+			StopNames: stops,
+		}
+	}
+	return out
+}
+
+func tripStopNames(trip map[string]any) []string {
+	stops := make([]string, 0)
+	for _, rawStop := range anySlice(trip["stopTimes"]) {
+		stop, _ := rawStop.(map[string]any)
+		if stop == nil {
+			continue
+		}
+		name := campusName(firstString(stop, "campusName", "stopName", "nameCn", "name"))
+		if name != "" {
+			stops = append(stops, name)
+		}
+	}
+	return stops
+}
+
+func busFilter(args []string) (string, string) {
+	if len(args) == 1 {
+		return campusName(args[0]), ""
+	}
+	if len(args) < 2 {
+		return "", ""
+	}
+	return campusName(args[0]), campusName(args[1])
+}
+
+func routeMatches(stops []string, from, to string) bool {
+	if from == "" || to == "" {
+		if from == "" {
+			return true
+		}
+		for _, stop := range stops {
+			if stop == from {
+				return true
+			}
+		}
+		return false
+	}
+	fromIndex := -1
+	for i, stop := range stops {
+		if stop == from && fromIndex == -1 {
+			fromIndex = i
+		}
+		if stop == to && fromIndex >= 0 && i > fromIndex {
+			return true
+		}
+	}
+	return false
+}
+
+func busRouteLabel(route busRoute, stops []string) string {
+	if len(stops) > 0 {
+		return strings.Join(stops, " -> ")
+	}
+	if route.Name != "" {
+		return route.Name
+	}
+	return "校车"
+}
+
+func campusName(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "东", "东区", "east", "east campus":
+		return "东区"
+	case "西", "西区", "west", "west campus":
+		return "西区"
+	case "中", "中区", "center", "central", "central campus":
+		return "中区"
+	case "北", "北区", "north", "north campus":
+		return "北区"
+	case "南", "南区", "south", "south campus":
+		return "南区"
+	case "高新", "高新区", "高新园区", "gx":
+		return "高新区"
+	}
+	return strings.TrimSpace(value)
+}
+
+func anySlice(value any) []any {
+	items, _ := value.([]any)
+	return items
+}
+
+func intNumber(value any) int {
+	switch n := value.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case string:
+		parsed, _ := strconv.Atoi(n)
+		return parsed
+	}
+	return 0
+}
+
+func busTime(value string, minutes int) string {
+	if value != "" {
+		return value
+	}
+	return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60)
 }
 
 func formatCourse(course map[string]any) string {
@@ -428,8 +754,15 @@ func formatSection(section map[string]any) string {
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
-		if value, ok := m[key].(string); ok && value != "" {
-			return value
+		switch value := m[key].(type) {
+		case string:
+			if value != "" {
+				return value
+			}
+		case float64:
+			return strconv.FormatInt(int64(value), 10)
+		case int:
+			return strconv.Itoa(value)
 		}
 	}
 	return ""

@@ -36,6 +36,25 @@ func TestCredentialAndConversationStatePersist(t *testing.T) {
 	if err := s.RecordConversationState(context.Background(), ident, "todo", "pending"); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.RecordInteraction(context.Background(), ident, Interaction{
+		RawText: "td done 1",
+		Command: "todo",
+		Args:    "done 1",
+		Handled: true,
+		Reply:   "已完成：写报告",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	err = s.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM interactions
+		WHERE platform = ? AND user_id = ? AND command = ? AND handled = 1`,
+		ident.Platform, ident.UserID, "todo").Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("interaction count = %d", count)
+	}
 }
 
 func TestLoginSessionLifecycle(t *testing.T) {

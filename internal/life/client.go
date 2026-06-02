@@ -88,6 +88,11 @@ func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[strin
 	return out, err
 }
 
+func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
+	body, _ := json.Marshal(map[string]any{"completed": true})
+	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
+}
+
 func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
 	err := c.getAuth(ctx, "/api/calendar-subscriptions/current", nil, token, &out)
@@ -114,6 +119,10 @@ func (c *Client) getAuth(ctx context.Context, path string, values url.Values, to
 
 func (c *Client) postAuth(ctx context.Context, path string, token string, body []byte, out any) error {
 	return c.do(ctx, http.MethodPost, path, nil, token, body, out)
+}
+
+func (c *Client) patchAuth(ctx context.Context, path string, token string, body []byte, out any) error {
+	return c.do(ctx, http.MethodPatch, path, nil, token, body, out)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, values url.Values, token string, body []byte, out any) error {
