@@ -645,6 +645,9 @@ func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
 			campus = "其他"
 		}
 		if campus != lastCampus {
+			if lastCampus != "" {
+				lines = append(lines, "")
+			}
 			lines = append(lines, campus+"：")
 			lastCampus = campus
 		}
@@ -661,7 +664,7 @@ func formatBusItem(item busItem) string {
 			if stop.Time != "" {
 				part += " " + stop.Time
 			}
-			parts = append(parts, fullwidthDigits(part))
+			parts = append(parts, part)
 		}
 		return strings.Join(parts, " → ")
 	}
@@ -669,7 +672,7 @@ func formatBusItem(item busItem) string {
 	if item.Arrival != "" {
 		line += "（到 " + item.Arrival + "）"
 	}
-	return fullwidthDigits(line)
+	return line
 }
 
 type busRoute struct {
@@ -792,15 +795,6 @@ func busRouteLabel(route busRoute, stops []string) string {
 		return strings.ReplaceAll(route.Name, " -> ", " → ")
 	}
 	return "校车"
-}
-
-func fullwidthDigits(text string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return '０' + (r - '0')
-		}
-		return r
-	}, text)
 }
 
 func firstStop(stops []busStop) string {

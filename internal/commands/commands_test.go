@@ -259,7 +259,7 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByDepartureCampus(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区：\n  东区 ０９:３０ → 北区 → 西区 ０９:４５") {
+	if !strings.Contains(got, "东区：\n  东区 09:30 → 北区 → 西区 09:45\n\n西区：") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
