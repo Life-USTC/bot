@@ -30,8 +30,10 @@ type messageEvent struct {
 	PostType    string `json:"post_type"`
 	MessageType string `json:"message_type"`
 	RawMessage  string `json:"raw_message"`
+	Message     any    `json:"message"`
 	GroupID     int64  `json:"group_id"`
 	UserID      int64  `json:"user_id"`
+	SelfID      int64  `json:"self_id"`
 }
 
 func (b *Bridge) Run(ctx context.Context) error {
@@ -115,15 +117,24 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		if event.PostType != "message" {
 			continue
 		}
+		if b.Logger != nil {
+			b.Logger.Printf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
+				event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
+		}
 		reply, ok := b.Handler.Handle(ctx, commands.Input{
 			Text:     event.RawMessage,
 			Identity: event.identity(),
 		})
 		if !ok {
+			if b.Logger != nil {
+				b.Logger.Printf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
+			}
 			continue
 		}
 		if err := sendReverseReply(conn, event, reply); err != nil && b.Logger != nil {
 			b.Logger.Printf("reverse websocket send failed: %v", err)
+		} else if b.Logger != nil {
+			b.Logger.Printf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
 		}
 	}
 }
@@ -207,4 +218,12 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
 	}
 	return nil
+}
+
+func trimLogText(text string) string {
+	const max = 160
+	if len(text) <= max {
+		return text
+	}
+	return text[:max] + "..."
 }

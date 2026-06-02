@@ -25,24 +25,24 @@ type Input struct {
 }
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
-	fields := strings.Fields(strings.TrimSpace(input.Text))
-	if len(fields) == 0 || fields[0] != h.Prefix {
+	cmd, ok := h.parse(input.Text)
+	if !ok {
 		return "", false
 	}
-	h.recordState(ctx, input.Identity, fields)
-	if len(fields) == 1 || fields[1] == "help" {
+	h.recordState(ctx, input.Identity, cmd)
+	if cmd.Name == "help" {
 		return h.help(), true
 	}
 
-	switch fields[1] {
+	switch cmd.Name {
 	case "login":
-		return h.login(ctx, input.Identity, fields[2:]), true
+		return h.login(ctx, input.Identity, cmd.Args), true
 	case "logout":
 		return h.logout(ctx, input.Identity), true
 	case "me":
 		return h.me(ctx, input.Identity), true
 	case "todo":
-		return h.todo(ctx, input.Identity, fields[2:]), true
+		return h.todo(ctx, input.Identity, cmd.Args), true
 	case "sub", "subs", "subscription":
 		return h.subscription(ctx, input.Identity), true
 	case "ping":
@@ -53,31 +53,126 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	case "semester":
 		return h.currentSemester(ctx), true
 	case "course":
-		return h.searchCourses(ctx, strings.Join(fields[2:], " ")), true
+		return h.searchCourses(ctx, strings.Join(cmd.Args, " ")), true
 	case "section":
-		return h.searchSections(ctx, strings.Join(fields[2:], " ")), true
+		return h.searchSections(ctx, strings.Join(cmd.Args, " ")), true
 	case "bus":
 		return h.bus(ctx), true
+	case "schedule":
+		return h.subscription(ctx, input.Identity), true
 	default:
 		return h.help(), true
 	}
 }
 
+type parsedCommand struct {
+	Name string
+	Args []string
+	Raw  string
+}
+
+func (h Handler) parse(text string) (parsedCommand, bool) {
+	raw := strings.TrimSpace(text)
+	if raw == "" {
+		return parsedCommand{}, false
+	}
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return parsedCommand{}, false
+	}
+	prefix := h.Prefix
+	if prefix == "" {
+		prefix = "/life"
+	}
+
+	if fields[0] == prefix {
+		if len(fields) == 1 {
+			return parsedCommand{Name: "help", Raw: raw}, true
+		}
+		name, args := normalizeCommand(fields[1], fields[2:])
+		return parsedCommand{Name: name, Args: args, Raw: raw}, true
+	}
+
+	if fields[0] == "/help" || fields[0] == "/?" || fields[0] == "help" || fields[0] == "帮助" || fields[0] == "？" {
+		return parsedCommand{Name: "help", Raw: raw}, true
+	}
+
+	name, args := normalizeCommand(fields[0], fields[1:])
+	if name == "" {
+		return parsedCommand{}, false
+	}
+	return parsedCommand{Name: name, Args: args, Raw: raw}, true
+}
+
+func normalizeCommand(name string, args []string) (string, []string) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "-h", "--help", "help", "?", "？", "帮助", "菜单":
+		return "help", args
+	case "p", "ping", "状态":
+		return "ping", args
+	case "login", "登录", "dl":
+		return "login", normalizeLoginArgs(args)
+	case "logout", "退出", "登出":
+		return "logout", args
+	case "me", "我", "我的", "profile", "个人":
+		return "me", args
+	case "todo", "td", "待办", "代办", "todo待办":
+		return "todo", normalizeTodoArgs(args)
+	case "bus", "xc", "校车", "车":
+		return "bus", args
+	case "schedule", "sched", "rc", "日程", "课表", "订阅", "sub", "subs", "subscription":
+		return "schedule", args
+	case "semester", "term", "学期", "xq":
+		return "semester", args
+	case "course", "kc", "课程":
+		return "course", args
+	case "section", "class", "bj", "教学班", "班级":
+		return "section", args
+	}
+	return "", args
+}
+
+func normalizeLoginArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	switch strings.ToLower(args[0]) {
+	case "status", "check", "完成", "状态", "ok", "好了":
+		next := append([]string(nil), args...)
+		next[0] = "status"
+		return next
+	}
+	return args
+}
+
+func normalizeTodoArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	switch strings.ToLower(args[0]) {
+	case "-h", "--help", "help", "?", "？", "帮助":
+		next := append([]string(nil), args...)
+		next[0] = "help"
+		return next
+	case "add", "new", "create", "+", "添加", "新增", "加":
+		next := append([]string(nil), args...)
+		next[0] = "add"
+		return next
+	}
+	return args
+}
+
 func (h Handler) help() string {
 	return strings.Join([]string{
-		"Life @ USTC commands:",
-		h.Prefix + " ping",
-		h.Prefix + " login",
-		h.Prefix + " login status",
-		h.Prefix + " logout",
-		h.Prefix + " me",
-		h.Prefix + " todo",
-		h.Prefix + " todo add <title>",
-		h.Prefix + " sub",
-		h.Prefix + " semester",
-		h.Prefix + " course <keyword>",
-		h.Prefix + " section <keyword>",
-		h.Prefix + " bus",
+		"可以直接发：",
+		"待办 / td",
+		"待办 add 写报告",
+		"校车 / xc",
+		"日程 / rc",
+		"我 / me",
+		"课程 数学分析",
+		"教学班 高等数学",
+		"登录 / 登录 状态",
 	}, "\n")
 }
 
@@ -88,23 +183,23 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 	if len(args) > 0 && args[0] == "status" {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
 		if err != nil {
-			return "Login status failed: " + err.Error()
+			return "登录状态查不到：" + friendlyError(err)
 		}
 		return result.Message
 	}
 	session, err := h.Auth.BeginDeviceLogin(ctx, ident)
 	if err != nil {
-		return "Login failed: " + err.Error()
+		return "登录开始失败：" + friendlyError(err)
 	}
 	link := session.VerificationURIComplete
 	if link == "" {
 		link = session.VerificationURI
 	}
 	return strings.Join([]string{
-		"Open this link to sign in to Life @ USTC:",
+		"打开链接登录 Life @ USTC：",
 		link,
-		"Code: " + session.UserCode,
-		fmt.Sprintf("Then send: %s login status", h.Prefix),
+		"验证码：" + session.UserCode,
+		"登录完发：登录 状态",
 	}, "\n")
 }
 
@@ -113,9 +208,9 @@ func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 		return "Login is not configured."
 	}
 	if err := h.Auth.Logout(ctx, ident); err != nil {
-		return "Logout failed: " + err.Error()
+		return "退出失败：" + friendlyError(err)
 	}
-	return "Logged out."
+	return "已退出登录。"
 }
 
 func (h Handler) me(ctx context.Context, ident store.Identity) string {
@@ -131,16 +226,25 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		}
 	}
 	if err != nil {
-		return "Failed to load profile: " + err.Error()
+		return "个人信息查不到：" + friendlyError(err)
 	}
 	name := firstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
 		name = firstString(me, "id", "sub")
 	}
-	return "Signed in as: " + name
+	return "已登录：" + name
 }
 
 func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) string {
+	if len(args) > 0 && args[0] == "help" {
+		return strings.Join([]string{
+			"待办用法：",
+			"待办",
+			"td",
+			"待办 add 写报告",
+			"td + 买咖啡",
+		}, "\n")
+	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -148,7 +252,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	if len(args) > 0 && args[0] == "add" {
 		title := strings.TrimSpace(strings.Join(args[1:], " "))
 		if title == "" {
-			return "Usage: " + h.Prefix + " todo add <title>"
+			return "想加什么？例如：待办 add 写报告"
 		}
 		created, err := h.Life.CreateTodo(ctx, token, title)
 		if err != nil && strings.Contains(err.Error(), " returned 401:") {
@@ -158,13 +262,16 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			}
 		}
 		if err != nil {
-			return "Failed to create todo: " + err.Error()
+			return "待办添加失败：" + friendlyError(err)
 		}
 		id := firstString(created, "id")
 		if id == "" {
 			id = fmt.Sprint(created["id"])
 		}
-		return "Created todo: " + id
+		if id != "" {
+			return "已加待办：" + title
+		}
+		return "已加待办"
 	}
 	todos, err := h.Life.Todos(ctx, token, "false")
 	if err != nil && strings.Contains(err.Error(), " returned 401:") {
@@ -174,12 +281,12 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		}
 	}
 	if err != nil {
-		return "Failed to load todos: " + err.Error()
+		return "待办查不到：" + friendlyError(err)
 	}
 	if len(todos) == 0 {
-		return "No pending todos."
+		return "没有待办。"
 	}
-	lines := []string{"Pending todos:"}
+	lines := []string{"待办："}
 	for i, todo := range todos {
 		if i >= 8 {
 			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
@@ -203,14 +310,14 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity) string 
 		}
 	}
 	if err != nil {
-		return "Failed to load subscriptions: " + err.Error()
+		return "日程查不到：" + friendlyError(err)
 	}
 	sub, _ := data["subscription"].(map[string]any)
 	sections, _ := sub["sections"].([]any)
 	if len(sections) == 0 {
-		return "No subscribed sections."
+		return "还没有订阅课程。"
 	}
-	lines := []string{"Subscribed sections:"}
+	lines := []string{"日程订阅："}
 	for i, item := range sections {
 		if i >= 8 {
 			lines = append(lines, fmt.Sprintf("...and %d more", len(sections)-i))
@@ -234,44 +341,40 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 }
 
 func (h Handler) loginRequired() string {
-	return "This command requires login. Send: " + h.Prefix + " login"
+	return "这个需要先登录。发：登录"
 }
 
-func (h Handler) recordState(ctx context.Context, ident store.Identity, fields []string) {
+func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd parsedCommand) {
 	if h.Store == nil || ident.Platform == "" || ident.UserID == "" {
 		return
 	}
-	command := ""
-	if len(fields) > 1 {
-		command = fields[1]
-	}
-	_ = h.Store.RecordConversationState(ctx, ident, command, strconv.Quote(strings.Join(fields, " ")))
+	_ = h.Store.RecordConversationState(ctx, ident, cmd.Name, strconv.Quote(cmd.Raw))
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
-		return "Failed to load current semester: " + err.Error()
+		return "学期查不到：" + friendlyError(err)
 	}
 	name := firstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
 		name = fmt.Sprint(semester["id"])
 	}
-	return "Current semester: " + name
+	return "当前学期：" + name
 }
 
 func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 	if keyword == "" {
-		return "Usage: " + h.Prefix + " course <keyword>"
+		return "想查哪门课？例如：课程 数学分析"
 	}
 	courses, err := h.Life.SearchCourses(ctx, keyword, 5)
 	if err != nil {
-		return "Failed to search courses: " + err.Error()
+		return "课程查不到：" + friendlyError(err)
 	}
 	if len(courses) == 0 {
-		return "No courses found."
+		return "没找到课程。"
 	}
-	lines := []string{"Courses:"}
+	lines := []string{"课程："}
 	for _, course := range courses {
 		lines = append(lines, formatCourse(course))
 	}
@@ -280,16 +383,16 @@ func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 
 func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	if keyword == "" {
-		return "Usage: " + h.Prefix + " section <keyword>"
+		return "想查哪个教学班？例如：教学班 高等数学"
 	}
 	sections, err := h.Life.SearchSections(ctx, keyword, 5)
 	if err != nil {
-		return "Failed to search sections: " + err.Error()
+		return "教学班查不到：" + friendlyError(err)
 	}
 	if len(sections) == 0 {
-		return "No sections found."
+		return "没找到教学班。"
 	}
-	lines := []string{"Sections:"}
+	lines := []string{"教学班："}
 	for _, section := range sections {
 		lines = append(lines, formatSection(section))
 	}
@@ -299,11 +402,11 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 func (h Handler) bus(ctx context.Context) string {
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
-		return "Failed to load bus data: " + err.Error()
+		return "校车查不到：" + friendlyError(err)
 	}
 	trips, _ := data["trips"].([]any)
 	routes, _ := data["routes"].([]any)
-	return fmt.Sprintf("Bus data loaded: %d routes, %d trips.", len(routes), len(trips))
+	return fmt.Sprintf("校车数据已加载：%d 条线路，%d 班车。之后可以继续做成“下一班校车”。", len(routes), len(trips))
 }
 
 func formatCourse(course map[string]any) string {
@@ -348,4 +451,15 @@ func nonEmpty(values []string) []string {
 		}
 	}
 	return out
+}
+
+func friendlyError(err error) string {
+	text := err.Error()
+	if strings.Contains(text, " returned 401:") || strings.Contains(strings.ToLower(text), "unauthorized") {
+		return "登录过期了，发：登录"
+	}
+	if strings.Contains(strings.ToLower(text), "timeout") {
+		return "网络超时，等会儿再试"
+	}
+	return text
 }
