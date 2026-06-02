@@ -535,22 +535,13 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 	} else if from != "" {
 		title = from + " 相关路线下一班："
 	}
-	lines := []string{title}
-	for i, item := range items {
-		if i >= 8 {
-			break
-		}
-		line := item.Route + "：" + item.DepartureTime
-		if item.Arrival != "" {
-			line += "（到 " + item.Arrival + "）"
-		}
-		lines = append(lines, line)
-	}
+	lines := append([]string{title}, formatBusItemsByDepartureCampus(items, 8)...)
 	return strings.Join(lines, "\n")
 }
 
 type busItem struct {
 	RouteID          string
+	DepartureCampus  string
 	DepartureMinutes int
 	DepartureTime    string
 	Arrival          string
@@ -591,6 +582,7 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		routeID := firstString(trip, "routeId")
 		items = append(items, busItem{
 			RouteID:          routeID,
+			DepartureCampus:  firstCampus(routeStops),
 			DepartureMinutes: departure,
 			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
 			Arrival:          firstString(trip, "arrivalTime"),
@@ -620,12 +612,39 @@ func nextBusByRoute(data map[string]any, args []string, now time.Time) []busItem
 		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if campusRank(out[i].DepartureCampus) != campusRank(out[j].DepartureCampus) {
+			return campusRank(out[i].DepartureCampus) < campusRank(out[j].DepartureCampus)
+		}
 		if out[i].DepartureMinutes == out[j].DepartureMinutes {
 			return out[i].Route < out[j].Route
 		}
 		return out[i].DepartureMinutes < out[j].DepartureMinutes
 	})
 	return out
+}
+
+func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
+	lines := make([]string, 0, len(items)+4)
+	lastCampus := ""
+	for i, item := range items {
+		if i >= limit {
+			break
+		}
+		campus := item.DepartureCampus
+		if campus == "" {
+			campus = "其他"
+		}
+		if campus != lastCampus {
+			lines = append(lines, campus+"：")
+			lastCampus = campus
+		}
+		line := "  " + item.Route + "：" + item.DepartureTime
+		if item.Arrival != "" {
+			line += "（到 " + item.Arrival + "）"
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 type busRoute struct {
@@ -720,6 +739,34 @@ func busRouteLabel(route busRoute, stops []string) string {
 		return route.Name
 	}
 	return "校车"
+}
+
+func firstCampus(stops []string) string {
+	if len(stops) == 0 {
+		return ""
+	}
+	return stops[0]
+}
+
+func campusRank(campus string) int {
+	switch campus {
+	case "东区":
+		return 0
+	case "西区":
+		return 1
+	case "中区":
+		return 2
+	case "北区":
+		return 3
+	case "南区":
+		return 4
+	case "高新区":
+		return 5
+	case "":
+		return 99
+	default:
+		return 50
+	}
 }
 
 func campusName(value string) string {

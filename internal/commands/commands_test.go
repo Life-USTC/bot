@@ -214,6 +214,44 @@ func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
 	}
 }
 
+func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+				},
+			},
+			map[string]any{
+				"id": float64(2),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(2), "dayType": "weekday", "departureTime": "09:05", "departureMinutes": float64(545), "arrivalTime": "09:20"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:30", "departureMinutes": float64(570), "arrivalTime": "09:45"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	items := nextBusByRoute(data, nil, now)
+	if len(items) != 2 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].DepartureCampus != "东区" || items[1].DepartureCampus != "西区" {
+		t.Fatalf("items = %#v", items)
+	}
+	lines := formatBusItemsByDepartureCampus(items, 8)
+	got := strings.Join(lines, "\n")
+	if !strings.Contains(got, "东区：\n  东区 -> 西区：09:30") {
+		t.Fatalf("formatted lines = %q", got)
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",
