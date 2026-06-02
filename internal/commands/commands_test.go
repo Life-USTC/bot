@@ -283,6 +283,46 @@ func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 	}
 }
 
+func TestSubscriptionSectionIDsForDayFiltersSemester(t *testing.T) {
+	data := map[string]any{
+		"subscription": map[string]any{
+			"sections": []any{
+				map[string]any{
+					"id": "current",
+					"semester": map[string]any{
+						"startDate": "2026-03-01T08:00:00+08:00",
+						"endDate":   "2026-07-03T08:00:00+08:00",
+					},
+				},
+				map[string]any{
+					"id": "old",
+					"semester": map[string]any{
+						"startDate": "2025-09-07T08:00:00+08:00",
+						"endDate":   "2026-01-23T08:00:00+08:00",
+					},
+				},
+			},
+		},
+	}
+	day := time.Date(2026, 6, 2, 12, 0, 0, 0, chinaLocation())
+	ids := subscriptionSectionIDsForDay(data, day)
+	if len(ids) != 1 || ids[0] != "current" {
+		t.Fatalf("ids = %#v", ids)
+	}
+}
+
+func TestFilterSchedulesForDayDropsAdjacentDates(t *testing.T) {
+	day := time.Date(2026, 6, 2, 12, 0, 0, 0, chinaLocation())
+	schedules := []map[string]any{
+		{"date": "2026-06-01T08:00:00+08:00", "startTime": "07:50"},
+		{"date": "2026-06-02T08:00:00+08:00", "startTime": "09:45"},
+	}
+	filtered := filterSchedulesForDay(schedules, day)
+	if len(filtered) != 1 || firstString(filtered[0], "startTime") != "09:45" {
+		t.Fatalf("filtered = %#v", filtered)
+	}
+}
+
 func TestNextBusItemsFiltersRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{

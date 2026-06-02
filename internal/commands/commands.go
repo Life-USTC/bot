@@ -816,7 +816,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err != nil {
 		return nil, err
 	}
-	sectionIDs := subscriptionSectionIDs(sub)
+	sectionIDs := subscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
 		return nil, nil
 	}
@@ -830,6 +830,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err != nil {
 		return nil, err
 	}
+	all = filterSchedulesForDay(all, day)
 	sort.Slice(all, func(i, j int) bool {
 		return firstString(all[i], "startTime") < firstString(all[j], "startTime")
 	})
@@ -882,9 +883,15 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 }
 
 func subscriptionSectionIDs(data map[string]any) []string {
+	return subscriptionSectionIDsForDay(data, time.Time{})
+}
+
+func subscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
 	sub, _ := data["subscription"].(map[string]any)
 	sections, _ := sub["sections"].([]any)
 	out := make([]string, 0, len(sections))
+	fallback := make([]string, 0, len(sections))
+	sawSemester := false
 	for _, item := range sections {
 		section, _ := item.(map[string]any)
 		if section == nil {
@@ -892,10 +899,60 @@ func subscriptionSectionIDs(data map[string]any) []string {
 		}
 		id := firstString(section, "id")
 		if id != "" {
+			fallback = append(fallback, id)
+		}
+		semester, _ := section["semester"].(map[string]any)
+		if semester == nil {
+			continue
+		}
+		sawSemester = true
+		if !day.IsZero() && !semesterContainsDay(semester, day) {
+			continue
+		}
+		if id != "" {
 			out = append(out, id)
 		}
 	}
+	if !sawSemester || day.IsZero() {
+		return fallback
+	}
 	return out
+}
+
+func semesterContainsDay(semester map[string]any, day time.Time) bool {
+	loc := day.Location()
+	start, okStart := parseAPITime(firstString(semester, "startDate"))
+	end, okEnd := parseAPITime(firstString(semester, "endDate"))
+	target := day.In(loc).Format("2006-01-02")
+	if okStart && target < start.In(loc).Format("2006-01-02") {
+		return false
+	}
+	if okEnd && target > end.In(loc).Format("2006-01-02") {
+		return false
+	}
+	return okStart || okEnd
+}
+
+func filterSchedulesForDay(schedules []map[string]any, day time.Time) []map[string]any {
+	out := make([]map[string]any, 0, len(schedules))
+	for _, schedule := range schedules {
+		if scheduleMatchesDay(schedule, day) {
+			out = append(out, schedule)
+		}
+	}
+	return out
+}
+
+func scheduleMatchesDay(schedule map[string]any, day time.Time) bool {
+	date := firstString(schedule, "date")
+	if date == "" {
+		return true
+	}
+	parsed, ok := parseAPITime(date)
+	if !ok {
+		return true
+	}
+	return parsed.In(day.Location()).Format("2006-01-02") == day.In(day.Location()).Format("2006-01-02")
 }
 
 func formatSchedule(schedule map[string]any) string {
