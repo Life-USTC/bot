@@ -660,19 +660,21 @@ func formatBusItem(item busItem) string {
 	if len(item.Stops) > 0 {
 		parts := make([]string, 0, len(item.Stops))
 		for _, stop := range item.Stops {
-			part := stop.Name
-			if stop.Time != "" {
-				part += " " + stop.Time
-			}
-			parts = append(parts, part)
+			parts = append(parts, stop.Name)
 		}
-		return strings.Join(parts, " → ")
+		return busTimeRange(item) + "  " + strings.Join(parts, " → ")
 	}
-	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + item.DepartureTime
-	if item.Arrival != "" {
-		line += "（到 " + item.Arrival + "）"
+	return busTimeRange(item) + "  " + strings.ReplaceAll(item.Route, " -> ", " → ")
+}
+
+func busTimeRange(item busItem) string {
+	if item.DepartureTime != "" && item.Arrival != "" {
+		return item.DepartureTime + "-" + item.Arrival
 	}
-	return line
+	if item.DepartureTime != "" {
+		return item.DepartureTime + "      "
+	}
+	return "           "
 }
 
 type busRoute struct {
