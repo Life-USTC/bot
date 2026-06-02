@@ -24,6 +24,7 @@ type Manager struct {
 }
 
 type metadata struct {
+	Issuer                      string `json:"issuer"`
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
 	RegistrationEndpoint        string `json:"registration_endpoint"`
@@ -63,6 +64,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	resp, err := m.httpClient().PostForm(meta.DeviceAuthorizationEndpoint, url.Values{
 		"client_id": {clientID},
 		"scope":     {oauthScope},
+		"resource":  {m.resource(meta)},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("device authorization request failed: %w", err)
@@ -116,6 +118,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		"grant_type":  {deviceGrantType},
 		"client_id":   {session.ClientID},
 		"device_code": {session.DeviceCode},
+		"resource":    {m.resource(meta)},
 	})
 	if err != nil {
 		return PollResult{}, err
@@ -123,7 +126,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusOK {
-		cred, err := credentialFromTokenBody(session.ClientID, m.Server, body, "", "")
+		cred, err := credentialFromTokenBody(session.ClientID, m.resource(meta), body, "", "")
 		if err != nil {
 			return PollResult{}, err
 		}
@@ -182,6 +185,7 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 }
 
 var ErrNotLoggedIn = fmt.Errorf("not logged in")
+var ErrUnauthorized = fmt.Errorf("unauthorized")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Credential, error) {
 	meta, err := m.discover(ctx)
@@ -192,9 +196,7 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 		"grant_type":    {"refresh_token"},
 		"client_id":     {cred.ClientID},
 		"refresh_token": {cred.RefreshToken},
-	}
-	if cred.Resource != "" {
-		values.Set("resource", cred.Resource)
+		"resource":      {m.resource(meta)},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.TokenEndpoint, strings.NewReader(values.Encode()))
 	if err != nil {
@@ -210,7 +212,25 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if resp.StatusCode != http.StatusOK {
 		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, string(body))
 	}
-	return credentialFromTokenBody(cred.ClientID, cred.Resource, body, cred.RefreshToken, cred.Scope)
+	return credentialFromTokenBody(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope)
+}
+
+func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
+	cred, err := m.Store.Credential(ctx, ident)
+	if err != nil {
+		return "", err
+	}
+	if cred == nil || cred.RefreshToken == "" {
+		return "", ErrNotLoggedIn
+	}
+	refreshed, err := m.refresh(ctx, *cred)
+	if err != nil {
+		return "", err
+	}
+	if err := m.Store.SaveCredential(ctx, ident, refreshed); err != nil {
+		return "", err
+	}
+	return refreshed.AccessToken, nil
 }
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
@@ -270,6 +290,13 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		return "", fmt.Errorf("client registration response missing client_id")
 	}
 	return result.ClientID, nil
+}
+
+func (m *Manager) resource(meta metadata) string {
+	if meta.Issuer != "" {
+		return strings.TrimRight(meta.Issuer, "/")
+	}
+	return strings.TrimRight(m.Server, "/")
 }
 
 func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string) (store.Credential, error) {

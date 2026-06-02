@@ -43,3 +43,29 @@ func TestGetReturnsHTTPError(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/api/me":
+			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+		case "/api/auth/oauth2/userinfo":
+			_, _ = w.Write([]byte(`{"sub":"user-1","preferred_username":"tiankai"}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	me, err := client.Me(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if me["preferred_username"] != "tiankai" {
+		t.Fatalf("me = %#v", me)
+	}
+}

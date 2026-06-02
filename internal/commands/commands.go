@@ -124,12 +124,18 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		return h.loginRequired()
 	}
 	me, err := h.Life.Me(ctx, token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			me, err = h.Life.Me(ctx, token)
+		}
+	}
 	if err != nil {
 		return "Failed to load profile: " + err.Error()
 	}
-	name := firstString(me, "name", "username", "email")
+	name := firstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
-		name = firstString(me, "id")
+		name = firstString(me, "id", "sub")
 	}
 	return "Signed in as: " + name
 }
@@ -145,6 +151,12 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			return "Usage: " + h.Prefix + " todo add <title>"
 		}
 		created, err := h.Life.CreateTodo(ctx, token, title)
+		if err != nil && strings.Contains(err.Error(), " returned 401:") {
+			token, refreshErr := h.Auth.Refresh(ctx, ident)
+			if refreshErr == nil {
+				created, err = h.Life.CreateTodo(ctx, token, title)
+			}
+		}
 		if err != nil {
 			return "Failed to create todo: " + err.Error()
 		}
@@ -155,6 +167,12 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		return "Created todo: " + id
 	}
 	todos, err := h.Life.Todos(ctx, token, "false")
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			todos, err = h.Life.Todos(ctx, token, "false")
+		}
+	}
 	if err != nil {
 		return "Failed to load todos: " + err.Error()
 	}
@@ -178,6 +196,12 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity) string 
 		return h.loginRequired()
 	}
 	data, err := h.Life.CurrentSubscription(ctx, token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			data, err = h.Life.CurrentSubscription(ctx, token)
+		}
+	}
 	if err != nil {
 		return "Failed to load subscriptions: " + err.Error()
 	}

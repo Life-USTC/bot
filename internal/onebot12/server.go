@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	libob "github.com/botuniverse/go-libonebot"
@@ -138,38 +139,48 @@ func (s *Server) pollLogin(w libob.ResponseWriter, r *libob.Request) {
 }
 
 func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
-	token, ok := s.accessTokenForAction(w, r)
+	ident, token, ok := s.accessTokenForAction(w, r)
 	if !ok {
 		return
 	}
 	data, err := s.life.Me(context.Background(), token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
+			data, err = s.life.Me(context.Background(), refreshed)
+		}
+	}
 	write(w, data, err)
 }
 
 func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
-	token, ok := s.accessTokenForAction(w, r)
+	ident, token, ok := s.accessTokenForAction(w, r)
 	if !ok {
 		return
 	}
 	data, err := s.life.Todos(context.Background(), token, "false")
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
+			data, err = s.life.Todos(context.Background(), refreshed, "false")
+		}
+	}
 	write(w, data, err)
 }
 
-func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) (string, bool) {
+func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) (store.Identity, string, bool) {
 	if s.auth == nil {
 		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("login is not configured"))
-		return "", false
+		return store.Identity{}, "", false
 	}
 	ident, ok := identityFromParams(w, r)
 	if !ok {
-		return "", false
+		return store.Identity{}, "", false
 	}
 	token, err := s.auth.AccessToken(context.Background(), ident)
 	if err != nil {
 		w.WriteFailed(libob.RetCodeBadParam, err)
-		return "", false
+		return store.Identity{}, "", false
 	}
-	return token, true
+	return ident, token, true
 }
 
 func identityFromParams(w libob.ResponseWriter, r *libob.Request) (store.Identity, bool) {
