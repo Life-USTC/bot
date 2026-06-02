@@ -168,7 +168,7 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
-			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告"},{"id":"todo-2","title":"买咖啡"}]}`))
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-05-14T23:55:00+08:00"},{"id":"todo-2","title":"买咖啡"}]}`))
 		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -192,6 +192,16 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	}
 	if !patched || !strings.Contains(reply, "已完成：写报告") {
 		t.Fatalf("patched = %v, reply = %q", patched, reply)
+	}
+}
+
+func TestFormatTodoDueDateFirst(t *testing.T) {
+	line := monospaceDigits(formatTodo(map[string]any{
+		"title": "写报告",
+		"dueAt": "2026-05-14T23:55:00+08:00",
+	}))
+	if line != "截止 𝟶𝟻-𝟷𝟺 𝟸𝟹:𝟻𝟻 写报告" {
+		t.Fatalf("line = %q", line)
 	}
 }
 
@@ -224,7 +234,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "数据库系统 · Problem Set 𝟷 · 截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶") {
+	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶 · 数据库系统 · Problem Set 𝟷") {
 		t.Fatalf("reply = %q", reply)
 	}
 

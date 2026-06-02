@@ -489,7 +489,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s", i+1, firstString(todo, "title")))
+		lines = append(lines, monospaceDigits(fmt.Sprintf("%d. %s", i+1, formatTodo(todo))))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -544,6 +544,22 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func formatTodo(todo map[string]any) string {
+	title := firstString(todo, "title")
+	due := formatAPITime(firstString(todo, "dueAt"))
+	parts := []string{}
+	if due != "" {
+		parts = append(parts, "截止 "+due)
+	}
+	if title != "" {
+		parts = append(parts, title)
+	}
+	if len(parts) == 0 {
+		return firstString(todo, "id")
+	}
+	return strings.Join(parts, " ")
 }
 
 func (h Handler) homework(ctx context.Context, ident store.Identity, args []string) string {
@@ -671,14 +687,14 @@ func formatHomework(homework map[string]any) string {
 	title := firstString(homework, "title")
 	due := formatAPITime(firstString(homework, "submissionDueAt"))
 	parts := []string{}
+	if due != "" {
+		parts = append(parts, "截止 "+due)
+	}
 	if course != "" {
 		parts = append(parts, course)
 	}
 	if title != "" {
 		parts = append(parts, title)
-	}
-	if due != "" {
-		parts = append(parts, "截止 "+due)
 	}
 	if len(parts) == 0 {
 		return monospaceDigits(firstString(homework, "id"))
