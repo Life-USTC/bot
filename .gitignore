@@ -1,4 +1,5 @@
 /life-ustc-bot
 *.log
 *.pid
+/.env
 /.run/
