@@ -93,10 +93,35 @@ func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
 	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
 }
 
+func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[string]any, error) {
+	var out struct {
+		Homeworks []map[string]any `json:"homeworks"`
+	}
+	if err := c.getAuth(ctx, "/api/me/subscriptions/homeworks", nil, token, &out); err != nil {
+		return nil, err
+	}
+	return out.Homeworks, nil
+}
+
+func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {
+	body, _ := json.Marshal(map[string]any{"completed": completed})
+	return c.putAuth(ctx, "/api/homeworks/"+url.PathEscape(id)+"/completion", token, body, nil)
+}
+
 func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
 	err := c.getAuth(ctx, "/api/calendar-subscriptions/current", nil, token, &out)
 	return out, err
+}
+
+func (c *Client) Schedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
+	var out struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := c.getAuth(ctx, "/api/schedules", values, token, &out); err != nil {
+		return nil, err
+	}
+	return out.Data, nil
 }
 
 func (c *Client) list(ctx context.Context, path string, values url.Values) ([]map[string]any, error) {
@@ -123,6 +148,10 @@ func (c *Client) postAuth(ctx context.Context, path string, token string, body [
 
 func (c *Client) patchAuth(ctx context.Context, path string, token string, body []byte, out any) error {
 	return c.do(ctx, http.MethodPatch, path, nil, token, body, out)
+}
+
+func (c *Client) putAuth(ctx context.Context, path string, token string, body []byte, out any) error {
+	return c.do(ctx, http.MethodPut, path, nil, token, body, out)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, values url.Values, token string, body []byte, out any) error {

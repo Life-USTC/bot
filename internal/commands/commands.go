@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,6 +55,8 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		reply = h.me(ctx, input.Identity)
 	case "todo":
 		reply = h.todo(ctx, input.Identity, cmd.Args)
+	case "homework":
+		reply = h.homework(ctx, input.Identity, cmd.Args)
 	case "sub", "subs", "subscription":
 		reply = h.subscription(ctx, input.Identity)
 	case "ping":
@@ -73,7 +76,9 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	case "bus":
 		reply = h.bus(ctx, cmd.Args)
 	case "schedule":
-		reply = h.subscription(ctx, input.Identity)
+		reply = h.curriculum(ctx, input.Identity, cmd.Args)
+	case "nextclass":
+		reply = h.nextClass(ctx, input.Identity)
 	default:
 		reply = h.help()
 	}
@@ -117,6 +122,18 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		return parsedCommand{Name: "help", Raw: raw}, true
 	}
 
+	if len(fields) >= 2 {
+		joined := fields[0] + fields[1]
+		switch joined {
+		case "今天课表":
+			return parsedCommand{Name: "schedule", Args: []string{"today"}, Raw: raw}, true
+		case "明天课表":
+			return parsedCommand{Name: "schedule", Args: []string{"tomorrow"}, Raw: raw}, true
+		case "下一节课":
+			return parsedCommand{Name: "nextclass", Raw: raw}, true
+		}
+	}
+
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
 		return parsedCommand{}, false
@@ -140,10 +157,20 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "me", args
 	case "todo", "td", "待办", "代办", "todo待办":
 		return "todo", normalizeTodoArgs(args)
+	case "homework", "hw", "作业":
+		return "homework", normalizeHomeworkArgs(args)
 	case "bus", "xc", "校车", "车":
 		return "bus", args
-	case "schedule", "sched", "rc", "日程", "课表", "订阅", "sub", "subs", "subscription":
-		return "schedule", args
+	case "schedule", "sched", "rc", "日程", "课表":
+		return "schedule", normalizeScheduleArgs(args)
+	case "今天课表":
+		return "schedule", []string{"today"}
+	case "明天课表":
+		return "schedule", []string{"tomorrow"}
+	case "订阅", "sub", "subs", "subscription":
+		return "subscription", args
+	case "nextclass", "next", "下一节", "下节课", "下一节课":
+		return "nextclass", args
 	case "semester", "term", "学期", "xq":
 		return "semester", args
 	case "course", "kc", "课程":
@@ -183,6 +210,52 @@ func normalizeTodoArgs(args []string) []string {
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		next := append([]string(nil), args...)
 		next[0] = "done"
+		return next
+	}
+	return args
+}
+
+func normalizeHomeworkArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	switch strings.ToLower(args[0]) {
+	case "-h", "--help", "help", "?", "？", "帮助":
+		next := append([]string(nil), args...)
+		next[0] = "help"
+		return next
+	case "done", "finish", "complete", "ok", "x", "完成", "好了":
+		next := append([]string(nil), args...)
+		next[0] = "done"
+		return next
+	case "undo", "undone", "reset", "取消", "撤销":
+		next := append([]string(nil), args...)
+		next[0] = "undo"
+		return next
+	case "pending", "未完成":
+		next := append([]string(nil), args...)
+		next[0] = "pending"
+		return next
+	case "all", "全部":
+		next := append([]string(nil), args...)
+		next[0] = "all"
+		return next
+	}
+	return args
+}
+
+func normalizeScheduleArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	switch strings.ToLower(args[0]) {
+	case "today", "今天", "今日":
+		next := append([]string(nil), args...)
+		next[0] = "today"
+		return next
+	case "tomorrow", "明天", "明日":
+		next := append([]string(nil), args...)
+		next[0] = "tomorrow"
 		return next
 	}
 	return args
@@ -241,9 +314,13 @@ func (h Handler) help() string {
 		"待办 / td",
 		"td 写报告",
 		"td done 1",
+		"作业 / hw",
+		"作业 done 1",
 		"校车 / xc",
 		"xc 东区 西区",
-		"日程 / rc",
+		"今天课表 / 明天课表",
+		"下一节课",
+		"订阅",
 		"状态 / status",
 		"我 / me",
 		"课程 数学分析",
@@ -443,6 +520,154 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 	return nil, false
 }
 
+func (h Handler) homework(ctx context.Context, ident store.Identity, args []string) string {
+	if len(args) > 0 && args[0] == "help" {
+		return strings.Join([]string{
+			"作业用法：",
+			"作业",
+			"作业 pending",
+			"作业 done 1",
+			"作业 undo 1",
+		}, "\n")
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	if len(args) > 0 && (args[0] == "done" || args[0] == "undo") {
+		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		if target == "" {
+			return "想改哪条作业？例如：作业 done 1"
+		}
+		homeworks, err := h.homeworks(ctx, ident, token)
+		if err != nil {
+			return "作业查不到：" + friendlyError(err)
+		}
+		homeworks = filterHomeworks(homeworks, true)
+		homework, ok := resolveHomework(homeworks, target)
+		if !ok {
+			return "没找到这条作业。发 作业 看编号，再试：作业 done 1"
+		}
+		id := firstString(homework, "id")
+		if id == "" {
+			return "这条作业没有可用 ID，暂时改不了。"
+		}
+		completed := args[0] == "done"
+		err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
+		if err != nil && strings.Contains(err.Error(), " returned 401:") {
+			token, refreshErr := h.Auth.Refresh(ctx, ident)
+			if refreshErr == nil {
+				err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
+			}
+		}
+		if err != nil {
+			return "作业状态更新失败：" + friendlyError(err)
+		}
+		title := firstString(homework, "title")
+		if completed {
+			return "已完成作业：" + title
+		}
+		return "已取消完成：" + title
+	}
+	pendingOnly := true
+	if len(args) > 0 && args[0] == "all" {
+		pendingOnly = false
+	}
+	homeworks, err := h.homeworks(ctx, ident, token)
+	if err != nil {
+		return "作业查不到：" + friendlyError(err)
+	}
+	homeworks = filterHomeworks(homeworks, pendingOnly)
+	if len(homeworks) == 0 {
+		if pendingOnly {
+			return "没有未完成作业。"
+		}
+		return "没有作业。"
+	}
+	lines := []string{"作业："}
+	for i, homework := range homeworks {
+		if i >= 8 {
+			lines = append(lines, fmt.Sprintf("...and %d more", len(homeworks)-i))
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, formatHomework(homework)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
+	homeworks, err := h.Life.SubscribedHomeworks(ctx, token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
+		}
+	}
+	sort.Slice(homeworks, func(i, j int) bool {
+		return firstString(homeworks[i], "submissionDueAt") < firstString(homeworks[j], "submissionDueAt")
+	})
+	return homeworks, err
+}
+
+func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]any {
+	if !pendingOnly {
+		return homeworks
+	}
+	out := make([]map[string]any, 0, len(homeworks))
+	for _, homework := range homeworks {
+		if !homeworkCompleted(homework) {
+			out = append(out, homework)
+		}
+	}
+	return out
+}
+
+func homeworkCompleted(homework map[string]any) bool {
+	if completed, ok := homework["isCompleted"].(bool); ok {
+		return completed
+	}
+	return homework["completion"] != nil
+}
+
+func resolveHomework(homeworks []map[string]any, target string) (map[string]any, bool) {
+	target = strings.TrimSpace(target)
+	if index, err := strconv.Atoi(target); err == nil && index >= 1 && index <= len(homeworks) {
+		return homeworks[index-1], true
+	}
+	needle := strings.ToLower(target)
+	for _, homework := range homeworks {
+		id := strings.ToLower(firstString(homework, "id"))
+		title := strings.ToLower(firstString(homework, "title"))
+		if needle == id || needle == title || strings.Contains(title, needle) {
+			return homework, true
+		}
+	}
+	return nil, false
+}
+
+func formatHomework(homework map[string]any) string {
+	course := nestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	if course == "" {
+		course = nestedPathString(homework, []string{"section", "course"}, "code")
+	}
+	title := firstString(homework, "title")
+	due := formatAPITime(firstString(homework, "submissionDueAt"))
+	parts := []string{}
+	if course != "" {
+		parts = append(parts, course)
+	}
+	if title != "" {
+		parts = append(parts, title)
+	}
+	if due != "" {
+		parts = append(parts, "截止 "+due)
+	}
+	if len(parts) == 0 {
+		return firstString(homework, "id")
+	}
+	return strings.Join(parts, " · ")
+}
+
 func (h Handler) subscription(ctx context.Context, ident store.Identity) string {
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -473,6 +698,162 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity) string 
 		lines = append(lines, formatSection(section))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
+	target := "today"
+	if len(args) > 0 {
+		target = args[0]
+	}
+	loc := chinaLocation()
+	day := time.Now().In(loc)
+	title := "今天课表："
+	if target == "tomorrow" {
+		day = day.AddDate(0, 0, 1)
+		title = "明天课表："
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	schedules, err := h.schedulesForDay(ctx, ident, token, day)
+	if err != nil {
+		return "课表查不到：" + friendlyError(err)
+	}
+	if len(schedules) == 0 {
+		if target == "tomorrow" {
+			return "明天没有课。"
+		}
+		return "今天没有课。"
+	}
+	lines := []string{title}
+	for i, schedule := range schedules {
+		if i >= 8 {
+			lines = append(lines, fmt.Sprintf("...and %d more", len(schedules)-i))
+			break
+		}
+		lines = append(lines, formatSchedule(schedule))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	loc := chinaLocation()
+	now := time.Now().In(loc)
+	for offset := 0; offset < 8; offset++ {
+		day := now.AddDate(0, 0, offset)
+		schedules, err := h.schedulesForDay(ctx, ident, token, day)
+		if err != nil {
+			return "下一节课查不到：" + friendlyError(err)
+		}
+		for _, schedule := range schedules {
+			start := scheduleStartTime(schedule, day, loc)
+			if start.IsZero() || start.Before(now) {
+				continue
+			}
+			prefix := "下一节课："
+			if offset == 1 {
+				prefix = "明天下一节："
+			} else if offset > 1 {
+				prefix = day.Format("01-02") + " 下一节："
+			}
+			return prefix + "\n" + formatSchedule(schedule)
+		}
+	}
+	return "接下来一周没查到课。"
+}
+
+func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
+	sub, err := h.Life.CurrentSubscription(ctx, token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			sub, err = h.Life.CurrentSubscription(ctx, token)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	sectionIDs := subscriptionSectionIDs(sub)
+	if len(sectionIDs) == 0 {
+		return nil, nil
+	}
+	all := make([]map[string]any, 0)
+	for _, sectionID := range sectionIDs {
+		values := url.Values{}
+		values.Set("sectionId", sectionID)
+		values.Set("dateFrom", day.Format("2006-01-02")+"T00:00:00+08:00")
+		values.Set("dateTo", day.Format("2006-01-02")+"T23:59:59+08:00")
+		values.Set("limit", "100")
+		schedules, fetchErr := h.Life.Schedules(ctx, token, values)
+		if fetchErr != nil && strings.Contains(fetchErr.Error(), " returned 401:") {
+			token, refreshErr := h.Auth.Refresh(ctx, ident)
+			if refreshErr == nil {
+				schedules, fetchErr = h.Life.Schedules(ctx, token, values)
+			}
+		}
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		all = append(all, schedules...)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return firstString(all[i], "startTime") < firstString(all[j], "startTime")
+	})
+	return all, nil
+}
+
+func subscriptionSectionIDs(data map[string]any) []string {
+	sub, _ := data["subscription"].(map[string]any)
+	sections, _ := sub["sections"].([]any)
+	out := make([]string, 0, len(sections))
+	for _, item := range sections {
+		section, _ := item.(map[string]any)
+		if section == nil {
+			continue
+		}
+		id := firstString(section, "id")
+		if id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func formatSchedule(schedule map[string]any) string {
+	timeRange := strings.TrimSpace(firstString(schedule, "startTime") + "-" + firstString(schedule, "endTime"))
+	course := nestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	if course == "" {
+		course = nestedString(schedule, "section", "code")
+	}
+	place := firstString(schedule, "customPlace")
+	if place == "" {
+		place = nestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+	}
+	line := timeRange
+	if course != "" {
+		line += "  " + course
+	}
+	if place != "" {
+		line += " @ " + place
+	}
+	return strings.TrimSpace(line)
+}
+
+func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
+	start := firstString(schedule, "startTime")
+	if start == "" {
+		return time.Time{}
+	}
+	parsed, err := time.ParseInLocation("2006-01-02 15:04", day.Format("2006-01-02")+" "+start, loc)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string, bool) {
@@ -983,6 +1364,37 @@ func nestedString(m map[string]any, key string, nestedKeys ...string) string {
 		return ""
 	}
 	return firstString(child, nestedKeys...)
+}
+
+func nestedPathString(m map[string]any, path []string, keys ...string) string {
+	current := m
+	for _, key := range path {
+		child, ok := current[key].(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = child
+	}
+	return firstString(current, keys...)
+}
+
+func formatAPITime(value string) string {
+	if value == "" {
+		return ""
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	return parsed.In(chinaLocation()).Format("01-02 15:04")
+}
+
+func chinaLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*60*60)
+	}
+	return loc
 }
 
 func nonEmpty(values []string) []string {

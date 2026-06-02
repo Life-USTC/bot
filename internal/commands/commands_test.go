@@ -193,6 +193,79 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	}
 }
 
+func TestHandleHomeworkListAndDone(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	completed := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch {
+		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		case r.URL.Path == "/api/homeworks/hw-1/completion" && r.Method == http.MethodPut:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			completed = body["completed"] == true
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "数据库系统 · Problem Set 1 · 截止 06-03 12:00") {
+		t.Fatalf("reply = %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 done 1", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !completed || !strings.Contains(reply, "已完成作业：Problem Set 1") {
+		t.Fatalf("completed = %v, reply = %q", completed, reply)
+	}
+}
+
+func TestHandleTodayCurriculum(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch {
+		case r.URL.Path == "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		case r.URL.Path == "/api/schedules":
+			if r.URL.Query().Get("sectionId") != "101" {
+				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "今天课表", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "09:50-11:25  数据库系统 @ 西区 3A204") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestNextBusItemsFiltersRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{
