@@ -542,6 +542,7 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 type busItem struct {
 	RouteID          string
 	DepartureCampus  string
+	ArrivalCampus    string
 	DepartureMinutes int
 	DepartureTime    string
 	Arrival          string
@@ -583,6 +584,7 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		items = append(items, busItem{
 			RouteID:          routeID,
 			DepartureCampus:  firstCampus(routeStops),
+			ArrivalCampus:    lastCampus(routeStops),
 			DepartureMinutes: departure,
 			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
 			Arrival:          firstString(trip, "arrivalTime"),
@@ -638,13 +640,20 @@ func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
 			lines = append(lines, campus+"：")
 			lastCampus = campus
 		}
-		line := "  " + item.Route + "：" + item.DepartureTime
-		if item.Arrival != "" {
-			line += "（到 " + item.Arrival + "）"
-		}
-		lines = append(lines, line)
+		lines = append(lines, "  "+formatBusItem(item))
 	}
 	return lines
+}
+
+func formatBusItem(item busItem) string {
+	if item.DepartureCampus != "" && item.ArrivalCampus != "" && item.Arrival != "" {
+		return item.DepartureCampus + " (" + item.DepartureTime + ") -> " + item.ArrivalCampus + " (" + item.Arrival + ")"
+	}
+	line := item.Route + "：" + item.DepartureTime
+	if item.Arrival != "" {
+		line += "（到 " + item.Arrival + "）"
+	}
+	return line
 }
 
 type busRoute struct {
@@ -746,6 +755,13 @@ func firstCampus(stops []string) string {
 		return ""
 	}
 	return stops[0]
+}
+
+func lastCampus(stops []string) string {
+	if len(stops) == 0 {
+		return ""
+	}
+	return stops[len(stops)-1]
 }
 
 func campusRank(campus string) int {
