@@ -55,18 +55,18 @@ func TestCredentialAndConversationStatePersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	err = s.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM interactions
+	err = s.db.WithContext(context.Background()).Raw(`SELECT COUNT(*) FROM interactions
 		WHERE platform = ? AND user_id = ? AND direction = 'inbound' AND command = ? AND handled = 1 AND status = 'handled'`,
-		ident.Platform, ident.UserID, "todo").Scan(&count)
+		ident.Platform, ident.UserID, "todo").Scan(&count).Error
 	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
 		t.Fatalf("inbound interaction count = %d", count)
 	}
-	err = s.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM interactions
+	err = s.db.WithContext(context.Background()).Raw(`SELECT COUNT(*) FROM interactions
 		WHERE platform = ? AND user_id = ? AND direction = 'outbound' AND raw_text = ? AND status = 'sent'`,
-		ident.Platform, ident.UserID, "已完成：写报告").Scan(&count)
+		ident.Platform, ident.UserID, "已完成：写报告").Scan(&count).Error
 	if err != nil {
 		t.Fatal(err)
 	}
