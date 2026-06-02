@@ -528,15 +528,7 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
-	title := "各路线下一班校车："
-	from, to := busFilter(args)
-	if from != "" && to != "" {
-		title = from + " → " + to + " 各路线下一班："
-	} else if from != "" {
-		title = from + " 相关路线下一班："
-	}
-	lines := append([]string{title}, formatBusItemsByDepartureCampus(items, 8)...)
-	return strings.Join(lines, "\n")
+	return strings.Join(formatBusItemsByDepartureCampus(items, 8), "\n")
 }
 
 type busItem struct {
@@ -648,10 +640,9 @@ func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
 			if lastCampus != "" {
 				lines = append(lines, "")
 			}
-			lines = append(lines, campus+"：")
 			lastCampus = campus
 		}
-		lines = append(lines, "  "+formatBusItem(item))
+		lines = append(lines, formatBusItem(item))
 	}
 	return lines
 }
