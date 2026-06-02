@@ -264,8 +264,22 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻  数据库系统 @ 西区 𝟹A𝟸𝟶𝟺") {
+	if !strings.Contains(reply, "西区 𝟹𝙰𝟸𝟶𝟺  𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻  数据库系统") {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
+	line := formatSchedule(map[string]any{
+		"startTime":   "07:50",
+		"endTime":     "09:25",
+		"customPlace": "GT-A405",
+		"section": map[string]any{
+			"course": map[string]any{"namePrimary": "随机过程理论"},
+		},
+	})
+	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻   𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻  随机过程理论" {
+		t.Fatalf("line = %q", line)
 	}
 }
 

@@ -908,14 +908,15 @@ func formatSchedule(schedule map[string]any) string {
 	if place == "" {
 		place = nestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 	}
-	line := timeRange
+	line := padRightDisplay(monospaceASCII(strings.TrimSpace(place)), 8)
+	if line != "" {
+		line += "  "
+	}
+	line += monospaceDigits(timeRange)
 	if course != "" {
 		line += "  " + course
 	}
-	if place != "" {
-		line += " @ " + place
-	}
-	return monospaceDigits(strings.TrimSpace(line))
+	return strings.TrimRight(line, " ")
 }
 
 func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
@@ -1308,6 +1309,51 @@ func monospaceDigits(text string) string {
 		}
 		return r
 	}, text)
+}
+
+func monospaceASCII(text string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9':
+			return '𝟶' + (r - '0')
+		case r >= 'A' && r <= 'Z':
+			return '𝙰' + (r - 'A')
+		default:
+			return r
+		}
+	}, text)
+}
+
+func padRightDisplay(text string, width int) string {
+	if text == "" {
+		return ""
+	}
+	padding := width - displayWidth(text)
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat(" ", padding)
+}
+
+func displayWidth(text string) int {
+	width := 0
+	for _, r := range text {
+		if isWideRune(r) {
+			width += 2
+			continue
+		}
+		width++
+	}
+	return width
+}
+
+func isWideRune(r rune) bool {
+	return (r >= 0x2E80 && r <= 0xA4CF) ||
+		(r >= 0xAC00 && r <= 0xD7A3) ||
+		(r >= 0xF900 && r <= 0xFAFF) ||
+		(r >= 0xFE10 && r <= 0xFE6F) ||
+		(r >= 0xFF00 && r <= 0xFF60) ||
+		(r >= 0xFFE0 && r <= 0xFFE6)
 }
 
 func firstStop(stops []busStop) string {
