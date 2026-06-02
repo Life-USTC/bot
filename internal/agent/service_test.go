@@ -43,3 +43,33 @@ func TestAgentToolConstruction(t *testing.T) {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 }
+
+func TestMessagesForIncludesRecentHistory(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "你好",
+		Command: "agent",
+		Handled: true,
+		Reply:   "你好！有什么可以帮你的吗？",
+		Status:  "handled",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	messages, err := svc.messagesFor(ctx, Input{Text: "我上面说了什么？", Identity: ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("message count = %d", len(messages))
+	}
+	if messages[0].Content != "你好" || messages[1].Content != "你好！有什么可以帮你的吗？" || messages[2].Content != "我上面说了什么？" {
+		t.Fatalf("messages = %#v", messages)
+	}
+}

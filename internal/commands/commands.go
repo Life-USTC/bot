@@ -24,8 +24,9 @@ type Handler struct {
 }
 
 type Input struct {
-	Text     string
-	Identity store.Identity
+	Text        string
+	Identity    store.Identity
+	SuppressLog bool
 }
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
@@ -39,11 +40,15 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	if isGroup(input.Identity) && cmd.Name != "bus" {
 		return "", false
 	}
-	h.recordState(ctx, input.Identity, cmd)
+	if !input.SuppressLog {
+		h.recordState(ctx, input.Identity, cmd)
+	}
 	var reply string
 	if cmd.Name == "help" {
 		reply = h.help()
-		h.recordInteraction(ctx, input.Identity, cmd, reply)
+		if !input.SuppressLog {
+			h.recordInteraction(ctx, input.Identity, cmd, reply)
+		}
 		return reply, true
 	}
 
@@ -83,7 +88,9 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	default:
 		reply = h.help()
 	}
-	h.recordInteraction(ctx, input.Identity, cmd, reply)
+	if !input.SuppressLog {
+		h.recordInteraction(ctx, input.Identity, cmd, reply)
+	}
 	return reply, true
 }
 

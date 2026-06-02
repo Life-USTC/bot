@@ -50,6 +50,7 @@ type Interaction struct {
 	Reply     string
 	Status    string
 	Error     string
+	CreatedAt time.Time
 }
 
 type Store struct {
@@ -366,4 +367,42 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		return fmt.Errorf("interaction raw text is empty")
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
+}
+
+func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, limit int) ([]Interaction, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	var rows []interactionRow
+	err := s.db.WithContext(ctx).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND direction = ? AND handled = ? AND status = ?",
+			ident.Platform, ident.ConversationType, ident.ConversationID, "inbound", true, "handled").
+		Order("created_at desc").
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Interaction, 0, len(rows))
+	for i := len(rows) - 1; i >= 0; i-- {
+		row := rows[i]
+		out = append(out, Interaction{
+			Direction: row.Direction,
+			RawText:   row.RawText,
+			Command:   row.Command,
+			Args:      row.Args,
+			Handled:   row.Handled,
+			Reply:     row.Reply,
+			Status:    row.Status,
+			Error:     row.Error,
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&interactionRow{}).Count(&count).Error
+	return count, err
 }

@@ -73,6 +73,49 @@ func TestCredentialAndConversationStatePersist(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("outbound interaction count = %d", count)
 	}
+	recent, err := s.RecentHandledInteractions(context.Background(), ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || recent[0].RawText != "td done 1" || recent[0].Reply != "已完成：写报告" {
+		t.Fatalf("recent = %#v", recent)
+	}
+}
+
+func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	for _, text := range []string{"你好", "你是谁", "我上面说了什么"} {
+		if err := s.RecordInteraction(context.Background(), ident, Interaction{
+			RawText: text,
+			Command: "agent",
+			Handled: true,
+			Reply:   "reply " + text,
+			Status:  "handled",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordInteraction(context.Background(), ident, Interaction{
+		Direction: "outbound",
+		RawText:   "ignored for history",
+		Handled:   true,
+		Status:    "sent",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := s.RecentHandledInteractions(context.Background(), ident, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 2 || recent[0].RawText != "你是谁" || recent[1].RawText != "我上面说了什么" {
+		t.Fatalf("recent = %#v", recent)
+	}
 }
 
 func TestLoginSessionLifecycle(t *testing.T) {

@@ -490,6 +490,28 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 	}
 }
 
+func TestHandleSuppressLog(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"nameCn":"2026年春季学期"}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "学期", Identity: ident, SuppressLog: true})
+	if !ok || reply == "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	count, err := handler.Store.InteractionCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("interaction count = %d", count)
+	}
+}
+
 func testAuthedHandler(t *testing.T, server *httptest.Server, ident store.Identity) Handler {
 	t.Helper()
 	s, err := store.Open(t.TempDir() + "/bot.db")

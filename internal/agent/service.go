@@ -48,12 +48,18 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	if modelName == "" {
 		modelName = "gpt-4o-mini"
 	}
+	agentHTTPClient := httpClient
+	if httpClient != nil {
+		clone := *httpClient
+		clone.Timeout = agentHTTPTimeout
+		agentHTTPClient = &clone
+	}
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
 		APIKey:     cfg.APIKey,
 		BaseURL:    cfg.BaseURL,
 		Model:      modelName,
-		HTTPClient: httpClient,
-		Timeout:    20 * time.Second,
+		HTTPClient: agentHTTPClient,
+		Timeout:    agentHTTPTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
@@ -76,7 +82,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
 		Description:   "Life @ USTC QQ assistant",
-		Instruction:   systemInstruction,
+		Instruction:   currentInstruction(),
 		Model:         s.model,
 		MaxIterations: 6,
 		ToolsConfig: adk.ToolsConfig{
@@ -87,7 +93,11 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		return "AI 助手初始化失败：" + err.Error(), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-	iter := runner.Query(ctx, input.Text)
+	messages, err := s.messagesFor(ctx, input)
+	if err != nil {
+		return "AI 历史记录读取失败：" + err.Error(), true
+	}
+	iter := runner.Run(ctx, messages)
 	reply := ""
 	for {
 		event, ok := iter.Next()
@@ -109,6 +119,27 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(reply), true
+}
+
+func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
+	messages := make([]*schema.Message, 0, 17)
+	if s.handler.Store != nil {
+		history, err := s.handler.Store.RecentHandledInteractions(ctx, input.Identity, historyTurnLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, turn := range history {
+			if strings.TrimSpace(turn.RawText) == "" {
+				continue
+			}
+			messages = append(messages, schema.UserMessage(turn.RawText))
+			if strings.TrimSpace(turn.Reply) != "" {
+				messages = append(messages, schema.AssistantMessage(turn.Reply, nil))
+			}
+		}
+	}
+	messages = append(messages, schema.UserMessage(input.Text))
+	return messages, nil
 }
 
 type emptyInput struct{}
@@ -179,18 +210,33 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 }
 
 func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {
-	reply, ok := s.handler.Handle(ctx, commands.Input{Text: text, Identity: ident})
+	reply, ok := s.handler.Handle(ctx, commands.Input{Text: text, Identity: ident, SuppressLog: true})
 	if !ok {
 		return "", fmt.Errorf("command %q was not handled", text)
 	}
 	return reply, nil
 }
 
-const systemInstruction = `You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
+const historyTurnLimit = 8
+const agentHTTPTimeout = 60 * time.Second
+
+var shanghaiLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*60*60)
+	}
+	return loc
+}()
+
+func currentInstruction() string {
+	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 Use tools for Life @ USTC facts instead of guessing.
+Current local time is %s.
+You can answer questions about prior messages using the chat history provided in this run.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`
+When a tool returns login-required text, tell the user to log in with 登录.`, time.Now().In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
+}
 
 var _ = schema.Assistant
