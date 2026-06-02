@@ -531,7 +531,7 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 	title := "各路线下一班校车："
 	from, to := busFilter(args)
 	if from != "" && to != "" {
-		title = from + " -> " + to + " 各路线下一班："
+		title = from + " → " + to + " 各路线下一班："
 	} else if from != "" {
 		title = from + " 相关路线下一班："
 	}
@@ -659,17 +659,17 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			part := stop.Name
 			if stop.Time != "" {
-				part += " (" + stop.Time + ")"
+				part += " " + stop.Time
 			}
-			parts = append(parts, part)
+			parts = append(parts, fullwidthDigits(part))
 		}
-		return strings.Join(parts, " -> ")
+		return strings.Join(parts, " → ")
 	}
-	line := item.Route + "：" + item.DepartureTime
+	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + item.DepartureTime
 	if item.Arrival != "" {
 		line += "（到 " + item.Arrival + "）"
 	}
-	return line
+	return fullwidthDigits(line)
 }
 
 type busRoute struct {
@@ -786,12 +786,21 @@ func routeMatches(stops []string, from, to string) bool {
 
 func busRouteLabel(route busRoute, stops []string) string {
 	if len(stops) > 0 {
-		return strings.Join(stops, " -> ")
+		return strings.Join(stops, " → ")
 	}
 	if route.Name != "" {
-		return route.Name
+		return strings.ReplaceAll(route.Name, " -> ", " → ")
 	}
 	return "校车"
+}
+
+func fullwidthDigits(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return '０' + (r - '0')
+		}
+		return r
+	}, text)
 }
 
 func firstStop(stops []busStop) string {

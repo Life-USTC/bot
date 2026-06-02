@@ -173,7 +173,7 @@ func TestNextBusItemsFiltersRoute(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0].DepartureTime != "09:20" || items[0].Route != "东区 -> 北区 -> 西区" {
+	if items[0].DepartureTime != "09:20" || items[0].Route != "东区 → 北区 → 西区" {
 		t.Fatalf("item = %#v", items[0])
 	}
 }
@@ -207,10 +207,10 @@ func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0].Route != "东区 -> 西区" || items[0].DepartureTime != "09:10" {
+	if items[0].Route != "东区 → 西区" || items[0].DepartureTime != "09:10" {
 		t.Fatalf("first item = %#v", items[0])
 	}
-	if items[1].Route != "西区 -> 东区" || items[1].DepartureTime != "09:30" {
+	if items[1].Route != "西区 → 东区" || items[1].DepartureTime != "09:30" {
 		t.Fatalf("second item = %#v", items[1])
 	}
 }
@@ -259,7 +259,7 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByDepartureCampus(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区：\n  东区 (09:30) -> 北区 -> 西区 (09:45)") {
+	if !strings.Contains(got, "东区：\n  东区 ０９:３０ → 北区 → 西区 ０９:４５") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
