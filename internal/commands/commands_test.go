@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -306,6 +307,76 @@ func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
 	}
 }
 
+func TestSubscriptionHelpDoesNotList(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "订阅 导入") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var replacedIDs []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"code":"CONT5103P.01"}]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/sections/match-codes":
+			var req struct {
+				Codes []string `json:"codes"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(req.Codes, ",") != "CONT5103P.01,CONT6104P.01,BAD000.01" {
+				t.Fatalf("codes = %#v", req.Codes)
+			}
+			_, _ = w.Write([]byte(`{
+				"semester":{"nameCn":"2026年春季学期"},
+				"sections":[
+					{"id":101,"code":"CONT5103P.01","course":{"namePrimary":"随机过程理论"}},
+					{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}
+				],
+				"unmatchedCodes":["BAD000.01"]
+			}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions":
+			var req struct {
+				SectionIDs []int `json:"sectionIds"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			replacedIDs = req.SectionIDs
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅 导入 cont5103p.01, CONT6104P.01 BAD000.01", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if strings.Join(intStrings(replacedIDs), ",") != "101,202" {
+		t.Fatalf("sectionIds = %#v", replacedIDs)
+	}
+	for _, want := range []string{"已订阅 𝟸 个教学班（新增 𝟷 个，已存在 𝟷 个）。", "2026年春季学期", "CONT6104P.01 组合数学", "BAD000.01"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+}
+
 func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 	line := formatSchedule(map[string]any{
 		"startTime":   "07:50",
@@ -526,6 +597,14 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 			t.Fatalf("%q args = %#v, want %#v", text, cmd.Args, wantArgs)
 		}
 	}
+}
+
+func intStrings(values []int) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, strconv.Itoa(value))
+	}
+	return out
 }
 
 func TestHandleSuppressLog(t *testing.T) {

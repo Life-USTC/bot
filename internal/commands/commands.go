@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,7 +65,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	case "homework":
 		reply = h.homework(ctx, input.Identity, cmd.Args)
 	case "sub", "subs", "subscription":
-		reply = h.subscription(ctx, input.Identity)
+		reply = h.subscription(ctx, input.Identity, cmd.Args)
 	case "ping":
 		if err := h.Life.Health(ctx); err != nil {
 			reply = "Life @ USTC API unavailable: " + err.Error()
@@ -176,7 +177,7 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	case "明天课表", "明日课表", "明天课标", "明日课标":
 		return "schedule", []string{"tomorrow"}
 	case "订阅", "sub", "subs", "subscription":
-		return "subscription", args
+		return "subscription", normalizeSubscriptionArgs(args)
 	case "nextclass", "next", "下一节", "下节课", "下一节课":
 		return "nextclass", args
 	case "semester", "term", "学期", "xq":
@@ -187,6 +188,23 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "section", args
 	}
 	return "", args
+}
+
+func normalizeSubscriptionArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	switch strings.ToLower(args[0]) {
+	case "-h", "--help", "help", "?", "？", "帮助":
+		next := append([]string(nil), args...)
+		next[0] = "help"
+		return next
+	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
+		next := append([]string(nil), args...)
+		next[0] = "import"
+		return next
+	}
+	return args
 }
 
 func normalizeLoginArgs(args []string) []string {
@@ -713,7 +731,35 @@ func formatHomeworkList(homeworks []map[string]any) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) subscription(ctx context.Context, ident store.Identity) string {
+var sectionCodePattern = regexp.MustCompile(`[A-Za-z0-9_.-]+\.[A-Za-z0-9]{2}`)
+
+func (h Handler) subscription(ctx context.Context, ident store.Identity, args []string) string {
+	if len(args) > 0 {
+		switch args[0] {
+		case "help":
+			return subscriptionHelp()
+		case "import":
+			return h.bulkSubscribeSections(ctx, ident, strings.Join(args[1:], " "))
+		default:
+			raw := strings.Join(args, " ")
+			if len(extractSectionCodes(raw)) > 0 {
+				return h.bulkSubscribeSections(ctx, ident, raw)
+			}
+		}
+	}
+	return h.subscriptionList(ctx, ident)
+}
+
+func subscriptionHelp() string {
+	return strings.Join([]string{
+		"订阅用法：",
+		"订阅：查看当前日程订阅",
+		"订阅 导入 <教学班代码...>：批量添加教学班",
+		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
+	}, "\n")
+}
+
+func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) string {
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -741,6 +787,135 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity) string 
 		}
 		section, _ := item.(map[string]any)
 		lines = append(lines, formatSection(section))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity, raw string) string {
+	codes := extractSectionCodes(raw)
+	if len(codes) == 0 {
+		return "没找到教学班代码。把网页课表里的教学班代码粘过来，例如：\n订阅 导入 CONT5103P.01 CONT6104P.01"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	current, err := h.Life.CurrentSubscription(ctx, token)
+	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		token, refreshErr := h.Auth.Refresh(ctx, ident)
+		if refreshErr == nil {
+			current, err = h.Life.CurrentSubscription(ctx, token)
+		}
+	}
+	if err != nil {
+		return "日程订阅查不到：" + friendlyError(err)
+	}
+	matches, err := h.Life.MatchSectionCodes(ctx, token, codes, "")
+	if err != nil {
+		return "教学班匹配失败：" + friendlyError(err)
+	}
+	sections := matchSections(matches)
+	if len(sections) == 0 {
+		return formatBulkSubscriptionResult(matches, sections, codes, 0, 0)
+	}
+	existing := subscriptionSectionIDInts(current)
+	existingSet := make(map[int]bool, len(existing))
+	for _, id := range existing {
+		existingSet[id] = true
+	}
+	union := append([]int(nil), existing...)
+	added := 0
+	already := 0
+	for _, section := range sections {
+		id := firstInt(section, "id")
+		if id == 0 {
+			continue
+		}
+		if existingSet[id] {
+			already++
+			continue
+		}
+		existingSet[id] = true
+		union = append(union, id)
+		added++
+	}
+	sort.Ints(union)
+	if _, err := h.Life.ReplaceCalendarSubscription(ctx, token, union); err != nil {
+		return "订阅更新失败：" + friendlyError(err)
+	}
+	return formatBulkSubscriptionResult(matches, sections, nil, added, already)
+}
+
+func extractSectionCodes(raw string) []string {
+	matches := sectionCodePattern.FindAllString(raw, -1)
+	out := make([]string, 0, len(matches))
+	seen := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		code := strings.ToUpper(match)
+		if seen[code] {
+			continue
+		}
+		seen[code] = true
+		out = append(out, code)
+	}
+	return out
+}
+
+func matchSections(matches map[string]any) []map[string]any {
+	rawSections, _ := matches["sections"].([]any)
+	sections := make([]map[string]any, 0, len(rawSections))
+	for _, raw := range rawSections {
+		section, _ := raw.(map[string]any)
+		if section != nil {
+			sections = append(sections, section)
+		}
+	}
+	return sections
+}
+
+func subscriptionSectionIDInts(data map[string]any) []int {
+	sub, _ := data["subscription"].(map[string]any)
+	sections, _ := sub["sections"].([]any)
+	ids := make([]int, 0, len(sections))
+	for _, raw := range sections {
+		section, _ := raw.(map[string]any)
+		id := firstInt(section, "id")
+		if id != 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]any, fallbackUnmatched []string, added, already int) string {
+	unmatched := stringSlice(matches["unmatchedCodes"])
+	if len(unmatched) == 0 {
+		unmatched = fallbackUnmatched
+	}
+	if len(sections) == 0 {
+		lines := []string{"没匹配到教学班。"}
+		if len(unmatched) > 0 {
+			lines = append(lines, "未匹配：")
+			for _, code := range unmatched {
+				lines = append(lines, "- "+code)
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	semester := semesterLabel(matches)
+	lines := []string{monospaceDigits(fmt.Sprintf("已订阅 %d 个教学班（新增 %d 个，已存在 %d 个）。", len(sections), added, already))}
+	if semester != "" {
+		lines = append(lines, "学期："+semester)
+	}
+	lines = append(lines, "", "已匹配：")
+	for _, section := range sections {
+		lines = append(lines, formatSection(section))
+	}
+	if len(unmatched) > 0 {
+		lines = append(lines, "", "未匹配：")
+		for _, code := range unmatched {
+			lines = append(lines, "- "+code)
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1578,6 +1753,44 @@ func firstString(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstInt(m map[string]any, keys ...string) int {
+	if m == nil {
+		return 0
+	}
+	for _, key := range keys {
+		switch value := m[key].(type) {
+		case int:
+			return value
+		case int64:
+			return int(value)
+		case float64:
+			return int(value)
+		case string:
+			id, err := strconv.Atoi(value)
+			if err == nil {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
+func stringSlice(value any) []string {
+	raw, _ := value.([]any)
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok && text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func semesterLabel(data map[string]any) string {
+	semester, _ := data["semester"].(map[string]any)
+	return firstString(semester, "namePrimary", "nameCn", "name")
 }
 
 func nestedString(m map[string]any, key string, nestedKeys ...string) string {

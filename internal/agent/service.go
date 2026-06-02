@@ -149,6 +149,10 @@ type busInput struct {
 	To   string `json:"to,omitempty" jsonschema_description:"Optional destination campus, such as 东区, 西区, 南区, 高新区"`
 }
 
+type bulkSubscribeInput struct {
+	Text string `json:"text" jsonschema_description:"Pasted section codes or text containing section codes, for example CONT5103P.01 CONT6104P.01"`
+}
+
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	specs := []struct {
 		name string
@@ -184,7 +188,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 			},
 		},
 	}
-	tools := make([]tool.BaseTool, 0, len(specs)+1)
+	tools := make([]tool.BaseTool, 0, len(specs)+2)
 	for _, spec := range specs {
 		t, err := utils.InferTool(spec.name, spec.desc, spec.fn)
 		if err != nil {
@@ -206,6 +210,13 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools = append(tools, busTool)
+	bulkSubscribeTool, err := utils.InferTool("bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
+		return s.runCommand(ctx, ident, "订阅 导入 "+input.Text)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, bulkSubscribeTool)
 	return tools, nil
 }
 

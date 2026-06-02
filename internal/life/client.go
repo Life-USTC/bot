@@ -114,6 +114,24 @@ func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[str
 	return out, err
 }
 
+func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []string, semesterID string) (map[string]any, error) {
+	req := map[string]any{"codes": codes}
+	if strings.TrimSpace(semesterID) != "" {
+		req["semesterId"] = semesterID
+	}
+	body, _ := json.Marshal(req)
+	var out map[string]any
+	err := c.postAuth(ctx, "/api/sections/match-codes", token, body, &out)
+	return out, err
+}
+
+func (c *Client) ReplaceCalendarSubscription(ctx context.Context, token string, sectionIDs []int) (map[string]any, error) {
+	body, _ := json.Marshal(map[string]any{"sectionIds": sectionIDs})
+	var out map[string]any
+	err := c.postAuth(ctx, "/api/calendar-subscriptions", token, body, &out)
+	return out, err
+}
+
 func (c *Client) Schedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
 	var out struct {
 		Data []map[string]any `json:"data"`
