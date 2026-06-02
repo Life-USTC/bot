@@ -660,21 +660,19 @@ func formatBusItem(item busItem) string {
 	if len(item.Stops) > 0 {
 		parts := make([]string, 0, len(item.Stops))
 		for _, stop := range item.Stops {
-			parts = append(parts, stop.Name)
+			part := stop.Name
+			if stop.Time != "" {
+				part += " " + monospaceDigits(stop.Time)
+			}
+			parts = append(parts, part)
 		}
-		return busTimeRange(item) + "  " + strings.Join(parts, " → ")
+		return strings.Join(parts, " → ")
 	}
-	return busTimeRange(item) + "  " + strings.ReplaceAll(item.Route, " -> ", " → ")
-}
-
-func busTimeRange(item busItem) string {
-	if item.DepartureTime != "" && item.Arrival != "" {
-		return item.DepartureTime + "-" + item.Arrival
+	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + monospaceDigits(item.DepartureTime)
+	if item.Arrival != "" {
+		line += "（到 " + monospaceDigits(item.Arrival) + "）"
 	}
-	if item.DepartureTime != "" {
-		return item.DepartureTime + "      "
-	}
-	return "           "
+	return line
 }
 
 type busRoute struct {
@@ -797,6 +795,15 @@ func busRouteLabel(route busRoute, stops []string) string {
 		return strings.ReplaceAll(route.Name, " -> ", " → ")
 	}
 	return "校车"
+}
+
+func monospaceDigits(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return '𝟶' + (r - '0')
+		}
+		return r
+	}, text)
 }
 
 func firstStop(stops []busStop) string {
