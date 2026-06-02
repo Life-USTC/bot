@@ -177,6 +177,43 @@ func TestNextBusItemsFiltersRoute(t *testing.T) {
 	}
 }
 
+func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+				},
+			},
+			map[string]any{
+				"id": float64(2),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:10", "departureMinutes": float64(550), "arrivalTime": "09:25"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "10:10", "departureMinutes": float64(610), "arrivalTime": "10:25"},
+			map[string]any{"routeId": float64(2), "dayType": "weekday", "departureTime": "09:30", "departureMinutes": float64(570), "arrivalTime": "09:45"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	items := nextBusByRoute(data, nil, now)
+	if len(items) != 2 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].Route != "东区 -> 西区" || items[0].DepartureTime != "09:10" {
+		t.Fatalf("first item = %#v", items[0])
+	}
+	if items[1].Route != "西区 -> 东区" || items[1].DepartureTime != "09:30" {
+		t.Fatalf("second item = %#v", items[1])
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",

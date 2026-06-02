@@ -524,21 +524,23 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 	if err != nil {
 		return "校车查不到：" + friendlyError(err)
 	}
-	items := nextBusItems(data, args, time.Now())
+	items := nextBusByRoute(data, args, time.Now())
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
-	title := "下一班校车："
+	title := "各路线下一班校车："
 	from, to := busFilter(args)
 	if from != "" && to != "" {
-		title = from + " -> " + to + " 下一班："
+		title = from + " -> " + to + " 各路线下一班："
+	} else if from != "" {
+		title = from + " 相关路线下一班："
 	}
 	lines := []string{title}
 	for i, item := range items {
-		if i >= 5 {
+		if i >= 8 {
 			break
 		}
-		line := item.DepartureTime + " " + item.Route
+		line := item.Route + "：" + item.DepartureTime
 		if item.Arrival != "" {
 			line += "（到 " + item.Arrival + "）"
 		}
@@ -548,6 +550,7 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 }
 
 type busItem struct {
+	RouteID          string
 	DepartureMinutes int
 	DepartureTime    string
 	Arrival          string
@@ -585,7 +588,9 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		if !routeMatches(routeStops, from, to) {
 			continue
 		}
+		routeID := firstString(trip, "routeId")
 		items = append(items, busItem{
+			RouteID:          routeID,
 			DepartureMinutes: departure,
 			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
 			Arrival:          firstString(trip, "arrivalTime"),
@@ -596,6 +601,31 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		return items[i].DepartureMinutes < items[j].DepartureMinutes
 	})
 	return items
+}
+
+func nextBusByRoute(data map[string]any, args []string, now time.Time) []busItem {
+	items := nextBusItems(data, args, now)
+	byRoute := make(map[string]busItem)
+	for _, item := range items {
+		key := item.RouteID
+		if key == "" {
+			key = item.Route
+		}
+		if _, exists := byRoute[key]; !exists {
+			byRoute[key] = item
+		}
+	}
+	out := make([]busItem, 0, len(byRoute))
+	for _, item := range byRoute {
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].DepartureMinutes == out[j].DepartureMinutes {
+			return out[i].Route < out[j].Route
+		}
+		return out[i].DepartureMinutes < out[j].DepartureMinutes
+	})
+	return out
 }
 
 type busRoute struct {
