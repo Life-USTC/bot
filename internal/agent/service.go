@@ -153,12 +153,31 @@ type bulkSubscribeInput struct {
 	Text string `json:"text" jsonschema_description:"Pasted section codes or text containing section codes, for example CONT5103P.01 CONT6104P.01"`
 }
 
+type keywordInput struct {
+	Keyword string `json:"keyword" jsonschema_description:"Search keyword, course name, teacher name, or section code"`
+}
+
+type todoInput struct {
+	Title string `json:"title" jsonschema_description:"Todo title to create"`
+}
+
+type targetInput struct {
+	Target string `json:"target" jsonschema_description:"Item number, ID, or title shown in the latest list response"`
+}
+
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	specs := []struct {
 		name string
 		desc string
 		fn   func(context.Context, emptyInput) (string, error)
 	}{
+		{
+			name: "get_two_day_curriculum",
+			desc: "Get the user's curriculum for today and tomorrow.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "课表")
+			},
+		},
 		{
 			name: "get_today_curriculum",
 			desc: "Get the user's curriculum for today.",
@@ -187,8 +206,43 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 				return s.runCommand(ctx, ident, "作业")
 			},
 		},
+		{
+			name: "list_todos",
+			desc: "List the user's pending todos.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "待办")
+			},
+		},
+		{
+			name: "list_subscriptions",
+			desc: "List the user's current calendar section subscriptions.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "订阅")
+			},
+		},
+		{
+			name: "get_current_semester",
+			desc: "Get the current Life USTC semester.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "学期")
+			},
+		},
+		{
+			name: "get_profile",
+			desc: "Get the logged-in user's profile status.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "我")
+			},
+		},
+		{
+			name: "get_bot_status",
+			desc: "Get Life API reachability and login status.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "状态")
+			},
+		},
 	}
-	tools := make([]tool.BaseTool, 0, len(specs)+2)
+	tools := make([]tool.BaseTool, 0, len(specs)+9)
 	for _, spec := range specs {
 		t, err := utils.InferTool(spec.name, spec.desc, spec.fn)
 		if err != nil {
@@ -210,6 +264,48 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools = append(tools, busTool)
+	courseTool, err := utils.InferTool("search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
+		return s.runCommand(ctx, ident, "课程 "+input.Keyword)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, courseTool)
+	sectionTool, err := utils.InferTool("search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
+		return s.runCommand(ctx, ident, "教学班 "+input.Keyword)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, sectionTool)
+	addTodoTool, err := utils.InferTool("add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
+		return s.runCommand(ctx, ident, "待办 add "+input.Title)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, addTodoTool)
+	completeTodoTool, err := utils.InferTool("complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
+		return s.runCommand(ctx, ident, "待办 done "+input.Target)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, completeTodoTool)
+	completeHomeworkTool, err := utils.InferTool("complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+		return s.runCommand(ctx, ident, "作业 done "+input.Target)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, completeHomeworkTool)
+	undoHomeworkTool, err := utils.InferTool("undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+		return s.runCommand(ctx, ident, "作业 undo "+input.Target)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, undoHomeworkTool)
 	bulkSubscribeTool, err := utils.InferTool("bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
 		return s.runCommand(ctx, ident, "订阅 导入 "+input.Text)
 	})
@@ -217,6 +313,13 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools = append(tools, bulkSubscribeTool)
+	currentTimeTool, err := utils.InferTool("get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
+		return time.Now().In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。"), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, currentTimeTool)
 	return tools, nil
 }
 

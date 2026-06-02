@@ -39,7 +39,7 @@ func TestAgentToolConstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 6 {
+	if len(tools) != 19 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 }
