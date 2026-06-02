@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
@@ -33,6 +34,15 @@ func main() {
 		Store:      stateStore,
 	}
 	handler := commands.Handler{Life: lifeClient, Auth: authManager, Store: stateStore, Prefix: cfg.CommandPrefix}
+	agentService, err := agent.New(context.Background(), agent.Config{
+		Enabled: cfg.EnableAgent,
+		APIKey:  cfg.LLMAPIKey,
+		BaseURL: cfg.LLMBaseURL,
+		Model:   cfg.LLMModel,
+	}, handler, httpClient)
+	if err != nil {
+		logger.Fatalf("create agent service: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -56,6 +66,7 @@ func main() {
 			AccessToken: cfg.NapCatAccessToken,
 			WSURL:       cfg.NapCatWSURL,
 			Handler:     handler,
+			Agent:       agentService,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 		}
@@ -70,6 +81,7 @@ func main() {
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
 			Handler:     handler,
+			Agent:       agentService,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 		}

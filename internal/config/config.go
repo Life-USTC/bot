@@ -23,6 +23,10 @@ type Config struct {
 	HTTPClientTimeout  time.Duration
 	EnableOneBotServer bool
 	EnableNapCatBridge bool
+	EnableAgent        bool
+	LLMAPIKey          string
+	LLMBaseURL         string
+	LLMModel           string
 }
 
 func FromEnv() Config {
@@ -42,6 +46,10 @@ func FromEnv() Config {
 		HTTPClientTimeout:  time.Duration(envInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
 		EnableOneBotServer: envBool("BOT_ENABLE_ONEBOT_SERVER", true),
 		EnableNapCatBridge: envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
+		EnableAgent:        envBool("BOT_ENABLE_AGENT", false),
+		LLMAPIKey:          os.Getenv("OPENAI_API_KEY"),
+		LLMBaseURL:         os.Getenv("OPENAI_BASE_URL"),
+		LLMModel:           envString("BOT_LLM_MODEL", "gpt-4o-mini"),
 	}
 }
 

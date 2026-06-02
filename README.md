@@ -58,6 +58,10 @@ BOT_ONEBOT_HTTP_PORT=6700
 BOT_ONEBOT_ACCESS_TOKEN=
 BOT_COMMAND_PREFIX=/life
 BOT_DB_PATH=.run/life-ustc-bot.db
+BOT_ENABLE_AGENT=false
+BOT_LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
 
 # NapCat reverse WebSocket. The local container is configured for /ws on 2280.
 NAPCAT_REVERSE_ADDR=0.0.0.0:2280
@@ -66,6 +70,11 @@ NAPCAT_REVERSE_PATH=/ws
 
 If a NapCat WebSocket server is configured instead, set `NAPCAT_WS_URL` and the
 bot will dial it. Otherwise it listens for NapCat reverse WebSocket connections.
+
+Set `BOT_ENABLE_AGENT=true` with `OPENAI_API_KEY` to enable the optional
+LLM-backed private-chat assistant. The agent uses existing bot commands as
+tools for curriculum, next class, homework, and shuttle bus queries. Group chats
+still use deterministic command handling only.
 
 ## Test
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -22,6 +23,7 @@ type Bridge struct {
 	AccessToken string
 	WSURL       string
 	Handler     commands.Handler
+	Agent       *agent.Service
 	HTTPClient  *http.Client
 	Logger      *log.Logger
 }
@@ -63,6 +65,9 @@ func (b *Bridge) Run(ctx context.Context) error {
 			Text:     event.RawMessage,
 			Identity: event.identity(),
 		})
+		if !ok {
+			reply, ok = b.handleAgent(ctx, event)
+		}
 		if !ok {
 			b.recordIgnored(ctx, event)
 			continue
@@ -129,6 +134,9 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			Identity: event.identity(),
 		})
 		if !ok {
+			reply, ok = b.handleAgent(ctx, event)
+		}
+		if !ok {
 			b.recordIgnored(ctx, event)
 			if b.Logger != nil {
 				b.Logger.Printf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
@@ -147,6 +155,29 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			}
 		}
 	}
+}
+
+func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, bool) {
+	if b.Agent == nil {
+		return "", false
+	}
+	reply, ok := b.Agent.Handle(ctx, agent.Input{
+		Text:     event.RawMessage,
+		Identity: event.identity(),
+	})
+	if !ok {
+		return "", false
+	}
+	if b.Handler.Store != nil {
+		_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
+			RawText: event.RawMessage,
+			Command: "agent",
+			Handled: true,
+			Reply:   reply,
+			Status:  "handled",
+		})
+	}
+	return reply, true
 }
 
 func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
