@@ -543,10 +543,16 @@ type busItem struct {
 	RouteID          string
 	DepartureCampus  string
 	ArrivalCampus    string
+	Stops            []busStop
 	DepartureMinutes int
 	DepartureTime    string
 	Arrival          string
 	Route            string
+}
+
+type busStop struct {
+	Name string
+	Time string
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
@@ -581,10 +587,12 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 			continue
 		}
 		routeID := firstString(trip, "routeId")
+		stops := busStops(trip, routeStops, busTime(firstString(trip, "departureTime"), departure), firstString(trip, "arrivalTime"))
 		items = append(items, busItem{
 			RouteID:          routeID,
-			DepartureCampus:  firstCampus(routeStops),
-			ArrivalCampus:    lastCampus(routeStops),
+			DepartureCampus:  firstStop(stops),
+			ArrivalCampus:    lastStop(stops),
+			Stops:            stops,
 			DepartureMinutes: departure,
 			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
 			Arrival:          firstString(trip, "arrivalTime"),
@@ -646,8 +654,16 @@ func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
 }
 
 func formatBusItem(item busItem) string {
-	if item.DepartureCampus != "" && item.ArrivalCampus != "" && item.Arrival != "" {
-		return item.DepartureCampus + " (" + item.DepartureTime + ") -> " + item.ArrivalCampus + " (" + item.Arrival + ")"
+	if len(item.Stops) > 0 {
+		parts := make([]string, 0, len(item.Stops))
+		for _, stop := range item.Stops {
+			part := stop.Name
+			if stop.Time != "" {
+				part += " (" + stop.Time + ")"
+			}
+			parts = append(parts, part)
+		}
+		return strings.Join(parts, " -> ")
 	}
 	line := item.Route + "：" + item.DepartureTime
 	if item.Arrival != "" {
@@ -706,6 +722,34 @@ func tripStopNames(trip map[string]any) []string {
 	return stops
 }
 
+func busStops(trip map[string]any, routeStops []string, departureTime, arrivalTime string) []busStop {
+	stops := make([]busStop, 0)
+	for _, rawStop := range anySlice(trip["stopTimes"]) {
+		stop, _ := rawStop.(map[string]any)
+		if stop == nil {
+			continue
+		}
+		name := campusName(firstString(stop, "campusName", "stopName", "nameCn", "name"))
+		if name != "" {
+			stops = append(stops, busStop{Name: name, Time: firstString(stop, "time")})
+		}
+	}
+	if len(stops) > 0 {
+		return stops
+	}
+	for i, name := range routeStops {
+		stop := busStop{Name: name}
+		if i == 0 {
+			stop.Time = departureTime
+		}
+		if i == len(routeStops)-1 {
+			stop.Time = arrivalTime
+		}
+		stops = append(stops, stop)
+	}
+	return stops
+}
+
 func busFilter(args []string) (string, string) {
 	if len(args) == 1 {
 		return campusName(args[0]), ""
@@ -750,18 +794,18 @@ func busRouteLabel(route busRoute, stops []string) string {
 	return "校车"
 }
 
-func firstCampus(stops []string) string {
+func firstStop(stops []busStop) string {
 	if len(stops) == 0 {
 		return ""
 	}
-	return stops[0]
+	return stops[0].Name
 }
 
-func lastCampus(stops []string) string {
+func lastStop(stops []busStop) string {
 	if len(stops) == 0 {
 		return ""
 	}
-	return stops[len(stops)-1]
+	return stops[len(stops)-1].Name
 }
 
 func campusRank(campus string) int {

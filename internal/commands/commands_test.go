@@ -151,6 +151,7 @@ func TestNextBusItemsFiltersRoute(t *testing.T) {
 				"id": float64(1),
 				"stops": []any{
 					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "北区"}},
 					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
 				},
 			},
@@ -172,7 +173,7 @@ func TestNextBusItemsFiltersRoute(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0].DepartureTime != "09:20" || items[0].Route != "东区 -> 西区" {
+	if items[0].DepartureTime != "09:20" || items[0].Route != "东区 -> 北区 -> 西区" {
 		t.Fatalf("item = %#v", items[0])
 	}
 }
@@ -234,7 +235,18 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 		},
 		"trips": []any{
 			map[string]any{"routeId": float64(2), "dayType": "weekday", "departureTime": "09:05", "departureMinutes": float64(545), "arrivalTime": "09:20"},
-			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:30", "departureMinutes": float64(570), "arrivalTime": "09:45"},
+			map[string]any{
+				"routeId":          float64(1),
+				"dayType":          "weekday",
+				"departureTime":    "09:30",
+				"departureMinutes": float64(570),
+				"arrivalTime":      "09:45",
+				"stopTimes": []any{
+					map[string]any{"campusName": "东区", "time": "09:30"},
+					map[string]any{"campusName": "北区"},
+					map[string]any{"campusName": "西区", "time": "09:45"},
+				},
+			},
 		},
 	}
 	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
@@ -247,7 +259,7 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByDepartureCampus(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区：\n  东区 (09:30) -> 西区 (09:45)") {
+	if !strings.Contains(got, "东区：\n  东区 (09:30) -> 北区 -> 西区 (09:45)") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
