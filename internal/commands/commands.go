@@ -169,7 +169,7 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "homework", normalizeHomeworkArgs(args)
 	case "bus", "xc", "校车", "车":
 		return "bus", args
-	case "schedule", "sched", "rc", "日程", "课表", "课标":
+	case "schedule", "sched", "rc", "kb", "日程", "课表", "课标":
 		return "schedule", normalizeScheduleArgs(args)
 	case "今天课表", "今日课表", "今天课标", "今日课标":
 		return "schedule", []string{"today"}
@@ -746,12 +746,15 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity) string 
 }
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
-	target := "today"
+	target := "two-day"
 	if len(args) > 0 {
 		target = args[0]
 	}
 	loc := chinaLocation()
 	day := time.Now().In(loc)
+	if target == "two-day" {
+		return h.curriculumTwoDays(ctx, ident, day)
+	}
 	title := "今天课表："
 	if target == "tomorrow" {
 		day = day.AddDate(0, 0, 1)
@@ -780,6 +783,41 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 		lines = append(lines, formatSchedule(schedule))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, today time.Time) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	todaySchedules, err := h.schedulesForDay(ctx, ident, token, today)
+	if err != nil {
+		return "课表查不到：" + friendlyError(err)
+	}
+	tomorrowSchedules, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
+	if err != nil {
+		return "课表查不到：" + friendlyError(err)
+	}
+	lines := []string{"今明两日课表："}
+	lines = append(lines, formatScheduleDay("今天", todaySchedules)...)
+	lines = append(lines, "")
+	lines = append(lines, formatScheduleDay("明天", tomorrowSchedules)...)
+	return strings.Join(lines, "\n")
+}
+
+func formatScheduleDay(title string, schedules []map[string]any) []string {
+	lines := []string{title + "："}
+	if len(schedules) == 0 {
+		return append(lines, "没有课。")
+	}
+	for i, schedule := range schedules {
+		if i >= 8 {
+			lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
+			break
+		}
+		lines = append(lines, formatSchedule(schedule))
+	}
+	return lines
 }
 
 func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {

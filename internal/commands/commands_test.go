@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -269,6 +270,42 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
+func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	scheduleCalls := 0
+	today := time.Now().In(chinaLocation()).Format("2006-01-02")
+	tomorrow := time.Now().In(chinaLocation()).AddDate(0, 0, 1).Format("2006-01-02")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		case r.URL.Path == "/api/schedules":
+			scheduleCalls++
+			if scheduleCalls == 1 {
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
+				return
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}]}`, tomorrow)))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "课表", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "今明两日课表：") || !strings.Contains(reply, "今天：") || !strings.Contains(reply, "明天：") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 	line := formatSchedule(map[string]any{
 		"startTime":   "07:50",
@@ -452,6 +489,7 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"xc": "bus",
 		"日程": "schedule",
 		"rc": "schedule",
+		"kb": "schedule",
 		"状态": "status",
 		"zt": "status",
 	}
