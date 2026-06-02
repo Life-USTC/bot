@@ -203,7 +203,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completion":null}]}`))
 		case r.URL.Path == "/api/homeworks/hw-1/completion" && r.Method == http.MethodPut:
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -222,11 +222,11 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "数据库系统 · Problem Set 1 · 截止 06-03 12:00") {
+	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "数据库系统 · Problem Set 1 · 截止 06-03 12:00") {
 		t.Fatalf("reply = %q", reply)
 	}
 
-	reply, ok = handler.Handle(ctx, Input{Text: "作业 done 1", Identity: ident})
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 done 2", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
@@ -248,6 +248,9 @@ func TestHandleTodayCurriculum(t *testing.T) {
 		case r.URL.Path == "/api/schedules":
 			if r.URL.Query().Get("sectionId") != "101" {
 				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
+			}
+			if !strings.HasSuffix(r.URL.Query().Get("dateFrom"), "Z") || !strings.HasSuffix(r.URL.Query().Get("dateTo"), "Z") {
+				t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 			}
 			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
 		default:

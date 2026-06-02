@@ -125,9 +125,9 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		switch joined {
-		case "今天课表":
+		case "今天课表", "今日课表":
 			return parsedCommand{Name: "schedule", Args: []string{"today"}, Raw: raw}, true
-		case "明天课表":
+		case "明天课表", "明天课标":
 			return parsedCommand{Name: "schedule", Args: []string{"tomorrow"}, Raw: raw}, true
 		case "下一节课":
 			return parsedCommand{Name: "nextclass", Raw: raw}, true
@@ -163,9 +163,9 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "bus", args
 	case "schedule", "sched", "rc", "日程", "课表":
 		return "schedule", normalizeScheduleArgs(args)
-	case "今天课表":
+	case "今天课表", "今日课表":
 		return "schedule", []string{"today"}
-	case "明天课表":
+	case "明天课表", "明天课标":
 		return "schedule", []string{"tomorrow"}
 	case "订阅", "sub", "subs", "subscription":
 		return "subscription", args
@@ -584,15 +584,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		return "没有作业。"
 	}
-	lines := []string{"作业："}
-	for i, homework := range homeworks {
-		if i >= 8 {
-			lines = append(lines, fmt.Sprintf("...and %d more", len(homeworks)-i))
-			break
-		}
-		lines = append(lines, fmt.Sprintf("%d. %s", i+1, formatHomework(homework)))
-	}
-	return strings.Join(lines, "\n")
+	return formatHomeworkList(homeworks)
 }
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
@@ -666,6 +658,51 @@ func formatHomework(homework map[string]any) string {
 		return firstString(homework, "id")
 	}
 	return strings.Join(parts, " · ")
+}
+
+func formatHomeworkList(homeworks []map[string]any) string {
+	now := time.Now().In(chinaLocation())
+	groups := []struct {
+		title string
+		items []map[string]any
+	}{
+		{title: "已逾期"},
+		{title: "近期"},
+		{title: "未来"},
+	}
+	for _, homework := range homeworks {
+		due, ok := parseAPITime(firstString(homework, "submissionDueAt"))
+		switch {
+		case ok && due.Before(now):
+			groups[0].items = append(groups[0].items, homework)
+		case !ok || !due.After(now.Add(7*24*time.Hour)):
+			groups[1].items = append(groups[1].items, homework)
+		default:
+			groups[2].items = append(groups[2].items, homework)
+		}
+	}
+	lines := []string{"作业："}
+	index := 1
+	shown := 0
+	for _, group := range groups {
+		if len(group.items) == 0 {
+			continue
+		}
+		if len(lines) > 1 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, group.title+"：")
+		for _, homework := range group.items {
+			if shown >= 8 {
+				lines = append(lines, fmt.Sprintf("...and %d more", len(homeworks)-shown))
+				return strings.Join(lines, "\n")
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s", index, formatHomework(homework)))
+			index++
+			shown++
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h Handler) subscription(ctx context.Context, ident store.Identity) string {
@@ -786,8 +823,10 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	for _, sectionID := range sectionIDs {
 		values := url.Values{}
 		values.Set("sectionId", sectionID)
-		values.Set("dateFrom", day.Format("2006-01-02")+"T00:00:00+08:00")
-		values.Set("dateTo", day.Format("2006-01-02")+"T23:59:59+08:00")
+		start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+		end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
+		values.Set("dateFrom", start.UTC().Format(time.RFC3339))
+		values.Set("dateTo", end.UTC().Format(time.RFC3339))
 		values.Set("limit", "100")
 		schedules, fetchErr := h.Life.Schedules(ctx, token, values)
 		if fetchErr != nil && strings.Contains(fetchErr.Error(), " returned 401:") {
@@ -1379,14 +1418,22 @@ func nestedPathString(m map[string]any, path []string, keys ...string) string {
 }
 
 func formatAPITime(value string) string {
+	parsed, ok := parseAPITime(value)
+	if !ok {
+		return strings.TrimSpace(value)
+	}
+	return parsed.Format("01-02 15:04")
+}
+
+func parseAPITime(value string) (time.Time, bool) {
 	if value == "" {
-		return ""
+		return time.Time{}, false
 	}
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return strings.TrimSpace(value)
+		return time.Time{}, false
 	}
-	return parsed.In(chinaLocation()).Format("01-02 15:04")
+	return parsed.In(chinaLocation()), true
 }
 
 func chinaLocation() *time.Location {
