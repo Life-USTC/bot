@@ -507,6 +507,7 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 		Args:    strings.Join(cmd.Args, " "),
 		Handled: true,
 		Reply:   reply,
+		Status:  "handled",
 	})
 }
 

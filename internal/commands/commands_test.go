@@ -64,10 +64,10 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 				]}
 			],
 			"trips":[
-				{"routeId":1,"dayType":"weekday","departureTime":"09:20","departureMinutes":560,"arrivalTime":"09:35","stopTimes":[
-					{"campusName":"东区","time":"09:20"},
+				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[
+					{"campusName":"东区","time":"23:59"},
 					{"campusName":"北区"},
-					{"campusName":"西区","time":"09:35"}
+					{"campusName":"西区","time":"23:59"}
 				]}
 			]
 		}`))
@@ -88,7 +88,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区 𝟶𝟿:𝟸𝟶 → 北区 → 西区 𝟶𝟿:𝟹𝟻") {
+	if !strings.Contains(reply, "东区 𝟸𝟹:𝟻𝟿 → 北区 → 西区 𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("reply = %q", reply)
 	}
 

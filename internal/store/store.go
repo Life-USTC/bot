@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -41,12 +42,14 @@ type LoginSession struct {
 }
 
 type Interaction struct {
-	RawText string
-	Command string
-	Args    string
-	Handled bool
-	Reply   string
-	Error   string
+	Direction string
+	RawText   string
+	Command   string
+	Args      string
+	Handled   bool
+	Reply     string
+	Status    string
+	Error     string
 }
 
 type Store struct {
@@ -131,11 +134,13 @@ func (s *Store) migrate(ctx context.Context) error {
 			conversation_type TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
+			direction TEXT NOT NULL DEFAULT 'inbound',
 			raw_text TEXT NOT NULL,
 			command TEXT,
 			args TEXT,
 			handled INTEGER NOT NULL,
 			reply TEXT,
+			status TEXT,
 			error TEXT,
 			created_at TEXT NOT NULL
 		)`,
@@ -147,7 +152,19 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	for _, stmt := range []string{
+		`ALTER TABLE interactions ADD COLUMN direction TEXT NOT NULL DEFAULT 'inbound'`,
+		`ALTER TABLE interactions ADD COLUMN status TEXT`,
+	} {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil && !isDuplicateColumnError(err) {
+			return err
+		}
+	}
 	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }
 
 func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
@@ -288,10 +305,14 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 	if interaction.Handled {
 		handled = 1
 	}
+	direction := interaction.Direction
+	if direction == "" {
+		direction = "inbound"
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO interactions
-		(platform, conversation_type, conversation_id, user_id, raw_text, command, args, handled, reply, error, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID,
-		interaction.RawText, interaction.Command, interaction.Args, handled, interaction.Reply, interaction.Error, now)
+		(platform, conversation_type, conversation_id, user_id, direction, raw_text, command, args, handled, reply, status, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, direction,
+		interaction.RawText, interaction.Command, interaction.Args, handled, interaction.Reply, interaction.Status, interaction.Error, now)
 	return err
 }

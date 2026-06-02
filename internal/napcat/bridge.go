@@ -67,8 +67,10 @@ func (b *Bridge) Run(ctx context.Context) error {
 			b.recordIgnored(ctx, event)
 			continue
 		}
-		if err := b.Send(ctx, event, reply); err != nil && b.Logger != nil {
-			b.Logger.Printf("send reply failed: %v", err)
+		if err := b.Send(ctx, event, reply); err != nil {
+			if b.Logger != nil {
+				b.Logger.Printf("send reply failed: %v", err)
+			}
 		}
 	}
 }
@@ -133,10 +135,16 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			}
 			continue
 		}
-		if err := sendReverseReply(conn, event, reply); err != nil && b.Logger != nil {
-			b.Logger.Printf("reverse websocket send failed: %v", err)
-		} else if b.Logger != nil {
-			b.Logger.Printf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
+		if err := sendReverseReply(conn, event, reply); err != nil {
+			b.recordOutbound(ctx, event, reply, "failed", err)
+			if b.Logger != nil {
+				b.Logger.Printf("reverse websocket send failed: %v", err)
+			}
+		} else {
+			b.recordOutbound(ctx, event, reply, "sent", nil)
+			if b.Logger != nil {
+				b.Logger.Printf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
+			}
 		}
 	}
 }
@@ -148,6 +156,24 @@ func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
 	_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
 		RawText: event.RawMessage,
 		Handled: false,
+		Status:  "ignored",
+	})
+}
+
+func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message, status string, err error) {
+	if b.Handler.Store == nil {
+		return
+	}
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+	_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
+		Direction: "outbound",
+		RawText:   message,
+		Handled:   true,
+		Status:    status,
+		Error:     errText,
 	})
 }
 
@@ -175,7 +201,13 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 		payload["group_id"] = event.GroupID
 		delete(payload, "user_id")
 	}
-	return b.post(ctx, endpoint, payload)
+	err := b.post(ctx, endpoint, payload)
+	if err != nil {
+		b.recordOutbound(ctx, event, message, "failed", err)
+		return err
+	}
+	b.recordOutbound(ctx, event, message, "sent", nil)
+	return nil
 }
 
 var echoCounter uint64
