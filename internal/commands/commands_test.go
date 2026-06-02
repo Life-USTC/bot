@@ -467,6 +467,29 @@ func TestNormalizeCommandAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeScheduleTypos(t *testing.T) {
+	tests := map[string][]string{
+		"课标":   {},
+		"今天课标": {"today"},
+		"今日课标": {"today"},
+		"明天课标": {"tomorrow"},
+		"明日课标": {"tomorrow"},
+	}
+	handler := Handler{Prefix: "/life"}
+	for text, wantArgs := range tests {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != "schedule" {
+			t.Fatalf("%q parsed as %q, want schedule", text, cmd.Name)
+		}
+		if strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
+			t.Fatalf("%q args = %#v, want %#v", text, cmd.Args, wantArgs)
+		}
+	}
+}
+
 func testAuthedHandler(t *testing.T, server *httptest.Server, ident store.Identity) Handler {
 	t.Helper()
 	s, err := store.Open(t.TempDir() + "/bot.db")

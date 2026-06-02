@@ -126,9 +126,9 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		switch joined {
-		case "今天课表", "今日课表":
+		case "今天课表", "今日课表", "今天课标", "今日课标":
 			return parsedCommand{Name: "schedule", Args: []string{"today"}, Raw: raw}, true
-		case "明天课表", "明日课表", "明天课标":
+		case "明天课表", "明日课表", "明天课标", "明日课标":
 			return parsedCommand{Name: "schedule", Args: []string{"tomorrow"}, Raw: raw}, true
 		case "下一节课":
 			return parsedCommand{Name: "nextclass", Raw: raw}, true
@@ -162,11 +162,11 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "homework", normalizeHomeworkArgs(args)
 	case "bus", "xc", "校车", "车":
 		return "bus", args
-	case "schedule", "sched", "rc", "日程", "课表":
+	case "schedule", "sched", "rc", "日程", "课表", "课标":
 		return "schedule", normalizeScheduleArgs(args)
-	case "今天课表", "今日课表":
+	case "今天课表", "今日课表", "今天课标", "今日课标":
 		return "schedule", []string{"today"}
-	case "明天课表", "明日课表", "明天课标":
+	case "明天课表", "明日课表", "明天课标", "明日课标":
 		return "schedule", []string{"tomorrow"}
 	case "订阅", "sub", "subs", "subscription":
 		return "subscription", args
