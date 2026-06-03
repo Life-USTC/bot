@@ -1774,7 +1774,7 @@ func formatCourse(course map[string]any) string {
 	if code == "" {
 		return "- " + name
 	}
-	return "- " + code + "\t" + name
+	return "- " + paddedCourseCode(code) + "\t" + name
 }
 
 func formatSection(section map[string]any) string {
@@ -1789,8 +1789,14 @@ func formatSection(section map[string]any) string {
 	if suffix == "" {
 		return "- " + code
 	}
-	return "- " + code + "\t" + suffix
+	return "- " + paddedCourseCode(code) + "\t" + suffix
 }
+
+func paddedCourseCode(code string) string {
+	return padRightDisplay(code, courseCodeColumnWidth)
+}
+
+const courseCodeColumnWidth = 14
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {

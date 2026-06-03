@@ -139,7 +139,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷\tCalculus") {
+	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
 	}
 }
