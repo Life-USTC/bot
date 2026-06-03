@@ -328,6 +328,36 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 	}
 }
 
+func TestSubscriptionListGroupsBySemester(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/calendar-subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"sections":[
+			{"id":101,"code":"CONT5103P.01","course":{"namePrimary":"随机过程理论"},"semester":{"nameCn":"2026年春季学期"}},
+			{"id":102,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"},"semester":{"nameCn":"2026年春季学期"}},
+			{"id":201,"code":"MATH1001.01","course":{"namePrimary":"数学分析"},"semester":{"nameCn":"2025年秋季学期"}}
+		]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, want := range []string{"日程订阅：", "2026年春季学期：", "2025年秋季学期：", "- CONT5103P.01 随机过程理论", "- MATH1001.01 数学分析"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Index(reply, "2026年春季学期：") > strings.Index(reply, "2025年秋季学期：") {
+		t.Fatalf("semester order changed: %q", reply)
+	}
+}
+
 func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
