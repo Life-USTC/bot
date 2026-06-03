@@ -1503,7 +1503,7 @@ func formatBusItem(item busItem) string {
 
 func formatBusStop(stop busStop) string {
 	name := padRightDisplayWide(stop.Name, busStopNameColumnWidth)
-	timeText := strings.Repeat("\u3000", busStopTimeWideWidth)
+	timeText := busMissingTimePlaceholder
 	if stop.Time != "" {
 		timeText = monospaceDigits(stop.Time)
 	}
@@ -1831,7 +1831,7 @@ const numberedColumnWidth = 3
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
-const busStopTimeWideWidth = 3
+const busMissingTimePlaceholder = "--:--"
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
