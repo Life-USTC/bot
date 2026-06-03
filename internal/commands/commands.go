@@ -1774,15 +1774,22 @@ func formatCourse(course map[string]any) string {
 	if code == "" {
 		return "- " + name
 	}
-	return "- " + code + " " + name
+	return "- " + code + "\t" + name
 }
 
 func formatSection(section map[string]any) string {
 	code := monospaceASCII(firstString(section, "code"))
 	course := nestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := nestedString(section, "semester", "name")
-	parts := []string{code, course, semester}
-	return "- " + strings.Join(nonEmpty(parts), " ")
+	parts := []string{course, semester}
+	if code == "" {
+		return "- " + strings.Join(nonEmpty(parts), " ")
+	}
+	suffix := strings.Join(nonEmpty(parts), " ")
+	if suffix == "" {
+		return "- " + code
+	}
+	return "- " + code + "\t" + suffix
 }
 
 func firstString(m map[string]any, keys ...string) string {
