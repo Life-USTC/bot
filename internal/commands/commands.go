@@ -1492,7 +1492,7 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			parts = append(parts, formatBusStop(stop))
 		}
-		return strings.Join(parts, " → ")
+		return strings.Join(parts, "\t→\t")
 	}
 	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + monospaceDigits(item.DepartureTime)
 	if item.Arrival != "" {
