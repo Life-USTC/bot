@@ -797,25 +797,14 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	}
 	grouped := subscriptionSectionsBySemester(sections)
 	lines := []string{"日程订阅："}
-	shown := 0
 	for _, group := range grouped {
-		if shown >= 8 {
-			break
-		}
 		if len(lines) > 1 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, group.semester+"：")
 		for _, section := range group.sections {
-			if shown >= 8 {
-				break
-			}
 			lines = append(lines, formatSection(section))
-			shown++
 		}
-	}
-	if shown < len(sections) {
-		lines = append(lines, fmt.Sprintf("...and %d more", len(sections)-shown))
 	}
 	return strings.Join(lines, "\n")
 }

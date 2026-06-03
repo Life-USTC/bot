@@ -356,6 +356,9 @@ func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	if strings.Index(reply, "2026年春季学期：") > strings.Index(reply, "2025年秋季学期：") {
 		t.Fatalf("semester order changed: %q", reply)
 	}
+	if strings.Contains(reply, "...and") {
+		t.Fatalf("reply should not be folded: %q", reply)
+	}
 }
 
 func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
