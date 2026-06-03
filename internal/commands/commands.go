@@ -1831,7 +1831,7 @@ const numberedColumnWidth = 3
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
-const busMissingTimePlaceholder = "—:—"
+const busMissingTimePlaceholder = "———"
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
