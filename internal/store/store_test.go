@@ -157,3 +157,31 @@ func TestLoginSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected no active session, got %#v", got)
 	}
 }
+
+func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(context.Background(), ident, LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := s.PendingLoginSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+	if sessions[0].Identity != ident {
+		t.Fatalf("identity = %#v", sessions[0].Identity)
+	}
+}

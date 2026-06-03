@@ -155,7 +155,7 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
-func TestLoginStartsAutomaticPoll(t *testing.T) {
+func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	var serverURL string
@@ -196,31 +196,12 @@ func TestLoginStartsAutomaticPoll(t *testing.T) {
 		Store:  s,
 		Prefix: "/life",
 	}
-	result, ok := handler.HandleResult(ctx, Input{Text: "登录", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "登录", Identity: ident})
 	if !ok {
 		t.Fatal("login was not handled")
 	}
-	if !result.StartLoginPoll {
-		t.Fatalf("result = %#v", result)
-	}
-	if !strings.Contains(result.Reply, "我会自动检查登录状态") {
-		t.Fatalf("reply = %q", result.Reply)
-	}
-}
-
-func TestLoginStatusDoesNotStartAutomaticPoll(t *testing.T) {
-	s, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	handler := Handler{Auth: &auth.Manager{Store: s}, Prefix: "/life"}
-	result, ok := handler.HandleResult(context.Background(), Input{Text: "登录 状态", Identity: testIdentity()})
-	if !ok {
-		t.Fatal("login status was not handled")
-	}
-	if result.StartLoginPoll {
-		t.Fatalf("result = %#v", result)
+	if !strings.Contains(reply, "我会自动检查登录状态") {
+		t.Fatalf("reply = %q", reply)
 	}
 }
 

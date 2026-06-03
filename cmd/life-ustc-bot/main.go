@@ -60,8 +60,9 @@ func main() {
 		logger.Printf("OneBot 12 HTTP server listening on %s:%d", cfg.OneBotHTTPHost, cfg.OneBotHTTPPort)
 	}
 
+	var napcatBridge *napcat.Bridge
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {
-		bridge := &napcat.Bridge{
+		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
 			WSURL:       cfg.NapCatWSURL,
@@ -71,13 +72,13 @@ func main() {
 			Logger:      logger,
 		}
 		go func() {
-			if err := bridge.Run(ctx); err != nil && ctx.Err() == nil {
+			if err := napcatBridge.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Printf("NapCat bridge stopped: %v", err)
 			}
 		}()
 		logger.Printf("NapCat bridge connecting to %s", cfg.NapCatWSURL)
 	} else if cfg.EnableNapCatBridge {
-		bridge := &napcat.Bridge{
+		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
 			Handler:     handler,
@@ -86,11 +87,20 @@ func main() {
 			Logger:      logger,
 		}
 		go func() {
-			if err := bridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
+			if err := napcatBridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
 				logger.Printf("NapCat reverse bridge stopped: %v", err)
 			}
 		}()
 		logger.Printf("NapCat reverse bridge listening on %s%s", cfg.NapCatReverseAddr, cfg.NapCatReversePath)
+	}
+	if napcatBridge != nil {
+		loginPoller := &auth.LoginPoller{
+			Manager:  authManager,
+			Notifier: napcatBridge,
+			Logger:   logger,
+		}
+		go loginPoller.Run(ctx)
+		logger.Printf("Login poller started")
 	}
 
 	<-ctx.Done()

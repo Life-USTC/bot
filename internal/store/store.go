@@ -39,6 +39,7 @@ type LoginSession struct {
 	ExpiresAt               time.Time
 	IntervalSeconds         int
 	Status                  string
+	Identity                Identity
 }
 
 type Interaction struct {
@@ -88,6 +89,10 @@ func (credentialRow) TableName() string {
 type loginSessionRow struct {
 	ID                      int64 `gorm:"primaryKey"`
 	UserID                  int64 `gorm:"not null;index:idx_login_sessions_user_status"`
+	Platform                string
+	ExternalUserID          string
+	ConversationType        string
+	ConversationID          string
 	DeviceCode              string
 	UserCode                string
 	VerificationURI         string
@@ -279,6 +284,10 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 		}
 		row := loginSessionRow{
 			UserID:                  userID,
+			Platform:                ident.Platform,
+			ExternalUserID:          ident.UserID,
+			ConversationType:        ident.ConversationType,
+			ConversationID:          ident.ConversationID,
 			DeviceCode:              session.DeviceCode,
 			UserCode:                session.UserCode,
 			VerificationURI:         session.VerificationURI,
@@ -317,7 +326,54 @@ func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginS
 		ExpiresAt:               row.ExpiresAt,
 		IntervalSeconds:         row.IntervalSeconds,
 		Status:                  row.Status,
+		Identity: Identity{
+			Platform:         firstNonEmpty(row.Platform, ident.Platform),
+			UserID:           firstNonEmpty(row.ExternalUserID, ident.UserID),
+			ConversationType: row.ConversationType,
+			ConversationID:   row.ConversationID,
+		},
 	}, nil
+}
+
+func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error) {
+	var rows []loginSessionRow
+	err := s.db.WithContext(ctx).
+		Joins("JOIN users ON users.id = login_sessions.user_id").
+		Where("login_sessions.status = ?", "pending").
+		Order("login_sessions.id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]LoginSession, 0, len(rows))
+	for _, row := range rows {
+		ident := Identity{
+			Platform:         firstNonEmpty(row.Platform, ""),
+			UserID:           firstNonEmpty(row.ExternalUserID, ""),
+			ConversationType: row.ConversationType,
+			ConversationID:   row.ConversationID,
+		}
+		if ident.Platform == "" || ident.UserID == "" {
+			var user userRow
+			if err := s.db.WithContext(ctx).First(&user, row.UserID).Error; err != nil {
+				return nil, err
+			}
+			ident.Platform = user.Platform
+			ident.UserID = user.ExternalUserID
+		}
+		sessions = append(sessions, LoginSession{
+			DeviceCode:              row.DeviceCode,
+			UserCode:                row.UserCode,
+			VerificationURI:         row.VerificationURI,
+			VerificationURIComplete: row.VerificationURIComplete,
+			ClientID:                row.ClientID,
+			ExpiresAt:               row.ExpiresAt,
+			IntervalSeconds:         row.IntervalSeconds,
+			Status:                  row.Status,
+			Identity:                ident,
+		})
+	}
+	return sessions, nil
 }
 
 func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode, status string) error {
@@ -328,6 +384,15 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
 		Where("user_id = ? AND device_code = ?", userID, deviceCode).
 		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()}).Error
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {

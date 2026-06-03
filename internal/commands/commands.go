@@ -30,79 +30,69 @@ type Input struct {
 	SuppressLog bool
 }
 
-type Result struct {
-	Reply          string
-	StartLoginPoll bool
-}
-
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
-	result, ok := h.HandleResult(ctx, input)
-	return result.Reply, ok
-}
-
-func (h Handler) HandleResult(ctx context.Context, input Input) (Result, bool) {
 	cmd, ok := h.parse(input.Text)
 	if !ok && isGroup(input.Identity) {
 		cmd, ok = parseGroupBus(input.Text)
 	}
 	if !ok {
-		return Result{}, false
+		return "", false
 	}
 	if isGroup(input.Identity) && cmd.Name != "bus" {
-		return Result{}, false
+		return "", false
 	}
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)
 	}
-	result := Result{}
+	var reply string
 	if cmd.Name == "help" {
-		result.Reply = h.help()
+		reply = h.help()
 		if !input.SuppressLog {
-			h.recordInteraction(ctx, input.Identity, cmd, result.Reply)
+			h.recordInteraction(ctx, input.Identity, cmd, reply)
 		}
-		return result, true
+		return reply, true
 	}
 
 	switch cmd.Name {
 	case "login":
-		result = h.login(ctx, input.Identity, cmd.Args)
+		reply = h.login(ctx, input.Identity, cmd.Args)
 	case "logout":
-		result.Reply = h.logout(ctx, input.Identity)
+		reply = h.logout(ctx, input.Identity)
 	case "me":
-		result.Reply = h.me(ctx, input.Identity)
+		reply = h.me(ctx, input.Identity)
 	case "todo":
-		result.Reply = h.todo(ctx, input.Identity, cmd.Args)
+		reply = h.todo(ctx, input.Identity, cmd.Args)
 	case "homework":
-		result.Reply = h.homework(ctx, input.Identity, cmd.Args)
+		reply = h.homework(ctx, input.Identity, cmd.Args)
 	case "sub", "subs", "subscription":
-		result.Reply = h.subscription(ctx, input.Identity, cmd.Args)
+		reply = h.subscription(ctx, input.Identity, cmd.Args)
 	case "ping":
 		if err := h.Life.Health(ctx); err != nil {
-			result.Reply = "Life @ USTC API unavailable: " + err.Error()
+			reply = "Life @ USTC API unavailable: " + err.Error()
 			break
 		}
-		result.Reply = "Life @ USTC API is reachable."
+		reply = "Life @ USTC API is reachable."
 	case "status":
-		result.Reply = h.status(ctx, input.Identity)
+		reply = h.status(ctx, input.Identity)
 	case "semester":
-		result.Reply = h.currentSemester(ctx)
+		reply = h.currentSemester(ctx)
 	case "course":
-		result.Reply = h.searchCourses(ctx, strings.Join(cmd.Args, " "))
+		reply = h.searchCourses(ctx, strings.Join(cmd.Args, " "))
 	case "section":
-		result.Reply = h.searchSections(ctx, strings.Join(cmd.Args, " "))
+		reply = h.searchSections(ctx, strings.Join(cmd.Args, " "))
 	case "bus":
-		result.Reply = h.bus(ctx, cmd.Args)
+		reply = h.bus(ctx, cmd.Args)
 	case "schedule":
-		result.Reply = h.curriculum(ctx, input.Identity, cmd.Args)
+		reply = h.curriculum(ctx, input.Identity, cmd.Args)
 	case "nextclass":
-		result.Reply = h.nextClass(ctx, input.Identity)
+		reply = h.nextClass(ctx, input.Identity)
 	default:
-		result.Reply = h.help()
+		reply = h.help()
 	}
 	if !input.SuppressLog {
-		h.recordInteraction(ctx, input.Identity, cmd, result.Reply)
+		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}
-	return result, true
+	return reply, true
 }
 
 type parsedCommand struct {
@@ -365,31 +355,31 @@ func (h Handler) help() string {
 	}, "\n")
 }
 
-func (h Handler) login(ctx context.Context, ident store.Identity, args []string) Result {
+func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
 	if h.Auth == nil {
-		return Result{Reply: "Login is not configured."}
+		return "Login is not configured."
 	}
 	if len(args) > 0 && args[0] == "status" {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
 		if err != nil {
-			return Result{Reply: "登录状态查不到：" + friendlyError(err)}
+			return "登录状态查不到：" + friendlyError(err)
 		}
-		return Result{Reply: result.Message}
+		return result.Message
 	}
 	session, err := h.Auth.BeginDeviceLogin(ctx, ident)
 	if err != nil {
-		return Result{Reply: "登录开始失败：" + friendlyError(err)}
+		return "登录开始失败：" + friendlyError(err)
 	}
 	link := session.VerificationURIComplete
 	if link == "" {
 		link = session.VerificationURI
 	}
-	return Result{Reply: strings.Join([]string{
+	return strings.Join([]string{
 		"打开链接登录 Life @ USTC：",
 		link,
 		"验证码：" + session.UserCode,
 		"我会自动检查登录状态，成功后告诉你。",
-	}, "\n"), StartLoginPoll: true}
+	}, "\n")
 }
 
 func (h Handler) logout(ctx context.Context, ident store.Identity) string {
