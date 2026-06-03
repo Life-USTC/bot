@@ -1492,7 +1492,7 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			parts = append(parts, formatBusStop(stop))
 		}
-		return strings.Join(parts, "\t→\t")
+		return strings.Join(parts, " → ")
 	}
 	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + monospaceDigits(item.DepartureTime)
 	if item.Arrival != "" {
@@ -1502,12 +1502,12 @@ func formatBusItem(item busItem) string {
 }
 
 func formatBusStop(stop busStop) string {
-	name := padRightDisplay(stop.Name, busStopNameColumnWidth)
-	timeText := strings.Repeat(" ", busStopTimeColumnWidth)
+	name := padRightDisplayWide(stop.Name, busStopNameColumnWidth)
+	timeText := strings.Repeat("\u3000", busStopTimeWideWidth)
 	if stop.Time != "" {
 		timeText = monospaceDigits(stop.Time)
 	}
-	return name + " " + timeText
+	return name + "\u3000" + timeText
 }
 
 type busRoute struct {
@@ -1663,6 +1663,10 @@ func formatNumberedLine(index int, text string) string {
 }
 
 func padRightDisplay(text string, width int) string {
+	return padRightDisplayWith(text, width, " ")
+}
+
+func padRightDisplayWith(text string, width int, pad string) string {
 	if text == "" {
 		return ""
 	}
@@ -1670,7 +1674,18 @@ func padRightDisplay(text string, width int) string {
 	if padding <= 0 {
 		return text
 	}
-	return text + strings.Repeat(" ", padding)
+	return text + strings.Repeat(pad, padding)
+}
+
+func padRightDisplayWide(text string, width int) string {
+	if text == "" {
+		return ""
+	}
+	padding := width - displayWidth(text)/2
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat("\u3000", padding)
 }
 
 func displayWidth(text string) int {
@@ -1815,8 +1830,8 @@ const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
-const busStopNameColumnWidth = 6
-const busStopTimeColumnWidth = 5
+const busStopNameColumnWidth = 3
+const busStopTimeWideWidth = 3
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
