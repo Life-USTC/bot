@@ -28,6 +28,11 @@ type Bridge struct {
 	Agent       *agent.Service
 	HTTPClient  *http.Client
 	Logger      *log.Logger
+
+	reverseMu      sync.Mutex
+	reverseConn    *websocket.Conn
+	reverseWriteMu *sync.Mutex
+	reverseSeq     uint64
 }
 
 type messageEvent struct {
@@ -117,6 +122,8 @@ func (b *Bridge) RunReverse(ctx context.Context, addr, path string) error {
 func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	defer func() { _ = conn.Close() }()
 	writeMu := &sync.Mutex{}
+	connID := b.setReverseConn(conn, writeMu)
+	defer b.clearReverseConn(connID)
 	for {
 		var event messageEvent
 		if err := conn.ReadJSON(&event); err != nil {
@@ -254,7 +261,39 @@ func (b *Bridge) SendLoginMessage(ctx context.Context, ident store.Identity, mes
 		groupID, _ := strconv.ParseInt(ident.ConversationID, 10, 64)
 		event.GroupID = groupID
 	}
+	if conn, writeMu := b.activeReverseConn(); conn != nil {
+		if err := sendReverseReply(conn, writeMu, event, message); err == nil {
+			b.recordOutbound(ctx, event, message, "sent", nil)
+			return nil
+		} else if b.Logger != nil {
+			b.Logger.Printf("reverse websocket login notification failed: %v", err)
+		}
+	}
 	return b.Send(ctx, event, message)
+}
+
+func (b *Bridge) setReverseConn(conn *websocket.Conn, writeMu *sync.Mutex) uint64 {
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	b.reverseSeq++
+	b.reverseConn = conn
+	b.reverseWriteMu = writeMu
+	return b.reverseSeq
+}
+
+func (b *Bridge) clearReverseConn(connID uint64) {
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	if b.reverseSeq == connID {
+		b.reverseConn = nil
+		b.reverseWriteMu = nil
+	}
+}
+
+func (b *Bridge) activeReverseConn() (*websocket.Conn, *sync.Mutex) {
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	return b.reverseConn, b.reverseWriteMu
 }
 
 var echoCounter uint64

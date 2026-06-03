@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,14 +13,69 @@ import (
 )
 
 type fakeNotifier struct {
-	ident   store.Identity
-	message string
+	ident     store.Identity
+	message   string
+	failCount int
 }
 
 func (n *fakeNotifier) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
+	if n.failCount > 0 {
+		n.failCount--
+		return fmt.Errorf("send failed")
+	}
 	n.ident = ident
 	n.message = message
 	return nil
+}
+
+func TestLoginPollerRetriesFailedCompletionNotification(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkLoginSession(context.Background(), ident, "device", "notify_failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	notifier := &fakeNotifier{failCount: 1}
+	poller := LoginPoller{
+		Manager:  &Manager{Store: s},
+		Notifier: notifier,
+	}
+	poller.tick(context.Background())
+	if notifier.message != "" {
+		t.Fatalf("message = %q", notifier.message)
+	}
+	sessions, err := s.PendingLoginSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Status != "notify_failed" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+
+	poller.tick(context.Background())
+	if notifier.message != "登录成功。" {
+		t.Fatalf("message = %q", notifier.message)
+	}
+	sessions, err = s.PendingLoginSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
 }
 
 func TestLoginPollerSendsCompletionFromPendingSession(t *testing.T) {

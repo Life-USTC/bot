@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -170,5 +171,50 @@ func TestSendLoginMessageUsesIdentity(t *testing.T) {
 	}
 	if gotBody["user_id"].(float64) != 42 || gotBody["message"] != "登录成功。" {
 		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	ready := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		bridge := &Bridge{}
+		connID := bridge.setReverseConn(conn, &sync.Mutex{})
+		defer bridge.clearReverseConn(connID)
+		if err := bridge.SendLoginMessage(context.Background(), store.Identity{
+			UserID:           "42",
+			ConversationType: "private",
+			ConversationID:   "42",
+		}, "登录成功。"); err != nil {
+			t.Error(err)
+			return
+		}
+		ready <- struct{}{}
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[len("http"):], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var frame map[string]any
+	if err := conn.ReadJSON(&frame); err != nil {
+		t.Fatal(err)
+	}
+	<-ready
+	if frame["action"] != "send_private_msg" {
+		t.Fatalf("action = %v", frame["action"])
+	}
+	params := frame["params"].(map[string]any)
+	if params["user_id"].(float64) != 42 || params["message"] != "登录成功。" {
+		t.Fatalf("params = %#v", params)
 	}
 }

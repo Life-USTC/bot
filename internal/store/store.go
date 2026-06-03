@@ -339,7 +339,7 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	var rows []loginSessionRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = login_sessions.user_id").
-		Where("login_sessions.status = ?", "pending").
+		Where("login_sessions.status IN ?", []string{"pending", "notify_failed"}).
 		Order("login_sessions.id ASC").
 		Find(&rows).Error
 	if err != nil {
