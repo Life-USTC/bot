@@ -489,7 +489,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
 			break
 		}
-		lines = append(lines, monospaceDigits(fmt.Sprintf("%d. %s", i+1, formatTodo(todo))))
+		lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -739,7 +739,7 @@ func formatHomeworkList(homeworks []map[string]any) string {
 				lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(homeworks)-shown)))
 				return strings.Join(lines, "\n")
 			}
-			lines = append(lines, monospaceDigits(fmt.Sprintf("%d. %s", index, formatHomework(homework))))
+			lines = append(lines, formatNumberedLine(index, formatHomework(homework)))
 			index++
 			shown++
 		}
@@ -1231,15 +1231,17 @@ func formatSchedule(schedule map[string]any) string {
 	if place == "" {
 		place = nestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 	}
-	line := padRightDisplay(monospaceASCII(strings.TrimSpace(place)), 8)
-	if line != "" {
-		line += "  "
+	columns := []string{}
+	if strings.TrimSpace(place) != "" {
+		columns = append(columns, padRightDisplay(monospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
 	}
-	line += monospaceDigits(timeRange)
+	if timeRange != "" {
+		columns = append(columns, padRightDisplay(monospaceDigits(timeRange), scheduleTimeColumnWidth))
+	}
 	if course != "" {
-		line += "  " + course
+		columns = append(columns, course)
 	}
-	return strings.TrimRight(line, " ")
+	return strings.TrimRight(strings.Join(columns, "\t"), " ")
 }
 
 func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
@@ -1490,7 +1492,7 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			part := stop.Name
 			if stop.Time != "" {
-				part += " " + monospaceDigits(stop.Time)
+				part = padRightDisplay(part, busStopColumnWidth) + "\t" + monospaceDigits(stop.Time)
 			}
 			parts = append(parts, part)
 		}
@@ -1647,6 +1649,14 @@ func monospaceASCII(text string) string {
 	}, text)
 }
 
+func formatNumberedLine(index int, text string) string {
+	prefix := padRightDisplay(monospaceDigits(fmt.Sprintf("%d.", index)), numberedColumnWidth)
+	if text == "" {
+		return prefix
+	}
+	return prefix + "\t" + monospaceDigits(text)
+}
+
 func padRightDisplay(text string, width int) string {
 	if text == "" {
 		return ""
@@ -1797,6 +1807,10 @@ func paddedCourseCode(code string) string {
 }
 
 const courseCodeColumnWidth = 14
+const numberedColumnWidth = 3
+const schedulePlaceColumnWidth = 8
+const scheduleTimeColumnWidth = 11
+const busStopColumnWidth = 6
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {

@@ -90,7 +90,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区 𝟸𝟹:𝟻𝟿 → 北区 → 西区 𝟸𝟹:𝟻𝟿") {
+	if !strings.Contains(reply, "东区  \t𝟸𝟹:𝟻𝟿 → 北区 → 西区  \t𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -205,6 +205,13 @@ func TestFormatTodoDueDateFirst(t *testing.T) {
 	}
 }
 
+func TestFormatNumberedLinePadsBeforeTab(t *testing.T) {
+	line := formatNumberedLine(1, "截止 05-14 23:55 写报告")
+	if line != "𝟷. \t截止 𝟶𝟻-𝟷𝟺 𝟸𝟹:𝟻𝟻 写报告" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
 func TestHandleHomeworkListAndDone(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -276,7 +283,7 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "西区 𝟹𝙰𝟸𝟶𝟺  𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻  数据库系统") {
+	if !strings.Contains(reply, "西区 𝟹𝙰𝟸𝟶𝟺\t𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻\t数据库系统") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -429,7 +436,7 @@ func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 			"course": map[string]any{"namePrimary": "随机过程理论"},
 		},
 	})
-	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻   𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻  随机过程理论" {
+	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻 \t𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻\t随机过程理论" {
 		t.Fatalf("line = %q", line)
 	}
 }
@@ -589,7 +596,7 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByDepartureCampus(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区 𝟶𝟿:𝟹𝟶 → 北区 → 西区 𝟶𝟿:𝟺𝟻\n\n西区 𝟶𝟿:𝟶𝟻") {
+	if !strings.Contains(got, "东区  \t𝟶𝟿:𝟹𝟶 → 北区 → 西区  \t𝟶𝟿:𝟺𝟻\n\n西区  \t𝟶𝟿:𝟶𝟻") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
