@@ -163,13 +163,13 @@ func TestSendLoginMessageUsesIdentity(t *testing.T) {
 		UserID:           "42",
 		ConversationType: "private",
 		ConversationID:   "42",
-	}, "登录成功。"); err != nil {
+	}, "登录好了，可以直接查待办、作业、课表了。"); err != nil {
 		t.Fatal(err)
 	}
 	if gotPath != "/send_private_msg" {
 		t.Fatalf("path = %q", gotPath)
 	}
-	if gotBody["user_id"].(float64) != 42 || gotBody["message"] != "登录成功。" {
+	if gotBody["user_id"].(float64) != 42 || gotBody["message"] != "登录好了，可以直接查待办、作业、课表了。" {
 		t.Fatalf("body = %#v", gotBody)
 	}
 }
@@ -191,7 +191,7 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 			UserID:           "42",
 			ConversationType: "private",
 			ConversationID:   "42",
-		}, "登录成功。"); err != nil {
+		}, "登录好了，可以直接查待办、作业、课表了。"); err != nil {
 			t.Error(err)
 			return
 		}
@@ -214,7 +214,7 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if params["user_id"].(float64) != 42 || params["message"] != "登录成功。" {
+	if params["user_id"].(float64) != 42 || params["message"] != "登录好了，可以直接查待办、作业、课表了。" {
 		t.Fatalf("params = %#v", params)
 	}
 }

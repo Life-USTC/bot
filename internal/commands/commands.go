@@ -357,7 +357,7 @@ func (h Handler) help() string {
 
 func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
 	if h.Auth == nil {
-		return "Login is not configured."
+		return "登录还没配置好。"
 	}
 	if len(args) > 0 && args[0] == "status" {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
@@ -375,16 +375,17 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 		link = session.VerificationURI
 	}
 	return strings.Join([]string{
-		"打开链接登录 Life @ USTC：",
+		"点开登录 Life @ USTC：",
 		link,
 		"验证码：" + session.UserCode,
-		"我会自动检查登录状态，成功后告诉你。",
+		"登录完成后不用回消息，我会自动告诉你。",
+		"如果想手动查，发：登录 状态",
 	}, "\n")
 }
 
 func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 	if h.Auth == nil {
-		return "Login is not configured."
+		return "登录还没配置好。"
 	}
 	if err := h.Auth.Logout(ctx, ident); err != nil {
 		return "退出失败：" + friendlyError(err)
@@ -1268,7 +1269,7 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 }
 
 func (h Handler) loginRequired() string {
-	return "这个需要先登录。发：登录"
+	return "这个要先登录。发：登录"
 }
 
 func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd parsedCommand) {

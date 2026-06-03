@@ -104,11 +104,11 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{}, err
 	}
 	if session == nil {
-		return PollResult{Message: "No pending login. Use /life login first."}, nil
+		return PollResult{Message: "现在没有正在进行的登录。发：登录"}, nil
 	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "Login code expired. Use /life login to start again."}, nil
+		return PollResult{Message: "验证码过期了。重新发：登录"}, nil
 	}
 	meta, err := m.discover(ctx)
 	if err != nil {
@@ -134,7 +134,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 			return PollResult{}, err
 		}
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
-		return PollResult{Authorized: true, Message: "Login complete."}, nil
+		return PollResult{Authorized: true, Message: "登录好了。"}, nil
 	}
 	var errResp struct {
 		Error string `json:"error"`
@@ -142,15 +142,15 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	_ = json.Unmarshal(body, &errResp)
 	switch errResp.Error {
 	case "authorization_pending":
-		return PollResult{Pending: true, Message: "Still waiting for authorization."}, nil
+		return PollResult{Pending: true, Message: "还在等你确认登录。"}, nil
 	case "slow_down":
-		return PollResult{SlowDown: true, Message: "Server asked us to slow down. Try again in a few seconds."}, nil
+		return PollResult{SlowDown: true, Message: "服务器让我们慢一点，我会继续等。"}, nil
 	case "expired_token":
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "Login code expired. Use /life login to start again."}, nil
+		return PollResult{Message: "验证码过期了。重新发：登录"}, nil
 	case "access_denied":
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
-		return PollResult{Message: "Login was denied."}, nil
+		return PollResult{Message: "登录被取消了。要重试就发：登录"}, nil
 	default:
 		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, string(body))
 	}
