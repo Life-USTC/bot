@@ -601,6 +601,19 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 }
 
+func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
+	items := []busItem{
+		{DepartureCampus: "东区", Stops: []busStop{{Name: "东区", Time: "09:00"}}},
+		{DepartureCampus: "西区", Stops: []busStop{{Name: "西区", Time: "09:05"}}},
+	}
+
+	lines := formatBusItemsByDepartureCampus(items, 0)
+	got := strings.Join(lines, "\n")
+	if !strings.Contains(got, "东区") || !strings.Contains(got, "西区") {
+		t.Fatalf("formatted lines = %q", got)
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",

@@ -1367,7 +1367,7 @@ func (h Handler) bus(ctx context.Context, args []string) string {
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
-	return strings.Join(formatBusItemsByDepartureCampus(items, 8), "\n")
+	return strings.Join(formatBusItemsByDepartureCampus(items, 0), "\n")
 }
 
 type busItem struct {
@@ -1468,7 +1468,7 @@ func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
 	lines := make([]string, 0, len(items)+4)
 	lastCampus := ""
 	for i, item := range items {
-		if i >= limit {
+		if limit > 0 && i >= limit {
 			break
 		}
 		campus := item.DepartureCampus
