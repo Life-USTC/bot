@@ -90,7 +90,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区\u3000𝟸𝟹:𝟻𝟿\u3000→\u3000北区\u3000\u3000\u3000\u3000→\u3000西区\u3000𝟸𝟹:𝟻𝟿") {
+	if !strings.Contains(reply, "东区\u3000\u3000𝟸𝟹:𝟻𝟿 → 北区\u3000\u3000\u3000\u3000\u3000 → 西区\u3000\u3000𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -241,7 +241,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶 · 数据库系统 · Problem Set 𝟷") {
+	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "近期：") || !strings.Contains(reply, "截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶 · 数据库系统 · Problem Set 𝟷") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -596,7 +596,7 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByDepartureCampus(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区\u3000𝟶𝟿:𝟹𝟶\u3000→\u3000北区\u3000\u3000\u3000\u3000→\u3000西区\u3000𝟶𝟿:𝟺𝟻\n\n西区\u3000𝟶𝟿:𝟶𝟻") {
+	if !strings.Contains(got, "东区\u3000\u3000𝟶𝟿:𝟹𝟶 → 北区\u3000\u3000\u3000\u3000\u3000 → 西区\u3000\u3000𝟶𝟿:𝟺𝟻\n\n西区\u3000\u3000𝟶𝟿:𝟶𝟻") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
