@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,18 @@ type Bridge struct {
 	Agent       *agent.Service
 	HTTPClient  *http.Client
 	Logger      *log.Logger
+
+	LoginPollInterval time.Duration
+	LoginPollTimeout  time.Duration
+
+	loginPollsMu sync.Mutex
+	loginPolls   map[string]loginPoll
+	loginPollSeq uint64
+}
+
+type loginPoll struct {
+	id     uint64
+	cancel context.CancelFunc
 }
 
 type messageEvent struct {
@@ -61,10 +74,11 @@ func (b *Bridge) Run(ctx context.Context) error {
 		if event.PostType != "message" {
 			continue
 		}
-		reply, ok := b.Handler.Handle(ctx, commands.Input{
+		result, ok := b.Handler.HandleResult(ctx, commands.Input{
 			Text:     event.RawMessage,
 			Identity: event.identity(),
 		})
+		reply := result.Reply
 		if !ok {
 			reply, ok = b.handleAgent(ctx, event)
 		}
@@ -76,6 +90,11 @@ func (b *Bridge) Run(ctx context.Context) error {
 			if b.Logger != nil {
 				b.Logger.Printf("send reply failed: %v", err)
 			}
+		}
+		if result.StartLoginPoll {
+			b.startLoginPoll(ctx, event, func(ctx context.Context, event messageEvent, message string) error {
+				return b.Send(ctx, event, message)
+			})
 		}
 	}
 }
@@ -114,6 +133,7 @@ func (b *Bridge) RunReverse(ctx context.Context, addr, path string) error {
 
 func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	defer func() { _ = conn.Close() }()
+	writeMu := &sync.Mutex{}
 	for {
 		var event messageEvent
 		if err := conn.ReadJSON(&event); err != nil {
@@ -129,10 +149,11 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			b.Logger.Printf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
 				event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
 		}
-		reply, ok := b.Handler.Handle(ctx, commands.Input{
+		result, ok := b.Handler.HandleResult(ctx, commands.Input{
 			Text:     event.RawMessage,
 			Identity: event.identity(),
 		})
+		reply := result.Reply
 		if !ok {
 			reply, ok = b.handleAgent(ctx, event)
 		}
@@ -143,7 +164,7 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			}
 			continue
 		}
-		if err := sendReverseReply(conn, event, reply); err != nil {
+		if err := sendReverseReply(conn, writeMu, event, reply); err != nil {
 			b.recordOutbound(ctx, event, reply, "failed", err)
 			if b.Logger != nil {
 				b.Logger.Printf("reverse websocket send failed: %v", err)
@@ -153,6 +174,17 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			if b.Logger != nil {
 				b.Logger.Printf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
 			}
+		}
+		if result.StartLoginPoll {
+			b.startLoginPoll(ctx, event, func(ctx context.Context, event messageEvent, message string) error {
+				err := sendReverseReply(conn, writeMu, event, message)
+				if err != nil {
+					b.recordOutbound(ctx, event, message, "failed", err)
+					return err
+				}
+				b.recordOutbound(ctx, event, message, "sent", nil)
+				return nil
+			})
 		}
 	}
 }
@@ -243,7 +275,7 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 
 var echoCounter uint64
 
-func sendReverseReply(conn *websocket.Conn, event messageEvent, message string) error {
+func sendReverseReply(conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, message string) error {
 	action := "send_private_msg"
 	params := map[string]any{
 		"user_id": event.UserID,
@@ -261,7 +293,90 @@ func sendReverseReply(conn *websocket.Conn, event messageEvent, message string) 
 		"params": params,
 		"echo":   fmt.Sprintf("life-ustc-%d", atomic.AddUint64(&echoCounter, 1)),
 	}
+	if writeMu != nil {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+	}
 	return conn.WriteJSON(frame)
+}
+
+func (b *Bridge) startLoginPoll(ctx context.Context, event messageEvent, send func(context.Context, messageEvent, string) error) {
+	if b.Handler.Auth == nil {
+		return
+	}
+	ident := event.identity()
+	key := identityKey(ident)
+	pollCtx, cancel := context.WithCancel(ctx)
+	b.loginPollsMu.Lock()
+	if b.loginPolls == nil {
+		b.loginPolls = make(map[string]loginPoll)
+	}
+	if existing := b.loginPolls[key]; existing.cancel != nil {
+		existing.cancel()
+	}
+	pollID := b.loginPollSeq + 1
+	b.loginPollSeq = pollID
+	b.loginPolls[key] = loginPoll{id: pollID, cancel: cancel}
+	b.loginPollsMu.Unlock()
+
+	go func() {
+		defer b.clearLoginPoll(key, pollID)
+		interval := b.LoginPollInterval
+		if interval <= 0 {
+			interval = 10 * time.Second
+		}
+		timeout := b.LoginPollTimeout
+		if timeout <= 0 {
+			timeout = 5 * time.Minute
+		}
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pollCtx.Done():
+				return
+			case <-timer.C:
+				return
+			case <-ticker.C:
+				result, err := b.Handler.Auth.PollDeviceLogin(pollCtx, ident)
+				if err != nil {
+					if b.Logger != nil {
+						b.Logger.Printf("login poll failed: %v", err)
+					}
+					continue
+				}
+				if result.Pending || result.SlowDown {
+					continue
+				}
+				if result.Authorized {
+					if err := send(pollCtx, event, "登录成功。"); err != nil && b.Logger != nil {
+						b.Logger.Printf("login completion notify failed: %v", err)
+					}
+					return
+				}
+				if result.Message != "" {
+					if err := send(pollCtx, event, result.Message); err != nil && b.Logger != nil {
+						b.Logger.Printf("login status notify failed: %v", err)
+					}
+				}
+				return
+			}
+		}
+	}()
+}
+
+func (b *Bridge) clearLoginPoll(key string, pollID uint64) {
+	b.loginPollsMu.Lock()
+	defer b.loginPollsMu.Unlock()
+	if b.loginPolls[key].id == pollID {
+		delete(b.loginPolls, key)
+	}
+}
+
+func identityKey(ident store.Identity) string {
+	return ident.Platform + "\x00" + ident.UserID + "\x00" + ident.ConversationType + "\x00" + ident.ConversationID
 }
 
 func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]any) error {

@@ -7,11 +7,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 func TestSendGroupMessage(t *testing.T) {
@@ -76,7 +79,7 @@ func TestSendReverseReply(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	err = sendReverseReply(conn, messageEvent{MessageType: "private", UserID: 42}, "pong")
+	err = sendReverseReply(conn, nil, messageEvent{MessageType: "private", UserID: 42}, "pong")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,5 +144,70 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
+	}
+}
+
+func TestLoginPollSendsCompletionMessage(t *testing.T) {
+	var serverURL string
+	polls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		polls++
+		if polls == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "access",
+			"refresh_token": "refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"scope":         "openid profile email offline_access",
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode:      "device",
+		ClientID:        "client",
+		ExpiresAt:       time.Now().Add(time.Minute),
+		IntervalSeconds: 10,
+		Status:          "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	bridge := &Bridge{
+		Handler:           commands.Handler{Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}},
+		LoginPollInterval: 10 * time.Millisecond,
+		LoginPollTimeout:  200 * time.Millisecond,
+	}
+	sent := make(chan string, 1)
+	bridge.startLoginPoll(context.Background(), messageEvent{MessageType: "private", UserID: 42}, func(ctx context.Context, event messageEvent, message string) error {
+		sent <- message
+		return nil
+	})
+
+	select {
+	case got := <-sent:
+		if got != "登录成功。" {
+			t.Fatalf("message = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for login completion message")
 	}
 }

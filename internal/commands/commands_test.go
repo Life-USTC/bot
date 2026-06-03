@@ -155,6 +155,75 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
+func TestLoginStartsAutomaticPoll(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"device_authorization_endpoint": serverURL + "/device",
+			"token_endpoint":                serverURL + "/token",
+			"registration_endpoint":         serverURL + "/register",
+		})
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
+	})
+	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"device_code":               "device",
+			"user_code":                 "USER-CODE",
+			"verification_uri":          serverURL + "/verify",
+			"verification_uri_complete": serverURL + "/verify?user_code=USER-CODE",
+			"expires_in":                300,
+			"interval":                  10,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	handler := Handler{
+		Life:   life.NewClient(server.URL, server.Client()),
+		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
+		Store:  s,
+		Prefix: "/life",
+	}
+	result, ok := handler.HandleResult(ctx, Input{Text: "登录", Identity: ident})
+	if !ok {
+		t.Fatal("login was not handled")
+	}
+	if !result.StartLoginPoll {
+		t.Fatalf("result = %#v", result)
+	}
+	if !strings.Contains(result.Reply, "我会自动检查登录状态") {
+		t.Fatalf("reply = %q", result.Reply)
+	}
+}
+
+func TestLoginStatusDoesNotStartAutomaticPoll(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	handler := Handler{Auth: &auth.Manager{Store: s}, Prefix: "/life"}
+	result, ok := handler.HandleResult(context.Background(), Input{Text: "登录 状态", Identity: testIdentity()})
+	if !ok {
+		t.Fatal("login status was not handled")
+	}
+	if result.StartLoginPoll {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestHandleTodoDoneByIndex(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
