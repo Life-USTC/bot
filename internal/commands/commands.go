@@ -1492,7 +1492,7 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			parts = append(parts, formatBusStop(stop))
 		}
-		return strings.Join(parts, " → ")
+		return strings.Join(parts, "\u3000→\u3000")
 	}
 	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + monospaceDigits(item.DepartureTime)
 	if item.Arrival != "" {
@@ -1507,7 +1507,7 @@ func formatBusStop(stop busStop) string {
 	if stop.Time != "" {
 		timeText = monospaceDigits(stop.Time)
 	}
-	return name + "\u3000" + timeText
+	return name + timeText
 }
 
 type busRoute struct {
@@ -1831,7 +1831,7 @@ const numberedColumnWidth = 3
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
-const busStopTimeWideWidth = 3
+const busStopTimeWideWidth = 2
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
