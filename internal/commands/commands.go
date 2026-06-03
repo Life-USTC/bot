@@ -1492,7 +1492,7 @@ func formatBusItem(item busItem) string {
 		for _, stop := range item.Stops {
 			part := stop.Name
 			if stop.Time != "" {
-				part = padRightDisplay(part, busStopColumnWidth) + "\t" + monospaceDigits(stop.Time)
+				part += " " + monospaceDigits(stop.Time)
 			}
 			parts = append(parts, part)
 		}
@@ -1810,7 +1810,6 @@ const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
-const busStopColumnWidth = 6
 
 func firstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
