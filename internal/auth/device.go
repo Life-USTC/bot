@@ -104,11 +104,11 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{}, err
 	}
 	if session == nil {
-		return PollResult{Message: "现在没有正在进行的登录。发：登录"}, nil
+		return PollResult{Message: "暂无进行中的登录。发送：登录"}, nil
 	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "验证码过期了。重新发：登录"}, nil
+		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	}
 	meta, err := m.discover(ctx)
 	if err != nil {
@@ -134,7 +134,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 			return PollResult{}, err
 		}
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
-		return PollResult{Authorized: true, Message: "登录好了。"}, nil
+		return PollResult{Authorized: true, Message: "登录完成。"}, nil
 	}
 	var errResp struct {
 		Error string `json:"error"`
@@ -142,15 +142,15 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	_ = json.Unmarshal(body, &errResp)
 	switch errResp.Error {
 	case "authorization_pending":
-		return PollResult{Pending: true, Message: "还在等你确认登录。"}, nil
+		return PollResult{Pending: true, Message: "等待确认登录。"}, nil
 	case "slow_down":
-		return PollResult{SlowDown: true, Message: "服务器让我们慢一点，我会继续等。"}, nil
+		return PollResult{SlowDown: true, Message: "轮询频率受限，稍后继续检查。"}, nil
 	case "expired_token":
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "验证码过期了。重新发：登录"}, nil
+		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	case "access_denied":
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
-		return PollResult{Message: "登录被取消了。要重试就发：登录"}, nil
+		return PollResult{Message: "登录已取消。发送：登录"}, nil
 	default:
 		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, string(body))
 	}

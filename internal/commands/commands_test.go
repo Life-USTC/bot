@@ -200,7 +200,7 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	if !ok {
 		t.Fatal("login was not handled")
 	}
-	if !strings.Contains(reply, "登录完成后不用回消息") {
+	if !strings.Contains(reply, "系统将自动检查登录状态") {
 		t.Fatalf("reply = %q", reply)
 	}
 }

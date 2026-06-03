@@ -66,7 +66,7 @@ func TestLoginPollerRetriesFailedCompletionNotification(t *testing.T) {
 	}
 
 	poller.tick(context.Background())
-	if notifier.message != "登录好了，可以直接查待办、作业、课表了。" {
+	if notifier.message != "登录完成。" {
 		t.Fatalf("message = %q", notifier.message)
 	}
 	sessions, err = s.PendingLoginSessions(context.Background())
@@ -123,7 +123,7 @@ func TestLoginPollerSendsCompletionFromPendingSession(t *testing.T) {
 	}
 	poller.tick(context.Background())
 
-	if notifier.message != "登录好了，可以直接查待办、作业、课表了。" {
+	if notifier.message != "登录完成。" {
 		t.Fatalf("message = %q", notifier.message)
 	}
 	if notifier.ident != ident {

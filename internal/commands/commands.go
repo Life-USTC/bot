@@ -357,7 +357,7 @@ func (h Handler) help() string {
 
 func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
 	if h.Auth == nil {
-		return "登录还没配置好。"
+		return "登录未配置。"
 	}
 	if len(args) > 0 && args[0] == "status" {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
@@ -375,17 +375,17 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 		link = session.VerificationURI
 	}
 	return strings.Join([]string{
-		"点开登录 Life @ USTC：",
+		"Life @ USTC 登录：",
 		link,
 		"验证码：" + session.UserCode,
-		"登录完成后不用回消息，我会自动告诉你。",
-		"如果想手动查，发：登录 状态",
+		"系统将自动检查登录状态。",
+		"手动查询：登录 状态",
 	}, "\n")
 }
 
 func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 	if h.Auth == nil {
-		return "登录还没配置好。"
+		return "登录未配置。"
 	}
 	if err := h.Auth.Logout(ctx, ident); err != nil {
 		return "退出失败：" + friendlyError(err)
@@ -1269,7 +1269,7 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 }
 
 func (h Handler) loginRequired() string {
-	return "这个要先登录。发：登录"
+	return "需要先登录。发送：登录"
 }
 
 func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd parsedCommand) {
@@ -1948,7 +1948,7 @@ func nonEmpty(values []string) []string {
 func friendlyError(err error) string {
 	text := err.Error()
 	if strings.Contains(text, " returned 401:") || strings.Contains(strings.ToLower(text), "unauthorized") {
-		return "登录过期了，发：登录"
+		return "登录已过期。发送：登录"
 	}
 	if strings.Contains(strings.ToLower(text), "timeout") {
 		return "网络超时，等会儿再试"

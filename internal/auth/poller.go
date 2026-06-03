@@ -80,7 +80,7 @@ func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, 
 	if ident.ConversationType == "" || ident.ConversationID == "" {
 		return
 	}
-	if err := p.Notifier.SendLoginMessage(ctx, ident, "登录好了，可以直接查待办、作业、课表了。"); err != nil {
+	if err := p.Notifier.SendLoginMessage(ctx, ident, "登录完成。"); err != nil {
 		p.logf("send login notification failed: %v", err)
 		if deviceCode != "" {
 			_ = p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, "notify_failed")
