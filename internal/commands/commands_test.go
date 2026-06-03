@@ -28,7 +28,7 @@ func TestHandleCourseSearch(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "MATH1001 Calculus") {
+	if !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷 Calculus") {
 		t.Fatalf("unexpected reply %q", reply)
 	}
 }
@@ -47,7 +47,7 @@ func TestHandleCasualCourseSearch(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "MATH1006 数学分析") {
+	if !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟼 数学分析") {
 		t.Fatalf("unexpected reply %q", reply)
 	}
 }
@@ -348,7 +348,7 @@ func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	for _, want := range []string{"日程订阅：", "2026年春季学期：", "2025年秋季学期：", "- CONT5103P.01 随机过程理论", "- MATH1001.01 数学分析"} {
+	for _, want := range []string{"日程订阅：", "2026年春季学期：", "2025年秋季学期：", "- 𝙲𝙾𝙽𝚃𝟻𝟷𝟶𝟹𝙿.𝟶𝟷 随机过程理论", "- 𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷 数学分析"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
@@ -413,7 +413,7 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	if strings.Join(intStrings(replacedIDs), ",") != "101,202" {
 		t.Fatalf("sectionIds = %#v", replacedIDs)
 	}
-	for _, want := range []string{"已订阅 𝟸 个教学班（新增 𝟷 个，已存在 𝟷 个）。", "2026年春季学期", "CONT6104P.01 组合数学", "BAD000.01"} {
+	for _, want := range []string{"已订阅 𝟸 个教学班（新增 𝟷 个，已存在 𝟷 个）。", "2026年春季学期", "𝙲𝙾𝙽𝚃𝟼𝟷𝟶𝟺𝙿.𝟶𝟷 组合数学", "BAD000.01"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}

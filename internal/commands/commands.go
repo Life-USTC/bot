@@ -1769,7 +1769,7 @@ func busTime(value string, minutes int) string {
 }
 
 func formatCourse(course map[string]any) string {
-	code := firstString(course, "code")
+	code := monospaceASCII(firstString(course, "code"))
 	name := firstString(course, "namePrimary", "nameCn", "name")
 	if code == "" {
 		return "- " + name
@@ -1778,7 +1778,7 @@ func formatCourse(course map[string]any) string {
 }
 
 func formatSection(section map[string]any) string {
-	code := firstString(section, "code")
+	code := monospaceASCII(firstString(section, "code"))
 	course := nestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := nestedString(section, "semester", "name")
 	parts := []string{code, course, semester}
