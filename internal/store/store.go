@@ -649,6 +649,9 @@ func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (NotificationSettings, error) {
+	if err := validateIdentity(ident); err != nil {
+		return NotificationSettings{}, err
+	}
 	ident = normalizeIdentity(ident)
 	var row notificationSettingRow
 	err := s.db.WithContext(ctx).

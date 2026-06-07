@@ -945,6 +945,28 @@ func TestNotificationSettingsTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestNotificationSettingsRejectsIncompleteIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	tests := []Identity{
+		{},
+		{Platform: "napcat"},
+		{UserID: "42"},
+		{Platform: "   ", UserID: "42"},
+		{Platform: "napcat", UserID: "   "},
+	}
+	for _, ident := range tests {
+		_, err := s.NotificationSettings(context.Background(), ident)
+		if err == nil || !strings.Contains(err.Error(), "identity") {
+			t.Fatalf("NotificationSettings(%#v) error = %v", ident, err)
+		}
+	}
+}
+
 func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
