@@ -442,6 +442,9 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {
+	if err := validateIdentity(ident); err != nil {
+		return err
+	}
 	row := conversationStateRow{
 		Platform:         ident.Platform,
 		ConversationType: ident.ConversationType,
@@ -455,6 +458,9 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 }
 
 func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interaction Interaction) error {
+	if err := validateIdentity(ident); err != nil {
+		return err
+	}
 	row := interactionRow{
 		Platform:         ident.Platform,
 		ConversationType: ident.ConversationType,

@@ -29,6 +29,32 @@ func TestEnsureUserRejectsIncompleteIdentity(t *testing.T) {
 	}
 }
 
+func TestRecordConversationStateRejectsIncompleteIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	err = s.RecordConversationState(context.Background(), Identity{}, "todo", "pending")
+	if err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("RecordConversationState error = %v", err)
+	}
+}
+
+func TestRecordInteractionRejectsIncompleteIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	err = s.RecordInteraction(context.Background(), Identity{}, Interaction{RawText: "hello"})
+	if err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("RecordInteraction error = %v", err)
+	}
+}
+
 func TestCredentialAndConversationStatePersist(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
