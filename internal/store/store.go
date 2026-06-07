@@ -622,6 +622,10 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 	if err != nil {
 		return err
 	}
+	settings, err = normalizeNotificationSettingsForSave(settings)
+	if err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	row := notificationSettingRow{
 		UserID:           userID,
@@ -645,6 +649,23 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 			"updated_at",
 		}),
 	}).Create(&row).Error
+}
+
+func normalizeNotificationSettingsForSave(settings NotificationSettings) (NotificationSettings, error) {
+	settings.Identity.Platform = strings.TrimSpace(settings.Identity.Platform)
+	settings.Identity.UserID = strings.TrimSpace(settings.Identity.UserID)
+	settings.Identity.ConversationType = strings.TrimSpace(settings.Identity.ConversationType)
+	settings.Identity.ConversationID = strings.TrimSpace(settings.Identity.ConversationID)
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+		return settings, nil
+	}
+	if settings.Identity.ConversationType == "" {
+		return NotificationSettings{}, errors.New("notification settings conversation type is empty")
+	}
+	if settings.Identity.ConversationID == "" {
+		return NotificationSettings{}, errors.New("notification settings conversation id is empty")
+	}
+	return settings, nil
 }
 
 func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]NotificationSettings, error) {

@@ -620,6 +620,66 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	}
 }
 
+func TestSaveNotificationSettingsTrimsConversationIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
+		Identity: Identity{
+			Platform:         " napcat ",
+			UserID:           " 42 ",
+			ConversationType: " private ",
+			ConversationID:   " 42 ",
+		},
+		ClassesEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := s.EnabledNotificationSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if len(enabled) != 1 || enabled[0].Identity != want {
+		t.Fatalf("enabled = %#v", enabled)
+	}
+}
+
+func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	tests := []NotificationSettings{
+		{
+			Identity:       Identity{Platform: "napcat", UserID: "42"},
+			ClassesEnabled: true,
+		},
+		{
+			Identity:        Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: " "},
+			HomeworkEnabled: true,
+		},
+	}
+	for _, settings := range tests {
+		err := s.SaveNotificationSettings(ctx, settings)
+		if err == nil || !strings.Contains(err.Error(), "notification settings") {
+			t.Fatalf("SaveNotificationSettings(%#v) error = %v", settings, err)
+		}
+	}
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
+		Identity: Identity{Platform: "napcat", UserID: "42"},
+	}); err != nil {
+		t.Fatalf("disabled settings should remain saveable: %v", err)
+	}
+}
+
 func TestNotificationDeliveryTrimsKeys(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
