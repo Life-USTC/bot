@@ -3,6 +3,8 @@ package napcat
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +18,18 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
 
 func TestSendGroupMessage(t *testing.T) {
 	var gotPath string
@@ -139,6 +153,25 @@ func TestSendReturnsNapCatHTTPFailureBody(t *testing.T) {
 		UserID:      456,
 	}, "hello")
 	if err == nil || !strings.Contains(err.Error(), "502: upstream unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendReturnsNapCatHTTPFailureReadError(t *testing.T) {
+	bridge := Bridge{
+		APIURL: "https://napcat.test",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusBadGateway,
+				Body:       io.NopCloser(errReader{}),
+			}, nil
+		})},
+	}
+	err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "502: read response body: read failed") {
 		t.Fatalf("error = %v", err)
 	}
 }

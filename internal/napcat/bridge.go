@@ -383,7 +383,10 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("napcat %s returned %d: read response body: %w", endpoint, resp.StatusCode, err)
+		}
 		message := strings.TrimSpace(string(respBody))
 		if message != "" {
 			return fmt.Errorf("napcat %s returned %d: %s", endpoint, resp.StatusCode, message)
