@@ -614,6 +614,7 @@ func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (NotificationSettings, error) {
+	ident = normalizeIdentity(ident)
 	var row notificationSettingRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = notification_settings.user_id").

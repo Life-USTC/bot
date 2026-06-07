@@ -728,6 +728,35 @@ func TestSaveNotificationSettingsTrimsConversationIdentity(t *testing.T) {
 	}
 }
 
+func TestNotificationSettingsTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	want := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
+		Identity:         want,
+		HomeworkEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.NotificationSettings(ctx, Identity{
+		Platform:         " napcat ",
+		UserID:           " 42 ",
+		ConversationType: " private ",
+		ConversationID:   " 42 ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HomeworkEnabled || got.Identity != want {
+		t.Fatalf("settings = %#v", got)
+	}
+}
+
 func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
