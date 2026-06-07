@@ -1,0 +1,87 @@
+package notify
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/store"
+)
+
+type fakeSender struct {
+	messages []string
+}
+
+func (s *fakeSender) SendMessage(ctx context.Context, ident store.Identity, message string) error {
+	s.messages = append(s.messages, message)
+	return nil
+}
+
+func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, chinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		case "/api/schedules":
+			if r.URL.Query().Get("sectionId") != "101" {
+				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+		case "/api/me/subscriptions/homeworks":
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID:    "client",
+		AccessToken: "access",
+		TokenType:   "Bearer",
+		ExpiresAt:   now.Add(time.Hour),
+		Resource:    server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{
+		Identity:        ident,
+		ClassesEnabled:  true,
+		HomeworkEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sender := &fakeSender{}
+	poller := &Poller{
+		Life:   life.NewClient(server.URL, server.Client()),
+		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store:  db,
+		Sender: sender,
+		Now:    func() time.Time { return now },
+	}
+	poller.tick(ctx)
+	poller.tick(ctx)
+
+	if len(sender.messages) != 2 {
+		t.Fatalf("messages = %#v", sender.messages)
+	}
+	joined := strings.Join(sender.messages, "\n")
+	for _, want := range []string{"课前提醒：", "作业提醒：", "数据库系统", "Problem Set 𝟷"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("messages missing %q: %#v", want, sender.messages)
+		}
+	}
+}

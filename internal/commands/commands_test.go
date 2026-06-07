@@ -402,6 +402,30 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 	}
 }
 
+func TestNotificationSettingsCommand(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	handler := Handler{Store: s, Prefix: "/life"}
+
+	reply, ok := handler.Handle(ctx, Input{Text: "通知", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

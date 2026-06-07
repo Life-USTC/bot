@@ -252,6 +252,10 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 }
 
 func (b *Bridge) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
+	return b.SendMessage(ctx, ident, message)
+}
+
+func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message string) error {
 	event := messageEvent{
 		MessageType: ident.ConversationType,
 	}

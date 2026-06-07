@@ -66,6 +66,8 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		reply = h.homework(ctx, input.Identity, cmd.Args)
 	case "sub", "subs", "subscription":
 		reply = h.subscription(ctx, input.Identity, cmd.Args)
+	case "notify":
+		reply = h.notify(ctx, input.Identity, cmd.Args)
 	case "ping":
 		if err := h.Life.Health(ctx); err != nil {
 			reply = "Life @ USTC API unavailable: " + err.Error()
@@ -178,6 +180,8 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		return "schedule", []string{"tomorrow"}
 	case "订阅", "sub", "subs", "subscription":
 		return "subscription", normalizeSubscriptionArgs(args)
+	case "notify", "notice", "push", "提醒", "通知", "推送":
+		return "notify", normalizeNotifyArgs(args)
 	case "nextclass", "next", "下一节", "下节课", "下一节课":
 		return "nextclass", args
 	case "semester", "term", "学期", "xq":
@@ -287,6 +291,27 @@ func normalizeScheduleArgs(args []string) []string {
 	return args
 }
 
+func normalizeNotifyArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i, arg := range out {
+		switch strings.ToLower(strings.TrimSpace(arg)) {
+		case "-h", "--help", "help", "?", "？", "帮助":
+			out[i] = "help"
+		case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
+			out[i] = "classes"
+		case "homework", "hw", "作业":
+			out[i] = "homework"
+		case "on", "enable", "enabled", "open", "开启", "打开", "开":
+			out[i] = "on"
+		case "off", "disable", "disabled", "close", "关闭", "关":
+			out[i] = "off"
+		case "status", "状态", "查看":
+			out[i] = "status"
+		}
+	}
+	return out
+}
+
 func parseGroupBus(text string) (parsedCommand, bool) {
 	raw := strings.TrimSpace(stripCQCodes(text))
 	if raw == "" || !containsBusKeyword(raw) {
@@ -352,6 +377,7 @@ func (h Handler) help() string {
 		"今天课表 / 明天课表",
 		"下一节课",
 		"订阅",
+		"通知",
 		"状态 / status",
 		"我 / me",
 		"课程 数学分析",
@@ -779,6 +805,65 @@ func subscriptionHelp() string {
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 	}, "\n")
+}
+
+func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {
+	if h.Store == nil {
+		return "通知未配置。"
+	}
+	if ident.ConversationType != "private" {
+		return "通知只能在私聊里设置。"
+	}
+	if len(args) > 0 && args[0] == "help" {
+		return strings.Join([]string{
+			"通知用法：",
+			"通知：查看设置",
+			"通知 课表 开 / 通知 课表 关",
+			"通知 作业 开 / 通知 作业 关",
+		}, "\n")
+	}
+	settings, err := h.Store.NotificationSettings(ctx, ident)
+	if err != nil {
+		return "通知设置查不到：" + friendlyError(err)
+	}
+	settings.Identity = ident
+	if len(args) == 0 || args[0] == "status" {
+		return formatNotificationSettings(settings)
+	}
+	if len(args) < 2 {
+		return "想设置哪类通知？例如：通知 课表 开"
+	}
+	enabled := args[1] == "on"
+	if args[1] != "on" && args[1] != "off" {
+		return "想打开还是关闭？例如：通知 作业 开"
+	}
+	switch args[0] {
+	case "classes":
+		settings.ClassesEnabled = enabled
+	case "homework":
+		settings.HomeworkEnabled = enabled
+	default:
+		return "支持：课表、作业。"
+	}
+	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
+		return "通知设置保存失败：" + friendlyError(err)
+	}
+	return formatNotificationSettings(settings)
+}
+
+func formatNotificationSettings(settings store.NotificationSettings) string {
+	return strings.Join([]string{
+		"通知设置：",
+		"课前提醒：" + onOffText(settings.ClassesEnabled),
+		"作业提醒：" + onOffText(settings.HomeworkEnabled),
+	}, "\n")
+}
+
+func onOffText(enabled bool) string {
+	if enabled {
+		return "开"
+	}
+	return "关"
 }
 
 func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) string {

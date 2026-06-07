@@ -185,3 +185,56 @@ func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 		t.Fatalf("identity = %#v", sessions[0].Identity)
 	}
 }
+
+func TestNotificationSettingsAndDeliveries(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	settings, err := s.NotificationSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.ClassesEnabled || settings.HomeworkEnabled {
+		t.Fatalf("default settings = %#v", settings)
+	}
+
+	settings.ClassesEnabled = true
+	settings.HomeworkEnabled = true
+	if err := s.SaveNotificationSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := s.EnabledNotificationSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || enabled[0].Identity != ident {
+		t.Fatalf("enabled settings = %#v", enabled)
+	}
+
+	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recorded {
+		t.Fatal("first delivery was not recorded")
+	}
+	delivered, err := s.NotificationDelivered(ctx, ident, "class", "section-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !delivered {
+		t.Fatal("delivery was not found")
+	}
+	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded {
+		t.Fatal("duplicate delivery was recorded")
+	}
+}

@@ -19,6 +19,9 @@ Message commands use `/life` by default:
 /life todo
 /life todo add <title>
 /life sub
+/life notify
+/life notify schedule on
+/life notify homework on
 /life semester
 /life course <keyword>
 /life section <keyword>
@@ -42,6 +45,10 @@ life_ustc.list_todos          {"platform":"napcat","user_id":"123"}
 verification link and user code. After approving in the browser, send
 `/life login status`; the bot persists the token for that chat user in SQLite.
 Authenticated commands refresh tokens automatically when possible.
+
+`/life notify` manages private-chat active pushes. Class reminders and homework
+reminders can be enabled independently, and sent reminders are recorded in SQLite
+so the same item is not pushed repeatedly.
 
 ## Run
 

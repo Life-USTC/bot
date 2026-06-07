@@ -54,6 +54,12 @@ type Interaction struct {
 	CreatedAt time.Time
 }
 
+type NotificationSettings struct {
+	Identity        Identity
+	ClassesEnabled  bool
+	HomeworkEnabled bool
+}
+
 type Store struct {
 	db *gorm.DB
 }
@@ -145,6 +151,33 @@ func (interactionRow) TableName() string {
 	return "interactions"
 }
 
+type notificationSettingRow struct {
+	UserID           int64  `gorm:"primaryKey"`
+	Platform         string `gorm:"not null"`
+	ExternalUserID   string `gorm:"not null"`
+	ConversationType string
+	ConversationID   string
+	ClassesEnabled   bool `gorm:"not null"`
+	HomeworkEnabled  bool `gorm:"not null"`
+	UpdatedAt        time.Time
+}
+
+func (notificationSettingRow) TableName() string {
+	return "notification_settings"
+}
+
+type notificationDeliveryRow struct {
+	ID        int64  `gorm:"primaryKey"`
+	UserID    int64  `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
+	Kind      string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
+	ItemKey   string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
+	CreatedAt time.Time
+}
+
+func (notificationDeliveryRow) TableName() string {
+	return "notification_deliveries"
+}
+
 func Open(path string) (*Store, error) {
 	if path == "" {
 		path = filepath.Join(".run", "life-ustc-bot.db")
@@ -184,6 +217,8 @@ func (s *Store) migrate() error {
 		&loginSessionRow{},
 		&conversationStateRow{},
 		&interactionRow{},
+		&notificationSettingRow{},
+		&notificationDeliveryRow{},
 	)
 }
 
@@ -470,4 +505,112 @@ func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := s.db.WithContext(ctx).Model(&interactionRow{}).Count(&count).Error
 	return count, err
+}
+
+func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (NotificationSettings, error) {
+	var row notificationSettingRow
+	err := s.db.WithContext(ctx).
+		Joins("JOIN users ON users.id = notification_settings.user_id").
+		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return NotificationSettings{Identity: ident}, nil
+	}
+	if err != nil {
+		return NotificationSettings{}, err
+	}
+	return notificationSettingsFromRow(row, ident), nil
+}
+
+func (s *Store) SaveNotificationSettings(ctx context.Context, settings NotificationSettings) error {
+	userID, err := s.EnsureUser(ctx, settings.Identity)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	row := notificationSettingRow{
+		UserID:           userID,
+		Platform:         settings.Identity.Platform,
+		ExternalUserID:   settings.Identity.UserID,
+		ConversationType: settings.Identity.ConversationType,
+		ConversationID:   settings.Identity.ConversationID,
+		ClassesEnabled:   settings.ClassesEnabled,
+		HomeworkEnabled:  settings.HomeworkEnabled,
+		UpdatedAt:        now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"platform",
+			"external_user_id",
+			"conversation_type",
+			"conversation_id",
+			"classes_enabled",
+			"homework_enabled",
+			"updated_at",
+		}),
+	}).Create(&row).Error
+}
+
+func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]NotificationSettings, error) {
+	var rows []notificationSettingRow
+	err := s.db.WithContext(ctx).
+		Where("(classes_enabled = ? OR homework_enabled = ?) AND conversation_type <> ? AND conversation_id <> ?",
+			true, true, "", "").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NotificationSettings, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, notificationSettingsFromRow(row, Identity{}))
+	}
+	return out, nil
+}
+
+func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
+	userID, err := s.EnsureUser(ctx, ident)
+	if err != nil {
+		return false, err
+	}
+	row := notificationDeliveryRow{
+		UserID:    userID,
+		Kind:      kind,
+		ItemKey:   itemKey,
+		CreatedAt: time.Now().UTC(),
+	}
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "kind"}, {Name: "item_key"}},
+		DoNothing: true,
+	}).Create(&row)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
+	userID, err := s.EnsureUser(ctx, ident)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	err = s.db.WithContext(ctx).Model(&notificationDeliveryRow{}).
+		Where("user_id = ? AND kind = ? AND item_key = ?", userID, kind, itemKey).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) NotificationSettings {
+	ident := Identity{
+		Platform:         firstNonEmpty(row.Platform, fallback.Platform),
+		UserID:           firstNonEmpty(row.ExternalUserID, fallback.UserID),
+		ConversationType: firstNonEmpty(row.ConversationType, fallback.ConversationType),
+		ConversationID:   firstNonEmpty(row.ConversationID, fallback.ConversationID),
+	}
+	return NotificationSettings{
+		Identity:        ident,
+		ClassesEnabled:  row.ClassesEnabled,
+		HomeworkEnabled: row.HomeworkEnabled,
+	}
 }

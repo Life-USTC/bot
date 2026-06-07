@@ -14,6 +14,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/config"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/napcat"
+	"github.com/Life-USTC/Bot/internal/notify"
 	"github.com/Life-USTC/Bot/internal/onebot12"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -101,6 +102,15 @@ func main() {
 		}
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
+		notificationPoller := &notify.Poller{
+			Life:   lifeClient,
+			Auth:   authManager,
+			Store:  stateStore,
+			Sender: napcatBridge,
+			Logger: logger,
+		}
+		go notificationPoller.Run(ctx)
+		logger.Printf("Notification poller started")
 	}
 
 	<-ctx.Done()
