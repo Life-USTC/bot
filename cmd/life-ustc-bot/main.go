@@ -34,7 +34,7 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
-	handler := commands.Handler{Life: lifeClient, Auth: authManager, Store: stateStore, Prefix: cfg.CommandPrefix}
+	handler := commands.Handler{Life: lifeClient, Auth: authManager, Store: stateStore, Prefix: cfg.CommandPrefix, Logger: logger}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled: cfg.EnableAgent,
 		APIKey:  cfg.LLMAPIKey,

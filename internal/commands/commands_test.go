@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1581,7 +1583,7 @@ func TestAttachedPrefixCommandParses(t *testing.T) {
 		args []string
 	}{
 		"/life校车 东区 西区": {name: "bus", args: []string{"东区", "西区"}},
-		"/lifekb今天":    {name: "schedule", args: []string{"today"}},
+		"/lifekb今天":     {name: "schedule", args: []string{"today"}},
 	}
 	for text, want := range tests {
 		cmd, ok := handler.parse(text)
@@ -1823,6 +1825,33 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	}
 	if recent[0].Command != "help" {
 		t.Fatalf("logged command = %q, want help", recent[0].Command)
+	}
+}
+
+func TestHandleLogsRecordFailures(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	handler := Handler{
+		Store:  s,
+		Prefix: "/life",
+		Logger: log.New(&logs, "", 0),
+	}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "/life help", Identity: testIdentity()})
+	if !ok || reply == "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	if !strings.Contains(logs.String(), "record conversation state failed") {
+		t.Fatalf("missing state log: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), "record command interaction failed") {
+		t.Fatalf("missing interaction log: %q", logs.String())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"regexp"
 	"sort"
@@ -26,6 +27,7 @@ type Handler struct {
 	Auth   *auth.Manager
 	Store  *store.Store
 	Prefix string
+	Logger *log.Logger
 }
 
 type AgentToolSpec struct {
@@ -1576,21 +1578,31 @@ func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd pars
 	if h.Store == nil || !hasConversationIdentity(ident) {
 		return
 	}
-	_ = h.Store.RecordConversationState(ctx, ident, cmd.Name, strconv.Quote(cmd.Raw))
+	if err := h.Store.RecordConversationState(ctx, ident, cmd.Name, strconv.Quote(cmd.Raw)); err != nil {
+		h.logf("record conversation state failed: %v", err)
+	}
 }
 
 func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd parsedCommand, reply string) {
 	if h.Store == nil || !hasConversationIdentity(ident) {
 		return
 	}
-	_ = h.Store.RecordInteraction(ctx, ident, store.Interaction{
+	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: cmd.Raw,
 		Command: cmd.Name,
 		Args:    strings.Join(cmd.Args, " "),
 		Handled: true,
 		Reply:   reply,
 		Status:  "handled",
-	})
+	}); err != nil {
+		h.logf("record command interaction failed: %v", err)
+	}
+}
+
+func (h Handler) logf(format string, args ...any) {
+	if h.Logger != nil {
+		h.Logger.Printf(format, args...)
+	}
 }
 
 func hasConversationIdentity(ident store.Identity) bool {
