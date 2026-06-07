@@ -135,6 +135,12 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 		t.Fatalf("reply = %q", reply)
 	}
 
+	groupInput.Identity.ConversationType = " GROUP "
+	reply, ok = handler.Handle(context.Background(), groupInput)
+	if !ok {
+		t.Fatal("padded/cased group bus message was not handled")
+	}
+
 	groupInput.Text = "/life td"
 	reply, ok = handler.Handle(context.Background(), groupInput)
 	if ok || reply != "" {

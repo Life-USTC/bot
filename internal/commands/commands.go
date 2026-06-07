@@ -253,7 +253,7 @@ var commandSpecs = []CommandSpec{
 }
 
 func isGroup(ident store.Identity) bool {
-	return ident.ConversationType == "group"
+	return strings.EqualFold(strings.TrimSpace(ident.ConversationType), "group")
 }
 
 func (h Handler) parse(text string) (parsedCommand, bool) {
