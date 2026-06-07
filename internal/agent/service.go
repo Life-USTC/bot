@@ -135,16 +135,17 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 			return nil, err
 		}
 		for _, turn := range history {
-			if strings.TrimSpace(turn.RawText) == "" {
+			rawText := strings.TrimSpace(turn.RawText)
+			if rawText == "" {
 				continue
 			}
-			messages = append(messages, schema.UserMessage(turn.RawText))
-			if strings.TrimSpace(turn.Reply) != "" {
-				messages = append(messages, schema.AssistantMessage(turn.Reply, nil))
+			messages = append(messages, schema.UserMessage(rawText))
+			if reply := strings.TrimSpace(turn.Reply); reply != "" {
+				messages = append(messages, schema.AssistantMessage(reply, nil))
 			}
 		}
 	}
-	messages = append(messages, schema.UserMessage(input.Text))
+	messages = append(messages, schema.UserMessage(strings.TrimSpace(input.Text)))
 	return messages, nil
 }
 

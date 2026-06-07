@@ -118,16 +118,16 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	if err := db.RecordInteraction(ctx, ident, store.Interaction{
-		RawText: "你好",
+		RawText: "  你好  ",
 		Command: "agent",
 		Handled: true,
-		Reply:   "你好！有什么可以帮你的吗？",
+		Reply:   "  你好！有什么可以帮你的吗？  ",
 		Status:  "handled",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	svc := &Service{handler: commands.Handler{Store: db}}
-	messages, err := svc.messagesFor(ctx, Input{Text: "我上面说了什么？", Identity: ident})
+	messages, err := svc.messagesFor(ctx, Input{Text: "  我上面说了什么？  ", Identity: ident})
 	if err != nil {
 		t.Fatal(err)
 	}
