@@ -578,11 +578,8 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		return h.loginRequired()
 	}
 	me, err := h.Life.Me(ctx, token)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			me, err = h.Life.Me(ctx, token)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		me, err = h.Life.Me(ctx, token)
 	}
 	if err != nil {
 		return "个人信息查不到：" + friendlyError(err)
@@ -638,11 +635,8 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			return "这条待办没有可用 ID，暂时完成不了。"
 		}
 		err = h.Life.CompleteTodo(ctx, token, id)
-		if life.IsUnauthorized(err) {
-			token, refreshErr := h.Auth.Refresh(ctx, ident)
-			if refreshErr == nil {
-				err = h.Life.CompleteTodo(ctx, token, id)
-			}
+		if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+			err = h.Life.CompleteTodo(ctx, token, id)
 		}
 		if err != nil {
 			return "待办完成失败：" + friendlyError(err)
@@ -680,11 +674,8 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 		return "想加什么？例如：td 写报告"
 	}
 	created, err := h.Life.CreateTodo(ctx, token, title)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			created, err = h.Life.CreateTodo(ctx, token, title)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		created, err = h.Life.CreateTodo(ctx, token, title)
 	}
 	if err != nil {
 		return "待办添加失败：" + friendlyError(err)
@@ -701,11 +692,8 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
 	todos, err := h.Life.Todos(ctx, token, "false")
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			todos, err = h.Life.Todos(ctx, token, "false")
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		todos, err = h.Life.Todos(ctx, token, "false")
 	}
 	return todos, err
 }
@@ -776,11 +764,8 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		completed := args[0] == "done"
 		err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-		if life.IsUnauthorized(err) {
-			token, refreshErr := h.Auth.Refresh(ctx, ident)
-			if refreshErr == nil {
-				err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-			}
+		if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+			err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
 		}
 		if err != nil {
 			return "作业状态更新失败：" + friendlyError(err)
@@ -811,11 +796,8 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
 	homeworks, err := h.Life.SubscribedHomeworks(ctx, token)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
 	}
 	sort.Slice(homeworks, func(i, j int) bool {
 		return lifedata.FirstString(homeworks[i], "submissionDueAt") < lifedata.FirstString(homeworks[j], "submissionDueAt")
@@ -1013,11 +995,8 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		return h.loginRequired()
 	}
 	data, err := h.Life.CurrentSubscription(ctx, token)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			data, err = h.Life.CurrentSubscription(ctx, token)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		data, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
 		return "日程查不到：" + friendlyError(err)
@@ -1079,11 +1058,8 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		return h.loginRequired()
 	}
 	current, err := h.Life.CurrentSubscription(ctx, token)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			current, err = h.Life.CurrentSubscription(ctx, token)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		current, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
 		return "日程订阅查不到：" + friendlyError(err)
@@ -1305,11 +1281,8 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 
 func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
 	sub, err := h.Life.CurrentSubscription(ctx, token)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			sub, err = h.Life.CurrentSubscription(ctx, token)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		sub, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
 		return nil, err
@@ -1319,11 +1292,8 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		return nil, nil
 	}
 	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
-	if life.IsUnauthorized(err) {
-		token, refreshErr := h.Auth.Refresh(ctx, ident)
-		if refreshErr == nil {
-			all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
-		}
+	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
 	}
 	if err != nil {
 		return nil, err

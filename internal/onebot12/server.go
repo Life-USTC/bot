@@ -143,10 +143,8 @@ func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
 		return
 	}
 	data, err := s.life.Me(context.Background(), token)
-	if life.IsUnauthorized(err) {
-		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
-			data, err = s.life.Me(context.Background(), refreshed)
-		}
+	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
+		data, err = s.life.Me(context.Background(), token)
 	}
 	write(w, data, err)
 }
@@ -157,10 +155,8 @@ func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
 		return
 	}
 	data, err := s.life.Todos(context.Background(), token, "false")
-	if life.IsUnauthorized(err) {
-		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
-			data, err = s.life.Todos(context.Background(), refreshed, "false")
-		}
+	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
+		data, err = s.life.Todos(context.Background(), token, "false")
 	}
 	write(w, data, err)
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -231,6 +232,14 @@ func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, er
 		return "", err
 	}
 	return refreshed.AccessToken, nil
+}
+
+func (m *Manager) RefreshIfUnauthorized(ctx context.Context, ident store.Identity, err error) (string, bool) {
+	if !life.IsUnauthorized(err) {
+		return "", false
+	}
+	refreshed, refreshErr := m.Refresh(ctx, ident)
+	return refreshed, refreshErr == nil
 }
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
