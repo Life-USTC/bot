@@ -375,9 +375,12 @@ func (s *Store) Credential(ctx context.Context, ident Identity) (*Credential, er
 }
 
 func (s *Store) DeleteCredential(ctx context.Context, ident Identity) error {
-	userID, err := s.EnsureUser(ctx, ident)
+	userID, ok, err := s.userID(ctx, ident)
 	if err != nil {
 		return err
+	}
+	if !ok {
+		return nil
 	}
 	return s.db.WithContext(ctx).Delete(&credentialRow{}, "user_id = ?", userID).Error
 }

@@ -237,6 +237,26 @@ func TestCredentialTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestDeleteCredentialDoesNotCreateMissingUser(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	if err := s.DeleteCredential(ctx, Identity{Platform: "napcat", UserID: "42"}); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after missing credential delete = %d", count)
+	}
+}
+
 func TestSaveCredentialRejectsBlankRequiredFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
