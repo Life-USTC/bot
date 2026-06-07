@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,17 @@ import (
 type Client struct {
 	server     string
 	httpClient *http.Client
+}
+
+type HTTPError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e HTTPError) Error() string {
+	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
 }
 
 func NewClient(server string, httpClient *http.Client) *Client {
@@ -68,6 +80,10 @@ func (c *Client) Me(ctx context.Context, token string) (map[string]any, error) {
 }
 
 func IsUnauthorized(err error) bool {
+	var httpErr HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusUnauthorized
+	}
 	return err != nil && strings.Contains(err.Error(), " returned 401:")
 }
 
@@ -205,7 +221,12 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s %s returned %d: %s", method, path, resp.StatusCode, trimBody(body))
+		return HTTPError{
+			Method:     method,
+			Path:       path,
+			StatusCode: resp.StatusCode,
+			Body:       trimBody(body),
+		}
 	}
 	if out != nil && len(body) > 0 {
 		if err := json.Unmarshal(body, out); err != nil {

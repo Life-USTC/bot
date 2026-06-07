@@ -40,8 +40,16 @@ func TestGetReturnsHTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	if err := client.Health(context.Background()); err == nil {
+	err := client.Health(context.Background())
+	if err == nil {
 		t.Fatal("expected error")
+	}
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if httpErr.StatusCode != http.StatusServiceUnavailable || httpErr.Method != http.MethodGet || httpErr.Path != "/api/metadata" {
+		t.Fatalf("http error = %#v", httpErr)
 	}
 }
 
@@ -78,7 +86,13 @@ func TestIsUnauthorized(t *testing.T) {
 	if !IsUnauthorized(errors.New(`GET /api/me returned 401: {"error":"Unauthorized"}`)) {
 		t.Fatal("401 error was not recognized")
 	}
+	if !IsUnauthorized(HTTPError{StatusCode: http.StatusUnauthorized}) {
+		t.Fatal("typed 401 error was not recognized")
+	}
 	if IsUnauthorized(errors.New("GET /api/me returned 500: nope")) {
 		t.Fatal("non-401 error was recognized")
+	}
+	if IsUnauthorized(HTTPError{StatusCode: http.StatusInternalServerError}) {
+		t.Fatal("typed non-401 error was recognized")
 	}
 }
