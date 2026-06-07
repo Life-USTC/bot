@@ -522,7 +522,7 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 		ConversationType: ident.ConversationType,
 		ConversationID:   ident.ConversationID,
 		UserID:           ident.UserID,
-		LastCommand:      command,
+		LastCommand:      strings.TrimSpace(command),
 		State:            state,
 		CreatedAt:        time.Now().UTC(),
 	}
@@ -540,12 +540,12 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		UserID:           ident.UserID,
 		Direction:        interactionDirection(interaction.Direction),
 		RawText:          interaction.RawText,
-		Command:          interaction.Command,
-		Args:             interaction.Args,
+		Command:          strings.TrimSpace(interaction.Command),
+		Args:             strings.TrimSpace(interaction.Args),
 		Handled:          interaction.Handled,
 		Reply:            interaction.Reply,
-		Status:           interaction.Status,
-		Error:            interaction.Error,
+		Status:           strings.TrimSpace(interaction.Status),
+		Error:            strings.TrimSpace(interaction.Error),
 		CreatedAt:        time.Now().UTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error

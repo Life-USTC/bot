@@ -304,6 +304,49 @@ func TestRecordInteractionNormalizesKnownDirection(t *testing.T) {
 	}
 }
 
+func TestRecordInteractionTrimsMetadataOnly(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.RecordConversationState(ctx, ident, " todo ", " raw state "); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordInteraction(ctx, ident, Interaction{
+		Direction: " inbound ",
+		RawText:   "  td done 1  ",
+		Command:   " todo ",
+		Args:      " done 1 ",
+		Handled:   true,
+		Reply:     "  已完成：写报告  ",
+		Status:    " handled ",
+		Error:     " warning ",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var state conversationStateRow
+	if err := s.db.WithContext(ctx).First(&state).Error; err != nil {
+		t.Fatal(err)
+	}
+	if state.LastCommand != "todo" || state.State != " raw state " {
+		t.Fatalf("state = %#v", state)
+	}
+	var row interactionRow
+	if err := s.db.WithContext(ctx).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.RawText != "  td done 1  " || row.Reply != "  已完成：写报告  " {
+		t.Fatalf("text fields changed: %#v", row)
+	}
+	if row.Direction != "inbound" || row.Command != "todo" || row.Args != "done 1" || row.Status != "handled" || row.Error != "warning" {
+		t.Fatalf("metadata = %#v", row)
+	}
+}
+
 func TestLoginSessionLifecycle(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
