@@ -273,18 +273,19 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 
 	ctx := context.Background()
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
 		DeviceCode:      "device",
 		UserCode:        "USER-CODE",
 		ClientID:        "client",
-		ExpiresAt:       time.Now().Add(time.Minute),
+		ExpiresAt:       now.Add(time.Minute),
 		IntervalSeconds: 5,
 		Status:          "pending",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
 	_, err = manager.PollDeviceLogin(ctx, ident)
 	if err == nil || !strings.Contains(err.Error(), "invalid JSON") {
 		t.Fatalf("error = %v", err)
@@ -441,18 +442,19 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 
 	ctx := context.Background()
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 	if err := s.SaveCredential(ctx, ident, store.Credential{
 		ClientID:     "client",
 		AccessToken:  "old-access",
 		RefreshToken: "refresh",
 		TokenType:    "Bearer",
-		ExpiresAt:    time.Now().Add(time.Hour),
+		ExpiresAt:    now.Add(time.Hour),
 		Resource:     server.URL,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
 	if token, ok := manager.RefreshIfUnauthorized(ctx, ident, life.HTTPError{StatusCode: http.StatusInternalServerError}); ok || token != "" {
 		t.Fatalf("non-401 refresh = %q, %v", token, ok)
 	}
@@ -466,5 +468,8 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 	}
 	if cred == nil || cred.AccessToken != "new-access" || cred.RefreshToken != "new-refresh" {
 		t.Fatalf("credential = %#v", cred)
+	}
+	if want := now.Add(time.Hour); !cred.ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %s, want %s", cred.ExpiresAt, want)
 	}
 }
