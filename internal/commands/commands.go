@@ -870,22 +870,7 @@ func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token s
 }
 
 func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
-	target = strings.TrimSpace(target)
-	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(todos) {
-		return todos[index-1], true
-	}
-	needle := normalizedLookupText(target)
-	if needle == "" {
-		return nil, false
-	}
-	for _, todo := range todos {
-		id := normalizedLookupText(lifedata.FirstString(todo, "id"))
-		title := normalizedLookupText(lifedata.FirstString(todo, "title"))
-		if needle == id || needle == title || strings.Contains(title, needle) {
-			return todo, true
-		}
-	}
-	return nil, false
+	return resolveByTarget(todos, target)
 }
 
 func formatTodo(todo map[string]any) string {
@@ -991,19 +976,23 @@ func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]
 }
 
 func resolveHomework(homeworks []map[string]any, target string) (map[string]any, bool) {
+	return resolveByTarget(homeworks, target)
+}
+
+func resolveByTarget(items []map[string]any, target string) (map[string]any, bool) {
 	target = strings.TrimSpace(target)
-	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(homeworks) {
-		return homeworks[index-1], true
+	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(items) {
+		return items[index-1], true
 	}
 	needle := normalizedLookupText(target)
 	if needle == "" {
 		return nil, false
 	}
-	for _, homework := range homeworks {
-		id := normalizedLookupText(lifedata.FirstString(homework, "id"))
-		title := normalizedLookupText(lifedata.FirstString(homework, "title"))
+	for _, item := range items {
+		id := normalizedLookupText(lifedata.FirstString(item, "id"))
+		title := normalizedLookupText(lifedata.FirstString(item, "title"))
 		if needle == id || needle == title || strings.Contains(title, needle) {
-			return homework, true
+			return item, true
 		}
 	}
 	return nil, false
