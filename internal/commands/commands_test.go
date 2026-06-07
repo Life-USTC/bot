@@ -1416,6 +1416,20 @@ func TestBusArgsFromTextAcceptsEnglishCampusAliases(t *testing.T) {
 	}
 }
 
+func TestBusArgsFromTextAvoidsOneCharCampusInsideWords(t *testing.T) {
+	tests := map[string][]string{
+		"校车中午到西区": {"到", "西区"},
+		"校车东到西":   {"东区", "西区"},
+		"xc 东 西":  {"东区", "西区"},
+	}
+	for text, want := range tests {
+		got := busArgsFromText(text)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Fatalf("%q args = %#v, want %#v", text, got, want)
+		}
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",

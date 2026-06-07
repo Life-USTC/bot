@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
@@ -614,10 +616,56 @@ func campusAliasIndex(text, alias string) int {
 	alias = strings.ToLower(alias)
 	for i := 0; i < len(alias); i++ {
 		if alias[i] > 127 {
+			if utf8.RuneCountInString(alias) == 1 {
+				return singleChineseCampusAliasIndex(text, alias)
+			}
 			return strings.Index(text, alias)
 		}
 	}
 	return textutil.IndexASCIIToken(text, alias)
+}
+
+func singleChineseCampusAliasIndex(text, alias string) int {
+	index := strings.Index(text, alias)
+	for index >= 0 {
+		if singleChineseCampusAliasAt(text, index, len(alias)) {
+			return index
+		}
+		next := strings.Index(text[index+len(alias):], alias)
+		if next < 0 {
+			return -1
+		}
+		index += len(alias) + next
+	}
+	return -1
+}
+
+func singleChineseCampusAliasAt(text string, index, length int) bool {
+	before := text[:index]
+	after := text[index+length:]
+	if strings.HasSuffix(before, "从") || strings.HasSuffix(before, "到") || strings.HasSuffix(before, "去") || strings.HasSuffix(before, "往") {
+		return true
+	}
+	if strings.HasPrefix(after, "到") || strings.HasPrefix(after, "去") || strings.HasPrefix(after, "往") {
+		return true
+	}
+	return chineseCampusAliasBoundaryBefore(before) && chineseCampusAliasBoundaryAfter(after)
+}
+
+func chineseCampusAliasBoundaryBefore(text string) bool {
+	if text == "" {
+		return true
+	}
+	r, _ := utf8.DecodeLastRuneInString(text)
+	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+}
+
+func chineseCampusAliasBoundaryAfter(text string) bool {
+	if text == "" {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(text)
+	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 func (h Handler) help() string {
