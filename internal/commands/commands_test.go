@@ -14,6 +14,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -387,8 +388,8 @@ func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	scheduleCalls := 0
-	today := time.Now().In(chinaLocation()).Format("2006-01-02")
-	tomorrow := time.Now().In(chinaLocation()).AddDate(0, 0, 1).Format("2006-01-02")
+	today := time.Now().In(lifedata.ChinaLocation()).Format("2006-01-02")
+	tomorrow := time.Now().In(lifedata.ChinaLocation()).AddDate(0, 0, 1).Format("2006-01-02")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/calendar-subscriptions/current":
@@ -581,21 +582,21 @@ func TestSubscriptionSectionIDsForDayFiltersSemester(t *testing.T) {
 			},
 		},
 	}
-	day := time.Date(2026, 6, 2, 12, 0, 0, 0, chinaLocation())
-	ids := subscriptionSectionIDsForDay(data, day)
+	day := time.Date(2026, 6, 2, 12, 0, 0, 0, lifedata.ChinaLocation())
+	ids := lifedata.SubscriptionSectionIDsForDay(data, day)
 	if len(ids) != 1 || ids[0] != "current" {
 		t.Fatalf("ids = %#v", ids)
 	}
 }
 
 func TestFilterSchedulesForDayDropsAdjacentDates(t *testing.T) {
-	day := time.Date(2026, 6, 2, 12, 0, 0, 0, chinaLocation())
+	day := time.Date(2026, 6, 2, 12, 0, 0, 0, lifedata.ChinaLocation())
 	schedules := []map[string]any{
 		{"date": "2026-06-01T08:00:00+08:00", "startTime": "07:50"},
 		{"date": "2026-06-02T08:00:00+08:00", "startTime": "09:45"},
 	}
-	filtered := filterSchedulesForDay(schedules, day)
-	if len(filtered) != 1 || firstString(filtered[0], "startTime") != "09:45" {
+	filtered := lifedata.FilterSchedulesForDay(schedules, day)
+	if len(filtered) != 1 || lifedata.FirstString(filtered[0], "startTime") != "09:45" {
 		t.Fatalf("filtered = %#v", filtered)
 	}
 }

@@ -1,0 +1,198 @@
+package lifedata
+
+import (
+	"strconv"
+	"strings"
+	"time"
+)
+
+func FirstString(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		switch value := m[key].(type) {
+		case string:
+			if value != "" {
+				return value
+			}
+		case float64:
+			return strconv.FormatInt(int64(value), 10)
+		case int:
+			return strconv.Itoa(value)
+		}
+	}
+	return ""
+}
+
+func NestedString(m map[string]any, key string, keys ...string) string {
+	child, ok := m[key].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return FirstString(child, keys...)
+}
+
+func NestedPathString(m map[string]any, path []string, keys ...string) string {
+	current := m
+	for _, key := range path {
+		child, ok := current[key].(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = child
+	}
+	return FirstString(current, keys...)
+}
+
+func HomeworkCompleted(homework map[string]any) bool {
+	if completed, ok := homework["isCompleted"].(bool); ok {
+		return completed
+	}
+	return homework["completion"] != nil
+}
+
+func SubscriptionSectionIDs(data map[string]any) []string {
+	return SubscriptionSectionIDsForDay(data, time.Time{})
+}
+
+func SubscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
+	sub, _ := data["subscription"].(map[string]any)
+	sections, _ := sub["sections"].([]any)
+	out := make([]string, 0, len(sections))
+	fallback := make([]string, 0, len(sections))
+	sawSemester := false
+	for _, item := range sections {
+		section, _ := item.(map[string]any)
+		if section == nil {
+			continue
+		}
+		id := FirstString(section, "id")
+		if id != "" {
+			fallback = append(fallback, id)
+		}
+		semester, _ := section["semester"].(map[string]any)
+		if semester == nil {
+			continue
+		}
+		sawSemester = true
+		if !day.IsZero() && !SemesterContainsDay(semester, day) {
+			continue
+		}
+		if id != "" {
+			out = append(out, id)
+		}
+	}
+	if !sawSemester || day.IsZero() {
+		return fallback
+	}
+	return out
+}
+
+func SemesterContainsDay(semester map[string]any, day time.Time) bool {
+	loc := day.Location()
+	start, okStart := ParseAPITime(FirstString(semester, "startDate"))
+	end, okEnd := ParseAPITime(FirstString(semester, "endDate"))
+	target := day.In(loc).Format("2006-01-02")
+	if okStart && target < start.In(loc).Format("2006-01-02") {
+		return false
+	}
+	if okEnd && target > end.In(loc).Format("2006-01-02") {
+		return false
+	}
+	return okStart || okEnd
+}
+
+func FilterSchedulesForDay(schedules []map[string]any, day time.Time) []map[string]any {
+	out := make([]map[string]any, 0, len(schedules))
+	for _, schedule := range schedules {
+		if ScheduleMatchesDay(schedule, day) {
+			out = append(out, schedule)
+		}
+	}
+	return out
+}
+
+func ScheduleMatchesDay(schedule map[string]any, day time.Time) bool {
+	date := FirstString(schedule, "date")
+	if date == "" {
+		return true
+	}
+	parsed, ok := ParseAPITime(date)
+	if !ok {
+		return true
+	}
+	return parsed.In(day.Location()).Format("2006-01-02") == day.In(day.Location()).Format("2006-01-02")
+}
+
+func FormatAPITime(value string) string {
+	if value == "" {
+		return ""
+	}
+	parsed, ok := ParseAPITime(value)
+	if !ok {
+		return strings.TrimSpace(value)
+	}
+	return parsed.In(ChinaLocation()).Format("01-02 15:04")
+}
+
+func ParseAPITime(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000Z"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed, true
+		}
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
+		if parsed, err := time.ParseInLocation(layout, value, ChinaLocation()); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func ChinaLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*60*60)
+	}
+	return loc
+}
+
+func FirstInt(m map[string]any, keys ...string) int {
+	if m == nil {
+		return 0
+	}
+	for _, key := range keys {
+		switch value := m[key].(type) {
+		case int:
+			return value
+		case int64:
+			return int(value)
+		case float64:
+			return int(value)
+		case string:
+			id, err := strconv.Atoi(value)
+			if err == nil {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
+func StringSlice(value any) []string {
+	raw, _ := value.([]any)
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok && text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func SemesterLabel(data map[string]any) string {
+	semester, _ := data["semester"].(map[string]any)
+	return FirstString(semester, "namePrimary", "nameCn", "name")
+}

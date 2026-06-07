@@ -2,7 +2,6 @@ package notify
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/url"
 	"sort"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -74,7 +74,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		p.logf("notification token unavailable for %s: %v", settings.Identity.UserID, err)
 		return
 	}
-	now := p.now().In(chinaLocation())
+	now := p.now().In(lifedata.ChinaLocation())
 	if settings.ClassesEnabled {
 		p.notifyClasses(ctx, settings.Identity, token, now)
 	}
@@ -126,17 +126,17 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 		return
 	}
 	sort.Slice(homeworks, func(i, j int) bool {
-		return firstString(homeworks[i], "submissionDueAt") < firstString(homeworks[j], "submissionDueAt")
+		return lifedata.FirstString(homeworks[i], "submissionDueAt") < lifedata.FirstString(homeworks[j], "submissionDueAt")
 	})
 	for _, homework := range homeworks {
-		if homeworkCompleted(homework) {
+		if lifedata.HomeworkCompleted(homework) {
 			continue
 		}
-		due, ok := parseAPITime(firstString(homework, "submissionDueAt"))
+		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 		if !ok || due.Before(now) || due.After(now.Add(24*time.Hour)) {
 			continue
 		}
-		key := notificationKey(homeworkKind, firstNonEmpty(firstString(homework, "id"), firstString(homework, "title"), due.Format(time.RFC3339)))
+		key := notificationKey(homeworkKind, firstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
 		delivered, err := p.Store.NotificationDelivered(ctx, ident, homeworkKind, key)
 		if err != nil {
 			p.logf("check homework notification delivery failed: %v", err)
@@ -166,7 +166,7 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err != nil {
 		return nil, err
 	}
-	sectionIDs := subscriptionSectionIDsForDay(sub, day)
+	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
 		return nil, nil
 	}
@@ -185,9 +185,9 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		}
 		all = append(all, schedules...)
 	}
-	all = filterSchedulesForDay(all, day)
+	all = lifedata.FilterSchedulesForDay(all, day)
 	sort.Slice(all, func(i, j int) bool {
-		return firstString(all[i], "startTime") < firstString(all[j], "startTime")
+		return lifedata.FirstString(all[i], "startTime") < lifedata.FirstString(all[j], "startTime")
 	})
 	return all, nil
 }
@@ -210,12 +210,12 @@ func notificationKey(kind, item string) string {
 }
 
 func scheduleKey(schedule map[string]any, start time.Time) string {
-	sectionID := nestedString(schedule, "section", "id")
-	return strings.Join(nonEmpty([]string{sectionID, start.Format("2006-01-02T15:04"), firstString(schedule, "startTime"), firstString(schedule, "endTime")}), "|")
+	sectionID := lifedata.NestedString(schedule, "section", "id")
+	return strings.Join(nonEmpty([]string{sectionID, start.Format("2006-01-02T15:04"), lifedata.FirstString(schedule, "startTime"), lifedata.FirstString(schedule, "endTime")}), "|")
 }
 
 func scheduleStartTime(schedule map[string]any, day time.Time) time.Time {
-	start := firstString(schedule, "startTime")
+	start := lifedata.FirstString(schedule, "startTime")
 	if start == "" {
 		return time.Time{}
 	}
@@ -227,174 +227,27 @@ func scheduleStartTime(schedule map[string]any, day time.Time) time.Time {
 }
 
 func formatSchedule(schedule map[string]any) string {
-	timeRange := strings.TrimSpace(firstString(schedule, "startTime") + "-" + firstString(schedule, "endTime"))
-	course := nestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
+	course := lifedata.NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if course == "" {
-		course = nestedString(schedule, "section", "code")
+		course = lifedata.NestedString(schedule, "section", "code")
 	}
-	place := firstString(schedule, "customPlace")
+	place := lifedata.FirstString(schedule, "customPlace")
 	if place == "" {
-		place = nestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+		place = lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 	}
 	parts := nonEmpty([]string{place, timeRange, course})
 	return monospaceDigits(strings.Join(parts, "\t"))
 }
 
 func formatHomework(homework map[string]any) string {
-	course := nestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	course := lifedata.NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if course == "" {
-		course = nestedPathString(homework, []string{"section", "course"}, "code")
+		course = lifedata.NestedPathString(homework, []string{"section", "course"}, "code")
 	}
-	title := firstString(homework, "title")
-	due := formatAPITime(firstString(homework, "submissionDueAt"))
+	title := lifedata.FirstString(homework, "title")
+	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	return monospaceDigits(strings.Join(nonEmpty([]string{"截止 " + due, course, title}), " · "))
-}
-
-func subscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
-	sub, _ := data["subscription"].(map[string]any)
-	sections, _ := sub["sections"].([]any)
-	out := make([]string, 0, len(sections))
-	fallback := make([]string, 0, len(sections))
-	sawSemester := false
-	for _, item := range sections {
-		section, _ := item.(map[string]any)
-		if section == nil {
-			continue
-		}
-		id := firstString(section, "id")
-		if id != "" {
-			fallback = append(fallback, id)
-		}
-		semester, _ := section["semester"].(map[string]any)
-		if semester == nil {
-			continue
-		}
-		sawSemester = true
-		if !day.IsZero() && !semesterContainsDay(semester, day) {
-			continue
-		}
-		if id != "" {
-			out = append(out, id)
-		}
-	}
-	if !sawSemester || day.IsZero() {
-		return fallback
-	}
-	return out
-}
-
-func semesterContainsDay(semester map[string]any, day time.Time) bool {
-	loc := day.Location()
-	start, okStart := parseAPITime(firstString(semester, "startDate"))
-	end, okEnd := parseAPITime(firstString(semester, "endDate"))
-	target := day.In(loc).Format("2006-01-02")
-	if okStart && target < start.In(loc).Format("2006-01-02") {
-		return false
-	}
-	if okEnd && target > end.In(loc).Format("2006-01-02") {
-		return false
-	}
-	return okStart || okEnd
-}
-
-func filterSchedulesForDay(schedules []map[string]any, day time.Time) []map[string]any {
-	out := make([]map[string]any, 0, len(schedules))
-	for _, schedule := range schedules {
-		if scheduleMatchesDay(schedule, day) {
-			out = append(out, schedule)
-		}
-	}
-	return out
-}
-
-func scheduleMatchesDay(schedule map[string]any, day time.Time) bool {
-	date := firstString(schedule, "date")
-	if date == "" {
-		return true
-	}
-	parsed, ok := parseAPITime(date)
-	if !ok {
-		return true
-	}
-	return parsed.In(day.Location()).Format("2006-01-02") == day.In(day.Location()).Format("2006-01-02")
-}
-
-func homeworkCompleted(homework map[string]any) bool {
-	if completed, ok := homework["isCompleted"].(bool); ok {
-		return completed
-	}
-	return homework["completion"] != nil
-}
-
-func formatAPITime(value string) string {
-	if value == "" {
-		return ""
-	}
-	parsed, ok := parseAPITime(value)
-	if !ok {
-		return value
-	}
-	return parsed.In(chinaLocation()).Format("01-02 15:04")
-}
-
-func parseAPITime(value string) (time.Time, bool) {
-	if value == "" {
-		return time.Time{}, false
-	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000Z", "2006-01-02 15:04:05", "2006-01-02"} {
-		parsed, err := time.Parse(layout, value)
-		if err == nil {
-			return parsed, true
-		}
-	}
-	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, chinaLocation()); err == nil {
-		return parsed, true
-	}
-	return time.Time{}, false
-}
-
-func chinaLocation() *time.Location {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		return time.FixedZone("CST", 8*60*60)
-	}
-	return loc
-}
-
-func firstString(m map[string]any, keys ...string) string {
-	for _, key := range keys {
-		switch value := m[key].(type) {
-		case string:
-			if value != "" {
-				return value
-			}
-		case float64:
-			return fmt.Sprintf("%.0f", value)
-		case int:
-			return fmt.Sprint(value)
-		}
-	}
-	return ""
-}
-
-func nestedString(m map[string]any, key string, names ...string) string {
-	nested, _ := m[key].(map[string]any)
-	if nested == nil {
-		return ""
-	}
-	return firstString(nested, names...)
-}
-
-func nestedPathString(m map[string]any, path []string, names ...string) string {
-	current := m
-	for _, key := range path {
-		next, _ := current[key].(map[string]any)
-		if next == nil {
-			return ""
-		}
-		current = next
-	}
-	return firstString(current, names...)
 }
 
 func firstNonEmpty(values ...string) string {

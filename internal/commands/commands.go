@@ -14,6 +14,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -586,9 +587,9 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 	if err != nil {
 		return "个人信息查不到：" + friendlyError(err)
 	}
-	name := firstString(me, "name", "username", "preferred_username", "email")
+	name := lifedata.FirstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
-		name = firstString(me, "id", "sub")
+		name = lifedata.FirstString(me, "id", "sub")
 	}
 	return "已登录：" + name
 }
@@ -629,7 +630,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		if !ok {
 			return "没找到这条待办。发 td 看编号，再试：td done 1"
 		}
-		id := firstString(todo, "id")
+		id := lifedata.FirstString(todo, "id")
 		if id == "" {
 			id = fmt.Sprint(todo["id"])
 		}
@@ -646,7 +647,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		if err != nil {
 			return "待办完成失败：" + friendlyError(err)
 		}
-		title := firstString(todo, "title")
+		title := lifedata.FirstString(todo, "title")
 		if title == "" {
 			return "已完成。"
 		}
@@ -688,7 +689,7 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 	if err != nil {
 		return "待办添加失败：" + friendlyError(err)
 	}
-	id := firstString(created, "id")
+	id := lifedata.FirstString(created, "id")
 	if id == "" {
 		id = fmt.Sprint(created["id"])
 	}
@@ -716,8 +717,8 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 	}
 	needle := strings.ToLower(target)
 	for _, todo := range todos {
-		id := strings.ToLower(firstString(todo, "id"))
-		title := strings.ToLower(firstString(todo, "title"))
+		id := strings.ToLower(lifedata.FirstString(todo, "id"))
+		title := strings.ToLower(lifedata.FirstString(todo, "title"))
 		if needle == id || needle == title || strings.Contains(title, needle) {
 			return todo, true
 		}
@@ -726,8 +727,8 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 }
 
 func formatTodo(todo map[string]any) string {
-	title := firstString(todo, "title")
-	due := formatAPITime(firstString(todo, "dueAt"))
+	title := lifedata.FirstString(todo, "title")
+	due := lifedata.FormatAPITime(lifedata.FirstString(todo, "dueAt"))
 	parts := []string{}
 	if due != "" {
 		parts = append(parts, "截止 "+due)
@@ -736,7 +737,7 @@ func formatTodo(todo map[string]any) string {
 		parts = append(parts, title)
 	}
 	if len(parts) == 0 {
-		return firstString(todo, "id")
+		return lifedata.FirstString(todo, "id")
 	}
 	return strings.Join(parts, " ")
 }
@@ -769,7 +770,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		if !ok {
 			return "没找到这条作业。发 作业 看编号，再试：作业 done 1"
 		}
-		id := firstString(homework, "id")
+		id := lifedata.FirstString(homework, "id")
 		if id == "" {
 			return "这条作业没有可用 ID，暂时改不了。"
 		}
@@ -784,7 +785,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		if err != nil {
 			return "作业状态更新失败：" + friendlyError(err)
 		}
-		title := firstString(homework, "title")
+		title := lifedata.FirstString(homework, "title")
 		if completed {
 			return "已完成作业：" + title
 		}
@@ -817,7 +818,7 @@ func (h Handler) homeworks(ctx context.Context, ident store.Identity, token stri
 		}
 	}
 	sort.Slice(homeworks, func(i, j int) bool {
-		return firstString(homeworks[i], "submissionDueAt") < firstString(homeworks[j], "submissionDueAt")
+		return lifedata.FirstString(homeworks[i], "submissionDueAt") < lifedata.FirstString(homeworks[j], "submissionDueAt")
 	})
 	return homeworks, err
 }
@@ -828,18 +829,11 @@ func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]
 	}
 	out := make([]map[string]any, 0, len(homeworks))
 	for _, homework := range homeworks {
-		if !homeworkCompleted(homework) {
+		if !lifedata.HomeworkCompleted(homework) {
 			out = append(out, homework)
 		}
 	}
 	return out
-}
-
-func homeworkCompleted(homework map[string]any) bool {
-	if completed, ok := homework["isCompleted"].(bool); ok {
-		return completed
-	}
-	return homework["completion"] != nil
 }
 
 func resolveHomework(homeworks []map[string]any, target string) (map[string]any, bool) {
@@ -849,8 +843,8 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 	}
 	needle := strings.ToLower(target)
 	for _, homework := range homeworks {
-		id := strings.ToLower(firstString(homework, "id"))
-		title := strings.ToLower(firstString(homework, "title"))
+		id := strings.ToLower(lifedata.FirstString(homework, "id"))
+		title := strings.ToLower(lifedata.FirstString(homework, "title"))
 		if needle == id || needle == title || strings.Contains(title, needle) {
 			return homework, true
 		}
@@ -859,12 +853,12 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 }
 
 func formatHomework(homework map[string]any) string {
-	course := nestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	course := lifedata.NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if course == "" {
-		course = nestedPathString(homework, []string{"section", "course"}, "code")
+		course = lifedata.NestedPathString(homework, []string{"section", "course"}, "code")
 	}
-	title := firstString(homework, "title")
-	due := formatAPITime(firstString(homework, "submissionDueAt"))
+	title := lifedata.FirstString(homework, "title")
+	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	parts := []string{}
 	if due != "" {
 		parts = append(parts, "截止 "+due)
@@ -876,13 +870,13 @@ func formatHomework(homework map[string]any) string {
 		parts = append(parts, title)
 	}
 	if len(parts) == 0 {
-		return monospaceDigits(firstString(homework, "id"))
+		return monospaceDigits(lifedata.FirstString(homework, "id"))
 	}
 	return monospaceDigits(strings.Join(parts, " · "))
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
-	now := time.Now().In(chinaLocation())
+	now := time.Now().In(lifedata.ChinaLocation())
 	groups := []struct {
 		title string
 		items []map[string]any
@@ -892,7 +886,7 @@ func formatHomeworkList(homeworks []map[string]any) string {
 		{title: "未来"},
 	}
 	for _, homework := range homeworks {
-		due, ok := parseAPITime(firstString(homework, "submissionDueAt"))
+		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 		switch {
 		case ok && due.Before(now):
 			groups[0].items = append(groups[0].items, homework)
@@ -1060,7 +1054,7 @@ func subscriptionSectionsBySemester(items []any) []subscriptionSemesterGroup {
 		if section == nil {
 			continue
 		}
-		semester := nestedString(section, "semester", "namePrimary", "nameCn", "name")
+		semester := lifedata.NestedString(section, "semester", "namePrimary", "nameCn", "name")
 		if semester == "" {
 			semester = "未标注学期"
 		}
@@ -1111,7 +1105,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	added := 0
 	already := 0
 	for _, section := range sections {
-		id := firstInt(section, "id")
+		id := lifedata.FirstInt(section, "id")
 		if id == 0 {
 			continue
 		}
@@ -1163,7 +1157,7 @@ func subscriptionSectionIDInts(data map[string]any) []int {
 	ids := make([]int, 0, len(sections))
 	for _, raw := range sections {
 		section, _ := raw.(map[string]any)
-		id := firstInt(section, "id")
+		id := lifedata.FirstInt(section, "id")
 		if id != 0 {
 			ids = append(ids, id)
 		}
@@ -1172,7 +1166,7 @@ func subscriptionSectionIDInts(data map[string]any) []int {
 }
 
 func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]any, fallbackUnmatched []string, added, already int) string {
-	unmatched := stringSlice(matches["unmatchedCodes"])
+	unmatched := lifedata.StringSlice(matches["unmatchedCodes"])
 	if len(unmatched) == 0 {
 		unmatched = fallbackUnmatched
 	}
@@ -1186,7 +1180,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 		}
 		return strings.Join(lines, "\n")
 	}
-	semester := semesterLabel(matches)
+	semester := lifedata.SemesterLabel(matches)
 	lines := []string{monospaceDigits(fmt.Sprintf("已订阅 %d 个教学班（新增 %d 个，已存在 %d 个）。", len(sections), added, already))}
 	if semester != "" {
 		lines = append(lines, "学期："+semester)
@@ -1209,7 +1203,7 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 	if len(args) > 0 {
 		target = args[0]
 	}
-	loc := chinaLocation()
+	loc := lifedata.ChinaLocation()
 	day := time.Now().In(loc)
 	if target == "two-day" {
 		return h.curriculumTwoDays(ctx, ident, day)
@@ -1284,7 +1278,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 	if !ok {
 		return h.loginRequired()
 	}
-	loc := chinaLocation()
+	loc := lifedata.ChinaLocation()
 	now := time.Now().In(loc)
 	for offset := 0; offset < 8; offset++ {
 		day := now.AddDate(0, 0, offset)
@@ -1320,7 +1314,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err != nil {
 		return nil, err
 	}
-	sectionIDs := subscriptionSectionIDsForDay(sub, day)
+	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
 		return nil, nil
 	}
@@ -1334,9 +1328,9 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err != nil {
 		return nil, err
 	}
-	all = filterSchedulesForDay(all, day)
+	all = lifedata.FilterSchedulesForDay(all, day)
 	sort.Slice(all, func(i, j int) bool {
-		return firstString(all[i], "startTime") < firstString(all[j], "startTime")
+		return lifedata.FirstString(all[i], "startTime") < lifedata.FirstString(all[j], "startTime")
 	})
 	return all, nil
 }
@@ -1386,88 +1380,15 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 	return all, ctx.Err()
 }
 
-func subscriptionSectionIDs(data map[string]any) []string {
-	return subscriptionSectionIDsForDay(data, time.Time{})
-}
-
-func subscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
-	sub, _ := data["subscription"].(map[string]any)
-	sections, _ := sub["sections"].([]any)
-	out := make([]string, 0, len(sections))
-	fallback := make([]string, 0, len(sections))
-	sawSemester := false
-	for _, item := range sections {
-		section, _ := item.(map[string]any)
-		if section == nil {
-			continue
-		}
-		id := firstString(section, "id")
-		if id != "" {
-			fallback = append(fallback, id)
-		}
-		semester, _ := section["semester"].(map[string]any)
-		if semester == nil {
-			continue
-		}
-		sawSemester = true
-		if !day.IsZero() && !semesterContainsDay(semester, day) {
-			continue
-		}
-		if id != "" {
-			out = append(out, id)
-		}
-	}
-	if !sawSemester || day.IsZero() {
-		return fallback
-	}
-	return out
-}
-
-func semesterContainsDay(semester map[string]any, day time.Time) bool {
-	loc := day.Location()
-	start, okStart := parseAPITime(firstString(semester, "startDate"))
-	end, okEnd := parseAPITime(firstString(semester, "endDate"))
-	target := day.In(loc).Format("2006-01-02")
-	if okStart && target < start.In(loc).Format("2006-01-02") {
-		return false
-	}
-	if okEnd && target > end.In(loc).Format("2006-01-02") {
-		return false
-	}
-	return okStart || okEnd
-}
-
-func filterSchedulesForDay(schedules []map[string]any, day time.Time) []map[string]any {
-	out := make([]map[string]any, 0, len(schedules))
-	for _, schedule := range schedules {
-		if scheduleMatchesDay(schedule, day) {
-			out = append(out, schedule)
-		}
-	}
-	return out
-}
-
-func scheduleMatchesDay(schedule map[string]any, day time.Time) bool {
-	date := firstString(schedule, "date")
-	if date == "" {
-		return true
-	}
-	parsed, ok := parseAPITime(date)
-	if !ok {
-		return true
-	}
-	return parsed.In(day.Location()).Format("2006-01-02") == day.In(day.Location()).Format("2006-01-02")
-}
-
 func formatSchedule(schedule map[string]any) string {
-	timeRange := strings.TrimSpace(firstString(schedule, "startTime") + "-" + firstString(schedule, "endTime"))
-	course := nestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
+	course := lifedata.NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if course == "" {
-		course = nestedString(schedule, "section", "code")
+		course = lifedata.NestedString(schedule, "section", "code")
 	}
-	place := firstString(schedule, "customPlace")
+	place := lifedata.FirstString(schedule, "customPlace")
 	if place == "" {
-		place = nestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+		place = lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 	}
 	columns := []string{}
 	if strings.TrimSpace(place) != "" {
@@ -1483,7 +1404,7 @@ func formatSchedule(schedule map[string]any) string {
 }
 
 func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
-	start := firstString(schedule, "startTime")
+	start := lifedata.FirstString(schedule, "startTime")
 	if start == "" {
 		return time.Time{}
 	}
@@ -1535,7 +1456,7 @@ func (h Handler) currentSemester(ctx context.Context) string {
 	if err != nil {
 		return "学期查不到：" + friendlyError(err)
 	}
-	name := firstString(semester, "name", "nameCn", "namePrimary")
+	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
 		name = fmt.Sprint(semester["id"])
 	}
@@ -1640,14 +1561,14 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 	items := make([]busItem, 0, len(trips))
 	for _, raw := range trips {
 		trip, _ := raw.(map[string]any)
-		if trip == nil || firstString(trip, "dayType") != dayType {
+		if trip == nil || lifedata.FirstString(trip, "dayType") != dayType {
 			continue
 		}
 		departure := intNumber(trip["departureMinutes"])
 		if departure < nowMinutes {
 			continue
 		}
-		route := routes[firstString(trip, "routeId")]
+		route := routes[lifedata.FirstString(trip, "routeId")]
 		routeStops := route.StopNames
 		if len(routeStops) == 0 {
 			routeStops = tripStopNames(trip)
@@ -1655,16 +1576,16 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		if !routeMatches(routeStops, from, to) {
 			continue
 		}
-		routeID := firstString(trip, "routeId")
-		stops := busStops(trip, routeStops, busTime(firstString(trip, "departureTime"), departure), firstString(trip, "arrivalTime"))
+		routeID := lifedata.FirstString(trip, "routeId")
+		stops := busStops(trip, routeStops, busTime(lifedata.FirstString(trip, "departureTime"), departure), lifedata.FirstString(trip, "arrivalTime"))
 		items = append(items, busItem{
 			RouteID:          routeID,
 			DepartureCampus:  firstStop(stops),
 			ArrivalCampus:    lastStop(stops),
 			Stops:            stops,
 			DepartureMinutes: departure,
-			DepartureTime:    busTime(firstString(trip, "departureTime"), departure),
-			Arrival:          firstString(trip, "arrivalTime"),
+			DepartureTime:    busTime(lifedata.FirstString(trip, "departureTime"), departure),
+			Arrival:          lifedata.FirstString(trip, "arrivalTime"),
 			Route:            busRouteLabel(route, routeStops),
 		})
 	}
@@ -1767,16 +1688,16 @@ func busRouteMap(raw any) map[string]busRoute {
 			if stop == nil {
 				continue
 			}
-			name := campusName(firstString(stop, "nameCn", "name", "namePrimary"))
+			name := campusName(lifedata.FirstString(stop, "nameCn", "name", "namePrimary"))
 			if name == "" {
-				name = campusName(nestedString(stop, "campus", "nameCn", "namePrimary", "name"))
+				name = campusName(lifedata.NestedString(stop, "campus", "nameCn", "namePrimary", "name"))
 			}
 			if name != "" {
 				stops = append(stops, name)
 			}
 		}
-		out[firstString(route, "id")] = busRoute{
-			Name:      firstString(route, "nameCn", "namePrimary", "name"),
+		out[lifedata.FirstString(route, "id")] = busRoute{
+			Name:      lifedata.FirstString(route, "nameCn", "namePrimary", "name"),
 			StopNames: stops,
 		}
 	}
@@ -1790,7 +1711,7 @@ func tripStopNames(trip map[string]any) []string {
 		if stop == nil {
 			continue
 		}
-		name := campusName(firstString(stop, "campusName", "stopName", "nameCn", "name"))
+		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
 			stops = append(stops, name)
 		}
@@ -1805,9 +1726,9 @@ func busStops(trip map[string]any, routeStops []string, departureTime, arrivalTi
 		if stop == nil {
 			continue
 		}
-		name := campusName(firstString(stop, "campusName", "stopName", "nameCn", "name"))
+		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
-			stops = append(stops, busStop{Name: name, Time: firstString(stop, "time")})
+			stops = append(stops, busStop{Name: name, Time: lifedata.FirstString(stop, "time")})
 		}
 	}
 	if len(stops) > 0 {
@@ -2037,8 +1958,8 @@ func busTime(value string, minutes int) string {
 }
 
 func formatCourse(course map[string]any) string {
-	code := monospaceASCII(firstString(course, "code"))
-	name := firstString(course, "namePrimary", "nameCn", "name")
+	code := monospaceASCII(lifedata.FirstString(course, "code"))
+	name := lifedata.FirstString(course, "namePrimary", "nameCn", "name")
 	if code == "" {
 		return "- " + name
 	}
@@ -2046,9 +1967,9 @@ func formatCourse(course map[string]any) string {
 }
 
 func formatSection(section map[string]any) string {
-	code := monospaceASCII(firstString(section, "code"))
-	course := nestedString(section, "course", "namePrimary", "nameCn", "name")
-	semester := nestedString(section, "semester", "name")
+	code := monospaceASCII(lifedata.FirstString(section, "code"))
+	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
+	semester := lifedata.NestedString(section, "semester", "name")
 	parts := []string{course, semester}
 	if code == "" {
 		return "- " + strings.Join(nonEmpty(parts), " ")
@@ -2070,107 +1991,6 @@ const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
-
-func firstString(m map[string]any, keys ...string) string {
-	for _, key := range keys {
-		switch value := m[key].(type) {
-		case string:
-			if value != "" {
-				return value
-			}
-		case float64:
-			return strconv.FormatInt(int64(value), 10)
-		case int:
-			return strconv.Itoa(value)
-		}
-	}
-	return ""
-}
-
-func firstInt(m map[string]any, keys ...string) int {
-	if m == nil {
-		return 0
-	}
-	for _, key := range keys {
-		switch value := m[key].(type) {
-		case int:
-			return value
-		case int64:
-			return int(value)
-		case float64:
-			return int(value)
-		case string:
-			id, err := strconv.Atoi(value)
-			if err == nil {
-				return id
-			}
-		}
-	}
-	return 0
-}
-
-func stringSlice(value any) []string {
-	raw, _ := value.([]any)
-	out := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if text, ok := item.(string); ok && text != "" {
-			out = append(out, text)
-		}
-	}
-	return out
-}
-
-func semesterLabel(data map[string]any) string {
-	semester, _ := data["semester"].(map[string]any)
-	return firstString(semester, "namePrimary", "nameCn", "name")
-}
-
-func nestedString(m map[string]any, key string, nestedKeys ...string) string {
-	child, ok := m[key].(map[string]any)
-	if !ok {
-		return ""
-	}
-	return firstString(child, nestedKeys...)
-}
-
-func nestedPathString(m map[string]any, path []string, keys ...string) string {
-	current := m
-	for _, key := range path {
-		child, ok := current[key].(map[string]any)
-		if !ok {
-			return ""
-		}
-		current = child
-	}
-	return firstString(current, keys...)
-}
-
-func formatAPITime(value string) string {
-	parsed, ok := parseAPITime(value)
-	if !ok {
-		return strings.TrimSpace(value)
-	}
-	return parsed.Format("01-02 15:04")
-}
-
-func parseAPITime(value string) (time.Time, bool) {
-	if value == "" {
-		return time.Time{}, false
-	}
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return parsed.In(chinaLocation()), true
-}
-
-func chinaLocation() *time.Location {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		return time.FixedZone("CST", 8*60*60)
-	}
-	return loc
-}
 
 func nonEmpty(values []string) []string {
 	out := make([]string, 0, len(values))
