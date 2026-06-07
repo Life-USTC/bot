@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -80,6 +81,20 @@ func TestAgentToolConstruction(t *testing.T) {
 		if !names[name] {
 			t.Fatalf("missing tool %q; tools = %#v", name, names)
 		}
+	}
+}
+
+func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {
+	got, err := requiredToolArg("keyword", "  计算机网络  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "计算机网络" {
+		t.Fatalf("arg = %q", got)
+	}
+	_, err = requiredToolArg("keyword", " \t\n ")
+	if err == nil || !strings.Contains(err.Error(), "keyword") {
+		t.Fatalf("blank arg error = %v", err)
 	}
 }
 

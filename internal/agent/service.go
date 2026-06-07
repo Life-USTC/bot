@@ -200,43 +200,71 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
-		return s.runCommand(ctx, ident, "课程 "+input.Keyword)
+		keyword, err := requiredToolArg("keyword", input.Keyword)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "课程 "+keyword)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
-		return s.runCommand(ctx, ident, "教学班 "+input.Keyword)
+		keyword, err := requiredToolArg("keyword", input.Keyword)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "教学班 "+keyword)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
-		return s.runCommand(ctx, ident, "待办 add "+input.Title)
+		title, err := requiredToolArg("title", input.Title)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "待办 add "+title)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
-		return s.runCommand(ctx, ident, "待办 done "+input.Target)
+		target, err := requiredToolArg("target", input.Target)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "待办 done "+target)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
-		return s.runCommand(ctx, ident, "作业 done "+input.Target)
+		target, err := requiredToolArg("target", input.Target)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "作业 done "+target)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
-		return s.runCommand(ctx, ident, "作业 undo "+input.Target)
+		target, err := requiredToolArg("target", input.Target)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "作业 undo "+target)
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
-		return s.runCommand(ctx, ident, "订阅 导入 "+input.Text)
+		text, err := requiredToolArg("text", input.Text)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, "订阅 导入 "+text)
 	})
 	if err != nil {
 		return nil, err
@@ -283,6 +311,14 @@ func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {
 		count += len(commandSpec.AgentTools)
 	}
 	return count
+}
+
+func requiredToolArg(name, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%s is required", name)
+	}
+	return value, nil
 }
 
 func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {
