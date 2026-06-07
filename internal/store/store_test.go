@@ -992,7 +992,7 @@ func TestNotificationDeliveryTrimsKeys(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42"}
-	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, " class ", " section-1 ")
+	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, " CLASS ", " section-1 ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1004,7 +1004,7 @@ func TestNotificationDeliveryTrimsKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	if recorded {
-		t.Fatal("trim-equivalent duplicate delivery was recorded")
+		t.Fatal("normalized duplicate delivery was recorded")
 	}
 	delivered, err := s.NotificationDelivered(ctx, ident, " class ", " section-1 ")
 	if err != nil {
