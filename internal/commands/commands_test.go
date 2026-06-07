@@ -819,11 +819,19 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 上课 开启", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
+		t.Fatalf("class alias reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 hw 关闭", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
+		t.Fatalf("homework alias reply = %q, ok = %v", reply, ok)
+	}
 
 	paddedIdent := ident
 	paddedIdent.ConversationType = " PRIVATE "
 	reply, ok = handler.Handle(ctx, Input{Text: "通知", Identity: paddedIdent})
-	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("padded private reply = %q, ok = %v", reply, ok)
 	}
 }
