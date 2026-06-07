@@ -156,9 +156,7 @@ func (c *Client) ReplaceCalendarSubscription(ctx context.Context, token string, 
 }
 
 func (c *Client) Schedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
-	var out struct {
-		Data []map[string]any `json:"data"`
-	}
+	var out dataList
 	if err := c.getAuth(ctx, "/api/schedules", values, token, &out); err != nil {
 		return nil, err
 	}
@@ -166,13 +164,15 @@ func (c *Client) Schedules(ctx context.Context, token string, values url.Values)
 }
 
 func (c *Client) list(ctx context.Context, path string, values url.Values) ([]map[string]any, error) {
-	var out struct {
-		Data []map[string]any `json:"data"`
-	}
+	var out dataList
 	if err := c.get(ctx, path, values, &out); err != nil {
 		return nil, err
 	}
 	return out.Data, nil
+}
+
+type dataList struct {
+	Data []map[string]any `json:"data"`
 }
 
 func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {

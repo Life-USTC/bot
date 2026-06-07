@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -30,6 +31,32 @@ func TestSearchCourses(t *testing.T) {
 	}
 	if len(courses) != 1 || courses[0]["code"] != "MATH1001" {
 		t.Fatalf("unexpected courses %#v", courses)
+	}
+}
+
+func TestSchedulesUsesDataList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/schedules" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if got := r.URL.Query().Get("sectionId"); got != "101" {
+			t.Fatalf("sectionId = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","section":{"id":101}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	values := url.Values{"sectionId": []string{"101"}}
+	schedules, err := client.Schedules(context.Background(), "token", values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schedules) != 1 || schedules[0]["startTime"] != "09:50" {
+		t.Fatalf("schedules = %#v", schedules)
 	}
 }
 
