@@ -74,6 +74,26 @@ func TestSendTrimsAccessToken(t *testing.T) {
 	}
 }
 
+func TestSendTrimsAPIURL(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: " " + server.URL + "/// ", HTTPClient: server.Client()}
+	if err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/send_private_msg" {
+		t.Fatalf("path = %q", gotPath)
+	}
+}
+
 func TestSendReturnsNapCatJSONFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"failed","retcode":1200,"message":"send failed"}`))
