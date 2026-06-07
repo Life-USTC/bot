@@ -34,11 +34,11 @@ func FromEnv() Config {
 		LifeServer:         envString("LIFE_USTC_SERVER", "http://localhost:3000"),
 		OneBotHTTPHost:     envString("BOT_ONEBOT_HTTP_HOST", "127.0.0.1"),
 		OneBotHTTPPort:     envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
-		OneBotAccessToken:  os.Getenv("BOT_ONEBOT_ACCESS_TOKEN"),
+		OneBotAccessToken:  envOptionalString("BOT_ONEBOT_ACCESS_TOKEN"),
 		OneBotSelfID:       envString("BOT_SELF_ID", "life-ustc"),
 		NapCatAPIURL:       strings.TrimRight(envString("NAPCAT_API_URL", "http://127.0.0.1:3000"), "/"),
-		NapCatAccessToken:  os.Getenv("NAPCAT_ACCESS_TOKEN"),
-		NapCatWSURL:        os.Getenv("NAPCAT_WS_URL"),
+		NapCatAccessToken:  envOptionalString("NAPCAT_ACCESS_TOKEN"),
+		NapCatWSURL:        envOptionalString("NAPCAT_WS_URL"),
 		NapCatReverseAddr:  envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
 		NapCatReversePath:  envString("NAPCAT_REVERSE_PATH", "/ws"),
 		DBPath:             envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
@@ -47,8 +47,8 @@ func FromEnv() Config {
 		EnableOneBotServer: envBool("BOT_ENABLE_ONEBOT_SERVER", true),
 		EnableNapCatBridge: envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
 		EnableAgent:        envBool("BOT_ENABLE_AGENT", false),
-		LLMAPIKey:          os.Getenv("OPENAI_API_KEY"),
-		LLMBaseURL:         os.Getenv("OPENAI_BASE_URL"),
+		LLMAPIKey:          envOptionalString("OPENAI_API_KEY"),
+		LLMBaseURL:         envOptionalString("OPENAI_BASE_URL"),
 		LLMModel:           envString("BOT_LLM_MODEL", "gpt-4o-mini"),
 	}
 }
@@ -58,6 +58,10 @@ func envString(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envOptionalString(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
 }
 
 func envInt(key string, fallback int) int {

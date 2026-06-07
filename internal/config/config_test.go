@@ -48,3 +48,28 @@ func TestFromEnvFallsBackForInvalidHTTPClientTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestFromEnvTrimsOptionalStrings(t *testing.T) {
+	t.Setenv("BOT_ONEBOT_ACCESS_TOKEN", " onebot-token ")
+	t.Setenv("NAPCAT_ACCESS_TOKEN", " napcat-token ")
+	t.Setenv("NAPCAT_WS_URL", " ws://127.0.0.1:3001 ")
+	t.Setenv("OPENAI_API_KEY", " api-key ")
+	t.Setenv("OPENAI_BASE_URL", " https://llm.example/v1 ")
+
+	cfg := FromEnv()
+	if cfg.OneBotAccessToken != "onebot-token" {
+		t.Fatalf("OneBotAccessToken = %q", cfg.OneBotAccessToken)
+	}
+	if cfg.NapCatAccessToken != "napcat-token" {
+		t.Fatalf("NapCatAccessToken = %q", cfg.NapCatAccessToken)
+	}
+	if cfg.NapCatWSURL != "ws://127.0.0.1:3001" {
+		t.Fatalf("NapCatWSURL = %q", cfg.NapCatWSURL)
+	}
+	if cfg.LLMAPIKey != "api-key" {
+		t.Fatalf("LLMAPIKey = %q", cfg.LLMAPIKey)
+	}
+	if cfg.LLMBaseURL != "https://llm.example/v1" {
+		t.Fatalf("LLMBaseURL = %q", cfg.LLMBaseURL)
+	}
+}
