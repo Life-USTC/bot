@@ -95,8 +95,7 @@ func TestAgentToolConstruction(t *testing.T) {
 		Auth:  &auth.Manager{Store: db},
 		Store: db,
 	}}
-	names := agentToolNames(t, svc)
-	wantNames := []string{
+	assertAgentToolNames(t, svc,
 		"add_todo",
 		"bulk_subscribe_sections",
 		"complete_homework",
@@ -118,30 +117,13 @@ func TestAgentToolConstruction(t *testing.T) {
 		"search_sections",
 		"set_notification_settings",
 		"undo_homework_completion",
-	}
-	if len(names) != len(wantNames) {
-		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
-	}
-	for _, name := range wantNames {
-		if !names[name] {
-			t.Fatalf("missing tool %q; tools = %#v", name, names)
-		}
-	}
+	)
 }
 
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
-	names := agentToolNames(t, &Service{})
-	wantNames := []string{
+	assertAgentToolNames(t, &Service{},
 		"get_current_time",
-	}
-	if len(names) != len(wantNames) {
-		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
-	}
-	for _, name := range wantNames {
-		if !names[name] {
-			t.Fatalf("missing tool %q; tools = %#v", name, names)
-		}
-	}
+	)
 }
 
 func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
@@ -151,20 +133,11 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	names := agentToolNames(t, &Service{handler: commands.Handler{Store: db}})
-	wantNames := []string{
+	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
 		"get_notification_settings",
 		"set_notification_settings",
-	}
-	if len(names) != len(wantNames) {
-		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
-	}
-	for _, name := range wantNames {
-		if !names[name] {
-			t.Fatalf("missing tool %q; tools = %#v", name, names)
-		}
-	}
+	)
 }
 
 func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
@@ -194,6 +167,24 @@ func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 		names[info.Name] = true
 	}
 	return names
+}
+
+func assertAgentToolNames(t *testing.T, svc *Service, wantNames ...string) {
+	t.Helper()
+	names := agentToolNames(t, svc)
+	if len(names) != len(wantNames) {
+		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
+	}
+	seen := map[string]bool{}
+	for _, name := range wantNames {
+		if seen[name] {
+			t.Fatalf("duplicate expected tool %q", name)
+		}
+		seen[name] = true
+		if !names[name] {
+			t.Fatalf("missing tool %q; tools = %#v", name, names)
+		}
+	}
 }
 
 func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {
