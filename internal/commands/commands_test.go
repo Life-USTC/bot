@@ -438,6 +438,24 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	}
 }
 
+func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	handler := Handler{Auth: &auth.Manager{Store: s}, Prefix: "/life"}
+	for _, text := range []string{"登录 状态", "登录 ok", "登录 好了", "登录 完成"} {
+		reply, ok := handler.Handle(ctx, Input{Text: text, Identity: ident})
+		if !ok || reply != "暂无进行中的登录。发送：登录" {
+			t.Fatalf("%q reply = %q, ok = %v", text, reply, ok)
+		}
+	}
+}
+
 func TestHandleTodoDoneByIndex(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
