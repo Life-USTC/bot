@@ -202,6 +202,15 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestJoinedArgsTrimsJoinedText(t *testing.T) {
+	if got := joinedArgs([]string{" 写", "报告 "}); got != "写 报告" {
+		t.Fatalf("joinedArgs = %q", got)
+	}
+	if got := joinedArgs(nil); got != "" {
+		t.Fatalf("joinedArgs(nil) = %q", got)
+	}
+}
+
 func TestHandleTodoAddCasual(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

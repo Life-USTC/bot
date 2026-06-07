@@ -445,6 +445,10 @@ func withFirstArg(args []string, value string) []string {
 	return next
 }
 
+func joinedArgs(args []string) string {
+	return strings.TrimSpace(strings.Join(args, " "))
+}
+
 func parseGroupBus(text string) (parsedCommand, bool) {
 	raw := strings.TrimSpace(stripCQCodes(text))
 	if raw == "" || !containsBusKeyword(raw) {
@@ -593,14 +597,14 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		return h.loginRequired()
 	}
 	if len(args) > 0 && args[0] == "add" {
-		title := strings.TrimSpace(strings.Join(args[1:], " "))
+		title := joinedArgs(args[1:])
 		if title == "" {
 			return "想加什么？例如：待办 add 写报告"
 		}
 		return h.createTodo(ctx, ident, token, title)
 	}
 	if len(args) > 0 && args[0] == "done" {
-		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		target := joinedArgs(args[1:])
 		if target == "" {
 			return "想完成哪条？例如：td done 1"
 		}
@@ -730,7 +734,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		return h.loginRequired()
 	}
 	if len(args) > 0 && (args[0] == "done" || args[0] == "undo") {
-		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		target := joinedArgs(args[1:])
 		if target == "" {
 			return "想改哪条作业？例如：作业 done 1"
 		}
@@ -890,9 +894,9 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 		case "help":
 			return subscriptionHelp()
 		case "import":
-			return h.bulkSubscribeSections(ctx, ident, strings.Join(args[1:], " "))
+			return h.bulkSubscribeSections(ctx, ident, joinedArgs(args[1:]))
 		default:
-			raw := strings.Join(args, " ")
+			raw := joinedArgs(args)
 			if len(extractSectionCodes(raw)) > 0 {
 				return h.bulkSubscribeSections(ctx, ident, raw)
 			}
