@@ -122,7 +122,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 
 func TestHandleHelpAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"/help", "/?", "帮助", "/life -h"} {
+	for _, text := range []string{"/help", "/?", "帮助", "菜单", "/life -h", "/life 菜单"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text})
 		if !ok {
 			t.Fatalf("%q was not handled", text)
@@ -130,6 +130,17 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !strings.Contains(reply, "待办 / td") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
+	}
+}
+
+func TestIsHelpToken(t *testing.T) {
+	for _, token := range []string{"/help", "/?", "-h", "--help", " help ", "?", "？", "帮助", "菜单"} {
+		if !isHelpToken(token) {
+			t.Fatalf("%q was not recognized as help", token)
+		}
+	}
+	if isHelpToken("status") {
+		t.Fatal("status was recognized as help")
 	}
 }
 

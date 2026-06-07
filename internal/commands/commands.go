@@ -279,7 +279,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		return parsedCommand{Name: name, Args: args, Raw: raw}, true
 	}
 
-	if fields[0] == "/help" || fields[0] == "/?" || fields[0] == "help" || fields[0] == "帮助" || fields[0] == "？" {
+	if isHelpToken(fields[0]) {
 		return parsedCommand{Name: "help", Raw: raw}, true
 	}
 
@@ -304,7 +304,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 
 func normalizeCommand(name string, args []string) (string, []string) {
 	key := normToken(name)
-	if key == "-h" || key == "--help" || key == "help" || key == "?" || key == "？" || key == "帮助" || key == "菜单" {
+	if isHelpToken(key) {
 		return "help", args
 	}
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
@@ -347,9 +347,10 @@ func normalizeSubscriptionArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch normToken(args[0]) {
-	case "-h", "--help", "help", "?", "？", "帮助":
+	if isHelpToken(args[0]) {
 		return withFirstArg(args, "help")
+	}
+	switch normToken(args[0]) {
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
 		return withFirstArg(args, "import")
 	}
@@ -371,9 +372,10 @@ func normalizeTodoArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch normToken(args[0]) {
-	case "-h", "--help", "help", "?", "？", "帮助":
+	if isHelpToken(args[0]) {
 		return withFirstArg(args, "help")
+	}
+	switch normToken(args[0]) {
 	case "add", "new", "create", "+", "添加", "新增", "加":
 		return withFirstArg(args, "add")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
@@ -386,9 +388,10 @@ func normalizeHomeworkArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch normToken(args[0]) {
-	case "-h", "--help", "help", "?", "？", "帮助":
+	if isHelpToken(args[0]) {
 		return withFirstArg(args, "help")
+	}
+	switch normToken(args[0]) {
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
 	case "undo", "undone", "reset", "取消", "撤销":
@@ -417,9 +420,11 @@ func normalizeScheduleArgs(args []string) []string {
 func normalizeNotifyArgs(args []string) []string {
 	out := append([]string(nil), args...)
 	for i, arg := range out {
-		switch normToken(arg) {
-		case "-h", "--help", "help", "?", "？", "帮助":
+		if isHelpToken(arg) {
 			out[i] = "help"
+			continue
+		}
+		switch normToken(arg) {
 		case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
 			out[i] = "classes"
 		case "homework", "hw", "作业":
@@ -437,6 +442,15 @@ func normalizeNotifyArgs(args []string) []string {
 
 func normToken(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isHelpToken(value string) bool {
+	switch normToken(value) {
+	case "/help", "/?", "-h", "--help", "help", "?", "？", "帮助", "菜单":
+		return true
+	default:
+		return false
+	}
 }
 
 func withFirstArg(args []string, value string) []string {
