@@ -321,10 +321,10 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 }
 
 func (m *Manager) resource(meta metadata) string {
-	if meta.Issuer != "" {
-		return strings.TrimRight(meta.Issuer, "/")
+	if issuer := strings.TrimSpace(meta.Issuer); issuer != "" {
+		return strings.TrimRight(issuer, "/")
 	}
-	return strings.TrimRight(m.Server, "/")
+	return strings.TrimRight(strings.TrimSpace(m.Server), "/")
 }
 
 func responseBodyText(resp *http.Response) string {

@@ -197,6 +197,16 @@ func TestBeginDeviceLoginTrimsErrorBody(t *testing.T) {
 	}
 }
 
+func TestResourceTrimsIssuerAndServer(t *testing.T) {
+	manager := Manager{Server: " https://life.example/server/ "}
+	if got := manager.resource(metadata{Issuer: " https://life.example/issuer/ "}); got != "https://life.example/issuer" {
+		t.Fatalf("issuer resource = %q", got)
+	}
+	if got := manager.resource(metadata{}); got != "https://life.example/server" {
+		t.Fatalf("server resource = %q", got)
+	}
+}
+
 func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
