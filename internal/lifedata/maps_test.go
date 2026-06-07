@@ -122,6 +122,30 @@ func TestSortSchedulesByStartIsStable(t *testing.T) {
 	}
 }
 
+func TestScheduleStartTimeUsesProvidedLocation(t *testing.T) {
+	loc := time.FixedZone("TEST", 9*60*60)
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	got := ScheduleStartTime(map[string]any{"startTime": "09:45"}, day, loc)
+	if got.IsZero() {
+		t.Fatal("ScheduleStartTime returned zero")
+	}
+	if got.Location() != loc || got.Format("2006-01-02 15:04") != "2026-06-07 09:45" {
+		t.Fatalf("start = %s (%s)", got.Format(time.RFC3339), got.Location())
+	}
+}
+
+func TestScheduleStartTimeRejectsMissingOrInvalidStart(t *testing.T) {
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	for _, schedule := range []map[string]any{
+		{},
+		{"startTime": "bad"},
+	} {
+		if got := ScheduleStartTime(schedule, day, nil); !got.IsZero() {
+			t.Fatalf("ScheduleStartTime(%#v) = %s", schedule, got)
+		}
+	}
+}
+
 func TestIntValueAcceptsCommonAPIShapes(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

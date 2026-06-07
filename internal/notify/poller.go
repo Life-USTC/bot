@@ -90,7 +90,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 		return
 	}
 	for _, schedule := range schedules {
-		start := scheduleStartTime(schedule, now)
+		start := lifedata.ScheduleStartTime(schedule, now, nil)
 		if start.IsZero() || start.Before(now) || start.After(now.Add(30*time.Minute)) {
 			continue
 		}
@@ -202,18 +202,6 @@ func notificationKey(kind, item string) string {
 func scheduleKey(schedule map[string]any, start time.Time) string {
 	sectionID := lifedata.NestedString(schedule, "section", "id")
 	return strings.Join(textutil.NonEmpty(sectionID, start.Format("2006-01-02T15:04"), lifedata.FirstString(schedule, "startTime"), lifedata.FirstString(schedule, "endTime")), "|")
-}
-
-func scheduleStartTime(schedule map[string]any, day time.Time) time.Time {
-	start := lifedata.FirstString(schedule, "startTime")
-	if start == "" {
-		return time.Time{}
-	}
-	parsed, err := time.ParseInLocation("2006-01-02 15:04", day.Format("2006-01-02")+" "+start, day.Location())
-	if err != nil {
-		return time.Time{}
-	}
-	return parsed
 }
 
 func formatSchedule(schedule map[string]any) string {

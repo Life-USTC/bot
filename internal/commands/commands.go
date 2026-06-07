@@ -1230,7 +1230,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 			return "下一节课查不到：" + friendlyError(err)
 		}
 		for _, schedule := range schedules {
-			start := scheduleStartTime(schedule, day, loc)
+			start := lifedata.ScheduleStartTime(schedule, day, loc)
 			if start.IsZero() || start.Before(now) {
 				continue
 			}
@@ -1330,18 +1330,6 @@ func formatSchedule(schedule map[string]any) string {
 		columns = append(columns, course)
 	}
 	return strings.TrimRight(strings.Join(columns, "\t"), " ")
-}
-
-func scheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
-	start := lifedata.FirstString(schedule, "startTime")
-	if start == "" {
-		return time.Time{}
-	}
-	parsed, err := time.ParseInLocation("2006-01-02 15:04", day.Format("2006-01-02")+" "+start, loc)
-	if err != nil {
-		return time.Time{}
-	}
-	return parsed
 }
 
 func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string, bool) {

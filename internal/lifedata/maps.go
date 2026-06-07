@@ -155,6 +155,21 @@ func ScheduleMatchesDay(schedule map[string]any, day time.Time) bool {
 	return parsed.In(day.Location()).Format("2006-01-02") == day.In(day.Location()).Format("2006-01-02")
 }
 
+func ScheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
+	start := FirstString(schedule, "startTime")
+	if start == "" {
+		return time.Time{}
+	}
+	if loc == nil {
+		loc = day.Location()
+	}
+	parsed, err := time.ParseInLocation("2006-01-02 15:04", day.Format("2006-01-02")+" "+start, loc)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
 func FormatAPITime(value string) string {
 	if value == "" {
 		return ""
