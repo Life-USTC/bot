@@ -241,7 +241,7 @@ func TestIntValueRejectsInvalidValues(t *testing.T) {
 }
 
 func TestStringSliceAcceptsStringSlices(t *testing.T) {
-	got := StringSlice([]string{"one", "", "two"})
+	got := StringSlice([]string{" one ", "", "   ", "two"})
 	want := []string{"one", "two"}
 	if len(got) != len(want) {
 		t.Fatalf("StringSlice([]string) = %#v, want %#v", got, want)
@@ -254,7 +254,7 @@ func TestStringSliceAcceptsStringSlices(t *testing.T) {
 }
 
 func TestStringSliceAcceptsDecodedJSONSlices(t *testing.T) {
-	got := StringSlice([]any{"one", "", "two", 3})
+	got := StringSlice([]any{"one", "", " two ", "   ", 3})
 	want := []string{"one", "two"}
 	if len(got) != len(want) {
 		t.Fatalf("StringSlice([]any) = %#v, want %#v", got, want)

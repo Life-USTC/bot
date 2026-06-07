@@ -266,6 +266,7 @@ func StringSlice(value any) []string {
 	if items, ok := value.([]string); ok {
 		out := make([]string, 0, len(items))
 		for _, text := range items {
+			text = strings.TrimSpace(text)
 			if text != "" {
 				out = append(out, text)
 			}
@@ -275,8 +276,11 @@ func StringSlice(value any) []string {
 	raw := AnySlice(value)
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
-		if text, ok := item.(string); ok && text != "" {
-			out = append(out, text)
+		if text, ok := item.(string); ok {
+			text = strings.TrimSpace(text)
+			if text != "" {
+				out = append(out, text)
+			}
 		}
 	}
 	return out
