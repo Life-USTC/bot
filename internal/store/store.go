@@ -282,11 +282,11 @@ func validateConversationIdentity(ident Identity) error {
 }
 
 func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credential) error {
-	userID, err := s.EnsureUser(ctx, ident)
+	cred, err := normalizeCredentialForSave(cred)
 	if err != nil {
 		return err
 	}
-	cred, err = normalizeCredentialForSave(cred)
+	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
 		return err
 	}

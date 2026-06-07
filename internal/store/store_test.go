@@ -260,6 +260,13 @@ func TestSaveCredentialRejectsBlankRequiredFields(t *testing.T) {
 			t.Fatalf("SaveCredential(%#v) error = %v", cred, err)
 		}
 	}
+	var count int64
+	if err := s.db.WithContext(context.Background()).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after invalid credential = %d", count)
+	}
 }
 
 func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
