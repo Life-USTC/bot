@@ -453,6 +453,9 @@ func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
 }
 
 func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginSession, error) {
+	if err := validateIdentity(ident); err != nil {
+		return nil, err
+	}
 	ident = normalizeIdentity(ident)
 	var row loginSessionRow
 	err := s.db.WithContext(ctx).

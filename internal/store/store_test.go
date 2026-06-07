@@ -679,6 +679,28 @@ func TestActiveLoginSessionTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestActiveLoginSessionRejectsIncompleteIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	tests := []Identity{
+		{},
+		{Platform: "napcat"},
+		{UserID: "42"},
+		{Platform: "   ", UserID: "42"},
+		{Platform: "napcat", UserID: "   "},
+	}
+	for _, ident := range tests {
+		_, err := s.ActiveLoginSession(context.Background(), ident)
+		if err == nil || !strings.Contains(err.Error(), "identity") {
+			t.Fatalf("ActiveLoginSession(%#v) error = %v", ident, err)
+		}
+	}
+}
+
 func TestSaveLoginSessionRejectsBlankRequiredFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
