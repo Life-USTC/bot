@@ -339,6 +339,10 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	if err != nil {
 		return err
 	}
+	session, err = normalizeLoginSessionForSave(session)
+	if err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&loginSessionRow{}).
@@ -365,6 +369,25 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 		}
 		return tx.Create(&row).Error
 	})
+}
+
+func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
+	session.DeviceCode = strings.TrimSpace(session.DeviceCode)
+	session.UserCode = strings.TrimSpace(session.UserCode)
+	session.VerificationURI = strings.TrimSpace(session.VerificationURI)
+	session.VerificationURIComplete = strings.TrimSpace(session.VerificationURIComplete)
+	session.ClientID = strings.TrimSpace(session.ClientID)
+	session.Status = strings.TrimSpace(session.Status)
+	if session.DeviceCode == "" {
+		return LoginSession{}, errors.New("login session device code is empty")
+	}
+	if session.ClientID == "" {
+		return LoginSession{}, errors.New("login session client id is empty")
+	}
+	if session.Status == "" {
+		return LoginSession{}, errors.New("login session status is empty")
+	}
+	return session, nil
 }
 
 func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginSession, error) {

@@ -288,6 +288,66 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSaveLoginSessionTrimsFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode:              " device ",
+		UserCode:                " USER-CODE ",
+		VerificationURI:         " https://life.example/device ",
+		VerificationURIComplete: " https://life.example/device?user_code=USER-CODE ",
+		ClientID:                " client ",
+		ExpiresAt:               time.Now().Add(time.Minute),
+		Status:                  " pending ",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("session not found")
+	}
+	if got.DeviceCode != "device" || got.UserCode != "USER-CODE" || got.VerificationURI != "https://life.example/device" || got.ClientID != "client" || got.Status != "pending" {
+		t.Fatalf("session = %#v", got)
+	}
+}
+
+func TestSaveLoginSessionRejectsBlankRequiredFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	base := LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}
+	tests := []LoginSession{
+		func() LoginSession { next := base; next.DeviceCode = " "; return next }(),
+		func() LoginSession { next := base; next.ClientID = " "; return next }(),
+		func() LoginSession { next := base; next.Status = " "; return next }(),
+	}
+	for _, session := range tests {
+		err := s.SaveLoginSession(ctx, ident, session)
+		if err == nil || !strings.Contains(err.Error(), "login session") {
+			t.Fatalf("SaveLoginSession(%#v) error = %v", session, err)
+		}
+	}
+}
+
 func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
