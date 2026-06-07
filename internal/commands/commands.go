@@ -1638,7 +1638,7 @@ func (h Handler) status(ctx context.Context, ident store.Identity) string {
 		api = friendlyError(err)
 	}
 	login := "未登录"
-	if h.Auth != nil && h.Auth.Store != nil {
+	if h.Auth != nil {
 		if _, err := h.Auth.AccessToken(ctx, ident); err == nil {
 			login = "已登录"
 		}
