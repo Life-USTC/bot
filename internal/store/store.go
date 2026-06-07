@@ -229,6 +229,7 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 	if err := validateIdentity(ident); err != nil {
 		return 0, err
 	}
+	ident = normalizeIdentity(ident)
 	now := time.Now().UTC()
 	user := userRow{
 		Platform:       ident.Platform,
@@ -247,6 +248,14 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID).
 		First(&user).Error
 	return user.ID, err
+}
+
+func normalizeIdentity(ident Identity) Identity {
+	ident.Platform = strings.TrimSpace(ident.Platform)
+	ident.UserID = strings.TrimSpace(ident.UserID)
+	ident.ConversationType = strings.TrimSpace(ident.ConversationType)
+	ident.ConversationID = strings.TrimSpace(ident.ConversationID)
+	return ident
 }
 
 func validateIdentity(ident Identity) error {

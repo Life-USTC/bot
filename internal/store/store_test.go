@@ -29,6 +29,34 @@ func TestEnsureUserRejectsIncompleteIdentity(t *testing.T) {
 	}
 }
 
+func TestEnsureUserTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	first, err := s.EnsureUser(ctx, Identity{Platform: " napcat ", UserID: " 42 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.EnsureUser(ctx, Identity{Platform: "napcat", UserID: "42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("user ids = %d, %d", first, second)
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("user count = %d", count)
+	}
+}
+
 func TestRecordConversationStateRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
