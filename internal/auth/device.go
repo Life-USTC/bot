@@ -182,7 +182,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
 		return PollResult{Message: "登录已取消。发送：登录"}, nil
 	default:
-		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, bodyText(body))
 	}
 }
 
@@ -249,7 +249,7 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, bodyText(body))
 	}
 	return credentialFromTokenBodyAt(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope, m.now())
 }
@@ -359,6 +359,10 @@ func (m *Manager) resource(meta metadata) string {
 
 func responseBodyText(resp *http.Response) string {
 	body, _ := io.ReadAll(resp.Body)
+	return bodyText(body)
+}
+
+func bodyText(body []byte) string {
 	return strings.TrimSpace(string(body))
 }
 
