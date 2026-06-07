@@ -1437,7 +1437,10 @@ func (h Handler) currentSemester(ctx context.Context) string {
 	}
 	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
-		name = fmt.Sprint(semester["id"])
+		name = lifedata.FirstString(semester, "id")
+	}
+	if name == "" {
+		return "当前学期未知。"
 	}
 	return "当前学期：" + name
 }

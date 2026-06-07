@@ -1065,6 +1065,32 @@ func intStrings(values []int) []string {
 	return out
 }
 
+func TestCurrentSemesterUsesNumericID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":202602}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.currentSemester(context.Background())
+	if reply != "当前学期：202602" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestCurrentSemesterWithoutLabelIsUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.currentSemester(context.Background())
+	if reply != "当前学期未知。" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestHandleSuppressLog(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
