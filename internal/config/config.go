@@ -31,7 +31,7 @@ type Config struct {
 
 func FromEnv() Config {
 	return Config{
-		LifeServer:         envString("LIFE_USTC_SERVER", "http://localhost:3000"),
+		LifeServer:         envTrimRight("LIFE_USTC_SERVER", "http://localhost:3000", "/"),
 		OneBotHTTPHost:     envString("BOT_ONEBOT_HTTP_HOST", "127.0.0.1"),
 		OneBotHTTPPort:     envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
 		OneBotAccessToken:  envOptionalString("BOT_ONEBOT_ACCESS_TOKEN"),

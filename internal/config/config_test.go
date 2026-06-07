@@ -83,6 +83,24 @@ func TestFromEnvTrimsNapCatAPIURLTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestFromEnvTrimsLifeServerTrailingSlash(t *testing.T) {
+	t.Setenv("LIFE_USTC_SERVER", " http://life.example/// ")
+
+	cfg := FromEnv()
+	if cfg.LifeServer != "http://life.example" {
+		t.Fatalf("LifeServer = %q", cfg.LifeServer)
+	}
+}
+
+func TestFromEnvFallsBackForEmptyLifeServerAfterTrim(t *testing.T) {
+	t.Setenv("LIFE_USTC_SERVER", " / ")
+
+	cfg := FromEnv()
+	if cfg.LifeServer != "http://localhost:3000" {
+		t.Fatalf("LifeServer = %q", cfg.LifeServer)
+	}
+}
+
 func TestFromEnvFallsBackForEmptyNapCatAPIURLAfterTrim(t *testing.T) {
 	t.Setenv("NAPCAT_API_URL", " / ")
 
