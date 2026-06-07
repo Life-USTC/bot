@@ -1342,10 +1342,10 @@ func formatSchedule(schedule map[string]any) string {
 	place := lifedata.SchedulePlaceLabel(schedule)
 	columns := []string{}
 	if strings.TrimSpace(place) != "" {
-		columns = append(columns, padRightDisplay(textutil.MonospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
+		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
 	}
 	if timeRange != "" {
-		columns = append(columns, padRightDisplay(textutil.MonospaceDigits(timeRange), scheduleTimeColumnWidth))
+		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceDigits(timeRange), scheduleTimeColumnWidth))
 	}
 	if course != "" {
 		columns = append(columns, course)
@@ -1595,7 +1595,7 @@ func formatBusItem(item busItem) string {
 }
 
 func formatBusStop(stop busStop) string {
-	name := padRightDisplayWide(stop.Name, busStopNameColumnWidth)
+	name := textutil.PadRightDisplayWide(stop.Name, busStopNameColumnWidth)
 	timeText := busMissingTimePlaceholder
 	if stop.Time != "" {
 		timeText = textutil.MonospaceDigits(stop.Time)
@@ -1713,58 +1713,11 @@ func busRouteLabel(route busRoute, stops []string) string {
 }
 
 func formatNumberedLine(index int, text string) string {
-	prefix := padRightDisplay(textutil.MonospaceDigits(fmt.Sprintf("%d.", index)), numberedColumnWidth)
+	prefix := textutil.PadRightDisplay(textutil.MonospaceDigits(fmt.Sprintf("%d.", index)), numberedColumnWidth)
 	if text == "" {
 		return prefix
 	}
 	return prefix + "\t" + textutil.MonospaceDigits(text)
-}
-
-func padRightDisplay(text string, width int) string {
-	return padRightDisplayWith(text, width, " ")
-}
-
-func padRightDisplayWith(text string, width int, pad string) string {
-	if text == "" {
-		return ""
-	}
-	padding := width - displayWidth(text)
-	if padding <= 0 {
-		return text
-	}
-	return text + strings.Repeat(pad, padding)
-}
-
-func padRightDisplayWide(text string, width int) string {
-	if text == "" {
-		return ""
-	}
-	padding := width - displayWidth(text)/2
-	if padding <= 0 {
-		return text
-	}
-	return text + strings.Repeat("\u3000", padding)
-}
-
-func displayWidth(text string) int {
-	width := 0
-	for _, r := range text {
-		if isWideRune(r) {
-			width += 2
-			continue
-		}
-		width++
-	}
-	return width
-}
-
-func isWideRune(r rune) bool {
-	return (r >= 0x2E80 && r <= 0xA4CF) ||
-		(r >= 0xAC00 && r <= 0xD7A3) ||
-		(r >= 0xF900 && r <= 0xFAFF) ||
-		(r >= 0xFE10 && r <= 0xFE6F) ||
-		(r >= 0xFF00 && r <= 0xFF60) ||
-		(r >= 0xFFE0 && r <= 0xFFE6)
 }
 
 func firstStop(stops []busStop) string {
@@ -1863,7 +1816,7 @@ func formatSection(section map[string]any) string {
 }
 
 func paddedCourseCode(code string) string {
-	return padRightDisplay(code, courseCodeColumnWidth)
+	return textutil.PadRightDisplay(code, courseCodeColumnWidth)
 }
 
 const courseCodeColumnWidth = 14

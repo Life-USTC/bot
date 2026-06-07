@@ -41,3 +41,27 @@ func TestPlainDigits(t *testing.T) {
 		t.Fatalf("PlainDigits = %q", got)
 	}
 }
+
+func TestDisplayWidth(t *testing.T) {
+	if got := DisplayWidth("A中𝟷"); got != 4 {
+		t.Fatalf("DisplayWidth = %d", got)
+	}
+}
+
+func TestPadRightDisplay(t *testing.T) {
+	if got := PadRightDisplay("东区", 6); got != "东区  " {
+		t.Fatalf("PadRightDisplay wide text = %q", got)
+	}
+	if got := PadRightDisplay("abcdef", 3); got != "abcdef" {
+		t.Fatalf("PadRightDisplay long text = %q", got)
+	}
+	if got := PadRightDisplay("", 3); got != "" {
+		t.Fatalf("PadRightDisplay empty = %q", got)
+	}
+}
+
+func TestPadRightDisplayWide(t *testing.T) {
+	if got := PadRightDisplayWide("东区", 3); got != "东区　" {
+		t.Fatalf("PadRightDisplayWide = %q", got)
+	}
+}

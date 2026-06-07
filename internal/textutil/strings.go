@@ -1,5 +1,7 @@
 package textutil
 
+import "strings"
+
 func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -39,6 +41,44 @@ func PlainDigits(text string) string {
 	return string(out)
 }
 
+func PadRightDisplay(text string, width int) string {
+	return PadRightDisplayWith(text, width, " ")
+}
+
+func PadRightDisplayWith(text string, width int, pad string) string {
+	if text == "" {
+		return ""
+	}
+	padding := width - DisplayWidth(text)
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat(pad, padding)
+}
+
+func PadRightDisplayWide(text string, width int) string {
+	if text == "" {
+		return ""
+	}
+	padding := width - DisplayWidth(text)/2
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat("\u3000", padding)
+}
+
+func DisplayWidth(text string) int {
+	width := 0
+	for _, r := range text {
+		if isWideRune(r) {
+			width += 2
+			continue
+		}
+		width++
+	}
+	return width
+}
+
 func mapMonospace(text string, includeUppercase bool) string {
 	out := make([]rune, 0, len(text))
 	for _, r := range text {
@@ -52,4 +92,13 @@ func mapMonospace(text string, includeUppercase bool) string {
 		}
 	}
 	return string(out)
+}
+
+func isWideRune(r rune) bool {
+	return (r >= 0x2E80 && r <= 0xA4CF) ||
+		(r >= 0xAC00 && r <= 0xD7A3) ||
+		(r >= 0xF900 && r <= 0xFAFF) ||
+		(r >= 0xFE10 && r <= 0xFE6F) ||
+		(r >= 0xFF00 && r <= 0xFF60) ||
+		(r >= 0xFFE0 && r <= 0xFFE6)
 }
