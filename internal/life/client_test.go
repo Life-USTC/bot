@@ -63,6 +63,21 @@ func TestSchedulesUsesDataList(t *testing.T) {
 	}
 }
 
+func TestAuthHeaderTrimsToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.Schedules(context.Background(), " token ", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMatchSectionCodesTrimsSemesterID(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

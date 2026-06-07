@@ -54,8 +54,9 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	dialer := websocket.DefaultDialer
 	header := http.Header{}
-	if b.AccessToken != "" {
-		header.Set("Authorization", "Bearer "+b.AccessToken)
+	accessToken := strings.TrimSpace(b.AccessToken)
+	if accessToken != "" {
+		header.Set("Authorization", "Bearer "+accessToken)
 	}
 	conn, _, err := dialer.DialContext(ctx, b.WSURL, header)
 	if err != nil {
@@ -354,9 +355,10 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if b.AccessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+b.AccessToken)
-		q := url.Values{"access_token": []string{b.AccessToken}}
+	accessToken := strings.TrimSpace(b.AccessToken)
+	if accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		q := url.Values{"access_token": []string{accessToken}}
 		req.URL.RawQuery = q.Encode()
 	}
 	client := b.HTTPClient

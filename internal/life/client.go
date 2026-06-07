@@ -209,6 +209,7 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 	if err != nil {
 		return err
 	}
+	token = strings.TrimSpace(token)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

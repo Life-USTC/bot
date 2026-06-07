@@ -53,6 +53,27 @@ func TestSendGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendTrimsAccessToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer token" {
+			t.Fatalf("authorization = %q", auth)
+		}
+		if got := r.URL.Query().Get("access_token"); got != "token" {
+			t.Fatalf("access_token = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, AccessToken: " token ", HTTPClient: server.Client()}
+	if err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSendReturnsNapCatJSONFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"failed","retcode":1200,"message":"send failed"}`))
