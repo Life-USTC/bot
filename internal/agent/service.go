@@ -368,6 +368,9 @@ func busCommandText(input busInput) string {
 		parts = append(parts, from)
 	}
 	if to := strings.TrimSpace(input.To); to != "" {
+		if len(parts) == 1 {
+			parts = append(parts, "到")
+		}
 		parts = append(parts, to)
 	}
 	return strings.Join(parts, " ")

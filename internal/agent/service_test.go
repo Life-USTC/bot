@@ -151,6 +151,9 @@ func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 	if got := busCommandText(busInput{From: "  ", To: "\t"}); got != "校车" {
 		t.Fatalf("blank busCommandText = %q", got)
 	}
+	if got := busCommandText(busInput{To: " 西区 "}); got != "校车 到 西区" {
+		t.Fatalf("to-only busCommandText = %q", got)
+	}
 }
 
 func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {

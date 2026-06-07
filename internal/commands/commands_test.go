@@ -1206,6 +1206,39 @@ func TestNextBusItemsUsesShanghaiTime(t *testing.T) {
 	}
 }
 
+func TestNextBusItemsSupportsDestinationOnlyFilter(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+				},
+			},
+			map[string]any{
+				"id": float64(2),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:20", "departureMinutes": float64(560), "arrivalTime": "09:35"},
+			map[string]any{"routeId": float64(2), "dayType": "weekday", "departureTime": "09:30", "departureMinutes": float64(570), "arrivalTime": "09:45"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	items := nextBusItems(data, []string{"到", "东区"}, now)
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].Route != "西区 → 东区" {
+		t.Fatalf("item = %#v", items[0])
+	}
+}
+
 func TestNextBusItemsSkipsInvalidDepartureMinutes(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{

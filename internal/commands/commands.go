@@ -1815,13 +1815,25 @@ func busFilter(args []string) (string, string) {
 	if len(args) < 2 {
 		return "", ""
 	}
+	switch normToken(args[0]) {
+	case "to", "到":
+		return "", campusName(args[1])
+	}
 	return campusName(args[0]), campusName(args[1])
 }
 
 func routeMatches(stops []string, from, to string) bool {
 	if from == "" || to == "" {
 		if from == "" {
-			return true
+			if to == "" {
+				return true
+			}
+			for i, stop := range stops {
+				if stop == to {
+					return i > 0
+				}
+			}
+			return false
 		}
 		for _, stop := range stops {
 			if stop == from {
