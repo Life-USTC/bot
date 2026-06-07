@@ -251,6 +251,43 @@ func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 	}
 }
 
+func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "old-device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkLoginSession(ctx, ident, "old-device", "notify_failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "new-device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := s.PendingLoginSessions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].DeviceCode != "new-device" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
 func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

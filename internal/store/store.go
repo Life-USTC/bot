@@ -316,7 +316,7 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&loginSessionRow{}).
-			Where("user_id = ? AND status = ?", userID, "pending").
+			Where("user_id = ? AND status IN ?", userID, activeLoginSessionStatuses()).
 			Updates(map[string]any{"status": "superseded", "updated_at": now}).Error; err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	var rows []loginSessionRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = login_sessions.user_id").
-		Where("login_sessions.status IN ?", []string{"pending", "notify_failed"}).
+		Where("login_sessions.status IN ?", activeLoginSessionStatuses()).
 		Order("login_sessions.id ASC").
 		Find(&rows).Error
 	if err != nil {
@@ -412,6 +412,10 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 		})
 	}
 	return sessions, nil
+}
+
+func activeLoginSessionStatuses() []string {
+	return []string{"pending", "notify_failed"}
 }
 
 func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode, status string) error {
