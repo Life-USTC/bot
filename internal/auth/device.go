@@ -293,7 +293,7 @@ func (m *Manager) requireStore() (*store.Store, error) {
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
 	var lastErr error
-	server := strings.TrimRight(strings.TrimSpace(m.Server), "/")
+	server := m.serverURL()
 	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server+path, nil)
 		if err != nil {
@@ -357,6 +357,10 @@ func (m *Manager) resource(meta metadata) string {
 	if issuer := strings.TrimSpace(meta.Issuer); issuer != "" {
 		return strings.TrimRight(issuer, "/")
 	}
+	return m.serverURL()
+}
+
+func (m *Manager) serverURL() string {
 	return strings.TrimRight(strings.TrimSpace(m.Server), "/")
 }
 
