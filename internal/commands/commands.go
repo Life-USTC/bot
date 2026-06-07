@@ -589,7 +589,25 @@ func busArgsFromText(text string) []string {
 		}
 		args = append(args, match.campus)
 	}
+	if len(args) == 1 && hasDestinationMarkerBefore(lookupText, matches[0].index) {
+		return []string{"到", args[0]}
+	}
 	return args
+}
+
+func hasDestinationMarkerBefore(text string, index int) bool {
+	if index <= 0 || index > len(text) {
+		return false
+	}
+	before := strings.TrimSpace(text[:index])
+	if strings.HasSuffix(before, "从") || textutil.IndexASCIIToken(before, "from") >= 0 {
+		return false
+	}
+	if strings.HasSuffix(before, "到") {
+		return true
+	}
+	fields := strings.Fields(before)
+	return len(fields) > 0 && fields[len(fields)-1] == "to"
 }
 
 func campusAliasIndex(text, alias string) int {
