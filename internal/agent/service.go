@@ -123,7 +123,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
-	messages := make([]*schema.Message, 0, 17)
+	messages := make([]*schema.Message, 0, historyTurnLimit*2+1)
 	if s.handler.Store != nil {
 		history, err := s.handler.Store.RecentHandledInteractions(ctx, input.Identity, historyTurnLimit)
 		if err != nil {
@@ -172,9 +172,10 @@ type notificationInput struct {
 }
 
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
-	tools := make([]tool.BaseTool, 0, 21)
+	commandSpecs := commands.CommandSpecs()
+	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs)+extraAgentToolCount)
 	var err error
-	for _, commandSpec := range commands.CommandSpecs() {
+	for _, commandSpec := range commandSpecs {
 		for _, toolSpec := range commandSpec.AgentTools {
 			toolSpec := toolSpec
 			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
@@ -276,6 +277,14 @@ func appendInferredTool[I any](tools []tool.BaseTool, name, description string, 
 	return append(tools, t), nil
 }
 
+func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {
+	count := 0
+	for _, commandSpec := range commandSpecs {
+		count += len(commandSpec.AgentTools)
+	}
+	return count
+}
+
 func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {
 	reply, ok := s.handler.Handle(ctx, commands.Input{Text: text, Identity: ident, SuppressLog: true})
 	if !ok {
@@ -286,6 +295,7 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 
 const historyTurnLimit = 8
 const agentHTTPTimeout = 60 * time.Second
+const extraAgentToolCount = 10
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
