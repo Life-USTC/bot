@@ -139,7 +139,8 @@ func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[str
 
 func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []string, semesterID string) (map[string]any, error) {
 	req := map[string]any{"codes": codes}
-	if strings.TrimSpace(semesterID) != "" {
+	semesterID = strings.TrimSpace(semesterID)
+	if semesterID != "" {
 		req["semesterId"] = semesterID
 	}
 	body, _ := json.Marshal(req)

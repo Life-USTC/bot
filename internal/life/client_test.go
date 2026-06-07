@@ -2,6 +2,7 @@ package life
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,31 @@ func TestSchedulesUsesDataList(t *testing.T) {
 	}
 	if len(schedules) != 1 || schedules[0]["startTime"] != "09:50" {
 		t.Fatalf("schedules = %#v", schedules)
+	}
+}
+
+func TestMatchSectionCodesTrimsSemesterID(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections/match-codes" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"sections":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.MatchSectionCodes(context.Background(), "token", []string{"MATH1001.01"}, "  2026-spring  "); err != nil {
+		t.Fatal(err)
+	}
+	if gotBody["semesterId"] != "2026-spring" {
+		t.Fatalf("body = %#v", gotBody)
 	}
 }
 
