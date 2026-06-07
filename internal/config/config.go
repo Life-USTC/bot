@@ -36,7 +36,7 @@ func FromEnv() Config {
 		OneBotHTTPPort:     envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
 		OneBotAccessToken:  envOptionalString("BOT_ONEBOT_ACCESS_TOKEN"),
 		OneBotSelfID:       envString("BOT_SELF_ID", "life-ustc"),
-		NapCatAPIURL:       strings.TrimRight(envString("NAPCAT_API_URL", "http://127.0.0.1:3000"), "/"),
+		NapCatAPIURL:       envTrimRight("NAPCAT_API_URL", "http://127.0.0.1:3000", "/"),
 		NapCatAccessToken:  envOptionalString("NAPCAT_ACCESS_TOKEN"),
 		NapCatWSURL:        envOptionalString("NAPCAT_WS_URL"),
 		NapCatReverseAddr:  envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
@@ -62,6 +62,14 @@ func envString(key, fallback string) string {
 
 func envOptionalString(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
+}
+
+func envTrimRight(key, fallback, cutset string) string {
+	value := strings.TrimRight(envString(key, fallback), cutset)
+	if value == "" {
+		return strings.TrimRight(fallback, cutset)
+	}
+	return value
 }
 
 func envPath(key, fallback string) string {

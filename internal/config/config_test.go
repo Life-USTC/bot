@@ -74,6 +74,24 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	}
 }
 
+func TestFromEnvTrimsNapCatAPIURLTrailingSlash(t *testing.T) {
+	t.Setenv("NAPCAT_API_URL", " http://127.0.0.1:3000/// ")
+
+	cfg := FromEnv()
+	if cfg.NapCatAPIURL != "http://127.0.0.1:3000" {
+		t.Fatalf("NapCatAPIURL = %q", cfg.NapCatAPIURL)
+	}
+}
+
+func TestFromEnvFallsBackForEmptyNapCatAPIURLAfterTrim(t *testing.T) {
+	t.Setenv("NAPCAT_API_URL", " / ")
+
+	cfg := FromEnv()
+	if cfg.NapCatAPIURL != "http://127.0.0.1:3000" {
+		t.Fatalf("NapCatAPIURL = %q", cfg.NapCatAPIURL)
+	}
+}
+
 func TestFromEnvNormalizesNapCatReversePath(t *testing.T) {
 	t.Setenv("NAPCAT_REVERSE_PATH", " ws ")
 
