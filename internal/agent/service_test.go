@@ -144,6 +144,29 @@ func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	}
 }
 
+func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	names := agentToolNames(t, &Service{handler: commands.Handler{Store: db}})
+	wantNames := []string{
+		"get_current_time",
+		"get_notification_settings",
+		"set_notification_settings",
+	}
+	if len(names) != len(wantNames) {
+		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
+	}
+	for _, name := range wantNames {
+		if !names[name] {
+			t.Fatalf("missing tool %q; tools = %#v", name, names)
+		}
+	}
+}
+
 func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
 	_, err := appendCommandBackedTool(&Service{}, map[string]commands.CommandSpec{}, nil, "missing", "bad_tool", "Bad tool.", func(context.Context, emptyInput) (string, error) {
 		return "", nil
