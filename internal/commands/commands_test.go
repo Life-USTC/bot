@@ -1370,6 +1370,29 @@ func TestNormalizeSubscriptionImportAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeTodoActionAliases(t *testing.T) {
+	tests := map[string][]string{
+		"td + 买咖啡":         {"add", "买咖啡"},
+		"待办 添加 写报告":        {"add", "写报告"},
+		"代办 新增 写报告":        {"add", "写报告"},
+		"todo create task": {"add", "task"},
+		"td 完成 1":          {"done", "1"},
+		"待办 好了 1":          {"done", "1"},
+		"todo finish 1":    {"done", "1"},
+		"td x 1":           {"done", "1"},
+	}
+	handler := Handler{Prefix: "/life"}
+	for text, wantArgs := range tests {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != "todo" || strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
+			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
+		}
+	}
+}
+
 func TestNormalizeHomeworkActionAliases(t *testing.T) {
 	tests := map[string][]string{
 		"作业 取消 1":    {"undo", "1"},
