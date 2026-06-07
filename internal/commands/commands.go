@@ -696,21 +696,14 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 	if title == "" {
 		return "想加什么？例如：td 写报告"
 	}
-	created, err := h.Life.CreateTodo(ctx, token, title)
+	_, err := h.Life.CreateTodo(ctx, token, title)
 	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		created, err = h.Life.CreateTodo(ctx, token, title)
+		_, err = h.Life.CreateTodo(ctx, token, title)
 	}
 	if err != nil {
 		return commandError("待办添加失败：", err)
 	}
-	id := lifedata.FirstString(created, "id")
-	if id == "" {
-		id = fmt.Sprint(created["id"])
-	}
-	if id != "" {
-		return "已加待办：" + title
-	}
-	return "已加待办"
+	return "已加待办：" + title
 }
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {

@@ -258,7 +258,7 @@ func TestHandleTodoAddCasual(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"id":"todo-1"}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 
