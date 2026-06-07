@@ -387,6 +387,27 @@ func TestRecentHandledInteractionsTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestRecentHandledInteractionsRejectsIncompleteIdentity(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	tests := []Identity{
+		{},
+		{Platform: "napcat", UserID: "42"},
+		{Platform: "napcat", UserID: "42", ConversationType: "private"},
+		{Platform: "napcat", UserID: "42", ConversationID: "42"},
+	}
+	for _, ident := range tests {
+		_, err := s.RecentHandledInteractions(context.Background(), ident, 0)
+		if err == nil || !strings.Contains(err.Error(), "identity") {
+			t.Fatalf("RecentHandledInteractions(%#v) error = %v", ident, err)
+		}
+	}
+}
+
 func TestRecordInteractionAllowsEmptyRawText(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

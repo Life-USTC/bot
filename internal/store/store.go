@@ -610,6 +610,9 @@ func interactionDirection(direction string) string {
 }
 
 func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, limit int) ([]Interaction, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		return nil, nil
 	}
