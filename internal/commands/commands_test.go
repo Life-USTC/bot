@@ -868,6 +868,60 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	}
 }
 
+func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	today := day.Format("2006-01-02")
+	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
+	refreshRequests := 0
+	currentOldTokenCalls := 0
+	scheduleCalls := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
+			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			refreshRequests++
+			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
+			switch r.Header.Get("Authorization") {
+			case "Bearer access":
+				currentOldTokenCalls++
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			case "Bearer refreshed":
+				_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+			default:
+				t.Fatalf("current authorization = %q", r.Header.Get("Authorization"))
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/api/schedules":
+			scheduleCalls++
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("schedules authorization = %q", got)
+			}
+			if scheduleCalls == 1 {
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`, today)))
+				return
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}]}`, tomorrow)))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	handler := testAuthedHandlerWithRefresh(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, nil, day)
+	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if refreshRequests != 1 || currentOldTokenCalls != 1 || scheduleCalls != 2 {
+		t.Fatalf("refreshRequests = %d, currentOldTokenCalls = %d, scheduleCalls = %d", refreshRequests, currentOldTokenCalls, scheduleCalls)
+	}
+}
+
 func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

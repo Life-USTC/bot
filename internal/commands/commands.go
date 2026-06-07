@@ -1365,7 +1365,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if !ok {
 		return h.loginRequired()
 	}
-	schedules, err := h.schedulesForDay(ctx, ident, token, day)
+	schedules, _, err := h.schedulesForDay(ctx, ident, token, day)
 	if err != nil {
 		return commandError("课表查不到：", err)
 	}
@@ -1391,11 +1391,11 @@ func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, to
 	if !ok {
 		return h.loginRequired()
 	}
-	todaySchedules, err := h.schedulesForDay(ctx, ident, token, today)
+	todaySchedules, token, err := h.schedulesForDay(ctx, ident, token, today)
 	if err != nil {
 		return commandError("课表查不到：", err)
 	}
-	tomorrowSchedules, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
+	tomorrowSchedules, _, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
 	if err != nil {
 		return commandError("课表查不到：", err)
 	}
@@ -1434,7 +1434,8 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 	now = now.In(loc)
 	for offset := 0; offset < 8; offset++ {
 		day := now.AddDate(0, 0, offset)
-		schedules, err := h.schedulesForDay(ctx, ident, token, day)
+		schedules, refreshed, err := h.schedulesForDay(ctx, ident, token, day)
+		token = refreshed
 		if err != nil {
 			return commandError("下一节课查不到：", err)
 		}
@@ -1455,18 +1456,18 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 	return "接下来一周没查到课。"
 }
 
-func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
+func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
 	sub, err := h.Life.CurrentSubscription(ctx, token)
 	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 		token = refreshed
 		sub, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
-		return nil, err
+		return nil, token, err
 	}
 	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
-		return nil, nil
+		return nil, token, nil
 	}
 	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
 	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
@@ -1474,11 +1475,11 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
 	}
 	if err != nil {
-		return nil, err
+		return nil, token, err
 	}
 	all = lifedata.FilterSchedulesForDay(all, day)
 	lifedata.SortSchedulesByStart(all)
-	return all, nil
+	return all, token, nil
 }
 
 func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, sectionIDs []string, day time.Time) ([]map[string]any, error) {
