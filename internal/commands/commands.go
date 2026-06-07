@@ -1168,7 +1168,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 		if len(unmatched) > 0 {
 			lines = append(lines, "未匹配：")
 			for _, code := range unmatched {
-				lines = append(lines, "- "+code)
+				lines = append(lines, "- "+textutil.MonospaceASCII(code))
 			}
 		}
 		return strings.Join(lines, "\n")
@@ -1185,7 +1185,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 	if len(unmatched) > 0 {
 		lines = append(lines, "", "未匹配：")
 		for _, code := range unmatched {
-			lines = append(lines, "- "+code)
+			lines = append(lines, "- "+textutil.MonospaceASCII(code))
 		}
 	}
 	return strings.Join(lines, "\n")
