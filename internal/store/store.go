@@ -545,6 +545,7 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 	if err := validateConversationIdentity(ident); err != nil {
 		return err
 	}
+	ident = normalizeIdentity(ident)
 	row := interactionRow{
 		Platform:         ident.Platform,
 		ConversationType: ident.ConversationType,
@@ -580,6 +581,7 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 	if limit <= 0 {
 		return nil, nil
 	}
+	ident = normalizeIdentity(ident)
 	var rows []interactionRow
 	err := s.db.WithContext(ctx).
 		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND direction = ? AND handled = ? AND status = ?",

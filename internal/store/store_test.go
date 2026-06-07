@@ -291,6 +291,34 @@ func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
 	}
 }
 
+func TestRecentHandledInteractionsTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	paddedIdent := Identity{Platform: " napcat ", UserID: " 42 ", ConversationType: " private ", ConversationID: " 42 "}
+	if err := s.RecordInteraction(ctx, paddedIdent, Interaction{
+		RawText: "我上面说了什么",
+		Command: "agent",
+		Handled: true,
+		Reply:   "reply",
+		Status:  "handled",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := s.RecentHandledInteractions(ctx, ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || recent[0].RawText != "我上面说了什么" {
+		t.Fatalf("recent = %#v", recent)
+	}
+}
+
 func TestRecordInteractionAllowsEmptyRawText(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
