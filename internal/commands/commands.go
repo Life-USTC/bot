@@ -328,15 +328,42 @@ func commandSpec(name string) (CommandSpec, bool) {
 }
 
 func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {
-	switch name {
-	case "今天课表", "今日课表", "今天课标", "今日课标":
-		return "schedule", []string{"today"}, true
-	case "明天课表", "明日课表", "明天课标", "明日课标":
-		return "schedule", []string{"tomorrow"}, true
+	key := normToken(name)
+	if day, ok := joinedScheduleDay(key); ok {
+		return "schedule", []string{day}, true
+	}
+	switch key {
 	case "下一节课":
 		return "nextclass", nil, true
 	}
 	return "", args, false
+}
+
+func joinedScheduleDay(key string) (string, bool) {
+	for _, scheduleToken := range []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"} {
+		if strings.HasPrefix(key, scheduleToken) {
+			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
+				return day, true
+			}
+		}
+		if strings.HasSuffix(key, scheduleToken) {
+			if day, ok := normalizeScheduleDay(key[:len(key)-len(scheduleToken)]); ok {
+				return day, true
+			}
+		}
+	}
+	return "", false
+}
+
+func normalizeScheduleDay(value string) (string, bool) {
+	switch value {
+	case "today", "今天", "今日":
+		return "today", true
+	case "tomorrow", "明天", "明日":
+		return "tomorrow", true
+	default:
+		return "", false
+	}
 }
 
 func normalizeSubscriptionArgs(args []string) []string {
@@ -404,11 +431,8 @@ func normalizeScheduleArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch normToken(args[0]) {
-	case "today", "今天", "今日":
-		return withFirstArg(args, "today")
-	case "tomorrow", "明天", "明日":
-		return withFirstArg(args, "tomorrow")
+	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
+		return withFirstArg(args, day)
 	}
 	return args
 }
