@@ -587,7 +587,7 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 	err := s.db.WithContext(ctx).
 		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND direction = ? AND handled = ? AND status = ?",
 			ident.Platform, ident.ConversationType, ident.ConversationID, "inbound", true, "handled").
-		Order("created_at desc").
+		Order("created_at desc, id desc").
 		Limit(limit).
 		Find(&rows).Error
 	if err != nil {

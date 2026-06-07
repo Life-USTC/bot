@@ -298,6 +298,40 @@ func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
 	}
 }
 
+func TestRecentHandledInteractionsBreaksCreatedAtTiesByID(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	for _, text := range []string{"first", "second", "third"} {
+		if err := s.RecordInteraction(ctx, ident, Interaction{
+			RawText: text,
+			Command: "agent",
+			Handled: true,
+			Reply:   "reply " + text,
+			Status:  "handled",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sameTime := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	if err := s.db.WithContext(ctx).Model(&interactionRow{}).Where("1 = 1").Update("created_at", sameTime).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	recent, err := s.RecentHandledInteractions(ctx, ident, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 2 || recent[0].RawText != "second" || recent[1].RawText != "third" {
+		t.Fatalf("recent = %#v", recent)
+	}
+}
+
 func TestRecentHandledInteractionsTrimsIdentityKeys(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
