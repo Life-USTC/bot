@@ -24,6 +24,24 @@ type Handler struct {
 	Prefix string
 }
 
+type AgentToolSpec struct {
+	Name        string
+	Description string
+	CommandText string
+}
+
+type CommandSpec struct {
+	Name       string
+	Aliases    []string
+	Normalize  func([]string) []string
+	AgentTools []AgentToolSpec
+	Run        func(Handler, context.Context, store.Identity, []string) string
+}
+
+func CommandSpecs() []CommandSpec {
+	return append([]CommandSpec(nil), commandSpecs...)
+}
+
 type Input struct {
 	Text        string
 	Identity    store.Identity
@@ -53,43 +71,11 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		return reply, true
 	}
 
-	switch cmd.Name {
-	case "login":
-		reply = h.login(ctx, input.Identity, cmd.Args)
-	case "logout":
-		reply = h.logout(ctx, input.Identity)
-	case "me":
-		reply = h.me(ctx, input.Identity)
-	case "todo":
-		reply = h.todo(ctx, input.Identity, cmd.Args)
-	case "homework":
-		reply = h.homework(ctx, input.Identity, cmd.Args)
-	case "sub", "subs", "subscription":
-		reply = h.subscription(ctx, input.Identity, cmd.Args)
-	case "notify":
-		reply = h.notify(ctx, input.Identity, cmd.Args)
-	case "ping":
-		if err := h.Life.Health(ctx); err != nil {
-			reply = "Life @ USTC API unavailable: " + err.Error()
-			break
-		}
-		reply = "Life @ USTC API is reachable."
-	case "status":
-		reply = h.status(ctx, input.Identity)
-	case "semester":
-		reply = h.currentSemester(ctx)
-	case "course":
-		reply = h.searchCourses(ctx, strings.Join(cmd.Args, " "))
-	case "section":
-		reply = h.searchSections(ctx, strings.Join(cmd.Args, " "))
-	case "bus":
-		reply = h.bus(ctx, cmd.Args)
-	case "schedule":
-		reply = h.curriculum(ctx, input.Identity, cmd.Args)
-	case "nextclass":
-		reply = h.nextClass(ctx, input.Identity)
-	default:
+	spec, ok := commandSpec(cmd.Name)
+	if !ok || spec.Run == nil {
 		reply = h.help()
+	} else {
+		reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 	}
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
@@ -101,6 +87,168 @@ type parsedCommand struct {
 	Name string
 	Args []string
 	Raw  string
+}
+
+var commandSpecs = []CommandSpec{
+	{
+		Name:      "login",
+		Aliases:   []string{"login", "登录", "dl"},
+		Normalize: normalizeLoginArgs,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.login(ctx, ident, args)
+		},
+	},
+	{
+		Name:    "logout",
+		Aliases: []string{"logout", "退出", "登出"},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.logout(ctx, ident)
+		},
+	},
+	{
+		Name:    "me",
+		Aliases: []string{"me", "我", "我的", "profile", "个人"},
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_profile",
+			Description: "Get the logged-in user's profile status.",
+			CommandText: "我",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.me(ctx, ident)
+		},
+	},
+	{
+		Name:      "todo",
+		Aliases:   []string{"todo", "td", "待办", "代办", "todo待办"},
+		Normalize: normalizeTodoArgs,
+		AgentTools: []AgentToolSpec{{
+			Name:        "list_todos",
+			Description: "List the user's pending todos.",
+			CommandText: "待办",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.todo(ctx, ident, args)
+		},
+	},
+	{
+		Name:      "homework",
+		Aliases:   []string{"homework", "hw", "作业"},
+		Normalize: normalizeHomeworkArgs,
+		AgentTools: []AgentToolSpec{{
+			Name:        "list_homeworks",
+			Description: "List the user's homework grouped by overdue, nearby, and future.",
+			CommandText: "作业",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.homework(ctx, ident, args)
+		},
+	},
+	{
+		Name:      "subscription",
+		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
+		Normalize: normalizeSubscriptionArgs,
+		AgentTools: []AgentToolSpec{{
+			Name:        "list_subscriptions",
+			Description: "List the user's current calendar section subscriptions.",
+			CommandText: "订阅",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.subscription(ctx, ident, args)
+		},
+	},
+	{
+		Name:      "notify",
+		Aliases:   []string{"notify", "notice", "push", "提醒", "通知", "推送"},
+		Normalize: normalizeNotifyArgs,
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_notification_settings",
+			Description: "Get the user's active push notification settings for upcoming classes and homework reminders.",
+			CommandText: "通知",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.notify(ctx, ident, args)
+		},
+	},
+	{
+		Name:    "ping",
+		Aliases: []string{"p", "ping"},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			if err := h.Life.Health(ctx); err != nil {
+				return "Life @ USTC API unavailable: " + err.Error()
+			}
+			return "Life @ USTC API is reachable."
+		},
+	},
+	{
+		Name:    "status",
+		Aliases: []string{"status", "zt", "状态"},
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_bot_status",
+			Description: "Get Life API reachability and login status.",
+			CommandText: "状态",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.status(ctx, ident)
+		},
+	},
+	{
+		Name:    "semester",
+		Aliases: []string{"semester", "term", "学期", "xq"},
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_current_semester",
+			Description: "Get the current Life USTC semester.",
+			CommandText: "学期",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.currentSemester(ctx)
+		},
+	},
+	{
+		Name:    "course",
+		Aliases: []string{"course", "kc", "课程"},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.searchCourses(ctx, strings.Join(args, " "))
+		},
+	},
+	{
+		Name:    "section",
+		Aliases: []string{"section", "class", "bj", "教学班", "班级"},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.searchSections(ctx, strings.Join(args, " "))
+		},
+	},
+	{
+		Name:    "bus",
+		Aliases: []string{"bus", "xc", "校车", "车"},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.bus(ctx, args)
+		},
+	},
+	{
+		Name:      "schedule",
+		Aliases:   []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"},
+		Normalize: normalizeScheduleArgs,
+		AgentTools: []AgentToolSpec{
+			{Name: "get_two_day_curriculum", Description: "Get the user's curriculum for today and tomorrow.", CommandText: "课表"},
+			{Name: "get_today_curriculum", Description: "Get the user's curriculum for today.", CommandText: "课表 今天"},
+			{Name: "get_tomorrow_curriculum", Description: "Get the user's curriculum for tomorrow.", CommandText: "课表 明天"},
+		},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.curriculum(ctx, ident, args)
+		},
+	},
+	{
+		Name:    "nextclass",
+		Aliases: []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_next_class",
+			Description: "Get the user's next upcoming class.",
+			CommandText: "下一节课",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.nextClass(ctx, ident)
+		},
+	},
 }
 
 func isGroup(ident store.Identity) bool {
@@ -153,45 +301,44 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "-h", "--help", "help", "?", "？", "帮助", "菜单":
+	key := strings.ToLower(strings.TrimSpace(name))
+	if key == "-h" || key == "--help" || key == "help" || key == "?" || key == "？" || key == "帮助" || key == "菜单" {
 		return "help", args
-	case "p", "ping":
-		return "ping", args
-	case "status", "zt", "状态":
-		return "status", args
-	case "login", "登录", "dl":
-		return "login", normalizeLoginArgs(args)
-	case "logout", "退出", "登出":
-		return "logout", args
-	case "me", "我", "我的", "profile", "个人":
-		return "me", args
-	case "todo", "td", "待办", "代办", "todo待办":
-		return "todo", normalizeTodoArgs(args)
-	case "homework", "hw", "作业":
-		return "homework", normalizeHomeworkArgs(args)
-	case "bus", "xc", "校车", "车":
-		return "bus", args
-	case "schedule", "sched", "rc", "kb", "日程", "课表", "课标":
-		return "schedule", normalizeScheduleArgs(args)
-	case "今天课表", "今日课表", "今天课标", "今日课标":
-		return "schedule", []string{"today"}
-	case "明天课表", "明日课表", "明天课标", "明日课标":
-		return "schedule", []string{"tomorrow"}
-	case "订阅", "sub", "subs", "subscription":
-		return "subscription", normalizeSubscriptionArgs(args)
-	case "notify", "notice", "push", "提醒", "通知", "推送":
-		return "notify", normalizeNotifyArgs(args)
-	case "nextclass", "next", "下一节", "下节课", "下一节课":
-		return "nextclass", args
-	case "semester", "term", "学期", "xq":
-		return "semester", args
-	case "course", "kc", "课程":
-		return "course", args
-	case "section", "class", "bj", "教学班", "班级":
-		return "section", args
+	}
+	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
+		return normalized, normalizedArgs
+	}
+	for _, spec := range commandSpecs {
+		for _, alias := range spec.Aliases {
+			if key != strings.ToLower(alias) {
+				continue
+			}
+			if spec.Normalize != nil {
+				args = spec.Normalize(args)
+			}
+			return spec.Name, args
+		}
 	}
 	return "", args
+}
+
+func commandSpec(name string) (CommandSpec, bool) {
+	for _, spec := range commandSpecs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return CommandSpec{}, false
+}
+
+func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {
+	switch name {
+	case "今天课表", "今日课表", "今天课标", "今日课标":
+		return "schedule", []string{"today"}, true
+	case "明天课表", "明日课表", "明天课标", "明日课标":
+		return "schedule", []string{"tomorrow"}, true
+	}
+	return "", args, false
 }
 
 func normalizeSubscriptionArgs(args []string) []string {

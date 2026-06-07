@@ -131,6 +131,34 @@ func TestHandleHelpAliases(t *testing.T) {
 	}
 }
 
+func TestCommandSpecsAreUsable(t *testing.T) {
+	seen := map[string]bool{}
+	for _, spec := range CommandSpecs() {
+		if spec.Name == "" {
+			t.Fatal("command spec has empty name")
+		}
+		if spec.Run == nil {
+			t.Fatalf("command %q has nil Run", spec.Name)
+		}
+		if len(spec.Aliases) == 0 {
+			t.Fatalf("command %q has no aliases", spec.Name)
+		}
+		if seen[spec.Name] {
+			t.Fatalf("duplicate command spec %q", spec.Name)
+		}
+		seen[spec.Name] = true
+		name, _ := normalizeCommand(spec.Aliases[0], nil)
+		if name != spec.Name {
+			t.Fatalf("alias %q normalized to %q, want %q", spec.Aliases[0], name, spec.Name)
+		}
+	}
+	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus"} {
+		if !seen[name] {
+			t.Fatalf("missing command spec %q", name)
+		}
+	}
+}
+
 func TestHandleTodoHelpAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{"待办 -h", "td help", "/life todo --help"} {

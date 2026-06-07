@@ -171,96 +171,18 @@ type notificationInput struct {
 }
 
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
-	specs := []struct {
-		name string
-		desc string
-		fn   func(context.Context, emptyInput) (string, error)
-	}{
-		{
-			name: "get_two_day_curriculum",
-			desc: "Get the user's curriculum for today and tomorrow.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "课表")
-			},
-		},
-		{
-			name: "get_today_curriculum",
-			desc: "Get the user's curriculum for today.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "课表 今天")
-			},
-		},
-		{
-			name: "get_tomorrow_curriculum",
-			desc: "Get the user's curriculum for tomorrow.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "课表 明天")
-			},
-		},
-		{
-			name: "get_next_class",
-			desc: "Get the user's next upcoming class.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "下一节课")
-			},
-		},
-		{
-			name: "list_homeworks",
-			desc: "List the user's homework grouped by overdue, nearby, and future.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "作业")
-			},
-		},
-		{
-			name: "list_todos",
-			desc: "List the user's pending todos.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "待办")
-			},
-		},
-		{
-			name: "list_subscriptions",
-			desc: "List the user's current calendar section subscriptions.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "订阅")
-			},
-		},
-		{
-			name: "get_current_semester",
-			desc: "Get the current Life USTC semester.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "学期")
-			},
-		},
-		{
-			name: "get_profile",
-			desc: "Get the logged-in user's profile status.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "我")
-			},
-		},
-		{
-			name: "get_bot_status",
-			desc: "Get Life API reachability and login status.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "状态")
-			},
-		},
-		{
-			name: "get_notification_settings",
-			desc: "Get the user's active push notification settings for upcoming classes and homework reminders.",
-			fn: func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, "通知")
-			},
-		},
-	}
-	tools := make([]tool.BaseTool, 0, len(specs)+9)
-	for _, spec := range specs {
-		t, err := utils.InferTool(spec.name, spec.desc, spec.fn)
-		if err != nil {
-			return nil, err
+	tools := make([]tool.BaseTool, 0, 21)
+	for _, commandSpec := range commands.CommandSpecs() {
+		for _, toolSpec := range commandSpec.AgentTools {
+			toolSpec := toolSpec
+			t, err := utils.InferTool(toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, toolSpec.CommandText)
+			})
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, t)
 		}
-		tools = append(tools, t)
 	}
 	busTool, err := utils.InferTool("get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
 		parts := []string{"校车"}
