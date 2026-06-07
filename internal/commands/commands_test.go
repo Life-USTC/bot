@@ -325,6 +325,28 @@ func TestHandleStoreCommandWithoutStoreKeepsHelp(t *testing.T) {
 	}
 }
 
+func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{
+		Life:   life.NewClient(server.URL, server.Client()),
+		Auth:   &auth.Manager{},
+		Prefix: "/life",
+	}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "我", Identity: testIdentity()})
+	if !ok || reply != "登录未配置。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "登录用法：") {
+		t.Fatalf("help reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestHandleTodoHelpAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{"待办 -h", "td help", "/life todo --help"} {
