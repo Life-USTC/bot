@@ -467,6 +467,29 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestRecordConversationStateTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	paddedIdent := Identity{Platform: " napcat ", UserID: " 42 ", ConversationType: " private ", ConversationID: " 42 "}
+	if err := s.RecordConversationState(ctx, paddedIdent, " todo ", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	var row conversationStateRow
+	if err := s.db.WithContext(ctx).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	want := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	got := Identity{Platform: row.Platform, UserID: row.UserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID}
+	if got != want {
+		t.Fatalf("identity = %#v", got)
+	}
+}
+
 func TestSaveLoginSessionTrimsFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

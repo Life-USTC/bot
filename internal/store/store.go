@@ -529,6 +529,7 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 	if err := validateConversationIdentity(ident); err != nil {
 		return err
 	}
+	ident = normalizeIdentity(ident)
 	row := conversationStateRow{
 		Platform:         ident.Platform,
 		ConversationType: ident.ConversationType,
