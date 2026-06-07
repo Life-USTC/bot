@@ -54,7 +54,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	dialer := websocket.DefaultDialer
 	header := http.Header{}
-	accessToken := strings.TrimSpace(b.AccessToken)
+	accessToken := b.accessToken()
 	if accessToken != "" {
 		header.Set("Authorization", "Bearer "+accessToken)
 	}
@@ -367,7 +367,7 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	accessToken := strings.TrimSpace(b.AccessToken)
+	accessToken := b.accessToken()
 	if accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		q := url.Values{"access_token": []string{accessToken}}
@@ -413,6 +413,10 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return fmt.Errorf("napcat %s failed with retcode %d: %s", endpoint, result.RetCode, napcatResultText(result.Message, result.Wording, result.Status))
 	}
 	return nil
+}
+
+func (b *Bridge) accessToken() string {
+	return strings.TrimSpace(b.AccessToken)
 }
 
 func napcatResultText(message, wording, status string) string {

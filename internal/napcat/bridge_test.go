@@ -253,6 +253,29 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRunTrimsAccessToken(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	authHeader := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader <- r.Header.Get("Authorization")
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{WSURL: "ws" + server.URL[len("http"):], AccessToken: " token "}
+	if err := bridge.Run(context.Background()); err == nil {
+		t.Fatal("Run returned nil after websocket close")
+	}
+	if auth := <-authHeader; auth != "Bearer token" {
+		t.Fatalf("authorization = %q", auth)
+	}
+}
+
 func TestHandleMessageRecordsIgnored(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
