@@ -415,6 +415,9 @@ func TestRecordInteractionTrimsMetadataOnly(t *testing.T) {
 	if state.LastCommand != "todo" || state.State != " raw state " {
 		t.Fatalf("state = %#v", state)
 	}
+	if state.CreatedAt.IsZero() {
+		t.Fatal("state CreatedAt is zero")
+	}
 	var row interactionRow
 	if err := s.db.WithContext(ctx).First(&row).Error; err != nil {
 		t.Fatal(err)
@@ -424,6 +427,9 @@ func TestRecordInteractionTrimsMetadataOnly(t *testing.T) {
 	}
 	if row.Direction != "inbound" || row.Command != "todo" || row.Args != "done 1" || row.Status != "handled" || row.Error != "warning" {
 		t.Fatalf("metadata = %#v", row)
+	}
+	if row.CreatedAt.IsZero() {
+		t.Fatal("interaction CreatedAt is zero")
 	}
 }
 
