@@ -703,10 +703,10 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(todos) {
 		return todos[index-1], true
 	}
-	needle := strings.ToLower(target)
+	needle := normalizedLookupText(target)
 	for _, todo := range todos {
-		id := strings.ToLower(lifedata.FirstString(todo, "id"))
-		title := strings.ToLower(lifedata.FirstString(todo, "title"))
+		id := normalizedLookupText(lifedata.FirstString(todo, "id"))
+		title := normalizedLookupText(lifedata.FirstString(todo, "title"))
 		if needle == id || needle == title || strings.Contains(title, needle) {
 			return todo, true
 		}
@@ -821,15 +821,19 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(homeworks) {
 		return homeworks[index-1], true
 	}
-	needle := strings.ToLower(target)
+	needle := normalizedLookupText(target)
 	for _, homework := range homeworks {
-		id := strings.ToLower(lifedata.FirstString(homework, "id"))
-		title := strings.ToLower(lifedata.FirstString(homework, "title"))
+		id := normalizedLookupText(lifedata.FirstString(homework, "id"))
+		title := normalizedLookupText(lifedata.FirstString(homework, "title"))
 		if needle == id || needle == title || strings.Contains(title, needle) {
 			return homework, true
 		}
 	}
 	return nil, false
+}
+
+func normalizedLookupText(value string) string {
+	return strings.ToLower(textutil.PlainDigits(strings.TrimSpace(value)))
 }
 
 func formatHomework(homework map[string]any) string {

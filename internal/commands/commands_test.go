@@ -361,6 +361,17 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	}
 }
 
+func TestResolveTodoMatchesDisplayDigitsInTitle(t *testing.T) {
+	todos := []map[string]any{
+		{"id": "todo-1", "title": "写报告 1"},
+		{"id": "todo-2", "title": "写报告 2"},
+	}
+	todo, ok := resolveTodo(todos, "报告 𝟸")
+	if !ok || lifedata.FirstString(todo, "id") != "todo-2" {
+		t.Fatalf("todo = %#v, ok = %v", todo, ok)
+	}
+}
+
 func TestFormatTodoDueDateFirst(t *testing.T) {
 	line := textutil.MonospaceDigits(formatTodo(map[string]any{
 		"title": "写报告",
@@ -426,6 +437,17 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 	if !completed || !strings.Contains(reply, "已完成作业：Problem Set 1") {
 		t.Fatalf("completed = %v, reply = %q", completed, reply)
+	}
+}
+
+func TestResolveHomeworkMatchesDisplayDigitsInTitle(t *testing.T) {
+	homeworks := []map[string]any{
+		{"id": "hw-1", "title": "Problem Set 1"},
+		{"id": "hw-2", "title": "Problem Set 2"},
+	}
+	homework, ok := resolveHomework(homeworks, "set 𝟸")
+	if !ok || lifedata.FirstString(homework, "id") != "hw-2" {
+		t.Fatalf("homework = %#v, ok = %v", homework, ok)
 	}
 }
 
