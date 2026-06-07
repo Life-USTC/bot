@@ -79,7 +79,12 @@ func SchedulePlaceLabel(schedule map[string]any) string {
 }
 
 func ScheduleTimeRange(schedule map[string]any) string {
-	return strings.TrimSpace(FirstString(schedule, "startTime") + "-" + FirstString(schedule, "endTime"))
+	start := FirstString(schedule, "startTime")
+	end := FirstString(schedule, "endTime")
+	if start == "" && end == "" {
+		return ""
+	}
+	return strings.TrimSpace(start + "-" + end)
 }
 
 func SortHomeworksByDue(homeworks []map[string]any) {

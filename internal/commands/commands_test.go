@@ -756,6 +756,18 @@ func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 	}
 }
 
+func TestFormatScheduleOmitsMissingTimeColumn(t *testing.T) {
+	line := formatSchedule(map[string]any{
+		"customPlace": "GT-A405",
+		"section": map[string]any{
+			"course": map[string]any{"namePrimary": "随机过程理论"},
+		},
+	})
+	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻 \t随机过程理论" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
 func TestSubscriptionSectionIDsForDayFiltersSemester(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{

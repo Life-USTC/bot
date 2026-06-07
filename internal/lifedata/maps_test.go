@@ -106,7 +106,7 @@ func TestScheduleTimeRange(t *testing.T) {
 		{name: "full", schedule: map[string]any{"startTime": "07:50", "endTime": "09:25"}, want: "07:50-09:25"},
 		{name: "start only", schedule: map[string]any{"startTime": "07:50"}, want: "07:50-"},
 		{name: "end only", schedule: map[string]any{"endTime": "09:25"}, want: "-09:25"},
-		{name: "empty", schedule: map[string]any{}, want: "-"},
+		{name: "empty", schedule: map[string]any{}, want: ""},
 	} {
 		if got := ScheduleTimeRange(tc.schedule); got != tc.want {
 			t.Fatalf("%s: ScheduleTimeRange = %q, want %q", tc.name, got, tc.want)
