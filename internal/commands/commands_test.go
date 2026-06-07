@@ -793,6 +793,65 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	}
 }
 
+func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var replacedIDs []int
+	currentCalls := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
+			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
+			currentCalls++
+			if currentCalls == 1 {
+				if got := r.Header.Get("Authorization"); got != "Bearer access" {
+					t.Fatalf("initial current authorization = %q", got)
+				}
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("refreshed current authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"code":"CONT5103P.01"}]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/sections/match-codes":
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("match authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"sections":[{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions":
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("replace authorization = %q", got)
+			}
+			var req struct {
+				SectionIDs []int `json:"sectionIds"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			replacedIDs = req.SectionIDs
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	handler := testAuthedHandlerWithRefresh(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅 导入 CONT6104P.01", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if strings.Join(intStrings(replacedIDs), ",") != "101,202" {
+		t.Fatalf("sectionIds = %#v; reply = %q", replacedIDs, reply)
+	}
+}
+
 func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 	line := formatSchedule(map[string]any{
 		"startTime":   "07:50",
@@ -1286,19 +1345,35 @@ func TestAccessTokenReturnsFalseWhenUnavailable(t *testing.T) {
 
 func testAuthedHandler(t *testing.T, server *httptest.Server, ident store.Identity) Handler {
 	t.Helper()
-	s, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	err = s.SaveCredential(context.Background(), ident, store.Credential{
+	return testAuthedHandlerWithCredential(t, server, ident, store.Credential{
 		ClientID:    "client",
 		AccessToken: "access",
 		TokenType:   "Bearer",
 		ExpiresAt:   time.Now().Add(time.Hour),
 		Resource:    server.URL,
 	})
+}
+
+func testAuthedHandlerWithRefresh(t *testing.T, server *httptest.Server, ident store.Identity) Handler {
+	t.Helper()
+	return testAuthedHandlerWithCredential(t, server, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "access",
+		RefreshToken: "refresh",
+		TokenType:    "Bearer",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Resource:     server.URL,
+	})
+}
+
+func testAuthedHandlerWithCredential(t *testing.T, server *httptest.Server, ident store.Identity, cred store.Credential) Handler {
+	t.Helper()
+	s, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if err := s.SaveCredential(context.Background(), ident, cred); err != nil {
 		t.Fatal(err)
 	}
 	return Handler{

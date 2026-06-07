@@ -1103,13 +1103,18 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		return h.loginRequired()
 	}
 	current, err := h.Life.CurrentSubscription(ctx, token)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
 		current, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
 		return commandError("日程订阅查不到：", err)
 	}
 	matches, err := h.Life.MatchSectionCodes(ctx, token, codes, "")
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		matches, err = h.Life.MatchSectionCodes(ctx, token, codes, "")
+	}
 	if err != nil {
 		return commandError("教学班匹配失败：", err)
 	}
@@ -1139,7 +1144,12 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		added++
 	}
 	sort.Ints(union)
-	if _, err := h.Life.ReplaceCalendarSubscription(ctx, token, union); err != nil {
+	_, err = h.Life.ReplaceCalendarSubscription(ctx, token, union)
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		_, err = h.Life.ReplaceCalendarSubscription(ctx, token, union)
+	}
+	if err != nil {
 		return commandError("订阅更新失败：", err)
 	}
 	return formatBulkSubscriptionResult(matches, sections, nil, added, already)
@@ -1323,7 +1333,8 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 
 func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
 	sub, err := h.Life.CurrentSubscription(ctx, token)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
 		sub, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
@@ -1334,7 +1345,8 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		return nil, nil
 	}
 	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
 		all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
 	}
 	if err != nil {
