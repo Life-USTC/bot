@@ -226,7 +226,6 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 }
 
 var ErrNotLoggedIn = fmt.Errorf("not logged in")
-var ErrUnauthorized = fmt.Errorf("unauthorized")
 var ErrStoreNotConfigured = fmt.Errorf("auth store not configured")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Credential, error) {
