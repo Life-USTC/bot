@@ -6,13 +6,16 @@ func TestFirstNonEmpty(t *testing.T) {
 	if got := FirstNonEmpty("", "fallback", "later"); got != "fallback" {
 		t.Fatalf("FirstNonEmpty = %q", got)
 	}
+	if got := FirstNonEmpty("   ", " fallback "); got != "fallback" {
+		t.Fatalf("FirstNonEmpty trimmed = %q", got)
+	}
 	if got := FirstNonEmpty("", ""); got != "" {
 		t.Fatalf("FirstNonEmpty empty = %q", got)
 	}
 }
 
 func TestNonEmpty(t *testing.T) {
-	got := NonEmpty("", "one", "", "two")
+	got := NonEmpty("", "one", "   ", " two ")
 	want := []string{"one", "two"}
 	if len(got) != len(want) {
 		t.Fatalf("NonEmpty = %#v, want %#v", got, want)
