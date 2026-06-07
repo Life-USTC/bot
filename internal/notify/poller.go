@@ -218,23 +218,14 @@ func scheduleStartTime(schedule map[string]any, day time.Time) time.Time {
 
 func formatSchedule(schedule map[string]any) string {
 	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
-	course := lifedata.NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
-	if course == "" {
-		course = lifedata.NestedString(schedule, "section", "code")
-	}
-	place := lifedata.FirstString(schedule, "customPlace")
-	if place == "" {
-		place = lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
-	}
+	course := lifedata.ScheduleCourseLabel(schedule)
+	place := lifedata.SchedulePlaceLabel(schedule)
 	parts := nonEmpty([]string{place, timeRange, course})
 	return textutil.MonospaceDigits(strings.Join(parts, "\t"))
 }
 
 func formatHomework(homework map[string]any) string {
-	course := lifedata.NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
-	if course == "" {
-		course = lifedata.NestedPathString(homework, []string{"section", "course"}, "code")
-	}
+	course := lifedata.HomeworkCourseLabel(homework)
 	title := lifedata.FirstString(homework, "title")
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	return textutil.MonospaceDigits(strings.Join(nonEmpty([]string{"截止 " + due, course, title}), " · "))

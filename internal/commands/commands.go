@@ -818,10 +818,7 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 }
 
 func formatHomework(homework map[string]any) string {
-	course := lifedata.NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
-	if course == "" {
-		course = lifedata.NestedPathString(homework, []string{"section", "course"}, "code")
-	}
+	course := lifedata.HomeworkCourseLabel(homework)
 	title := lifedata.FirstString(homework, "title")
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	parts := []string{}
@@ -1320,14 +1317,8 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 
 func formatSchedule(schedule map[string]any) string {
 	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
-	course := lifedata.NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
-	if course == "" {
-		course = lifedata.NestedString(schedule, "section", "code")
-	}
-	place := lifedata.FirstString(schedule, "customPlace")
-	if place == "" {
-		place = lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
-	}
+	course := lifedata.ScheduleCourseLabel(schedule)
+	place := lifedata.SchedulePlaceLabel(schedule)
 	columns := []string{}
 	if strings.TrimSpace(place) != "" {
 		columns = append(columns, padRightDisplay(textutil.MonospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))

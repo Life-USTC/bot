@@ -27,6 +27,38 @@ func TestFormatAPITimeKeepsLocalDateOnlyAtMidnight(t *testing.T) {
 	}
 }
 
+func TestLifeDataLabelsUseFallbacks(t *testing.T) {
+	homework := map[string]any{
+		"section": map[string]any{
+			"course": map[string]any{"code": "MATH1001"},
+		},
+	}
+	if got := HomeworkCourseLabel(homework); got != "MATH1001" {
+		t.Fatalf("HomeworkCourseLabel = %q", got)
+	}
+
+	schedule := map[string]any{
+		"section": map[string]any{"code": "CS1001"},
+		"room":    map[string]any{"code": "3A101"},
+	}
+	if got := ScheduleCourseLabel(schedule); got != "CS1001" {
+		t.Fatalf("ScheduleCourseLabel = %q", got)
+	}
+	if got := SchedulePlaceLabel(schedule); got != "3A101" {
+		t.Fatalf("SchedulePlaceLabel = %q", got)
+	}
+}
+
+func TestSchedulePlaceLabelPrefersCustomPlace(t *testing.T) {
+	schedule := map[string]any{
+		"customPlace": "线上",
+		"room":        map[string]any{"nameCn": "3A101"},
+	}
+	if got := SchedulePlaceLabel(schedule); got != "线上" {
+		t.Fatalf("SchedulePlaceLabel = %q", got)
+	}
+}
+
 func TestSubscriptionSectionIDsForDayFiltersBySemester(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{

@@ -50,6 +50,30 @@ func HomeworkCompleted(homework map[string]any) bool {
 	return homework["completion"] != nil
 }
 
+func HomeworkCourseLabel(homework map[string]any) string {
+	name := NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	if name != "" {
+		return name
+	}
+	return NestedPathString(homework, []string{"section", "course"}, "code")
+}
+
+func ScheduleCourseLabel(schedule map[string]any) string {
+	name := NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
+	if name != "" {
+		return name
+	}
+	return NestedString(schedule, "section", "code")
+}
+
+func SchedulePlaceLabel(schedule map[string]any) string {
+	place := FirstString(schedule, "customPlace")
+	if place != "" {
+		return place
+	}
+	return NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+}
+
 func SortHomeworksByDue(homeworks []map[string]any) {
 	sort.SliceStable(homeworks, func(i, j int) bool {
 		return apiTimeLess(FirstString(homeworks[i], "submissionDueAt"), FirstString(homeworks[j], "submissionDueAt"))
