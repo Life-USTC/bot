@@ -146,7 +146,8 @@ func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity,
 
 func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
 	sub, err := p.Life.CurrentSubscription(ctx, token)
-	if token, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+	if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
 		sub, err = p.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {

@@ -166,13 +166,20 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
 	})
 	mux.HandleFunc("/api/calendar-subscriptions/current", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		switch r.Header.Get("Authorization") {
+		case "Bearer old-access":
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case "Bearer new-access":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		default:
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
 	})
 	mux.HandleFunc("/api/schedules", func(w http.ResponseWriter, r *http.Request) {
 		scheduleRequests++
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			t.Fatal("schedule request used stale token")
 		case "Bearer new-access":
 			_, _ = w.Write([]byte(`{"data":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
 		default:
@@ -214,7 +221,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	}
 	poller.tick(ctx)
 
-	if refreshRequests != 1 || scheduleRequests != 2 {
+	if refreshRequests != 1 || scheduleRequests != 1 {
 		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
 	}
 	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "课前提醒：") {
