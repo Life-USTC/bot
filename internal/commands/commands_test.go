@@ -797,6 +797,41 @@ func TestNextBusItemsUsesShanghaiTime(t *testing.T) {
 	}
 }
 
+func TestNextBusItemsIgnoresBlankRouteIDs(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": "   ",
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "南区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "高新区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{
+				"routeId":          "missing-route",
+				"dayType":          "weekday",
+				"departureTime":    "09:20",
+				"departureMinutes": float64(560),
+				"arrivalTime":      "09:35",
+				"stopTimes": []any{
+					map[string]any{"campusName": "东区", "time": "09:20"},
+					map[string]any{"campusName": "西区", "time": "09:35"},
+				},
+			},
+		},
+	}
+	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	items := nextBusItems(data, []string{"东区", "西区"}, now)
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].Route != "东区 → 西区" {
+		t.Fatalf("item = %#v", items[0])
+	}
+}
+
 func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{

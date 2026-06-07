@@ -1667,7 +1667,11 @@ func busRouteMap(raw any) map[string]busRoute {
 				stops = append(stops, name)
 			}
 		}
-		out[lifedata.FirstString(route, "id")] = busRoute{
+		id := lifedata.FirstString(route, "id")
+		if id == "" {
+			continue
+		}
+		out[id] = busRoute{
 			Name:      lifedata.FirstString(route, "nameCn", "namePrimary", "name"),
 			StopNames: stops,
 		}
