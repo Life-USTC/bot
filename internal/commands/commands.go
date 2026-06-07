@@ -539,7 +539,7 @@ func busArgsFromText(text string) []string {
 	seen := map[string]bool{}
 	lookupText := strings.ToLower(text)
 	for _, alias := range campusAliases() {
-		if index := strings.Index(lookupText, strings.ToLower(alias)); index >= 0 {
+		if index := campusAliasIndex(lookupText, strings.ToLower(alias)); index >= 0 {
 			campus := campusName(alias)
 			if campus != "" && !seen[campus] {
 				matches = append(matches, match{index: index, campus: campus})
@@ -558,6 +558,40 @@ func busArgsFromText(text string) []string {
 		args = append(args, match.campus)
 	}
 	return args
+}
+
+func campusAliasIndex(text, alias string) int {
+	index := strings.Index(text, alias)
+	if index < 0 || !isASCIIAlias(alias) {
+		return index
+	}
+	for index >= 0 {
+		before := index == 0 || !isASCIIAlnum(text[index-1])
+		afterIndex := index + len(alias)
+		after := afterIndex == len(text) || !isASCIIAlnum(text[afterIndex])
+		if before && after {
+			return index
+		}
+		next := strings.Index(text[index+1:], alias)
+		if next < 0 {
+			return -1
+		}
+		index += next + 1
+	}
+	return -1
+}
+
+func isASCIIAlias(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlnum(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
 }
 
 func (h Handler) help() string {

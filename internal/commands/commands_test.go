@@ -1102,6 +1102,7 @@ func TestBusArgsFromTextAcceptsEnglishCampusAliases(t *testing.T) {
 	tests := map[string][]string{
 		"Any BUS from EAST campus to west campus?": {"东区", "西区"},
 		"bus from gx to north":                     {"高新区", "北区"},
+		"bus to northeast tomorrow":                {},
 	}
 	for text, want := range tests {
 		got := busArgsFromText(text)
