@@ -13,6 +13,12 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
+var authTestNow = time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+
+func fixedClock(now time.Time) func() time.Time {
+	return func() time.Time { return now }
+}
+
 func TestDeviceLoginFlow(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
@@ -60,8 +66,8 @@ func TestDeviceLoginFlow(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
+	now := authTestNow
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(now)}
 	session, err := manager.BeginDeviceLogin(context.Background(), ident)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +102,7 @@ func TestPollDeviceLoginExpiresSessionUsingManagerClock(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	now := authTestNow
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
 	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
 		DeviceCode:      "device",
@@ -109,7 +115,7 @@ func TestPollDeviceLoginExpiresSessionUsingManagerClock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manager := Manager{Store: s, Now: func() time.Time { return now }}
+	manager := Manager{Store: s, Now: fixedClock(now)}
 	result, err := manager.PollDeviceLogin(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +279,7 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 
 	ctx := context.Background()
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	now := authTestNow
 	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
 		DeviceCode:      "device",
 		UserCode:        "USER-CODE",
@@ -285,7 +291,7 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(now)}
 	_, err = manager.PollDeviceLogin(ctx, ident)
 	if err == nil || !strings.Contains(err.Error(), "invalid JSON") {
 		t.Fatalf("error = %v", err)
@@ -293,7 +299,7 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 }
 
 func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	now := authTestNow
 	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{
 		"access_token": "access",
 		"expires_in": "120"
@@ -307,7 +313,7 @@ func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
 }
 
 func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	now := authTestNow
 	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{"access_token": "access"}`), "", "", now)
 	if err != nil {
 		t.Fatal(err)
@@ -370,8 +376,8 @@ func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 
 	ctx := context.Background()
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
+	now := authTestNow
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(now)}
 	if err := s.SaveCredential(ctx, ident, store.Credential{
 		ClientID:     "client",
 		AccessToken:  "old-access",
@@ -442,7 +448,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 
 	ctx := context.Background()
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
-	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	now := authTestNow
 	if err := s.SaveCredential(ctx, ident, store.Credential{
 		ClientID:     "client",
 		AccessToken:  "old-access",
@@ -454,7 +460,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(now)}
 	if token, ok := manager.RefreshIfUnauthorized(ctx, ident, life.HTTPError{StatusCode: http.StatusInternalServerError}); ok || token != "" {
 		t.Fatalf("non-401 refresh = %q, %v", token, ok)
 	}
