@@ -25,12 +25,14 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 
 func TestAgentIgnoresGroupMessages(t *testing.T) {
 	svc := &Service{enabled: true}
-	reply, ok := svc.Handle(context.Background(), Input{
-		Text:     "帮我看看今天有什么课",
-		Identity: store.Identity{ConversationType: "group"},
-	})
-	if ok || reply != "" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	for _, conversationType := range []string{"group", " group ", "GROUP"} {
+		reply, ok := svc.Handle(context.Background(), Input{
+			Text:     "帮我看看今天有什么课",
+			Identity: store.Identity{ConversationType: conversationType},
+		})
+		if ok || reply != "" {
+			t.Fatalf("conversationType %q reply = %q, ok = %v", conversationType, reply, ok)
+		}
 	}
 }
 
