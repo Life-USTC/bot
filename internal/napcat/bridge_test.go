@@ -285,9 +285,9 @@ func TestSendMessageNormalizesGroupIdentity(t *testing.T) {
 
 	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
 	if err := bridge.SendMessage(context.Background(), store.Identity{
-		UserID:           "42",
+		UserID:           " 42 ",
 		ConversationType: " GROUP ",
-		ConversationID:   "100",
+		ConversationID:   " 100 ",
 	}, "hello"); err != nil {
 		t.Fatal(err)
 	}

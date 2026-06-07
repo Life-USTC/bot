@@ -278,13 +278,13 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 
 func messageEventFromIdentity(ident store.Identity) (messageEvent, error) {
 	event := messageEvent{MessageType: ident.ConversationType}
-	userID, err := strconv.ParseInt(ident.UserID, 10, 64)
+	userID, err := strconv.ParseInt(strings.TrimSpace(ident.UserID), 10, 64)
 	if err != nil {
 		return messageEvent{}, fmt.Errorf("invalid napcat user id %q: %w", ident.UserID, err)
 	}
 	event.UserID = userID
 	if isGroupMessageType(ident.ConversationType) {
-		groupID, err := strconv.ParseInt(ident.ConversationID, 10, 64)
+		groupID, err := strconv.ParseInt(strings.TrimSpace(ident.ConversationID), 10, 64)
 		if err != nil {
 			return messageEvent{}, fmt.Errorf("invalid napcat group id %q: %w", ident.ConversationID, err)
 		}
