@@ -735,6 +735,13 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	if !recorded {
 		t.Fatal("first delivery was not recorded")
 	}
+	var delivery notificationDeliveryRow
+	if err := s.db.WithContext(ctx).First(&delivery, "kind = ? AND item_key = ?", "class", "section-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if delivery.CreatedAt.IsZero() {
+		t.Fatal("delivery created_at was not set")
+	}
 	delivered, err := s.NotificationDelivered(ctx, ident, "class", "section-1")
 	if err != nil {
 		t.Fatal(err)
@@ -790,7 +797,7 @@ func TestNotificationSettingsTrimsIdentityKeys(t *testing.T) {
 	ctx := context.Background()
 	want := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
-		Identity:         want,
+		Identity:        want,
 		HomeworkEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
