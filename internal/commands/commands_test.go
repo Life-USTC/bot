@@ -568,6 +568,55 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
+func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	currentCalls := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
+			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
+			currentCalls++
+			if currentCalls == 1 {
+				if got := r.Header.Get("Authorization"); got != "Bearer access" {
+					t.Fatalf("initial current authorization = %q", got)
+				}
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("refreshed current authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/schedules":
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("schedules authorization = %q", got)
+			}
+			if r.URL.Query().Get("sectionId") != "101" {
+				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	handler := testAuthedHandlerWithRefresh(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "今天课表", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "数据库系统") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
