@@ -149,6 +149,40 @@ func TestRecordInteractionAllowsEmptyRawText(t *testing.T) {
 	}
 }
 
+func TestRecordInteractionNormalizesKnownDirection(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.RecordInteraction(ctx, ident, Interaction{
+		Direction: " OUTBOUND ",
+		RawText:   "sent",
+		Handled:   true,
+		Status:    "sent",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var direction string
+	err = s.db.WithContext(ctx).Raw(`SELECT direction FROM interactions WHERE raw_text = ?`, "sent").Scan(&direction).Error
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direction != "outbound" {
+		t.Fatalf("direction = %q", direction)
+	}
+	recent, err := s.RecentHandledInteractions(ctx, ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 0 {
+		t.Fatalf("recent = %#v", recent)
+	}
+}
+
 func TestLoginSessionLifecycle(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

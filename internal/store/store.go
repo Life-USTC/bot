@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -437,16 +438,12 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 }
 
 func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interaction Interaction) error {
-	direction := interaction.Direction
-	if direction == "" {
-		direction = "inbound"
-	}
 	row := interactionRow{
 		Platform:         ident.Platform,
 		ConversationType: ident.ConversationType,
 		ConversationID:   ident.ConversationID,
 		UserID:           ident.UserID,
-		Direction:        direction,
+		Direction:        interactionDirection(interaction.Direction),
 		RawText:          interaction.RawText,
 		Command:          interaction.Command,
 		Args:             interaction.Args,
@@ -457,6 +454,19 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		CreatedAt:        time.Now().UTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
+}
+
+func interactionDirection(direction string) string {
+	trimmed := strings.TrimSpace(direction)
+	normalized := strings.ToLower(trimmed)
+	switch normalized {
+	case "":
+		return "inbound"
+	case "inbound", "outbound":
+		return normalized
+	default:
+		return trimmed
+	}
 }
 
 func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, limit int) ([]Interaction, error) {
