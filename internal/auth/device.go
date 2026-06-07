@@ -316,6 +316,7 @@ func (m *Manager) discover(ctx context.Context) (metadata, error) {
 			_ = resp.Body.Close()
 			return out, err
 		}
+		lastErr = fmt.Errorf("%s returned %d: %s", path, resp.StatusCode, responseBodyText(resp))
 		_ = resp.Body.Close()
 	}
 	return metadata{}, fmt.Errorf("could not discover OAuth metadata from %s: %v", m.Server, lastErr)

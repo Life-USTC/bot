@@ -348,6 +348,26 @@ func TestResponseBodyTextReportsReadError(t *testing.T) {
 	}
 }
 
+func TestDiscoverReportsHTTPFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("metadata unavailable"))
+	}))
+	defer server.Close()
+
+	manager := Manager{Server: server.URL}
+	_, err := manager.discover(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	message := err.Error()
+	for _, want := range []string{"/.well-known/openid-configuration", "502", "metadata unavailable"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("discover error = %q, want %q", message, want)
+		}
+	}
+}
+
 func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
