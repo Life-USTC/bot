@@ -1,6 +1,9 @@
 package onebot12
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -52,6 +55,30 @@ func TestLifeActionWithoutLifeClientFails(t *testing.T) {
 	}
 	if !strings.Contains(resp.Message, "Life @ USTC API is not configured") {
 		t.Fatalf("message = %q", resp.Message)
+	}
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+func TestErrorRetCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: libob.RetCodeNetworkError},
+		{name: "handler timeout", err: http.ErrHandlerTimeout, want: libob.RetCodeNetworkError},
+		{name: "net timeout", err: timeoutError{}, want: libob.RetCodeNetworkError},
+		{name: "regular", err: errors.New("boom"), want: libob.RetCodeInternalHandlerError},
+	}
+	for _, tt := range tests {
+		if got := errorRetCode(tt.err); got != tt.want {
+			t.Fatalf("%s: errorRetCode = %d, want %d", tt.name, got, tt.want)
+		}
 	}
 }
 

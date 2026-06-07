@@ -264,16 +264,23 @@ func write(w libob.ResponseWriter, data any, err error) {
 		w.WriteData(data)
 		return
 	}
+	retCode := errorRetCode(err)
+	if retCode == libob.RetCodeNetworkError {
+		w.WriteFailed(retCode, err)
+		return
+	}
+	w.WriteFailed(retCode, fmt.Errorf("Life @ USTC API error: %w", err))
+}
+
+func errorRetCode(err error) int {
 	var netErr interface{ Timeout() bool }
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		w.WriteFailed(libob.RetCodeNetworkError, err)
-		return
+		return libob.RetCodeNetworkError
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, http.ErrHandlerTimeout) {
-		w.WriteFailed(libob.RetCodeNetworkError, err)
-		return
+		return libob.RetCodeNetworkError
 	}
-	w.WriteFailed(libob.RetCodeInternalHandlerError, fmt.Errorf("Life @ USTC API error: %w", err))
+	return libob.RetCodeInternalHandlerError
 }
 
 func ContextWithTimeout() (context.Context, context.CancelFunc) {
