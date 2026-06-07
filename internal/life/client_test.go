@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,18 @@ import (
 	"testing"
 	"unicode/utf8"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
 
 func TestSearchCourses(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -253,6 +266,24 @@ func TestGetReturnsHTTPError(t *testing.T) {
 		t.Fatalf("error type = %T", err)
 	}
 	if httpErr.StatusCode != http.StatusServiceUnavailable || httpErr.Method != http.MethodGet || httpErr.Path != "/api/metadata" {
+		t.Fatalf("http error = %#v", httpErr)
+	}
+}
+
+func TestGetReturnsHTTPErrorForErrorBodyReadFailure(t *testing.T) {
+	client := NewClient("https://life.test", &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(errReader{}),
+		}, nil
+	})})
+
+	err := client.Health(context.Background())
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if httpErr.StatusCode != http.StatusServiceUnavailable || !strings.Contains(httpErr.Body, "read response body: read failed") {
 		t.Fatalf("http error = %#v", httpErr)
 	}
 }

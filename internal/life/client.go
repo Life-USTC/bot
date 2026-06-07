@@ -259,6 +259,14 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 	defer func() { _ = resp.Body.Close() }()
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
+		if resp.StatusCode >= 400 {
+			return HTTPError{
+				Method:     method,
+				Path:       path,
+				StatusCode: resp.StatusCode,
+				Body:       "read response body: " + err.Error(),
+			}
+		}
 		return err
 	}
 	if resp.StatusCode >= 400 {
