@@ -479,6 +479,26 @@ func withFirstArg(args []string, value string) []string {
 	return next
 }
 
+func hasArgs(args []string) bool {
+	return len(args) > 0
+}
+
+func firstArgIs(args []string, value string) bool {
+	return hasArgs(args) && args[0] == value
+}
+
+func firstArgIn(args []string, values ...string) bool {
+	if !hasArgs(args) {
+		return false
+	}
+	for _, value := range values {
+		if args[0] == value {
+			return true
+		}
+	}
+	return false
+}
+
 func joinedArgs(args []string) string {
 	return strings.TrimSpace(strings.Join(args, " "))
 }
@@ -561,7 +581,7 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 	if h.Auth == nil {
 		return "登录未配置。"
 	}
-	if len(args) > 0 && args[0] == "status" {
+	if firstArgIs(args, "status") {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
 		if err != nil {
 			return commandError("登录状态查不到：", err)
@@ -615,7 +635,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 }
 
 func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) string {
-	if len(args) > 0 && args[0] == "help" {
+	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"待办用法：",
 			"待办",
@@ -630,14 +650,14 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	if !ok {
 		return h.loginRequired()
 	}
-	if len(args) > 0 && args[0] == "add" {
+	if firstArgIs(args, "add") {
 		title := joinedArgs(args[1:])
 		if title == "" {
 			return "想加什么？例如：待办 add 写报告"
 		}
 		return h.createTodo(ctx, ident, token, title)
 	}
-	if len(args) > 0 && args[0] == "done" {
+	if firstArgIs(args, "done") {
 		target := joinedArgs(args[1:])
 		if target == "" {
 			return "想完成哪条？例如：td done 1"
@@ -670,7 +690,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		}
 		return "已完成：" + title
 	}
-	if len(args) > 0 {
+	if hasArgs(args) {
 		return h.createTodo(ctx, ident, token, strings.Join(args, " "))
 	}
 	todos, err := h.pendingTodos(ctx, ident, token)
@@ -747,7 +767,7 @@ func formatTodo(todo map[string]any) string {
 }
 
 func (h Handler) homework(ctx context.Context, ident store.Identity, args []string) string {
-	if len(args) > 0 && args[0] == "help" {
+	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"作业用法：",
 			"作业",
@@ -760,7 +780,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 	if !ok {
 		return h.loginRequired()
 	}
-	if len(args) > 0 && (args[0] == "done" || args[0] == "undo") {
+	if firstArgIn(args, "done", "undo") {
 		target := joinedArgs(args[1:])
 		if target == "" {
 			return "想改哪条作业？例如：作业 done 1"
@@ -793,7 +813,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		return "已取消完成：" + title
 	}
 	pendingOnly := true
-	if len(args) > 0 && args[0] == "all" {
+	if firstArgIs(args, "all") {
 		pendingOnly = false
 	}
 	homeworks, err := h.homeworks(ctx, ident, token)
@@ -920,7 +940,7 @@ func formatHomeworkList(homeworks []map[string]any) string {
 var sectionCodePattern = regexp.MustCompile(`[A-Za-z0-9_.-]+\.[A-Za-z0-9]{2}`)
 
 func (h Handler) subscription(ctx context.Context, ident store.Identity, args []string) string {
-	if len(args) > 0 {
+	if hasArgs(args) {
 		switch args[0] {
 		case "help":
 			return subscriptionHelp()
@@ -952,7 +972,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if ident.ConversationType != "private" {
 		return "通知只能在私聊里设置。"
 	}
-	if len(args) > 0 && args[0] == "help" {
+	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"通知用法：",
 			"通知：查看设置",
@@ -965,7 +985,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return commandError("通知设置查不到：", err)
 	}
 	settings.Identity = ident
-	if len(args) == 0 || args[0] == "status" {
+	if !hasArgs(args) || firstArgIs(args, "status") {
 		return formatNotificationSettings(settings)
 	}
 	if len(args) < 2 {
@@ -1176,7 +1196,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
 	target := "two-day"
-	if len(args) > 0 {
+	if hasArgs(args) {
 		target = args[0]
 	}
 	loc := lifedata.ChinaLocation()
