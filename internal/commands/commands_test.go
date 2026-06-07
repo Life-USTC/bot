@@ -224,6 +224,16 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	storeCommands := map[string]bool{
 		"notify": true,
 	}
+	authCommands := map[string]bool{
+		"login":        true,
+		"logout":       true,
+		"me":           true,
+		"todo":         true,
+		"homework":     true,
+		"subscription": true,
+		"schedule":     true,
+		"nextclass":    true,
+	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -242,6 +252,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		}
 		if spec.NeedsStore != storeCommands[spec.Name] {
 			t.Fatalf("command %q NeedsStore = %v", spec.Name, spec.NeedsStore)
+		}
+		if spec.NeedsAuth != authCommands[spec.Name] {
+			t.Fatalf("command %q NeedsAuth = %v", spec.Name, spec.NeedsAuth)
 		}
 		seen[spec.Name] = true
 		for _, alias := range spec.Aliases {

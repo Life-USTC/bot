@@ -36,6 +36,7 @@ type CommandSpec struct {
 	Aliases    []string
 	NeedsLife  bool
 	NeedsStore bool
+	NeedsAuth  bool
 	Normalize  func([]string) []string
 	AgentTools []AgentToolSpec
 	Run        func(Handler, context.Context, store.Identity, []string) string
@@ -100,14 +101,16 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "login",
 		Aliases:   []string{"login", "登录", "dl"},
+		NeedsAuth: true,
 		Normalize: normalizeLoginArgs,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.login(ctx, ident, args)
 		},
 	},
 	{
-		Name:    "logout",
-		Aliases: []string{"logout", "退出", "登出"},
+		Name:      "logout",
+		Aliases:   []string{"logout", "退出", "登出"},
+		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.logout(ctx, ident)
 		},
@@ -116,6 +119,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "me",
 		Aliases:   []string{"me", "我", "我的", "profile", "个人"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_profile",
 			Description: "Get the logged-in user's profile status.",
@@ -129,6 +133,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "todo",
 		Aliases:   []string{"todo", "td", "待办", "代办", "todo待办"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		Normalize: normalizeTodoArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_todos",
@@ -143,6 +148,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "homework",
 		Aliases:   []string{"homework", "hw", "作业"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		Normalize: normalizeHomeworkArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_homeworks",
@@ -157,6 +163,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "subscription",
 		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		Normalize: normalizeSubscriptionArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_subscriptions",
@@ -246,6 +253,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "schedule",
 		Aliases:   []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		Normalize: normalizeScheduleArgs,
 		AgentTools: []AgentToolSpec{
 			{Name: "get_two_day_curriculum", Description: "Get the user's curriculum for today and tomorrow.", CommandText: "课表"},
@@ -260,6 +268,7 @@ var commandSpecs = []CommandSpec{
 		Name:      "nextclass",
 		Aliases:   []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
 		NeedsLife: true,
+		NeedsAuth: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_next_class",
 			Description: "Get the user's next upcoming class.",
