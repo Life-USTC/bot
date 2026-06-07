@@ -650,6 +650,9 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+			t.Fatalf("content-type = %q", r.Header.Get("Content-Type"))
+		}
 		_ = r.ParseForm()
 		if r.Form.Get("grant_type") != "refresh_token" {
 			t.Fatalf("grant_type = %q", r.Form.Get("grant_type"))

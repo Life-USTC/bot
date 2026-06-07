@@ -240,12 +240,7 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 		"refresh_token": {cred.RefreshToken},
 		"resource":      {m.resource(meta)},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.TokenEndpoint, strings.NewReader(values.Encode()))
-	if err != nil {
-		return store.Credential{}, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := m.httpClient().Do(req)
+	resp, err := m.postForm(ctx, meta.TokenEndpoint, values)
 	if err != nil {
 		return store.Credential{}, err
 	}
