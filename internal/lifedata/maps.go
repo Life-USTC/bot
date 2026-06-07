@@ -287,6 +287,15 @@ func AnySlice(value any) []any {
 }
 
 func MapSlice(value any) []map[string]any {
+	if items, ok := value.([]map[string]any); ok {
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			if item != nil {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
 	raw := AnySlice(value)
 	out := make([]map[string]any, 0, len(raw))
 	for _, item := range raw {
