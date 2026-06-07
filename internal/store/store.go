@@ -250,6 +250,24 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 	return user.ID, err
 }
 
+func (s *Store) userID(ctx context.Context, ident Identity) (int64, bool, error) {
+	if err := validateIdentity(ident); err != nil {
+		return 0, false, err
+	}
+	ident = normalizeIdentity(ident)
+	var user userRow
+	err := s.db.WithContext(ctx).
+		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID).
+		First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return user.ID, true, nil
+}
+
 func normalizeIdentity(ident Identity) Identity {
 	ident.Platform = strings.TrimSpace(ident.Platform)
 	ident.UserID = strings.TrimSpace(ident.UserID)
@@ -730,9 +748,12 @@ func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind,
 	if err != nil {
 		return false, err
 	}
-	userID, err := s.EnsureUser(ctx, ident)
+	userID, ok, err := s.userID(ctx, ident)
 	if err != nil {
 		return false, err
+	}
+	if !ok {
+		return false, nil
 	}
 	var count int64
 	err = s.db.WithContext(ctx).Model(&notificationDeliveryRow{}).
