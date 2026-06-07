@@ -84,6 +84,23 @@ func TestSendReturnsInvalidNapCatJSON(t *testing.T) {
 	}
 }
 
+func TestSendReturnsNapCatHTTPFailureBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`upstream unavailable`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "502: upstream unavailable") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSendReverseReply(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	done := make(chan map[string]any, 1)

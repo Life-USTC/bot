@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -367,6 +368,11 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		message := strings.TrimSpace(string(respBody))
+		if message != "" {
+			return fmt.Errorf("napcat %s returned %d: %s", endpoint, resp.StatusCode, message)
+		}
 		return fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
 	}
 	respBody, err := io.ReadAll(resp.Body)
