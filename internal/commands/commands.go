@@ -1544,7 +1544,10 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		if lifedata.FirstString(trip, "dayType") != dayType {
 			continue
 		}
-		departure, _ := lifedata.IntValue(trip["departureMinutes"])
+		departure, ok := lifedata.IntValue(trip["departureMinutes"])
+		if !ok {
+			continue
+		}
 		if departure < nowMinutes {
 			continue
 		}
