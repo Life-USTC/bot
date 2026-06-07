@@ -672,9 +672,6 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		}
 		id := lifedata.FirstString(todo, "id")
 		if id == "" {
-			id = fmt.Sprint(todo["id"])
-		}
-		if id == "" || id == "<nil>" {
 			return "这条待办没有可用 ID，暂时完成不了。"
 		}
 		err = h.Life.CompleteTodo(ctx, token, id)

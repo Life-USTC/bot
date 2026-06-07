@@ -394,6 +394,33 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	}
 }
 
+func TestHandleTodoDoneUsesNumericID(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	patched := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"todos":[{"id":123,"title":"写报告"}]}`))
+		case r.URL.Path == "/api/todos/123" && r.Method == http.MethodPatch:
+			patched = true
+			_, _ = w.Write([]byte(`{"id":123,"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td done 1", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !patched || !strings.Contains(reply, "已完成：写报告") {
+		t.Fatalf("patched = %v, reply = %q", patched, reply)
+	}
+}
+
 func TestResolveTodoMatchesDisplayDigitsInTitle(t *testing.T) {
 	todos := []map[string]any{
 		{"id": "todo-1", "title": "写报告 1"},
