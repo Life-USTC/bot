@@ -84,6 +84,83 @@ func TestDeviceLoginFlow(t *testing.T) {
 	}
 }
 
+func TestBeginDeviceLoginRejectsIncompleteDeviceResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+		want string
+	}{
+		{
+			name: "missing device code",
+			body: map[string]any{
+				"user_code":        "USER-CODE",
+				"verification_uri": "https://example.test/verify",
+				"expires_in":       600,
+			},
+			want: "device_code",
+		},
+		{
+			name: "missing verification uri",
+			body: map[string]any{
+				"device_code": "device",
+				"user_code":   "USER-CODE",
+				"expires_in":  600,
+			},
+			want: "verification_uri",
+		},
+		{
+			name: "missing expiry",
+			body: map[string]any{
+				"device_code":      "device",
+				"user_code":        "USER-CODE",
+				"verification_uri": "https://example.test/verify",
+			},
+			want: "expires_in",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var serverURL string
+			mux := http.NewServeMux()
+			mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"device_authorization_endpoint": serverURL + "/device",
+					"registration_endpoint":         serverURL + "/register",
+				})
+			})
+			mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
+			})
+			mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tc.body)
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			serverURL = server.URL
+
+			s, err := store.Open(t.TempDir() + "/bot.db")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = s.Close() }()
+
+			ctx := context.Background()
+			ident := store.Identity{Platform: "napcat", UserID: "42"}
+			manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}
+			_, err = manager.BeginDeviceLogin(ctx, ident)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			session, err := s.ActiveLoginSession(ctx, ident)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session != nil {
+				t.Fatalf("session = %#v", session)
+			}
+		})
+	}
+}
+
 func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()

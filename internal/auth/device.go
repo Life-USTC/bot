@@ -79,6 +79,9 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+	if err := validateDeviceAuthResponse(out); err != nil {
+		return nil, err
+	}
 	interval := out.Interval
 	if interval <= 0 {
 		interval = 5
@@ -97,6 +100,21 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		return nil, err
 	}
 	return session, nil
+}
+
+func validateDeviceAuthResponse(resp deviceAuthResponse) error {
+	switch {
+	case resp.DeviceCode == "":
+		return fmt.Errorf("device authorization response missing device_code")
+	case resp.UserCode == "":
+		return fmt.Errorf("device authorization response missing user_code")
+	case resp.VerificationURI == "" && resp.VerificationURIComplete == "":
+		return fmt.Errorf("device authorization response missing verification_uri")
+	case resp.ExpiresIn <= 0:
+		return fmt.Errorf("device authorization response missing expires_in")
+	default:
+		return nil
+	}
 }
 
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
