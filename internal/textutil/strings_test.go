@@ -36,6 +36,12 @@ func TestTrimEqualFold(t *testing.T) {
 	}
 }
 
+func TestLowerTrim(t *testing.T) {
+	if got := LowerTrim(" KB "); got != "kb" {
+		t.Fatalf("LowerTrim = %q", got)
+	}
+}
+
 func TestIndexASCIIToken(t *testing.T) {
 	tests := []struct {
 		text  string

@@ -27,6 +27,10 @@ func TrimEqualFold(value, target string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), target)
 }
 
+func LowerTrim(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func IndexASCIIToken(text, token string) int {
 	if token == "" {
 		return -1

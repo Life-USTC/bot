@@ -354,7 +354,7 @@ func requiredToolArg(name, value string) (string, error) {
 }
 
 func notificationKindCommandArg(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+	switch textutil.LowerTrim(value) {
 	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
 		return "课表", nil
 	case "homework", "hw", "作业":

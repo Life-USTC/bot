@@ -496,7 +496,7 @@ func normalizeNotifyArgs(args []string) []string {
 }
 
 func normToken(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+	return textutil.LowerTrim(value)
 }
 
 func isHelpToken(value string) bool {
@@ -992,7 +992,7 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 }
 
 func normalizedLookupText(value string) string {
-	return strings.ToLower(textutil.PlainDigits(strings.TrimSpace(value)))
+	return textutil.LowerTrim(textutil.PlainDigits(value))
 }
 
 func formatHomework(homework map[string]any) string {
@@ -1985,7 +1985,7 @@ func campusAliases() []string {
 }
 
 func campusName(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+	switch textutil.LowerTrim(value) {
 	case "东", "东区", "east", "east campus":
 		return "东区"
 	case "西", "西区", "west", "west campus":
@@ -2060,7 +2060,7 @@ func moreLine(count int, monospace bool) string {
 
 func friendlyError(err error) string {
 	text := err.Error()
-	lower := strings.ToLower(text)
+	lower := textutil.LowerTrim(text)
 	if life.IsUnauthorized(err) || strings.Contains(lower, "unauthorized") {
 		return "登录已过期。发送：登录"
 	}
