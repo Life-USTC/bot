@@ -94,6 +94,42 @@ func TestDeviceLoginFlow(t *testing.T) {
 	}
 }
 
+func TestBeginDeviceLoginTrimsServerURL(t *testing.T) {
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"device_authorization_endpoint": serverURL + "/device",
+			"registration_endpoint":         serverURL + "/register",
+		})
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
+	})
+	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"device_code":      "device",
+			"user_code":        "USER-CODE",
+			"verification_uri": serverURL + "/verify",
+			"expires_in":       600,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	manager := Manager{Server: " " + server.URL + "/// ", HTTPClient: server.Client(), Store: s}
+	if _, err := manager.BeginDeviceLogin(context.Background(), store.Identity{Platform: "napcat", UserID: "42"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPollDeviceLoginExpiresSessionUsingManagerClock(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(t.TempDir() + "/bot.db")

@@ -265,8 +265,9 @@ func (m *Manager) RefreshIfUnauthorized(ctx context.Context, ident store.Identit
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
 	var lastErr error
+	server := strings.TrimRight(strings.TrimSpace(m.Server), "/")
 	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(m.Server, "/")+path, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server+path, nil)
 		if err != nil {
 			return metadata{}, err
 		}
