@@ -1,10 +1,12 @@
 package napcat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -332,6 +334,31 @@ func TestHandleMessageRecordsIgnored(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("interaction count = %d", count)
+	}
+}
+
+func TestRecordIgnoredLogsStoreError(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var logs bytes.Buffer
+	bridge := &Bridge{
+		Handler: commands.Handler{Store: db, Prefix: "/life"},
+		Logger:  log.New(&logs, "", 0),
+	}
+	reply, ok := bridge.handleMessage(context.Background(), messageEvent{
+		PostType:   "message",
+		RawMessage: "not a command",
+		UserID:     456,
+	})
+	if ok || reply != "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	if !strings.Contains(logs.String(), "record ignored interaction failed") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
 

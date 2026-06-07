@@ -183,44 +183,45 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, b
 	if !ok {
 		return "", false
 	}
-	if b.Handler.Store != nil {
-		_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
-			RawText: event.RawMessage,
-			Command: "agent",
-			Handled: true,
-			Reply:   reply,
-			Status:  "handled",
-		})
-	}
+	b.recordInteraction(ctx, event, store.Interaction{
+		RawText: event.RawMessage,
+		Command: "agent",
+		Handled: true,
+		Reply:   reply,
+		Status:  "handled",
+	}, "agent")
 	return reply, true
 }
 
 func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
-	if b.Handler.Store == nil {
-		return
-	}
-	_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
+	b.recordInteraction(ctx, event, store.Interaction{
 		RawText: event.RawMessage,
 		Handled: false,
 		Status:  "ignored",
-	})
+	}, "ignored")
 }
 
 func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message, status string, err error) {
-	if b.Handler.Store == nil {
-		return
-	}
 	errText := ""
 	if err != nil {
 		errText = err.Error()
 	}
-	_ = b.Handler.Store.RecordInteraction(ctx, event.identity(), store.Interaction{
+	b.recordInteraction(ctx, event, store.Interaction{
 		Direction: "outbound",
 		RawText:   message,
 		Handled:   true,
 		Status:    status,
 		Error:     errText,
-	})
+	}, "outbound")
+}
+
+func (b *Bridge) recordInteraction(ctx context.Context, event messageEvent, interaction store.Interaction, label string) {
+	if b.Handler.Store == nil {
+		return
+	}
+	if err := b.Handler.Store.RecordInteraction(ctx, event.identity(), interaction); err != nil && b.Logger != nil {
+		b.Logger.Printf("record %s interaction failed: %v", label, err)
+	}
 }
 
 func (e messageEvent) identity() store.Identity {
