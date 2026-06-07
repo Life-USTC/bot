@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/store"
@@ -68,7 +69,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 			p.notifyApproved(ctx, ident, session.DeviceCode)
 			continue
 		}
-		if message == "" || ident.ConversationType == "" || ident.ConversationID == "" {
+		if message == "" || !hasNotificationIdentity(ident) {
 			continue
 		}
 		if err := p.Notifier.SendLoginMessage(ctx, ident, message); err != nil {
@@ -78,7 +79,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 }
 
 func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, deviceCode string) {
-	if ident.ConversationType == "" || ident.ConversationID == "" {
+	if !hasNotificationIdentity(ident) {
 		return
 	}
 	if err := p.Notifier.SendLoginMessage(ctx, ident, "登录完成。"); err != nil {
@@ -91,6 +92,11 @@ func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, 
 	if deviceCode != "" {
 		_ = p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, "approved")
 	}
+}
+
+func hasNotificationIdentity(ident store.Identity) bool {
+	return strings.TrimSpace(ident.ConversationType) != "" &&
+		strings.TrimSpace(ident.ConversationID) != ""
 }
 
 func (p *LoginPoller) logf(format string, args ...any) {

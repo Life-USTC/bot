@@ -82,6 +82,49 @@ func TestLoginPollerRetriesFailedCompletionNotification(t *testing.T) {
 	}
 }
 
+func TestLoginPollerSkipsBlankNotificationIdentity(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := store.Identity{
+		Platform:         "napcat",
+		UserID:           "42",
+		ConversationType: "  ",
+		ConversationID:   "  ",
+	}
+	if err := s.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkLoginSession(context.Background(), ident, "device", "notify_failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	notifier := &fakeNotifier{}
+	poller := LoginPoller{
+		Manager:  &Manager{Store: s},
+		Notifier: notifier,
+	}
+	poller.tick(context.Background())
+	if notifier.message != "" {
+		t.Fatalf("message = %q", notifier.message)
+	}
+	sessions, err := s.PendingLoginSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Status != "notify_failed" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
 func TestLoginPollerSendsCompletionFromPendingSession(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
