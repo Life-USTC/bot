@@ -727,6 +727,13 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || enabled[0].Identity != ident {
 		t.Fatalf("enabled settings = %#v", enabled)
 	}
+	var settingRow notificationSettingRow
+	if err := s.db.WithContext(ctx).First(&settingRow, "conversation_type = ? AND conversation_id = ?", "private", "42").Error; err != nil {
+		t.Fatal(err)
+	}
+	if settingRow.UpdatedAt.IsZero() {
+		t.Fatal("notification settings updated_at was not set")
+	}
 
 	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
 	if err != nil {
