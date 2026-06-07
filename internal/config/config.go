@@ -81,12 +81,8 @@ func envPath(key, fallback string) string {
 }
 
 func envInt(key string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil {
+	value, ok := envParsedInt(key)
+	if !ok {
 		return fallback
 	}
 	return value
@@ -101,15 +97,23 @@ func envPositiveInt(key string, fallback int) int {
 }
 
 func envUint16(key string, fallback uint16) uint16 {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 || value > int(^uint16(0)) {
+	value, ok := envParsedInt(key)
+	if !ok || value <= 0 || value > int(^uint16(0)) {
 		return fallback
 	}
 	return uint16(value)
+}
+
+func envParsedInt(key string) (int, bool) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, false
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func envBool(key string, fallback bool) bool {
