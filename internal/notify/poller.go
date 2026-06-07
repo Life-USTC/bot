@@ -95,21 +95,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 			continue
 		}
 		key := notificationKey(classKind, scheduleKey(schedule, start))
-		delivered, err := p.Store.NotificationDelivered(ctx, ident, classKind, key)
-		if err != nil {
-			p.logf("check class notification delivery failed: %v", err)
-			continue
-		}
-		if delivered {
-			continue
-		}
-		if err := p.Sender.SendMessage(ctx, ident, "课前提醒：\n"+formatSchedule(schedule)); err != nil {
-			p.logf("send class notification failed: %v", err)
-			continue
-		}
-		if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, classKind, key); err != nil {
-			p.logf("record class notification failed: %v", err)
-		}
+		p.sendNotificationOnce(ctx, ident, classKind, key, "课前提醒：\n"+formatSchedule(schedule))
 	}
 }
 
@@ -132,21 +118,25 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 			continue
 		}
 		key := notificationKey(homeworkKind, textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
-		delivered, err := p.Store.NotificationDelivered(ctx, ident, homeworkKind, key)
-		if err != nil {
-			p.logf("check homework notification delivery failed: %v", err)
-			continue
-		}
-		if delivered {
-			continue
-		}
-		if err := p.Sender.SendMessage(ctx, ident, "作业提醒：\n"+formatHomework(homework)); err != nil {
-			p.logf("send homework notification failed: %v", err)
-			continue
-		}
-		if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, homeworkKind, key); err != nil {
-			p.logf("record homework notification failed: %v", err)
-		}
+		p.sendNotificationOnce(ctx, ident, homeworkKind, key, "作业提醒：\n"+formatHomework(homework))
+	}
+}
+
+func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity, kind, key, message string) {
+	delivered, err := p.Store.NotificationDelivered(ctx, ident, kind, key)
+	if err != nil {
+		p.logf("check %s notification delivery failed: %v", kind, err)
+		return
+	}
+	if delivered {
+		return
+	}
+	if err := p.Sender.SendMessage(ctx, ident, message); err != nil {
+		p.logf("send %s notification failed: %v", kind, err)
+		return
+	}
+	if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, kind, key); err != nil {
+		p.logf("record %s notification failed: %v", kind, err)
 	}
 }
 
