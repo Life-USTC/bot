@@ -71,23 +71,19 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	var reply string
 	if cmd.Name == "help" {
 		reply = h.help()
-		if !input.SuppressLog {
-			h.recordInteraction(ctx, input.Identity, cmd, reply)
-		}
-		return reply, true
-	}
-
-	spec, ok := commandSpec(cmd.Name)
-	if !ok || spec.Run == nil {
-		reply = h.help()
-	} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
-		reply = "Life @ USTC API unavailable: not configured."
-	} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
-		reply = "登录未配置。"
-	} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
-		reply = "存储未配置。"
 	} else {
-		reply = spec.Run(h, ctx, input.Identity, cmd.Args)
+		spec, ok := commandSpec(cmd.Name)
+		if !ok || spec.Run == nil {
+			reply = h.help()
+		} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
+			reply = "Life @ USTC API unavailable: not configured."
+		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
+			reply = "登录未配置。"
+		} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
+			reply = "存储未配置。"
+		} else {
+			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
+		}
 	}
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
