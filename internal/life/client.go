@@ -89,7 +89,11 @@ func IsUnauthorized(err error) bool {
 	if errors.As(err, &httpErr) {
 		return httpErr.StatusCode == http.StatusUnauthorized
 	}
-	return err != nil && strings.Contains(err.Error(), " returned 401:")
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, " returned 401:") || strings.HasSuffix(text, " returned 401")
 }
 
 func (c *Client) Todos(ctx context.Context, token string, completed string) ([]map[string]any, error) {
