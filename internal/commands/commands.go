@@ -318,6 +318,13 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		}
 		return parsedCommand{Name: name, Args: args, Raw: raw}, true
 	}
+	if strings.HasPrefix(fields[0], prefix) {
+		name, args := normalizeCommand(strings.TrimPrefix(fields[0], prefix), fields[1:])
+		if name == "" {
+			return parsedCommand{Name: "help", Raw: raw}, true
+		}
+		return parsedCommand{Name: name, Args: args, Raw: raw}, true
+	}
 
 	if isHelpToken(fields[0]) {
 		return parsedCommand{Name: "help", Raw: raw}, true

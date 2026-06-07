@@ -1574,6 +1574,37 @@ func TestPrefixedUnknownCommandParsesAsHelp(t *testing.T) {
 	}
 }
 
+func TestAttachedPrefixCommandParses(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	tests := map[string]struct {
+		name string
+		args []string
+	}{
+		"/life校车 东区 西区": {name: "bus", args: []string{"东区", "西区"}},
+		"/lifekb今天":    {name: "schedule", args: []string{"today"}},
+	}
+	for text, want := range tests {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != want.name || strings.Join(cmd.Args, " ") != strings.Join(want.args, " ") {
+			t.Fatalf("%q parsed as name=%q args=%#v, want name=%q args=%#v", text, cmd.Name, cmd.Args, want.name, want.args)
+		}
+	}
+}
+
+func TestAttachedPrefixUnknownCommandParsesAsHelp(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	cmd, ok := handler.parse("/lifenope")
+	if !ok {
+		t.Fatal("command was not parsed")
+	}
+	if cmd.Name != "help" {
+		t.Fatalf("command name = %q, want help", cmd.Name)
+	}
+}
+
 func TestNormalizeSubscriptionImportAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{
