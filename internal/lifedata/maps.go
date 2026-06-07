@@ -1,6 +1,7 @@
 package lifedata
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,18 @@ func HomeworkCompleted(homework map[string]any) bool {
 		return completed
 	}
 	return homework["completion"] != nil
+}
+
+func SortHomeworksByDue(homeworks []map[string]any) {
+	sort.SliceStable(homeworks, func(i, j int) bool {
+		return apiTimeLess(FirstString(homeworks[i], "submissionDueAt"), FirstString(homeworks[j], "submissionDueAt"))
+	})
+}
+
+func SortSchedulesByStart(schedules []map[string]any) {
+	sort.SliceStable(schedules, func(i, j int) bool {
+		return FirstString(schedules[i], "startTime") < FirstString(schedules[j], "startTime")
+	})
 }
 
 func SubscriptionSectionIDs(data map[string]any) []string {
@@ -149,6 +162,21 @@ func ParseAPITime(value string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func apiTimeLess(left, right string) bool {
+	leftTime, leftOK := ParseAPITime(left)
+	rightTime, rightOK := ParseAPITime(right)
+	switch {
+	case leftOK && rightOK:
+		return leftTime.Before(rightTime)
+	case leftOK:
+		return true
+	case rightOK:
+		return false
+	default:
+		return left < right
+	}
 }
 
 func ChinaLocation() *time.Location {

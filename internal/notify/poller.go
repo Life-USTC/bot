@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -122,9 +121,7 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 		p.logf("load homework notifications failed: %v", err)
 		return
 	}
-	sort.Slice(homeworks, func(i, j int) bool {
-		return lifedata.FirstString(homeworks[i], "submissionDueAt") < lifedata.FirstString(homeworks[j], "submissionDueAt")
-	})
+	lifedata.SortHomeworksByDue(homeworks)
 	for _, homework := range homeworks {
 		if lifedata.HomeworkCompleted(homework) {
 			continue
@@ -180,9 +177,7 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		all = append(all, schedules...)
 	}
 	all = lifedata.FilterSchedulesForDay(all, day)
-	sort.Slice(all, func(i, j int) bool {
-		return lifedata.FirstString(all[i], "startTime") < lifedata.FirstString(all[j], "startTime")
-	})
+	lifedata.SortSchedulesByStart(all)
 	return all, nil
 }
 

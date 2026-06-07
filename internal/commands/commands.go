@@ -783,9 +783,7 @@ func (h Handler) homeworks(ctx context.Context, ident store.Identity, token stri
 	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 		homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
 	}
-	sort.Slice(homeworks, func(i, j int) bool {
-		return lifedata.FirstString(homeworks[i], "submissionDueAt") < lifedata.FirstString(homeworks[j], "submissionDueAt")
-	})
+	lifedata.SortHomeworksByDue(homeworks)
 	return homeworks, err
 }
 
@@ -1283,9 +1281,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		return nil, err
 	}
 	all = lifedata.FilterSchedulesForDay(all, day)
-	sort.Slice(all, func(i, j int) bool {
-		return lifedata.FirstString(all[i], "startTime") < lifedata.FirstString(all[j], "startTime")
-	})
+	lifedata.SortSchedulesByStart(all)
 	return all, nil
 }
 
