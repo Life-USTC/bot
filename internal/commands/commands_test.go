@@ -541,6 +541,13 @@ func TestResolveTodoMatchesDisplayDigitsInTitle(t *testing.T) {
 	}
 }
 
+func TestResolveTodoRejectsBlankTarget(t *testing.T) {
+	todos := []map[string]any{{"id": "todo-1", "title": "写报告"}}
+	if todo, ok := resolveTodo(todos, " \t "); ok || todo != nil {
+		t.Fatalf("todo = %#v, ok = %v", todo, ok)
+	}
+}
+
 func TestFormatTodoDueDateFirst(t *testing.T) {
 	line := textutil.MonospaceDigits(formatTodo(map[string]any{
 		"title": "写报告",
@@ -616,6 +623,13 @@ func TestResolveHomeworkMatchesDisplayDigitsInTitle(t *testing.T) {
 	}
 	homework, ok := resolveHomework(homeworks, "set 𝟸")
 	if !ok || lifedata.FirstString(homework, "id") != "hw-2" {
+		t.Fatalf("homework = %#v, ok = %v", homework, ok)
+	}
+}
+
+func TestResolveHomeworkRejectsBlankTarget(t *testing.T) {
+	homeworks := []map[string]any{{"id": "hw-1", "title": "Problem Set 1"}}
+	if homework, ok := resolveHomework(homeworks, " \t "); ok || homework != nil {
 		t.Fatalf("homework = %#v, ok = %v", homework, ok)
 	}
 }

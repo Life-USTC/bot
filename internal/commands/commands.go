@@ -779,6 +779,9 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 		return todos[index-1], true
 	}
 	needle := normalizedLookupText(target)
+	if needle == "" {
+		return nil, false
+	}
 	for _, todo := range todos {
 		id := normalizedLookupText(lifedata.FirstString(todo, "id"))
 		title := normalizedLookupText(lifedata.FirstString(todo, "title"))
@@ -897,6 +900,9 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 		return homeworks[index-1], true
 	}
 	needle := normalizedLookupText(target)
+	if needle == "" {
+		return nil, false
+	}
 	for _, homework := range homeworks {
 		id := normalizedLookupText(lifedata.FirstString(homework, "id"))
 		title := normalizedLookupText(lifedata.FirstString(homework, "title"))
