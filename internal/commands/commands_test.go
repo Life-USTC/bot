@@ -939,6 +939,14 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("homework alias reply = %q, ok = %v", reply, ok)
 	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表", Identity: ident})
+	if !ok || !strings.Contains(reply, "想打开还是关闭") {
+		t.Fatalf("missing state reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 校车", Identity: ident})
+	if !ok || !strings.Contains(reply, "支持：课表、作业") {
+		t.Fatalf("invalid kind reply = %q, ok = %v", reply, ok)
+	}
 
 	paddedIdent := ident
 	paddedIdent.ConversationType = " PRIVATE "

@@ -1116,7 +1116,12 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return formatNotificationSettings(settings)
 	}
 	if len(args) < 2 {
-		return "想设置哪类通知？例如：通知 课表 开"
+		switch args[0] {
+		case "classes", "homework":
+			return "想打开还是关闭？例如：通知 作业 开"
+		default:
+			return "支持：课表、作业。"
+		}
 	}
 	enabled := args[1] == "on"
 	if args[1] != "on" && args[1] != "off" {
