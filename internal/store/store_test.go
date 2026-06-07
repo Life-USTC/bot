@@ -471,6 +471,33 @@ func TestSaveLoginSessionTrimsFields(t *testing.T) {
 	}
 }
 
+func TestActiveLoginSessionTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	if err := s.SaveLoginSession(ctx, Identity{Platform: "napcat", UserID: "42"}, LoginSession{
+		DeviceCode:      "device",
+		UserCode:        "USER-CODE",
+		VerificationURI: "https://life.example/device",
+		ClientID:        "client",
+		ExpiresAt:       time.Now().Add(time.Minute),
+		Status:          "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ActiveLoginSession(ctx, Identity{Platform: " napcat ", UserID: " 42 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.DeviceCode != "device" {
+		t.Fatalf("session = %#v", got)
+	}
+}
+
 func TestSaveLoginSessionRejectsBlankRequiredFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

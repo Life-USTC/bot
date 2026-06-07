@@ -421,6 +421,7 @@ func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
 }
 
 func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginSession, error) {
+	ident = normalizeIdentity(ident)
 	var row loginSessionRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = login_sessions.user_id").
