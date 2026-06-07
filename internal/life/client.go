@@ -248,8 +248,9 @@ func setLimit(values url.Values, limit int) {
 
 func trimBody(body []byte) string {
 	text := strings.TrimSpace(string(body))
-	if len(text) > 200 {
-		return text[:200]
+	runes := []rune(text)
+	if len(runes) > 200 {
+		return string(runes[:200])
 	}
 	return text
 }

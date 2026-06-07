@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestSearchCourses(t *testing.T) {
@@ -95,6 +97,19 @@ func TestHTTPErrorString(t *testing.T) {
 		StatusCode: http.StatusServiceUnavailable,
 	}).Error(); got != "GET /api/metadata returned 503" {
 		t.Fatalf("HTTPError without body = %q", got)
+	}
+}
+
+func TestTrimBodyTruncatesByRune(t *testing.T) {
+	got := trimBody([]byte(strings.Repeat("错", 201)))
+	if !utf8.ValidString(got) {
+		t.Fatalf("trimmed body is invalid UTF-8: %q", got)
+	}
+	if utf8.RuneCountInString(got) != 200 {
+		t.Fatalf("rune count = %d", utf8.RuneCountInString(got))
+	}
+	if got != strings.Repeat("错", 200) {
+		t.Fatalf("trimmed body = %q", got)
 	}
 }
 
