@@ -183,10 +183,9 @@ func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.Me(ctx, token)
-	if token, ok := s.auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		data, err = lifeClient.Me(ctx, token)
-	}
+	data, err := withRefresh(ctx, ident, token, s.auth.RefreshIfUnauthorized, func(token string) (map[string]any, error) {
+		return lifeClient.Me(ctx, token)
+	})
 	write(w, data, err)
 }
 
@@ -201,11 +200,18 @@ func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.Todos(ctx, token, "false")
-	if token, ok := s.auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		data, err = lifeClient.Todos(ctx, token, "false")
-	}
+	data, err := withRefresh(ctx, ident, token, s.auth.RefreshIfUnauthorized, func(token string) ([]map[string]any, error) {
+		return lifeClient.Todos(ctx, token, "false")
+	})
 	write(w, data, err)
+}
+
+func withRefresh[T any](ctx context.Context, ident store.Identity, token string, refresh func(context.Context, store.Identity, error) (string, bool), fetch func(string) (T, error)) (T, error) {
+	data, err := fetch(token)
+	if refreshed, ok := refresh(ctx, ident, err); ok {
+		return fetch(refreshed)
+	}
+	return data, err
 }
 
 func (s *Server) lifeClientForAction(w libob.ResponseWriter) (*life.Client, bool) {
