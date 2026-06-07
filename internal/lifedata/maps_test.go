@@ -210,6 +210,14 @@ func TestScheduleStartTimeUsesProvidedLocation(t *testing.T) {
 	}
 }
 
+func TestScheduleStartTimeAcceptsSeconds(t *testing.T) {
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	got := ScheduleStartTime(map[string]any{"startTime": "09:45:30"}, day, nil)
+	if got.IsZero() || got.Format("2006-01-02 15:04:05") != "2026-06-07 09:45:30" {
+		t.Fatalf("start = %s", got.Format(time.RFC3339))
+	}
+}
+
 func TestScheduleStartTimeRejectsMissingOrInvalidStart(t *testing.T) {
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
 	for _, schedule := range []map[string]any{

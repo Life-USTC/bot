@@ -182,11 +182,13 @@ func ScheduleStartTime(schedule map[string]any, day time.Time, loc *time.Locatio
 	if loc == nil {
 		loc = day.Location()
 	}
-	parsed, err := time.ParseInLocation("2006-01-02 15:04", day.Format("2006-01-02")+" "+start, loc)
-	if err != nil {
-		return time.Time{}
+	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02 15:04:05"} {
+		parsed, err := time.ParseInLocation(layout, day.Format("2006-01-02")+" "+start, loc)
+		if err == nil {
+			return parsed
+		}
 	}
-	return parsed
+	return time.Time{}
 }
 
 func FormatAPITime(value string) string {
