@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,6 +142,23 @@ func TestIsHelpToken(t *testing.T) {
 	}
 	if isHelpToken("status") {
 		t.Fatal("status was recognized as help")
+	}
+}
+
+func TestFriendlyError(t *testing.T) {
+	for _, err := range []error{
+		life.HTTPError{StatusCode: http.StatusUnauthorized},
+		errors.New("request failed: Unauthorized"),
+	} {
+		if got := friendlyError(err); got != "登录已过期。发送：登录" {
+			t.Fatalf("friendlyError(%v) = %q", err, got)
+		}
+	}
+	if got := friendlyError(errors.New("upstream timeout waiting for response")); got != "网络超时，等会儿再试" {
+		t.Fatalf("timeout friendlyError = %q", got)
+	}
+	if got := friendlyError(errors.New("server exploded")); got != "server exploded" {
+		t.Fatalf("passthrough friendlyError = %q", got)
 	}
 }
 

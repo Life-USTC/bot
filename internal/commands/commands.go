@@ -1869,10 +1869,11 @@ const busMissingTimePlaceholder = "———"
 
 func friendlyError(err error) string {
 	text := err.Error()
-	if life.IsUnauthorized(err) || strings.Contains(strings.ToLower(text), "unauthorized") {
+	lower := strings.ToLower(text)
+	if life.IsUnauthorized(err) || strings.Contains(lower, "unauthorized") {
 		return "登录已过期。发送：登录"
 	}
-	if strings.Contains(strings.ToLower(text), "timeout") {
+	if strings.Contains(lower, "timeout") {
 		return "网络超时，等会儿再试"
 	}
 	return text
