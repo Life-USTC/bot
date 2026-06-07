@@ -70,6 +70,11 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 					{"campusName":"东区","time":"23:59"},
 					{"campusName":"北区"},
 					{"campusName":"西区","time":"23:59"}
+				]},
+				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[
+					{"campusName":"东区","time":"23:59"},
+					{"campusName":"北区"},
+					{"campusName":"西区","time":"23:59"}
 				]}
 			]
 		}`))
@@ -98,6 +103,18 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	reply, ok = handler.Handle(context.Background(), groupInput)
 	if ok || reply != "" {
 		t.Fatalf("group personal command reply = %q, ok = %v", reply, ok)
+	}
+
+	groupInput.Text = "[CQ:image,summary=&#91;动画表情&#93;,file=1.png,sub_type=1,url=https://example.invalid/download?rkey=CAQSMJSxCxAi3h4QEhInHuJOdWi5QXU7]"
+	reply, ok = handler.Handle(context.Background(), groupInput)
+	if ok || reply != "" {
+		t.Fatalf("group image reply = %q, ok = %v", reply, ok)
+	}
+
+	groupInput.Text = "[CQ:image,file=1.png] 校车"
+	reply, ok = handler.Handle(context.Background(), groupInput)
+	if !ok || !strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟻𝟿") {
+		t.Fatalf("group image caption reply = %q, ok = %v", reply, ok)
 	}
 }
 

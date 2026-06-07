@@ -288,7 +288,7 @@ func normalizeScheduleArgs(args []string) []string {
 }
 
 func parseGroupBus(text string) (parsedCommand, bool) {
-	raw := strings.TrimSpace(text)
+	raw := strings.TrimSpace(stripCQCodes(text))
 	if raw == "" || !containsBusKeyword(raw) {
 		return parsedCommand{}, false
 	}
@@ -297,12 +297,17 @@ func parseGroupBus(text string) (parsedCommand, bool) {
 
 func containsBusKeyword(text string) bool {
 	lower := strings.ToLower(text)
-	for _, keyword := range []string{"校车", "班车", "xc", "bus"} {
-		if strings.Contains(lower, keyword) {
-			return true
-		}
+	if strings.Contains(lower, "校车") || strings.Contains(lower, "班车") {
+		return true
 	}
-	return false
+	return busLatinKeywordRE.MatchString(lower)
+}
+
+var cqCodeRE = regexp.MustCompile(`(?i)\[CQ:[^\]]+\]`)
+var busLatinKeywordRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(xc|bus)([^a-z0-9]|$)`)
+
+func stripCQCodes(text string) string {
+	return strings.TrimSpace(cqCodeRE.ReplaceAllString(text, " "))
 }
 
 func busArgsFromText(text string) []string {
