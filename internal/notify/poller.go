@@ -80,18 +80,18 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 	}
 	now := p.now().In(lifedata.ChinaLocation())
 	if settings.ClassesEnabled {
-		p.notifyClasses(ctx, settings.Identity, token, now)
+		token = p.notifyClasses(ctx, settings.Identity, token, now)
 	}
 	if settings.HomeworkEnabled {
 		p.notifyHomeworks(ctx, settings.Identity, token, now)
 	}
 }
 
-func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token string, now time.Time) {
-	schedules, err := p.schedulesForDay(ctx, ident, token, now)
+func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token string, now time.Time) string {
+	schedules, token, err := p.schedulesForDay(ctx, ident, token, now)
 	if err != nil {
 		p.logf("load schedules for notification failed: %v", err)
-		return
+		return token
 	}
 	for _, schedule := range schedules {
 		start := lifedata.ScheduleStartTime(schedule, now, nil)
@@ -101,6 +101,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 		key := notificationKey(classKind, scheduleKey(schedule, start))
 		p.sendNotificationOnce(ctx, ident, classKind, key, "课前提醒：\n"+formatSchedule(schedule))
 	}
+	return token
 }
 
 func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, token string, now time.Time) {
@@ -144,18 +145,18 @@ func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity,
 	}
 }
 
-func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
+func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
 	sub, err := p.Life.CurrentSubscription(ctx, token)
 	if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 		token = refreshed
 		sub, err = p.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
-		return nil, err
+		return nil, token, err
 	}
 	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
-		return nil, nil
+		return nil, token, nil
 	}
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
@@ -172,13 +173,13 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 			schedules, err = p.Life.Schedules(ctx, token, values)
 		}
 		if err != nil {
-			return nil, err
+			return nil, token, err
 		}
 		all = append(all, schedules...)
 	}
 	all = lifedata.FilterSchedulesForDay(all, day)
 	lifedata.SortSchedulesByStart(all)
-	return all, nil
+	return all, token, nil
 }
 
 func (p *Poller) now() time.Time {

@@ -186,6 +186,16 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 	})
+	mux.HandleFunc("/api/me/subscriptions/homeworks", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Authorization") {
+		case "Bearer old-access":
+			t.Fatal("homework request used stale token")
+		case "Bearer new-access":
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		default:
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	serverURL = server.URL
@@ -205,8 +215,9 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{
-		Identity:       ident,
-		ClassesEnabled: true,
+		Identity:        ident,
+		ClassesEnabled:  true,
+		HomeworkEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +235,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	if refreshRequests != 1 || scheduleRequests != 1 {
 		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
 	}
-	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "课前提醒：") {
+	if len(sender.messages) != 2 || !strings.Contains(strings.Join(sender.messages, "\n"), "课前提醒：") || !strings.Contains(strings.Join(sender.messages, "\n"), "作业提醒：") {
 		t.Fatalf("messages = %#v", sender.messages)
 	}
 }
