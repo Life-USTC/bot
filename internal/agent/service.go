@@ -173,19 +173,19 @@ type notificationInput struct {
 
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	tools := make([]tool.BaseTool, 0, 21)
+	var err error
 	for _, commandSpec := range commands.CommandSpecs() {
 		for _, toolSpec := range commandSpec.AgentTools {
 			toolSpec := toolSpec
-			t, err := utils.InferTool(toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
+			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
 				return s.runCommand(ctx, ident, toolSpec.CommandText)
 			})
 			if err != nil {
 				return nil, err
 			}
-			tools = append(tools, t)
 		}
 	}
-	busTool, err := utils.InferTool("get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
+	tools, err = appendInferredTool(tools, "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
 		parts := []string{"校车"}
 		if strings.TrimSpace(input.From) != "" {
 			parts = append(parts, input.From)
@@ -198,57 +198,49 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, busTool)
-	courseTool, err := utils.InferTool("search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
 		return s.runCommand(ctx, ident, "课程 "+input.Keyword)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, courseTool)
-	sectionTool, err := utils.InferTool("search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
 		return s.runCommand(ctx, ident, "教学班 "+input.Keyword)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, sectionTool)
-	addTodoTool, err := utils.InferTool("add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
+	tools, err = appendInferredTool(tools, "add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
 		return s.runCommand(ctx, ident, "待办 add "+input.Title)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, addTodoTool)
-	completeTodoTool, err := utils.InferTool("complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendInferredTool(tools, "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
 		return s.runCommand(ctx, ident, "待办 done "+input.Target)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, completeTodoTool)
-	completeHomeworkTool, err := utils.InferTool("complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendInferredTool(tools, "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
 		return s.runCommand(ctx, ident, "作业 done "+input.Target)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, completeHomeworkTool)
-	undoHomeworkTool, err := utils.InferTool("undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendInferredTool(tools, "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
 		return s.runCommand(ctx, ident, "作业 undo "+input.Target)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, undoHomeworkTool)
-	bulkSubscribeTool, err := utils.InferTool("bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
+	tools, err = appendInferredTool(tools, "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
 		return s.runCommand(ctx, ident, "订阅 导入 "+input.Text)
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, bulkSubscribeTool)
-	setNotificationTool, err := utils.InferTool("set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
+	tools, err = appendInferredTool(tools, "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
 		kind := strings.ToLower(strings.TrimSpace(input.Kind))
 		switch kind {
 		case "class", "classes", "section", "sections", "schedule", "curriculum":
@@ -267,15 +259,21 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, setNotificationTool)
-	currentTimeTool, err := utils.InferTool("get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
+	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
 		return time.Now().In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。"), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, currentTimeTool)
 	return tools, nil
+}
+
+func appendInferredTool[I any](tools []tool.BaseTool, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+	t, err := utils.InferTool(name, description, fn)
+	if err != nil {
+		return nil, err
+	}
+	return append(tools, t), nil
 }
 
 func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {

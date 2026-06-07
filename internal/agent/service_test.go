@@ -39,18 +39,44 @@ func TestAgentToolConstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 21 {
-		t.Fatalf("tool count = %d", len(tools))
-	}
 	names := map[string]bool{}
 	for _, tool := range tools {
 		info, err := tool.Info(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
+		if names[info.Name] {
+			t.Fatalf("duplicate tool %q", info.Name)
+		}
 		names[info.Name] = true
 	}
-	for _, name := range []string{"get_notification_settings", "set_notification_settings"} {
+	wantNames := []string{
+		"add_todo",
+		"bulk_subscribe_sections",
+		"complete_homework",
+		"complete_todo",
+		"get_bot_status",
+		"get_current_semester",
+		"get_current_time",
+		"get_next_bus",
+		"get_next_class",
+		"get_notification_settings",
+		"get_profile",
+		"get_today_curriculum",
+		"get_tomorrow_curriculum",
+		"get_two_day_curriculum",
+		"list_homeworks",
+		"list_subscriptions",
+		"list_todos",
+		"search_courses",
+		"search_sections",
+		"set_notification_settings",
+		"undo_homework_completion",
+	}
+	if len(names) != len(wantNames) {
+		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
+	}
+	for _, name := range wantNames {
 		if !names[name] {
 			t.Fatalf("missing tool %q; tools = %#v", name, names)
 		}
