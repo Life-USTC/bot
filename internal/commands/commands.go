@@ -890,7 +890,11 @@ func formatHomework(homework map[string]any) string {
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
-	now := time.Now().In(lifedata.ChinaLocation())
+	return formatHomeworkListAt(homeworks, time.Now().In(lifedata.ChinaLocation()))
+}
+
+func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
+	now = now.In(lifedata.ChinaLocation())
 	groups := []struct {
 		title string
 		items []map[string]any

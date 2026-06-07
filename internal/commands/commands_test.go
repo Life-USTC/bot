@@ -511,6 +511,23 @@ func TestResolveHomeworkMatchesDisplayDigitsInTitle(t *testing.T) {
 	}
 }
 
+func TestFormatHomeworkListGroupsByDueTime(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	reply := formatHomeworkListAt([]map[string]any{
+		{"id": "overdue", "title": "Past", "submissionDueAt": "2026-06-07T11:00:00+08:00"},
+		{"id": "nearby", "title": "Soon", "submissionDueAt": "2026-06-14T12:00:00+08:00"},
+		{"id": "future", "title": "Later", "submissionDueAt": "2026-06-14T12:01:00+08:00"},
+	}, now)
+	for _, want := range []string{"已逾期：", "近期：", "未来："} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Index(reply, "Past") > strings.Index(reply, "Soon") || strings.Index(reply, "Soon") > strings.Index(reply, "Later") {
+		t.Fatalf("reply order = %q", reply)
+	}
+}
+
 func TestHandleTodayCurriculum(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
