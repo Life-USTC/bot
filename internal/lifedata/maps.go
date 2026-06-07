@@ -68,15 +68,11 @@ func SubscriptionSectionIDs(data map[string]any) []string {
 
 func SubscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
 	sub, _ := data["subscription"].(map[string]any)
-	sections, _ := sub["sections"].([]any)
+	sections := MapSlice(sub["sections"])
 	out := make([]string, 0, len(sections))
 	fallback := make([]string, 0, len(sections))
 	sawSemester := false
-	for _, item := range sections {
-		section, _ := item.(map[string]any)
-		if section == nil {
-			continue
-		}
+	for _, section := range sections {
 		id := FirstString(section, "id")
 		if id != "" {
 			fallback = append(fallback, id)
@@ -210,11 +206,28 @@ func FirstInt(m map[string]any, keys ...string) int {
 }
 
 func StringSlice(value any) []string {
-	raw, _ := value.([]any)
+	raw := AnySlice(value)
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
 		if text, ok := item.(string); ok && text != "" {
 			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func AnySlice(value any) []any {
+	items, _ := value.([]any)
+	return items
+}
+
+func MapSlice(value any) []map[string]any {
+	raw := AnySlice(value)
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		m, _ := item.(map[string]any)
+		if m != nil {
+			out = append(out, m)
 		}
 	}
 	return out

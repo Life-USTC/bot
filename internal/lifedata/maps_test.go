@@ -89,3 +89,29 @@ func TestSortSchedulesByStartIsStable(t *testing.T) {
 		}
 	}
 }
+
+func TestMapSliceSkipsNonMaps(t *testing.T) {
+	items := MapSlice([]any{
+		map[string]any{"id": "one"},
+		"ignored",
+		nil,
+		map[string]any{"id": "two"},
+	})
+
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2: %#v", len(items), items)
+	}
+	got := []string{FirstString(items[0], "id"), FirstString(items[1], "id")}
+	want := []string{"one", "two"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("items = %#v, want ids %#v", items, want)
+		}
+	}
+}
+
+func TestMapSliceReturnsEmptyForNonSlice(t *testing.T) {
+	if got := MapSlice(map[string]any{"id": "one"}); len(got) != 0 {
+		t.Fatalf("MapSlice(non-slice) = %#v", got)
+	}
+}

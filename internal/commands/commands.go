@@ -985,7 +985,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		return "日程查不到：" + friendlyError(err)
 	}
 	sub, _ := data["subscription"].(map[string]any)
-	sections, _ := sub["sections"].([]any)
+	sections := lifedata.MapSlice(sub["sections"])
 	if len(sections) == 0 {
 		return "还没有订阅课程。"
 	}
@@ -1008,14 +1008,10 @@ type subscriptionSemesterGroup struct {
 	sections []map[string]any
 }
 
-func subscriptionSectionsBySemester(items []any) []subscriptionSemesterGroup {
+func subscriptionSectionsBySemester(sections []map[string]any) []subscriptionSemesterGroup {
 	groups := make([]subscriptionSemesterGroup, 0)
 	indexBySemester := map[string]int{}
-	for _, item := range items {
-		section, _ := item.(map[string]any)
-		if section == nil {
-			continue
-		}
+	for _, section := range sections {
 		semester := lifedata.NestedString(section, "semester", "namePrimary", "nameCn", "name")
 		if semester == "" {
 			semester = "未标注学期"
@@ -1099,23 +1095,14 @@ func extractSectionCodes(raw string) []string {
 }
 
 func matchSections(matches map[string]any) []map[string]any {
-	rawSections, _ := matches["sections"].([]any)
-	sections := make([]map[string]any, 0, len(rawSections))
-	for _, raw := range rawSections {
-		section, _ := raw.(map[string]any)
-		if section != nil {
-			sections = append(sections, section)
-		}
-	}
-	return sections
+	return lifedata.MapSlice(matches["sections"])
 }
 
 func subscriptionSectionIDInts(data map[string]any) []int {
 	sub, _ := data["subscription"].(map[string]any)
-	sections, _ := sub["sections"].([]any)
+	sections := lifedata.MapSlice(sub["sections"])
 	ids := make([]int, 0, len(sections))
-	for _, raw := range sections {
-		section, _ := raw.(map[string]any)
+	for _, section := range sections {
 		id := lifedata.FirstInt(section, "id")
 		if id != 0 {
 			ids = append(ids, id)
@@ -1508,11 +1495,10 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 	}
 	nowMinutes := now.Hour()*60 + now.Minute()
 	routes := busRouteMap(data["routes"])
-	trips, _ := data["trips"].([]any)
+	trips := lifedata.MapSlice(data["trips"])
 	items := make([]busItem, 0, len(trips))
-	for _, raw := range trips {
-		trip, _ := raw.(map[string]any)
-		if trip == nil || lifedata.FirstString(trip, "dayType") != dayType {
+	for _, trip := range trips {
+		if lifedata.FirstString(trip, "dayType") != dayType {
 			continue
 		}
 		departure := intNumber(trip["departureMinutes"])
@@ -1627,18 +1613,10 @@ type busRoute struct {
 
 func busRouteMap(raw any) map[string]busRoute {
 	out := map[string]busRoute{}
-	routes, _ := raw.([]any)
-	for _, item := range routes {
-		route, _ := item.(map[string]any)
-		if route == nil {
-			continue
-		}
+	routes := lifedata.MapSlice(raw)
+	for _, route := range routes {
 		stops := make([]string, 0)
-		for _, rawStop := range anySlice(route["stops"]) {
-			stop, _ := rawStop.(map[string]any)
-			if stop == nil {
-				continue
-			}
+		for _, stop := range lifedata.MapSlice(route["stops"]) {
 			name := campusName(lifedata.FirstString(stop, "nameCn", "name", "namePrimary"))
 			if name == "" {
 				name = campusName(lifedata.NestedString(stop, "campus", "nameCn", "namePrimary", "name"))
@@ -1657,11 +1635,7 @@ func busRouteMap(raw any) map[string]busRoute {
 
 func tripStopNames(trip map[string]any) []string {
 	stops := make([]string, 0)
-	for _, rawStop := range anySlice(trip["stopTimes"]) {
-		stop, _ := rawStop.(map[string]any)
-		if stop == nil {
-			continue
-		}
+	for _, stop := range lifedata.MapSlice(trip["stopTimes"]) {
 		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
 			stops = append(stops, name)
@@ -1672,11 +1646,7 @@ func tripStopNames(trip map[string]any) []string {
 
 func busStops(trip map[string]any, routeStops []string, departureTime, arrivalTime string) []busStop {
 	stops := make([]busStop, 0)
-	for _, rawStop := range anySlice(trip["stopTimes"]) {
-		stop, _ := rawStop.(map[string]any)
-		if stop == nil {
-			continue
-		}
+	for _, stop := range lifedata.MapSlice(trip["stopTimes"]) {
 		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
 			stops = append(stops, busStop{Name: name, Time: lifedata.FirstString(stop, "time")})
@@ -1859,11 +1829,6 @@ func campusName(value string) string {
 		return "先研院"
 	}
 	return strings.TrimSpace(value)
-}
-
-func anySlice(value any) []any {
-	items, _ := value.([]any)
-	return items
 }
 
 func intNumber(value any) int {
