@@ -109,15 +109,21 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 
 func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[string]any, error) {
 	title = strings.TrimSpace(title)
-	body, _ := json.Marshal(map[string]any{"title": title})
+	body, err := jsonBody(map[string]any{"title": title})
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.postAuth(ctx, "/api/todos", token, body, &out)
+	err = c.postAuth(ctx, "/api/todos", token, body, &out)
 	return out, err
 }
 
 func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
 	id = strings.TrimSpace(id)
-	body, _ := json.Marshal(map[string]any{"completed": true})
+	body, err := jsonBody(map[string]any{"completed": true})
+	if err != nil {
+		return err
+	}
 	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
 }
 
@@ -133,7 +139,10 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 
 func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {
 	id = strings.TrimSpace(id)
-	body, _ := json.Marshal(map[string]any{"completed": completed})
+	body, err := jsonBody(map[string]any{"completed": completed})
+	if err != nil {
+		return err
+	}
 	return c.putAuth(ctx, "/api/homeworks/"+url.PathEscape(id)+"/completion", token, body, nil)
 }
 
@@ -156,16 +165,22 @@ func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []st
 	if semesterID != "" {
 		req["semesterId"] = semesterID
 	}
-	body, _ := json.Marshal(req)
+	body, err := jsonBody(req)
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.postAuth(ctx, "/api/sections/match-codes", token, body, &out)
+	err = c.postAuth(ctx, "/api/sections/match-codes", token, body, &out)
 	return out, err
 }
 
 func (c *Client) ReplaceCalendarSubscription(ctx context.Context, token string, sectionIDs []int) (map[string]any, error) {
-	body, _ := json.Marshal(map[string]any{"sectionIds": sectionIDs})
+	body, err := jsonBody(map[string]any{"sectionIds": sectionIDs})
+	if err != nil {
+		return nil, err
+	}
 	var out map[string]any
-	err := c.postAuth(ctx, "/api/calendar-subscriptions", token, body, &out)
+	err = c.postAuth(ctx, "/api/calendar-subscriptions", token, body, &out)
 	return out, err
 }
 
@@ -187,6 +202,10 @@ func (c *Client) list(ctx context.Context, path string, values url.Values) ([]ma
 
 type dataList struct {
 	Data []map[string]any `json:"data"`
+}
+
+func jsonBody(value any) ([]byte, error) {
+	return json.Marshal(value)
 }
 
 func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {

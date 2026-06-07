@@ -231,6 +231,12 @@ func TestMatchSectionCodesTrimsCodes(t *testing.T) {
 	}
 }
 
+func TestJSONBodyReturnsMarshalError(t *testing.T) {
+	if _, err := jsonBody(map[string]any{"bad": func() {}}); err == nil {
+		t.Fatal("jsonBody returned nil error")
+	}
+}
+
 func TestGetReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
