@@ -109,6 +109,29 @@ func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 	}
 }
 
+func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
+	tests := map[string]string{
+		" classes ": "课表",
+		"kb":        "课表",
+		"课表":        "课表",
+		"作业":        "作业",
+		"HW":        "作业",
+	}
+	for input, want := range tests {
+		got, err := notificationKindCommandArg(input)
+		if err != nil {
+			t.Fatalf("%q error = %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("%q = %q, want %q", input, got, want)
+		}
+	}
+	_, err := notificationKindCommandArg("bus")
+	if err == nil || !strings.Contains(err.Error(), "unsupported notification kind") {
+		t.Fatalf("unsupported kind error = %v", err)
+	}
+}
+
 func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")

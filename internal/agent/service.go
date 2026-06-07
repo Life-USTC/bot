@@ -269,14 +269,9 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
-		kind := strings.ToLower(strings.TrimSpace(input.Kind))
-		switch kind {
-		case "class", "classes", "section", "sections", "schedule", "curriculum":
-			kind = "课表"
-		case "homework", "hw":
-			kind = "作业"
-		default:
-			return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", input.Kind)
+		kind, err := notificationKindCommandArg(input.Kind)
+		if err != nil {
+			return "", err
 		}
 		state := "关"
 		if input.Enabled {
@@ -318,6 +313,17 @@ func requiredToolArg(name, value string) (string, error) {
 		return "", fmt.Errorf("%s is required", name)
 	}
 	return value, nil
+}
+
+func notificationKindCommandArg(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
+		return "课表", nil
+	case "homework", "hw", "作业":
+		return "作业", nil
+	default:
+		return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", value)
+	}
 }
 
 func busCommandText(input busInput) string {
