@@ -369,6 +369,7 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	if err != nil {
 		return err
 	}
+	ident = normalizeIdentity(ident)
 	session, err = normalizeLoginSessionForSave(session)
 	if err != nil {
 		return err

@@ -589,7 +589,8 @@ func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	if err := s.SaveLoginSession(context.Background(), ident, LoginSession{
+	paddedIdent := Identity{Platform: " napcat ", UserID: " 42 ", ConversationType: " private ", ConversationID: " 42 "}
+	if err := s.SaveLoginSession(context.Background(), paddedIdent, LoginSession{
 		DeviceCode: "device",
 		ClientID:   "client",
 		ExpiresAt:  time.Now().Add(time.Minute),
