@@ -657,7 +657,7 @@ func chineseCampusAliasBoundaryBefore(text string) bool {
 		return true
 	}
 	r, _ := utf8.DecodeLastRuneInString(text)
-	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	return isChineseCampusAliasBoundaryRune(r)
 }
 
 func chineseCampusAliasBoundaryAfter(text string) bool {
@@ -665,6 +665,10 @@ func chineseCampusAliasBoundaryAfter(text string) bool {
 		return true
 	}
 	r, _ := utf8.DecodeRuneInString(text)
+	return isChineseCampusAliasBoundaryRune(r)
+}
+
+func isChineseCampusAliasBoundaryRune(r rune) bool {
 	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
