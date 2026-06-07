@@ -71,15 +71,8 @@ func (b *Bridge) Run(ctx context.Context) error {
 		if event.PostType != "message" {
 			continue
 		}
-		reply, ok := b.Handler.Handle(ctx, commands.Input{
-			Text:     event.RawMessage,
-			Identity: event.identity(),
-		})
+		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
-			reply, ok = b.handleAgent(ctx, event)
-		}
-		if !ok {
-			b.recordIgnored(ctx, event)
 			continue
 		}
 		if err := b.Send(ctx, event, reply); err != nil {
@@ -142,15 +135,8 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			b.Logger.Printf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
 				event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
 		}
-		reply, ok := b.Handler.Handle(ctx, commands.Input{
-			Text:     event.RawMessage,
-			Identity: event.identity(),
-		})
+		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
-			reply, ok = b.handleAgent(ctx, event)
-		}
-		if !ok {
-			b.recordIgnored(ctx, event)
 			if b.Logger != nil {
 				b.Logger.Printf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
 			}
@@ -168,6 +154,21 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			}
 		}
 	}
+}
+
+func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (string, bool) {
+	reply, ok := b.Handler.Handle(ctx, commands.Input{
+		Text:     event.RawMessage,
+		Identity: event.identity(),
+	})
+	if !ok {
+		reply, ok = b.handleAgent(ctx, event)
+	}
+	if !ok {
+		b.recordIgnored(ctx, event)
+		return "", false
+	}
+	return reply, true
 }
 
 func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, bool) {

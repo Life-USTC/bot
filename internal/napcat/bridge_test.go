@@ -196,6 +196,32 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	}
 }
 
+func TestHandleMessageRecordsIgnored(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	bridge := &Bridge{Handler: commands.Handler{Store: db, Prefix: "/life"}}
+	reply, ok := bridge.handleMessage(context.Background(), messageEvent{
+		PostType:    "message",
+		MessageType: "private",
+		RawMessage:  "not a command",
+		UserID:      456,
+	})
+	if ok || reply != "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	count, err := db.InteractionCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("interaction count = %d", count)
+	}
+}
+
 func TestSendLoginMessageUsesIdentity(t *testing.T) {
 	var gotPath string
 	var gotBody map[string]any
