@@ -188,21 +188,27 @@ func FirstInt(m map[string]any, keys ...string) int {
 		return 0
 	}
 	for _, key := range keys {
-		switch value := m[key].(type) {
-		case int:
+		if value, ok := IntValue(m[key]); ok {
 			return value
-		case int64:
-			return int(value)
-		case float64:
-			return int(value)
-		case string:
-			id, err := strconv.Atoi(value)
-			if err == nil {
-				return id
-			}
 		}
 	}
 	return 0
+}
+
+func IntValue(value any) (int, bool) {
+	switch n := value.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case string:
+		parsed, err := strconv.Atoi(n)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func StringSlice(value any) []string {

@@ -90,6 +90,32 @@ func TestSortSchedulesByStartIsStable(t *testing.T) {
 	}
 }
 
+func TestIntValueAcceptsCommonAPIShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  int
+	}{
+		{name: "int", value: 12, want: 12},
+		{name: "int64", value: int64(12), want: 12},
+		{name: "float64", value: 12.9, want: 12},
+		{name: "string", value: "12", want: 12},
+	} {
+		got, ok := IntValue(tc.value)
+		if !ok || got != tc.want {
+			t.Fatalf("%s: IntValue(%#v) = %d, %t; want %d, true", tc.name, tc.value, got, ok, tc.want)
+		}
+	}
+}
+
+func TestIntValueRejectsInvalidValues(t *testing.T) {
+	for _, value := range []any{"", "abc", nil, true} {
+		if got, ok := IntValue(value); ok || got != 0 {
+			t.Fatalf("IntValue(%#v) = %d, %t; want 0, false", value, got, ok)
+		}
+	}
+}
+
 func TestMapSliceSkipsNonMaps(t *testing.T) {
 	items := MapSlice([]any{
 		map[string]any{"id": "one"},

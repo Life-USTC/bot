@@ -1501,7 +1501,7 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		if lifedata.FirstString(trip, "dayType") != dayType {
 			continue
 		}
-		departure := intNumber(trip["departureMinutes"])
+		departure, _ := lifedata.IntValue(trip["departureMinutes"])
 		if departure < nowMinutes {
 			continue
 		}
@@ -1829,19 +1829,6 @@ func campusName(value string) string {
 		return "先研院"
 	}
 	return strings.TrimSpace(value)
-}
-
-func intNumber(value any) int {
-	switch n := value.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case string:
-		parsed, _ := strconv.Atoi(n)
-		return parsed
-	}
-	return 0
 }
 
 func busTime(value string, minutes int) string {
