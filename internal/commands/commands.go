@@ -1299,15 +1299,20 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 	all := make([]map[string]any, 0, len(sectionIDs))
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
+scheduleLoop:
 	for _, sectionID := range sectionIDs {
 		if ctx.Err() != nil {
 			break
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break scheduleLoop
 		}
 		sectionID := sectionID
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 			values := url.Values{}
 			values.Set("sectionId", sectionID)

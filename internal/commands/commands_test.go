@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -518,6 +519,40 @@ func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
 	}
 	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestFetchSchedulesForSectionsLimitsConcurrency(t *testing.T) {
+	var current int32
+	var maxSeen int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/schedules" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		now := atomic.AddInt32(&current, 1)
+		for {
+			previous := atomic.LoadInt32(&maxSeen)
+			if now <= previous || atomic.CompareAndSwapInt32(&maxSeen, previous, now) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		atomic.AddInt32(&current, -1)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+
+	sectionIDs := make([]string, 20)
+	for i := range sectionIDs {
+		sectionIDs[i] = strconv.Itoa(i + 1)
+	}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	_, err := handler.fetchSchedulesForSections(context.Background(), "token", sectionIDs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&maxSeen); got > 8 {
+		t.Fatalf("max concurrency = %d", got)
 	}
 }
 
