@@ -562,12 +562,13 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
-func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
+func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	scheduleCalls := 0
-	today := time.Now().In(lifedata.ChinaLocation()).Format("2006-01-02")
-	tomorrow := time.Now().In(lifedata.ChinaLocation()).AddDate(0, 0, 1).Format("2006-01-02")
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	today := day.Format("2006-01-02")
+	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/calendar-subscriptions/current":
@@ -586,10 +587,7 @@ func TestHandleBareCurriculumShowsTodayAndTomorrow(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "课表", Identity: ident})
-	if !ok {
-		t.Fatal("command was not handled")
-	}
+	reply := handler.curriculumAt(ctx, ident, nil, day)
 	if !strings.Contains(reply, "今明两日课表：") || !strings.Contains(reply, "今天：") || !strings.Contains(reply, "明天：") {
 		t.Fatalf("reply = %q", reply)
 	}

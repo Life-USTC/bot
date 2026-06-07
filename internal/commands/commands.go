@@ -1196,12 +1196,15 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 }
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
+	return h.curriculumAt(ctx, ident, args, time.Now().In(lifedata.ChinaLocation()))
+}
+
+func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []string, day time.Time) string {
 	target := "two-day"
 	if hasArgs(args) {
 		target = args[0]
 	}
-	loc := lifedata.ChinaLocation()
-	day := time.Now().In(loc)
+	day = day.In(lifedata.ChinaLocation())
 	if target == "two-day" {
 		return h.curriculumTwoDays(ctx, ident, day)
 	}
