@@ -659,8 +659,8 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	}
 	lines := []string{"待办："}
 	for i, todo := range todos {
-		if i >= 8 {
-			lines = append(lines, fmt.Sprintf("...and %d more", len(todos)-i))
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(todos)-i, false))
 			break
 		}
 		lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
@@ -885,8 +885,8 @@ func formatHomeworkList(homeworks []map[string]any) string {
 		}
 		lines = append(lines, group.title+"：")
 		for _, homework := range group.items {
-			if shown >= 8 {
-				lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(homeworks)-shown)))
+			if shown >= listDisplayLimit {
+				lines = append(lines, moreLine(len(homeworks)-shown, true))
 				return strings.Join(lines, "\n")
 			}
 			lines = append(lines, formatNumberedLine(index, formatHomework(homework)))
@@ -1187,8 +1187,8 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 	}
 	lines := []string{title}
 	for i, schedule := range schedules {
-		if i >= 8 {
-			lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(schedules)-i, true))
 			break
 		}
 		lines = append(lines, formatSchedule(schedule))
@@ -1222,8 +1222,8 @@ func formatScheduleDay(title string, schedules []map[string]any) []string {
 		return append(lines, "没有课。")
 	}
 	for i, schedule := range schedules {
-		if i >= 8 {
-			lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(schedules)-i, true))
 			break
 		}
 		lines = append(lines, formatSchedule(schedule))
@@ -1859,10 +1859,19 @@ func paddedCourseCode(code string) string {
 
 const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
+const listDisplayLimit = 8
 const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
+
+func moreLine(count int, monospace bool) string {
+	line := fmt.Sprintf("...and %d more", count)
+	if monospace {
+		return textutil.MonospaceDigits(line)
+	}
+	return line
+}
 
 func friendlyError(err error) string {
 	text := err.Error()
