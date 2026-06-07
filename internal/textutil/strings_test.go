@@ -27,6 +27,15 @@ func TestNonEmpty(t *testing.T) {
 	}
 }
 
+func TestTrimEqualFold(t *testing.T) {
+	if !TrimEqualFold(" GROUP ", "group") {
+		t.Fatal("TrimEqualFold did not trim and fold case")
+	}
+	if TrimEqualFold("private", "group") {
+		t.Fatal("TrimEqualFold matched different values")
+	}
+}
+
 func TestMonospaceDigits(t *testing.T) {
 	if got := MonospaceDigits("Room 3A204"); got != "Room 𝟹A𝟸𝟶𝟺" {
 		t.Fatalf("MonospaceDigits = %q", got)

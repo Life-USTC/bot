@@ -23,6 +23,10 @@ func NonEmpty(values ...string) []string {
 	return out
 }
 
+func TrimEqualFold(value, target string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), target)
+}
+
 func MonospaceDigits(text string) string {
 	return mapMonospace(text, false)
 }

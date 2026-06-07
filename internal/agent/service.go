@@ -18,6 +18,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 type Config struct {
@@ -123,7 +124,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func isGroupConversation(ident store.Identity) bool {
-	return strings.EqualFold(strings.TrimSpace(ident.ConversationType), "group")
+	return textutil.TrimEqualFold(ident.ConversationType, "group")
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {

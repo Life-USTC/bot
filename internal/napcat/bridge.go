@@ -345,7 +345,7 @@ func sendReverseReply(conn *websocket.Conn, writeMu *sync.Mutex, event messageEv
 }
 
 func isGroupMessageType(messageType string) bool {
-	return strings.EqualFold(strings.TrimSpace(messageType), "group")
+	return textutil.TrimEqualFold(messageType, "group")
 }
 
 func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]any) error {
