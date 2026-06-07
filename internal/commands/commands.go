@@ -302,7 +302,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
-	key := strings.ToLower(strings.TrimSpace(name))
+	key := normToken(name)
 	if key == "-h" || key == "--help" || key == "help" || key == "?" || key == "？" || key == "帮助" || key == "菜单" {
 		return "help", args
 	}
@@ -311,7 +311,7 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	}
 	for _, spec := range commandSpecs {
 		for _, alias := range spec.Aliases {
-			if key != strings.ToLower(alias) {
+			if key != normToken(alias) {
 				continue
 			}
 			if spec.Normalize != nil {
@@ -346,15 +346,11 @@ func normalizeSubscriptionArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch strings.ToLower(args[0]) {
+	switch normToken(args[0]) {
 	case "-h", "--help", "help", "?", "？", "帮助":
-		next := append([]string(nil), args...)
-		next[0] = "help"
-		return next
+		return withFirstArg(args, "help")
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
-		next := append([]string(nil), args...)
-		next[0] = "import"
-		return next
+		return withFirstArg(args, "import")
 	}
 	return args
 }
@@ -363,11 +359,9 @@ func normalizeLoginArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch strings.ToLower(args[0]) {
+	switch normToken(args[0]) {
 	case "status", "check", "完成", "状态", "ok", "好了":
-		next := append([]string(nil), args...)
-		next[0] = "status"
-		return next
+		return withFirstArg(args, "status")
 	}
 	return args
 }
@@ -376,19 +370,13 @@ func normalizeTodoArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch strings.ToLower(args[0]) {
+	switch normToken(args[0]) {
 	case "-h", "--help", "help", "?", "？", "帮助":
-		next := append([]string(nil), args...)
-		next[0] = "help"
-		return next
+		return withFirstArg(args, "help")
 	case "add", "new", "create", "+", "添加", "新增", "加":
-		next := append([]string(nil), args...)
-		next[0] = "add"
-		return next
+		return withFirstArg(args, "add")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
-		next := append([]string(nil), args...)
-		next[0] = "done"
-		return next
+		return withFirstArg(args, "done")
 	}
 	return args
 }
@@ -397,27 +385,17 @@ func normalizeHomeworkArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch strings.ToLower(args[0]) {
+	switch normToken(args[0]) {
 	case "-h", "--help", "help", "?", "？", "帮助":
-		next := append([]string(nil), args...)
-		next[0] = "help"
-		return next
+		return withFirstArg(args, "help")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
-		next := append([]string(nil), args...)
-		next[0] = "done"
-		return next
+		return withFirstArg(args, "done")
 	case "undo", "undone", "reset", "取消", "撤销":
-		next := append([]string(nil), args...)
-		next[0] = "undo"
-		return next
+		return withFirstArg(args, "undo")
 	case "pending", "未完成":
-		next := append([]string(nil), args...)
-		next[0] = "pending"
-		return next
+		return withFirstArg(args, "pending")
 	case "all", "全部":
-		next := append([]string(nil), args...)
-		next[0] = "all"
-		return next
+		return withFirstArg(args, "all")
 	}
 	return args
 }
@@ -426,15 +404,11 @@ func normalizeScheduleArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
-	switch strings.ToLower(args[0]) {
+	switch normToken(args[0]) {
 	case "today", "今天", "今日":
-		next := append([]string(nil), args...)
-		next[0] = "today"
-		return next
+		return withFirstArg(args, "today")
 	case "tomorrow", "明天", "明日":
-		next := append([]string(nil), args...)
-		next[0] = "tomorrow"
-		return next
+		return withFirstArg(args, "tomorrow")
 	}
 	return args
 }
@@ -442,7 +416,7 @@ func normalizeScheduleArgs(args []string) []string {
 func normalizeNotifyArgs(args []string) []string {
 	out := append([]string(nil), args...)
 	for i, arg := range out {
-		switch strings.ToLower(strings.TrimSpace(arg)) {
+		switch normToken(arg) {
 		case "-h", "--help", "help", "?", "？", "帮助":
 			out[i] = "help"
 		case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
@@ -458,6 +432,16 @@ func normalizeNotifyArgs(args []string) []string {
 		}
 	}
 	return out
+}
+
+func normToken(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func withFirstArg(args []string, value string) []string {
+	next := append([]string(nil), args...)
+	next[0] = value
+	return next
 }
 
 func parseGroupBus(text string) (parsedCommand, bool) {

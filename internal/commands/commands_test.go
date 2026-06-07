@@ -173,6 +173,26 @@ func TestHandleTodoHelpAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
+	args := []string{" HELP ", "kept"}
+	normalized := normalizeTodoArgs(args)
+	if strings.Join(normalized, " ") != "help kept" {
+		t.Fatalf("normalized = %#v", normalized)
+	}
+	if args[0] != " HELP " {
+		t.Fatalf("args mutated = %#v", args)
+	}
+
+	args = []string{" KB ", "ON"}
+	normalized = normalizeNotifyArgs(args)
+	if strings.Join(normalized, " ") != "classes on" {
+		t.Fatalf("notify normalized = %#v", normalized)
+	}
+	if args[0] != " KB " || args[1] != "ON" {
+		t.Fatalf("notify args mutated = %#v", args)
+	}
+}
+
 func TestHandleTodoAddCasual(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
