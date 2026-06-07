@@ -75,7 +75,7 @@ func TestMonospaceASCII(t *testing.T) {
 }
 
 func TestPlainDigits(t *testing.T) {
-	if got := PlainDigits("作业 𝟷𝟸. Room 3"); got != "作业 12. Room 3" {
+	if got := PlainDigits("作业 𝟷𝟸. Room ３"); got != "作业 12. Room 3" {
 		t.Fatalf("PlainDigits = %q", got)
 	}
 }

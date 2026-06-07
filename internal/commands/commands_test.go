@@ -709,6 +709,10 @@ func TestResolveHomeworkMatchesDisplayDigitsInTitle(t *testing.T) {
 	if !ok || lifedata.FirstString(homework, "id") != "hw-2" {
 		t.Fatalf("homework = %#v, ok = %v", homework, ok)
 	}
+	homework, ok = resolveHomework(homeworks, "２")
+	if !ok || lifedata.FirstString(homework, "id") != "hw-2" {
+		t.Fatalf("fullwidth homework = %#v, ok = %v", homework, ok)
+	}
 }
 
 func TestResolveHomeworkRejectsBlankTarget(t *testing.T) {

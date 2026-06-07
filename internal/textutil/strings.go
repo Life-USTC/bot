@@ -67,6 +67,10 @@ func PlainDigits(text string) string {
 			out = append(out, '0'+(r-'𝟶'))
 			continue
 		}
+		if r >= '０' && r <= '９' {
+			out = append(out, '0'+(r-'０'))
+			continue
+		}
 		out = append(out, r)
 	}
 	return string(out)
