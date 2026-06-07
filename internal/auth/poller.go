@@ -84,13 +84,18 @@ func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, 
 	}
 	if err := p.Notifier.SendLoginMessage(ctx, ident, "登录完成。"); err != nil {
 		p.logf("send login notification failed: %v", err)
-		if deviceCode != "" {
-			_ = p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, "notify_failed")
-		}
+		p.markLoginSession(ctx, ident, deviceCode, "notify_failed")
 		return
 	}
-	if deviceCode != "" {
-		_ = p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, "approved")
+	p.markLoginSession(ctx, ident, deviceCode, "approved")
+}
+
+func (p *LoginPoller) markLoginSession(ctx context.Context, ident store.Identity, deviceCode, status string) {
+	if deviceCode == "" {
+		return
+	}
+	if err := p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, status); err != nil {
+		p.logf("mark login session %s failed: %v", status, err)
 	}
 }
 

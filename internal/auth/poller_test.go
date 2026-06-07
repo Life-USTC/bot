@@ -1,11 +1,14 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +125,31 @@ func TestLoginPollerSkipsBlankNotificationIdentity(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].Status != "notify_failed" {
 		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
+func TestLoginPollerLogsMarkLoginSessionFailure(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	var logs bytes.Buffer
+	notifier := &fakeNotifier{}
+	poller := LoginPoller{
+		Manager:  &Manager{Store: s},
+		Notifier: notifier,
+		Logger:   log.New(&logs, "", 0),
+	}
+	ident := store.Identity{ConversationType: "private", ConversationID: "42"}
+	poller.notifyApproved(context.Background(), ident, "device")
+
+	if notifier.message != "登录完成。" {
+		t.Fatalf("message = %q", notifier.message)
+	}
+	if !strings.Contains(logs.String(), "mark login session approved failed") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
 
