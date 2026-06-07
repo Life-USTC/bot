@@ -1,6 +1,7 @@
 package lifedata
 
 import (
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -253,6 +254,9 @@ func IntValue(value any) (int, bool) {
 	case int64:
 		return int(n), true
 	case float64:
+		if math.Trunc(n) != n {
+			return 0, false
+		}
 		return int(n), true
 	case string:
 		parsed, err := strconv.Atoi(strings.TrimSpace(n))

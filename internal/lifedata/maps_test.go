@@ -221,7 +221,7 @@ func TestIntValueAcceptsCommonAPIShapes(t *testing.T) {
 	}{
 		{name: "int", value: 12, want: 12},
 		{name: "int64", value: int64(12), want: 12},
-		{name: "float64", value: 12.9, want: 12},
+		{name: "float64", value: 12.0, want: 12},
 		{name: "string", value: "12", want: 12},
 		{name: "string with spaces", value: " 12 ", want: 12},
 	} {
@@ -233,7 +233,7 @@ func TestIntValueAcceptsCommonAPIShapes(t *testing.T) {
 }
 
 func TestIntValueRejectsInvalidValues(t *testing.T) {
-	for _, value := range []any{"", "abc", nil, true} {
+	for _, value := range []any{"", "abc", nil, true, 12.9} {
 		if got, ok := IntValue(value); ok || got != 0 {
 			t.Fatalf("IntValue(%#v) = %d, %t; want 0, false", value, got, ok)
 		}
