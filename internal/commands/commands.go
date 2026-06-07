@@ -1020,7 +1020,7 @@ func formatHomework(homework map[string]any) string {
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
-	return formatHomeworkListAt(homeworks, time.Now().In(lifedata.ChinaLocation()))
+	return formatHomeworkListAt(homeworks, chinaNow())
 }
 
 func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
@@ -1341,7 +1341,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 }
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
-	return h.curriculumAt(ctx, ident, args, time.Now().In(lifedata.ChinaLocation()))
+	return h.curriculumAt(ctx, ident, args, chinaNow())
 }
 
 func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []string, day time.Time) string {
@@ -1419,7 +1419,7 @@ func formatScheduleDay(title string, schedules []map[string]any) []string {
 }
 
 func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
-	return h.nextClassAt(ctx, ident, time.Now().In(lifedata.ChinaLocation()))
+	return h.nextClassAt(ctx, ident, chinaNow())
 }
 
 func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time.Time) string {
@@ -2065,6 +2065,10 @@ func moreLine(count int, monospace bool) string {
 		return textutil.MonospaceDigits(line)
 	}
 	return line
+}
+
+func chinaNow() time.Time {
+	return time.Now().In(lifedata.ChinaLocation())
 }
 
 func friendlyError(err error) string {

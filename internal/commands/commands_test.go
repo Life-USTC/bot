@@ -650,6 +650,14 @@ func TestMoreLineFormatting(t *testing.T) {
 	}
 }
 
+func TestChinaNowUsesChinaLocation(t *testing.T) {
+	now := chinaNow()
+	name, offset := now.Zone()
+	if now.Location().String() != lifedata.ChinaLocation().String() || name != "CST" || offset != 8*60*60 {
+		t.Fatalf("chinaNow location = %v, zone = %s, offset = %d", now.Location(), name, offset)
+	}
+}
+
 func TestHandleHomeworkListAndDone(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
