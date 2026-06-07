@@ -201,6 +201,34 @@ func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {
 	}
 }
 
+func TestRequiredCommandToolTrimsArgAndRunsCommand(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	fn := requiredCommandTool[targetInput](svc, ident, "target", "通知 ", func(input targetInput) string {
+		return input.Target
+	})
+	reply, err := fn(context.Background(), targetInput{Target: " 作业 开 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "作业提醒：开") {
+		t.Fatalf("reply = %q", reply)
+	}
+	settings, err := db.NotificationSettings(context.Background(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.HomeworkEnabled {
+		t.Fatalf("settings = %#v", settings)
+	}
+}
+
 func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 	if got := busCommandText(busInput{From: " 东区 ", To: " 西区 "}); got != "校车 东区 西区" {
 		t.Fatalf("busCommandText = %q", got)
