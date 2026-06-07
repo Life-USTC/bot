@@ -101,6 +101,15 @@ func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	}
 }
 
+func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
+	_, err := appendCommandBackedTool(&Service{}, nil, "missing", "bad_tool", "Bad tool.", func(context.Context, emptyInput) (string, error) {
+		return "", nil
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "missing"`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
 	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"})

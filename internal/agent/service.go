@@ -296,7 +296,10 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 
 func appendCommandBackedTool[I any](s *Service, tools []tool.BaseTool, commandName, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	spec, ok := commandSpecByName(commandName)
-	if ok && !s.commandDependenciesAvailable(spec) {
+	if !ok {
+		return nil, fmt.Errorf("agent tool %q references unknown command %q", name, commandName)
+	}
+	if !s.commandDependenciesAvailable(spec) {
 		return tools, nil
 	}
 	return appendInferredTool(tools, name, description, fn)
