@@ -704,6 +704,13 @@ func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
 			t.Fatalf("MarkLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
 		}
 	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after invalid login session update = %d", count)
+	}
 }
 
 func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {

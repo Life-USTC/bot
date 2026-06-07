@@ -518,11 +518,11 @@ func activeLoginSessionStatuses() []string {
 }
 
 func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode, status string) error {
-	userID, err := s.EnsureUser(ctx, ident)
+	deviceCode, status, err := normalizeLoginSessionUpdate(deviceCode, status)
 	if err != nil {
 		return err
 	}
-	deviceCode, status, err = normalizeLoginSessionUpdate(deviceCode, status)
+	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
 		return err
 	}
