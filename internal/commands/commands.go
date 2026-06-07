@@ -544,13 +544,13 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 	if len(args) > 0 && args[0] == "status" {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
 		if err != nil {
-			return "登录状态查不到：" + friendlyError(err)
+			return commandError("登录状态查不到：", err)
 		}
 		return result.Message
 	}
 	session, err := h.Auth.BeginDeviceLogin(ctx, ident)
 	if err != nil {
-		return "登录开始失败：" + friendlyError(err)
+		return commandError("登录开始失败：", err)
 	}
 	link := session.VerificationURIComplete
 	if link == "" {
@@ -570,7 +570,7 @@ func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 		return "登录未配置。"
 	}
 	if err := h.Auth.Logout(ctx, ident); err != nil {
-		return "退出失败：" + friendlyError(err)
+		return commandError("退出失败：", err)
 	}
 	return "已退出登录。"
 }
@@ -585,7 +585,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		me, err = h.Life.Me(ctx, token)
 	}
 	if err != nil {
-		return "个人信息查不到：" + friendlyError(err)
+		return commandError("个人信息查不到：", err)
 	}
 	name := lifedata.FirstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
@@ -624,7 +624,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		}
 		todos, err := h.pendingTodos(ctx, ident, token)
 		if err != nil {
-			return "待办查不到：" + friendlyError(err)
+			return commandError("待办查不到：", err)
 		}
 		todo, ok := resolveTodo(todos, target)
 		if !ok {
@@ -642,7 +642,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			err = h.Life.CompleteTodo(ctx, token, id)
 		}
 		if err != nil {
-			return "待办完成失败：" + friendlyError(err)
+			return commandError("待办完成失败：", err)
 		}
 		title := lifedata.FirstString(todo, "title")
 		if title == "" {
@@ -655,7 +655,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	}
 	todos, err := h.pendingTodos(ctx, ident, token)
 	if err != nil {
-		return "待办查不到：" + friendlyError(err)
+		return commandError("待办查不到：", err)
 	}
 	if len(todos) == 0 {
 		return "没有待办。"
@@ -681,7 +681,7 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 		created, err = h.Life.CreateTodo(ctx, token, title)
 	}
 	if err != nil {
-		return "待办添加失败：" + friendlyError(err)
+		return commandError("待办添加失败：", err)
 	}
 	id := lifedata.FirstString(created, "id")
 	if id == "" {
@@ -754,7 +754,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		homeworks, err := h.homeworks(ctx, ident, token)
 		if err != nil {
-			return "作业查不到：" + friendlyError(err)
+			return commandError("作业查不到：", err)
 		}
 		homeworks = filterHomeworks(homeworks, true)
 		homework, ok := resolveHomework(homeworks, target)
@@ -771,7 +771,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 			err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
 		}
 		if err != nil {
-			return "作业状态更新失败：" + friendlyError(err)
+			return commandError("作业状态更新失败：", err)
 		}
 		title := lifedata.FirstString(homework, "title")
 		if completed {
@@ -785,7 +785,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 	}
 	homeworks, err := h.homeworks(ctx, ident, token)
 	if err != nil {
-		return "作业查不到：" + friendlyError(err)
+		return commandError("作业查不到：", err)
 	}
 	homeworks = filterHomeworks(homeworks, pendingOnly)
 	if len(homeworks) == 0 {
@@ -945,7 +945,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	}
 	settings, err := h.Store.NotificationSettings(ctx, ident)
 	if err != nil {
-		return "通知设置查不到：" + friendlyError(err)
+		return commandError("通知设置查不到：", err)
 	}
 	settings.Identity = ident
 	if len(args) == 0 || args[0] == "status" {
@@ -967,7 +967,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return "支持：课表、作业。"
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
-		return "通知设置保存失败：" + friendlyError(err)
+		return commandError("通知设置保存失败：", err)
 	}
 	return formatNotificationSettings(settings)
 }
@@ -997,7 +997,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		data, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
-		return "日程查不到：" + friendlyError(err)
+		return commandError("日程查不到：", err)
 	}
 	sub, _ := data["subscription"].(map[string]any)
 	sections := lifedata.MapSlice(sub["sections"])
@@ -1056,11 +1056,11 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		current, err = h.Life.CurrentSubscription(ctx, token)
 	}
 	if err != nil {
-		return "日程订阅查不到：" + friendlyError(err)
+		return commandError("日程订阅查不到：", err)
 	}
 	matches, err := h.Life.MatchSectionCodes(ctx, token, codes, "")
 	if err != nil {
-		return "教学班匹配失败：" + friendlyError(err)
+		return commandError("教学班匹配失败：", err)
 	}
 	sections := matchSections(matches)
 	if len(sections) == 0 {
@@ -1089,7 +1089,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	}
 	sort.Ints(union)
 	if _, err := h.Life.ReplaceCalendarSubscription(ctx, token, union); err != nil {
-		return "订阅更新失败：" + friendlyError(err)
+		return commandError("订阅更新失败：", err)
 	}
 	return formatBulkSubscriptionResult(matches, sections, nil, added, already)
 }
@@ -1180,7 +1180,7 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 	}
 	schedules, err := h.schedulesForDay(ctx, ident, token, day)
 	if err != nil {
-		return "课表查不到：" + friendlyError(err)
+		return commandError("课表查不到：", err)
 	}
 	if len(schedules) == 0 {
 		if target == "tomorrow" {
@@ -1206,11 +1206,11 @@ func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, to
 	}
 	todaySchedules, err := h.schedulesForDay(ctx, ident, token, today)
 	if err != nil {
-		return "课表查不到：" + friendlyError(err)
+		return commandError("课表查不到：", err)
 	}
 	tomorrowSchedules, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
 	if err != nil {
-		return "课表查不到：" + friendlyError(err)
+		return commandError("课表查不到：", err)
 	}
 	lines := []string{"今明两日课表："}
 	lines = append(lines, formatScheduleDay("今天", todaySchedules)...)
@@ -1245,7 +1245,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 		day := now.AddDate(0, 0, offset)
 		schedules, err := h.schedulesForDay(ctx, ident, token, day)
 		if err != nil {
-			return "下一节课查不到：" + friendlyError(err)
+			return commandError("下一节课查不到：", err)
 		}
 		for _, schedule := range schedules {
 			start := lifedata.ScheduleStartTime(schedule, day, loc)
@@ -1389,7 +1389,7 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 func (h Handler) currentSemester(ctx context.Context) string {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
-		return "学期查不到：" + friendlyError(err)
+		return commandError("学期查不到：", err)
 	}
 	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
@@ -1404,7 +1404,7 @@ func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 	}
 	courses, err := h.Life.SearchCourses(ctx, keyword, 5)
 	if err != nil {
-		return "课程查不到：" + friendlyError(err)
+		return commandError("课程查不到：", err)
 	}
 	if len(courses) == 0 {
 		return "没找到课程。"
@@ -1422,7 +1422,7 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	}
 	sections, err := h.Life.SearchSections(ctx, keyword, 5)
 	if err != nil {
-		return "教学班查不到：" + friendlyError(err)
+		return commandError("教学班查不到：", err)
 	}
 	if len(sections) == 0 {
 		return "没找到教学班。"
@@ -1455,7 +1455,7 @@ func (h Handler) status(ctx context.Context, ident store.Identity) string {
 func (h Handler) bus(ctx context.Context, args []string) string {
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
-		return "校车查不到：" + friendlyError(err)
+		return commandError("校车查不到：", err)
 	}
 	items := nextBusByRoute(data, args, time.Now())
 	if len(items) == 0 {
@@ -1877,4 +1877,8 @@ func friendlyError(err error) string {
 		return "网络超时，等会儿再试"
 	}
 	return text
+}
+
+func commandError(prefix string, err error) string {
+	return prefix + friendlyError(err)
 }

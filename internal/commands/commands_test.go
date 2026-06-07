@@ -160,6 +160,9 @@ func TestFriendlyError(t *testing.T) {
 	if got := friendlyError(errors.New("server exploded")); got != "server exploded" {
 		t.Fatalf("passthrough friendlyError = %q", got)
 	}
+	if got := commandError("课表查不到：", errors.New("server exploded")); got != "课表查不到：server exploded" {
+		t.Fatalf("commandError = %q", got)
+	}
 }
 
 func TestCommandSpecsAreUsable(t *testing.T) {
