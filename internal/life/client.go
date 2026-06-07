@@ -236,13 +236,6 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 	return nil
 }
 
-func (c *Client) Decode(body []byte, path string, out any) error {
-	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("decode %s: %w", path, err)
-	}
-	return nil
-}
-
 func setLimit(values url.Values, limit int) {
 	if limit <= 0 {
 		limit = 5
