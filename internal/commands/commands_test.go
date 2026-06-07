@@ -221,6 +221,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"schedule":     true,
 		"nextclass":    true,
 	}
+	storeCommands := map[string]bool{
+		"notify": true,
+	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -236,6 +239,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		}
 		if spec.NeedsLife != lifeCommands[spec.Name] {
 			t.Fatalf("command %q NeedsLife = %v", spec.Name, spec.NeedsLife)
+		}
+		if spec.NeedsStore != storeCommands[spec.Name] {
+			t.Fatalf("command %q NeedsStore = %v", spec.Name, spec.NeedsStore)
 		}
 		seen[spec.Name] = true
 		for _, alias := range spec.Aliases {
@@ -266,6 +272,19 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
 	if !ok || !strings.Contains(reply, "订阅 导入") {
+		t.Fatalf("help reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleStoreCommandWithoutStoreKeepsHelp(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "通知", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "存储未配置") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = handler.Handle(context.Background(), Input{Text: "通知 help", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "通知 课表 开") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }

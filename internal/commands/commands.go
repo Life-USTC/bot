@@ -35,6 +35,7 @@ type CommandSpec struct {
 	Name       string
 	Aliases    []string
 	NeedsLife  bool
+	NeedsStore bool
 	Normalize  func([]string) []string
 	AgentTools []AgentToolSpec
 	Run        func(Handler, context.Context, store.Identity, []string) string
@@ -78,6 +79,8 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		reply = h.help()
 	} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
 		reply = "Life @ USTC API unavailable: not configured."
+	} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
+		reply = "存储未配置。"
 	} else {
 		reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 	}
@@ -165,9 +168,10 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "notify",
-		Aliases:   []string{"notify", "notice", "push", "提醒", "通知", "推送"},
-		Normalize: normalizeNotifyArgs,
+		Name:       "notify",
+		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送"},
+		NeedsStore: true,
+		Normalize:  normalizeNotifyArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_notification_settings",
 			Description: "Get the user's active push notification settings for upcoming classes and homework reminders.",
@@ -996,12 +1000,6 @@ func subscriptionHelp() string {
 }
 
 func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {
-	if h.Store == nil {
-		return "通知未配置。"
-	}
-	if !isPrivate(ident) {
-		return "通知只能在私聊里设置。"
-	}
 	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"通知用法：",
@@ -1009,6 +1007,12 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
 		}, "\n")
+	}
+	if h.Store == nil {
+		return "存储未配置。"
+	}
+	if !isPrivate(ident) {
+		return "通知只能在私聊里设置。"
 	}
 	settings, err := h.Store.NotificationSettings(ctx, ident)
 	if err != nil {
