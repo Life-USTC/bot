@@ -77,9 +77,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 			continue
 		}
 		if err := b.Send(ctx, event, reply); err != nil {
-			if b.Logger != nil {
-				b.Logger.Printf("send reply failed: %v", err)
-			}
+			b.logf("send reply failed: %v", err)
 		}
 	}
 }
@@ -94,9 +92,7 @@ func (b *Bridge) RunReverse(ctx context.Context, addr, path string) error {
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			if b.Logger != nil {
-				b.Logger.Printf("upgrade reverse websocket failed: %v", err)
-			}
+			b.logf("upgrade reverse websocket failed: %v", err)
 			return
 		}
 		go b.handleReverseConn(ctx, conn)
@@ -124,35 +120,27 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	for {
 		var event messageEvent
 		if err := conn.ReadJSON(&event); err != nil {
-			if b.Logger != nil && ctx.Err() == nil {
-				b.Logger.Printf("reverse websocket read failed: %v", err)
+			if ctx.Err() == nil {
+				b.logf("reverse websocket read failed: %v", err)
 			}
 			return
 		}
 		if event.PostType != "message" {
 			continue
 		}
-		if b.Logger != nil {
-			b.Logger.Printf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
-				event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
-		}
+		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
+			event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
 		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
-			if b.Logger != nil {
-				b.Logger.Printf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
-			}
+			b.logf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
 			continue
 		}
 		if err := sendReverseReply(conn, writeMu, event, reply); err != nil {
 			b.recordOutbound(ctx, event, reply, "failed", err)
-			if b.Logger != nil {
-				b.Logger.Printf("reverse websocket send failed: %v", err)
-			}
+			b.logf("reverse websocket send failed: %v", err)
 		} else {
 			b.recordOutbound(ctx, event, reply, "sent", nil)
-			if b.Logger != nil {
-				b.Logger.Printf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
-			}
+			b.logf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
 		}
 	}
 }
@@ -219,8 +207,14 @@ func (b *Bridge) recordInteraction(ctx context.Context, event messageEvent, inte
 	if b.Handler.Store == nil {
 		return
 	}
-	if err := b.Handler.Store.RecordInteraction(ctx, event.identity(), interaction); err != nil && b.Logger != nil {
-		b.Logger.Printf("record %s interaction failed: %v", label, err)
+	if err := b.Handler.Store.RecordInteraction(ctx, event.identity(), interaction); err != nil {
+		b.logf("record %s interaction failed: %v", label, err)
+	}
+}
+
+func (b *Bridge) logf(format string, args ...any) {
+	if b.Logger != nil {
+		b.Logger.Printf(format, args...)
 	}
 }
 
@@ -270,8 +264,8 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 		if err := sendReverseReply(conn, writeMu, event, message); err == nil {
 			b.recordOutbound(ctx, event, message, "sent", nil)
 			return nil
-		} else if b.Logger != nil {
-			b.Logger.Printf("reverse websocket login notification failed: %v", err)
+		} else {
+			b.logf("reverse websocket login notification failed: %v", err)
 		}
 	}
 	return b.Send(ctx, event, message)
