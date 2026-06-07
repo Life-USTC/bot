@@ -259,6 +259,19 @@ func validateIdentity(ident Identity) error {
 	return nil
 }
 
+func validateConversationIdentity(ident Identity) error {
+	if err := validateIdentity(ident); err != nil {
+		return err
+	}
+	if strings.TrimSpace(ident.ConversationType) == "" {
+		return errors.New("identity conversation type is empty")
+	}
+	if strings.TrimSpace(ident.ConversationID) == "" {
+		return errors.New("identity conversation id is empty")
+	}
+	return nil
+}
+
 func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credential) error {
 	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
@@ -442,7 +455,7 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {
-	if err := validateIdentity(ident); err != nil {
+	if err := validateConversationIdentity(ident); err != nil {
 		return err
 	}
 	row := conversationStateRow{
@@ -458,7 +471,7 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 }
 
 func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interaction Interaction) error {
-	if err := validateIdentity(ident); err != nil {
+	if err := validateConversationIdentity(ident); err != nil {
 		return err
 	}
 	row := interactionRow{

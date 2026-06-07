@@ -36,9 +36,17 @@ func TestRecordConversationStateRejectsIncompleteIdentity(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	err = s.RecordConversationState(context.Background(), Identity{}, "todo", "pending")
-	if err == nil || !strings.Contains(err.Error(), "identity") {
-		t.Fatalf("RecordConversationState error = %v", err)
+	tests := []Identity{
+		{},
+		{Platform: "napcat", UserID: "42"},
+		{Platform: "napcat", UserID: "42", ConversationType: "private"},
+		{Platform: "napcat", UserID: "42", ConversationID: "42"},
+	}
+	for _, ident := range tests {
+		err = s.RecordConversationState(context.Background(), ident, "todo", "pending")
+		if err == nil || !strings.Contains(err.Error(), "identity") {
+			t.Fatalf("RecordConversationState(%#v) error = %v", ident, err)
+		}
 	}
 }
 
@@ -49,9 +57,17 @@ func TestRecordInteractionRejectsIncompleteIdentity(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	err = s.RecordInteraction(context.Background(), Identity{}, Interaction{RawText: "hello"})
-	if err == nil || !strings.Contains(err.Error(), "identity") {
-		t.Fatalf("RecordInteraction error = %v", err)
+	tests := []Identity{
+		{},
+		{Platform: "napcat", UserID: "42"},
+		{Platform: "napcat", UserID: "42", ConversationType: "private"},
+		{Platform: "napcat", UserID: "42", ConversationID: "42"},
+	}
+	for _, ident := range tests {
+		err = s.RecordInteraction(context.Background(), ident, Interaction{RawText: "hello"})
+		if err == nil || !strings.Contains(err.Error(), "identity") {
+			t.Fatalf("RecordInteraction(%#v) error = %v", ident, err)
+		}
 	}
 }
 
