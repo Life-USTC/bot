@@ -203,6 +203,32 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	}
 }
 
+func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
+	before := time.Now()
+	cred, err := credentialFromTokenBody("client", "resource", []byte(`{
+		"access_token": "access",
+		"expires_in": "120"
+	}`), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := time.Until(cred.ExpiresAt)
+	if remaining < 110*time.Second || remaining > 130*time.Second {
+		t.Fatalf("expires_at = %s, before = %s, remaining = %s", cred.ExpiresAt, before, remaining)
+	}
+}
+
+func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
+	cred, err := credentialFromTokenBody("client", "resource", []byte(`{"access_token": "access"}`), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := time.Until(cred.ExpiresAt)
+	if remaining < 3500*time.Second || remaining > 3700*time.Second {
+		t.Fatalf("expires_at = %s, remaining = %s", cred.ExpiresAt, remaining)
+	}
+}
+
 func TestRefreshIfUnauthorized(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()

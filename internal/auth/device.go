@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -337,8 +338,8 @@ func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRef
 	if accessToken == "" {
 		return store.Credential{}, fmt.Errorf("token response missing access_token")
 	}
-	expiresIn := 3600.0
-	if value, ok := tokens["expires_in"].(float64); ok {
+	expiresIn := 3600
+	if value, ok := lifedata.IntValue(tokens["expires_in"]); ok {
 		expiresIn = value
 	}
 	refreshToken, _ := tokens["refresh_token"].(string)
