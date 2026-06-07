@@ -98,7 +98,7 @@ func envUint16(key string, fallback uint16) uint16 {
 		return fallback
 	}
 	value, err := strconv.Atoi(raw)
-	if err != nil || value < 0 || value > int(^uint16(0)) {
+	if err != nil || value <= 0 || value > int(^uint16(0)) {
 		return fallback
 	}
 	return uint16(value)

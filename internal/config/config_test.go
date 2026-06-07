@@ -15,7 +15,7 @@ func TestFromEnvParsesOneBotHTTPPort(t *testing.T) {
 }
 
 func TestFromEnvFallsBackForInvalidOneBotHTTPPort(t *testing.T) {
-	for _, value := range []string{"bad", "-1", "70000"} {
+	for _, value := range []string{"bad", "0", "-1", "70000"} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("BOT_ONEBOT_HTTP_PORT", value)
 
