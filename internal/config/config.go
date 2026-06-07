@@ -43,7 +43,7 @@ func FromEnv() Config {
 		NapCatReversePath:  envString("NAPCAT_REVERSE_PATH", "/ws"),
 		DBPath:             envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
 		CommandPrefix:      envString("BOT_COMMAND_PREFIX", "/life"),
-		HTTPClientTimeout:  time.Duration(envInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
+		HTTPClientTimeout:  time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
 		EnableOneBotServer: envBool("BOT_ENABLE_ONEBOT_SERVER", true),
 		EnableNapCatBridge: envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
 		EnableAgent:        envBool("BOT_ENABLE_AGENT", false),
@@ -67,6 +67,14 @@ func envInt(key string, fallback int) int {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func envPositiveInt(key string, fallback int) int {
+	value := envInt(key, fallback)
+	if value <= 0 {
 		return fallback
 	}
 	return value
