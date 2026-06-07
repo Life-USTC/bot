@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,31 @@ var authTestNow = time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 
 func fixedClock(now time.Time) func() time.Time {
 	return func() time.Time { return now }
+}
+
+func TestManagerWithoutStoreReturnsConfiguredError(t *testing.T) {
+	ctx := context.Background()
+	manager := Manager{}
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+
+	if _, err := manager.BeginDeviceLogin(ctx, ident); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("BeginDeviceLogin error = %v", err)
+	}
+	if _, err := manager.PollDeviceLogin(ctx, ident); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("PollDeviceLogin error = %v", err)
+	}
+	if _, err := manager.AccessToken(ctx, ident); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("AccessToken error = %v", err)
+	}
+	if err := manager.Logout(ctx, ident); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("Logout error = %v", err)
+	}
+	if _, err := manager.Refresh(ctx, ident); !errors.Is(err, ErrStoreNotConfigured) {
+		t.Fatalf("Refresh error = %v", err)
+	}
+	if token, ok := manager.RefreshIfUnauthorized(ctx, ident, life.HTTPError{StatusCode: http.StatusUnauthorized}); ok || token != "" {
+		t.Fatalf("RefreshIfUnauthorized token = %q, ok = %v", token, ok)
+	}
 }
 
 func TestDeviceLoginFlow(t *testing.T) {

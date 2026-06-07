@@ -50,6 +50,10 @@ type PollResult struct {
 }
 
 func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*store.LoginSession, error) {
+	authStore, err := m.requireStore()
+	if err != nil {
+		return nil, err
+	}
 	meta, err := m.discover(ctx)
 	if err != nil {
 		return nil, err
@@ -97,7 +101,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		IntervalSeconds:         interval,
 		Status:                  "pending",
 	}
-	if err := m.Store.SaveLoginSession(ctx, ident, *session); err != nil {
+	if err := authStore.SaveLoginSession(ctx, ident, *session); err != nil {
 		return nil, err
 	}
 	return session, nil
@@ -119,7 +123,11 @@ func validateDeviceAuthResponse(resp deviceAuthResponse) error {
 }
 
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
-	session, err := m.Store.ActiveLoginSession(ctx, ident)
+	authStore, err := m.requireStore()
+	if err != nil {
+		return PollResult{}, err
+	}
+	session, err := authStore.ActiveLoginSession(ctx, ident)
 	if err != nil {
 		return PollResult{}, err
 	}
@@ -127,7 +135,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{Message: "暂无进行中的登录。发送：登录"}, nil
 	}
 	if m.now().After(session.ExpiresAt) {
-		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
+		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	}
 	meta, err := m.discover(ctx)
@@ -150,10 +158,10 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		if err != nil {
 			return PollResult{}, err
 		}
-		if err := m.Store.SaveCredential(ctx, ident, cred); err != nil {
+		if err := authStore.SaveCredential(ctx, ident, cred); err != nil {
 			return PollResult{}, err
 		}
-		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
+		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
 		return PollResult{Authorized: true, Message: "登录完成。"}, nil
 	}
 	var errResp struct {
@@ -168,10 +176,10 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	case "slow_down":
 		return PollResult{SlowDown: true, Message: "轮询频率受限，稍后继续检查。"}, nil
 	case "expired_token":
-		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
+		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	case "access_denied":
-		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
+		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
 		return PollResult{Message: "登录已取消。发送：登录"}, nil
 	default:
 		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -179,7 +187,11 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 }
 
 func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string, error) {
-	cred, err := m.Store.Credential(ctx, ident)
+	authStore, err := m.requireStore()
+	if err != nil {
+		return "", err
+	}
+	cred, err := authStore.Credential(ctx, ident)
 	if err != nil {
 		return "", err
 	}
@@ -196,18 +208,23 @@ func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string
 	if err != nil {
 		return "", err
 	}
-	if err := m.Store.SaveCredential(ctx, ident, refreshed); err != nil {
+	if err := authStore.SaveCredential(ctx, ident, refreshed); err != nil {
 		return "", err
 	}
 	return refreshed.AccessToken, nil
 }
 
 func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
-	return m.Store.DeleteCredential(ctx, ident)
+	authStore, err := m.requireStore()
+	if err != nil {
+		return err
+	}
+	return authStore.DeleteCredential(ctx, ident)
 }
 
 var ErrNotLoggedIn = fmt.Errorf("not logged in")
 var ErrUnauthorized = fmt.Errorf("unauthorized")
+var ErrStoreNotConfigured = fmt.Errorf("auth store not configured")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Credential, error) {
 	meta, err := m.discover(ctx)
@@ -238,7 +255,11 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
-	cred, err := m.Store.Credential(ctx, ident)
+	authStore, err := m.requireStore()
+	if err != nil {
+		return "", err
+	}
+	cred, err := authStore.Credential(ctx, ident)
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +270,7 @@ func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, er
 	if err != nil {
 		return "", err
 	}
-	if err := m.Store.SaveCredential(ctx, ident, refreshed); err != nil {
+	if err := authStore.SaveCredential(ctx, ident, refreshed); err != nil {
 		return "", err
 	}
 	return refreshed.AccessToken, nil
@@ -261,6 +282,13 @@ func (m *Manager) RefreshIfUnauthorized(ctx context.Context, ident store.Identit
 	}
 	refreshed, refreshErr := m.Refresh(ctx, ident)
 	return refreshed, refreshErr == nil
+}
+
+func (m *Manager) requireStore() (*store.Store, error) {
+	if m == nil || m.Store == nil {
+		return nil, ErrStoreNotConfigured
+	}
+	return m.Store, nil
 }
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
