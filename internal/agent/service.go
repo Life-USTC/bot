@@ -16,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -288,13 +289,7 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 const historyTurnLimit = 8
 const agentHTTPTimeout = 60 * time.Second
 
-var shanghaiLocation = func() *time.Location {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		return time.FixedZone("CST", 8*60*60)
-	}
-	return loc
-}()
+var shanghaiLocation = lifedata.ChinaLocation()
 
 func currentInstruction() string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.

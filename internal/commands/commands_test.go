@@ -656,6 +656,32 @@ func TestNextBusItemsFiltersRoute(t *testing.T) {
 	}
 }
 
+func TestNextBusItemsUsesShanghaiTime(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "08:30", "departureMinutes": float64(510), "arrivalTime": "08:45"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:20", "departureMinutes": float64(560), "arrivalTime": "09:35"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)
+	items := nextBusItems(data, []string{"东区", "西区"}, now)
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].DepartureTime != "09:20" {
+		t.Fatalf("item = %#v", items[0])
+	}
+}
+
 func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{

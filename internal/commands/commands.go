@@ -1484,10 +1484,7 @@ type busStop struct {
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err == nil {
-		now = now.In(loc)
-	}
+	now = now.In(lifedata.ChinaLocation())
 	from, to := busFilter(args)
 	dayType := "weekday"
 	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
