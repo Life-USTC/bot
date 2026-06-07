@@ -27,6 +27,18 @@ func MonospaceASCII(text string) string {
 	return mapMonospace(text, true)
 }
 
+func PlainDigits(text string) string {
+	out := make([]rune, 0, len(text))
+	for _, r := range text {
+		if r >= '𝟶' && r <= '𝟿' {
+			out = append(out, '0'+(r-'𝟶'))
+			continue
+		}
+		out = append(out, r)
+	}
+	return string(out)
+}
+
 func mapMonospace(text string, includeUppercase bool) string {
 	out := make([]rune, 0, len(text))
 	for _, r := range text {

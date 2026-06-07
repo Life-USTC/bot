@@ -352,7 +352,7 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "td done 1", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "td done 𝟷", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
@@ -420,7 +420,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 		t.Fatalf("reply = %q", reply)
 	}
 
-	reply, ok = handler.Handle(ctx, Input{Text: "作业 done 2", Identity: ident})
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 done 𝟸", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
 	}

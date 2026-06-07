@@ -700,7 +700,7 @@ func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token s
 
 func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 	target = strings.TrimSpace(target)
-	if index, err := strconv.Atoi(target); err == nil && index >= 1 && index <= len(todos) {
+	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(todos) {
 		return todos[index-1], true
 	}
 	needle := strings.ToLower(target)
@@ -818,7 +818,7 @@ func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]
 
 func resolveHomework(homeworks []map[string]any, target string) (map[string]any, bool) {
 	target = strings.TrimSpace(target)
-	if index, err := strconv.Atoi(target); err == nil && index >= 1 && index <= len(homeworks) {
+	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(homeworks) {
 		return homeworks[index-1], true
 	}
 	needle := strings.ToLower(target)
