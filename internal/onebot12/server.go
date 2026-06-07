@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	libob "github.com/botuniverse/go-libonebot"
@@ -144,7 +143,7 @@ func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
 		return
 	}
 	data, err := s.life.Me(context.Background(), token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
 			data, err = s.life.Me(context.Background(), refreshed)
 		}
@@ -158,7 +157,7 @@ func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
 		return
 	}
 	data, err := s.life.Todos(context.Background(), token, "false")
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		if refreshed, refreshErr := s.auth.Refresh(context.Background(), ident); refreshErr == nil {
 			data, err = s.life.Todos(context.Background(), refreshed, "false")
 		}

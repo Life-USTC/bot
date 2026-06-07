@@ -52,7 +52,7 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 		ClientID:    "client",
 		AccessToken: "access",
 		TokenType:   "Bearer",
-		ExpiresAt:   now.Add(time.Hour),
+		ExpiresAt:   time.Now().Add(time.Hour),
 		Resource:    server.URL,
 	}); err != nil {
 		t.Fatal(err)

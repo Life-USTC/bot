@@ -577,7 +577,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		return h.loginRequired()
 	}
 	me, err := h.Life.Me(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			me, err = h.Life.Me(ctx, token)
@@ -637,7 +637,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			return "这条待办没有可用 ID，暂时完成不了。"
 		}
 		err = h.Life.CompleteTodo(ctx, token, id)
-		if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		if life.IsUnauthorized(err) {
 			token, refreshErr := h.Auth.Refresh(ctx, ident)
 			if refreshErr == nil {
 				err = h.Life.CompleteTodo(ctx, token, id)
@@ -679,7 +679,7 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 		return "想加什么？例如：td 写报告"
 	}
 	created, err := h.Life.CreateTodo(ctx, token, title)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			created, err = h.Life.CreateTodo(ctx, token, title)
@@ -700,7 +700,7 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
 	todos, err := h.Life.Todos(ctx, token, "false")
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			todos, err = h.Life.Todos(ctx, token, "false")
@@ -775,7 +775,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		completed := args[0] == "done"
 		err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-		if err != nil && strings.Contains(err.Error(), " returned 401:") {
+		if life.IsUnauthorized(err) {
 			token, refreshErr := h.Auth.Refresh(ctx, ident)
 			if refreshErr == nil {
 				err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
@@ -810,7 +810,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
 	homeworks, err := h.Life.SubscribedHomeworks(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
@@ -1019,7 +1019,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		return h.loginRequired()
 	}
 	data, err := h.Life.CurrentSubscription(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			data, err = h.Life.CurrentSubscription(ctx, token)
@@ -1085,7 +1085,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		return h.loginRequired()
 	}
 	current, err := h.Life.CurrentSubscription(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			current, err = h.Life.CurrentSubscription(ctx, token)
@@ -1311,7 +1311,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 
 func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
 	sub, err := h.Life.CurrentSubscription(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			sub, err = h.Life.CurrentSubscription(ctx, token)
@@ -1325,7 +1325,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		return nil, nil
 	}
 	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		token, refreshErr := h.Auth.Refresh(ctx, ident)
 		if refreshErr == nil {
 			all, err = h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
@@ -2184,7 +2184,7 @@ func nonEmpty(values []string) []string {
 
 func friendlyError(err error) string {
 	text := err.Error()
-	if strings.Contains(text, " returned 401:") || strings.Contains(strings.ToLower(text), "unauthorized") {
+	if life.IsUnauthorized(err) || strings.Contains(strings.ToLower(text), "unauthorized") {
 		return "登录已过期。发送：登录"
 	}
 	if strings.Contains(strings.ToLower(text), "timeout") {

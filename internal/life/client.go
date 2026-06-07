@@ -61,10 +61,14 @@ func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 func (c *Client) Me(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
 	err := c.getAuth(ctx, "/api/me", nil, token, &out)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if IsUnauthorized(err) {
 		err = c.getAuth(ctx, "/api/auth/oauth2/userinfo", nil, token, &out)
 	}
 	return out, err
+}
+
+func IsUnauthorized(err error) bool {
+	return err != nil && strings.Contains(err.Error(), " returned 401:")
 }
 
 func (c *Client) Todos(ctx context.Context, token string, completed string) ([]map[string]any, error) {

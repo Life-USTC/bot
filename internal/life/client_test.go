@@ -2,6 +2,7 @@ package life
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -67,5 +68,17 @@ func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
 	}
 	if me["preferred_username"] != "tiankai" {
 		t.Fatalf("me = %#v", me)
+	}
+}
+
+func TestIsUnauthorized(t *testing.T) {
+	if IsUnauthorized(nil) {
+		t.Fatal("nil error reported unauthorized")
+	}
+	if !IsUnauthorized(errors.New(`GET /api/me returned 401: {"error":"Unauthorized"}`)) {
+		t.Fatal("401 error was not recognized")
+	}
+	if IsUnauthorized(errors.New("GET /api/me returned 500: nope")) {
+		t.Fatal("non-401 error was recognized")
 	}
 }

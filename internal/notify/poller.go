@@ -115,7 +115,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 
 func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, token string, now time.Time) {
 	homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		if refreshed, refreshErr := p.Auth.Refresh(ctx, ident); refreshErr == nil {
 			token = refreshed
 			homeworks, err = p.Life.SubscribedHomeworks(ctx, token)
@@ -157,7 +157,7 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 
 func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, error) {
 	sub, err := p.Life.CurrentSubscription(ctx, token)
-	if err != nil && strings.Contains(err.Error(), " returned 401:") {
+	if life.IsUnauthorized(err) {
 		if refreshed, refreshErr := p.Auth.Refresh(ctx, ident); refreshErr == nil {
 			token = refreshed
 			sub, err = p.Life.CurrentSubscription(ctx, token)
