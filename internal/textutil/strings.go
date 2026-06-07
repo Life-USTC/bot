@@ -27,6 +27,27 @@ func TrimEqualFold(value, target string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), target)
 }
 
+func IndexASCIIToken(text, token string) int {
+	if token == "" {
+		return -1
+	}
+	index := strings.Index(text, token)
+	for index >= 0 {
+		before := index == 0 || !isASCIIAlnum(text[index-1])
+		afterIndex := index + len(token)
+		after := afterIndex == len(text) || !isASCIIAlnum(text[afterIndex])
+		if before && after {
+			return index
+		}
+		next := strings.Index(text[index+1:], token)
+		if next < 0 {
+			return -1
+		}
+		index += next + 1
+	}
+	return -1
+}
+
 func MonospaceDigits(text string) string {
 	return mapMonospace(text, false)
 }
@@ -107,4 +128,8 @@ func isWideRune(r rune) bool {
 		(r >= 0xFE10 && r <= 0xFE6F) ||
 		(r >= 0xFF00 && r <= 0xFF60) ||
 		(r >= 0xFFE0 && r <= 0xFFE6)
+}
+
+func isASCIIAlnum(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
 }

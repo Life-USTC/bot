@@ -520,11 +520,10 @@ func containsBusKeyword(text string) bool {
 	if strings.Contains(lower, "校车") || strings.Contains(lower, "班车") {
 		return true
 	}
-	return busLatinKeywordRE.MatchString(lower)
+	return textutil.IndexASCIIToken(lower, "xc") >= 0 || textutil.IndexASCIIToken(lower, "bus") >= 0
 }
 
 var cqCodeRE = regexp.MustCompile(`(?i)\[CQ:[^\]]+\]`)
-var busLatinKeywordRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(xc|bus)([^a-z0-9]|$)`)
 
 func stripCQCodes(text string) string {
 	return strings.TrimSpace(cqCodeRE.ReplaceAllString(text, " "))
@@ -539,7 +538,7 @@ func busArgsFromText(text string) []string {
 	seen := map[string]bool{}
 	lookupText := strings.ToLower(text)
 	for _, alias := range campusAliases() {
-		if index := campusAliasIndex(lookupText, strings.ToLower(alias)); index >= 0 {
+		if index := campusAliasIndex(lookupText, alias); index >= 0 {
 			campus := campusName(alias)
 			if campus != "" && !seen[campus] {
 				matches = append(matches, match{index: index, campus: campus})
@@ -561,37 +560,13 @@ func busArgsFromText(text string) []string {
 }
 
 func campusAliasIndex(text, alias string) int {
-	index := strings.Index(text, alias)
-	if index < 0 || !isASCIIAlias(alias) {
-		return index
-	}
-	for index >= 0 {
-		before := index == 0 || !isASCIIAlnum(text[index-1])
-		afterIndex := index + len(alias)
-		after := afterIndex == len(text) || !isASCIIAlnum(text[afterIndex])
-		if before && after {
-			return index
-		}
-		next := strings.Index(text[index+1:], alias)
-		if next < 0 {
-			return -1
-		}
-		index += next + 1
-	}
-	return -1
-}
-
-func isASCIIAlias(value string) bool {
-	for i := 0; i < len(value); i++ {
-		if value[i] > 127 {
-			return false
+	alias = strings.ToLower(alias)
+	for i := 0; i < len(alias); i++ {
+		if alias[i] > 127 {
+			return strings.Index(text, alias)
 		}
 	}
-	return true
-}
-
-func isASCIIAlnum(ch byte) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+	return textutil.IndexASCIIToken(text, alias)
 }
 
 func (h Handler) help() string {

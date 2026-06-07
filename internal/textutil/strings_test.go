@@ -36,6 +36,26 @@ func TestTrimEqualFold(t *testing.T) {
 	}
 }
 
+func TestIndexASCIIToken(t *testing.T) {
+	tests := []struct {
+		text  string
+		token string
+		want  int
+	}{
+		{text: "bus from east", token: "bus", want: 0},
+		{text: "take northeast then north", token: "north", want: 20},
+		{text: "northeast", token: "north", want: -1},
+		{text: "bus2", token: "bus", want: -1},
+		{text: "to-bus", token: "bus", want: 3},
+		{text: "bus", token: "", want: -1},
+	}
+	for _, tt := range tests {
+		if got := IndexASCIIToken(tt.text, tt.token); got != tt.want {
+			t.Fatalf("IndexASCIIToken(%q, %q) = %d, want %d", tt.text, tt.token, got, tt.want)
+		}
+	}
+}
+
 func TestMonospaceDigits(t *testing.T) {
 	if got := MonospaceDigits("Room 3A204"); got != "Room 𝟹A𝟸𝟶𝟺" {
 		t.Fatalf("MonospaceDigits = %q", got)
