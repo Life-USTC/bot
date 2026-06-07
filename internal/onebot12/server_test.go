@@ -2,14 +2,18 @@ package onebot12
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	libob "github.com/botuniverse/go-libonebot"
 
+	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -56,6 +60,80 @@ func TestLifeActionWithoutLifeClientFails(t *testing.T) {
 	}
 	if !strings.Contains(resp.Message, "Life @ USTC API is not configured") {
 		t.Fatalf("message = %q", resp.Message)
+	}
+}
+
+func TestTodosRefreshesUnauthorizedToken(t *testing.T) {
+	ctx := context.Background()
+	ident := store.Identity{Platform: "onebot", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	var serverURL string
+	refreshRequests := 0
+	todoRequests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	})
+	mux.HandleFunc("/api/todos", func(w http.ResponseWriter, r *http.Request) {
+		todoRequests++
+		switch r.Header.Get("Authorization") {
+		case "Bearer old-access":
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case "Bearer new-access":
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告"}]}`))
+		default:
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+	})
+	lifeServer := httptest.NewServer(mux)
+	defer lifeServer.Close()
+	serverURL = lifeServer.URL
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		TokenType:    "Bearer",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Resource:     lifeServer.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := New(Config{
+		SelfID: "bot",
+		Auth:   &auth.Manager{Server: lifeServer.URL, HTTPClient: lifeServer.Client(), Store: db},
+	}, life.NewClient(lifeServer.URL, lifeServer.Client()))
+	resp := server.onebot.CallAction(actionPrefix+".list_todos", map[string]interface{}{
+		"user_id": "42",
+	})
+	if resp.Status != "ok" {
+		t.Fatalf("response = %#v", resp)
+	}
+	if refreshRequests != 1 || todoRequests != 2 {
+		t.Fatalf("refreshRequests = %d, todoRequests = %d", refreshRequests, todoRequests)
+	}
+	cred, err := db.Credential(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred == nil || cred.AccessToken != "new-access" || cred.RefreshToken != "new-refresh" {
+		t.Fatalf("credential = %#v", cred)
 	}
 }
 
