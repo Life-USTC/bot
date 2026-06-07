@@ -188,6 +188,7 @@ func FormatAPITime(value string) string {
 }
 
 func ParseAPITime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return time.Time{}, false
 	}

@@ -11,6 +11,7 @@ func TestParseAPITimeAcceptsCommonServerFormats(t *testing.T) {
 		"2026-06-07T00:00:00.000Z",
 		"2026-06-07 08:00:00",
 		"2026-06-07",
+		" 2026-06-07T08:00:00+08:00 ",
 	} {
 		if _, ok := ParseAPITime(value); !ok {
 			t.Fatalf("ParseAPITime(%q) failed", value)
