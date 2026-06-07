@@ -1350,6 +1350,26 @@ func TestNormalizeCommandAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeSubscriptionImportAliases(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{
+		"订阅 导入 CONT5103P.01",
+		"订阅 批量 CONT5103P.01",
+		"订阅 添加 CONT5103P.01",
+		"订阅 新增 CONT5103P.01",
+		"订阅 + CONT5103P.01",
+		"sub add CONT5103P.01",
+	} {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != "subscription" || strings.Join(cmd.Args, " ") != "import CONT5103P.01" {
+			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
+		}
+	}
+}
+
 func TestNormalizeScheduleTypos(t *testing.T) {
 	tests := map[string][]string{
 		"课标":                {},
