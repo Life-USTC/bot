@@ -140,7 +140,9 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	var errResp struct {
 		Error string `json:"error"`
 	}
-	_ = json.Unmarshal(body, &errResp)
+	if err := json.Unmarshal(body, &errResp); err != nil {
+		return PollResult{}, fmt.Errorf("token poll returned invalid JSON (%d): %w", resp.StatusCode, err)
+	}
 	switch errResp.Error {
 	case "authorization_pending":
 		return PollResult{Pending: true, Message: "等待确认登录。"}, nil
