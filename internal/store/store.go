@@ -358,6 +358,9 @@ func normalizeCredentialForSave(cred Credential) (Credential, error) {
 }
 
 func (s *Store) Credential(ctx context.Context, ident Identity) (*Credential, error) {
+	if err := validateIdentity(ident); err != nil {
+		return nil, err
+	}
 	ident = normalizeIdentity(ident)
 	var row credentialRow
 	err := s.db.WithContext(ctx).
