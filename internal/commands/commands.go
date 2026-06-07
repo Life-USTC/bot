@@ -758,10 +758,9 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 	if !ok {
 		return h.loginRequired()
 	}
-	me, err := h.Life.Me(ctx, token)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		me, err = h.Life.Me(ctx, token)
-	}
+	me, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) (map[string]any, error) {
+		return h.Life.Me(ctx, token)
+	})
 	if err != nil {
 		return commandError("个人信息查不到：", err)
 	}
@@ -862,10 +861,9 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 }
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	todos, err := h.Life.Todos(ctx, token, "false")
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		todos, err = h.Life.Todos(ctx, token, "false")
-	}
+	todos, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) ([]map[string]any, error) {
+		return h.Life.Todos(ctx, token, "false")
+	})
 	return todos, err
 }
 
@@ -954,10 +952,9 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 }
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	homeworks, err := h.Life.SubscribedHomeworks(ctx, token)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		homeworks, err = h.Life.SubscribedHomeworks(ctx, token)
-	}
+	homeworks, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) ([]map[string]any, error) {
+		return h.Life.SubscribedHomeworks(ctx, token)
+	})
 	lifedata.SortHomeworksByDue(homeworks)
 	return homeworks, err
 }
@@ -1168,10 +1165,9 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	if !ok {
 		return h.loginRequired()
 	}
-	data, err := h.Life.CurrentSubscription(ctx, token)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		data, err = h.Life.CurrentSubscription(ctx, token)
-	}
+	data, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
 	if err != nil {
 		return commandError("日程查不到：", err)
 	}
@@ -1558,6 +1554,14 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 		return token, true
 	}
 	return "", false
+}
+
+func withRefresh[T any](ctx context.Context, ident store.Identity, token string, refresh func(context.Context, store.Identity, error) (string, bool), fetch func(string) (T, error)) (T, error) {
+	data, err := fetch(token)
+	if refreshed, ok := refresh(ctx, ident, err); ok {
+		return fetch(refreshed)
+	}
+	return data, err
 }
 
 func (h Handler) loginRequired() string {
