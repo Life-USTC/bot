@@ -1316,7 +1316,7 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 }
 
 func formatSchedule(schedule map[string]any) string {
-	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
+	timeRange := lifedata.ScheduleTimeRange(schedule)
 	course := lifedata.ScheduleCourseLabel(schedule)
 	place := lifedata.SchedulePlaceLabel(schedule)
 	columns := []string{}

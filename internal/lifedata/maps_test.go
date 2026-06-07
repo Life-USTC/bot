@@ -77,6 +77,23 @@ func TestSchedulePlaceLabelPrefersCustomPlace(t *testing.T) {
 	}
 }
 
+func TestScheduleTimeRange(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		schedule map[string]any
+		want     string
+	}{
+		{name: "full", schedule: map[string]any{"startTime": "07:50", "endTime": "09:25"}, want: "07:50-09:25"},
+		{name: "start only", schedule: map[string]any{"startTime": "07:50"}, want: "07:50-"},
+		{name: "end only", schedule: map[string]any{"endTime": "09:25"}, want: "-09:25"},
+		{name: "empty", schedule: map[string]any{}, want: "-"},
+	} {
+		if got := ScheduleTimeRange(tc.schedule); got != tc.want {
+			t.Fatalf("%s: ScheduleTimeRange = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestSubscriptionSectionIDsForDayFiltersBySemester(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{

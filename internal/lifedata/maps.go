@@ -76,6 +76,10 @@ func SchedulePlaceLabel(schedule map[string]any) string {
 	return NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 }
 
+func ScheduleTimeRange(schedule map[string]any) string {
+	return strings.TrimSpace(FirstString(schedule, "startTime") + "-" + FirstString(schedule, "endTime"))
+}
+
 func SortHomeworksByDue(homeworks []map[string]any) {
 	sort.SliceStable(homeworks, func(i, j int) bool {
 		return apiTimeLess(FirstString(homeworks[i], "submissionDueAt"), FirstString(homeworks[j], "submissionDueAt"))

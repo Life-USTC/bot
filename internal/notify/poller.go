@@ -205,7 +205,7 @@ func scheduleKey(schedule map[string]any, start time.Time) string {
 }
 
 func formatSchedule(schedule map[string]any) string {
-	timeRange := strings.TrimSpace(lifedata.FirstString(schedule, "startTime") + "-" + lifedata.FirstString(schedule, "endTime"))
+	timeRange := lifedata.ScheduleTimeRange(schedule)
 	course := lifedata.ScheduleCourseLabel(schedule)
 	place := lifedata.SchedulePlaceLabel(schedule)
 	parts := textutil.NonEmpty(place, timeRange, course)
