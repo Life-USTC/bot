@@ -857,11 +857,13 @@ func TestNormalizeCommandAliases(t *testing.T) {
 
 func TestNormalizeScheduleTypos(t *testing.T) {
 	tests := map[string][]string{
-		"课标":   {},
-		"今天课标": {"today"},
-		"今日课标": {"today"},
-		"明天课标": {"tomorrow"},
-		"明日课标": {"tomorrow"},
+		"课标":    {},
+		"今天 课表": {"today"},
+		"今天课标":  {"today"},
+		"今日课标":  {"today"},
+		"明天 课表": {"tomorrow"},
+		"明天课标":  {"tomorrow"},
+		"明日课标":  {"tomorrow"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {
@@ -874,6 +876,19 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		}
 		if strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
 			t.Fatalf("%q args = %#v, want %#v", text, cmd.Args, wantArgs)
+		}
+	}
+}
+
+func TestNormalizeJoinedNextClass(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{"下一节课", "下一 节课"} {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != "nextclass" {
+			t.Fatalf("%q parsed as %q, want nextclass", text, cmd.Name)
 		}
 	}
 }

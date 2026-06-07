@@ -285,13 +285,8 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
-		switch joined {
-		case "今天课表", "今日课表", "今天课标", "今日课标":
-			return parsedCommand{Name: "schedule", Args: []string{"today"}, Raw: raw}, true
-		case "明天课表", "明日课表", "明天课标", "明日课标":
-			return parsedCommand{Name: "schedule", Args: []string{"tomorrow"}, Raw: raw}, true
-		case "下一节课":
-			return parsedCommand{Name: "nextclass", Raw: raw}, true
+		if name, args, ok := normalizeJoinedCommand(joined, nil); ok {
+			return parsedCommand{Name: name, Args: args, Raw: raw}, true
 		}
 	}
 
@@ -339,6 +334,8 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 		return "schedule", []string{"today"}, true
 	case "明天课表", "明日课表", "明天课标", "明日课标":
 		return "schedule", []string{"tomorrow"}, true
+	case "下一节课":
+		return "nextclass", nil, true
 	}
 	return "", args, false
 }
