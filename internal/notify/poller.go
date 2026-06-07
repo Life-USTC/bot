@@ -154,7 +154,7 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	}
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
-	all := make([]map[string]any, 0)
+	all := make([]map[string]any, 0, len(sectionIDs))
 	for _, sectionID := range sectionIDs {
 		values := url.Values{}
 		values.Set("sectionId", sectionID)

@@ -1024,8 +1024,8 @@ type subscriptionSemesterGroup struct {
 }
 
 func subscriptionSectionsBySemester(sections []map[string]any) []subscriptionSemesterGroup {
-	groups := make([]subscriptionSemesterGroup, 0)
-	indexBySemester := map[string]int{}
+	groups := make([]subscriptionSemesterGroup, 0, len(sections))
+	indexBySemester := make(map[string]int, len(sections))
 	for _, section := range sections {
 		semester := lifedata.NestedString(section, "semester", "namePrimary", "nameCn", "name")
 		if semester == "" {
@@ -1296,7 +1296,7 @@ func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, se
 
 	var mu sync.Mutex
 	var firstErr error
-	all := make([]map[string]any, 0)
+	all := make([]map[string]any, 0, len(sectionIDs))
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
 	for _, sectionID := range sectionIDs {
@@ -1606,11 +1606,12 @@ type busRoute struct {
 }
 
 func busRouteMap(raw any) map[string]busRoute {
-	out := map[string]busRoute{}
 	routes := lifedata.MapSlice(raw)
+	out := make(map[string]busRoute, len(routes))
 	for _, route := range routes {
-		stops := make([]string, 0)
-		for _, stop := range lifedata.MapSlice(route["stops"]) {
+		rawStops := lifedata.MapSlice(route["stops"])
+		stops := make([]string, 0, len(rawStops))
+		for _, stop := range rawStops {
 			name := campusName(lifedata.FirstString(stop, "nameCn", "name", "namePrimary"))
 			if name == "" {
 				name = campusName(lifedata.NestedString(stop, "campus", "nameCn", "namePrimary", "name"))
@@ -1628,8 +1629,9 @@ func busRouteMap(raw any) map[string]busRoute {
 }
 
 func tripStopNames(trip map[string]any) []string {
-	stops := make([]string, 0)
-	for _, stop := range lifedata.MapSlice(trip["stopTimes"]) {
+	rawStops := lifedata.MapSlice(trip["stopTimes"])
+	stops := make([]string, 0, len(rawStops))
+	for _, stop := range rawStops {
 		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
 			stops = append(stops, name)
@@ -1639,8 +1641,9 @@ func tripStopNames(trip map[string]any) []string {
 }
 
 func busStops(trip map[string]any, routeStops []string, departureTime, arrivalTime string) []busStop {
-	stops := make([]busStop, 0)
-	for _, stop := range lifedata.MapSlice(trip["stopTimes"]) {
+	rawStops := lifedata.MapSlice(trip["stopTimes"])
+	stops := make([]busStop, 0, len(rawStops))
+	for _, stop := range rawStops {
 		name := campusName(lifedata.FirstString(stop, "campusName", "stopName", "nameCn", "name"))
 		if name != "" {
 			stops = append(stops, busStop{Name: name, Time: lifedata.FirstString(stop, "time")})
