@@ -92,6 +92,15 @@ func TestPadRightDisplay(t *testing.T) {
 	}
 }
 
+func TestPadRightDisplayWith(t *testing.T) {
+	if got := PadRightDisplayWith("东区", 6, "\u3000"); got != "东区　" {
+		t.Fatalf("PadRightDisplayWith wide pad = %q", got)
+	}
+	if got := PadRightDisplayWith("东区", 6, ""); got != "东区" {
+		t.Fatalf("PadRightDisplayWith empty pad = %q", got)
+	}
+}
+
 func TestPadRightDisplayWide(t *testing.T) {
 	if got := PadRightDisplayWide("东区", 3); got != "东区　" {
 		t.Fatalf("PadRightDisplayWide = %q", got)

@@ -80,18 +80,16 @@ func PadRightDisplayWith(text string, width int, pad string) string {
 	if padding <= 0 {
 		return text
 	}
-	return text + strings.Repeat(pad, padding)
+	padWidth := DisplayWidth(pad)
+	if padWidth <= 0 {
+		return text
+	}
+	repeat := (padding + padWidth - 1) / padWidth
+	return text + strings.Repeat(pad, repeat)
 }
 
 func PadRightDisplayWide(text string, width int) string {
-	if text == "" {
-		return ""
-	}
-	padding := width - DisplayWidth(text)/2
-	if padding <= 0 {
-		return text
-	}
-	return text + strings.Repeat("\u3000", padding)
+	return PadRightDisplayWith(text, width*2, "\u3000")
 }
 
 func DisplayWidth(text string) int {
