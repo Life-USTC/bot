@@ -143,6 +143,22 @@ func TestSendReturnsNapCatHTTPFailureBody(t *testing.T) {
 	}
 }
 
+func TestSendReturnsNapCatRetcodeFailureFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"retcode":1}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "retcode 1: unknown") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSendReverseReply(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	done := make(chan map[string]any, 1)

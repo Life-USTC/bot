@@ -407,12 +407,16 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return fmt.Errorf("napcat %s returned invalid JSON: %w", endpoint, err)
 	}
 	if result.Status != "" && result.Status != "ok" {
-		return fmt.Errorf("napcat %s failed: %s", endpoint, textutil.FirstNonEmpty(result.Message, result.Wording, result.Status))
+		return fmt.Errorf("napcat %s failed: %s", endpoint, napcatResultText(result.Message, result.Wording, result.Status))
 	}
 	if result.RetCode != 0 {
-		return fmt.Errorf("napcat %s failed with retcode %d: %s", endpoint, result.RetCode, textutil.FirstNonEmpty(result.Message, result.Wording))
+		return fmt.Errorf("napcat %s failed with retcode %d: %s", endpoint, result.RetCode, napcatResultText(result.Message, result.Wording, result.Status))
 	}
 	return nil
+}
+
+func napcatResultText(message, wording, status string) string {
+	return textutil.FirstNonEmpty(message, wording, status, "unknown")
 }
 
 func trimLogText(text string) string {
