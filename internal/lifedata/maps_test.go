@@ -116,6 +116,32 @@ func TestIntValueRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestStringSliceAcceptsStringSlices(t *testing.T) {
+	got := StringSlice([]string{"one", "", "two"})
+	want := []string{"one", "two"}
+	if len(got) != len(want) {
+		t.Fatalf("StringSlice([]string) = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("StringSlice([]string) = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestStringSliceAcceptsDecodedJSONSlices(t *testing.T) {
+	got := StringSlice([]any{"one", "", "two", 3})
+	want := []string{"one", "two"}
+	if len(got) != len(want) {
+		t.Fatalf("StringSlice([]any) = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("StringSlice([]any) = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestMapSliceSkipsNonMaps(t *testing.T) {
 	items := MapSlice([]any{
 		map[string]any{"id": "one"},

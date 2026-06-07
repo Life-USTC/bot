@@ -212,6 +212,15 @@ func IntValue(value any) (int, bool) {
 }
 
 func StringSlice(value any) []string {
+	if items, ok := value.([]string); ok {
+		out := make([]string, 0, len(items))
+		for _, text := range items {
+			if text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
 	raw := AnySlice(value)
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
