@@ -118,6 +118,37 @@ func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
 	}
 }
 
+func TestRecordInteractionAllowsEmptyRawText(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.RecordInteraction(context.Background(), ident, Interaction{
+		Handled: false,
+		Status:  "ignored",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordInteraction(context.Background(), ident, Interaction{
+		Direction: "outbound",
+		Handled:   true,
+		Status:    "send_failed",
+		Error:     "missing message body",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	count, err := s.InteractionCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("interaction count = %d", count)
+	}
+}
+
 func TestLoginSessionLifecycle(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -462,9 +461,6 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		Status:           interaction.Status,
 		Error:            interaction.Error,
 		CreatedAt:        time.Now().UTC(),
-	}
-	if row.RawText == "" {
-		return fmt.Errorf("interaction raw text is empty")
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
 }
