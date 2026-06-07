@@ -218,6 +218,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
 	aliases := map[string]string{}
 	agentTools := map[string]string{}
+	handler := Handler{Prefix: "/life"}
 	lifeCommands := map[string]bool{
 		"me":           true,
 		"todo":         true,
@@ -291,6 +292,13 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			}
 			if owner, ok := agentTools[tool.Name]; ok {
 				t.Fatalf("agent tool %q for %q already belongs to %q", tool.Name, spec.Name, owner)
+			}
+			parsed, ok := handler.parse(tool.CommandText)
+			if !ok {
+				t.Fatalf("agent tool %q for %q command text %q was not parsed", tool.Name, spec.Name, tool.CommandText)
+			}
+			if parsed.Name != spec.Name {
+				t.Fatalf("agent tool %q command text parsed as %q, want %q", tool.Name, parsed.Name, spec.Name)
 			}
 			agentTools[tool.Name] = spec.Name
 		}
