@@ -11,6 +11,7 @@ func FirstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
 		switch value := m[key].(type) {
 		case string:
+			value = strings.TrimSpace(value)
 			if value != "" {
 				return value
 			}

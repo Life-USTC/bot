@@ -31,6 +31,8 @@ func TestFormatAPITimeKeepsLocalDateOnlyAtMidnight(t *testing.T) {
 func TestFirstStringAcceptsScalarValues(t *testing.T) {
 	data := map[string]any{
 		"empty":     "",
+		"blank":     "   ",
+		"spaced":    " value ",
 		"int":       12,
 		"int64":     int64(13),
 		"float":     float64(14),
@@ -38,6 +40,9 @@ func TestFirstStringAcceptsScalarValues(t *testing.T) {
 	}
 	if got := FirstString(data, "empty", "int"); got != "12" {
 		t.Fatalf("FirstString int = %q", got)
+	}
+	if got := FirstString(data, "blank", "spaced"); got != "value" {
+		t.Fatalf("FirstString trims and skips blank = %q", got)
 	}
 	if got := FirstString(data, "int64"); got != "13" {
 		t.Fatalf("FirstString int64 = %q", got)
@@ -78,6 +83,16 @@ func TestSchedulePlaceLabelPrefersCustomPlace(t *testing.T) {
 		"room":        map[string]any{"nameCn": "3A101"},
 	}
 	if got := SchedulePlaceLabel(schedule); got != "线上" {
+		t.Fatalf("SchedulePlaceLabel = %q", got)
+	}
+}
+
+func TestSchedulePlaceLabelFallsBackFromBlankCustomPlace(t *testing.T) {
+	schedule := map[string]any{
+		"customPlace": "   ",
+		"room":        map[string]any{"nameCn": "3A101"},
+	}
+	if got := SchedulePlaceLabel(schedule); got != "3A101" {
 		t.Fatalf("SchedulePlaceLabel = %q", got)
 	}
 }
