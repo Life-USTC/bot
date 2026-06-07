@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -129,6 +130,17 @@ func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
 	_, err := notificationKindCommandArg("bus")
 	if err == nil || !strings.Contains(err.Error(), "unsupported notification kind") {
 		t.Fatalf("unsupported kind error = %v", err)
+	}
+}
+
+func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
+	now := time.Date(2026, 6, 7, 10, 30, 0, 0, time.UTC)
+	if got := currentTimeMessageAt(now); got != "现在是 2026-06-07 18:30，Asia/Shanghai。" {
+		t.Fatalf("currentTimeMessageAt = %q", got)
+	}
+	instruction := currentInstructionAt(now)
+	if !strings.Contains(instruction, "Current local time is 2026-06-07 18:30 CST.") {
+		t.Fatalf("instruction = %q", instruction)
 	}
 }
 

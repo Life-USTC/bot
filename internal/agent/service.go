@@ -283,7 +283,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
-		return time.Now().In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。"), nil
+		return currentTimeMessage(), nil
 	})
 	if err != nil {
 		return nil, err
@@ -352,6 +352,10 @@ const extraAgentToolCount = 10
 var shanghaiLocation = lifedata.ChinaLocation()
 
 func currentInstruction() string {
+	return currentInstructionAt(time.Now())
+}
+
+func currentInstructionAt(now time.Time) string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 Use tools for Life @ USTC facts instead of guessing.
@@ -360,7 +364,15 @@ You can answer questions about prior messages using the chat history provided in
 You can manage private-chat notification settings with tools when the user asks to turn class or homework reminders on or off.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`, time.Now().In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
+When a tool returns login-required text, tell the user to log in with 登录.`, now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
+}
+
+func currentTimeMessage() string {
+	return currentTimeMessageAt(time.Now())
+}
+
+func currentTimeMessageAt(now time.Time) string {
+	return now.In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。")
 }
 
 var _ = schema.Assistant
