@@ -102,7 +102,7 @@ func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 }
 
 func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
-	_, err := appendCommandBackedTool(&Service{}, nil, "missing", "bad_tool", "Bad tool.", func(context.Context, emptyInput) (string, error) {
+	_, err := appendCommandBackedTool(&Service{}, map[string]commands.CommandSpec{}, nil, "missing", "bad_tool", "Bad tool.", func(context.Context, emptyInput) (string, error) {
 		return "", nil
 	})
 	if err == nil || !strings.Contains(err.Error(), `unknown command "missing"`) {
