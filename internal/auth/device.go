@@ -73,8 +73,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("device authorization failed (%d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("device authorization failed (%d): %s", resp.StatusCode, responseBodyText(resp))
 	}
 	var out deviceAuthResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -174,7 +173,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
 		return PollResult{Message: "登录已取消。发送：登录"}, nil
 	default:
-		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, string(body))
+		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 }
 
@@ -232,7 +231,7 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, string(body))
+		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return credentialFromTokenBody(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope)
 }
@@ -307,8 +306,7 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("client registration failed (%d): %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("client registration failed (%d): %s", resp.StatusCode, responseBodyText(resp))
 	}
 	var result struct {
 		ClientID string `json:"client_id"`
@@ -327,6 +325,11 @@ func (m *Manager) resource(meta metadata) string {
 		return strings.TrimRight(meta.Issuer, "/")
 	}
 	return strings.TrimRight(m.Server, "/")
+}
+
+func responseBodyText(resp *http.Response) string {
+	body, _ := io.ReadAll(resp.Body)
+	return strings.TrimSpace(string(body))
 }
 
 func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string) (store.Credential, error) {
