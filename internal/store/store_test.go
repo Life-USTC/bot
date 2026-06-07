@@ -995,4 +995,11 @@ func TestNotificationDeliveryRejectsBlankKeys(t *testing.T) {
 			t.Fatalf("NotificationDelivered(%q, %q) = %v, %v", tt.kind, tt.itemKey, delivered, err)
 		}
 	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after invalid notification delivery = %d", count)
+	}
 }

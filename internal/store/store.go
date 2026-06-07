@@ -701,11 +701,11 @@ func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]Notification
 }
 
 func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	userID, err := s.EnsureUser(ctx, ident)
+	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
 	if err != nil {
 		return false, err
 	}
-	kind, itemKey, err = normalizeNotificationDeliveryKey(kind, itemKey)
+	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
 		return false, err
 	}
@@ -726,11 +726,11 @@ func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identit
 }
 
 func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	userID, err := s.EnsureUser(ctx, ident)
+	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
 	if err != nil {
 		return false, err
 	}
-	kind, itemKey, err = normalizeNotificationDeliveryKey(kind, itemKey)
+	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
 		return false, err
 	}
