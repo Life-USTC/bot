@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -2072,7 +2073,7 @@ func friendlyError(err error) string {
 	if life.IsUnauthorized(err) || strings.Contains(lower, "unauthorized") {
 		return "登录已过期。发送：登录"
 	}
-	if strings.Contains(lower, "timeout") {
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(lower, "timeout") {
 		return "网络超时，等会儿再试"
 	}
 	return text

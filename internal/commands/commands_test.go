@@ -203,6 +203,9 @@ func TestFriendlyError(t *testing.T) {
 	if got := friendlyError(errors.New("upstream timeout waiting for response")); got != "网络超时，等会儿再试" {
 		t.Fatalf("timeout friendlyError = %q", got)
 	}
+	if got := friendlyError(context.DeadlineExceeded); got != "网络超时，等会儿再试" {
+		t.Fatalf("deadline friendlyError = %q", got)
+	}
 	if got := friendlyError(errors.New("server exploded")); got != "server exploded" {
 		t.Fatalf("passthrough friendlyError = %q", got)
 	}
