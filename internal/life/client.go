@@ -55,6 +55,7 @@ func (c *Client) CurrentSemester(ctx context.Context) (map[string]any, error) {
 
 func (c *Client) SearchCourses(ctx context.Context, search string, limit int) ([]map[string]any, error) {
 	values := url.Values{}
+	search = strings.TrimSpace(search)
 	values.Set("search", search)
 	setLimit(values, limit)
 	return c.list(ctx, "/api/courses", values)
@@ -62,6 +63,7 @@ func (c *Client) SearchCourses(ctx context.Context, search string, limit int) ([
 
 func (c *Client) SearchSections(ctx context.Context, search string, limit int) ([]map[string]any, error) {
 	values := url.Values{}
+	search = strings.TrimSpace(search)
 	values.Set("search", search)
 	setLimit(values, limit)
 	return c.list(ctx, "/api/sections", values)
@@ -92,6 +94,7 @@ func IsUnauthorized(err error) bool {
 
 func (c *Client) Todos(ctx context.Context, token string, completed string) ([]map[string]any, error) {
 	values := url.Values{}
+	completed = strings.TrimSpace(completed)
 	if completed != "" {
 		values.Set("completed", completed)
 	}

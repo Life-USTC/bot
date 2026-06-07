@@ -37,6 +37,29 @@ func TestSearchCourses(t *testing.T) {
 	}
 }
 
+func TestSearchTrimsQuery(t *testing.T) {
+	seen := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.URL.Path] = true
+		if got := r.URL.Query().Get("search"); got != "math" {
+			t.Fatalf("%s search = %q", r.URL.Path, got)
+		}
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.SearchCourses(context.Background(), " math ", 5); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SearchSections(context.Background(), " math ", 5); err != nil {
+		t.Fatal(err)
+	}
+	if !seen["/api/courses"] || !seen["/api/sections"] {
+		t.Fatalf("seen paths = %#v", seen)
+	}
+}
+
 func TestSchedulesUsesDataList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/schedules" {
@@ -60,6 +83,21 @@ func TestSchedulesUsesDataList(t *testing.T) {
 	}
 	if len(schedules) != 1 || schedules[0]["startTime"] != "09:50" {
 		t.Fatalf("schedules = %#v", schedules)
+	}
+}
+
+func TestTodosTrimsCompletedFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := r.URL.Query()["completed"]; ok {
+			t.Fatalf("completed query should be omitted: %s", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"todos":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.Todos(context.Background(), "token", "   "); err != nil {
+		t.Fatal(err)
 	}
 }
 
