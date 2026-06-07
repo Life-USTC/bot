@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	libob "github.com/botuniverse/go-libonebot"
 
@@ -79,6 +80,20 @@ func TestErrorRetCode(t *testing.T) {
 		if got := errorRetCode(tt.err); got != tt.want {
 			t.Fatalf("%s: errorRetCode = %d, want %d", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestContextWithTimeoutSetsDeadline(t *testing.T) {
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("deadline was not set")
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 || remaining > 15*time.Second {
+		t.Fatalf("deadline remaining = %s", remaining)
 	}
 }
 

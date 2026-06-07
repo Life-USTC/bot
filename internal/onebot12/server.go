@@ -72,7 +72,9 @@ func (s *Server) mux() *libob.ActionMux {
 			w.WriteData(map[string]any{"good": false, "online": false})
 			return
 		}
-		err := s.life.Health(context.Background())
+		ctx, cancel := ContextWithTimeout()
+		defer cancel()
+		err := s.life.Health(ctx)
 		w.WriteData(map[string]any{"good": err == nil, "online": err == nil})
 	})
 	mux.HandleFunc(actionPrefix+".get_current_semester", s.currentSemester)
@@ -91,7 +93,9 @@ func (s *Server) currentSemester(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.CurrentSemester(context.Background())
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := lifeClient.CurrentSemester(ctx)
 	write(w, data, err)
 }
 
@@ -105,7 +109,9 @@ func (s *Server) searchCourses(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.SearchCourses(context.Background(), search, 5)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := lifeClient.SearchCourses(ctx, search, 5)
 	write(w, data, err)
 }
 
@@ -119,7 +125,9 @@ func (s *Server) searchSections(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.SearchSections(context.Background(), search, 5)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := lifeClient.SearchSections(ctx, search, 5)
 	write(w, data, err)
 }
 
@@ -128,7 +136,9 @@ func (s *Server) bus(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := lifeClient.Bus(context.Background())
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := lifeClient.Bus(ctx)
 	write(w, data, err)
 }
 
@@ -141,7 +151,9 @@ func (s *Server) beginLogin(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := s.auth.BeginDeviceLogin(context.Background(), ident)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := s.auth.BeginDeviceLogin(ctx, ident)
 	write(w, data, err)
 }
 
@@ -154,7 +166,9 @@ func (s *Server) pollLogin(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	data, err := s.auth.PollDeviceLogin(context.Background(), ident)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := s.auth.PollDeviceLogin(ctx, ident)
 	write(w, data, err)
 }
 
@@ -163,13 +177,15 @@ func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	ident, token, ok := s.accessTokenForAction(w, r)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	ident, token, ok := s.accessTokenForAction(ctx, w, r)
 	if !ok {
 		return
 	}
-	data, err := lifeClient.Me(context.Background(), token)
-	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
-		data, err = lifeClient.Me(context.Background(), token)
+	data, err := lifeClient.Me(ctx, token)
+	if token, ok := s.auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		data, err = lifeClient.Me(ctx, token)
 	}
 	write(w, data, err)
 }
@@ -179,13 +195,15 @@ func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
 	if !ok {
 		return
 	}
-	ident, token, ok := s.accessTokenForAction(w, r)
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	ident, token, ok := s.accessTokenForAction(ctx, w, r)
 	if !ok {
 		return
 	}
-	data, err := lifeClient.Todos(context.Background(), token, "false")
-	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
-		data, err = lifeClient.Todos(context.Background(), token, "false")
+	data, err := lifeClient.Todos(ctx, token, "false")
+	if token, ok := s.auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		data, err = lifeClient.Todos(ctx, token, "false")
 	}
 	write(w, data, err)
 }
@@ -198,7 +216,7 @@ func (s *Server) lifeClientForAction(w libob.ResponseWriter) (*life.Client, bool
 	return s.life, true
 }
 
-func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) (store.Identity, string, bool) {
+func (s *Server) accessTokenForAction(ctx context.Context, w libob.ResponseWriter, r *libob.Request) (store.Identity, string, bool) {
 	if s.auth == nil {
 		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("login is not configured"))
 		return store.Identity{}, "", false
@@ -207,7 +225,7 @@ func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) 
 	if !ok {
 		return store.Identity{}, "", false
 	}
-	token, err := s.auth.AccessToken(context.Background(), ident)
+	token, err := s.auth.AccessToken(ctx, ident)
 	if err != nil {
 		w.WriteFailed(libob.RetCodeBadParam, err)
 		return store.Identity{}, "", false
