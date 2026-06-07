@@ -271,6 +271,37 @@ func TestSendLoginMessageUsesIdentity(t *testing.T) {
 	}
 }
 
+func TestSendMessageNormalizesGroupIdentity(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	if err := bridge.SendMessage(context.Background(), store.Identity{
+		UserID:           "42",
+		ConversationType: " GROUP ",
+		ConversationID:   "100",
+	}, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/send_group_msg" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotBody["group_id"].(float64) != 100 || gotBody["message"] != "hello" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+	if _, ok := gotBody["user_id"]; ok {
+		t.Fatalf("group payload should not include user_id: %#v", gotBody)
+	}
+}
+
 func TestSendMessageRejectsInvalidIdentityIDs(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

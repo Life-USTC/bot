@@ -225,7 +225,7 @@ func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message
 
 func (e messageEvent) identity() store.Identity {
 	conversationID := fmt.Sprint(e.UserID)
-	if e.MessageType == "group" {
+	if isGroupMessageType(e.MessageType) {
 		conversationID = fmt.Sprint(e.GroupID)
 	}
 	return store.Identity{
@@ -242,7 +242,7 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 		"user_id": event.UserID,
 		"message": message,
 	}
-	if event.MessageType == "group" {
+	if isGroupMessageType(event.MessageType) {
 		endpoint = "/send_group_msg"
 		payload["group_id"] = event.GroupID
 		delete(payload, "user_id")
@@ -283,7 +283,7 @@ func messageEventFromIdentity(ident store.Identity) (messageEvent, error) {
 		return messageEvent{}, fmt.Errorf("invalid napcat user id %q: %w", ident.UserID, err)
 	}
 	event.UserID = userID
-	if ident.ConversationType == "group" {
+	if isGroupMessageType(ident.ConversationType) {
 		groupID, err := strconv.ParseInt(ident.ConversationID, 10, 64)
 		if err != nil {
 			return messageEvent{}, fmt.Errorf("invalid napcat group id %q: %w", ident.ConversationID, err)
@@ -325,7 +325,7 @@ func sendReverseReply(conn *websocket.Conn, writeMu *sync.Mutex, event messageEv
 		"user_id": event.UserID,
 		"message": message,
 	}
-	if event.MessageType == "group" {
+	if isGroupMessageType(event.MessageType) {
 		action = "send_group_msg"
 		params = map[string]any{
 			"group_id": event.GroupID,
@@ -342,6 +342,10 @@ func sendReverseReply(conn *websocket.Conn, writeMu *sync.Mutex, event messageEv
 		defer writeMu.Unlock()
 	}
 	return conn.WriteJSON(frame)
+}
+
+func isGroupMessageType(messageType string) bool {
+	return strings.EqualFold(strings.TrimSpace(messageType), "group")
 }
 
 func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]any) error {
