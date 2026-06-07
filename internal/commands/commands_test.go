@@ -310,6 +310,42 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	}
 }
 
+func TestCommandSpecsReturnsIsolatedSlices(t *testing.T) {
+	specs := CommandSpecs()
+	if len(specs) == 0 {
+		t.Fatal("missing command specs")
+	}
+	aliasIndex := -1
+	toolIndex := -1
+	for i, spec := range specs {
+		if len(spec.Aliases) > 0 && aliasIndex == -1 {
+			aliasIndex = i
+		}
+		if len(spec.AgentTools) > 0 && toolIndex == -1 {
+			toolIndex = i
+		}
+	}
+	if aliasIndex == -1 || toolIndex == -1 {
+		t.Fatalf("aliasIndex = %d, toolIndex = %d", aliasIndex, toolIndex)
+	}
+
+	aliasName := specs[aliasIndex].Name
+	toolName := specs[toolIndex].Name
+	specs[aliasIndex].Aliases[0] = "mutated"
+	specs[toolIndex].AgentTools[0].CommandText = "mutated"
+
+	handler := Handler{Prefix: "/life"}
+	fresh := CommandSpecs()
+	parsed, ok := handler.parse(fresh[aliasIndex].Aliases[0])
+	if !ok || parsed.Name != aliasName {
+		t.Fatalf("alias command parsed as %q, ok = %v, want %q", parsed.Name, ok, aliasName)
+	}
+	parsed, ok = handler.parse(fresh[toolIndex].AgentTools[0].CommandText)
+	if !ok || parsed.Name != toolName {
+		t.Fatalf("agent tool command parsed as %q, ok = %v, want %q", parsed.Name, ok, toolName)
+	}
+}
+
 func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "课程 数学分析", Identity: testIdentity()})

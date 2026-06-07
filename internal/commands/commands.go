@@ -46,7 +46,12 @@ type CommandSpec struct {
 }
 
 func CommandSpecs() []CommandSpec {
-	return append([]CommandSpec(nil), commandSpecs...)
+	specs := append([]CommandSpec(nil), commandSpecs...)
+	for i := range specs {
+		specs[i].Aliases = append([]string(nil), specs[i].Aliases...)
+		specs[i].AgentTools = append([]AgentToolSpec(nil), specs[i].AgentTools...)
+	}
+	return specs
 }
 
 type Input struct {
