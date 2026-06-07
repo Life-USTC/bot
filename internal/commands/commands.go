@@ -82,7 +82,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		reply = h.help()
 	} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
 		reply = "Life @ USTC API unavailable: not configured."
-	} else if spec.NeedsAuth && h.Auth != nil && h.Auth.Store == nil && !firstArgIs(cmd.Args, "help") {
+	} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
 		reply = "登录未配置。"
 	} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
 		reply = "存储未配置。"
