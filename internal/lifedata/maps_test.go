@@ -55,6 +55,13 @@ func TestFirstStringAcceptsScalarValues(t *testing.T) {
 	}
 }
 
+func TestFirstIntAcceptsDisplayDigits(t *testing.T) {
+	data := map[string]any{"id": " 𝟷𝟸 "}
+	if got := FirstInt(data, "id"); got != 12 {
+		t.Fatalf("FirstInt display digits = %d", got)
+	}
+}
+
 func TestLifeDataLabelsUseFallbacks(t *testing.T) {
 	homework := map[string]any{
 		"section": map[string]any{

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 func FirstString(m map[string]any, keys ...string) string {
@@ -264,7 +266,7 @@ func IntValue(value any) (int, bool) {
 		}
 		return int(n), true
 	case string:
-		parsed, err := strconv.Atoi(strings.TrimSpace(n))
+		parsed, err := strconv.Atoi(textutil.PlainDigits(strings.TrimSpace(n)))
 		return parsed, err == nil
 	default:
 		return 0, false
