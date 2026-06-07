@@ -378,6 +378,15 @@ func TestFormatNumberedLinePadsBeforeTab(t *testing.T) {
 	}
 }
 
+func TestMoreLineFormatting(t *testing.T) {
+	if got := moreLine(12, false); got != "...and 12 more" {
+		t.Fatalf("plain moreLine = %q", got)
+	}
+	if got := moreLine(12, true); got != "...and 𝟷𝟸 more" {
+		t.Fatalf("monospace moreLine = %q", got)
+	}
+}
+
 func TestHandleHomeworkListAndDone(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
