@@ -278,19 +278,27 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 
 func messageEventFromIdentity(ident store.Identity) (messageEvent, error) {
 	event := messageEvent{MessageType: ident.ConversationType}
-	userID, err := strconv.ParseInt(strings.TrimSpace(ident.UserID), 10, 64)
+	userID, err := parseNapCatID(ident.UserID, "user")
 	if err != nil {
-		return messageEvent{}, fmt.Errorf("invalid napcat user id %q: %w", ident.UserID, err)
+		return messageEvent{}, err
 	}
 	event.UserID = userID
 	if isGroupMessageType(ident.ConversationType) {
-		groupID, err := strconv.ParseInt(strings.TrimSpace(ident.ConversationID), 10, 64)
+		groupID, err := parseNapCatID(ident.ConversationID, "group")
 		if err != nil {
-			return messageEvent{}, fmt.Errorf("invalid napcat group id %q: %w", ident.ConversationID, err)
+			return messageEvent{}, err
 		}
 		event.GroupID = groupID
 	}
 	return event, nil
+}
+
+func parseNapCatID(value, kind string) (int64, error) {
+	id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid napcat %s id %q: %w", kind, value, err)
+	}
+	return id, nil
 }
 
 func (b *Bridge) setReverseConn(conn *websocket.Conn, writeMu *sync.Mutex) uint64 {
