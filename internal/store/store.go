@@ -333,6 +333,7 @@ func normalizeCredentialForSave(cred Credential) (Credential, error) {
 }
 
 func (s *Store) Credential(ctx context.Context, ident Identity) (*Credential, error) {
+	ident = normalizeIdentity(ident)
 	var row credentialRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = credentials.user_id").

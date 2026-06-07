@@ -206,6 +206,30 @@ func TestSaveCredentialTrimsFields(t *testing.T) {
 	}
 }
 
+func TestCredentialTrimsIdentityKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	if err := s.SaveCredential(ctx, Identity{Platform: "napcat", UserID: "42"}, Credential{
+		ClientID:    "client",
+		AccessToken: "access",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Credential(ctx, Identity{Platform: " napcat ", UserID: " 42 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.AccessToken != "access" {
+		t.Fatalf("credential = %#v", got)
+	}
+}
+
 func TestSaveCredentialRejectsBlankRequiredFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
