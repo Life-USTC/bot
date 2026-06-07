@@ -56,6 +56,16 @@ func TestDeviceLoginFlow(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("content-type = %q", r.Header.Get("Content-Type"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["client_name"] != "life-ustc-onebot" || body["token_endpoint_auth_method"] != "none" {
+			t.Fatalf("registration body = %#v", body)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
 	})
 	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {

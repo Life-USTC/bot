@@ -324,7 +324,10 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		"response_types":             []string{"code"},
 		"scope":                      oauthScope,
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return "", err
