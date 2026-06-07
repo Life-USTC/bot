@@ -27,6 +27,24 @@ func TestFormatAPITimeKeepsLocalDateOnlyAtMidnight(t *testing.T) {
 	}
 }
 
+func TestFirstStringAcceptsScalarValues(t *testing.T) {
+	data := map[string]any{
+		"empty": "",
+		"int":   12,
+		"int64": int64(13),
+		"float": float64(14),
+	}
+	if got := FirstString(data, "empty", "int"); got != "12" {
+		t.Fatalf("FirstString int = %q", got)
+	}
+	if got := FirstString(data, "int64"); got != "13" {
+		t.Fatalf("FirstString int64 = %q", got)
+	}
+	if got := FirstString(data, "float"); got != "14" {
+		t.Fatalf("FirstString float = %q", got)
+	}
+}
+
 func TestLifeDataLabelsUseFallbacks(t *testing.T) {
 	homework := map[string]any{
 		"section": map[string]any{

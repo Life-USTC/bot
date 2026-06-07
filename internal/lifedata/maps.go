@@ -18,6 +18,8 @@ func FirstString(m map[string]any, keys ...string) string {
 			return strconv.FormatInt(int64(value), 10)
 		case int:
 			return strconv.Itoa(value)
+		case int64:
+			return strconv.FormatInt(value, 10)
 		}
 	}
 	return ""
