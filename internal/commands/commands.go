@@ -208,14 +208,14 @@ var commandSpecs = []CommandSpec{
 		Name:    "course",
 		Aliases: []string{"course", "kc", "课程"},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchCourses(ctx, strings.Join(args, " "))
+			return h.searchCourses(ctx, joinedArgs(args))
 		},
 	},
 	{
 		Name:    "section",
 		Aliases: []string{"section", "class", "bj", "教学班", "班级"},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchSections(ctx, strings.Join(args, " "))
+			return h.searchSections(ctx, joinedArgs(args))
 		},
 	},
 	{
@@ -691,7 +691,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		return "已完成：" + title
 	}
 	if hasArgs(args) {
-		return h.createTodo(ctx, ident, token, strings.Join(args, " "))
+		return h.createTodo(ctx, ident, token, joinedArgs(args))
 	}
 	todos, err := h.pendingTodos(ctx, ident, token)
 	if err != nil {
@@ -1446,6 +1446,7 @@ func (h Handler) currentSemester(ctx context.Context) string {
 }
 
 func (h Handler) searchCourses(ctx context.Context, keyword string) string {
+	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return "想查哪门课？例如：课程 数学分析"
 	}
@@ -1464,6 +1465,7 @@ func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 }
 
 func (h Handler) searchSections(ctx context.Context, keyword string) string {
+	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return "想查哪个教学班？例如：教学班 高等数学"
 	}

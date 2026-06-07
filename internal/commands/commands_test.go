@@ -56,6 +56,38 @@ func TestHandleCasualCourseSearch(t *testing.T) {
 	}
 }
 
+func TestSearchCoursesTrimsKeyword(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("search") != "数学分析" {
+			t.Fatalf("search = %q", r.URL.Query().Get("search"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1006","namePrimary":"数学分析"}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.searchCourses(context.Background(), "  数学分析  ")
+	if !strings.Contains(reply, "数学分析") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestSearchSectionsTrimsKeyword(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("search") != "高等数学" {
+			t.Fatalf("search = %q", r.URL.Query().Get("search"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001.01","course":{"namePrimary":"高等数学"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.searchSections(context.Background(), "  高等数学  ")
+	if !strings.Contains(reply, "高等数学") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/bus" {
