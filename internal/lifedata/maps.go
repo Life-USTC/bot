@@ -15,7 +15,7 @@ func FirstString(m map[string]any, keys ...string) string {
 				return value
 			}
 		case float64:
-			return strconv.FormatInt(int64(value), 10)
+			return strconv.FormatFloat(value, 'f', -1, 64)
 		case int:
 			return strconv.Itoa(value)
 		case int64:

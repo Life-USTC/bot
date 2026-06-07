@@ -30,10 +30,11 @@ func TestFormatAPITimeKeepsLocalDateOnlyAtMidnight(t *testing.T) {
 
 func TestFirstStringAcceptsScalarValues(t *testing.T) {
 	data := map[string]any{
-		"empty": "",
-		"int":   12,
-		"int64": int64(13),
-		"float": float64(14),
+		"empty":     "",
+		"int":       12,
+		"int64":     int64(13),
+		"float":     float64(14),
+		"floatFrac": float64(14.5),
 	}
 	if got := FirstString(data, "empty", "int"); got != "12" {
 		t.Fatalf("FirstString int = %q", got)
@@ -43,6 +44,9 @@ func TestFirstStringAcceptsScalarValues(t *testing.T) {
 	}
 	if got := FirstString(data, "float"); got != "14" {
 		t.Fatalf("FirstString float = %q", got)
+	}
+	if got := FirstString(data, "floatFrac"); got != "14.5" {
+		t.Fatalf("FirstString fractional float = %q", got)
 	}
 }
 
