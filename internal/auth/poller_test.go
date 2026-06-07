@@ -16,6 +16,7 @@ type fakeNotifier struct {
 	ident     store.Identity
 	message   string
 	failCount int
+	afterSend func()
 }
 
 func (n *fakeNotifier) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
@@ -25,6 +26,9 @@ func (n *fakeNotifier) SendLoginMessage(ctx context.Context, ident store.Identit
 	}
 	n.ident = ident
 	n.message = message
+	if n.afterSend != nil {
+		n.afterSend()
+	}
 	return nil
 }
 
@@ -135,5 +139,40 @@ func TestLoginPollerSendsCompletionFromPendingSession(t *testing.T) {
 	}
 	if active != nil {
 		t.Fatalf("session still pending: %#v", active)
+	}
+}
+
+func TestLoginPollerRunsImmediateTick(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkLoginSession(context.Background(), ident, "device", "notify_failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	notifier := &fakeNotifier{afterSend: cancel}
+	poller := LoginPoller{
+		Manager:  &Manager{Store: s},
+		Notifier: notifier,
+		Interval: time.Hour,
+	}
+	poller.Run(ctx)
+
+	if notifier.message != "登录完成。" {
+		t.Fatalf("message = %q", notifier.message)
 	}
 }

@@ -24,6 +24,7 @@ func (p *LoginPoller) Run(ctx context.Context) {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
+	p.tick(ctx)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
