@@ -371,7 +371,10 @@ func (m *Manager) serverURL() string {
 }
 
 func responseBodyText(resp *http.Response) string {
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "read response body: " + err.Error()
+	}
 	return bodyText(body)
 }
 

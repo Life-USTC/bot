@@ -340,6 +340,14 @@ func TestResourceTrimsIssuerAndServer(t *testing.T) {
 	}
 }
 
+func TestResponseBodyTextReportsReadError(t *testing.T) {
+	resp := &http.Response{Body: io.NopCloser(errReader{})}
+
+	if got := responseBodyText(resp); !strings.Contains(got, "read response body: read failed") {
+		t.Fatalf("responseBodyText = %q", got)
+	}
+}
+
 func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
