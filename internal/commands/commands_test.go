@@ -954,6 +954,27 @@ func TestHandleSuppressLog(t *testing.T) {
 	}
 }
 
+func TestAccessTokenReturnsFalseWhenUnavailable(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	handler := Handler{}
+	token, ok := handler.accessToken(ctx, ident)
+	if ok || token != "" {
+		t.Fatalf("nil auth token = %q, ok = %v", token, ok)
+	}
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	handler.Auth = &auth.Manager{Store: s}
+	token, ok = handler.accessToken(ctx, ident)
+	if ok || token != "" {
+		t.Fatalf("missing credential token = %q, ok = %v", token, ok)
+	}
+}
+
 func testAuthedHandler(t *testing.T, server *httptest.Server, ident store.Identity) Handler {
 	t.Helper()
 	s, err := store.Open(t.TempDir() + "/bot.db")

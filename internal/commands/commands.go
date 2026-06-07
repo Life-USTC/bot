@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -1359,7 +1358,7 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 	if err == nil {
 		return token, true
 	}
-	return "", !errors.Is(err, auth.ErrNotLoggedIn) && false
+	return "", false
 }
 
 func (h Handler) loginRequired() string {
