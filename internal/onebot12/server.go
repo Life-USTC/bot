@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	libob "github.com/botuniverse/go-libonebot"
@@ -185,23 +186,41 @@ func identityFromParams(w libob.ResponseWriter, r *libob.Request) (store.Identit
 		return store.Identity{}, false
 	}
 	platform := "onebot"
-	if value, exists := p.GetString("platform"); exists {
-		platform = value
+	value, ok := optionalStringParam(w, r, "platform", platform)
+	if !ok {
+		return store.Identity{}, false
 	}
+	platform = value
 	conversationType := "private"
-	if value, exists := p.GetString("conversation_type"); exists {
-		conversationType = value
+	value, ok = optionalStringParam(w, r, "conversation_type", conversationType)
+	if !ok {
+		return store.Identity{}, false
 	}
+	conversationType = value
 	conversationID := userID
-	if value, exists := p.GetString("conversation_id"); exists {
-		conversationID = value
+	value, ok = optionalStringParam(w, r, "conversation_id", conversationID)
+	if !ok {
+		return store.Identity{}, false
 	}
+	conversationID = value
 	return store.Identity{
-		Platform:         platform,
-		UserID:           userID,
-		ConversationType: conversationType,
-		ConversationID:   conversationID,
+		Platform:         strings.TrimSpace(platform),
+		UserID:           strings.TrimSpace(userID),
+		ConversationType: strings.TrimSpace(conversationType),
+		ConversationID:   strings.TrimSpace(conversationID),
 	}, true
+}
+
+func optionalStringParam(w libob.ResponseWriter, r *libob.Request, key, defaultValue string) (string, bool) {
+	if _, ok := r.Params.Value()[key]; !ok {
+		return defaultValue, true
+	}
+	value, err := r.Params.GetString(key)
+	if err != nil {
+		w.WriteFailed(libob.RetCodeBadParam, fmt.Errorf("参数错误: %v", err))
+		return "", false
+	}
+	return value, true
 }
 
 func write(w libob.ResponseWriter, data any, err error) {
