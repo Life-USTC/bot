@@ -135,6 +135,7 @@ func TestHandleHelpAliases(t *testing.T) {
 
 func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
+	aliases := map[string]string{}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -149,9 +150,16 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			t.Fatalf("duplicate command spec %q", spec.Name)
 		}
 		seen[spec.Name] = true
-		name, _ := normalizeCommand(spec.Aliases[0], nil)
-		if name != spec.Name {
-			t.Fatalf("alias %q normalized to %q, want %q", spec.Aliases[0], name, spec.Name)
+		for _, alias := range spec.Aliases {
+			key := normToken(alias)
+			if owner, ok := aliases[key]; ok {
+				t.Fatalf("alias %q for %q already belongs to %q", alias, spec.Name, owner)
+			}
+			aliases[key] = spec.Name
+			name, _ := normalizeCommand(alias, nil)
+			if name != spec.Name {
+				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
+			}
 		}
 	}
 	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus"} {
