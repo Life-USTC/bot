@@ -1370,6 +1370,28 @@ func TestNormalizeSubscriptionImportAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeHomeworkActionAliases(t *testing.T) {
+	tests := map[string][]string{
+		"作业 取消 1":    {"undo", "1"},
+		"作业 撤销 1":    {"undo", "1"},
+		"hw reset 1": {"undo", "1"},
+		"作业 全部":      {"all"},
+		"hw all":     {"all"},
+		"作业 未完成":     {"pending"},
+		"hw pending": {"pending"},
+	}
+	handler := Handler{Prefix: "/life"}
+	for text, wantArgs := range tests {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != "homework" || strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
+			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
+		}
+	}
+}
+
 func TestNormalizeScheduleTypos(t *testing.T) {
 	tests := map[string][]string{
 		"课标":                {},
