@@ -192,6 +192,7 @@ func TestIntValueAcceptsCommonAPIShapes(t *testing.T) {
 		{name: "int64", value: int64(12), want: 12},
 		{name: "float64", value: 12.9, want: 12},
 		{name: "string", value: "12", want: 12},
+		{name: "string with spaces", value: " 12 ", want: 12},
 	} {
 		got, ok := IntValue(tc.value)
 		if !ok || got != tc.want {

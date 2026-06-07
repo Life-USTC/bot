@@ -250,7 +250,7 @@ func IntValue(value any) (int, bool) {
 	case float64:
 		return int(n), true
 	case string:
-		parsed, err := strconv.Atoi(n)
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
 		return parsed, err == nil
 	default:
 		return 0, false
