@@ -16,6 +16,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 type Handler struct {
@@ -834,9 +835,9 @@ func formatHomework(homework map[string]any) string {
 		parts = append(parts, title)
 	}
 	if len(parts) == 0 {
-		return monospaceDigits(lifedata.FirstString(homework, "id"))
+		return textutil.MonospaceDigits(lifedata.FirstString(homework, "id"))
 	}
-	return monospaceDigits(strings.Join(parts, " · "))
+	return textutil.MonospaceDigits(strings.Join(parts, " · "))
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
@@ -873,7 +874,7 @@ func formatHomeworkList(homeworks []map[string]any) string {
 		lines = append(lines, group.title+"：")
 		for _, homework := range group.items {
 			if shown >= 8 {
-				lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(homeworks)-shown)))
+				lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(homeworks)-shown)))
 				return strings.Join(lines, "\n")
 			}
 			lines = append(lines, formatNumberedLine(index, formatHomework(homework)))
@@ -1139,7 +1140,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 		return strings.Join(lines, "\n")
 	}
 	semester := lifedata.SemesterLabel(matches)
-	lines := []string{monospaceDigits(fmt.Sprintf("已订阅 %d 个教学班（新增 %d 个，已存在 %d 个）。", len(sections), added, already))}
+	lines := []string{textutil.MonospaceDigits(fmt.Sprintf("已订阅 %d 个教学班（新增 %d 个，已存在 %d 个）。", len(sections), added, already))}
 	if semester != "" {
 		lines = append(lines, "学期："+semester)
 	}
@@ -1188,7 +1189,7 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 	lines := []string{title}
 	for i, schedule := range schedules {
 		if i >= 8 {
-			lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
+			lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
 			break
 		}
 		lines = append(lines, formatSchedule(schedule))
@@ -1223,7 +1224,7 @@ func formatScheduleDay(title string, schedules []map[string]any) []string {
 	}
 	for i, schedule := range schedules {
 		if i >= 8 {
-			lines = append(lines, monospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
+			lines = append(lines, textutil.MonospaceDigits(fmt.Sprintf("...and %d more", len(schedules)-i)))
 			break
 		}
 		lines = append(lines, formatSchedule(schedule))
@@ -1253,7 +1254,7 @@ func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
 			if offset == 1 {
 				prefix = "明天下一节："
 			} else if offset > 1 {
-				prefix = monospaceDigits(day.Format("01-02")) + " 下一节："
+				prefix = textutil.MonospaceDigits(day.Format("01-02")) + " 下一节："
 			}
 			return prefix + "\n" + formatSchedule(schedule)
 		}
@@ -1342,10 +1343,10 @@ func formatSchedule(schedule map[string]any) string {
 	}
 	columns := []string{}
 	if strings.TrimSpace(place) != "" {
-		columns = append(columns, padRightDisplay(monospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
+		columns = append(columns, padRightDisplay(textutil.MonospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
 	}
 	if timeRange != "" {
-		columns = append(columns, padRightDisplay(monospaceDigits(timeRange), scheduleTimeColumnWidth))
+		columns = append(columns, padRightDisplay(textutil.MonospaceDigits(timeRange), scheduleTimeColumnWidth))
 	}
 	if course != "" {
 		columns = append(columns, course)
@@ -1603,9 +1604,9 @@ func formatBusItem(item busItem) string {
 		}
 		return strings.Join(parts, "  →  ")
 	}
-	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + monospaceDigits(item.DepartureTime)
+	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + textutil.MonospaceDigits(item.DepartureTime)
 	if item.Arrival != "" {
-		line += "（到 " + monospaceDigits(item.Arrival) + "）"
+		line += "（到 " + textutil.MonospaceDigits(item.Arrival) + "）"
 	}
 	return line
 }
@@ -1614,7 +1615,7 @@ func formatBusStop(stop busStop) string {
 	name := padRightDisplayWide(stop.Name, busStopNameColumnWidth)
 	timeText := busMissingTimePlaceholder
 	if stop.Time != "" {
-		timeText = monospaceDigits(stop.Time)
+		timeText = textutil.MonospaceDigits(stop.Time)
 	}
 	return name + " " + timeText
 }
@@ -1741,34 +1742,12 @@ func busRouteLabel(route busRoute, stops []string) string {
 	return "校车"
 }
 
-func monospaceDigits(text string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return '𝟶' + (r - '0')
-		}
-		return r
-	}, text)
-}
-
-func monospaceASCII(text string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= '0' && r <= '9':
-			return '𝟶' + (r - '0')
-		case r >= 'A' && r <= 'Z':
-			return '𝙰' + (r - 'A')
-		default:
-			return r
-		}
-	}, text)
-}
-
 func formatNumberedLine(index int, text string) string {
-	prefix := padRightDisplay(monospaceDigits(fmt.Sprintf("%d.", index)), numberedColumnWidth)
+	prefix := padRightDisplay(textutil.MonospaceDigits(fmt.Sprintf("%d.", index)), numberedColumnWidth)
 	if text == "" {
 		return prefix
 	}
-	return prefix + "\t" + monospaceDigits(text)
+	return prefix + "\t" + textutil.MonospaceDigits(text)
 }
 
 func padRightDisplay(text string, width int) string {
@@ -1908,7 +1887,7 @@ func busTime(value string, minutes int) string {
 }
 
 func formatCourse(course map[string]any) string {
-	code := monospaceASCII(lifedata.FirstString(course, "code"))
+	code := textutil.MonospaceASCII(lifedata.FirstString(course, "code"))
 	name := lifedata.FirstString(course, "namePrimary", "nameCn", "name")
 	if code == "" {
 		return "- " + name
@@ -1917,7 +1896,7 @@ func formatCourse(course map[string]any) string {
 }
 
 func formatSection(section map[string]any) string {
-	code := monospaceASCII(lifedata.FirstString(section, "code"))
+	code := textutil.MonospaceASCII(lifedata.FirstString(section, "code"))
 	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := lifedata.NestedString(section, "semester", "name")
 	parts := []string{course, semester}

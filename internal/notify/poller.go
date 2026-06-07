@@ -227,7 +227,7 @@ func formatSchedule(schedule map[string]any) string {
 		place = lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
 	}
 	parts := nonEmpty([]string{place, timeRange, course})
-	return monospaceDigits(strings.Join(parts, "\t"))
+	return textutil.MonospaceDigits(strings.Join(parts, "\t"))
 }
 
 func formatHomework(homework map[string]any) string {
@@ -237,7 +237,7 @@ func formatHomework(homework map[string]any) string {
 	}
 	title := lifedata.FirstString(homework, "title")
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-	return monospaceDigits(strings.Join(nonEmpty([]string{"截止 " + due, course, title}), " · "))
+	return textutil.MonospaceDigits(strings.Join(nonEmpty([]string{"截止 " + due, course, title}), " · "))
 }
 
 func nonEmpty(values []string) []string {
@@ -248,13 +248,4 @@ func nonEmpty(values []string) []string {
 		}
 	}
 	return out
-}
-
-func monospaceDigits(text string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return '𝟶' + (r - '0')
-		}
-		return r
-	}, text)
 }

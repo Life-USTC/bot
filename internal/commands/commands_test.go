@@ -16,6 +16,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 func TestHandleCourseSearch(t *testing.T) {
@@ -312,7 +313,7 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 }
 
 func TestFormatTodoDueDateFirst(t *testing.T) {
-	line := monospaceDigits(formatTodo(map[string]any{
+	line := textutil.MonospaceDigits(formatTodo(map[string]any{
 		"title": "写报告",
 		"dueAt": "2026-05-14T23:55:00+08:00",
 	}))
