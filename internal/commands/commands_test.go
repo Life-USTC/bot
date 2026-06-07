@@ -1501,6 +1501,20 @@ func TestNormalizeCommandAliases(t *testing.T) {
 	}
 }
 
+func TestPrefixedUnknownCommandParsesAsHelp(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	cmd, ok := handler.parse("/life nope")
+	if !ok {
+		t.Fatal("command was not parsed")
+	}
+	if cmd.Name != "help" {
+		t.Fatalf("command name = %q, want help", cmd.Name)
+	}
+	if len(cmd.Args) != 0 {
+		t.Fatalf("args = %#v", cmd.Args)
+	}
+}
+
 func TestNormalizeSubscriptionImportAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{
@@ -1694,6 +1708,31 @@ func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("interaction count = %d", count)
+	}
+}
+
+func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := testIdentity()
+	handler := Handler{Store: s, Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
+	if !ok || !strings.Contains(reply, "待办 / td") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 {
+		t.Fatalf("recent = %#v", recent)
+	}
+	if recent[0].Command != "help" {
+		t.Fatalf("logged command = %q, want help", recent[0].Command)
 	}
 }
 

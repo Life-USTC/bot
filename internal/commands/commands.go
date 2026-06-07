@@ -307,6 +307,9 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 			return parsedCommand{Name: "help", Raw: raw}, true
 		}
 		name, args := normalizeCommand(fields[1], fields[2:])
+		if name == "" {
+			return parsedCommand{Name: "help", Raw: raw}, true
+		}
 		return parsedCommand{Name: name, Args: args, Raw: raw}, true
 	}
 
