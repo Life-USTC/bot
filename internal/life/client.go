@@ -108,6 +108,7 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 }
 
 func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[string]any, error) {
+	title = strings.TrimSpace(title)
 	body, _ := json.Marshal(map[string]any{"title": title})
 	var out map[string]any
 	err := c.postAuth(ctx, "/api/todos", token, body, &out)
