@@ -1326,17 +1326,23 @@ func TestNormalizeCommandAliases(t *testing.T) {
 
 func TestNormalizeScheduleTypos(t *testing.T) {
 	tests := map[string][]string{
-		"课标":    {},
-		"今天 课表": {"today"},
-		"今天课标":  {"today"},
-		"今日课标":  {"today"},
-		"课表今天":  {"today"},
-		"kb今天":  {"today"},
-		"明天 课表": {"tomorrow"},
-		"明天课标":  {"tomorrow"},
-		"明日课标":  {"tomorrow"},
-		"课表明天":  {"tomorrow"},
-		"明日kb":  {"tomorrow"},
+		"课标":                {},
+		"today kb":          {"today"},
+		"todaykb":           {"today"},
+		"kb today":          {"today"},
+		"今天 课表":             {"today"},
+		"今天课标":              {"today"},
+		"今日课标":              {"today"},
+		"课表今天":              {"today"},
+		"kb今天":              {"today"},
+		"tomorrow schedule": {"tomorrow"},
+		"tomorrowsched":     {"tomorrow"},
+		"sched tomorrow":    {"tomorrow"},
+		"明天 课表":             {"tomorrow"},
+		"明天课标":              {"tomorrow"},
+		"明日课标":              {"tomorrow"},
+		"课表明天":              {"tomorrow"},
+		"明日kb":              {"tomorrow"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {
