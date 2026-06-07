@@ -277,6 +277,10 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 	if err != nil {
 		return err
 	}
+	cred, err = normalizeCredentialForSave(cred)
+	if err != nil {
+		return err
+	}
 	row := credentialRow{
 		UserID:       userID,
 		ClientID:     cred.ClientID,
@@ -301,6 +305,22 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 			"updated_at",
 		}),
 	}).Create(&row).Error
+}
+
+func normalizeCredentialForSave(cred Credential) (Credential, error) {
+	cred.ClientID = strings.TrimSpace(cred.ClientID)
+	cred.AccessToken = strings.TrimSpace(cred.AccessToken)
+	cred.RefreshToken = strings.TrimSpace(cred.RefreshToken)
+	cred.TokenType = strings.TrimSpace(cred.TokenType)
+	cred.Scope = strings.TrimSpace(cred.Scope)
+	cred.Resource = strings.TrimSpace(cred.Resource)
+	if cred.ClientID == "" {
+		return Credential{}, errors.New("credential client id is empty")
+	}
+	if cred.AccessToken == "" {
+		return Credential{}, errors.New("credential access token is empty")
+	}
+	return cred, nil
 }
 
 func (s *Store) Credential(ctx context.Context, ident Identity) (*Credential, error) {

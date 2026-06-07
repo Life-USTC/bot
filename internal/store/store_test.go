@@ -147,6 +147,62 @@ func TestCredentialAndConversationStatePersist(t *testing.T) {
 	}
 }
 
+func TestSaveCredentialTrimsFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveCredential(context.Background(), ident, Credential{
+		ClientID:     " client ",
+		AccessToken:  " access ",
+		RefreshToken: " refresh ",
+		TokenType:    " Bearer ",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Scope:        " openid ",
+		Resource:     " https://life.example ",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Credential(context.Background(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("credential not found")
+	}
+	if got.ClientID != "client" || got.AccessToken != "access" || got.RefreshToken != "refresh" || got.TokenType != "Bearer" || got.Scope != "openid" || got.Resource != "https://life.example" {
+		t.Fatalf("credential = %#v", got)
+	}
+}
+
+func TestSaveCredentialRejectsBlankRequiredFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	base := Credential{
+		ClientID:    "client",
+		AccessToken: "access",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	tests := []Credential{
+		func() Credential { next := base; next.ClientID = " "; return next }(),
+		func() Credential { next := base; next.AccessToken = " "; return next }(),
+	}
+	for _, cred := range tests {
+		err := s.SaveCredential(context.Background(), ident, cred)
+		if err == nil || !strings.Contains(err.Error(), "credential") {
+			t.Fatalf("SaveCredential(%#v) error = %v", cred, err)
+		}
+	}
+}
+
 func TestRecentHandledInteractionsOrdersOldestFirst(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
