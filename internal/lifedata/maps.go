@@ -211,7 +211,7 @@ func ParseAPITime(value string) (time.Time, bool) {
 			return parsed, true
 		}
 	}
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02"} {
 		if parsed, err := time.ParseInLocation(layout, value, ChinaLocation()); err == nil {
 			return parsed, true
 		}
