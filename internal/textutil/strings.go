@@ -9,6 +9,16 @@ func FirstNonEmpty(values ...string) string {
 	return ""
 }
 
+func NonEmpty(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
 func MonospaceDigits(text string) string {
 	return mapMonospace(text, false)
 }

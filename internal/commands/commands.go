@@ -1841,9 +1841,9 @@ func formatSection(section map[string]any) string {
 	semester := lifedata.NestedString(section, "semester", "name")
 	parts := []string{course, semester}
 	if code == "" {
-		return "- " + strings.Join(nonEmpty(parts), " ")
+		return "- " + strings.Join(textutil.NonEmpty(parts...), " ")
 	}
-	suffix := strings.Join(nonEmpty(parts), " ")
+	suffix := strings.Join(textutil.NonEmpty(parts...), " ")
 	if suffix == "" {
 		return "- " + code
 	}
@@ -1860,16 +1860,6 @@ const schedulePlaceColumnWidth = 8
 const scheduleTimeColumnWidth = 11
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
-
-func nonEmpty(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
-}
 
 func friendlyError(err error) string {
 	text := err.Error()
