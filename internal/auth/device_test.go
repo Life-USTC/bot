@@ -340,6 +340,71 @@ func TestCredentialFromTokenBodyTrimsTokenStrings(t *testing.T) {
 	}
 }
 
+func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
+	var serverURL string
+	refreshRequests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"expires_in":    3600,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    now.Add(2 * time.Minute),
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token, err := manager.AccessToken(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "old-access" || refreshRequests != 0 {
+		t.Fatalf("token = %q, refreshRequests = %d", token, refreshRequests)
+	}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    now.Add(30 * time.Second),
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token, err = manager.AccessToken(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "new-access" || refreshRequests != 1 {
+		t.Fatalf("token = %q, refreshRequests = %d", token, refreshRequests)
+	}
+}
+
 func TestRefreshIfUnauthorized(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()

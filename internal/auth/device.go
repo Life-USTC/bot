@@ -186,7 +186,7 @@ func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string
 	if cred == nil {
 		return "", ErrNotLoggedIn
 	}
-	if time.Until(cred.ExpiresAt) > time.Minute {
+	if cred.ExpiresAt.Sub(m.now()) > time.Minute {
 		return cred.AccessToken, nil
 	}
 	if cred.RefreshToken == "" {
