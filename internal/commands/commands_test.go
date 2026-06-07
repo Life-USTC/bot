@@ -207,6 +207,7 @@ func TestFriendlyError(t *testing.T) {
 func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
 	aliases := map[string]string{}
+	agentTools := map[string]string{}
 	lifeCommands := map[string]bool{
 		"me":           true,
 		"todo":         true,
@@ -267,6 +268,21 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			if name != spec.Name {
 				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
 			}
+		}
+		for _, tool := range spec.AgentTools {
+			if strings.TrimSpace(tool.Name) == "" {
+				t.Fatalf("command %q has agent tool with empty name", spec.Name)
+			}
+			if strings.TrimSpace(tool.Description) == "" {
+				t.Fatalf("agent tool %q for %q has empty description", tool.Name, spec.Name)
+			}
+			if strings.TrimSpace(tool.CommandText) == "" {
+				t.Fatalf("agent tool %q for %q has empty command text", tool.Name, spec.Name)
+			}
+			if owner, ok := agentTools[tool.Name]; ok {
+				t.Fatalf("agent tool %q for %q already belongs to %q", tool.Name, spec.Name, owner)
+			}
+			agentTools[tool.Name] = spec.Name
 		}
 	}
 	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus"} {
