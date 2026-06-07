@@ -1274,12 +1274,16 @@ func formatScheduleDay(title string, schedules []map[string]any) []string {
 }
 
 func (h Handler) nextClass(ctx context.Context, ident store.Identity) string {
+	return h.nextClassAt(ctx, ident, time.Now().In(lifedata.ChinaLocation()))
+}
+
+func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time.Time) string {
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
 	}
 	loc := lifedata.ChinaLocation()
-	now := time.Now().In(loc)
+	now = now.In(loc)
 	for offset := 0; offset < 8; offset++ {
 		day := now.AddDate(0, 0, offset)
 		schedules, err := h.schedulesForDay(ctx, ident, token, day)

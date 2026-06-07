@@ -596,6 +596,29 @@ func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	}
 }
 
+func TestNextClassSkipsPastClassAtFixedTime(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+		case r.URL.Path == "/api/schedules":
+			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:00","endTime":"09:45","section":{"course":{"namePrimary":"已过去"}}},{"startTime":"11:00","endTime":"11:45","section":{"course":{"namePrimary":"下一节"}}}]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	now := time.Date(2026, 6, 7, 10, 0, 0, 0, lifedata.ChinaLocation())
+	reply := handler.nextClassAt(ctx, ident, now)
+	if !strings.Contains(reply, "下一节课：") || !strings.Contains(reply, "下一节") || strings.Contains(reply, "已过去") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestFetchSchedulesForSectionsLimitsConcurrency(t *testing.T) {
 	var current int32
 	var maxSeen int32
