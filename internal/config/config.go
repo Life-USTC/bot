@@ -33,7 +33,7 @@ func FromEnv() Config {
 	return Config{
 		LifeServer:         envString("LIFE_USTC_SERVER", "http://localhost:3000"),
 		OneBotHTTPHost:     envString("BOT_ONEBOT_HTTP_HOST", "127.0.0.1"),
-		OneBotHTTPPort:     uint16(envInt("BOT_ONEBOT_HTTP_PORT", 6700)),
+		OneBotHTTPPort:     envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
 		OneBotAccessToken:  os.Getenv("BOT_ONEBOT_ACCESS_TOKEN"),
 		OneBotSelfID:       envString("BOT_SELF_ID", "life-ustc"),
 		NapCatAPIURL:       strings.TrimRight(envString("NAPCAT_API_URL", "http://127.0.0.1:3000"), "/"),
@@ -70,6 +70,18 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func envUint16(key string, fallback uint16) uint16 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 || value > int(^uint16(0)) {
+		return fallback
+	}
+	return uint16(value)
 }
 
 func envBool(key string, fallback bool) bool {
