@@ -921,6 +921,13 @@ func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T)
 			t.Fatalf("SaveNotificationSettings(%#v) error = %v", settings, err)
 		}
 	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after invalid notification settings = %d", count)
+	}
 	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
 		Identity: Identity{Platform: "napcat", UserID: "42"},
 	}); err != nil {

@@ -634,11 +634,11 @@ func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (Notif
 }
 
 func (s *Store) SaveNotificationSettings(ctx context.Context, settings NotificationSettings) error {
-	userID, err := s.EnsureUser(ctx, settings.Identity)
+	settings, err := normalizeNotificationSettingsForSave(settings)
 	if err != nil {
 		return err
 	}
-	settings, err = normalizeNotificationSettingsForSave(settings)
+	userID, err := s.EnsureUser(ctx, settings.Identity)
 	if err != nil {
 		return err
 	}
