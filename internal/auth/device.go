@@ -68,7 +68,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.httpClient().PostForm(meta.DeviceAuthorizationEndpoint, url.Values{
+	resp, err := m.postForm(ctx, meta.DeviceAuthorizationEndpoint, url.Values{
 		"client_id": {clientID},
 		"scope":     {oauthScope},
 		"resource":  {m.resource(meta)},
@@ -142,7 +142,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	if err != nil {
 		return PollResult{}, err
 	}
-	resp, err := m.httpClient().PostForm(meta.TokenEndpoint, url.Values{
+	resp, err := m.postForm(ctx, meta.TokenEndpoint, url.Values{
 		"grant_type":  {deviceGrantType},
 		"client_id":   {session.ClientID},
 		"device_code": {session.DeviceCode},
@@ -358,6 +358,15 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		return "", fmt.Errorf("client registration response missing client_id")
 	}
 	return result.ClientID, nil
+}
+
+func (m *Manager) postForm(ctx context.Context, endpoint string, values url.Values) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return m.httpClient().Do(req)
 }
 
 func (m *Manager) resource(meta metadata) string {

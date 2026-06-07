@@ -143,6 +143,54 @@ func TestDeviceLoginFlow(t *testing.T) {
 	}
 }
 
+func TestBeginDeviceLoginUsesContextForDeviceRequest(t *testing.T) {
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"device_authorization_endpoint": serverURL + "/device",
+			"registration_endpoint":         serverURL + "/register",
+		})
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
+	})
+	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":      "device",
+				"user_code":        "USER-CODE",
+				"verification_uri": serverURL + "/verify",
+				"expires_in":       600,
+			})
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = manager.BeginDeviceLogin(ctx, store.Identity{Platform: "napcat", UserID: "42"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("BeginDeviceLogin error = %v, want context deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
+		t.Fatalf("BeginDeviceLogin ignored context, elapsed = %s", elapsed)
+	}
+}
+
 func TestBeginDeviceLoginTrimsServerURL(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
