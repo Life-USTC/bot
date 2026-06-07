@@ -98,6 +98,15 @@ func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {
 	}
 }
 
+func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
+	if got := busCommandText(busInput{From: " 东区 ", To: " 西区 "}); got != "校车 东区 西区" {
+		t.Fatalf("busCommandText = %q", got)
+	}
+	if got := busCommandText(busInput{From: "  ", To: "\t"}); got != "校车" {
+		t.Fatalf("blank busCommandText = %q", got)
+	}
+}
+
 func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")

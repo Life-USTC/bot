@@ -187,14 +187,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		}
 	}
 	tools, err = appendInferredTool(tools, "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
-		parts := []string{"校车"}
-		if strings.TrimSpace(input.From) != "" {
-			parts = append(parts, input.From)
-		}
-		if strings.TrimSpace(input.To) != "" {
-			parts = append(parts, input.To)
-		}
-		return s.runCommand(ctx, ident, strings.Join(parts, " "))
+		return s.runCommand(ctx, ident, busCommandText(input))
 	})
 	if err != nil {
 		return nil, err
@@ -319,6 +312,17 @@ func requiredToolArg(name, value string) (string, error) {
 		return "", fmt.Errorf("%s is required", name)
 	}
 	return value, nil
+}
+
+func busCommandText(input busInput) string {
+	parts := []string{"校车"}
+	if from := strings.TrimSpace(input.From); from != "" {
+		parts = append(parts, from)
+	}
+	if to := strings.TrimSpace(input.To); to != "" {
+		parts = append(parts, to)
+	}
+	return strings.Join(parts, " ")
 }
 
 func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {
