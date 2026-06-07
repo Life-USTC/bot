@@ -40,7 +40,7 @@ func FromEnv() Config {
 		NapCatAccessToken:  envOptionalString("NAPCAT_ACCESS_TOKEN"),
 		NapCatWSURL:        envOptionalString("NAPCAT_WS_URL"),
 		NapCatReverseAddr:  envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
-		NapCatReversePath:  envString("NAPCAT_REVERSE_PATH", "/ws"),
+		NapCatReversePath:  envPath("NAPCAT_REVERSE_PATH", "/ws"),
 		DBPath:             envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
 		CommandPrefix:      envString("BOT_COMMAND_PREFIX", "/life"),
 		HTTPClientTimeout:  time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
@@ -62,6 +62,14 @@ func envString(key, fallback string) string {
 
 func envOptionalString(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
+}
+
+func envPath(key, fallback string) string {
+	value := envString(key, fallback)
+	if strings.HasPrefix(value, "/") {
+		return value
+	}
+	return "/" + value
 }
 
 func envInt(key string, fallback int) int {

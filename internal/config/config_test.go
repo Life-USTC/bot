@@ -73,3 +73,21 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 		t.Fatalf("LLMBaseURL = %q", cfg.LLMBaseURL)
 	}
 }
+
+func TestFromEnvNormalizesNapCatReversePath(t *testing.T) {
+	t.Setenv("NAPCAT_REVERSE_PATH", " ws ")
+
+	cfg := FromEnv()
+	if cfg.NapCatReversePath != "/ws" {
+		t.Fatalf("NapCatReversePath = %q", cfg.NapCatReversePath)
+	}
+}
+
+func TestFromEnvKeepsAbsoluteNapCatReversePath(t *testing.T) {
+	t.Setenv("NAPCAT_REVERSE_PATH", " /custom ")
+
+	cfg := FromEnv()
+	if cfg.NapCatReversePath != "/custom" {
+		t.Fatalf("NapCatReversePath = %q", cfg.NapCatReversePath)
+	}
+}
