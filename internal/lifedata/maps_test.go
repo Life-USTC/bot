@@ -128,6 +128,18 @@ func TestSubscriptionSectionIDsForDayFiltersBySemester(t *testing.T) {
 	}
 }
 
+func TestSubscriptionSectionsHandlesMissingSubscription(t *testing.T) {
+	for _, data := range []map[string]any{
+		{},
+		{"subscription": "bad"},
+		{"subscription": map[string]any{"sections": "bad"}},
+	} {
+		if sections := SubscriptionSections(data); len(sections) != 0 {
+			t.Fatalf("sections = %#v", sections)
+		}
+	}
+}
+
 func TestSortHomeworksByDueUsesParsedTimes(t *testing.T) {
 	homeworks := []map[string]any{
 		{"id": "late", "submissionDueAt": "2026-06-07T10:00:00+08:00"},

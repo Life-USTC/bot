@@ -97,8 +97,7 @@ func SubscriptionSectionIDs(data map[string]any) []string {
 }
 
 func SubscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
-	sub, _ := data["subscription"].(map[string]any)
-	sections := MapSlice(sub["sections"])
+	sections := SubscriptionSections(data)
 	out := make([]string, 0, len(sections))
 	fallback := make([]string, 0, len(sections))
 	sawSemester := false
@@ -123,6 +122,11 @@ func SubscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
 		return fallback
 	}
 	return out
+}
+
+func SubscriptionSections(data map[string]any) []map[string]any {
+	sub, _ := data["subscription"].(map[string]any)
+	return MapSlice(sub["sections"])
 }
 
 func SemesterContainsDay(semester map[string]any, day time.Time) bool {

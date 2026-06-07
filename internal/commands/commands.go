@@ -999,8 +999,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	if err != nil {
 		return commandError("日程查不到：", err)
 	}
-	sub, _ := data["subscription"].(map[string]any)
-	sections := lifedata.MapSlice(sub["sections"])
+	sections := lifedata.SubscriptionSections(data)
 	if len(sections) == 0 {
 		return "还没有订阅课程。"
 	}
@@ -1114,8 +1113,7 @@ func matchSections(matches map[string]any) []map[string]any {
 }
 
 func subscriptionSectionIDInts(data map[string]any) []int {
-	sub, _ := data["subscription"].(map[string]any)
-	sections := lifedata.MapSlice(sub["sections"])
+	sections := lifedata.SubscriptionSections(data)
 	ids := make([]int, 0, len(sections))
 	for _, section := range sections {
 		id := lifedata.FirstInt(section, "id")
