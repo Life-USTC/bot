@@ -125,6 +125,31 @@ func TestLoginPollerSkipsBlankNotificationIdentity(t *testing.T) {
 	}
 }
 
+func TestHasLoginPollIdentity(t *testing.T) {
+	valid := store.Identity{
+		Platform:         " napcat ",
+		UserID:           " 42 ",
+		ConversationType: " private ",
+		ConversationID:   " 42 ",
+	}
+	tests := []struct {
+		name  string
+		ident store.Identity
+		want  bool
+	}{
+		{name: "valid", ident: valid, want: true},
+		{name: "missing platform", ident: func() store.Identity { next := valid; next.Platform = " "; return next }()},
+		{name: "missing user", ident: func() store.Identity { next := valid; next.UserID = " "; return next }()},
+		{name: "missing conversation type", ident: func() store.Identity { next := valid; next.ConversationType = " "; return next }()},
+		{name: "missing conversation id", ident: func() store.Identity { next := valid; next.ConversationID = " "; return next }()},
+	}
+	for _, tt := range tests {
+		if got := hasLoginPollIdentity(tt.ident); got != tt.want {
+			t.Fatalf("%s: hasLoginPollIdentity = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestLoginPollerSendsCompletionFromPendingSession(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()

@@ -49,7 +49,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 	}
 	for _, session := range sessions {
 		ident := session.Identity
-		if ident.Platform == "" || ident.UserID == "" {
+		if !hasLoginPollIdentity(ident) {
 			continue
 		}
 		if session.Status == "notify_failed" {
@@ -69,7 +69,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 			p.notifyApproved(ctx, ident, session.DeviceCode)
 			continue
 		}
-		if message == "" || !hasNotificationIdentity(ident) {
+		if message == "" {
 			continue
 		}
 		if err := p.Notifier.SendLoginMessage(ctx, ident, message); err != nil {
@@ -97,6 +97,12 @@ func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, 
 func hasNotificationIdentity(ident store.Identity) bool {
 	return strings.TrimSpace(ident.ConversationType) != "" &&
 		strings.TrimSpace(ident.ConversationID) != ""
+}
+
+func hasLoginPollIdentity(ident store.Identity) bool {
+	return strings.TrimSpace(ident.Platform) != "" &&
+		strings.TrimSpace(ident.UserID) != "" &&
+		hasNotificationIdentity(ident)
 }
 
 func (p *LoginPoller) logf(format string, args ...any) {
