@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 type Identity struct {
@@ -362,8 +364,8 @@ func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginS
 		IntervalSeconds:         row.IntervalSeconds,
 		Status:                  row.Status,
 		Identity: Identity{
-			Platform:         firstNonEmpty(row.Platform, ident.Platform),
-			UserID:           firstNonEmpty(row.ExternalUserID, ident.UserID),
+			Platform:         textutil.FirstNonEmpty(row.Platform, ident.Platform),
+			UserID:           textutil.FirstNonEmpty(row.ExternalUserID, ident.UserID),
 			ConversationType: row.ConversationType,
 			ConversationID:   row.ConversationID,
 		},
@@ -383,8 +385,8 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	sessions := make([]LoginSession, 0, len(rows))
 	for _, row := range rows {
 		ident := Identity{
-			Platform:         firstNonEmpty(row.Platform, ""),
-			UserID:           firstNonEmpty(row.ExternalUserID, ""),
+			Platform:         textutil.FirstNonEmpty(row.Platform, ""),
+			UserID:           textutil.FirstNonEmpty(row.ExternalUserID, ""),
 			ConversationType: row.ConversationType,
 			ConversationID:   row.ConversationID,
 		}
@@ -419,15 +421,6 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
 		Where("user_id = ? AND device_code = ?", userID, deviceCode).
 		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()}).Error
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {
@@ -600,10 +593,10 @@ func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind,
 
 func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) NotificationSettings {
 	ident := Identity{
-		Platform:         firstNonEmpty(row.Platform, fallback.Platform),
-		UserID:           firstNonEmpty(row.ExternalUserID, fallback.UserID),
-		ConversationType: firstNonEmpty(row.ConversationType, fallback.ConversationType),
-		ConversationID:   firstNonEmpty(row.ConversationID, fallback.ConversationID),
+		Platform:         textutil.FirstNonEmpty(row.Platform, fallback.Platform),
+		UserID:           textutil.FirstNonEmpty(row.ExternalUserID, fallback.UserID),
+		ConversationType: textutil.FirstNonEmpty(row.ConversationType, fallback.ConversationType),
+		ConversationID:   textutil.FirstNonEmpty(row.ConversationID, fallback.ConversationID),
 	}
 	return NotificationSettings{
 		Identity:        ident,

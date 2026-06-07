@@ -11,6 +11,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const (
@@ -130,7 +131,7 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 		if !ok || due.Before(now) || due.After(now.Add(24*time.Hour)) {
 			continue
 		}
-		key := notificationKey(homeworkKind, firstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
+		key := notificationKey(homeworkKind, textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
 		delivered, err := p.Store.NotificationDelivered(ctx, ident, homeworkKind, key)
 		if err != nil {
 			p.logf("check homework notification delivery failed: %v", err)
@@ -237,15 +238,6 @@ func formatHomework(homework map[string]any) string {
 	title := lifedata.FirstString(homework, "title")
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	return monospaceDigits(strings.Join(nonEmpty([]string{"截止 " + due, course, title}), " · "))
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func nonEmpty(values []string) []string {
