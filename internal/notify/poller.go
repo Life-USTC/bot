@@ -52,7 +52,7 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) tick(ctx context.Context) {
-	if p.Life == nil || p.Auth == nil || p.Store == nil || p.Sender == nil {
+	if p.Life == nil || p.Auth == nil || p.Auth.Store == nil || p.Store == nil || p.Sender == nil {
 		return
 	}
 	settings, err := p.Store.EnabledNotificationSettings(ctx)

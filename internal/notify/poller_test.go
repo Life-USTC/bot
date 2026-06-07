@@ -148,3 +148,23 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 		t.Fatalf("notification was sent again: %#v", sender.messages)
 	}
 }
+
+func TestPollerSkipsAuthWithoutStore(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	sender := &fakeSender{}
+	poller := &Poller{
+		Life:   life.NewClient("https://life.example", nil),
+		Auth:   &auth.Manager{},
+		Store:  db,
+		Sender: sender,
+	}
+	poller.tick(context.Background())
+	if len(sender.messages) != 0 {
+		t.Fatalf("messages = %#v", sender.messages)
+	}
+}
