@@ -174,6 +174,35 @@ func TestSendLoginMessageUsesIdentity(t *testing.T) {
 	}
 }
 
+func TestSendMessageRejectsInvalidIdentityIDs(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	err := bridge.SendMessage(context.Background(), store.Identity{
+		UserID:           "not-a-number",
+		ConversationType: "private",
+		ConversationID:   "not-a-number",
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "invalid napcat user id") {
+		t.Fatalf("private error = %v", err)
+	}
+	err = bridge.SendMessage(context.Background(), store.Identity{
+		UserID:           "42",
+		ConversationType: "group",
+		ConversationID:   "not-a-number",
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "invalid napcat group id") {
+		t.Fatalf("group error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("unexpected HTTP requests = %d", requests)
+	}
+}
+
 func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	ready := make(chan struct{}, 1)
