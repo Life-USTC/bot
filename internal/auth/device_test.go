@@ -60,13 +60,17 @@ func TestDeviceLoginFlow(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ident := store.Identity{Platform: "napcat", UserID: "42"}
-	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s}
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: func() time.Time { return now }}
 	session, err := manager.BeginDeviceLogin(context.Background(), ident)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if session.UserCode != "USER-CODE" {
 		t.Fatalf("session = %#v", session)
+	}
+	if want := now.Add(600 * time.Second); !session.ExpiresAt.Equal(want) {
+		t.Fatalf("session expires_at = %s, want %s", session.ExpiresAt, want)
 	}
 	result, err := manager.PollDeviceLogin(context.Background(), ident)
 	if err != nil {
@@ -81,6 +85,44 @@ func TestDeviceLoginFlow(t *testing.T) {
 	}
 	if token != "access" {
 		t.Fatalf("token = %q", token)
+	}
+}
+
+func TestPollDeviceLoginExpiresSessionUsingManagerClock(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode:      "device",
+		UserCode:        "USER-CODE",
+		ClientID:        "client",
+		ExpiresAt:       now.Add(-time.Second),
+		IntervalSeconds: 5,
+		Status:          "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := Manager{Store: s, Now: func() time.Time { return now }}
+	result, err := manager.PollDeviceLogin(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Message != "验证码已过期。发送：登录" {
+		t.Fatalf("result = %#v", result)
+	}
+	session, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != nil {
+		t.Fatalf("session still active = %#v", session)
 	}
 }
 

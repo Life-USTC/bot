@@ -23,6 +23,7 @@ type Manager struct {
 	Server     string
 	HTTPClient *http.Client
 	Store      *store.Store
+	Now        func() time.Time
 }
 
 type metadata struct {
@@ -92,7 +93,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		VerificationURI:         out.VerificationURI,
 		VerificationURIComplete: out.VerificationURIComplete,
 		ClientID:                clientID,
-		ExpiresAt:               time.Now().Add(time.Duration(out.ExpiresIn) * time.Second),
+		ExpiresAt:               m.now().Add(time.Duration(out.ExpiresIn) * time.Second),
 		IntervalSeconds:         interval,
 		Status:                  "pending",
 	}
@@ -125,7 +126,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	if session == nil {
 		return PollResult{Message: "暂无进行中的登录。发送：登录"}, nil
 	}
-	if time.Now().After(session.ExpiresAt) {
+	if m.now().After(session.ExpiresAt) {
 		_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	}
@@ -145,7 +146,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusOK {
-		cred, err := credentialFromTokenBody(session.ClientID, m.resource(meta), body, "", "")
+		cred, err := credentialFromTokenBodyAt(session.ClientID, m.resource(meta), body, "", "", m.now())
 		if err != nil {
 			return PollResult{}, err
 		}
@@ -233,7 +234,7 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if resp.StatusCode != http.StatusOK {
 		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	return credentialFromTokenBody(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope)
+	return credentialFromTokenBodyAt(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope, m.now())
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
@@ -378,4 +379,11 @@ func (m *Manager) httpClient() *http.Client {
 		return m.HTTPClient
 	}
 	return &http.Client{Timeout: 15 * time.Second}
+}
+
+func (m *Manager) now() time.Time {
+	if m.Now != nil {
+		return m.Now()
+	}
+	return time.Now()
 }
