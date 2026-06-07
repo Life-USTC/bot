@@ -123,6 +123,36 @@ func TestCreateTodoTrimsTitle(t *testing.T) {
 	}
 }
 
+func TestCompleteTodoTrimsID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.CompleteTodo(context.Background(), "token", " todo-1 "); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetHomeworkCompletionTrimsID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/homeworks/homework-1/completion" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.SetHomeworkCompletion(context.Background(), "token", " homework-1 ", true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAuthHeaderTrimsToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {

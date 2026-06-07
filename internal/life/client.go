@@ -116,6 +116,7 @@ func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[strin
 }
 
 func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
+	id = strings.TrimSpace(id)
 	body, _ := json.Marshal(map[string]any{"completed": true})
 	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
 }
@@ -131,6 +132,7 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 }
 
 func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {
+	id = strings.TrimSpace(id)
 	body, _ := json.Marshal(map[string]any{"completed": completed})
 	return c.putAuth(ctx, "/api/homeworks/"+url.PathEscape(id)+"/completion", token, body, nil)
 }
