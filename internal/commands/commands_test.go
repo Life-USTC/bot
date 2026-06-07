@@ -463,6 +463,19 @@ func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
 	}
 }
 
+func TestHandleLoginHelpAliases(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{"登录 help", "登录 -h", "/life login --help"} {
+		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !ok {
+			t.Fatalf("%q was not handled", text)
+		}
+		if !strings.Contains(reply, "登录用法：") || !strings.Contains(reply, "登录 状态") {
+			t.Fatalf("%q reply = %q", text, reply)
+		}
+	}
+}
+
 func TestHandleTodoDoneByIndex(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

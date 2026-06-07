@@ -416,6 +416,9 @@ func normalizeLoginArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
+	if isHelpToken(args[0]) {
+		return withFirstArg(args, "help")
+	}
 	switch normToken(args[0]) {
 	case "status", "check", "完成", "状态", "ok", "好了":
 		return withFirstArg(args, "status")
@@ -620,6 +623,13 @@ func (h Handler) help() string {
 }
 
 func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
+	if firstArgIs(args, "help") {
+		return strings.Join([]string{
+			"登录用法：",
+			"登录",
+			"登录 状态",
+		}, "\n")
+	}
 	if h.Auth == nil {
 		return "登录未配置。"
 	}
