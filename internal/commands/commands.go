@@ -1921,6 +1921,9 @@ func formatCourse(course map[string]any) string {
 	if code == "" {
 		return "- " + name
 	}
+	if name == "" {
+		return "- " + code
+	}
 	return "- " + paddedCourseCode(code) + "\t" + name
 }
 
