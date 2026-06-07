@@ -461,6 +461,13 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	if err := s.SaveLoginSession(context.Background(), ident, session); err != nil {
 		t.Fatal(err)
 	}
+	var row loginSessionRow
+	if err := s.db.WithContext(context.Background()).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+		t.Fatalf("session timestamps are zero: %#v", row)
+	}
 	got, err := s.ActiveLoginSession(context.Background(), ident)
 	if err != nil {
 		t.Fatal(err)
@@ -470,6 +477,12 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 	if err := s.MarkLoginSession(context.Background(), ident, "device", "approved"); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.db.WithContext(context.Background()).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != "approved" || row.UpdatedAt.IsZero() {
+		t.Fatalf("marked session = %#v", row)
 	}
 	got, err = s.ActiveLoginSession(context.Background(), ident)
 	if err != nil {
