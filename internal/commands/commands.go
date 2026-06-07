@@ -1513,11 +1513,15 @@ func (h Handler) status(ctx context.Context, ident store.Identity) string {
 }
 
 func (h Handler) bus(ctx context.Context, args []string) string {
+	return h.busAt(ctx, args, time.Now())
+}
+
+func (h Handler) busAt(ctx context.Context, args []string, now time.Time) string {
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
 		return commandError("校车查不到：", err)
 	}
-	items := nextBusByRoute(data, args, time.Now())
+	items := nextBusByRoute(data, args, now)
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}

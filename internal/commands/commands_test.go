@@ -846,6 +846,25 @@ func TestFilterSchedulesForDayDropsAdjacentDates(t *testing.T) {
 	}
 }
 
+func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[{"routeId":1,"dayType":"weekday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:15"}]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
+	if reply := handler.busAt(context.Background(), nil, now); reply != "今天后面没查到校车。" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestNextBusItemsFiltersRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{
