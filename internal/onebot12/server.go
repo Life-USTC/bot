@@ -68,6 +68,10 @@ func (s *Server) Shutdown() {
 func (s *Server) mux() *libob.ActionMux {
 	mux := libob.NewActionMux()
 	mux.HandleFunc(libob.ActionGetStatus, func(w libob.ResponseWriter, r *libob.Request) {
+		if s.life == nil {
+			w.WriteData(map[string]any{"good": false, "online": false})
+			return
+		}
 		err := s.life.Health(context.Background())
 		w.WriteData(map[string]any{"good": err == nil, "online": err == nil})
 	})
@@ -83,32 +87,48 @@ func (s *Server) mux() *libob.ActionMux {
 }
 
 func (s *Server) currentSemester(w libob.ResponseWriter, r *libob.Request) {
-	data, err := s.life.CurrentSemester(context.Background())
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
+	data, err := lifeClient.CurrentSemester(context.Background())
 	write(w, data, err)
 }
 
 func (s *Server) searchCourses(w libob.ResponseWriter, r *libob.Request) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
 	p := libob.NewParamGetter(w, r)
 	search, ok := p.GetString("search")
 	if !ok {
 		return
 	}
-	data, err := s.life.SearchCourses(context.Background(), search, 5)
+	data, err := lifeClient.SearchCourses(context.Background(), search, 5)
 	write(w, data, err)
 }
 
 func (s *Server) searchSections(w libob.ResponseWriter, r *libob.Request) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
 	p := libob.NewParamGetter(w, r)
 	search, ok := p.GetString("search")
 	if !ok {
 		return
 	}
-	data, err := s.life.SearchSections(context.Background(), search, 5)
+	data, err := lifeClient.SearchSections(context.Background(), search, 5)
 	write(w, data, err)
 }
 
 func (s *Server) bus(w libob.ResponseWriter, r *libob.Request) {
-	data, err := s.life.Bus(context.Background())
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
+	data, err := lifeClient.Bus(context.Background())
 	write(w, data, err)
 }
 
@@ -139,27 +159,43 @@ func (s *Server) pollLogin(w libob.ResponseWriter, r *libob.Request) {
 }
 
 func (s *Server) me(w libob.ResponseWriter, r *libob.Request) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
 	ident, token, ok := s.accessTokenForAction(w, r)
 	if !ok {
 		return
 	}
-	data, err := s.life.Me(context.Background(), token)
+	data, err := lifeClient.Me(context.Background(), token)
 	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
-		data, err = s.life.Me(context.Background(), token)
+		data, err = lifeClient.Me(context.Background(), token)
 	}
 	write(w, data, err)
 }
 
 func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
 	ident, token, ok := s.accessTokenForAction(w, r)
 	if !ok {
 		return
 	}
-	data, err := s.life.Todos(context.Background(), token, "false")
+	data, err := lifeClient.Todos(context.Background(), token, "false")
 	if token, ok := s.auth.RefreshIfUnauthorized(context.Background(), ident, err); ok {
-		data, err = s.life.Todos(context.Background(), token, "false")
+		data, err = lifeClient.Todos(context.Background(), token, "false")
 	}
 	write(w, data, err)
+}
+
+func (s *Server) lifeClientForAction(w libob.ResponseWriter) (*life.Client, bool) {
+	if s.life == nil {
+		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("Life @ USTC API is not configured"))
+		return nil, false
+	}
+	return s.life, true
 }
 
 func (s *Server) accessTokenForAction(w libob.ResponseWriter, r *libob.Request) (store.Identity, string, bool) {
