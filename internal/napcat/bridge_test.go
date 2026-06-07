@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -294,5 +295,23 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if params["user_id"].(float64) != 42 || params["message"] != "登录完成。" {
 		t.Fatalf("params = %#v", params)
+	}
+}
+
+func TestTrimLogText(t *testing.T) {
+	if got := trimLogText("short"); got != "short" {
+		t.Fatalf("short text = %q", got)
+	}
+	longASCII := strings.Repeat("a", 161)
+	if got := trimLogText(longASCII); got != strings.Repeat("a", 160)+"..." {
+		t.Fatalf("ASCII trim = %q", got)
+	}
+	longChinese := strings.Repeat("校", 161)
+	got := trimLogText(longChinese)
+	if !utf8.ValidString(got) {
+		t.Fatalf("trimmed text is invalid UTF-8: %q", got)
+	}
+	if got != strings.Repeat("校", 160)+"..." {
+		t.Fatalf("Chinese trim = %q", got)
 	}
 }

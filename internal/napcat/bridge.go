@@ -402,8 +402,9 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 
 func trimLogText(text string) string {
 	const max = 160
-	if len(text) <= max {
+	runes := []rune(text)
+	if len(runes) <= max {
 		return text
 	}
-	return text[:max] + "..."
+	return string(runes[:max]) + "..."
 }
