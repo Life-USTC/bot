@@ -711,10 +711,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 }
 
 func normalizeNotificationSettingsForSave(settings NotificationSettings) (NotificationSettings, error) {
-	settings.Identity.Platform = strings.TrimSpace(settings.Identity.Platform)
-	settings.Identity.UserID = strings.TrimSpace(settings.Identity.UserID)
-	settings.Identity.ConversationType = strings.TrimSpace(settings.Identity.ConversationType)
-	settings.Identity.ConversationID = strings.TrimSpace(settings.Identity.ConversationID)
+	settings.Identity = normalizeIdentity(settings.Identity)
 	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
 		return settings, nil
 	}
