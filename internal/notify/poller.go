@@ -166,6 +166,10 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		values.Set("dateTo", end.UTC().Format(time.RFC3339))
 		values.Set("limit", "100")
 		schedules, err := p.Life.Schedules(ctx, token, values)
+		if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+			token = refreshed
+			schedules, err = p.Life.Schedules(ctx, token, values)
+		}
 		if err != nil {
 			return nil, err
 		}

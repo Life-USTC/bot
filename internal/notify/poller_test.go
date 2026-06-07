@@ -149,6 +149,79 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	}
 }
 
+func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+
+	var serverURL string
+	scheduleRequests := 0
+	refreshRequests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"token_endpoint":"` + serverURL + `/token"}`))
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests++
+		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
+	})
+	mux.HandleFunc("/api/calendar-subscriptions/current", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+	})
+	mux.HandleFunc("/api/schedules", func(w http.ResponseWriter, r *http.Request) {
+		scheduleRequests++
+		switch r.Header.Get("Authorization") {
+		case "Bearer old-access":
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case "Bearer new-access":
+			_, _ = w.Write([]byte(`{"data":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+		default:
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    now.Add(time.Hour),
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{
+		Identity:       ident,
+		ClassesEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sender := &fakeSender{}
+	poller := &Poller{
+		Life:   life.NewClient(server.URL, server.Client()),
+		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db, Now: func() time.Time { return now }},
+		Store:  db,
+		Sender: sender,
+		Now:    func() time.Time { return now },
+	}
+	poller.tick(ctx)
+
+	if refreshRequests != 1 || scheduleRequests != 2 {
+		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
+	}
+	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "课前提醒：") {
+		t.Fatalf("messages = %#v", sender.messages)
+	}
+}
+
 func TestPollerSkipsAuthWithoutStore(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
