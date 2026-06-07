@@ -165,6 +165,11 @@ type targetInput struct {
 	Target string `json:"target" jsonschema_description:"Item number, ID, or title shown in the latest list response"`
 }
 
+type notificationInput struct {
+	Kind    string `json:"kind" jsonschema_description:"Notification type to change: classes for upcoming class reminders, homework for homework due reminders"`
+	Enabled bool   `json:"enabled" jsonschema_description:"Whether to enable this notification type"`
+}
+
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	specs := []struct {
 		name string
@@ -241,6 +246,13 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 				return s.runCommand(ctx, ident, "状态")
 			},
 		},
+		{
+			name: "get_notification_settings",
+			desc: "Get the user's active push notification settings for upcoming classes and homework reminders.",
+			fn: func(ctx context.Context, _ emptyInput) (string, error) {
+				return s.runCommand(ctx, ident, "通知")
+			},
+		},
 	}
 	tools := make([]tool.BaseTool, 0, len(specs)+9)
 	for _, spec := range specs {
@@ -313,6 +325,26 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	tools = append(tools, bulkSubscribeTool)
+	setNotificationTool, err := utils.InferTool("set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
+		kind := strings.ToLower(strings.TrimSpace(input.Kind))
+		switch kind {
+		case "class", "classes", "section", "sections", "schedule", "curriculum":
+			kind = "课表"
+		case "homework", "hw":
+			kind = "作业"
+		default:
+			return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", input.Kind)
+		}
+		state := "关"
+		if input.Enabled {
+			state = "开"
+		}
+		return s.runCommand(ctx, ident, "通知 "+kind+" "+state)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, setNotificationTool)
 	currentTimeTool, err := utils.InferTool("get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
 		return time.Now().In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。"), nil
 	})
@@ -348,6 +380,7 @@ Answer in the user's language, usually concise Chinese.
 Use tools for Life @ USTC facts instead of guessing.
 Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run.
+You can manage private-chat notification settings with tools when the user asks to turn class or homework reminders on or off.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
 When a tool returns login-required text, tell the user to log in with 登录.`, time.Now().In(shanghaiLocation).Format("2006-01-02 15:04 MST"))

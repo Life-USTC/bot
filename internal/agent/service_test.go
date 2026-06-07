@@ -39,8 +39,21 @@ func TestAgentToolConstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 19 {
+	if len(tools) != 21 {
 		t.Fatalf("tool count = %d", len(tools))
+	}
+	names := map[string]bool{}
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[info.Name] = true
+	}
+	for _, name := range []string{"get_notification_settings", "set_notification_settings"} {
+		if !names[name] {
+			t.Fatalf("missing tool %q; tools = %#v", name, names)
+		}
 	}
 }
 
