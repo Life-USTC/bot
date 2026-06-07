@@ -365,12 +365,12 @@ func (s *Store) DeleteCredential(ctx context.Context, ident Identity) error {
 }
 
 func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session LoginSession) error {
-	userID, err := s.EnsureUser(ctx, ident)
+	ident = normalizeIdentity(ident)
+	session, err := normalizeLoginSessionForSave(session)
 	if err != nil {
 		return err
 	}
-	ident = normalizeIdentity(ident)
-	session, err = normalizeLoginSessionForSave(session)
+	userID, err := s.EnsureUser(ctx, ident)
 	if err != nil {
 		return err
 	}
