@@ -405,3 +405,65 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 		t.Fatal("duplicate delivery was recorded")
 	}
 }
+
+func TestNotificationDeliveryTrimsKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, " class ", " section-1 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !recorded {
+		t.Fatal("first delivery was not recorded")
+	}
+	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded {
+		t.Fatal("trim-equivalent duplicate delivery was recorded")
+	}
+	delivered, err := s.NotificationDelivered(ctx, ident, " class ", " section-1 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !delivered {
+		t.Fatal("trimmed delivery was not found")
+	}
+}
+
+func TestNotificationDeliveryRejectsBlankKeys(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	tests := []struct {
+		kind    string
+		itemKey string
+	}{
+		{kind: "", itemKey: "section-1"},
+		{kind: "   ", itemKey: "section-1"},
+		{kind: "class", itemKey: ""},
+		{kind: "class", itemKey: "   "},
+	}
+	for _, tt := range tests {
+		recorded, err := s.TryRecordNotificationDelivery(ctx, ident, tt.kind, tt.itemKey)
+		if err == nil || recorded {
+			t.Fatalf("TryRecordNotificationDelivery(%q, %q) = %v, %v", tt.kind, tt.itemKey, recorded, err)
+		}
+		delivered, err := s.NotificationDelivered(ctx, ident, tt.kind, tt.itemKey)
+		if err == nil || delivered {
+			t.Fatalf("NotificationDelivered(%q, %q) = %v, %v", tt.kind, tt.itemKey, delivered, err)
+		}
+	}
+}

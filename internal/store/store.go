@@ -609,6 +609,10 @@ func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identit
 	if err != nil {
 		return false, err
 	}
+	kind, itemKey, err = normalizeNotificationDeliveryKey(kind, itemKey)
+	if err != nil {
+		return false, err
+	}
 	row := notificationDeliveryRow{
 		UserID:    userID,
 		Kind:      kind,
@@ -630,11 +634,27 @@ func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind,
 	if err != nil {
 		return false, err
 	}
+	kind, itemKey, err = normalizeNotificationDeliveryKey(kind, itemKey)
+	if err != nil {
+		return false, err
+	}
 	var count int64
 	err = s.db.WithContext(ctx).Model(&notificationDeliveryRow{}).
 		Where("user_id = ? AND kind = ? AND item_key = ?", userID, kind, itemKey).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func normalizeNotificationDeliveryKey(kind, itemKey string) (string, string, error) {
+	kind = strings.TrimSpace(kind)
+	itemKey = strings.TrimSpace(itemKey)
+	if kind == "" {
+		return "", "", errors.New("notification delivery kind is empty")
+	}
+	if itemKey == "" {
+		return "", "", errors.New("notification delivery item key is empty")
+	}
+	return kind, itemKey, nil
 }
 
 func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) NotificationSettings {
