@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -38,22 +41,18 @@ func TestAgentIgnoresGroupMessages(t *testing.T) {
 }
 
 func TestAgentToolConstruction(t *testing.T) {
-	svc := &Service{}
-	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"})
+	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := map[string]bool{}
-	for _, tool := range tools {
-		info, err := tool.Info(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if names[info.Name] {
-			t.Fatalf("duplicate tool %q", info.Name)
-		}
-		names[info.Name] = true
-	}
+	defer func() { _ = db.Close() }()
+
+	svc := &Service{handler: commands.Handler{
+		Life:  life.NewClient("https://life.example", &http.Client{}),
+		Auth:  &auth.Manager{Store: db},
+		Store: db,
+	}}
+	names := agentToolNames(t, svc)
 	wantNames := []string{
 		"add_todo",
 		"bulk_subscribe_sections",
@@ -85,6 +84,41 @@ func TestAgentToolConstruction(t *testing.T) {
 			t.Fatalf("missing tool %q; tools = %#v", name, names)
 		}
 	}
+}
+
+func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
+	names := agentToolNames(t, &Service{})
+	wantNames := []string{
+		"get_current_time",
+	}
+	if len(names) != len(wantNames) {
+		t.Fatalf("tool count = %d, want %d; tools = %#v", len(names), len(wantNames), names)
+	}
+	for _, name := range wantNames {
+		if !names[name] {
+			t.Fatalf("missing tool %q; tools = %#v", name, names)
+		}
+	}
+}
+
+func agentToolNames(t *testing.T, svc *Service) map[string]bool {
+	t.Helper()
+	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range tools {
+		info, err := tool.Info(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if names[info.Name] {
+			t.Fatalf("duplicate tool %q", info.Name)
+		}
+		names[info.Name] = true
+	}
+	return names
 }
 
 func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {

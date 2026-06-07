@@ -182,6 +182,9 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs)+extraAgentToolCount)
 	var err error
 	for _, commandSpec := range commandSpecs {
+		if !s.commandDependenciesAvailable(commandSpec) {
+			continue
+		}
 		for _, toolSpec := range commandSpec.AgentTools {
 			toolSpec := toolSpec
 			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
@@ -192,13 +195,13 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 			}
 		}
 	}
-	tools, err = appendInferredTool(tools, "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
 		return s.runCommand(ctx, ident, busCommandText(input))
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "course", "search_courses", "Search courses by name, code, or teacher keyword.", func(ctx context.Context, input keywordInput) (string, error) {
 		keyword, err := requiredToolArg("keyword", input.Keyword)
 		if err != nil {
 			return "", err
@@ -208,7 +211,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "section", "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", func(ctx context.Context, input keywordInput) (string, error) {
 		keyword, err := requiredToolArg("keyword", input.Keyword)
 		if err != nil {
 			return "", err
@@ -218,7 +221,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "todo", "add_todo", "Create a new todo for the user.", func(ctx context.Context, input todoInput) (string, error) {
 		title, err := requiredToolArg("title", input.Title)
 		if err != nil {
 			return "", err
@@ -228,7 +231,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "todo", "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", func(ctx context.Context, input targetInput) (string, error) {
 		target, err := requiredToolArg("target", input.Target)
 		if err != nil {
 			return "", err
@@ -238,7 +241,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "homework", "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
 		target, err := requiredToolArg("target", input.Target)
 		if err != nil {
 			return "", err
@@ -248,7 +251,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "homework", "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", func(ctx context.Context, input targetInput) (string, error) {
 		target, err := requiredToolArg("target", input.Target)
 		if err != nil {
 			return "", err
@@ -258,7 +261,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "subscription", "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", func(ctx context.Context, input bulkSubscribeInput) (string, error) {
 		text, err := requiredToolArg("text", input.Text)
 		if err != nil {
 			return "", err
@@ -268,7 +271,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, tools, "notify", "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
 		kind, err := notificationKindCommandArg(input.Kind)
 		if err != nil {
 			return "", err
@@ -289,6 +292,36 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		return nil, err
 	}
 	return tools, nil
+}
+
+func appendCommandBackedTool[I any](s *Service, tools []tool.BaseTool, commandName, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+	spec, ok := commandSpecByName(commandName)
+	if ok && !s.commandDependenciesAvailable(spec) {
+		return tools, nil
+	}
+	return appendInferredTool(tools, name, description, fn)
+}
+
+func commandSpecByName(name string) (commands.CommandSpec, bool) {
+	for _, spec := range commands.CommandSpecs() {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return commands.CommandSpec{}, false
+}
+
+func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
+	if spec.NeedsLife && s.handler.Life == nil {
+		return false
+	}
+	if spec.NeedsAuth && (s.handler.Auth == nil || s.handler.Auth.Store == nil) {
+		return false
+	}
+	if spec.NeedsStore && s.handler.Store == nil {
+		return false
+	}
+	return true
 }
 
 func appendInferredTool[I any](tools []tool.BaseTool, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
