@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -367,7 +368,38 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
 	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(respBody)) == 0 {
+		return nil
+	}
+	var result struct {
+		Status  string `json:"status"`
+		RetCode int    `json:"retcode"`
+		Message string `json:"message"`
+		Wording string `json:"wording"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("napcat %s returned invalid JSON: %w", endpoint, err)
+	}
+	if result.Status != "" && result.Status != "ok" {
+		return fmt.Errorf("napcat %s failed: %s", endpoint, firstNonEmpty(result.Message, result.Wording, result.Status))
+	}
+	if result.RetCode != 0 {
+		return fmt.Errorf("napcat %s failed with retcode %d: %s", endpoint, result.RetCode, firstNonEmpty(result.Message, result.Wording))
+	}
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func trimLogText(text string) string {

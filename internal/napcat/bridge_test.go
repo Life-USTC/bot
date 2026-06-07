@@ -52,6 +52,38 @@ func TestSendGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendReturnsNapCatJSONFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"failed","retcode":1200,"message":"send failed"}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "send failed") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendReturnsInvalidNapCatJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	err := bridge.Send(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err == nil || !strings.Contains(err.Error(), "invalid JSON") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSendReverseReply(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	done := make(chan map[string]any, 1)
