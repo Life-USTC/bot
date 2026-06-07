@@ -335,6 +335,7 @@ func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRef
 		return store.Credential{}, err
 	}
 	accessToken, _ := tokens["access_token"].(string)
+	accessToken = strings.TrimSpace(accessToken)
 	if accessToken == "" {
 		return store.Credential{}, fmt.Errorf("token response missing access_token")
 	}
@@ -343,14 +344,17 @@ func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRef
 		expiresIn = value
 	}
 	refreshToken, _ := tokens["refresh_token"].(string)
+	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
 		refreshToken = fallbackRefresh
 	}
 	scope, _ := tokens["scope"].(string)
+	scope = strings.TrimSpace(scope)
 	if scope == "" {
 		scope = fallbackScope
 	}
 	tokenType, _ := tokens["token_type"].(string)
+	tokenType = strings.TrimSpace(tokenType)
 	return store.Credential{
 		ClientID:     clientID,
 		AccessToken:  accessToken,

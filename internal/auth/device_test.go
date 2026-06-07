@@ -229,6 +229,30 @@ func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
 	}
 }
 
+func TestCredentialFromTokenBodyTrimsTokenStrings(t *testing.T) {
+	cred, err := credentialFromTokenBody("client", "resource", []byte(`{
+		"access_token": " access ",
+		"refresh_token": "   ",
+		"token_type": " Bearer ",
+		"scope": "   "
+	}`), "fallback-refresh", "fallback-scope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.AccessToken != "access" {
+		t.Fatalf("access_token = %q", cred.AccessToken)
+	}
+	if cred.RefreshToken != "fallback-refresh" {
+		t.Fatalf("refresh_token = %q", cred.RefreshToken)
+	}
+	if cred.TokenType != "Bearer" {
+		t.Fatalf("token_type = %q", cred.TokenType)
+	}
+	if cred.Scope != "fallback-scope" {
+		t.Fatalf("scope = %q", cred.Scope)
+	}
+}
+
 func TestRefreshIfUnauthorized(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
