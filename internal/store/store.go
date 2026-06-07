@@ -226,6 +226,9 @@ func (s *Store) migrate() error {
 }
 
 func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
+	if err := validateIdentity(ident); err != nil {
+		return 0, err
+	}
 	now := time.Now().UTC()
 	user := userRow{
 		Platform:       ident.Platform,
@@ -244,6 +247,16 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID).
 		First(&user).Error
 	return user.ID, err
+}
+
+func validateIdentity(ident Identity) error {
+	if strings.TrimSpace(ident.Platform) == "" {
+		return errors.New("identity platform is empty")
+	}
+	if strings.TrimSpace(ident.UserID) == "" {
+		return errors.New("identity user id is empty")
+	}
+	return nil
 }
 
 func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credential) error {
