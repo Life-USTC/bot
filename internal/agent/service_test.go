@@ -3,9 +3,12 @@ package agent
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -37,6 +40,46 @@ func TestAgentIgnoresGroupMessages(t *testing.T) {
 		if ok || reply != "" {
 			t.Fatalf("conversationType %q reply = %q, ok = %v", conversationType, reply, ok)
 		}
+	}
+}
+
+func TestNewNormalizesModelCredentials(t *testing.T) {
+	var gotAuth string
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-test",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	svc, err := New(context.Background(), Config{
+		Enabled: true,
+		APIKey:  " test-key ",
+		BaseURL: " " + server.URL + "/ ",
+		Model:   " test-model ",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.Content != "ok" {
+		t.Fatalf("reply = %q", reply.Content)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if gotPath != "/chat/completions" {
+		t.Fatalf("path = %q", gotPath)
 	}
 }
 

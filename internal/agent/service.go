@@ -43,13 +43,15 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	if !cfg.Enabled {
 		return &Service{handler: handler}, nil
 	}
-	if strings.TrimSpace(cfg.APIKey) == "" {
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if apiKey == "" {
 		return nil, errors.New("agent enabled but OPENAI_API_KEY is empty")
 	}
 	modelName := strings.TrimSpace(cfg.Model)
 	if modelName == "" {
 		modelName = "gpt-4o-mini"
 	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	agentHTTPClient := httpClient
 	if httpClient != nil {
 		clone := *httpClient
@@ -57,8 +59,8 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		agentHTTPClient = &clone
 	}
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
-		APIKey:     cfg.APIKey,
-		BaseURL:    cfg.BaseURL,
+		APIKey:     apiKey,
+		BaseURL:    baseURL,
 		Model:      modelName,
 		HTTPClient: agentHTTPClient,
 		Timeout:    agentHTTPTimeout,
