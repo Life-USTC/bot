@@ -256,6 +256,10 @@ func isGroup(ident store.Identity) bool {
 	return strings.EqualFold(strings.TrimSpace(ident.ConversationType), "group")
 }
 
+func isPrivate(ident store.Identity) bool {
+	return strings.EqualFold(strings.TrimSpace(ident.ConversationType), "private")
+}
+
 func (h Handler) parse(text string) (parsedCommand, bool) {
 	raw := strings.TrimSpace(text)
 	if raw == "" {
@@ -970,7 +974,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if h.Store == nil {
 		return "通知未配置。"
 	}
-	if ident.ConversationType != "private" {
+	if !isPrivate(ident) {
 		return "通知只能在私聊里设置。"
 	}
 	if firstArgIs(args, "help") {
