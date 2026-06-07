@@ -152,7 +152,10 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PollResult{}, fmt.Errorf("token poll response read failed: %w", err)
+	}
 	if resp.StatusCode == http.StatusOK {
 		cred, err := credentialFromTokenBodyAt(session.ClientID, m.resource(meta), body, "", "", m.now())
 		if err != nil {
@@ -247,7 +250,10 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 		return store.Credential{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return store.Credential{}, fmt.Errorf("refresh response read failed: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, bodyText(body))
 	}

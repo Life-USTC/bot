@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,18 @@ var authTestNow = time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 
 func fixedClock(now time.Time) func() time.Time {
 	return func() time.Time { return now }
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
 }
 
 func TestManagerWithoutStoreReturnsConfiguredError(t *testing.T) {
@@ -370,6 +383,49 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	}
 }
 
+func TestPollDeviceLoginReturnsBodyReadError(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	now := authTestNow
+	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode:      "device",
+		UserCode:        "USER-CODE",
+		ClientID:        "client",
+		ExpiresAt:       now.Add(time.Minute),
+		IntervalSeconds: 5,
+		Status:          "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := Manager{
+		Server: "https://life.test",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/token" {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(errReader{})}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"token_endpoint":"https://life.test/token"
+				}`)),
+			}, nil
+		})},
+		Store: s,
+		Now:   fixedClock(now),
+	}
+	_, err = manager.PollDeviceLogin(ctx, ident)
+	if err == nil || !strings.Contains(err.Error(), "token poll response read failed") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
 	now := authTestNow
 	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{
@@ -481,6 +537,31 @@ func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 	}
 	if token != "new-access" || refreshRequests != 1 {
 		t.Fatalf("token = %q, refreshRequests = %d", token, refreshRequests)
+	}
+}
+
+func TestRefreshReturnsBodyReadError(t *testing.T) {
+	manager := Manager{
+		Server: "https://life.test",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/token" {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(errReader{})}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"token_endpoint":"https://life.test/token"
+				}`)),
+			}, nil
+		})},
+		Now: fixedClock(authTestNow),
+	}
+	_, err := manager.refresh(context.Background(), store.Credential{
+		ClientID:     "client",
+		RefreshToken: "refresh",
+	})
+	if err == nil || !strings.Contains(err.Error(), "refresh response read failed") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
