@@ -288,6 +288,61 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device",
+		ClientID:   "client",
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Status:     "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkLoginSession(ctx, ident, " device ", " approved "); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("expected no active session, got %#v", got)
+	}
+}
+
+func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	tests := []struct {
+		deviceCode string
+		status     string
+	}{
+		{deviceCode: "", status: "approved"},
+		{deviceCode: "   ", status: "approved"},
+		{deviceCode: "device", status: ""},
+		{deviceCode: "device", status: "   "},
+	}
+	for _, tt := range tests {
+		err := s.MarkLoginSession(ctx, ident, tt.deviceCode, tt.status)
+		if err == nil || !strings.Contains(err.Error(), "login session") {
+			t.Fatalf("MarkLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
+		}
+	}
+}
+
 func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

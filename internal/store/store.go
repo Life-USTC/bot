@@ -449,9 +449,25 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 	if err != nil {
 		return err
 	}
+	deviceCode, status, err = normalizeLoginSessionUpdate(deviceCode, status)
+	if err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
 		Where("user_id = ? AND device_code = ?", userID, deviceCode).
 		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()}).Error
+}
+
+func normalizeLoginSessionUpdate(deviceCode, status string) (string, string, error) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	status = strings.TrimSpace(status)
+	if deviceCode == "" {
+		return "", "", errors.New("login session device code is empty")
+	}
+	if status == "" {
+		return "", "", errors.New("login session status is empty")
+	}
+	return deviceCode, status, nil
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {
