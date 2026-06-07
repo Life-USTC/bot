@@ -26,6 +26,9 @@ type HTTPError struct {
 }
 
 func (e HTTPError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("%s %s returned %d", e.Method, e.Path, e.StatusCode)
+	}
 	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
 }
 

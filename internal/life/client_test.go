@@ -53,6 +53,24 @@ func TestGetReturnsHTTPError(t *testing.T) {
 	}
 }
 
+func TestHTTPErrorString(t *testing.T) {
+	if got := (HTTPError{
+		Method:     http.MethodGet,
+		Path:       "/api/metadata",
+		StatusCode: http.StatusServiceUnavailable,
+		Body:       "not ready",
+	}).Error(); got != "GET /api/metadata returned 503: not ready" {
+		t.Fatalf("HTTPError with body = %q", got)
+	}
+	if got := (HTTPError{
+		Method:     http.MethodGet,
+		Path:       "/api/metadata",
+		StatusCode: http.StatusServiceUnavailable,
+	}).Error(); got != "GET /api/metadata returned 503" {
+		t.Fatalf("HTTPError without body = %q", got)
+	}
+}
+
 func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
