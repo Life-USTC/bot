@@ -204,6 +204,13 @@ func TestSaveCredentialTrimsFields(t *testing.T) {
 	if got.ClientID != "client" || got.AccessToken != "access" || got.RefreshToken != "refresh" || got.TokenType != "Bearer" || got.Scope != "openid" || got.Resource != "https://life.example" {
 		t.Fatalf("credential = %#v", got)
 	}
+	var row credentialRow
+	if err := s.db.WithContext(context.Background()).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.UpdatedAt.IsZero() {
+		t.Fatal("credential UpdatedAt is zero")
+	}
 }
 
 func TestCredentialTrimsIdentityKeys(t *testing.T) {
