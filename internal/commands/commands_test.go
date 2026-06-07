@@ -993,6 +993,33 @@ func TestHandleSuppressLog(t *testing.T) {
 	}
 }
 
+func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	handler := Handler{Store: s, Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{
+		Text: "/life help",
+		Identity: store.Identity{
+			Platform: "napcat",
+			UserID:   "42",
+		},
+	})
+	if !ok || reply == "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	count, err := s.InteractionCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("interaction count = %d", count)
+	}
+}
+
 func TestAccessTokenReturnsFalseWhenUnavailable(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
