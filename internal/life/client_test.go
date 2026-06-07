@@ -193,6 +193,29 @@ func TestMatchSectionCodesTrimsSemesterID(t *testing.T) {
 	}
 }
 
+func TestMatchSectionCodesTrimsCodes(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections/match-codes" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"sections":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.MatchSectionCodes(context.Background(), "token", []string{" MATH1001.01 ", " ", "CS1001.02"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	codes, ok := gotBody["codes"].([]any)
+	if !ok || len(codes) != 2 || codes[0] != "MATH1001.01" || codes[1] != "CS1001.02" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
 func TestGetReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
