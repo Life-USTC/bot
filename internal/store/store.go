@@ -277,11 +277,11 @@ func normalizeIdentity(ident Identity) Identity {
 }
 
 func validateIdentity(ident Identity) error {
-	if strings.TrimSpace(ident.Platform) == "" {
-		return errors.New("identity platform is empty")
+	if err := requireIdentityField(ident.Platform, "platform"); err != nil {
+		return err
 	}
-	if strings.TrimSpace(ident.UserID) == "" {
-		return errors.New("identity user id is empty")
+	if err := requireIdentityField(ident.UserID, "user id"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -290,11 +290,18 @@ func validateConversationIdentity(ident Identity) error {
 	if err := validateIdentity(ident); err != nil {
 		return err
 	}
-	if strings.TrimSpace(ident.ConversationType) == "" {
-		return errors.New("identity conversation type is empty")
+	if err := requireIdentityField(ident.ConversationType, "conversation type"); err != nil {
+		return err
 	}
-	if strings.TrimSpace(ident.ConversationID) == "" {
-		return errors.New("identity conversation id is empty")
+	if err := requireIdentityField(ident.ConversationID, "conversation id"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func requireIdentityField(value, name string) error {
+	if strings.TrimSpace(value) == "" {
+		return errors.New("identity " + name + " is empty")
 	}
 	return nil
 }
