@@ -532,9 +532,12 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 	if err != nil {
 		return err
 	}
-	userID, err := s.EnsureUser(ctx, ident)
+	userID, ok, err := s.userID(ctx, ident)
 	if err != nil {
 		return err
+	}
+	if !ok {
+		return nil
 	}
 	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
 		Where("user_id = ? AND device_code = ?", userID, deviceCode).

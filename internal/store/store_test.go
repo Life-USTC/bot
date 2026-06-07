@@ -700,6 +700,27 @@ func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	}
 }
 
+func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	if err := s.MarkLoginSession(ctx, ident, "device", "approved"); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("user count after missing login session update = %d", count)
+	}
+}
+
 func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
