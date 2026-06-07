@@ -333,6 +333,10 @@ func responseBodyText(resp *http.Response) string {
 }
 
 func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string) (store.Credential, error) {
+	return credentialFromTokenBodyAt(clientID, resource, body, fallbackRefresh, fallbackScope, time.Now())
+}
+
+func credentialFromTokenBodyAt(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string, now time.Time) (store.Credential, error) {
 	var tokens map[string]any
 	if err := json.Unmarshal(body, &tokens); err != nil {
 		return store.Credential{}, err
@@ -363,7 +367,7 @@ func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRef
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    tokenType,
-		ExpiresAt:    time.Now().Add(time.Duration(expiresIn) * time.Second),
+		ExpiresAt:    now.Add(time.Duration(expiresIn) * time.Second),
 		Scope:        scope,
 		Resource:     resource,
 	}, nil

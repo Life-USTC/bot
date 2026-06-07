@@ -250,28 +250,27 @@ func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 }
 
 func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
-	before := time.Now()
-	cred, err := credentialFromTokenBody("client", "resource", []byte(`{
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{
 		"access_token": "access",
 		"expires_in": "120"
-	}`), "", "")
+	}`), "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	remaining := time.Until(cred.ExpiresAt)
-	if remaining < 110*time.Second || remaining > 130*time.Second {
-		t.Fatalf("expires_at = %s, before = %s, remaining = %s", cred.ExpiresAt, before, remaining)
+	if want := now.Add(120 * time.Second); !cred.ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %s, want %s", cred.ExpiresAt, want)
 	}
 }
 
 func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
-	cred, err := credentialFromTokenBody("client", "resource", []byte(`{"access_token": "access"}`), "", "")
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{"access_token": "access"}`), "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	remaining := time.Until(cred.ExpiresAt)
-	if remaining < 3500*time.Second || remaining > 3700*time.Second {
-		t.Fatalf("expires_at = %s, remaining = %s", cred.ExpiresAt, remaining)
+	if want := now.Add(time.Hour); !cred.ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %s, want %s", cred.ExpiresAt, want)
 	}
 }
 
