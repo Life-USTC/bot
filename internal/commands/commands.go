@@ -34,6 +34,7 @@ type AgentToolSpec struct {
 type CommandSpec struct {
 	Name       string
 	Aliases    []string
+	NeedsLife  bool
 	Normalize  func([]string) []string
 	AgentTools []AgentToolSpec
 	Run        func(Handler, context.Context, store.Identity, []string) string
@@ -75,6 +76,8 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	spec, ok := commandSpec(cmd.Name)
 	if !ok || spec.Run == nil {
 		reply = h.help()
+	} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
+		reply = "Life @ USTC API unavailable: not configured."
 	} else {
 		reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 	}
@@ -107,8 +110,9 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "me",
-		Aliases: []string{"me", "我", "我的", "profile", "个人"},
+		Name:      "me",
+		Aliases:   []string{"me", "我", "我的", "profile", "个人"},
+		NeedsLife: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_profile",
 			Description: "Get the logged-in user's profile status.",
@@ -121,6 +125,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "todo",
 		Aliases:   []string{"todo", "td", "待办", "代办", "todo待办"},
+		NeedsLife: true,
 		Normalize: normalizeTodoArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_todos",
@@ -134,6 +139,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "homework",
 		Aliases:   []string{"homework", "hw", "作业"},
+		NeedsLife: true,
 		Normalize: normalizeHomeworkArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_homeworks",
@@ -147,6 +153,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "subscription",
 		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
+		NeedsLife: true,
 		Normalize: normalizeSubscriptionArgs,
 		AgentTools: []AgentToolSpec{{
 			Name:        "list_subscriptions",
@@ -171,8 +178,9 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "ping",
-		Aliases: []string{"p", "ping"},
+		Name:      "ping",
+		Aliases:   []string{"p", "ping"},
+		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			if err := h.Life.Health(ctx); err != nil {
 				return "Life @ USTC API unavailable: " + err.Error()
@@ -181,8 +189,9 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "status",
-		Aliases: []string{"status", "zt", "状态"},
+		Name:      "status",
+		Aliases:   []string{"status", "zt", "状态"},
+		NeedsLife: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_bot_status",
 			Description: "Get Life API reachability and login status.",
@@ -193,8 +202,9 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "semester",
-		Aliases: []string{"semester", "term", "学期", "xq"},
+		Name:      "semester",
+		Aliases:   []string{"semester", "term", "学期", "xq"},
+		NeedsLife: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_current_semester",
 			Description: "Get the current Life USTC semester.",
@@ -205,22 +215,25 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "course",
-		Aliases: []string{"course", "kc", "课程"},
+		Name:      "course",
+		Aliases:   []string{"course", "kc", "课程"},
+		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:    "section",
-		Aliases: []string{"section", "class", "bj", "教学班", "班级"},
+		Name:      "section",
+		Aliases:   []string{"section", "class", "bj", "教学班", "班级"},
+		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchSections(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:    "bus",
-		Aliases: []string{"bus", "xc", "校车", "车"},
+		Name:      "bus",
+		Aliases:   []string{"bus", "xc", "校车", "车"},
+		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.bus(ctx, args)
 		},
@@ -228,6 +241,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "schedule",
 		Aliases:   []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"},
+		NeedsLife: true,
 		Normalize: normalizeScheduleArgs,
 		AgentTools: []AgentToolSpec{
 			{Name: "get_two_day_curriculum", Description: "Get the user's curriculum for today and tomorrow.", CommandText: "课表"},
@@ -239,8 +253,9 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:    "nextclass",
-		Aliases: []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
+		Name:      "nextclass",
+		Aliases:   []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
+		NeedsLife: true,
 		AgentTools: []AgentToolSpec{{
 			Name:        "get_next_class",
 			Description: "Get the user's next upcoming class.",

@@ -207,6 +207,20 @@ func TestFriendlyError(t *testing.T) {
 func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
 	aliases := map[string]string{}
+	lifeCommands := map[string]bool{
+		"me":           true,
+		"todo":         true,
+		"homework":     true,
+		"subscription": true,
+		"ping":         true,
+		"status":       true,
+		"semester":     true,
+		"course":       true,
+		"section":      true,
+		"bus":          true,
+		"schedule":     true,
+		"nextclass":    true,
+	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -219,6 +233,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		}
 		if seen[spec.Name] {
 			t.Fatalf("duplicate command spec %q", spec.Name)
+		}
+		if spec.NeedsLife != lifeCommands[spec.Name] {
+			t.Fatalf("command %q NeedsLife = %v", spec.Name, spec.NeedsLife)
 		}
 		seen[spec.Name] = true
 		for _, alias := range spec.Aliases {
@@ -237,6 +254,19 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		if !seen[name] {
 			t.Fatalf("missing command spec %q", name)
 		}
+	}
+}
+
+func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "课程 数学分析", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "Life @ USTC API unavailable") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "订阅 导入") {
+		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
 
