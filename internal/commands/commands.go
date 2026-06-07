@@ -537,8 +537,9 @@ func busArgsFromText(text string) []string {
 	}
 	matches := make([]match, 0, 2)
 	seen := map[string]bool{}
+	lookupText := strings.ToLower(text)
 	for _, alias := range campusAliases() {
-		if index := strings.Index(text, alias); index >= 0 {
+		if index := strings.Index(lookupText, strings.ToLower(alias)); index >= 0 {
 			campus := campusName(alias)
 			if campus != "" && !seen[campus] {
 				matches = append(matches, match{index: index, campus: campus})
@@ -1829,9 +1830,11 @@ func campusRank(campus string) int {
 
 func campusAliases() []string {
 	return []string{
+		"east campus", "west campus", "central campus", "north campus", "south campus",
 		"高新区", "高新园区", "高新",
 		"先研院",
 		"东区", "西区", "中区", "北区", "南区",
+		"east", "west", "center", "central", "north", "south", "gx",
 		"东", "西", "中", "北", "南",
 	}
 }

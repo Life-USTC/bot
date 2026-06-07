@@ -1098,6 +1098,19 @@ func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
 	}
 }
 
+func TestBusArgsFromTextAcceptsEnglishCampusAliases(t *testing.T) {
+	tests := map[string][]string{
+		"Any BUS from EAST campus to west campus?": {"东区", "西区"},
+		"bus from gx to north":                     {"高新区", "北区"},
+	}
+	for text, want := range tests {
+		got := busArgsFromText(text)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Fatalf("%q args = %#v, want %#v", text, got, want)
+		}
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",
