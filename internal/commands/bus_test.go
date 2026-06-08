@@ -193,7 +193,7 @@ func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
-			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":false}}`))
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":true}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -201,8 +201,8 @@ func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区\u3000 𝟸𝟹:𝟷𝟶") || !strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
+	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "南区\u3000 𝟸𝟹:𝟷𝟶") || strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 }

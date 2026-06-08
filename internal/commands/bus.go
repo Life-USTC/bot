@@ -186,8 +186,8 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if !store.IsGroupConversation(ident) {
 		preferences, ok := h.currentBusPreferences(ctx, ident)
 		if ok {
-			options.ShowDeparted = preferences.ShowDepartedTrips
 			if options.UsePreferredRoute && len(routeArgs) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
+				options.ShowDeparted = preferences.ShowDepartedTrips
 				if from, ok := campusNameByID(data, *preferences.PreferredOriginCampusID); ok {
 					if to, ok := campusNameByID(data, *preferences.PreferredDestinationCampusID); ok {
 						routeArgs = []string{from, to}
