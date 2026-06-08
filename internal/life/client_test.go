@@ -114,6 +114,16 @@ func TestSchedulesUsesDataList(t *testing.T) {
 	}
 }
 
+func TestScheduleQuery(t *testing.T) {
+	values := ScheduleQuery("101", "2026-06-07T00:00:00Z", "2026-06-07T23:59:59Z")
+	if values.Get("sectionId") != "101" ||
+		values.Get("dateFrom") != "2026-06-07T00:00:00Z" ||
+		values.Get("dateTo") != "2026-06-07T23:59:59Z" ||
+		values.Get("limit") != "100" {
+		t.Fatalf("values = %s", values.Encode())
+	}
+}
+
 func TestTodosTrimsCompletedFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := r.URL.Query()["completed"]; ok {

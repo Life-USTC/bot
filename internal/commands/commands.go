@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1505,11 +1504,7 @@ scheduleLoop:
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			values := url.Values{}
-			values.Set("sectionId", sectionID)
-			values.Set("dateFrom", dateFrom)
-			values.Set("dateTo", dateTo)
-			values.Set("limit", "100")
+			values := life.ScheduleQuery(sectionID, dateFrom, dateTo)
 			schedules, err := h.Life.Schedules(ctx, token, values)
 			mu.Lock()
 			defer mu.Unlock()

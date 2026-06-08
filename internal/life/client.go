@@ -191,6 +191,15 @@ func (c *Client) Schedules(ctx context.Context, token string, values url.Values)
 	return out.Data, nil
 }
 
+func ScheduleQuery(sectionID, dateFrom, dateTo string) url.Values {
+	values := url.Values{}
+	values.Set("sectionId", sectionID)
+	values.Set("dateFrom", dateFrom)
+	values.Set("dateTo", dateTo)
+	values.Set("limit", "100")
+	return values
+}
+
 func (c *Client) list(ctx context.Context, path string, values url.Values) ([]map[string]any, error) {
 	var out dataList
 	if err := c.get(ctx, path, values, &out); err != nil {

@@ -3,7 +3,6 @@ package notify
 import (
 	"context"
 	"log"
-	"net/url"
 	"strings"
 	"time"
 
@@ -157,11 +156,7 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
 	all := make([]map[string]any, 0, len(sectionIDs))
 	for _, sectionID := range sectionIDs {
-		values := url.Values{}
-		values.Set("sectionId", sectionID)
-		values.Set("dateFrom", start.UTC().Format(time.RFC3339))
-		values.Set("dateTo", end.UTC().Format(time.RFC3339))
-		values.Set("limit", "100")
+		values := life.ScheduleQuery(sectionID, start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339))
 		schedules, err := p.Life.Schedules(ctx, token, values)
 		if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 			token = refreshed
