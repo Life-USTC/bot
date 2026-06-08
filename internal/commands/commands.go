@@ -811,10 +811,9 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		if id == "" {
 			return "这条待办没有可用 ID，暂时完成不了。"
 		}
-		err = h.Life.CompleteTodo(ctx, token, id)
-		if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-			err = h.Life.CompleteTodo(ctx, token, id)
-		}
+		_, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (struct{}, error) {
+			return struct{}{}, h.Life.CompleteTodo(ctx, token, id)
+		})
 		if err != nil {
 			return commandError("待办完成失败：", err)
 		}
@@ -850,10 +849,9 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 	if title == "" {
 		return "想加什么？例如：td 写报告"
 	}
-	_, err := h.Life.CreateTodo(ctx, token, title)
-	if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		_, err = h.Life.CreateTodo(ctx, token, title)
-	}
+	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CreateTodo(ctx, token, title)
+	})
 	if err != nil {
 		return commandError("待办添加失败：", err)
 	}
@@ -920,10 +918,9 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 			return "这条作业没有可用 ID，暂时改不了。"
 		}
 		completed := args[0] == "done"
-		err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-		if token, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-			err = h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-		}
+		_, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (struct{}, error) {
+			return struct{}{}, h.Life.SetHomeworkCompletion(ctx, token, id, completed)
+		})
 		if err != nil {
 			return commandError("作业状态更新失败：", err)
 		}

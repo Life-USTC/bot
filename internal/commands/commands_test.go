@@ -511,6 +511,56 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
+func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	refreshRequests := 0
+	todoRequests := 0
+	var gotBody map[string]any
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
+			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			refreshRequests++
+			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/todos":
+			todoRequests++
+			if todoRequests == 1 {
+				if got := r.Header.Get("Authorization"); got != "Bearer access" {
+					t.Fatalf("initial authorization = %q", got)
+				}
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
+				t.Fatalf("refreshed authorization = %q", got)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	handler := testAuthedHandlerWithRefresh(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td 写报告", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if refreshRequests != 1 || todoRequests != 2 {
+		t.Fatalf("refreshRequests = %d, todoRequests = %d", refreshRequests, todoRequests)
+	}
+	if gotBody["title"] != "写报告" || !strings.Contains(reply, "已加待办：写报告") {
+		t.Fatalf("body = %#v, reply = %q", gotBody, reply)
+	}
+}
+
 func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
