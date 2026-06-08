@@ -318,14 +318,14 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		if name == "" {
 			return helpCommand(raw), true
 		}
-		return parsedCommand{Name: name, Args: args, Raw: raw}, true
+		return commandResult(raw, name, args), true
 	}
 	if strings.HasPrefix(fields[0], prefix) {
 		name, args := normalizeCommand(strings.TrimPrefix(fields[0], prefix), fields[1:])
 		if name == "" {
 			return helpCommand(raw), true
 		}
-		return parsedCommand{Name: name, Args: args, Raw: raw}, true
+		return commandResult(raw, name, args), true
 	}
 
 	if isHelpToken(fields[0]) {
@@ -335,7 +335,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		if name, args, ok := normalizeJoinedCommand(joined, nil); ok {
-			return parsedCommand{Name: name, Args: args, Raw: raw}, true
+			return commandResult(raw, name, args), true
 		}
 	}
 
@@ -343,11 +343,15 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if name == "" {
 		return parsedCommand{}, false
 	}
-	return parsedCommand{Name: name, Args: args, Raw: raw}, true
+	return commandResult(raw, name, args), true
 }
 
 func helpCommand(raw string) parsedCommand {
 	return parsedCommand{Name: "help", Raw: raw}
+}
+
+func commandResult(raw, name string, args []string) parsedCommand {
+	return parsedCommand{Name: name, Args: args, Raw: raw}
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
@@ -565,7 +569,7 @@ func parseGroupBus(text string) (parsedCommand, bool) {
 	if raw == "" || !containsBusKeyword(raw) {
 		return parsedCommand{}, false
 	}
-	return parsedCommand{Name: "bus", Args: busArgsFromText(raw), Raw: raw}, true
+	return commandResult(raw, "bus", busArgsFromText(raw)), true
 }
 
 func containsBusKeyword(text string) bool {
