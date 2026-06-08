@@ -296,9 +296,16 @@ func TestToolTraceNotifierSendsInvocation(t *testing.T) {
 		},
 	}
 
-	trace.Notify(context.Background(), "list_todos")
-	if len(messages) != 1 || messages[0] != "工具调用：list_todos" {
+	trace.Notify(context.Background(), "search_courses", keywordInput{Keyword: "数学分析"})
+	trace.Notify(context.Background(), "get_current_time", emptyInput{})
+	if len(messages) != 2 {
 		t.Fatalf("messages = %#v", messages)
+	}
+	if messages[0] != `工具调用：search_courses {"keyword":"数学分析"}` {
+		t.Fatalf("message 0 = %q", messages[0])
+	}
+	if messages[1] != "工具调用：get_current_time" {
+		t.Fatalf("message 1 = %q", messages[1])
 	}
 }
 

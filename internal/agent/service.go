@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -211,11 +212,14 @@ type toolTraceNotifier struct {
 	send  func(context.Context, store.Identity, string) error
 }
 
-func (r *toolTraceNotifier) Notify(ctx context.Context, name string) {
+func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any) {
 	if r == nil {
 		return
 	}
 	message := "工具调用：" + name
+	if args := formatToolArgs(input); args != "" {
+		message += " " + args
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.send != nil {
@@ -399,7 +403,7 @@ func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
 func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	wrapped := func(ctx context.Context, input I) (string, error) {
 		if trace != nil {
-			trace.Notify(ctx, name)
+			trace.Notify(ctx, name, input)
 		}
 		return fn(ctx, input)
 	}
@@ -408,6 +412,23 @@ func appendInferredTool[I any](tools []tool.BaseTool, name, description string, 
 		return nil, err
 	}
 	return append(tools, t), nil
+}
+
+func formatToolArgs(input any) string {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Sprintf("%v", input)
+	}
+	args := strings.TrimSpace(string(data))
+	if args == "" || args == "{}" || args == "null" {
+		return ""
+	}
+	const maxRunes = 300
+	runes := []rune(args)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "..."
+	}
+	return args
 }
 
 func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {
