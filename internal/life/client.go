@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 type Client struct {
@@ -157,14 +159,7 @@ func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[str
 }
 
 func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []string, semesterID string) (map[string]any, error) {
-	normalizedCodes := make([]string, 0, len(codes))
-	for _, code := range codes {
-		code = strings.TrimSpace(code)
-		if code != "" {
-			normalizedCodes = append(normalizedCodes, code)
-		}
-	}
-	req := map[string]any{"codes": normalizedCodes}
+	req := map[string]any{"codes": textutil.NonEmpty(codes...)}
 	semesterID = strings.TrimSpace(semesterID)
 	if semesterID != "" {
 		req["semesterId"] = semesterID
