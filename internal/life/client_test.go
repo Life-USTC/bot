@@ -319,6 +319,22 @@ func TestMatchSectionCodesTrimsCodes(t *testing.T) {
 	}
 }
 
+func TestMatchSectionCodesRejectsBlankCodes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	matches, err := client.MatchSectionCodes(context.Background(), "token", []string{" ", "\t"}, "")
+	if err == nil || !strings.Contains(err.Error(), "section code") {
+		t.Fatalf("matches = %#v, err = %v", matches, err)
+	}
+	if matches != nil {
+		t.Fatalf("matches = %#v, want nil", matches)
+	}
+}
+
 func TestJSONBodyReturnsMarshalError(t *testing.T) {
 	if _, err := jsonBody(map[string]any{"bad": func() {}}); err == nil {
 		t.Fatal("jsonBody returned nil error")

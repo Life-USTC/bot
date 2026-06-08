@@ -168,7 +168,11 @@ func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[str
 }
 
 func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []string, semesterID string) (map[string]any, error) {
-	req := map[string]any{"codes": textutil.NonEmpty(codes...)}
+	codes = textutil.NonEmpty(codes...)
+	if len(codes) == 0 {
+		return nil, errors.New("section code is required")
+	}
+	req := map[string]any{"codes": codes}
 	semesterID = strings.TrimSpace(semesterID)
 	if semesterID != "" {
 		req["semesterId"] = semesterID
