@@ -34,7 +34,22 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
-	handler := commands.Handler{Life: lifeClient, Auth: authManager, Store: stateStore, Prefix: cfg.CommandPrefix, Logger: logger}
+	var napcatBridge *napcat.Bridge
+	handler := commands.Handler{
+		Life:           lifeClient,
+		Auth:           authManager,
+		Store:          stateStore,
+		Prefix:         cfg.CommandPrefix,
+		Logger:         logger,
+		FeedbackUsers:  cfg.FeedbackAdminUsers,
+		FeedbackGroups: cfg.FeedbackAdminGroups,
+		FeedbackSend: func(ctx context.Context, ident store.Identity, message string) error {
+			if napcatBridge == nil {
+				return commands.ErrFeedbackSenderUnavailable
+			}
+			return napcatBridge.SendMessage(ctx, ident, message)
+		},
+	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled: cfg.EnableAgent,
 		APIKey:  cfg.LLMAPIKey,
@@ -61,7 +76,6 @@ func main() {
 		logger.Printf("OneBot 12 HTTP server listening on %s:%d", cfg.OneBotHTTPHost, cfg.OneBotHTTPPort)
 	}
 
-	var napcatBridge *napcat.Bridge
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {
 		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,

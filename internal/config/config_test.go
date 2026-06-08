@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,6 +72,19 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	}
 	if cfg.LLMBaseURL != "https://llm.example/v1" {
 		t.Fatalf("LLMBaseURL = %q", cfg.LLMBaseURL)
+	}
+}
+
+func TestFromEnvParsesFeedbackTargets(t *testing.T) {
+	t.Setenv("BOT_FEEDBACK_ADMIN_USERS", " 42, 43;44 ")
+	t.Setenv("BOT_FEEDBACK_ADMIN_GROUPS", " 100 101 ")
+
+	cfg := FromEnv()
+	if strings.Join(cfg.FeedbackAdminUsers, ",") != "42,43,44" {
+		t.Fatalf("FeedbackAdminUsers = %#v", cfg.FeedbackAdminUsers)
+	}
+	if strings.Join(cfg.FeedbackAdminGroups, ",") != "100,101" {
+		t.Fatalf("FeedbackAdminGroups = %#v", cfg.FeedbackAdminGroups)
 	}
 }
 

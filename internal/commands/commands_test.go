@@ -238,6 +238,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"agent":        true,
 		"bus":          true,
 		"schedule":     true,
+		"feedback":     true,
 	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
@@ -796,6 +797,76 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	}
 	if !strings.Contains(reply, "已完成 4 条") || !strings.Contains(reply, "回工位收拾") || !strings.Contains(reply, "创建 1") {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	sent := []store.Identity{}
+	messages := []string{}
+	handler := Handler{
+		Prefix:         "/life",
+		FeedbackUsers:  []string{"1001"},
+		FeedbackGroups: []string{"2001"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+			sent = append(sent, target)
+			messages = append(messages, message)
+			return nil
+		},
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "反馈 校车显示有点乱", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if reply != "已收到反馈，会转给维护者。" {
+		t.Fatalf("reply = %q", reply)
+	}
+	if len(sent) != 2 {
+		t.Fatalf("sent = %#v", sent)
+	}
+	if sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
+		t.Fatalf("private target = %#v", sent[0])
+	}
+	if sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
+		t.Fatalf("group target = %#v", sent[1])
+	}
+	if !strings.Contains(messages[0], "用户反馈") || !strings.Contains(messages[0], "用户：42") || !strings.Contains(messages[0], "校车显示有点乱") {
+		t.Fatalf("message = %q", messages[0])
+	}
+}
+
+func TestHandleFeedbackWorksInGroup(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	ident.ConversationType = "group"
+	ident.ConversationID = "3001"
+	ident.UserID = "42"
+	called := false
+	handler := Handler{
+		Prefix:        "/life",
+		FeedbackUsers: []string{"1001"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+			called = true
+			if !strings.Contains(message, "来源：group:3001") {
+				t.Fatalf("message = %q", message)
+			}
+			return nil
+		},
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "fb 群里也可以反馈", Identity: ident})
+	if !ok || reply != "已收到反馈，会转给维护者。" || !called {
+		t.Fatalf("reply = %q, ok = %v, called = %v", reply, ok, called)
+	}
+}
+
+func TestHandleFeedbackRequiresConfiguredTarget(t *testing.T) {
+	reply, ok := Handler{Prefix: "/life"}.Handle(context.Background(), Input{
+		Text:     "反馈 hello",
+		Identity: testIdentity(),
+	})
+	if !ok || reply != "反馈通道还没配置。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -1842,6 +1913,8 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"ks": "exam",
 		"状态": "status",
 		"zt": "status",
+		"反馈": "feedback",
+		"fb": "feedback",
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, want := range tests {

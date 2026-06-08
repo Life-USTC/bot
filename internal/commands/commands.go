@@ -20,12 +20,17 @@ import (
 )
 
 type Handler struct {
-	Life   *life.Client
-	Auth   *auth.Manager
-	Store  *store.Store
-	Prefix string
-	Logger *log.Logger
+	Life           *life.Client
+	Auth           *auth.Manager
+	Store          *store.Store
+	Prefix         string
+	Logger         *log.Logger
+	FeedbackUsers  []string
+	FeedbackGroups []string
+	FeedbackSend   func(context.Context, store.Identity, string) error
 }
+
+var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
 
 type AgentToolSpec struct {
 	Name        string
@@ -68,7 +73,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if store.IsGroupConversation(input.Identity) && cmd.Name != "bus" {
+	if store.IsGroupConversation(input.Identity) && !groupCommandAllowed(cmd.Name) {
 		return "", false
 	}
 	if !input.SuppressLog {
@@ -106,6 +111,10 @@ type parsedCommand struct {
 }
 
 var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"}
+
+func groupCommandAllowed(name string) bool {
+	return name == "bus" || name == "feedback"
+}
 
 var commandSpecs = []CommandSpec{
 	{
@@ -225,6 +234,14 @@ var commandSpecs = []CommandSpec{
 		Normalize:  normalizeAgentArgs,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.agentSettings(ctx, ident, args)
+		},
+	},
+	{
+		Name:    "feedback",
+		Aliases: []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"},
+		HasHelp: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.feedback(ctx, ident, args)
 		},
 	},
 	{
@@ -692,11 +709,81 @@ func (h Handler) help() string {
 		"AI 工具",
 		"状态 / status",
 		"我 / me",
+		"反馈 你的建议",
 		"课程 数学分析",
 		"教学班 高等数学",
 		"老师 张",
 		"考试 / ks",
 		"登录 / 登录 状态",
+	}, "\n")
+}
+
+func (h Handler) feedback(ctx context.Context, ident store.Identity, args []string) string {
+	if firstArgIs(args, "help") {
+		return strings.Join([]string{
+			"反馈用法：",
+			"反馈 希望校车能显示更多路线",
+			"fb 这里写你的建议",
+		}, "\n")
+	}
+	text := strings.TrimSpace(joinedArgs(args))
+	if text == "" {
+		return "想反馈什么？例如：反馈 校车时间希望更清楚"
+	}
+	if h.FeedbackSend == nil || (len(h.FeedbackUsers) == 0 && len(h.FeedbackGroups) == 0) {
+		return "反馈通道还没配置。"
+	}
+	message := formatFeedbackMessage(ident, text)
+	sent := 0
+	for _, userID := range h.FeedbackUsers {
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			continue
+		}
+		if err := h.FeedbackSend(ctx, store.Identity{
+			Platform:         ident.Platform,
+			UserID:           userID,
+			ConversationType: "private",
+			ConversationID:   userID,
+		}, message); err != nil {
+			return commandError("反馈发送失败：", err)
+		}
+		sent++
+	}
+	for _, groupID := range h.FeedbackGroups {
+		groupID = strings.TrimSpace(groupID)
+		if groupID == "" {
+			continue
+		}
+		if err := h.FeedbackSend(ctx, store.Identity{
+			Platform:         ident.Platform,
+			ConversationType: "group",
+			ConversationID:   groupID,
+		}, message); err != nil {
+			return commandError("反馈发送失败：", err)
+		}
+		sent++
+	}
+	if sent == 0 {
+		return "反馈通道还没配置。"
+	}
+	return "已收到反馈，会转给维护者。"
+}
+
+func formatFeedbackMessage(ident store.Identity, text string) string {
+	source := ident.ConversationType
+	if ident.ConversationID != "" {
+		source += ":" + ident.ConversationID
+	}
+	userID := strings.TrimSpace(ident.UserID)
+	if userID == "" {
+		userID = "unknown"
+	}
+	return strings.Join([]string{
+		"用户反馈",
+		"来源：" + source,
+		"用户：" + userID,
+		"内容：" + text,
 	}, "\n")
 }
 

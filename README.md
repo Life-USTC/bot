@@ -69,6 +69,8 @@ BOT_ENABLE_AGENT=false
 BOT_LLM_MODEL=gpt-4o-mini
 OPENAI_API_KEY=
 OPENAI_BASE_URL=
+BOT_FEEDBACK_ADMIN_USERS=
+BOT_FEEDBACK_ADMIN_GROUPS=
 
 # NapCat reverse WebSocket. The local container is configured for /ws on 2280.
 NAPCAT_REVERSE_ADDR=0.0.0.0:2280
@@ -82,6 +84,9 @@ Set `BOT_ENABLE_AGENT=true` with `OPENAI_API_KEY` to enable the optional
 LLM-backed private-chat assistant. The agent uses existing bot commands as
 tools for curriculum, next class, homework, and shuttle bus queries. Group chats
 still use deterministic command handling only.
+
+Set `BOT_FEEDBACK_ADMIN_USERS` and/or `BOT_FEEDBACK_ADMIN_GROUPS` to comma-,
+semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`.
 
 ## Test
 
