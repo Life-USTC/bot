@@ -384,7 +384,13 @@ func responseBodyText(resp *http.Response) string {
 }
 
 func bodyText(body []byte) string {
-	return strings.TrimSpace(string(body))
+	const max = 200
+	text := strings.TrimSpace(string(body))
+	runes := []rune(text)
+	if len(runes) > max {
+		return string(runes[:max])
+	}
+	return text
 }
 
 func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string) (store.Credential, error) {

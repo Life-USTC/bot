@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -393,6 +394,19 @@ func TestResponseBodyTextReportsReadError(t *testing.T) {
 
 	if got := responseBodyText(resp); !strings.Contains(got, "read response body: read failed") {
 		t.Fatalf("responseBodyText = %q", got)
+	}
+}
+
+func TestBodyTextTruncatesByRune(t *testing.T) {
+	got := bodyText([]byte(strings.Repeat("错", 201)))
+	if !utf8.ValidString(got) {
+		t.Fatalf("bodyText returned invalid UTF-8: %q", got)
+	}
+	if utf8.RuneCountInString(got) != 200 {
+		t.Fatalf("rune count = %d", utf8.RuneCountInString(got))
+	}
+	if got != strings.Repeat("错", 200) {
+		t.Fatalf("bodyText = %q", got)
 	}
 }
 
