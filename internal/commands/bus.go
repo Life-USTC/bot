@@ -186,6 +186,9 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if !store.IsGroupConversation(ident) {
 		preferences, ok := h.currentBusPreferences(ctx, ident)
 		if ok {
+			if options.ExplicitRoute {
+				options.ShowDeparted = preferences.ShowDepartedTrips
+			}
 			if options.UsePreferredRoute && len(routeArgs) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
 				options.ShowDeparted = preferences.ShowDepartedTrips
 				if from, ok := campusNameByID(data, *preferences.PreferredOriginCampusID); ok {
@@ -196,7 +199,12 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			}
 		}
 	}
-	items := nextBusByRouteWithOptions(data, routeArgs, now, options)
+	var items []busItem
+	if options.ExplicitRoute {
+		items = nextBusItemsWithOptions(data, routeArgs, now, options)
+	} else {
+		items = nextBusByRouteWithOptions(data, routeArgs, now, options)
+	}
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
@@ -303,6 +311,7 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 		}
 		out = append(out, args[i])
 	}
+	options.ExplicitRoute = len(busCampusesFromArgs(out)) >= 2
 	return out, options
 }
 
@@ -517,6 +526,7 @@ type busQueryOptions struct {
 	Now               time.Time
 	After             bool
 	UsePreferredRoute bool
+	ExplicitRoute     bool
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {

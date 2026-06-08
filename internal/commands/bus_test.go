@@ -229,6 +229,73 @@ func TestHandleBusPreferredRouteUsesSavedPreferences(t *testing.T) {
 	}
 }
 
+func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(`{
+				"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"高新区"}}]}],
+				"trips":[
+					{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:40","stopTimes":[
+						{"campusName":"东区","time":"08:00"},{"campusName":"高新区","time":"08:40"}
+					]},
+					{"routeId":1,"dayType":"weekday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:40","stopTimes":[
+						{"campusName":"东区","time":"09:00"},{"campusName":"高新区","time":"09:40"}
+					]},
+					{"routeId":1,"dayType":"weekday","departureTime":"10:00","departureMinutes":600,"arrivalTime":"10:40","stopTimes":[
+						{"campusName":"东区","time":"10:00"},{"campusName":"高新区","time":"10:40"}
+					]}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
+	if strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") || !strings.Contains(reply, "𝟷𝟶:𝟶𝟶") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(`{
+				"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"高新区"}}]}],
+				"trips":[
+					{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:40","stopTimes":[
+						{"campusName":"东区","time":"08:00"},{"campusName":"高新区","time":"08:40"}
+					]},
+					{"routeId":1,"dayType":"weekday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:40","stopTimes":[
+						{"campusName":"东区","time":"09:00"},{"campusName":"高新区","time":"09:40"}
+					]}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":true}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestNextBusItemsFiltersRoute(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{
