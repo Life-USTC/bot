@@ -820,7 +820,7 @@ func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind,
 }
 
 func normalizeNotificationDeliveryKey(kind, itemKey string) (string, string, error) {
-	kind = strings.ToLower(strings.TrimSpace(kind))
+	kind = textutil.LowerTrim(kind)
 	itemKey = strings.TrimSpace(itemKey)
 	if kind == "" {
 		return "", "", errors.New("notification delivery kind is empty")
