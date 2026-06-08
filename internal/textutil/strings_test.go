@@ -42,6 +42,15 @@ func TestLowerTrim(t *testing.T) {
 	}
 }
 
+func TestTrimTrailingSlash(t *testing.T) {
+	if got := TrimTrailingSlash(" https://life.example/// "); got != "https://life.example" {
+		t.Fatalf("TrimTrailingSlash = %q", got)
+	}
+	if got := TrimTrailingSlash("   "); got != "" {
+		t.Fatalf("TrimTrailingSlash blank = %q", got)
+	}
+}
+
 func TestIndexASCIIToken(t *testing.T) {
 	tests := []struct {
 		text  string

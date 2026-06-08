@@ -14,6 +14,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const oauthScope = "openid profile email offline_access"
@@ -371,7 +372,7 @@ func (m *Manager) resource(meta metadata) string {
 }
 
 func (m *Manager) serverURL() string {
-	return strings.TrimRight(strings.TrimSpace(m.Server), "/")
+	return textutil.TrimTrailingSlash(m.Server)
 }
 
 func responseBodyText(resp *http.Response) string {

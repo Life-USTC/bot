@@ -39,7 +39,7 @@ func NewClient(server string, httpClient *http.Client) *Client {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &Client{
-		server:     strings.TrimRight(strings.TrimSpace(server), "/"),
+		server:     textutil.TrimTrailingSlash(server),
 		httpClient: httpClient,
 	}
 }

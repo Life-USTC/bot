@@ -51,7 +51,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	if modelName == "" {
 		modelName = "gpt-4o-mini"
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	baseURL := textutil.TrimTrailingSlash(cfg.BaseURL)
 	agentHTTPClient := httpClient
 	if httpClient != nil {
 		clone := *httpClient

@@ -357,7 +357,7 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 	if err != nil {
 		return err
 	}
-	apiURL := strings.TrimRight(strings.TrimSpace(b.APIURL), "/") + endpoint
+	apiURL := textutil.TrimTrailingSlash(b.APIURL) + endpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
 	if err != nil {
 		return err
