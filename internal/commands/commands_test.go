@@ -645,6 +645,19 @@ func TestHandleLoginHelpAliases(t *testing.T) {
 	}
 }
 
+func TestHandleScheduleHelpAliases(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{"课表 help", "课表 帮助", "schedule -h"} {
+		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !ok {
+			t.Fatalf("%q was not handled", text)
+		}
+		if !strings.Contains(reply, "课表用法：") || strings.Contains(reply, "需要先登录") {
+			t.Fatalf("%q reply = %q", text, reply)
+		}
+	}
+}
+
 func TestHandleTodoDoneByIndex(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

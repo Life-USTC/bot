@@ -483,6 +483,9 @@ func normalizeScheduleArgs(args []string) []string {
 	if !hasArgs(args) {
 		return args
 	}
+	if isHelpToken(args[0]) {
+		return withFirstArg(args, "help")
+	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
 		return withFirstArg(args, day)
 	}
@@ -1344,6 +1347,15 @@ func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []st
 }
 
 func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []string, day time.Time) string {
+	if firstArgIs(args, "help") {
+		return strings.Join([]string{
+			"课表用法：",
+			"课表：查看今明两日",
+			"今天课表",
+			"明天课表",
+			"下一节课",
+		}, "\n")
+	}
 	target := "two-day"
 	if hasArgs(args) {
 		target = args[0]
