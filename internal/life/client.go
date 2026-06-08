@@ -115,6 +115,9 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 
 func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[string]any, error) {
 	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil, errors.New("todo title is required")
+	}
 	body, err := jsonBody(map[string]any{"title": title})
 	if err != nil {
 		return nil, err

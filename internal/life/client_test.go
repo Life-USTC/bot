@@ -168,6 +168,22 @@ func TestCreateTodoTrimsTitle(t *testing.T) {
 	}
 }
 
+func TestCreateTodoRejectsBlankTitle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	todo, err := client.CreateTodo(context.Background(), "token", " \n ")
+	if err == nil || !strings.Contains(err.Error(), "todo title") {
+		t.Fatalf("todo = %#v, err = %v", todo, err)
+	}
+	if todo != nil {
+		t.Fatalf("todo = %#v, want nil", todo)
+	}
+}
+
 func TestCompleteTodoTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
