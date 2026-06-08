@@ -136,10 +136,10 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 			continue
 		}
 		if err := sendReverseReply(conn, writeMu, event, reply); err != nil {
-			b.recordOutbound(ctx, event, reply, "failed", err)
+			b.recordOutbound(ctx, event, reply, store.InteractionStatusFailed, err)
 			b.logf("reverse websocket send failed: %v", err)
 		} else {
-			b.recordOutbound(ctx, event, reply, "sent", nil)
+			b.recordOutbound(ctx, event, reply, store.InteractionStatusSent, nil)
 			b.logf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
 		}
 	}
@@ -176,7 +176,7 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, b
 		Command: "agent",
 		Handled: true,
 		Reply:   reply,
-		Status:  "handled",
+		Status:  store.InteractionStatusHandled,
 	}, "agent")
 	return reply, true
 }
@@ -185,7 +185,7 @@ func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
 	b.recordInteraction(ctx, event, store.Interaction{
 		RawText: event.RawMessage,
 		Handled: false,
-		Status:  "ignored",
+		Status:  store.InteractionStatusIgnored,
 	}, "ignored")
 }
 
@@ -195,7 +195,7 @@ func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message
 		errText = err.Error()
 	}
 	b.recordInteraction(ctx, event, store.Interaction{
-		Direction: "outbound",
+		Direction: store.InteractionDirectionOutbound,
 		RawText:   message,
 		Handled:   true,
 		Status:    status,
@@ -244,10 +244,10 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 	}
 	err := b.post(ctx, endpoint, payload)
 	if err != nil {
-		b.recordOutbound(ctx, event, message, "failed", err)
+		b.recordOutbound(ctx, event, message, store.InteractionStatusFailed, err)
 		return err
 	}
-	b.recordOutbound(ctx, event, message, "sent", nil)
+	b.recordOutbound(ctx, event, message, store.InteractionStatusSent, nil)
 	return nil
 }
 
@@ -262,7 +262,7 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 	}
 	if conn, writeMu := b.activeReverseConn(); conn != nil {
 		if err := sendReverseReply(conn, writeMu, event, message); err == nil {
-			b.recordOutbound(ctx, event, message, "sent", nil)
+			b.recordOutbound(ctx, event, message, store.InteractionStatusSent, nil)
 			return nil
 		} else {
 			b.logf("reverse websocket login notification failed: %v", err)

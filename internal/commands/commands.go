@@ -1588,7 +1588,7 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 		Args:    strings.Join(cmd.Args, " "),
 		Handled: true,
 		Reply:   reply,
-		Status:  "handled",
+		Status:  store.InteractionStatusHandled,
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
 	}

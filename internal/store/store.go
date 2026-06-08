@@ -57,6 +57,16 @@ type Interaction struct {
 	CreatedAt time.Time
 }
 
+const (
+	InteractionDirectionInbound  = "inbound"
+	InteractionDirectionOutbound = "outbound"
+
+	InteractionStatusHandled = "handled"
+	InteractionStatusIgnored = "ignored"
+	InteractionStatusSent    = "sent"
+	InteractionStatusFailed  = "failed"
+)
+
 type NotificationSettings struct {
 	Identity        Identity
 	ClassesEnabled  bool
@@ -611,8 +621,8 @@ func interactionDirection(direction string) string {
 	normalized := strings.ToLower(trimmed)
 	switch normalized {
 	case "":
-		return "inbound"
-	case "inbound", "outbound":
+		return InteractionDirectionInbound
+	case InteractionDirectionInbound, InteractionDirectionOutbound:
 		return normalized
 	default:
 		return trimmed
@@ -630,7 +640,7 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 	var rows []interactionRow
 	err := s.db.WithContext(ctx).
 		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND direction = ? AND handled = ? AND status = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, "inbound", true, "handled").
+			ident.Platform, ident.ConversationType, ident.ConversationID, InteractionDirectionInbound, true, InteractionStatusHandled).
 		Order("created_at desc, id desc").
 		Limit(limit).
 		Find(&rows).Error
