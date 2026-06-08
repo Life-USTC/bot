@@ -38,6 +38,7 @@ type AgentToolSpec struct {
 type CommandSpec struct {
 	Name       string
 	Aliases    []string
+	HasHelp    bool
 	NeedsLife  bool
 	NeedsStore bool
 	NeedsAuth  bool
@@ -82,7 +83,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		spec, ok := commandSpec(cmd.Name)
 		if !ok || spec.Run == nil {
 			reply = h.help()
-		} else if firstArgIs(cmd.Args, "help") && !commandHasHelp(cmd.Name) {
+		} else if firstArgIs(cmd.Args, "help") && !spec.HasHelp {
 			reply = h.help()
 		} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
 			reply = "Life @ USTC API unavailable: not configured."
@@ -110,6 +111,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "login",
 		Aliases:   []string{"login", "登录", "dl"},
+		HasHelp:   true,
 		NeedsAuth: true,
 		Normalize: normalizeLoginArgs,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -141,6 +143,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "todo",
 		Aliases:   []string{"todo", "td", "待办", "代办", "todo待办"},
+		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeTodoArgs,
@@ -156,6 +159,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "homework",
 		Aliases:   []string{"homework", "hw", "作业"},
+		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeHomeworkArgs,
@@ -171,6 +175,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "subscription",
 		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
+		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeSubscriptionArgs,
@@ -186,6 +191,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:       "notify",
 		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送"},
+		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeNotifyArgs,
 		AgentTools: []AgentToolSpec{{
@@ -261,6 +267,7 @@ var commandSpecs = []CommandSpec{
 	{
 		Name:      "schedule",
 		Aliases:   []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"},
+		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeScheduleArgs,
@@ -376,15 +383,6 @@ func commandSpec(name string) (CommandSpec, bool) {
 		}
 	}
 	return CommandSpec{}, false
-}
-
-func commandHasHelp(name string) bool {
-	switch name {
-	case "login", "todo", "homework", "subscription", "notify", "schedule":
-		return true
-	default:
-		return false
-	}
 }
 
 func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {
