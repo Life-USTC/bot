@@ -1,6 +1,10 @@
 package textutil
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestFirstNonEmpty(t *testing.T) {
 	if got := FirstNonEmpty("", "fallback", "later"); got != "fallback" {
@@ -63,6 +67,19 @@ func TestTrimTrailingSlash(t *testing.T) {
 	}
 	if got := TrimTrailingSlash("   "); got != "" {
 		t.Fatalf("TrimTrailingSlash blank = %q", got)
+	}
+}
+
+func TestTrimBytesRunes(t *testing.T) {
+	got := TrimBytesRunes([]byte(" \n"+strings.Repeat("错", 201)+" "), 200)
+	if !utf8.ValidString(got) {
+		t.Fatalf("TrimBytesRunes returned invalid UTF-8: %q", got)
+	}
+	if utf8.RuneCountInString(got) != 200 {
+		t.Fatalf("rune count = %d", utf8.RuneCountInString(got))
+	}
+	if got != strings.Repeat("错", 200) {
+		t.Fatalf("TrimBytesRunes = %q", got)
 	}
 }
 

@@ -43,6 +43,15 @@ func TrimTrailingSlash(value string) string {
 	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
+func TrimBytesRunes(value []byte, max int) string {
+	text := strings.TrimSpace(string(value))
+	runes := []rune(text)
+	if max > 0 && len(runes) > max {
+		return string(runes[:max])
+	}
+	return text
+}
+
 func IndexASCIIToken(text, token string) int {
 	if token == "" {
 		return -1
