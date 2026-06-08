@@ -11,7 +11,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -163,20 +166,275 @@ func isChineseCampusAliasBoundaryRune(r rune) bool {
 	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-func (h Handler) bus(ctx context.Context, args []string) string {
-	return h.busAt(ctx, args, time.Now())
+func (h Handler) bus(ctx context.Context, ident store.Identity, args []string) string {
+	return h.busAt(ctx, ident, args, time.Now())
 }
 
-func (h Handler) busAt(ctx context.Context, args []string, now time.Time) string {
+func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string, now time.Time) string {
+	if firstArgIs(args, "help") {
+		return busHelp()
+	}
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
 		return commandError("校车查不到：", err)
 	}
-	items := nextBusByRoute(data, args, now)
+	if busPreferenceArgs(args) {
+		return h.busPreferences(ctx, ident, data, args)
+	}
+	options := busQueryOptions{}
+	if !store.IsGroupConversation(ident) {
+		preferences, ok := h.currentBusPreferences(ctx, ident)
+		if ok {
+			options.ShowDeparted = preferences.ShowDepartedTrips
+			if len(args) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
+				if from, ok := campusNameByID(data, *preferences.PreferredOriginCampusID); ok {
+					if to, ok := campusNameByID(data, *preferences.PreferredDestinationCampusID); ok {
+						args = []string{from, to}
+					}
+				}
+			}
+		}
+	}
+	items := nextBusByRouteWithOptions(data, args, now, options)
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
 	return strings.Join(formatBusItemsByDepartureCampus(items, 0), "\n")
+}
+
+func busHelp() string {
+	return strings.Join([]string{
+		"可以直接发：",
+		"校车",
+		"xc 东区 西区",
+		"校车 偏好",
+		"校车 设置 东区 西区",
+		"校车 已发车 开",
+		"校车 已发车 关",
+	}, "\n")
+}
+
+func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data map[string]any, args []string) string {
+	if store.IsGroupConversation(ident) {
+		return "群聊只能查校车；偏好请私聊设置。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	preferences, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (life.BusPreferences, error) {
+		return h.Life.BusPreferences(ctx, token)
+	})
+	if err != nil {
+		return commandError("校车偏好查不到：", err)
+	}
+	update, shouldSave, message := parseBusPreferenceUpdate(data, args, preferences)
+	if message != "" {
+		return message
+	}
+	if !shouldSave {
+		return formatBusPreferences(data, preferences, "校车偏好：")
+	}
+	preferences, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (life.BusPreferences, error) {
+		return h.Life.SetBusPreferences(ctx, token, update)
+	})
+	if err != nil {
+		return commandError("校车偏好保存失败：", err)
+	}
+	return formatBusPreferences(data, preferences, "已更新校车偏好：")
+}
+
+func (h Handler) currentBusPreferences(ctx context.Context, ident store.Identity) (life.BusPreferences, bool) {
+	if h.Auth == nil || h.Auth.Store == nil {
+		return life.BusPreferences{}, false
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return life.BusPreferences{}, false
+	}
+	preferences, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (life.BusPreferences, error) {
+		return h.Life.BusPreferences(ctx, token)
+	})
+	return preferences, err == nil
+}
+
+func busPreferenceArgs(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch normToken(args[0]) {
+	case "preference", "preferences", "pref", "prefs", "偏好", "默认", "设置", "set", "已发车", "已出发", "show-departed", "departed":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseBusPreferenceUpdate(data map[string]any, args []string, current life.BusPreferences) (life.BusPreferences, bool, string) {
+	args = copyArgs(args)
+	if len(args) == 0 {
+		return current, false, ""
+	}
+	switch normToken(args[0]) {
+	case "preference", "preferences", "pref", "prefs", "偏好", "默认":
+		args = args[1:]
+	case "set", "设置":
+		args = args[1:]
+		if len(args) == 0 {
+			return current, false, "想设置哪条路线？例如：校车 设置 东区 西区"
+		}
+	}
+	if len(args) == 0 {
+		return current, false, ""
+	}
+	next := current
+	if showDeparted, ok := parseBusShowDeparted(args); ok {
+		next.ShowDepartedTrips = showDeparted
+		args = removeBusShowDepartedArgs(args)
+	}
+	campuses := busCampusesFromArgs(args)
+	switch len(campuses) {
+	case 0:
+		return next, true, ""
+	case 1:
+		return current, false, "路线需要出发和到达校区。例如：校车 设置 东区 西区"
+	default:
+		fromID, ok := campusIDByName(data, campuses[0])
+		if !ok {
+			return current, false, "没找到出发校区：" + campuses[0]
+		}
+		toID, ok := campusIDByName(data, campuses[1])
+		if !ok {
+			return current, false, "没找到到达校区：" + campuses[1]
+		}
+		next.PreferredOriginCampusID = &fromID
+		next.PreferredDestinationCampusID = &toID
+		return next, true, ""
+	}
+}
+
+func formatBusPreferences(data map[string]any, preferences life.BusPreferences, title string) string {
+	route := "未设置"
+	if preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
+		from, fromOK := campusNameByID(data, *preferences.PreferredOriginCampusID)
+		to, toOK := campusNameByID(data, *preferences.PreferredDestinationCampusID)
+		if fromOK && toOK {
+			route = from + " → " + to
+		} else {
+			route = fmt.Sprintf("%d → %d", *preferences.PreferredOriginCampusID, *preferences.PreferredDestinationCampusID)
+		}
+	}
+	showDeparted := "不显示"
+	if preferences.ShowDepartedTrips {
+		showDeparted = "显示"
+	}
+	return strings.Join([]string{
+		title,
+		"路线：" + route,
+		"已发车：" + showDeparted,
+	}, "\n")
+}
+
+func parseBusShowDeparted(args []string) (bool, bool) {
+	for i, arg := range args {
+		switch normToken(arg) {
+		case "show-departed", "departed", "已发车", "已出发":
+			if i+1 < len(args) {
+				if value, ok := parseBusBool(args[i+1]); ok {
+					return value, true
+				}
+			}
+			return true, true
+		}
+		if value, ok := parseBusBool(arg); ok && i > 0 {
+			prev := normToken(args[i-1])
+			if prev == "show-departed" || prev == "departed" || prev == "已发车" || prev == "已出发" {
+				return value, true
+			}
+		}
+	}
+	return false, false
+}
+
+func parseBusBool(value string) (bool, bool) {
+	switch normToken(value) {
+	case "on", "true", "1", "yes", "y", "open", "enable", "enabled", "show", "开", "开启", "显示":
+		return true, true
+	case "off", "false", "0", "no", "n", "close", "disable", "disabled", "hide", "关", "关闭", "不显示", "隐藏":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func removeBusShowDepartedArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch normToken(args[i]) {
+		case "show-departed", "departed", "已发车", "已出发":
+			if i+1 < len(args) {
+				if _, ok := parseBusBool(args[i+1]); ok {
+					i++
+				}
+			}
+			continue
+		default:
+			out = append(out, args[i])
+		}
+	}
+	return out
+}
+
+func busCampusesFromArgs(args []string) []string {
+	campuses := make([]string, 0, 2)
+	for _, arg := range args {
+		campus := campusName(arg)
+		if campus == "" || campus == arg && !knownCampusName(campus) {
+			continue
+		}
+		campuses = append(campuses, campus)
+		if len(campuses) >= 2 {
+			break
+		}
+	}
+	return campuses
+}
+
+func knownCampusName(value string) bool {
+	switch campusName(value) {
+	case "东区", "西区", "中区", "北区", "南区", "高新区", "先研院":
+		return true
+	default:
+		return false
+	}
+}
+
+func campusIDByName(data map[string]any, name string) (int, bool) {
+	name = campusName(name)
+	for _, campus := range lifedata.MapSlice(data["campuses"]) {
+		id, ok := lifedata.IntValue(campus["id"])
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"nameCn", "namePrimary", "nameSecondary", "nameEn", "name"} {
+			if campusName(lifedata.FirstString(campus, key)) == name {
+				return id, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func campusNameByID(data map[string]any, id int) (string, bool) {
+	for _, campus := range lifedata.MapSlice(data["campuses"]) {
+		campusID, ok := lifedata.IntValue(campus["id"])
+		if !ok || campusID != id {
+			continue
+		}
+		name := campusName(lifedata.FirstString(campus, "nameCn", "namePrimary", "nameSecondary", "nameEn", "name"))
+		return name, name != ""
+	}
+	return "", false
 }
 
 type busItem struct {
@@ -195,7 +453,15 @@ type busStop struct {
 	Time string
 }
 
+type busQueryOptions struct {
+	ShowDeparted bool
+}
+
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
+	return nextBusItemsWithOptions(data, args, now, busQueryOptions{})
+}
+
+func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions) []busItem {
 	now = now.In(lifedata.ChinaLocation())
 	from, to := busFilter(args)
 	dayType := "weekday"
@@ -214,7 +480,7 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 		if !ok {
 			continue
 		}
-		if departure < nowMinutes {
+		if !options.ShowDeparted && departure < nowMinutes {
 			continue
 		}
 		route := routes[lifedata.FirstString(trip, "routeId")]
@@ -245,7 +511,11 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 }
 
 func nextBusByRoute(data map[string]any, args []string, now time.Time) []busItem {
-	items := nextBusItems(data, args, now)
+	return nextBusByRouteWithOptions(data, args, now, busQueryOptions{})
+}
+
+func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions) []busItem {
+	items := nextBusItemsWithOptions(data, args, now, options)
 	byRoute := make(map[string]busItem)
 	for _, item := range items {
 		key := item.RouteID

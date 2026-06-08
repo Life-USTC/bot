@@ -173,6 +173,20 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
+		Name:      "overview",
+		Aliases:   []string{"overview", "today", "jr", "ddl", "deadline", "deadlines", "今日", "今天", "安排", "日程安排"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		AgentTools: []AgentToolSpec{{
+			Name:        "get_today_overview",
+			Description: "Get today's classes plus pending todos, due-soon homework, and upcoming exams.",
+			CommandText: "今日",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.overview(ctx, ident)
+		},
+	},
+	{
 		Name:      "subscription",
 		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
 		HasHelp:   true,
@@ -257,11 +271,20 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "bus",
-		Aliases:   []string{"bus", "xc", "校车", "车"},
+		Name:      "teacher",
+		Aliases:   []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
 		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.bus(ctx, args)
+			return h.searchTeachers(ctx, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "bus",
+		Aliases:   []string{"bus", "xc", "校车", "车"},
+		HasHelp:   true,
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.bus(ctx, ident, args)
 		},
 	},
 	{
@@ -292,6 +315,20 @@ var commandSpecs = []CommandSpec{
 		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.nextClass(ctx, ident)
+		},
+	},
+	{
+		Name:      "exam",
+		Aliases:   []string{"exam", "exams", "ks", "考试"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		AgentTools: []AgentToolSpec{{
+			Name:        "list_exams",
+			Description: "List exams from the user's subscribed teaching sections.",
+			CommandText: "考试",
+		}},
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.exams(ctx, ident)
 		},
 	},
 }
@@ -334,7 +371,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
-		if name, args, ok := normalizeJoinedCommand(joined, nil); ok {
+		if name, args, ok := normalizeJoinedCommand(joined, fields[2:]); ok {
 			return commandResult(raw, name, args), true
 		}
 	}
@@ -393,6 +430,12 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 	switch key {
 	case "下一节课":
 		return "nextclass", nil, true
+	case "校车偏好", "校车默认", "车偏好", "车默认", "xc偏好", "xc默认", "buspref", "busprefs", "buspreference", "buspreferences":
+		return "bus", []string{"偏好"}, true
+	case "校车设置", "车设置", "xc设置", "busset":
+		return "bus", append([]string{"设置"}, args...), true
+	case "校车已发车", "车已发车", "xc已发车", "busdeparted", "busshow-departed":
+		return "bus", append([]string{"已发车"}, args...), true
 	}
 	return "", args, false
 }
@@ -464,6 +507,20 @@ func normalizeTodoArgs(args []string) []string {
 		return withFirstArg(args, "add")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
+	case "undo", "undone", "reopen", "reset", "取消", "撤销":
+		return withFirstArg(args, "undo")
+	case "delete", "del", "remove", "rm", "删除":
+		return withFirstArg(args, "delete")
+	case "update", "edit", "set", "修改", "更新":
+		return withFirstArg(args, "update")
+	case "list", "ls", "查看", "列表":
+		return withFirstArg(args, "list")
+	case "all", "全部":
+		return withFirstArg(args, "all")
+	case "pending", "todo", "未完成":
+		return withFirstArg(args, "pending")
+	case "completed", "finished", "已完成":
+		return withFirstArg(args, "completed")
 	}
 	return args
 }
@@ -590,6 +647,7 @@ func (h Handler) help() string {
 		"td done 1",
 		"作业 / hw",
 		"作业 done 1",
+		"今日 / ddl",
 		"校车 / xc",
 		"xc 东区 西区",
 		"今天课表 / 明天课表",
@@ -600,6 +658,8 @@ func (h Handler) help() string {
 		"我 / me",
 		"课程 数学分析",
 		"教学班 高等数学",
+		"老师 张",
+		"考试 / ks",
 		"登录 / 登录 状态",
 	}, "\n")
 }
@@ -677,6 +737,10 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			"td 写报告",
 			"td + 买咖啡",
 			"td done 1",
+			"td undo 1",
+			"td delete 1",
+			"td update 1 title 写报告 priority high due 2026-06-10",
+			"td all / td high / td completed",
 		}, "\n")
 	}
 	token, ok := h.accessToken(ctx, ident)
@@ -684,42 +748,83 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		return h.loginRequired()
 	}
 	if firstArgIs(args, "add") {
-		title := joinedArgs(args[1:])
-		if title == "" {
+		opts := parseTodoCreateArgs(args[1:])
+		if opts.Title == "" {
 			return "想加什么？例如：待办 add 写报告"
 		}
-		return h.createTodo(ctx, ident, token, title)
+		return h.createTodo(ctx, ident, token, opts)
 	}
 	if firstArgIs(args, "done") {
 		target := joinedArgs(args[1:])
 		if target == "" {
 			return "想完成哪条？例如：td done 1"
 		}
-		todos, err := h.pendingTodos(ctx, ident, token)
+		return h.setTodoCompletion(ctx, ident, token, target, true)
+	}
+	if firstArgIs(args, "undo") {
+		target := joinedArgs(args[1:])
+		if target == "" {
+			return "想恢复哪条？例如：td undo 1"
+		}
+		return h.setTodoCompletion(ctx, ident, token, target, false)
+	}
+	if firstArgIs(args, "delete") {
+		target := joinedArgs(args[1:])
+		if target == "" {
+			return "想删除哪条？例如：td delete 1"
+		}
+		return h.deleteTodo(ctx, ident, token, target)
+	}
+	if firstArgIs(args, "update") {
+		if len(args) < 3 {
+			return "想改哪条、改什么？例如：td update 1 title 写报告"
+		}
+		return h.updateTodo(ctx, ident, token, args[1], args[2:])
+	}
+	if opts, ok, err := todoListOptionsFromArgs(args); ok {
 		if err != nil {
-			return commandError("待办查不到：", err)
+			return err.Error()
 		}
-		todo, ok := resolveTodo(todos, target)
-		if !ok {
-			return "没找到这条待办。发 td 看编号，再试：td done 1"
-		}
-		id := lifedata.FirstString(todo, "id")
-		if id == "" {
-			return "这条待办没有可用 ID，暂时完成不了。"
-		}
-		err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
-			return h.Life.CompleteTodo(ctx, token, id)
-		})
-		if err != nil {
-			return commandError("待办完成失败：", err)
-		}
-		title := lifedata.FirstString(todo, "title")
-		return todoCompletionReply(title)
+		return h.listTodos(ctx, ident, token, opts)
 	}
 	if hasArgs(args) {
-		return h.createTodo(ctx, ident, token, joinedArgs(args))
+		return h.createTodo(ctx, ident, token, parseTodoCreateArgs(args))
 	}
-	todos, err := h.pendingTodos(ctx, ident, token)
+	return h.listTodos(ctx, ident, token, life.TodoListOptions{Completed: "false"})
+}
+
+func todoCompletionReply(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "已完成。"
+	}
+	return "已完成：" + title
+}
+
+func todoUndoReply(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "已恢复。"
+	}
+	return "已恢复：" + title
+}
+
+func (h Handler) createTodo(ctx context.Context, ident store.Identity, token string, opts life.TodoCreateOptions) string {
+	opts.Title = strings.TrimSpace(opts.Title)
+	if opts.Title == "" {
+		return "想加什么？例如：td 写报告"
+	}
+	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CreateTodoWithOptions(ctx, token, opts)
+	})
+	if err != nil {
+		return commandError("待办添加失败：", err)
+	}
+	return "已加待办：" + opts.Title
+}
+
+func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions) string {
+	todos, err := h.todos(ctx, ident, token, opts)
 	if err != nil {
 		return commandError("待办查不到：", err)
 	}
@@ -737,33 +842,103 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	return strings.Join(lines, "\n")
 }
 
-func todoCompletionReply(title string) string {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return "已完成。"
+func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, token, target string, completed bool) string {
+	completedFilter := "false"
+	if !completed {
+		completedFilter = "true"
 	}
-	return "已完成：" + title
-}
-
-func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, title string) string {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return "想加什么？例如：td 写报告"
+	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{Completed: completedFilter})
+	if err != nil {
+		return commandError("待办查不到：", err)
 	}
-	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.CreateTodo(ctx, token, title)
+	todo, ok := resolveTodo(todos, target)
+	if !ok {
+		if completed {
+			return "没找到这条待办。发 td 看编号，再试：td done 1"
+		}
+		return "没找到这条已完成待办。发 td completed 看编号，再试：td undo 1"
+	}
+	id := lifedata.FirstString(todo, "id")
+	if id == "" {
+		return "这条待办没有可用 ID，暂时操作不了。"
+	}
+	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+		return h.Life.SetTodoCompleted(ctx, token, id, completed)
 	})
 	if err != nil {
-		return commandError("待办添加失败：", err)
+		if completed {
+			return commandError("待办完成失败：", err)
+		}
+		return commandError("待办恢复失败：", err)
 	}
-	return "已加待办：" + title
+	title := lifedata.FirstString(todo, "title")
+	if completed {
+		return todoCompletionReply(title)
+	}
+	return todoUndoReply(title)
 }
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
+	return h.todos(ctx, ident, token, life.TodoListOptions{Completed: "false"})
+}
+
+func (h Handler) todos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions) ([]map[string]any, error) {
 	todos, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
-		return h.Life.Todos(ctx, token, "false")
+		return h.Life.TodosWithOptions(ctx, token, opts)
 	})
 	return todos, err
+}
+
+func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, target string, args []string) string {
+	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
+	if err != nil {
+		return commandError("待办查不到：", err)
+	}
+	todo, ok := resolveTodo(todos, target)
+	if !ok {
+		return "没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告"
+	}
+	id := lifedata.FirstString(todo, "id")
+	if id == "" {
+		return "这条待办没有可用 ID，暂时修改不了。"
+	}
+	opts := parseTodoUpdateArgs(args)
+	if !hasTodoUpdate(opts) {
+		return "想改什么？例如：td update 1 title 写报告"
+	}
+	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+		return h.Life.UpdateTodo(ctx, token, id, opts)
+	})
+	if err != nil {
+		return commandError("待办修改失败：", err)
+	}
+	return "已修改待办：" + lifedata.FirstString(todo, "title", "id")
+}
+
+func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, target string) string {
+	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
+	if err != nil {
+		return commandError("待办查不到：", err)
+	}
+	todo, ok := resolveTodo(todos, target)
+	if !ok {
+		return "没找到这条待办。发 td all 看编号，再试：td delete 1"
+	}
+	id := lifedata.FirstString(todo, "id")
+	if id == "" {
+		return "这条待办没有可用 ID，暂时删除不了。"
+	}
+	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+		return h.Life.DeleteTodo(ctx, token, id)
+	})
+	if err != nil {
+		return commandError("待办删除失败：", err)
+	}
+	title := strings.TrimSpace(lifedata.FirstString(todo, "title"))
+	if title == "" {
+		return "已删除。"
+	}
+	return "已删除：" + title
 }
 
 func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
@@ -784,6 +959,257 @@ func formatTodo(todo map[string]any) string {
 		return lifedata.FirstString(todo, "id")
 	}
 	return strings.Join(parts, " ")
+}
+
+func todoListOptionsFromArgs(args []string) (life.TodoListOptions, bool, error) {
+	if len(args) == 0 {
+		return life.TodoListOptions{}, false, nil
+	}
+	opts := life.TodoListOptions{Completed: "false"}
+	start := 0
+	switch args[0] {
+	case "list":
+		start = 1
+	case "all":
+		opts.Completed = ""
+		start = 1
+	case "pending":
+		start = 1
+	case "completed":
+		opts.Completed = "true"
+		start = 1
+	default:
+		if priority, ok := normalizeTodoPriority(args[0]); ok {
+			opts.Priority = priority
+			return opts, true, nil
+		}
+		return life.TodoListOptions{}, false, nil
+	}
+	for i := start; i < len(args); i++ {
+		token := normToken(args[i])
+		switch token {
+		case "all", "全部":
+			opts.Completed = ""
+		case "pending", "未完成":
+			opts.Completed = "false"
+		case "completed", "finished", "done", "已完成":
+			opts.Completed = "true"
+		case "before", "duebefore", "截止前":
+			i++
+			if i >= len(args) {
+				return opts, true, errors.New("缺少日期。例如：td list before 2026-06-10")
+			}
+			opts.DueBefore = args[i]
+		case "after", "dueafter", "截止后":
+			i++
+			if i >= len(args) {
+				return opts, true, errors.New("缺少日期。例如：td list after 2026-06-10")
+			}
+			opts.DueAfter = args[i]
+		case "priority", "p", "优先级":
+			i++
+			if i >= len(args) {
+				return opts, true, errors.New("缺少优先级。可用：low / medium / high")
+			}
+			priority, ok := normalizeTodoPriority(args[i])
+			if !ok {
+				return opts, true, fmt.Errorf("优先级不认识：%s", args[i])
+			}
+			opts.Priority = priority
+		default:
+			if priority, ok := normalizeTodoPriority(args[i]); ok {
+				opts.Priority = priority
+			}
+		}
+	}
+	return opts, true, nil
+}
+
+func parseTodoCreateArgs(args []string) life.TodoCreateOptions {
+	fields := parseTodoFields(args)
+	return life.TodoCreateOptions{
+		Title:    fields.title,
+		Content:  fields.content,
+		Priority: fields.priority,
+		DueAt:    fields.dueAt,
+	}
+}
+
+func parseTodoUpdateArgs(args []string) life.TodoUpdateOptions {
+	fields := parseTodoFields(args)
+	return life.TodoUpdateOptions{
+		Title:     fields.title,
+		Content:   fields.content,
+		Priority:  fields.priority,
+		DueAt:     fields.dueAt,
+		Completed: fields.completed,
+	}
+}
+
+type todoFields struct {
+	title     string
+	content   string
+	priority  string
+	dueAt     string
+	completed *bool
+}
+
+func parseTodoFields(args []string) todoFields {
+	var fields todoFields
+	var titleParts []string
+	for i := 0; i < len(args); i++ {
+		token := normToken(args[i])
+		switch token {
+		case "title", "标题":
+			value, next := collectTodoFieldValue(args, i+1)
+			titleParts = append(titleParts, value...)
+			i = next - 1
+		case "content", "note", "notes", "body", "内容", "备注":
+			value, next := collectTodoFieldValue(args, i+1)
+			fields.content = joinedArgs(value)
+			i = next - 1
+		case "due", "duetime", "ddl", "deadline", "截止", "到期":
+			if i+1 < len(args) {
+				fields.dueAt = args[i+1]
+				i++
+			}
+		case "priority", "prio", "p", "优先级":
+			if i+1 < len(args) {
+				if priority, ok := normalizeTodoPriority(args[i+1]); ok {
+					fields.priority = priority
+				}
+				i++
+			}
+		case "completed", "complete", "done", "完成":
+			completed := true
+			fields.completed = &completed
+		case "not-completed", "pending", "undo", "reopen", "未完成", "取消", "撤销":
+			completed := false
+			fields.completed = &completed
+		default:
+			if priority, ok := normalizeTodoPriority(args[i]); ok {
+				fields.priority = priority
+			} else {
+				titleParts = append(titleParts, args[i])
+			}
+		}
+	}
+	fields.title = joinedArgs(titleParts)
+	return fields
+}
+
+func collectTodoFieldValue(args []string, start int) ([]string, int) {
+	var value []string
+	for i := start; i < len(args); i++ {
+		if len(value) > 0 && isTodoFieldKey(args[i]) {
+			return value, i
+		}
+		value = append(value, args[i])
+	}
+	return value, len(args)
+}
+
+func isTodoFieldKey(arg string) bool {
+	switch normToken(arg) {
+	case "title", "标题", "content", "note", "notes", "body", "内容", "备注", "due", "duetime", "ddl", "deadline", "截止", "到期", "priority", "prio", "p", "优先级", "completed", "complete", "done", "完成", "not-completed", "pending", "undo", "reopen", "未完成", "取消", "撤销":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeTodoPriority(value string) (string, bool) {
+	switch normToken(value) {
+	case "low", "l", "低":
+		return "low", true
+	case "medium", "mid", "m", "normal", "普通", "中":
+		return "medium", true
+	case "high", "h", "urgent", "重要", "高":
+		return "high", true
+	default:
+		return "", false
+	}
+}
+
+func hasTodoUpdate(opts life.TodoUpdateOptions) bool {
+	return strings.TrimSpace(opts.Title) != "" ||
+		strings.TrimSpace(opts.Content) != "" ||
+		strings.TrimSpace(opts.Priority) != "" ||
+		strings.TrimSpace(opts.DueAt) != "" ||
+		opts.Completed != nil
+}
+
+func (h Handler) overview(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	now := chinaNow()
+	schedules, token, err := h.schedulesForDay(ctx, ident, token, now)
+	if err != nil {
+		return commandError("今日安排查不到：", err)
+	}
+	todos, err := h.pendingTodos(ctx, ident, token)
+	if err != nil {
+		return commandError("今日安排查不到：", err)
+	}
+	homeworks, err := h.homeworks(ctx, ident, token)
+	if err != nil {
+		return commandError("今日安排查不到：", err)
+	}
+	subscription, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
+	if err != nil {
+		return commandError("今日安排查不到：", err)
+	}
+	exams := upcomingSubscriptionExams(subscriptionExams(subscription), now)
+	return formatOverview(now, schedules, todos, dueSoonHomeworks(homeworks, now), exams)
+}
+
+func formatOverview(now time.Time, schedules []map[string]any, todos []map[string]any, homeworks []map[string]any, exams []subscriptionExam) string {
+	lines := []string{textutil.MonospaceDigits(now.In(lifedata.ChinaLocation()).Format("01-02")) + " 安排："}
+	lines = appendOverviewSection(lines, "今日课表", schedules, formatSchedule)
+	lines = appendOverviewSection(lines, "待办", todos, formatTodo)
+	lines = appendOverviewSection(lines, "近期作业", homeworks, formatHomework)
+	lines = appendOverviewSection(lines, "考试", exams, formatExam)
+	if len(lines) == 1 {
+		return lines[0] + "\n暂无安排。"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func appendOverviewSection[T any](lines []string, title string, items []T, format func(T) string) []string {
+	if len(items) == 0 {
+		return lines
+	}
+	if len(lines) > 1 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, title+"：")
+	for i, item := range items {
+		if i >= 3 {
+			lines = append(lines, moreLine(len(items)-i, true))
+			break
+		}
+		lines = append(lines, formatNumberedLine(i+1, format(item)))
+	}
+	return lines
+}
+
+func dueSoonHomeworks(homeworks []map[string]any, now time.Time) []map[string]any {
+	out := make([]map[string]any, 0, len(homeworks))
+	for _, homework := range homeworks {
+		if lifedata.HomeworkCompleted(homework) {
+			continue
+		}
+		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
+		if !ok || due.Before(now) || !due.After(now.Add(7*24*time.Hour)) {
+			out = append(out, homework)
+		}
+	}
+	lifedata.SortHomeworksByDue(out)
+	return out
 }
 
 func (h Handler) homework(ctx context.Context, ident store.Identity, args []string) string {
@@ -1543,6 +1969,52 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	return strings.Join(lines, "\n")
 }
 
+func (h Handler) searchTeachers(ctx context.Context, keyword string) string {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return "想查哪位老师？例如：老师 张"
+	}
+	teachers, err := h.Life.SearchTeachers(ctx, keyword, 5)
+	if err != nil {
+		return commandError("老师查不到：", err)
+	}
+	if len(teachers) == 0 {
+		return "没找到老师。"
+	}
+	lines := []string{"老师："}
+	for _, teacher := range teachers {
+		lines = append(lines, formatTeacher(teacher))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) exams(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
+	if err != nil {
+		return commandError("考试查不到：", err)
+	}
+	exams := subscriptionExams(data)
+	if len(exams) == 0 {
+		return "没有订阅课程考试。"
+	}
+	sortSubscriptionExams(exams)
+	lines := []string{"考试："}
+	for i, exam := range exams {
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(exams)-i, true))
+			break
+		}
+		lines = append(lines, formatNumberedLine(i+1, formatExam(exam)))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (h Handler) status(ctx context.Context, ident store.Identity) string {
 	api := "OK"
 	if err := h.Life.Health(ctx); err != nil {
@@ -1580,6 +2052,130 @@ func formatSection(section map[string]any) string {
 	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := lifedata.NestedString(section, "semester", "name")
 	return formatCodeLabelLine(code, textutil.JoinNonEmpty(" ", course, semester))
+}
+
+func formatTeacher(teacher map[string]any) string {
+	code := textutil.MonospaceASCII(lifedata.FirstString(teacher, "code", "teacherId", "id"))
+	name := lifedata.FirstString(teacher, "namePrimary", "nameCn", "name")
+	department := lifedata.NestedString(teacher, "department", "namePrimary", "nameCn", "name")
+	title := lifedata.NestedString(teacher, "teacherTitle", "namePrimary", "nameCn", "name")
+	return formatCodeLabelLine(code, textutil.JoinNonEmpty(" ", name, department, title))
+}
+
+type subscriptionExam struct {
+	exam    map[string]any
+	section map[string]any
+}
+
+func subscriptionExams(data map[string]any) []subscriptionExam {
+	sections := lifedata.SubscriptionSections(data)
+	out := make([]subscriptionExam, 0, len(sections))
+	for _, section := range sections {
+		for _, exam := range lifedata.MapSlice(section["exams"]) {
+			out = append(out, subscriptionExam{exam: exam, section: section})
+		}
+	}
+	return out
+}
+
+func sortSubscriptionExams(exams []subscriptionExam) {
+	sort.SliceStable(exams, func(i, j int) bool {
+		left, leftOK := lifedata.ParseAPITime(lifedata.FirstString(exams[i].exam, "examDate", "date"))
+		right, rightOK := lifedata.ParseAPITime(lifedata.FirstString(exams[j].exam, "examDate", "date"))
+		switch {
+		case leftOK && rightOK && !left.Equal(right):
+			return left.Before(right)
+		case leftOK != rightOK:
+			return leftOK
+		}
+		return examTimeKey(exams[i].exam) < examTimeKey(exams[j].exam)
+	})
+}
+
+func upcomingSubscriptionExams(exams []subscriptionExam, now time.Time) []subscriptionExam {
+	out := make([]subscriptionExam, 0, len(exams))
+	loc := lifedata.ChinaLocation()
+	today := now.In(loc).Format("2006-01-02")
+	for _, exam := range exams {
+		date, ok := lifedata.ParseAPITime(lifedata.FirstString(exam.exam, "examDate", "date"))
+		if !ok || date.In(loc).Format("2006-01-02") >= today {
+			out = append(out, exam)
+		}
+	}
+	sortSubscriptionExams(out)
+	return out
+}
+
+func formatExam(item subscriptionExam) string {
+	date := formatExamDate(item.exam)
+	timeRange := formatExamTimeRange(item.exam)
+	course := lifedata.NestedString(item.section, "course", "namePrimary", "nameCn", "name", "code")
+	sectionCode := lifedata.FirstString(item.section, "code")
+	mode := lifedata.FirstString(item.exam, "examMode")
+	rooms := formatExamRooms(item.exam)
+	parts := textutil.NonEmpty(date, timeRange, course, sectionCode, mode, rooms)
+	if len(parts) == 0 {
+		return lifedata.FirstString(item.exam, "id")
+	}
+	return textutil.MonospaceASCII(textutil.MonospaceDigits(strings.Join(parts, " · ")))
+}
+
+func formatExamDate(exam map[string]any) string {
+	value := lifedata.FirstString(exam, "examDate", "date")
+	if value == "" {
+		return "日期待定"
+	}
+	parsed, ok := lifedata.ParseAPITime(value)
+	if !ok {
+		return value
+	}
+	return parsed.In(lifedata.ChinaLocation()).Format("01-02")
+}
+
+func formatExamTimeRange(exam map[string]any) string {
+	start := examClock(lifedata.FirstString(exam, "startTime"))
+	end := examClock(lifedata.FirstString(exam, "endTime"))
+	switch {
+	case start != "" && end != "":
+		return start + "-" + end
+	case start != "":
+		return start
+	case end != "":
+		return end
+	default:
+		return ""
+	}
+}
+
+func examClock(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, ":") {
+		return value
+	}
+	n, err := strconv.Atoi(textutil.PlainDigits(value))
+	if err != nil || n < 0 {
+		return value
+	}
+	return fmt.Sprintf("%02d:%02d", n/100, n%100)
+}
+
+func examTimeKey(exam map[string]any) string {
+	return examClock(lifedata.FirstString(exam, "startTime"))
+}
+
+func formatExamRooms(exam map[string]any) string {
+	rooms := lifedata.MapSlice(exam["examRooms"])
+	labels := make([]string, 0, len(rooms))
+	for _, room := range rooms {
+		label := lifedata.FirstString(room, "room", "namePrimary", "nameCn", "name")
+		if label != "" {
+			labels = append(labels, label)
+		}
+	}
+	return strings.Join(labels, "、")
 }
 
 func formatCodeLabelLine(code, label string) string {

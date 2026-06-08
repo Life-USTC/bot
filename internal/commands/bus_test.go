@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,34 @@ import (
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
+
+const busPreferenceTestData = `{
+	"campuses":[
+		{"id":1,"nameCn":"东区","namePrimary":"东区"},
+		{"id":2,"nameCn":"西区","namePrimary":"西区"},
+		{"id":3,"nameCn":"南区","namePrimary":"南区"}
+	],
+	"routes":[
+		{"id":1,"stops":[
+			{"campus":{"nameCn":"东区"}},
+			{"campus":{"nameCn":"西区"}}
+		]},
+		{"id":2,"stops":[
+			{"campus":{"nameCn":"南区"}},
+			{"campus":{"nameCn":"东区"}}
+		]}
+	],
+	"trips":[
+		{"routeId":1,"dayType":"weekday","departureTime":"23:00","departureMinutes":1380,"arrivalTime":"23:20","stopTimes":[
+			{"campusName":"东区","time":"23:00"},
+			{"campusName":"西区","time":"23:20"}
+		]},
+		{"routeId":2,"dayType":"weekday","departureTime":"23:10","departureMinutes":1390,"arrivalTime":"23:30","stopTimes":[
+			{"campusName":"南区","time":"23:10"},
+			{"campusName":"东区","time":"23:30"}
+		]}
+	]
+}`
 
 func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +128,81 @@ func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
-	if reply := handler.busAt(context.Background(), nil, now); reply != "今天后面没查到校车。" {
+	if reply := handler.busAt(context.Background(), store.Identity{}, nil, now); reply != "今天后面没查到校车。" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusPreferencesViewAndSet(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var saved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(busPreferenceTestData))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			if got := r.Header.Get("Authorization"); got != "Bearer access" {
+				t.Fatalf("authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":1,"preferredDestinationCampusId":2,"showDepartedTrips":false}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/bus/preferences":
+			if got := r.Header.Get("Authorization"); got != "Bearer access" {
+				t.Fatalf("authorization = %q", got)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&saved); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":true}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "校车偏好", Identity: ident})
+	if !ok {
+		t.Fatal("preference command was not handled")
+	}
+	if !strings.Contains(reply, "路线：东区 → 西区") || !strings.Contains(reply, "已发车：不显示") {
+		t.Fatalf("reply = %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "校车 设置 南区 东区 已发车 开", Identity: ident})
+	if !ok {
+		t.Fatal("set preference command was not handled")
+	}
+	if saved["preferredOriginCampusId"] != float64(3) ||
+		saved["preferredDestinationCampusId"] != float64(1) ||
+		saved["showDepartedTrips"] != true {
+		t.Fatalf("saved = %#v", saved)
+	}
+	if !strings.Contains(reply, "已更新校车偏好：") ||
+		!strings.Contains(reply, "路线：南区 → 东区") ||
+		!strings.Contains(reply, "已发车：显示") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusUsesSavedPreferencesForBarePrivateQuery(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(busPreferenceTestData))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "南区\u3000 𝟸𝟹:𝟷𝟶") || strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 }

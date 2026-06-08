@@ -50,6 +50,31 @@ func TestSearchCourses(t *testing.T) {
 	}
 }
 
+func TestSearchTeachers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/teachers" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("search"); got != "张" {
+			t.Fatalf("search = %q", got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "3" {
+			t.Fatalf("limit = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"T001","namePrimary":"张三"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	teachers, err := client.SearchTeachers(context.Background(), " 张 ", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(teachers) != 1 || teachers[0]["namePrimary"] != "张三" {
+		t.Fatalf("unexpected teachers %#v", teachers)
+	}
+}
+
 func TestNewClientTrimsServerURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/metadata" {
@@ -83,7 +108,10 @@ func TestSearchTrimsQuery(t *testing.T) {
 	if _, err := client.SearchSections(context.Background(), " math ", 5); err != nil {
 		t.Fatal(err)
 	}
-	if !seen["/api/courses"] || !seen["/api/sections"] {
+	if _, err := client.SearchTeachers(context.Background(), " math ", 5); err != nil {
+		t.Fatal(err)
+	}
+	if !seen["/api/courses"] || !seen["/api/sections"] || !seen["/api/teachers"] {
 		t.Fatalf("seen paths = %#v", seen)
 	}
 }
@@ -121,6 +149,57 @@ func TestSchedulesUsesDataList(t *testing.T) {
 	}
 }
 
+func TestBusPreferencesUsesAuthEndpoints(t *testing.T) {
+	var gotBody BusPreferences
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":1,"preferredDestinationCampusId":4,"showDepartedTrips":true}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/bus/preferences":
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":2,"preferredDestinationCampusId":3,"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	preferences, err := client.BusPreferences(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preferences.PreferredOriginCampusID == nil || *preferences.PreferredOriginCampusID != 1 ||
+		preferences.PreferredDestinationCampusID == nil || *preferences.PreferredDestinationCampusID != 4 ||
+		!preferences.ShowDepartedTrips {
+		t.Fatalf("preferences = %#v", preferences)
+	}
+	origin, destination := 2, 3
+	preferences, err = client.SetBusPreferences(context.Background(), "token", BusPreferences{
+		PreferredOriginCampusID:      &origin,
+		PreferredDestinationCampusID: &destination,
+		ShowDepartedTrips:            false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBody.PreferredOriginCampusID == nil || *gotBody.PreferredOriginCampusID != 2 ||
+		gotBody.PreferredDestinationCampusID == nil || *gotBody.PreferredDestinationCampusID != 3 ||
+		gotBody.ShowDepartedTrips {
+		t.Fatalf("body = %#v", gotBody)
+	}
+	if preferences.PreferredOriginCampusID == nil || *preferences.PreferredOriginCampusID != 2 ||
+		preferences.PreferredDestinationCampusID == nil || *preferences.PreferredDestinationCampusID != 3 ||
+		preferences.ShowDepartedTrips {
+		t.Fatalf("saved preferences = %#v", preferences)
+	}
+}
+
 func TestScheduleQuery(t *testing.T) {
 	values := ScheduleQuery(" 101 ", " 2026-06-07T00:00:00Z ", "\t2026-06-07T23:59:59Z\n")
 	if values.Get("sectionId") != "101" ||
@@ -142,6 +221,28 @@ func TestTodosTrimsCompletedFilter(t *testing.T) {
 
 	client := NewClient(server.URL, server.Client())
 	if _, err := client.Todos(context.Background(), "token", "   "); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTodosWithOptionsSendsFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		values := r.URL.Query()
+		if values.Get("completed") != "true" || values.Get("priority") != "high" || values.Get("dueBefore") != "2026-06-10" || values.Get("dueAfter") != "2026-06-01" {
+			t.Fatalf("query = %s", values.Encode())
+		}
+		_, _ = w.Write([]byte(`{"todos":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	_, err := client.TodosWithOptions(context.Background(), "token", TodoListOptions{
+		Completed: " true ",
+		Priority:  " high ",
+		DueBefore: " 2026-06-10 ",
+		DueAfter:  " 2026-06-01 ",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -184,6 +285,34 @@ func TestCreateTodoRejectsBlankTitle(t *testing.T) {
 	}
 }
 
+func TestCreateTodoWithOptionsSendsOptionalFields(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"id":"todo-1"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	_, err := client.CreateTodoWithOptions(context.Background(), "token", TodoCreateOptions{
+		Title:    " 写报告 ",
+		Content:  " 读第一章 ",
+		Priority: " high ",
+		DueAt:    " 2026-06-10 ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBody["title"] != "写报告" || gotBody["content"] != "读第一章" || gotBody["priority"] != "high" || gotBody["dueAt"] != "2026-06-10" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
 func TestCompleteTodoTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
@@ -209,6 +338,64 @@ func TestCompleteTodoRejectsBlankID(t *testing.T) {
 	err := client.CompleteTodo(context.Background(), "token", " \t ")
 	if err == nil || !strings.Contains(err.Error(), "todo id") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUpdateTodoSendsChanges(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	completed := false
+	client := NewClient(server.URL, server.Client())
+	err := client.UpdateTodo(context.Background(), "token", " todo-1 ", TodoUpdateOptions{
+		Title:     " 写报告 ",
+		Content:   " 读第一章 ",
+		Priority:  " high ",
+		DueAt:     " 2026-06-10 ",
+		Completed: &completed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBody["title"] != "写报告" || gotBody["content"] != "读第一章" || gotBody["priority"] != "high" || gotBody["dueAt"] != "2026-06-10" || gotBody["completed"] != false {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestUpdateTodoRejectsEmptyChanges(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.UpdateTodo(context.Background(), "token", "todo-1", TodoUpdateOptions{})
+	if err == nil || !strings.Contains(err.Error(), "at least one change") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDeleteTodoTrimsID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodDelete {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.DeleteTodo(context.Background(), "token", " todo-1 "); err != nil {
+		t.Fatal(err)
 	}
 }
 

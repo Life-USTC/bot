@@ -165,7 +165,25 @@ type keywordInput struct {
 }
 
 type todoInput struct {
-	Title string `json:"title" jsonschema_description:"Todo title to create"`
+	Title    string `json:"title" jsonschema_description:"Todo title to create"`
+	Content  string `json:"content,omitempty" jsonschema_description:"Optional todo content or note"`
+	Priority string `json:"priority,omitempty" jsonschema_description:"Optional priority: low, medium, or high"`
+	DueAt    string `json:"due_at,omitempty" jsonschema_description:"Optional due date, such as 2026-06-10 or an RFC3339 datetime"`
+}
+
+type todoListInput struct {
+	Status    string `json:"status,omitempty" jsonschema_description:"Optional status filter: pending, completed, or all"`
+	Priority  string `json:"priority,omitempty" jsonschema_description:"Optional priority filter: low, medium, or high"`
+	DueBefore string `json:"due_before,omitempty" jsonschema_description:"Optional due-before date, such as 2026-06-10"`
+	DueAfter  string `json:"due_after,omitempty" jsonschema_description:"Optional due-after date, such as 2026-06-10"`
+}
+
+type todoUpdateInput struct {
+	Target   string `json:"target" jsonschema_description:"Todo number, ID, or title shown in the latest list response"`
+	Title    string `json:"title,omitempty" jsonschema_description:"Optional new todo title"`
+	Content  string `json:"content,omitempty" jsonschema_description:"Optional new content or note"`
+	Priority string `json:"priority,omitempty" jsonschema_description:"Optional new priority: low, medium, or high"`
+	DueAt    string `json:"due_at,omitempty" jsonschema_description:"Optional new due date, such as 2026-06-10 or an RFC3339 datetime"`
 }
 
 type targetInput struct {
@@ -214,13 +232,43 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Create a new todo for the user.", requiredCommandTool(s, ident, "title", "待办 add ", func(input todoInput) string {
-		return input.Title
+	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher", "search_teachers", "Search teachers by name or teacher code.", requiredCommandTool(s, ident, "keyword", "老师 ", func(input keywordInput) string {
+		return input.Keyword
+	}))
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "list_filtered_todos", "List todos with optional status, priority, and due-date filters.", func(ctx context.Context, input todoListInput) (string, error) {
+		return s.runCommand(ctx, ident, todoListCommandText(input))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Create a new todo for the user, optionally with content, priority, and due date.", requiredCommandTool(s, ident, "title", "待办 add ", func(input todoInput) string {
+		return todoCreateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", requiredCommandTool(s, ident, "target", "待办 done ", func(input targetInput) string {
+		return input.Target
+	}))
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Mark a completed todo as pending by number, ID, or title from the completed todo list.", requiredCommandTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
+		return input.Target
+	}))
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Update a todo title, content, priority, or due date by number, ID, or title.", requiredCommandTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
+		return todoUpdateCommandSuffix(input)
+	}))
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Delete a todo by number, ID, or title from the todo list.", requiredCommandTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
@@ -358,6 +406,54 @@ func busCommandText(input busInput) string {
 			parts = append(parts, "到")
 		}
 		parts = append(parts, to)
+	}
+	return strings.Join(parts, " ")
+}
+
+func todoListCommandText(input todoListInput) string {
+	parts := []string{"待办", "list"}
+	if status := strings.TrimSpace(input.Status); status != "" {
+		parts = append(parts, status)
+	}
+	if priority := strings.TrimSpace(input.Priority); priority != "" {
+		parts = append(parts, "priority", priority)
+	}
+	if dueBefore := strings.TrimSpace(input.DueBefore); dueBefore != "" {
+		parts = append(parts, "before", dueBefore)
+	}
+	if dueAfter := strings.TrimSpace(input.DueAfter); dueAfter != "" {
+		parts = append(parts, "after", dueAfter)
+	}
+	return strings.Join(parts, " ")
+}
+
+func todoCreateCommandSuffix(input todoInput) string {
+	parts := []string{strings.TrimSpace(input.Title)}
+	if dueAt := strings.TrimSpace(input.DueAt); dueAt != "" {
+		parts = append(parts, "due", dueAt)
+	}
+	if priority := strings.TrimSpace(input.Priority); priority != "" {
+		parts = append(parts, "priority", priority)
+	}
+	if content := strings.TrimSpace(input.Content); content != "" {
+		parts = append(parts, "content", content)
+	}
+	return strings.Join(parts, " ")
+}
+
+func todoUpdateCommandSuffix(input todoUpdateInput) string {
+	parts := []string{strings.TrimSpace(input.Target)}
+	if title := strings.TrimSpace(input.Title); title != "" {
+		parts = append(parts, "title", title)
+	}
+	if dueAt := strings.TrimSpace(input.DueAt); dueAt != "" {
+		parts = append(parts, "due", dueAt)
+	}
+	if priority := strings.TrimSpace(input.Priority); priority != "" {
+		parts = append(parts, "priority", priority)
+	}
+	if content := strings.TrimSpace(input.Content); content != "" {
+		parts = append(parts, "content", content)
 	}
 	return strings.Join(parts, " ")
 }

@@ -63,6 +63,10 @@ func (c *Client) SearchSections(ctx context.Context, search string, limit int) (
 	return c.list(ctx, "/api/sections", searchQuery(search, limit))
 }
 
+func (c *Client) SearchTeachers(ctx context.Context, search string, limit int) ([]map[string]any, error) {
+	return c.list(ctx, "/api/teachers", searchQuery(search, limit))
+}
+
 func searchQuery(search string, limit int) url.Values {
 	values := url.Values{}
 	search = strings.TrimSpace(search)
@@ -75,6 +79,32 @@ func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
 	err := c.get(ctx, "/api/bus", nil, &out)
 	return out, err
+}
+
+type BusPreferences struct {
+	PreferredOriginCampusID      *int `json:"preferredOriginCampusId"`
+	PreferredDestinationCampusID *int `json:"preferredDestinationCampusId"`
+	ShowDepartedTrips            bool `json:"showDepartedTrips"`
+}
+
+func (c *Client) BusPreferences(ctx context.Context, token string) (BusPreferences, error) {
+	var out struct {
+		Preference BusPreferences `json:"preference"`
+	}
+	err := c.getAuth(ctx, "/api/bus/preferences", nil, token, &out)
+	return out.Preference, err
+}
+
+func (c *Client) SetBusPreferences(ctx context.Context, token string, preferences BusPreferences) (BusPreferences, error) {
+	body, err := jsonBody(preferences)
+	if err != nil {
+		return BusPreferences{}, err
+	}
+	var out struct {
+		Preference BusPreferences `json:"preference"`
+	}
+	err = c.postAuth(ctx, "/api/bus/preferences", token, body, &out)
+	return out.Preference, err
 }
 
 func (c *Client) Me(ctx context.Context, token string) (map[string]any, error) {
@@ -98,11 +128,45 @@ func IsUnauthorized(err error) bool {
 	return strings.Contains(text, " returned 401:") || strings.HasSuffix(text, " returned 401")
 }
 
+type TodoListOptions struct {
+	Completed string
+	Priority  string
+	DueBefore string
+	DueAfter  string
+}
+
+type TodoCreateOptions struct {
+	Title    string
+	Content  string
+	Priority string
+	DueAt    string
+}
+
+type TodoUpdateOptions struct {
+	Title     string
+	Content   string
+	Priority  string
+	DueAt     string
+	Completed *bool
+}
+
 func (c *Client) Todos(ctx context.Context, token string, completed string) ([]map[string]any, error) {
+	return c.TodosWithOptions(ctx, token, TodoListOptions{Completed: completed})
+}
+
+func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoListOptions) ([]map[string]any, error) {
 	values := url.Values{}
-	completed = strings.TrimSpace(completed)
-	if completed != "" {
+	if completed := strings.TrimSpace(opts.Completed); completed != "" {
 		values.Set("completed", completed)
+	}
+	if priority := strings.TrimSpace(opts.Priority); priority != "" {
+		values.Set("priority", priority)
+	}
+	if dueBefore := strings.TrimSpace(opts.DueBefore); dueBefore != "" {
+		values.Set("dueBefore", dueBefore)
+	}
+	if dueAfter := strings.TrimSpace(opts.DueAfter); dueAfter != "" {
+		values.Set("dueAfter", dueAfter)
 	}
 	var out struct {
 		Todos []map[string]any `json:"todos"`
@@ -114,11 +178,25 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 }
 
 func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[string]any, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
+	return c.CreateTodoWithOptions(ctx, token, TodoCreateOptions{Title: title})
+}
+
+func (c *Client) CreateTodoWithOptions(ctx context.Context, token string, opts TodoCreateOptions) (map[string]any, error) {
+	opts.Title = strings.TrimSpace(opts.Title)
+	if opts.Title == "" {
 		return nil, errors.New("todo title is required")
 	}
-	body, err := jsonBody(map[string]any{"title": title})
+	bodyValue := map[string]any{"title": opts.Title}
+	if content := strings.TrimSpace(opts.Content); content != "" {
+		bodyValue["content"] = content
+	}
+	if priority := strings.TrimSpace(opts.Priority); priority != "" {
+		bodyValue["priority"] = priority
+	}
+	if dueAt := strings.TrimSpace(opts.DueAt); dueAt != "" {
+		bodyValue["dueAt"] = dueAt
+	}
+	body, err := jsonBody(bodyValue)
 	if err != nil {
 		return nil, err
 	}
@@ -128,15 +206,58 @@ func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[strin
 }
 
 func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
+	return c.SetTodoCompleted(ctx, token, id, true)
+}
+
+func (c *Client) SetTodoCompleted(ctx context.Context, token, id string, completed bool) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return errors.New("todo id is required")
 	}
-	body, err := completionBody(true)
+	body, err := completionBody(completed)
 	if err != nil {
 		return err
 	}
 	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
+}
+
+func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpdateOptions) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("todo id is required")
+	}
+	bodyValue := map[string]any{}
+	if title := strings.TrimSpace(opts.Title); title != "" {
+		bodyValue["title"] = title
+	}
+	if content := strings.TrimSpace(opts.Content); content != "" {
+		bodyValue["content"] = content
+	}
+	if priority := strings.TrimSpace(opts.Priority); priority != "" {
+		bodyValue["priority"] = priority
+	}
+	if dueAt := strings.TrimSpace(opts.DueAt); dueAt != "" {
+		bodyValue["dueAt"] = dueAt
+	}
+	if opts.Completed != nil {
+		bodyValue["completed"] = *opts.Completed
+	}
+	if len(bodyValue) == 0 {
+		return errors.New("todo update requires at least one change")
+	}
+	body, err := jsonBody(bodyValue)
+	if err != nil {
+		return err
+	}
+	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
+}
+
+func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("todo id is required")
+	}
+	return c.do(ctx, http.MethodDelete, "/api/todos/"+url.PathEscape(id), nil, token, nil, nil)
 }
 
 func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[string]any, error) {

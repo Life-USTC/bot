@@ -104,6 +104,46 @@ func TestSearchSectionsTrimsKeyword(t *testing.T) {
 	}
 }
 
+func TestHandleTeacherSearch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/teachers" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("search") != "张" {
+			t.Fatalf("search = %q", r.URL.Query().Get("search"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"T001","namePrimary":"张三","department":{"namePrimary":"数学科学学院"},"teacherTitle":{"namePrimary":"教授"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "老师 张"})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, want := range []string{"老师：", "𝚃𝟶𝟶𝟷", "张三 数学科学学院 教授"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+}
+
+func TestSearchTeachersTrimsKeyword(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("search") != "张" {
+			t.Fatalf("search = %q", r.URL.Query().Get("search"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"T001","namePrimary":"张三"}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.searchTeachers(context.Background(), "  张  ")
+	if !strings.Contains(reply, "张三") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestHandleHelpAliases(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 	for _, text := range []string{"/help", "/?", "帮助", "菜单", "/life -h", "/life 菜单"} {
@@ -160,15 +200,18 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"me":           true,
 		"todo":         true,
 		"homework":     true,
+		"overview":     true,
 		"subscription": true,
 		"ping":         true,
 		"status":       true,
 		"semester":     true,
 		"course":       true,
 		"section":      true,
+		"teacher":      true,
 		"bus":          true,
 		"schedule":     true,
 		"nextclass":    true,
+		"exam":         true,
 	}
 	storeCommands := map[string]bool{
 		"notify": true,
@@ -179,9 +222,11 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"me":           true,
 		"todo":         true,
 		"homework":     true,
+		"overview":     true,
 		"subscription": true,
 		"schedule":     true,
 		"nextclass":    true,
+		"exam":         true,
 	}
 	helpCommands := map[string]bool{
 		"login":        true,
@@ -189,6 +234,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"homework":     true,
 		"subscription": true,
 		"notify":       true,
+		"bus":          true,
 		"schedule":     true,
 	}
 	for _, spec := range CommandSpecs() {
@@ -259,7 +305,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus"} {
+	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus", "teacher", "exam"} {
 		if !seen[name] {
 			t.Fatalf("missing command spec %q", name)
 		}
@@ -700,6 +746,162 @@ func TestHandleTodoDoneUsesNumericID(t *testing.T) {
 	}
 }
 
+func TestHandleTodoListWithFilters(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		values := r.URL.Query()
+		if values.Get("completed") != "" || values.Get("priority") != "high" || values.Get("dueBefore") != "2026-06-10" {
+			t.Fatalf("query = %s", values.Encode())
+		}
+		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","priority":"high"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td all high before 2026-06-10", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "写报告") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleTodoAddWithOptionalFields(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td add 写报告 due 2026-06-10 priority high content 读第一章", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if gotBody["title"] != "写报告" || gotBody["dueAt"] != "2026-06-10" || gotBody["priority"] != "high" || gotBody["content"] != "读第一章" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+	if !strings.Contains(reply, "已加待办：写报告") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleTodoUndoByIndex(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	patched := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("completed") != "true" {
+				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			}
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","completed":true}]}`))
+		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(body), `"completed":false`) {
+				t.Fatalf("patch body = %s", body)
+			}
+			patched = true
+			_, _ = w.Write([]byte(`{"success":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td undo 1", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !patched || !strings.Contains(reply, "已恢复：写报告") {
+		t.Fatalf("patched = %v, reply = %q", patched, reply)
+	}
+}
+
+func TestHandleTodoUpdateByIndex(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"旧标题"}]}`))
+		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"success":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td update 1 title 新标题 due 2026-06-10 priority low content 备注", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if gotBody["title"] != "新标题" || gotBody["dueAt"] != "2026-06-10" || gotBody["priority"] != "low" || gotBody["content"] != "备注" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+	if !strings.Contains(reply, "已修改待办：旧标题") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestParseTodoUpdateArgsIncludesContent(t *testing.T) {
+	opts := parseTodoUpdateArgs([]string{"title", "新标题", "due", "2026-06-10", "priority", "low", "content", "备注"})
+	if opts.Title != "新标题" || opts.DueAt != "2026-06-10" || opts.Priority != "low" || opts.Content != "备注" {
+		t.Fatalf("opts = %#v", opts)
+	}
+}
+
+func TestHandleTodoDeleteByIndex(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	deleted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告"}]}`))
+		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodDelete:
+			deleted = true
+			_, _ = w.Write([]byte(`{"success":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "td delete 1", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !deleted || !strings.Contains(reply, "已删除：写报告") {
+		t.Fatalf("deleted = %v, reply = %q", deleted, reply)
+	}
+}
+
 func TestTodoCompletionReply(t *testing.T) {
 	tests := map[string]string{
 		"写报告":  "已完成：写报告",
@@ -860,6 +1062,109 @@ func TestFormatHomeworkListGroupsByDueTime(t *testing.T) {
 	}
 	if strings.Index(reply, "Past") > strings.Index(reply, "Soon") || strings.Index(reply, "Soon") > strings.Index(reply, "Later") {
 		t.Fatalf("reply order = %q", reply)
+	}
+}
+
+func TestHandleOverviewCombinesPersonalData(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[
+				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":"2026-06-20T00:00:00+08:00","startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
+			]}}`))
+		case "/api/schedules":
+			if r.URL.Query().Get("sectionId") != "101" {
+				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"date":"2026-06-08T00:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`))
+		case "/api/todos":
+			if r.URL.Query().Get("completed") != "false" {
+				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			}
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-06-09T18:00:00+08:00"}]}`))
+		case "/api/me/subscriptions/homeworks":
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"作业一","submissionDueAt":"2026-06-09T23:59:00+08:00","section":{"course":{"namePrimary":"数学分析"}}}]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "今日", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, want := range []string{"安排：", "今日课表：", "计算机导论", "待办：", "写报告", "近期作业：", "作业一", "考试：", "𝟶𝟼-𝟸𝟶"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+}
+
+func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if r.URL.Path != "/api/calendar-subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"sections":[
+			{"code":"MATH1001.01","course":{"namePrimary":"数学分析"},"exams":[{"id":2,"examDate":"2026-06-20T00:00:00+08:00","startTime":1430,"endTime":1630,"examMode":"闭卷","examRooms":[{"room":"3A101"}]}]},
+			{"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"exams":[{"id":1,"examDate":"2026-06-10T00:00:00+08:00","startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
+		]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "考试", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, want := range []string{
+		"考试：",
+		"𝟷. \t𝟶𝟼-𝟷𝟶 · 𝟶𝟿:𝟶𝟶-𝟷𝟷:𝟶𝟶 · 计算机导论 · 𝙲𝚂𝟷𝟶𝟶𝟷.𝟶𝟷 · 𝙶𝚃-𝙱𝟷𝟷𝟸",
+		"𝟸. \t𝟶𝟼-𝟸𝟶 · 𝟷𝟺:𝟹𝟶-𝟷𝟼:𝟹𝟶 · 数学分析 · 𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷 · 闭卷 · 𝟹𝙰𝟷𝟶𝟷",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Index(reply, "计算机导论") > strings.Index(reply, "数学分析") {
+		t.Fatalf("reply not sorted by date: %q", reply)
+	}
+}
+
+func TestHandleExamListEmpty(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"subscription":{"sections":[{"code":"MATH1001.01","exams":[]}]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "ks", Identity: ident})
+	if !ok || reply != "没有订阅课程考试。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestFormatExamDateUnknown(t *testing.T) {
+	line := formatExam(subscriptionExam{
+		exam:    map[string]any{"id": "exam-1"},
+		section: map[string]any{"course": map[string]any{"namePrimary": "随机过程"}},
+	})
+	if line != "日期待定 · 随机过程" {
+		t.Fatalf("line = %q", line)
 	}
 }
 
@@ -1401,6 +1706,10 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"日程": "schedule",
 		"rc": "schedule",
 		"kb": "schedule",
+		"老师": "teacher",
+		"js": "teacher",
+		"考试": "exam",
+		"ks": "exam",
 		"状态": "status",
 		"zt": "status",
 	}
@@ -1491,6 +1800,11 @@ func TestNormalizeTodoActionAliases(t *testing.T) {
 		"待办 好了 1":          {"done", "1"},
 		"todo finish 1":    {"done", "1"},
 		"td x 1":           {"done", "1"},
+		"td 撤销 1":          {"undo", "1"},
+		"td 删除 1":          {"delete", "1"},
+		"td 修改 1 title x":  {"update", "1", "title", "x"},
+		"td 全部":            {"all"},
+		"td 已完成":           {"completed"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {
