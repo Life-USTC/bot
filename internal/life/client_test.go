@@ -321,6 +321,21 @@ func TestGetReturnsHTTPErrorForErrorBodyReadFailure(t *testing.T) {
 	}
 }
 
+func TestGetTreatsWhitespaceBodyAsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/metadata" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(" \n\t "))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHTTPErrorString(t *testing.T) {
 	if got := (HTTPError{
 		Method:     http.MethodGet,

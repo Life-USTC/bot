@@ -285,7 +285,7 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 			Body:       trimBody(body),
 		}
 	}
-	if out != nil && len(body) > 0 {
+	if out != nil && len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, out); err != nil {
 			return fmt.Errorf("decode %s: %w", path, err)
 		}
