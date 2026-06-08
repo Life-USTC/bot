@@ -123,6 +123,17 @@ func TestScheduleTimeRange(t *testing.T) {
 	}
 }
 
+func TestDayRFC3339RangeUsesLocalDay(t *testing.T) {
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	from, to := DayRFC3339Range(day)
+	if from != "2026-06-06T16:00:00Z" {
+		t.Fatalf("from = %q", from)
+	}
+	if to != "2026-06-07T15:59:59Z" {
+		t.Fatalf("to = %q", to)
+	}
+}
+
 func TestSubscriptionSectionIDsForDayFiltersBySemester(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{

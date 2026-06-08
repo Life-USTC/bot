@@ -89,6 +89,12 @@ func ScheduleTimeRange(schedule map[string]any) string {
 	return strings.TrimSpace(start + "-" + end)
 }
 
+func DayRFC3339Range(day time.Time) (string, string) {
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
+	return start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339)
+}
+
 func SortHomeworksByDue(homeworks []map[string]any) {
 	sort.SliceStable(homeworks, func(i, j int) bool {
 		return apiTimeLess(FirstString(homeworks[i], "submissionDueAt"), FirstString(homeworks[j], "submissionDueAt"))

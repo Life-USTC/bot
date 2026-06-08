@@ -152,11 +152,10 @@ func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if len(sectionIDs) == 0 {
 		return nil, token, nil
 	}
-	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
-	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
+	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
 	all := make([]map[string]any, 0, len(sectionIDs))
 	for _, sectionID := range sectionIDs {
-		values := life.ScheduleQuery(sectionID, start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339))
+		values := life.ScheduleQuery(sectionID, dateFrom, dateTo)
 		schedules, err := p.Life.Schedules(ctx, token, values)
 		if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 			token = refreshed

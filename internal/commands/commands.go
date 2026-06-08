@@ -1479,10 +1479,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 }
 
 func (h Handler) fetchSchedulesForSections(ctx context.Context, token string, sectionIDs []string, day time.Time) ([]map[string]any, error) {
-	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
-	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())
-	dateFrom := start.UTC().Format(time.RFC3339)
-	dateTo := end.UTC().Format(time.RFC3339)
+	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
 
 	var mu sync.Mutex
 	var firstErr error
