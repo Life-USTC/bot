@@ -649,7 +649,7 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 	lines := make([]string, 0, len(items)+1)
 	header := make([]string, 0, len(stops))
 	for i, stop := range stops {
-		header = append(header, formatBusTableCell(stop, widths[i]))
+		header = append(header, formatBusTableHeaderCell(stop, widths[i], i == len(stops)-1))
 	}
 	lines = append(lines, strings.Join(header, busTableColumnGap))
 	for _, item := range items {
@@ -696,6 +696,14 @@ func formatBusTableCell(text string, width int) string {
 		padding = min(padding, busMissingTimeMaxPad)
 	}
 	return text + strings.Repeat(busTablePad, padding)
+}
+
+func formatBusTableHeaderCell(text string, width int, last bool) string {
+	cell := formatBusTableCell(text, width)
+	if !last && textutil.DisplayWidth(text) >= width {
+		cell += busTablePad
+	}
+	return cell
 }
 
 func busTableStops(items []busItem) []string {
