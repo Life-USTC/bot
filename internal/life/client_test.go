@@ -88,6 +88,13 @@ func TestSearchTrimsQuery(t *testing.T) {
 	}
 }
 
+func TestSearchQuery(t *testing.T) {
+	values := searchQuery(" math ", 0)
+	if values.Get("search") != "math" || values.Get("limit") != "5" {
+		t.Fatalf("values = %s", values.Encode())
+	}
+}
+
 func TestSchedulesUsesDataList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/schedules" {

@@ -56,19 +56,19 @@ func (c *Client) CurrentSemester(ctx context.Context) (map[string]any, error) {
 }
 
 func (c *Client) SearchCourses(ctx context.Context, search string, limit int) ([]map[string]any, error) {
-	values := url.Values{}
-	search = strings.TrimSpace(search)
-	values.Set("search", search)
-	setLimit(values, limit)
-	return c.list(ctx, "/api/courses", values)
+	return c.list(ctx, "/api/courses", searchQuery(search, limit))
 }
 
 func (c *Client) SearchSections(ctx context.Context, search string, limit int) ([]map[string]any, error) {
+	return c.list(ctx, "/api/sections", searchQuery(search, limit))
+}
+
+func searchQuery(search string, limit int) url.Values {
 	values := url.Values{}
 	search = strings.TrimSpace(search)
 	values.Set("search", search)
 	setLimit(values, limit)
-	return c.list(ctx, "/api/sections", values)
+	return values
 }
 
 func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
