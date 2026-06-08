@@ -1362,6 +1362,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 			"作业",
 			"作业 pending",
 			"作业 done 1",
+			"作业 done 1,2,3",
 			"作业 undo 1",
 		}, "\n")
 	}
@@ -1374,28 +1375,23 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		if target == "" {
 			return "想改哪条作业？例如：作业 done 1"
 		}
+		completed := args[0] == "done"
 		homeworks, err := h.homeworks(ctx, ident, token)
 		if err != nil {
 			return commandError("作业查不到：", err)
 		}
-		homeworks = filterHomeworks(homeworks, true)
+		if completed {
+			homeworks = filterHomeworks(homeworks, true)
+		}
+		targets := splitTodoTargets(target)
+		if len(targets) > 1 {
+			return h.setHomeworkCompletionBatch(ctx, ident, token, homeworks, targets, completed)
+		}
 		homework, ok := resolveHomework(homeworks, target)
 		if !ok {
 			return "没找到这条作业。发 作业 看编号，再试：作业 done 1"
 		}
-		id := lifedata.FirstString(homework, "id")
-		if id == "" {
-			return "这条作业没有可用 ID，暂时改不了。"
-		}
-		completed := args[0] == "done"
-		err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
-			return h.Life.SetHomeworkCompletion(ctx, token, id, completed)
-		})
-		if err != nil {
-			return commandError("作业状态更新失败：", err)
-		}
-		title := lifedata.FirstString(homework, "title")
-		return homeworkCompletionReply(completed, title)
+		return h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
 	}
 	pendingOnly := true
 	if firstArgIs(args, "all") {
@@ -1427,6 +1423,55 @@ func homeworkCompletionReply(completed bool, title string) string {
 		return "已取消完成。"
 	}
 	return "已取消完成：" + title
+}
+
+func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Identity, token string, homeworks []map[string]any, targets []string, completed bool) string {
+	done := make([]string, 0, len(targets))
+	missing := []string{}
+	for _, target := range targets {
+		homework, ok := resolveHomework(homeworks, target)
+		if !ok {
+			missing = append(missing, target)
+			continue
+		}
+		reply := h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
+		if strings.HasPrefix(reply, "作业状态更新失败：") || strings.Contains(reply, "没有可用 ID") {
+			return reply
+		}
+		done = append(done, strings.TrimPrefix(strings.TrimPrefix(reply, "已完成作业："), "已取消完成："))
+	}
+	if len(done) == 0 {
+		return "没找到这些作业。发 作业 看编号，再试：作业 done 1,2,3"
+	}
+	action := "完成"
+	if !completed {
+		action = "取消完成"
+	}
+	lines := []string{fmt.Sprintf("已%s %d 条作业：", action, len(done))}
+	for _, title := range done {
+		if strings.TrimSpace(title) == "" {
+			title = "作业"
+		}
+		lines = append(lines, "- "+title)
+	}
+	if len(missing) > 0 {
+		lines = append(lines, "没找到："+strings.Join(missing, ", "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) setHomeworkCompletionItem(ctx context.Context, ident store.Identity, token string, homework map[string]any, completed bool) string {
+	id := lifedata.FirstString(homework, "id")
+	if id == "" {
+		return "这条作业没有可用 ID，暂时改不了。"
+	}
+	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+		return h.Life.SetHomeworkCompletion(ctx, token, id, completed)
+	})
+	if err != nil {
+		return commandError("作业状态更新失败：", err)
+	}
+	return homeworkCompletionReply(completed, lifedata.FirstString(homework, "title"))
 }
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {

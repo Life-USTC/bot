@@ -1061,6 +1061,42 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 }
 
+func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	completed := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/homeworks/hw-") && r.Method == http.MethodPut:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			completed[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/homeworks/"), "/completion")] = body["completed"] == true
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业 done 1,2,3", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, id := range []string{"hw-1", "hw-2", "hw-3"} {
+		if !completed[id] {
+			t.Fatalf("missing completion for %s; completed = %#v", id, completed)
+		}
+	}
+	if !strings.Contains(reply, "已完成 3 条作业") || !strings.Contains(reply, "Problem Set 1") || !strings.Contains(reply, "Problem Set 3") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestHomeworkCompletionReply(t *testing.T) {
 	tests := []struct {
 		completed bool
