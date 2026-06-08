@@ -212,7 +212,7 @@ type toolTraceNotifier struct {
 	send  func(context.Context, store.Identity, string) error
 }
 
-func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any) {
+func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any, result string, err error) {
 	if r == nil {
 		return
 	}
@@ -220,18 +220,7 @@ func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any) 
 	if args := formatToolArgs(input); args != "" {
 		message += " " + args
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.send != nil {
-		_ = r.send(ctx, r.ident, message)
-	}
-}
-
-func (r *toolTraceNotifier) NotifyResult(ctx context.Context, name, result string, err error) {
-	if r == nil {
-		return
-	}
-	message := "工具结果：" + name
+	message += "\n工具结果："
 	if err != nil {
 		message += "\n失败：" + formatToolResult(err.Error())
 	} else if formatted := formatToolResult(result); formatted != "" {
@@ -419,12 +408,9 @@ func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
 
 func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	wrapped := func(ctx context.Context, input I) (string, error) {
-		if trace != nil {
-			trace.Notify(ctx, name, input)
-		}
 		result, err := fn(ctx, input)
 		if trace != nil {
-			trace.NotifyResult(ctx, name, result, err)
+			trace.Notify(ctx, name, input, result, err)
 		}
 		return result, err
 	}

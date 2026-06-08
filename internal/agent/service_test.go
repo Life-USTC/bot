@@ -282,7 +282,7 @@ func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
 	}
 }
 
-func TestToolTraceNotifierSendsInvocation(t *testing.T) {
+func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	var messages []string
 	trace := &toolTraceNotifier{
@@ -296,20 +296,16 @@ func TestToolTraceNotifierSendsInvocation(t *testing.T) {
 		},
 	}
 
-	trace.Notify(context.Background(), "search_courses", keywordInput{Keyword: "数学分析"})
-	trace.NotifyResult(context.Background(), "search_courses", "课程：数学分析\n教师：张三", nil)
-	trace.Notify(context.Background(), "get_current_time", emptyInput{})
-	if len(messages) != 3 {
+	trace.Notify(context.Background(), "search_courses", keywordInput{Keyword: "数学分析"}, "课程：数学分析\n教师：张三", nil)
+	trace.Notify(context.Background(), "get_current_time", emptyInput{}, "", nil)
+	if len(messages) != 2 {
 		t.Fatalf("messages = %#v", messages)
 	}
-	if messages[0] != `工具调用：search_courses {"keyword":"数学分析"}` {
+	if messages[0] != "工具调用：search_courses {\"keyword\":\"数学分析\"}\n工具结果：\n课程：数学分析\n教师：张三" {
 		t.Fatalf("message 0 = %q", messages[0])
 	}
-	if messages[1] != "工具结果：search_courses\n课程：数学分析\n教师：张三" {
+	if messages[1] != "工具调用：get_current_time\n工具结果：" {
 		t.Fatalf("message 1 = %q", messages[1])
-	}
-	if messages[2] != "工具调用：get_current_time" {
-		t.Fatalf("message 2 = %q", messages[2])
 	}
 }
 
@@ -339,6 +335,14 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		Direction: store.InteractionDirectionOutbound,
+		RawText:   "工具调用：search_courses {\"keyword\":\"数学分析\"}\n工具结果：\n课程：数学分析",
+		Handled:   true,
+		Status:    store.InteractionStatusSent,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: "  你好  ",
 		Command: "agent",
