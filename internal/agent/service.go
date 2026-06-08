@@ -180,7 +180,7 @@ type notificationInput struct {
 func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	commandSpecs := commands.CommandSpecs()
 	specByName := commandSpecsByName(commandSpecs)
-	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs)+extraAgentToolCount)
+	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs))
 	var err error
 	for _, commandSpec := range commandSpecs {
 		if !s.commandDependenciesAvailable(commandSpec) {
@@ -368,7 +368,6 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 
 const historyTurnLimit = 8
 const agentHTTPTimeout = 60 * time.Second
-const extraAgentToolCount = 10
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
