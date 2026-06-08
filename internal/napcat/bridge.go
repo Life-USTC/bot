@@ -273,18 +273,19 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 
 func messageEventFromIdentity(ident store.Identity) (messageEvent, error) {
 	event := messageEvent{MessageType: ident.ConversationType}
-	userID, err := parseNapCatID(ident.UserID, "user")
-	if err != nil {
-		return messageEvent{}, err
-	}
-	event.UserID = userID
 	if isGroupMessageType(ident.ConversationType) {
 		groupID, err := parseNapCatID(ident.ConversationID, "group")
 		if err != nil {
 			return messageEvent{}, err
 		}
 		event.GroupID = groupID
+		return event, nil
 	}
+	userID, err := parseNapCatID(textutil.FirstNonEmpty(ident.ConversationID, ident.UserID), "user")
+	if err != nil {
+		return messageEvent{}, err
+	}
+	event.UserID = userID
 	return event, nil
 }
 
