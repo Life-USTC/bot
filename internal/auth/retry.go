@@ -16,3 +16,10 @@ func WithRefresh[T any](ctx context.Context, manager *Manager, ident store.Ident
 	}
 	return data, err
 }
+
+func WithRefreshVoid(ctx context.Context, manager *Manager, ident store.Identity, token string, fetch func(string) error) error {
+	_, err := WithRefresh(ctx, manager, ident, token, func(token string) (struct{}, error) {
+		return struct{}{}, fetch(token)
+	})
+	return err
+}

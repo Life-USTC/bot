@@ -769,3 +769,61 @@ func TestWithRefreshRetriesUnauthorized(t *testing.T) {
 		t.Fatalf("got = %q, refreshRequests = %d, calls = %#v", got, refreshRequests, calls)
 	}
 }
+
+func TestWithRefreshVoidRetriesUnauthorized(t *testing.T) {
+	ctx := context.Background()
+	var serverURL string
+	refreshRequests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		TokenType:    "Bearer",
+		ExpiresAt:    authTestNow.Add(time.Hour),
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := []string{}
+	manager := &Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(authTestNow)}
+	err = WithRefreshVoid(ctx, manager, ident, "old-access", func(token string) error {
+		calls = append(calls, token)
+		if token == "old-access" {
+			return life.HTTPError{StatusCode: http.StatusUnauthorized}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshRequests != 1 || strings.Join(calls, ",") != "old-access,new-access" {
+		t.Fatalf("refreshRequests = %d, calls = %#v", refreshRequests, calls)
+	}
+}

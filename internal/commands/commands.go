@@ -811,8 +811,8 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		if id == "" {
 			return "这条待办没有可用 ID，暂时完成不了。"
 		}
-		_, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (struct{}, error) {
-			return struct{}{}, h.Life.CompleteTodo(ctx, token, id)
+		err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+			return h.Life.CompleteTodo(ctx, token, id)
 		})
 		if err != nil {
 			return commandError("待办完成失败：", err)
@@ -918,8 +918,8 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 			return "这条作业没有可用 ID，暂时改不了。"
 		}
 		completed := args[0] == "done"
-		_, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (struct{}, error) {
-			return struct{}{}, h.Life.SetHomeworkCompletion(ctx, token, id, completed)
+		err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+			return h.Life.SetHomeworkCompletion(ctx, token, id, completed)
 		})
 		if err != nil {
 			return commandError("作业状态更新失败：", err)
