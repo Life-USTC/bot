@@ -276,8 +276,11 @@ func TestBusQueryArgsSupportsAfterTime(t *testing.T) {
 	if options.Now.IsZero() || options.Now.Hour() != 9 || options.Now.Minute() != 25 {
 		t.Fatalf("options = %#v", options)
 	}
+	if !options.After {
+		t.Fatalf("options.After = false")
+	}
 	args, options = busQueryArgs([]string{"高新区", "东区", "after", "2026-06-09", "09:25"}, now)
-	if strings.Join(args, " ") != "高新区 东区" || options.Now.Day() != 9 || options.Now.Hour() != 9 || options.Now.Minute() != 25 {
+	if strings.Join(args, " ") != "高新区 东区" || !options.After || options.Now.Day() != 9 || options.Now.Hour() != 9 || options.Now.Minute() != 25 {
 		t.Fatalf("date args = %#v options = %#v", args, options)
 	}
 }
@@ -303,6 +306,10 @@ func TestNextBusItemsUsesAfterTimeOption(t *testing.T) {
 	items := nextBusItemsWithOptions(data, []string{"高新区", "东区"}, now, busQueryOptions{Now: after})
 	if len(items) != 1 || items[0].DepartureTime != "09:40" {
 		t.Fatalf("items = %#v", items)
+	}
+	items = nextBusItemsWithOptions(data, []string{"高新区", "东区"}, now, busQueryOptions{Now: after, ShowDeparted: true, After: true})
+	if len(items) != 1 || items[0].DepartureTime != "09:40" {
+		t.Fatalf("show departed with after items = %#v", items)
 	}
 }
 

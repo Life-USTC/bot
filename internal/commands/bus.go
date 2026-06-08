@@ -280,12 +280,14 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 			if i+1 < len(args) {
 				if after, ok := parseBusAfterTime(args[i+1], now); ok {
 					options.Now = after
+					options.After = true
 					i++
 					continue
 				}
 				if i+2 < len(args) {
 					if after, ok := parseBusAfterTime(args[i+1]+" "+args[i+2], now); ok {
 						options.Now = after
+						options.After = true
 						i += 2
 						continue
 					}
@@ -506,6 +508,7 @@ type busStop struct {
 type busQueryOptions struct {
 	ShowDeparted bool
 	Now          time.Time
+	After        bool
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
@@ -534,7 +537,7 @@ func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, 
 		if !ok {
 			continue
 		}
-		if !options.ShowDeparted && departure < nowMinutes {
+		if (!options.ShowDeparted || options.After) && departure < nowMinutes {
 			continue
 		}
 		route := routes[lifedata.FirstString(trip, "routeId")]

@@ -332,6 +332,22 @@ func TestFormatToolResultTruncatesLongText(t *testing.T) {
 	}
 }
 
+func TestCleanQQReplyRemovesMarkdownTables(t *testing.T) {
+	input := `---
+
+## 明天行程
+| 时间 | 事项 | 地点 |
+|------|------|------|
+| **07:50-09:25** | 组合数学 | 高新区 **GT-B112** |
+
+> 建议下课后出发`
+	got := cleanQQReply(input)
+	want := "明天行程\n时间  事项  地点\n07:50-09:25  组合数学  高新区 GT-B112\n\n建议下课后出发"
+	if got != want {
+		t.Fatalf("cleanQQReply = %q", got)
+	}
+}
+
 func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	now := time.Date(2026, 6, 7, 10, 30, 0, 0, time.UTC)
 	if got := currentTimeMessageAt(now); got != "现在是 2026-06-07 18:30，Asia/Shanghai。" {

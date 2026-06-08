@@ -135,7 +135,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if reply == "" {
 		return "", false
 	}
-	return reply, true
+	return cleanQQReply(reply), true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -457,6 +457,70 @@ func formatToolArgs(input any) string {
 	return args
 }
 
+func cleanQQReply(reply string) string {
+	lines := strings.Split(reply, "\n")
+	out := make([]string, 0, len(lines))
+	blank := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if len(out) > 0 {
+				blank = true
+			}
+			continue
+		}
+		if trimmed == "---" || isMarkdownTableSeparator(trimmed) {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "|") && strings.HasSuffix(trimmed, "|") {
+			trimmed = cleanMarkdownTableRow(trimmed)
+			if trimmed == "" {
+				continue
+			}
+		}
+		for strings.HasPrefix(trimmed, "#") {
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+		}
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
+		trimmed = strings.NewReplacer("**", "", "__", "", "`", "").Replace(trimmed)
+		if blank {
+			out = append(out, "")
+			blank = false
+		}
+		out = append(out, trimmed)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	if !strings.Contains(line, "|") {
+		return false
+	}
+	stripped := strings.Trim(line, "| ")
+	if stripped == "" {
+		return false
+	}
+	for _, r := range stripped {
+		if r != '-' && r != ':' && r != '|' && r != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
+func cleanMarkdownTableRow(line string) string {
+	line = strings.Trim(line, "|")
+	parts := strings.Split(line, "|")
+	cells := make([]string, 0, len(parts))
+	for _, part := range parts {
+		cell := strings.TrimSpace(part)
+		if cell != "" {
+			cells = append(cells, cell)
+		}
+	}
+	return strings.Join(cells, "  ")
+}
+
 func formatToolResult(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -587,7 +651,7 @@ func currentInstruction() string {
 func currentInstructionAt(now time.Time) string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
-QQ does not render Markdown tables well. Prefer short plain-text lines and compact bullet lists; avoid Markdown tables unless the user explicitly asks for a table.
+QQ does not render Markdown tables well. Do not use Markdown tables, horizontal rules, blockquotes, or heading markers. Use short plain-text lines and compact numbered lists.
 Use tools for Life @ USTC facts instead of guessing.
 Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run.
