@@ -33,6 +33,15 @@ func TestJoinNonEmpty(t *testing.T) {
 	}
 }
 
+func TestHasText(t *testing.T) {
+	if !HasText(" value ") {
+		t.Fatal("HasText returned false for trimmed text")
+	}
+	if HasText(" \t\n ") {
+		t.Fatal("HasText returned true for whitespace")
+	}
+}
+
 func TestTrimEqualFold(t *testing.T) {
 	if !TrimEqualFold(" GROUP ", "group") {
 		t.Fatal("TrimEqualFold did not trim and fold case")

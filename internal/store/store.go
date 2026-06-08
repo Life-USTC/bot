@@ -287,13 +287,13 @@ func normalizeIdentity(ident Identity) Identity {
 }
 
 func HasUserIdentity(ident Identity) bool {
-	return strings.TrimSpace(ident.Platform) != "" &&
-		strings.TrimSpace(ident.UserID) != ""
+	return textutil.HasText(ident.Platform) &&
+		textutil.HasText(ident.UserID)
 }
 
 func HasConversationTarget(ident Identity) bool {
-	return strings.TrimSpace(ident.ConversationType) != "" &&
-		strings.TrimSpace(ident.ConversationID) != ""
+	return textutil.HasText(ident.ConversationType) &&
+		textutil.HasText(ident.ConversationID)
 }
 
 func HasConversationIdentity(ident Identity) bool {
@@ -332,7 +332,7 @@ func validateConversationIdentity(ident Identity) error {
 }
 
 func requireIdentityField(value, name string) error {
-	if strings.TrimSpace(value) == "" {
+	if !textutil.HasText(value) {
 		return errors.New("identity " + name + " is empty")
 	}
 	return nil

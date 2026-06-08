@@ -27,6 +27,10 @@ func JoinNonEmpty(separator string, values ...string) string {
 	return strings.Join(NonEmpty(values...), separator)
 }
 
+func HasText(value string) bool {
+	return strings.TrimSpace(value) != ""
+}
+
 func TrimEqualFold(value, target string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), target)
 }
