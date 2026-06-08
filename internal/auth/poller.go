@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/store"
@@ -100,14 +99,11 @@ func (p *LoginPoller) markLoginSession(ctx context.Context, ident store.Identity
 }
 
 func hasNotificationIdentity(ident store.Identity) bool {
-	return strings.TrimSpace(ident.ConversationType) != "" &&
-		strings.TrimSpace(ident.ConversationID) != ""
+	return store.HasConversationTarget(ident)
 }
 
 func hasLoginPollIdentity(ident store.Identity) bool {
-	return strings.TrimSpace(ident.Platform) != "" &&
-		strings.TrimSpace(ident.UserID) != "" &&
-		hasNotificationIdentity(ident)
+	return store.HasConversationIdentity(ident)
 }
 
 func (p *LoginPoller) logf(format string, args ...any) {

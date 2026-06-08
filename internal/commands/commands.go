@@ -1601,10 +1601,7 @@ func (h Handler) logf(format string, args ...any) {
 }
 
 func hasConversationIdentity(ident store.Identity) bool {
-	return strings.TrimSpace(ident.Platform) != "" &&
-		strings.TrimSpace(ident.UserID) != "" &&
-		strings.TrimSpace(ident.ConversationType) != "" &&
-		strings.TrimSpace(ident.ConversationID) != ""
+	return store.HasConversationIdentity(ident)
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {

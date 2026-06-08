@@ -286,6 +286,20 @@ func normalizeIdentity(ident Identity) Identity {
 	return ident
 }
 
+func HasUserIdentity(ident Identity) bool {
+	return strings.TrimSpace(ident.Platform) != "" &&
+		strings.TrimSpace(ident.UserID) != ""
+}
+
+func HasConversationTarget(ident Identity) bool {
+	return strings.TrimSpace(ident.ConversationType) != "" &&
+		strings.TrimSpace(ident.ConversationID) != ""
+}
+
+func HasConversationIdentity(ident Identity) bool {
+	return HasUserIdentity(ident) && HasConversationTarget(ident)
+}
+
 func validateIdentity(ident Identity) error {
 	if err := requireIdentityField(ident.Platform, "platform"); err != nil {
 		return err

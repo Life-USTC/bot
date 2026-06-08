@@ -57,6 +57,28 @@ func TestEnsureUserTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestIdentityCompletenessHelpersTrimFields(t *testing.T) {
+	full := Identity{Platform: " napcat ", UserID: " 42 ", ConversationType: " private ", ConversationID: " 42 "}
+	if !HasUserIdentity(full) {
+		t.Fatal("HasUserIdentity rejected padded user identity")
+	}
+	if !HasConversationTarget(full) {
+		t.Fatal("HasConversationTarget rejected padded conversation target")
+	}
+	if !HasConversationIdentity(full) {
+		t.Fatal("HasConversationIdentity rejected padded full identity")
+	}
+	if HasUserIdentity(Identity{Platform: "napcat", UserID: " "}) {
+		t.Fatal("HasUserIdentity accepted blank user id")
+	}
+	if HasConversationTarget(Identity{ConversationType: " ", ConversationID: "42"}) {
+		t.Fatal("HasConversationTarget accepted blank conversation type")
+	}
+	if HasConversationIdentity(Identity{Platform: "napcat", UserID: "42", ConversationType: "private"}) {
+		t.Fatal("HasConversationIdentity accepted missing conversation id")
+	}
+}
+
 func TestRecordConversationStateRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
