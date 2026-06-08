@@ -693,7 +693,7 @@ func formatBusTableCell(text string, width int) string {
 		return text
 	}
 	if text == busMissingTimePlaceholder {
-		return text + strings.Repeat("—", padding)
+		padding = min(padding, busMissingTimeMaxPad)
 	}
 	return text + strings.Repeat(busTablePad, padding)
 }
@@ -1017,3 +1017,4 @@ const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
 const busTableColumnGap = "\u3000"
 const busTablePad = "\u2007"
+const busMissingTimeMaxPad = 1
