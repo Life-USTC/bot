@@ -652,7 +652,7 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
 		for _, stop := range stops {
-			timeText := busMissingTimePlaceholder
+			timeText := strings.Repeat(" ", cellWidth)
 			if stopTime := times[stop]; stopTime != "" {
 				timeText = textutil.MonospaceDigits(stopTime)
 			}
