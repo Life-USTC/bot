@@ -846,10 +846,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			return commandError("待办完成失败：", err)
 		}
 		title := lifedata.FirstString(todo, "title")
-		if title == "" {
-			return "已完成。"
-		}
-		return "已完成：" + title
+		return todoCompletionReply(title)
 	}
 	if hasArgs(args) {
 		return h.createTodo(ctx, ident, token, joinedArgs(args))
@@ -870,6 +867,14 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func todoCompletionReply(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "已完成。"
+	}
+	return "已完成：" + title
 }
 
 func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, title string) string {

@@ -772,6 +772,18 @@ func TestHandleTodoDoneUsesNumericID(t *testing.T) {
 	}
 }
 
+func TestTodoCompletionReply(t *testing.T) {
+	tests := map[string]string{
+		"写报告":  "已完成：写报告",
+		" \t ": "已完成。",
+	}
+	for title, want := range tests {
+		if got := todoCompletionReply(title); got != want {
+			t.Fatalf("todoCompletionReply(%q) = %q, want %q", title, got, want)
+		}
+	}
+}
+
 func TestResolveTodoMatchesDisplayDigitsInTitle(t *testing.T) {
 	todos := []map[string]any{
 		{"id": "todo-1", "title": "写报告 1"},
