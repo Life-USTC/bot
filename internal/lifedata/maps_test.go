@@ -278,11 +278,21 @@ func TestScheduleStartTimeAcceptsSeconds(t *testing.T) {
 	}
 }
 
+func TestScheduleStartTimeAcceptsUnpaddedClock(t *testing.T) {
+	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	got := ScheduleStartTime(map[string]any{"startTime": "9:05"}, day, nil)
+	if got.IsZero() || got.Format("2006-01-02 15:04") != "2026-06-07 09:05" {
+		t.Fatalf("start = %s", got.Format(time.RFC3339))
+	}
+}
+
 func TestScheduleStartTimeRejectsMissingOrInvalidStart(t *testing.T) {
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
 	for _, schedule := range []map[string]any{
 		{},
 		{"startTime": "bad"},
+		{"startTime": "09:99"},
+		{"startTime": "09:45:99"},
 	} {
 		if got := ScheduleStartTime(schedule, day, nil); !got.IsZero() {
 			t.Fatalf("ScheduleStartTime(%#v) = %s", schedule, got)

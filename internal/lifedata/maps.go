@@ -142,16 +142,32 @@ func SortSchedulesByStart(schedules []map[string]any) {
 }
 
 func clockMinutes(value string) (int, bool) {
-	parts := strings.Split(strings.TrimSpace(value), ":")
-	if len(parts) < 2 {
+	hour, minute, _, ok := clockParts(value)
+	if !ok {
 		return 0, false
+	}
+	return hour*60 + minute, true
+}
+
+func clockParts(value string) (int, int, int, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, 0, 0, false
 	}
 	hour, errHour := strconv.Atoi(parts[0])
 	minute, errMinute := strconv.Atoi(parts[1])
 	if errHour != nil || errMinute != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
-		return 0, false
+		return 0, 0, 0, false
 	}
-	return hour*60 + minute, true
+	second := 0
+	if len(parts) == 3 {
+		parsed, err := strconv.Atoi(parts[2])
+		if err != nil || parsed < 0 || parsed > 59 {
+			return 0, 0, 0, false
+		}
+		second = parsed
+	}
+	return hour, minute, second, true
 }
 
 func SubscriptionSectionIDs(data map[string]any) []string {
@@ -229,19 +245,14 @@ func ScheduleMatchesDay(schedule map[string]any, day time.Time) bool {
 
 func ScheduleStartTime(schedule map[string]any, day time.Time, loc *time.Location) time.Time {
 	start := FirstString(schedule, "startTime")
-	if start == "" {
+	hour, minute, second, ok := clockParts(start)
+	if !ok {
 		return time.Time{}
 	}
 	if loc == nil {
 		loc = day.Location()
 	}
-	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02 15:04:05"} {
-		parsed, err := time.ParseInLocation(layout, day.Format("2006-01-02")+" "+start, loc)
-		if err == nil {
-			return parsed
-		}
-	}
-	return time.Time{}
+	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, second, 0, loc)
 }
 
 func FormatAPITime(value string) string {
