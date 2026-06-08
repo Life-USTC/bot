@@ -1224,6 +1224,22 @@ func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	}
 }
 
+func TestSubscriptionSectionIDIntsSkipsNonPositiveIDs(t *testing.T) {
+	data := map[string]any{
+		"subscription": map[string]any{
+			"sections": []any{
+				map[string]any{"id": float64(-1)},
+				map[string]any{"id": float64(0)},
+				map[string]any{"id": float64(101)},
+			},
+		},
+	}
+	ids := subscriptionSectionIDInts(data)
+	if strings.Join(intStrings(ids), ",") != "101" {
+		t.Fatalf("ids = %#v", ids)
+	}
+}
+
 func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

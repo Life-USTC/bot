@@ -1277,7 +1277,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	already := 0
 	for _, section := range sections {
 		id := lifedata.FirstInt(section, "id")
-		if id == 0 {
+		if id <= 0 {
 			continue
 		}
 		if existingSet[id] {
@@ -1324,7 +1324,7 @@ func subscriptionSectionIDInts(data map[string]any) []int {
 	ids := make([]int, 0, len(sections))
 	for _, section := range sections {
 		id := lifedata.FirstInt(section, "id")
-		if id != 0 {
+		if id > 0 {
 			ids = append(ids, id)
 		}
 	}
