@@ -208,6 +208,9 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
+	if options.ExplicitRoute {
+		return strings.Join(formatBusItemsAsStopTimeTable(items), "\n")
+	}
 	return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 }
 
@@ -635,6 +638,53 @@ func formatBusItemsByRouteGroup(items []busItem, limit int) []string {
 		lines = append(lines, formatBusItem(item))
 	}
 	return lines
+}
+
+func formatBusItemsAsStopTimeTable(items []busItem) []string {
+	stops := busTableStops(items)
+	if len(stops) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(items)+1)
+	lines = append(lines, strings.Join(stops, "\t"))
+	for _, item := range items {
+		times := busStopTimes(item)
+		row := make([]string, 0, len(stops))
+		for _, stop := range stops {
+			timeText := busMissingTimePlaceholder
+			if stopTime := times[stop]; stopTime != "" {
+				timeText = textutil.MonospaceDigits(stopTime)
+			}
+			row = append(row, timeText)
+		}
+		lines = append(lines, strings.Join(row, "\t"))
+	}
+	return lines
+}
+
+func busTableStops(items []busItem) []string {
+	stops := []string{}
+	seen := map[string]bool{}
+	for _, item := range items {
+		for _, stop := range item.Stops {
+			if stop.Name == "" || seen[stop.Name] {
+				continue
+			}
+			stops = append(stops, stop.Name)
+			seen[stop.Name] = true
+		}
+	}
+	return stops
+}
+
+func busStopTimes(item busItem) map[string]string {
+	times := make(map[string]string, len(item.Stops))
+	for _, stop := range item.Stops {
+		if stop.Name != "" {
+			times[stop.Name] = stop.Time
+		}
+	}
+	return times
 }
 
 func sortedBusItemsByRouteGroup(items []busItem) []busItem {

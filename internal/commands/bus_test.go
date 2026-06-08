@@ -85,7 +85,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟻𝟿  →  北区\u3000 ———  →  西区\u3000 𝟸𝟹:𝟻𝟿") {
+	if !strings.Contains(reply, "东区\t北区\t西区\n𝟸𝟹:𝟻𝟿\t———\t𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -262,6 +262,12 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 	if strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") || !strings.Contains(reply, "𝟷𝟶:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
+	if !strings.Contains(reply, "东区\t高新区") ||
+		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\t𝟶𝟿:𝟺𝟶") ||
+		!strings.Contains(reply, "𝟷𝟶:𝟶𝟶\t𝟷𝟶:𝟺𝟶") ||
+		strings.Contains(reply, "→") {
+		t.Fatalf("reply is not a stop-time table: %q", reply)
+	}
 }
 
 func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) {
@@ -293,6 +299,11 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	reply := handler.busAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
 	if !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
+	}
+	if !strings.Contains(reply, "东区\t高新区") ||
+		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶\t𝟶𝟾:𝟺𝟶") ||
+		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\t𝟶𝟿:𝟺𝟶") {
+		t.Fatalf("reply is not a stop-time table: %q", reply)
 	}
 }
 
