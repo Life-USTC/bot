@@ -525,7 +525,7 @@ func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
 		{
 			DepartureCampus:  "东区",
 			DepartureMinutes: 570,
-			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "中区", Time: "09:45"}},
+			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "西区", Time: "09:45"}},
 		},
 		{
 			DepartureCampus:  "高新区",
@@ -537,22 +537,28 @@ func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
 			DepartureMinutes: 800,
 			Stops:            []busStop{{Name: "先研院", Time: "13:20"}, {Name: "高新区", Time: "13:30"}},
 		},
+		{
+			DepartureCampus:  "北区",
+			DepartureMinutes: 840,
+			Stops:            []busStop{{Name: "北区", Time: "14:00"}, {Name: "中区", Time: "14:10"}},
+		},
 	}
 
 	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
-	highTech := "高新区 𝟶𝟿:𝟹𝟻"
+	eastHigh := "高新区 𝟶𝟿:𝟹𝟻"
+	eastWest := "东区\u3000 𝟶𝟿:𝟹𝟶"
 	highTechLocal := "先研院 𝟷𝟹:𝟸𝟶"
-	campusLoop := "东区\u3000 𝟶𝟿:𝟹𝟶"
 	south := "南区\u3000 𝟷𝟸:𝟶𝟶"
-	for _, want := range []string{highTech, highTechLocal, campusLoop, south} {
+	other := "北区\u3000 𝟷𝟺:𝟶𝟶"
+	for _, want := range []string{eastHigh, eastWest, highTechLocal, south, other} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatted lines missing %q: %q", want, got)
 		}
 	}
-	if !(strings.Index(got, highTech) < strings.Index(got, campusLoop) &&
-		strings.Index(got, highTechLocal) < strings.Index(got, campusLoop) &&
-		strings.Index(got, campusLoop) < strings.Index(got, south) &&
-		strings.Contains(got, "\n\n"+campusLoop)) {
+	if !(strings.Index(got, eastHigh) < strings.Index(got, eastWest) &&
+		strings.Index(got, eastWest) < strings.Index(got, highTechLocal) &&
+		strings.Index(got, highTechLocal) < strings.Index(got, south) &&
+		strings.Index(got, south) < strings.Index(got, other)) {
 		t.Fatalf("formatted lines not grouped in route order: %q", got)
 	}
 }

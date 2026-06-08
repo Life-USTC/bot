@@ -648,16 +648,19 @@ func sortedBusItemsByRouteGroup(items []busItem) []busItem {
 
 func busRouteGroupRank(item busItem) int {
 	stops := busItemStopNames(item)
-	if hasBusStop(stops, "高新区") || hasBusStop(stops, "先研院") {
+	if hasBusStop(stops, "东区") && hasBusStop(stops, "高新区") {
 		return 0
 	}
-	if isCampusLoopRoute(stops) {
+	if hasBusStop(stops, "东区") && hasBusStop(stops, "西区") {
 		return 1
 	}
-	if hasBusStop(stops, "南区") {
+	if hasBusStop(stops, "高新区") && hasBusStop(stops, "先研院") {
 		return 2
 	}
-	return 3
+	if hasBusStop(stops, "南区") {
+		return 3
+	}
+	return 4
 }
 
 func busItemStopNames(item busItem) []string {
@@ -690,22 +693,6 @@ func hasBusStop(stops []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func isCampusLoopRoute(stops []string) bool {
-	if len(stops) == 0 {
-		return false
-	}
-	seen := 0
-	for _, stop := range stops {
-		switch stop {
-		case "东区", "北区", "中区", "西区":
-			seen++
-		default:
-			return false
-		}
-	}
-	return seen >= 2
 }
 
 func formatBusItem(item busItem) string {
