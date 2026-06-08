@@ -52,6 +52,15 @@ func TestFormatHomeworkFallsBackToID(t *testing.T) {
 	}
 }
 
+func TestFormatScheduleFallsBackToID(t *testing.T) {
+	got := formatSchedule(map[string]any{
+		"section": map[string]any{"id": "101"},
+	})
+	if got != "𝟷𝟶𝟷" {
+		t.Fatalf("formatSchedule fallback = %q", got)
+	}
+}
+
 func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())

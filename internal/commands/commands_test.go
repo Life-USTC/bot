@@ -1414,6 +1414,15 @@ func TestFormatScheduleOmitsMissingTimeColumn(t *testing.T) {
 	}
 }
 
+func TestFormatScheduleFallsBackToID(t *testing.T) {
+	line := formatSchedule(map[string]any{
+		"section": map[string]any{"id": "101"},
+	})
+	if line != "𝟷𝟶𝟷" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
 func TestSubscriptionSectionIDsForDayFiltersSemester(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{

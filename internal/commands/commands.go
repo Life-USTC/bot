@@ -1586,7 +1586,14 @@ func formatSchedule(schedule map[string]any) string {
 	if course != "" {
 		columns = append(columns, course)
 	}
+	if len(columns) == 0 {
+		return textutil.MonospaceDigits(scheduleFallbackLabel(schedule))
+	}
 	return strings.TrimRight(strings.Join(columns, "\t"), " ")
+}
+
+func scheduleFallbackLabel(schedule map[string]any) string {
+	return textutil.FirstNonEmpty(lifedata.FirstString(schedule, "id"), lifedata.NestedString(schedule, "section", "id"))
 }
 
 func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string, bool) {
