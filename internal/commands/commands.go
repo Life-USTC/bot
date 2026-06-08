@@ -1534,8 +1534,9 @@ func formatSchedule(schedule map[string]any) string {
 	course := lifedata.ScheduleCourseLabel(schedule)
 	place := lifedata.SchedulePlaceLabel(schedule)
 	columns := []string{}
-	if strings.TrimSpace(place) != "" {
-		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceASCII(strings.TrimSpace(place)), schedulePlaceColumnWidth))
+	place = strings.TrimSpace(place)
+	if place != "" {
+		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceASCII(place), schedulePlaceColumnWidth))
 	}
 	if timeRange != "" {
 		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceDigits(timeRange), scheduleTimeColumnWidth))
