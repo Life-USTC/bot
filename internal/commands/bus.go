@@ -786,52 +786,27 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 	if len(stops) == 0 {
 		return nil
 	}
-	cellWidth := busTableCellWidth(stops, items)
-	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, formatBusTableCells(stops, cellWidth))
+	rows := make([]textutil.DisplayTableRow, 0, len(items))
 	for _, item := range items {
 		times := busStopTimes(item)
-		row := make([]string, 0, len(stops))
+		cells := make([]string, 0, len(stops))
 		for _, stop := range stops {
-			timeText := busTableBlankCell(cellWidth)
+			timeText := ""
 			if stopTime := times[stop]; stopTime != "" {
 				timeText = textutil.MonospaceDigits(stopTime)
 			}
-			row = append(row, timeText)
+			cells = append(cells, timeText)
 		}
-		line := formatBusTableCells(row, cellWidth)
+		row := textutil.DisplayTableRow{Cells: cells}
 		if item.Highlight {
-			line += "\t✨"
+			row.Suffix = "✨"
 		}
-		lines = append(lines, line)
+		rows = append(rows, row)
 	}
-	return lines
-}
-
-func busTableCellWidth(stops []string, items []busItem) int {
-	width := 0
-	for _, stop := range stops {
-		width = max(width, textutil.DisplayWidth(stop))
-	}
-	for _, item := range items {
-		times := busStopTimes(item)
-		for _, stop := range stops {
-			timeText := busMissingTimePlaceholder
-			if stopTime := times[stop]; stopTime != "" {
-				timeText = textutil.MonospaceDigits(stopTime)
-			}
-			width = max(width, textutil.DisplayWidth(timeText))
-		}
-	}
-	return width
-}
-
-func formatBusTableCells(cells []string, width int) string {
-	out := make([]string, 0, len(cells))
-	for _, cell := range cells {
-		out = append(out, textutil.PadRightDisplay(cell, width))
-	}
-	return strings.Join(out, "\t")
+	return textutil.FormatDisplayTable(stops, rows, textutil.DisplayTableOptions{
+		EmptyWidthText: busMissingTimePlaceholder,
+		EmptyCell:      busTableBlankCell,
+	})
 }
 
 func busTableBlankCell(width int) string {
