@@ -122,7 +122,7 @@ func TestSchedulesUsesDataList(t *testing.T) {
 }
 
 func TestScheduleQuery(t *testing.T) {
-	values := ScheduleQuery("101", "2026-06-07T00:00:00Z", "2026-06-07T23:59:59Z")
+	values := ScheduleQuery(" 101 ", " 2026-06-07T00:00:00Z ", "\t2026-06-07T23:59:59Z\n")
 	if values.Get("sectionId") != "101" ||
 		values.Get("dateFrom") != "2026-06-07T00:00:00Z" ||
 		values.Get("dateTo") != "2026-06-07T23:59:59Z" ||

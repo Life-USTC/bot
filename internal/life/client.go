@@ -193,9 +193,9 @@ func (c *Client) Schedules(ctx context.Context, token string, values url.Values)
 
 func ScheduleQuery(sectionID, dateFrom, dateTo string) url.Values {
 	values := url.Values{}
-	values.Set("sectionId", sectionID)
-	values.Set("dateFrom", dateFrom)
-	values.Set("dateTo", dateTo)
+	values.Set("sectionId", strings.TrimSpace(sectionID))
+	values.Set("dateFrom", strings.TrimSpace(dateFrom))
+	values.Set("dateTo", strings.TrimSpace(dateTo))
 	values.Set("limit", "100")
 	return values
 }
