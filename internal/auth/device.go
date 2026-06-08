@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,10 +61,10 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		return nil, err
 	}
 	if meta.DeviceAuthorizationEndpoint == "" {
-		return nil, fmt.Errorf("server does not support OAuth device authorization")
+		return nil, errors.New("server does not support OAuth device authorization")
 	}
 	if meta.RegistrationEndpoint == "" {
-		return nil, fmt.Errorf("server does not advertise OAuth dynamic client registration")
+		return nil, errors.New("server does not advertise OAuth dynamic client registration")
 	}
 	clientID, err := m.registerClient(ctx, meta.RegistrationEndpoint)
 	if err != nil {
@@ -111,13 +112,13 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 func validateDeviceAuthResponse(resp deviceAuthResponse) error {
 	switch {
 	case resp.DeviceCode == "":
-		return fmt.Errorf("device authorization response missing device_code")
+		return errors.New("device authorization response missing device_code")
 	case resp.UserCode == "":
-		return fmt.Errorf("device authorization response missing user_code")
+		return errors.New("device authorization response missing user_code")
 	case resp.VerificationURI == "" && resp.VerificationURIComplete == "":
-		return fmt.Errorf("device authorization response missing verification_uri")
+		return errors.New("device authorization response missing verification_uri")
 	case resp.ExpiresIn <= 0:
-		return fmt.Errorf("device authorization response missing expires_in")
+		return errors.New("device authorization response missing expires_in")
 	default:
 		return nil
 	}
@@ -226,8 +227,8 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 	return authStore.DeleteCredential(ctx, ident)
 }
 
-var ErrNotLoggedIn = fmt.Errorf("not logged in")
-var ErrStoreNotConfigured = fmt.Errorf("auth store not configured")
+var ErrNotLoggedIn = errors.New("not logged in")
+var ErrStoreNotConfigured = errors.New("auth store not configured")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Credential, error) {
 	meta, err := m.discover(ctx)
@@ -350,7 +351,7 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		return "", err
 	}
 	if result.ClientID == "" {
-		return "", fmt.Errorf("client registration response missing client_id")
+		return "", errors.New("client registration response missing client_id")
 	}
 	return result.ClientID, nil
 }
@@ -398,7 +399,7 @@ func credentialFromTokenBodyAt(clientID, resource string, body []byte, fallbackR
 	}
 	accessToken := tokenString(tokens, "access_token", "")
 	if accessToken == "" {
-		return store.Credential{}, fmt.Errorf("token response missing access_token")
+		return store.Credential{}, errors.New("token response missing access_token")
 	}
 	expiresIn := 3600
 	if value, ok := lifedata.IntValue(tokens["expires_in"]); ok {

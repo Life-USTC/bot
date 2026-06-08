@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -50,7 +51,7 @@ type messageEvent struct {
 
 func (b *Bridge) Run(ctx context.Context) error {
 	if b.WSURL == "" {
-		return fmt.Errorf("NAPCAT_WS_URL is empty")
+		return errors.New("NAPCAT_WS_URL is empty")
 	}
 	dialer := websocket.DefaultDialer
 	header := http.Header{}
