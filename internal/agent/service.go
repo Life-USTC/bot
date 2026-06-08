@@ -36,8 +36,9 @@ type Service struct {
 }
 
 type Input struct {
-	Text     string
-	Identity store.Identity
+	Text       string
+	Identity   store.Identity
+	SendUpdate func(context.Context, store.Identity, string) error
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
@@ -85,9 +86,9 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if err != nil {
 		return "AI 工具设置读取失败：" + err.Error(), true
 	}
-	var trace *toolTraceRecorder
+	var trace *toolTraceNotifier
 	if traceEnabled {
-		trace = &toolTraceRecorder{}
+		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
 	tools, err := s.toolsFor(input.Identity, trace)
 	if err != nil {
@@ -133,7 +134,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if reply == "" {
 		return "", false
 	}
-	return appendToolTrace(reply, trace), true
+	return reply, true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -204,36 +205,22 @@ type notificationInput struct {
 	Enabled bool   `json:"enabled" jsonschema_description:"Whether to enable this notification type"`
 }
 
-type toolCallTrace struct {
-	Name    string
-	Summary string
-}
-
-type toolTraceRecorder struct {
+type toolTraceNotifier struct {
 	mu    sync.Mutex
-	calls []toolCallTrace
+	ident store.Identity
+	send  func(context.Context, store.Identity, string) error
 }
 
-func (r *toolTraceRecorder) Record(name, result string, err error) {
+func (r *toolTraceNotifier) Notify(ctx context.Context, name string) {
 	if r == nil {
 		return
 	}
-	summary := compactToolResult(result)
-	if err != nil {
-		summary = "失败：" + compactToolResult(err.Error())
-	}
+	message := "工具调用：" + name
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls = append(r.calls, toolCallTrace{Name: name, Summary: summary})
-}
-
-func (r *toolTraceRecorder) Calls() []toolCallTrace {
-	if r == nil {
-		return nil
+	if r.send != nil {
+		_ = r.send(ctx, r.ident, message)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]toolCallTrace(nil), r.calls...)
 }
 
 func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (bool, error) {
@@ -247,7 +234,7 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
-func (s *Service) toolsFor(ident store.Identity, trace *toolTraceRecorder) ([]tool.BaseTool, error) {
+func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]tool.BaseTool, error) {
 	commandSpecs := commands.CommandSpecs()
 	specByName := commandSpecsByName(commandSpecs)
 	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs))
@@ -367,7 +354,7 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceRecorder) ([]to
 	return tools, nil
 }
 
-func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.CommandSpec, tools []tool.BaseTool, commandName, name, description string, trace *toolTraceRecorder, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.CommandSpec, tools []tool.BaseTool, commandName, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	spec, ok := specByName[commandName]
 	if !ok {
 		return nil, fmt.Errorf("agent tool %q references unknown command %q", name, commandName)
@@ -409,55 +396,18 @@ func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
 	return true
 }
 
-func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceRecorder, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	wrapped := func(ctx context.Context, input I) (string, error) {
-		result, err := fn(ctx, input)
 		if trace != nil {
-			trace.Record(name, result, err)
+			trace.Notify(ctx, name)
 		}
-		return result, err
+		return fn(ctx, input)
 	}
 	t, err := utils.InferTool(name, description, wrapped)
 	if err != nil {
 		return nil, err
 	}
 	return append(tools, t), nil
-}
-
-func appendToolTrace(reply string, trace *toolTraceRecorder) string {
-	calls := trace.Calls()
-	if len(calls) == 0 {
-		return reply
-	}
-	lines := []string{reply, "", "工具调用："}
-	for i, call := range calls {
-		line := fmt.Sprintf("%d. %s", i+1, call.Name)
-		if call.Summary != "" {
-			line += " -> " + call.Summary
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func compactToolResult(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	for _, line := range strings.Split(value, "\n") {
-		line = strings.Join(strings.Fields(line), " ")
-		if line == "" {
-			continue
-		}
-		const maxRunes = 80
-		runes := []rune(line)
-		if len(runes) > maxRunes {
-			return string(runes[:maxRunes]) + "..."
-		}
-		return line
-	}
-	return ""
 }
 
 func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {

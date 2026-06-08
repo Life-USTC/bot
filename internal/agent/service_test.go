@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -283,20 +282,23 @@ func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
 	}
 }
 
-func TestAppendToolTrace(t *testing.T) {
-	trace := &toolTraceRecorder{}
-	trace.Record("list_todos", "第一行\n第二行", nil)
-	trace.Record("bad_tool", "", errors.New("broken"))
+func TestToolTraceNotifierSendsInvocation(t *testing.T) {
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	var messages []string
+	trace := &toolTraceNotifier{
+		ident: ident,
+		send: func(ctx context.Context, gotIdent store.Identity, message string) error {
+			if gotIdent != ident {
+				t.Fatalf("identity = %#v", gotIdent)
+			}
+			messages = append(messages, message)
+			return nil
+		},
+	}
 
-	reply := appendToolTrace("完成", trace)
-	if !strings.Contains(reply, "工具调用：") {
-		t.Fatalf("reply missing trace header: %q", reply)
-	}
-	if !strings.Contains(reply, "1. list_todos -> 第一行") {
-		t.Fatalf("reply missing first tool: %q", reply)
-	}
-	if !strings.Contains(reply, "2. bad_tool -> 失败：broken") {
-		t.Fatalf("reply missing error tool: %q", reply)
+	trace.Notify(context.Background(), "list_todos")
+	if len(messages) != 1 || messages[0] != "工具调用：list_todos" {
+		t.Fatalf("messages = %#v", messages)
 	}
 }
 

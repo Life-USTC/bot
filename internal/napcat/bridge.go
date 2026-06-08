@@ -166,8 +166,9 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, b
 		return "", false
 	}
 	reply, ok := b.Agent.Handle(ctx, agent.Input{
-		Text:     event.RawMessage,
-		Identity: event.identity(),
+		Text:       event.RawMessage,
+		Identity:   event.identity(),
+		SendUpdate: b.SendMessage,
 	})
 	if !ok {
 		return "", false
