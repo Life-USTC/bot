@@ -29,6 +29,29 @@ func (s *fakeSender) SendMessage(ctx context.Context, ident store.Identity, mess
 	return nil
 }
 
+func TestFormatHomeworkIncludesDetails(t *testing.T) {
+	homework := map[string]any{
+		"title":           "Problem Set 1",
+		"submissionDueAt": "2026-06-08T10:00:00+08:00",
+		"section": map[string]any{
+			"course": map[string]any{"namePrimary": "数据库系统"},
+		},
+	}
+	got := formatHomework(homework)
+	for _, want := range []string{"截止 𝟶𝟼-𝟶𝟾 𝟷𝟶:𝟶𝟶", "数据库系统", "Problem Set 𝟷"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatHomework missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestFormatHomeworkFallsBackToID(t *testing.T) {
+	got := formatHomework(map[string]any{"id": "hw-1"})
+	if got != "hw-𝟷" {
+		t.Fatalf("formatHomework fallback = %q", got)
+	}
+}
+
 func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
