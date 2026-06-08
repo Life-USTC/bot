@@ -89,6 +89,10 @@ func ScheduleTimeRange(schedule map[string]any) string {
 	return strings.TrimSpace(start + "-" + end)
 }
 
+func ScheduleFallbackLabel(schedule map[string]any) string {
+	return textutil.FirstNonEmpty(FirstString(schedule, "id"), NestedString(schedule, "section", "id"))
+}
+
 func DayRFC3339Range(day time.Time) (string, string) {
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	end := time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, day.Location())

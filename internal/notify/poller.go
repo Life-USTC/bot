@@ -199,13 +199,9 @@ func formatSchedule(schedule map[string]any) string {
 	place := lifedata.SchedulePlaceLabel(schedule)
 	parts := textutil.NonEmpty(place, timeRange, course)
 	if len(parts) == 0 {
-		return textutil.MonospaceDigits(scheduleFallbackLabel(schedule))
+		return textutil.MonospaceDigits(lifedata.ScheduleFallbackLabel(schedule))
 	}
 	return textutil.MonospaceDigits(strings.Join(parts, "\t"))
-}
-
-func scheduleFallbackLabel(schedule map[string]any) string {
-	return textutil.FirstNonEmpty(lifedata.FirstString(schedule, "id"), lifedata.NestedString(schedule, "section", "id"))
 }
 
 func formatHomework(homework map[string]any) string {

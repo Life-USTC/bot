@@ -123,6 +123,17 @@ func TestScheduleTimeRange(t *testing.T) {
 	}
 }
 
+func TestScheduleFallbackLabel(t *testing.T) {
+	if got := ScheduleFallbackLabel(map[string]any{"id": " 101 "}); got != "101" {
+		t.Fatalf("ScheduleFallbackLabel id = %q", got)
+	}
+	if got := ScheduleFallbackLabel(map[string]any{
+		"section": map[string]any{"id": float64(102)},
+	}); got != "102" {
+		t.Fatalf("ScheduleFallbackLabel section id = %q", got)
+	}
+}
+
 func TestDayRFC3339RangeUsesLocalDay(t *testing.T) {
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
 	from, to := DayRFC3339Range(day)
