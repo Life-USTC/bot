@@ -1570,7 +1570,7 @@ func (h Handler) loginRequired() string {
 }
 
 func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd parsedCommand) {
-	if h.Store == nil || !hasConversationIdentity(ident) {
+	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
 	if err := h.Store.RecordConversationState(ctx, ident, cmd.Name, strconv.Quote(cmd.Raw)); err != nil {
@@ -1579,7 +1579,7 @@ func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd pars
 }
 
 func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd parsedCommand, reply string) {
-	if h.Store == nil || !hasConversationIdentity(ident) {
+	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
 	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
@@ -1598,10 +1598,6 @@ func (h Handler) logf(format string, args ...any) {
 	if h.Logger != nil {
 		h.Logger.Printf(format, args...)
 	}
-}
-
-func hasConversationIdentity(ident store.Identity) bool {
-	return store.HasConversationIdentity(ident)
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {
