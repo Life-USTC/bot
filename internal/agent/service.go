@@ -76,7 +76,8 @@ func (s *Service) Enabled() bool {
 }
 
 func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
-	if !s.Enabled() || strings.TrimSpace(input.Text) == "" || store.IsGroupConversation(input.Identity) {
+	inputText := strings.TrimSpace(input.Text)
+	if !s.Enabled() || inputText == "" || store.IsGroupConversation(input.Identity) {
 		return "", false
 	}
 	tools, err := s.toolsFor(input.Identity)
@@ -115,14 +116,15 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		if err != nil || msg == nil {
 			continue
 		}
-		if strings.TrimSpace(msg.Content) != "" {
-			reply = msg.Content
+		content := strings.TrimSpace(msg.Content)
+		if content != "" {
+			reply = content
 		}
 	}
-	if strings.TrimSpace(reply) == "" {
+	if reply == "" {
 		return "", false
 	}
-	return strings.TrimSpace(reply), true
+	return reply, true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {

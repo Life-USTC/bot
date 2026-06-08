@@ -43,6 +43,17 @@ func TestAgentIgnoresGroupMessages(t *testing.T) {
 	}
 }
 
+func TestAgentIgnoresBlankMessages(t *testing.T) {
+	svc := &Service{enabled: true}
+	reply, ok := svc.Handle(context.Background(), Input{
+		Text:     " \t\n ",
+		Identity: store.Identity{ConversationType: "private"},
+	})
+	if ok || reply != "" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestNewNormalizesModelCredentials(t *testing.T) {
 	var gotAuth string
 	var gotPath string
