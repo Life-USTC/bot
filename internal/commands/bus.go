@@ -187,7 +187,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		preferences, ok := h.currentBusPreferences(ctx, ident)
 		if ok {
 			options.ShowDeparted = preferences.ShowDepartedTrips
-			if len(routeArgs) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
+			if options.UsePreferredRoute && len(routeArgs) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
 				if from, ok := campusNameByID(data, *preferences.PreferredOriginCampusID); ok {
 					if to, ok := campusNameByID(data, *preferences.PreferredDestinationCampusID); ok {
 						routeArgs = []string{from, to}
@@ -207,6 +207,8 @@ func busHelp() string {
 	return strings.Join([]string{
 		"可以直接发：",
 		"校车",
+		"校车 全部",
+		"校车 我的路线",
 		"xc 东区 西区",
 		"校车 偏好",
 		"校车 设置 东区 西区",
@@ -276,6 +278,11 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 	options := busQueryOptions{}
 	for i := 0; i < len(args); i++ {
 		switch normToken(args[i]) {
+		case "all", "全部", "所有":
+			continue
+		case "preferred", "preference-route", "pref-route", "我的路线", "偏好路线", "默认路线":
+			options.UsePreferredRoute = true
+			continue
 		case "after", "之后", "以后":
 			if i+1 < len(args) {
 				if after, ok := parseBusAfterTime(args[i+1], now); ok {
@@ -506,9 +513,10 @@ type busStop struct {
 }
 
 type busQueryOptions struct {
-	ShowDeparted bool
-	Now          time.Time
-	After        bool
+	ShowDeparted      bool
+	Now               time.Time
+	After             bool
+	UsePreferredRoute bool
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
@@ -640,7 +648,7 @@ func sortedBusItemsByRouteGroup(items []busItem) []busItem {
 
 func busRouteGroupRank(item busItem) int {
 	stops := busItemStopNames(item)
-	if hasBusStop(stops, "东区") && hasBusStop(stops, "高新区") {
+	if hasBusStop(stops, "高新区") || hasBusStop(stops, "先研院") {
 		return 0
 	}
 	if isCampusLoopRoute(stops) {

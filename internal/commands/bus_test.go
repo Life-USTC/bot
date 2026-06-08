@@ -185,7 +185,7 @@ func TestHandleBusPreferencesViewAndSet(t *testing.T) {
 	}
 }
 
-func TestHandleBusUsesSavedPreferencesForBarePrivateQuery(t *testing.T) {
+func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +202,28 @@ func TestHandleBusUsesSavedPreferencesForBarePrivateQuery(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "南区\u3000 𝟸𝟹:𝟷𝟶") || !strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusPreferredRouteUsesSavedPreferences(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(busPreferenceTestData))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, []string{"我的路线"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
 	if !strings.Contains(reply, "南区\u3000 𝟸𝟹:𝟷𝟶") || strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
@@ -519,17 +541,18 @@ func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
 
 	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 	highTech := "高新区 𝟶𝟿:𝟹𝟻"
+	highTechLocal := "先研院 𝟷𝟹:𝟸𝟶"
 	campusLoop := "东区\u3000 𝟶𝟿:𝟹𝟶"
 	south := "南区\u3000 𝟷𝟸:𝟶𝟶"
-	other := "先研院 𝟷𝟹:𝟸𝟶"
-	for _, want := range []string{highTech, campusLoop, south, other} {
+	for _, want := range []string{highTech, highTechLocal, campusLoop, south} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatted lines missing %q: %q", want, got)
 		}
 	}
 	if !(strings.Index(got, highTech) < strings.Index(got, campusLoop) &&
+		strings.Index(got, highTechLocal) < strings.Index(got, campusLoop) &&
 		strings.Index(got, campusLoop) < strings.Index(got, south) &&
-		strings.Index(got, south) < strings.Index(got, other)) {
+		strings.Contains(got, "\n\n"+campusLoop)) {
 		t.Fatalf("formatted lines not grouped in route order: %q", got)
 	}
 }
