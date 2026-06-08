@@ -645,21 +645,54 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 	if len(stops) == 0 {
 		return nil
 	}
+	widths := busTableColumnWidths(stops, items)
 	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, strings.Join(stops, "\t"))
+	header := make([]string, 0, len(stops))
+	for i, stop := range stops {
+		header = append(header, formatBusTableCell(stop, widths[i]))
+	}
+	lines = append(lines, strings.Join(header, busTableColumnGap))
 	for _, item := range items {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
-		for _, stop := range stops {
+		for i, stop := range stops {
 			timeText := busMissingTimePlaceholder
 			if stopTime := times[stop]; stopTime != "" {
 				timeText = textutil.MonospaceDigits(stopTime)
 			}
-			row = append(row, timeText)
+			row = append(row, formatBusTableCell(timeText, widths[i]))
 		}
-		lines = append(lines, strings.Join(row, "\t"))
+		lines = append(lines, strings.Join(row, busTableColumnGap))
 	}
 	return lines
+}
+
+func busTableColumnWidths(stops []string, items []busItem) []int {
+	widths := make([]int, len(stops))
+	for i, stop := range stops {
+		widths[i] = textutil.DisplayWidth(stop)
+	}
+	for _, item := range items {
+		times := busStopTimes(item)
+		for i, stop := range stops {
+			timeText := busMissingTimePlaceholder
+			if stopTime := times[stop]; stopTime != "" {
+				timeText = textutil.MonospaceDigits(stopTime)
+			}
+			if width := textutil.DisplayWidth(timeText); width > widths[i] {
+				widths[i] = width
+			}
+		}
+	}
+	return widths
+}
+
+func formatBusTableCell(text string, width int) string {
+	padding := width - textutil.DisplayWidth(text)
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat(busTablePad, padding)
 }
 
 func busTableStops(items []busItem) []string {
@@ -979,3 +1012,5 @@ func busTime(value string, minutes int) string {
 
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
+const busTableColumnGap = "\u3000"
+const busTablePad = "\u2007"

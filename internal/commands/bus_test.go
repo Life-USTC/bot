@@ -85,7 +85,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区\t北区\t西区\n𝟸𝟹:𝟻𝟿\t———\t𝟸𝟹:𝟻𝟿") {
+	if !strings.Contains(reply, "东区 \u3000北区\u3000西区 \n𝟸𝟹:𝟻𝟿\u3000——— \u3000𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -262,9 +262,9 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 	if strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") || !strings.Contains(reply, "𝟷𝟶:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if !strings.Contains(reply, "东区\t高新区") ||
-		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\t𝟶𝟿:𝟺𝟶") ||
-		!strings.Contains(reply, "𝟷𝟶:𝟶𝟶\t𝟷𝟶:𝟺𝟶") ||
+	if !strings.Contains(reply, "东区 \u3000高新区") ||
+		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\u3000𝟶𝟿:𝟺𝟶 ") ||
+		!strings.Contains(reply, "𝟷𝟶:𝟶𝟶\u3000𝟷𝟶:𝟺𝟶 ") ||
 		strings.Contains(reply, "→") {
 		t.Fatalf("reply is not a stop-time table: %q", reply)
 	}
@@ -300,9 +300,9 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	if !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if !strings.Contains(reply, "东区\t高新区") ||
-		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶\t𝟶𝟾:𝟺𝟶") ||
-		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\t𝟶𝟿:𝟺𝟶") {
+	if !strings.Contains(reply, "东区 \u3000高新区") ||
+		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶\u3000𝟶𝟾:𝟺𝟶 ") ||
+		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶\u3000𝟶𝟿:𝟺𝟶 ") {
 		t.Fatalf("reply is not a stop-time table: %q", reply)
 	}
 }
