@@ -240,6 +240,24 @@ func TestSortSchedulesByStartIsStable(t *testing.T) {
 	}
 }
 
+func TestSortSchedulesByStartUsesClockOrder(t *testing.T) {
+	schedules := []map[string]any{
+		{"id": "ten", "startTime": "10:00"},
+		{"id": "missing"},
+		{"id": "nine", "startTime": "9:05"},
+		{"id": "eight", "startTime": "08:30:00"},
+	}
+
+	SortSchedulesByStart(schedules)
+	got := []string{FirstString(schedules[0], "id"), FirstString(schedules[1], "id"), FirstString(schedules[2], "id"), FirstString(schedules[3], "id")}
+	want := []string{"eight", "nine", "ten", "missing"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestScheduleStartTimeUsesProvidedLocation(t *testing.T) {
 	loc := time.FixedZone("TEST", 9*60*60)
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)

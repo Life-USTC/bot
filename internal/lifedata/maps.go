@@ -124,8 +124,34 @@ func SortHomeworksByDue(homeworks []map[string]any) {
 
 func SortSchedulesByStart(schedules []map[string]any) {
 	sort.SliceStable(schedules, func(i, j int) bool {
-		return FirstString(schedules[i], "startTime") < FirstString(schedules[j], "startTime")
+		left := FirstString(schedules[i], "startTime")
+		right := FirstString(schedules[j], "startTime")
+		leftMinutes, leftOK := clockMinutes(left)
+		rightMinutes, rightOK := clockMinutes(right)
+		switch {
+		case leftOK && rightOK:
+			return leftMinutes < rightMinutes
+		case leftOK:
+			return true
+		case rightOK:
+			return false
+		default:
+			return left < right
+		}
 	})
+}
+
+func clockMinutes(value string) (int, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) < 2 {
+		return 0, false
+	}
+	hour, errHour := strconv.Atoi(parts[0])
+	minute, errMinute := strconv.Atoi(parts[1])
+	if errHour != nil || errMinute != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 0, false
+	}
+	return hour*60 + minute, true
 }
 
 func SubscriptionSectionIDs(data map[string]any) []string {
