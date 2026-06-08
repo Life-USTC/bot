@@ -537,8 +537,8 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	sessions := make([]LoginSession, 0, len(rows))
 	for _, row := range rows {
 		ident := Identity{
-			Platform:         textutil.FirstNonEmpty(row.Platform, ""),
-			UserID:           textutil.FirstNonEmpty(row.ExternalUserID, ""),
+			Platform:         textutil.FirstNonEmpty(row.Platform),
+			UserID:           textutil.FirstNonEmpty(row.ExternalUserID),
 			ConversationType: row.ConversationType,
 			ConversationID:   row.ConversationID,
 		}
