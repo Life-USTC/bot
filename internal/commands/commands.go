@@ -560,7 +560,7 @@ func joinedArgs(args []string) string {
 }
 
 func parseGroupBus(text string) (parsedCommand, bool) {
-	raw := strings.TrimSpace(stripCQCodes(text))
+	raw := stripCQCodes(text)
 	if raw == "" || !containsBusKeyword(raw) {
 		return parsedCommand{}, false
 	}
