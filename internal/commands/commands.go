@@ -218,6 +218,16 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
+		Name:       "agent",
+		Aliases:    []string{"agent", "ai", "llm", "tool", "tools", "工具", "调试"},
+		HasHelp:    true,
+		NeedsStore: true,
+		Normalize:  normalizeAgentArgs,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.agentSettings(ctx, ident, args)
+		},
+	},
+	{
 		Name:      "ping",
 		Aliases:   []string{"p", "ping"},
 		NeedsLife: true,
@@ -581,6 +591,31 @@ func normalizeNotifyArgs(args []string) []string {
 	return out
 }
 
+func normalizeAgentArgs(args []string) []string {
+	out := copyArgs(args)
+	if len(out) > 0 {
+		switch normToken(out[0]) {
+		case "tool", "tools", "工具", "调用":
+			out = out[1:]
+		}
+	}
+	for i, arg := range out {
+		if isHelpToken(arg) {
+			out[i] = "help"
+			continue
+		}
+		switch normToken(arg) {
+		case "on", "enable", "enabled", "open", "开启", "打开", "开":
+			out[i] = "on"
+		case "off", "disable", "disabled", "close", "关闭", "关":
+			out[i] = "off"
+		case "status", "状态", "查看":
+			out[i] = "status"
+		}
+	}
+	return out
+}
+
 func NormalizeNotificationKind(value string) (string, bool) {
 	switch normToken(value) {
 	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
@@ -654,6 +689,7 @@ func (h Handler) help() string {
 		"下一节课",
 		"订阅",
 		"通知",
+		"AI 工具",
 		"状态 / status",
 		"我 / me",
 		"课程 数学分析",
@@ -1470,6 +1506,47 @@ func formatNotificationSettings(settings store.NotificationSettings) string {
 		"课前提醒：" + onOffText(settings.ClassesEnabled),
 		"作业提醒：" + onOffText(settings.HomeworkEnabled),
 	}, "\n")
+}
+
+func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args []string) string {
+	if firstArgIs(args, "help") {
+		return strings.Join([]string{
+			"AI 工具用法：",
+			"AI 工具：查看设置",
+			"AI 工具 开：显示 LLM 工具调用",
+			"AI 工具 关：隐藏 LLM 工具调用",
+		}, "\n")
+	}
+	if h.Store == nil {
+		return "存储未配置。"
+	}
+	if !store.IsPrivateConversation(ident) {
+		return "AI 工具设置只能在私聊里设置。"
+	}
+	settings, err := h.Store.AgentSettings(ctx, ident)
+	if err != nil {
+		return commandError("AI 工具设置查不到：", err)
+	}
+	settings.Identity = ident
+	if !hasArgs(args) || firstArgIs(args, "status") {
+		return formatAgentSettings(settings)
+	}
+	switch args[0] {
+	case "on":
+		settings.ExposeToolCalls = true
+	case "off":
+		settings.ExposeToolCalls = false
+	default:
+		return "想打开还是关闭？例如：AI 工具 开"
+	}
+	if err := h.Store.SaveAgentSettings(ctx, settings); err != nil {
+		return commandError("AI 工具设置保存失败：", err)
+	}
+	return formatAgentSettings(settings)
+}
+
+func formatAgentSettings(settings store.AgentSettings) string {
+	return "AI 工具调用展示：" + onOffText(settings.ExposeToolCalls)
 }
 
 func onOffText(enabled bool) string {

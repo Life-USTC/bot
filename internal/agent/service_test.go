@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,7 +160,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 }
 
 func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
-	_, err := appendCommandBackedTool(&Service{}, map[string]commands.CommandSpec{}, nil, "missing", "bad_tool", "Bad tool.", func(context.Context, emptyInput) (string, error) {
+	_, err := appendCommandBackedTool(&Service{}, map[string]commands.CommandSpec{}, nil, "missing", "bad_tool", "Bad tool.", nil, func(context.Context, emptyInput) (string, error) {
 		return "", nil
 	})
 	if err == nil || !strings.Contains(err.Error(), `unknown command "missing"`) {
@@ -169,7 +170,7 @@ func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"})
+	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,6 +280,23 @@ func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
 	_, err := notificationKindCommandArg("bus")
 	if err == nil || !strings.Contains(err.Error(), "unsupported notification kind") {
 		t.Fatalf("unsupported kind error = %v", err)
+	}
+}
+
+func TestAppendToolTrace(t *testing.T) {
+	trace := &toolTraceRecorder{}
+	trace.Record("list_todos", "第一行\n第二行", nil)
+	trace.Record("bad_tool", "", errors.New("broken"))
+
+	reply := appendToolTrace("完成", trace)
+	if !strings.Contains(reply, "工具调用：") {
+		t.Fatalf("reply missing trace header: %q", reply)
+	}
+	if !strings.Contains(reply, "1. list_todos -> 第一行") {
+		t.Fatalf("reply missing first tool: %q", reply)
+	}
+	if !strings.Contains(reply, "2. bad_tool -> 失败：broken") {
+		t.Fatalf("reply missing error tool: %q", reply)
 	}
 }
 

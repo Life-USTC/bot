@@ -1099,6 +1099,48 @@ func TestNotificationSettingsTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestAgentSettings(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	settings, err := s.AgentSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.ExposeToolCalls {
+		t.Fatalf("default settings = %#v", settings)
+	}
+
+	settings.ExposeToolCalls = true
+	if err := s.SaveAgentSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AgentSettings(ctx, Identity{
+		Platform:         " napcat ",
+		UserID:           " 42 ",
+		ConversationType: " private ",
+		ConversationID:   " 42 ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.ExposeToolCalls || got.Identity != ident {
+		t.Fatalf("settings = %#v", got)
+	}
+	var row agentSettingRow
+	if err := s.db.WithContext(ctx).First(&row, "conversation_type = ? AND conversation_id = ?", "private", "42").Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.UpdatedAt.IsZero() {
+		t.Fatal("agent settings updated_at was not set")
+	}
+}
+
 func TestNotificationSettingsRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

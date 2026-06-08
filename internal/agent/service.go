@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
@@ -80,7 +81,15 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if !s.Enabled() || inputText == "" || store.IsGroupConversation(input.Identity) {
 		return "", false
 	}
-	tools, err := s.toolsFor(input.Identity)
+	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
+	if err != nil {
+		return "AI 工具设置读取失败：" + err.Error(), true
+	}
+	var trace *toolTraceRecorder
+	if traceEnabled {
+		trace = &toolTraceRecorder{}
+	}
+	tools, err := s.toolsFor(input.Identity, trace)
 	if err != nil {
 		return "AI 工具初始化失败：" + err.Error(), true
 	}
@@ -124,7 +133,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if reply == "" {
 		return "", false
 	}
-	return reply, true
+	return appendToolTrace(reply, trace), true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -195,7 +204,50 @@ type notificationInput struct {
 	Enabled bool   `json:"enabled" jsonschema_description:"Whether to enable this notification type"`
 }
 
-func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
+type toolCallTrace struct {
+	Name    string
+	Summary string
+}
+
+type toolTraceRecorder struct {
+	mu    sync.Mutex
+	calls []toolCallTrace
+}
+
+func (r *toolTraceRecorder) Record(name, result string, err error) {
+	if r == nil {
+		return
+	}
+	summary := compactToolResult(result)
+	if err != nil {
+		summary = "失败：" + compactToolResult(err.Error())
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, toolCallTrace{Name: name, Summary: summary})
+}
+
+func (r *toolTraceRecorder) Calls() []toolCallTrace {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]toolCallTrace(nil), r.calls...)
+}
+
+func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (bool, error) {
+	if s.handler.Store == nil {
+		return false, nil
+	}
+	settings, err := s.handler.Store.AgentSettings(ctx, ident)
+	if err != nil {
+		return false, err
+	}
+	return settings.ExposeToolCalls, nil
+}
+
+func (s *Service) toolsFor(ident store.Identity, trace *toolTraceRecorder) ([]tool.BaseTool, error) {
 	commandSpecs := commands.CommandSpecs()
 	specByName := commandSpecsByName(commandSpecs)
 	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs))
@@ -206,7 +258,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 		}
 		for _, toolSpec := range commandSpec.AgentTools {
 			toolSpec := toolSpec
-			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, func(ctx context.Context, _ emptyInput) (string, error) {
+			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, trace, func(ctx context.Context, _ emptyInput) (string, error) {
 				return s.runCommand(ctx, ident, toolSpec.CommandText)
 			})
 			if err != nil {
@@ -214,85 +266,85 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 			}
 		}
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", func(ctx context.Context, input busInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", trace, func(ctx context.Context, input busInput) (string, error) {
 		return s.runCommand(ctx, ident, busCommandText(input))
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "course", "search_courses", "Search courses by name, code, or teacher keyword.", requiredCommandTool(s, ident, "keyword", "课程 ", func(input keywordInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "course", "search_courses", "Search courses by name, code, or teacher keyword.", trace, requiredCommandTool(s, ident, "keyword", "课程 ", func(input keywordInput) string {
 		return input.Keyword
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section", "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", requiredCommandTool(s, ident, "keyword", "教学班 ", func(input keywordInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section", "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", trace, requiredCommandTool(s, ident, "keyword", "教学班 ", func(input keywordInput) string {
 		return input.Keyword
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher", "search_teachers", "Search teachers by name or teacher code.", requiredCommandTool(s, ident, "keyword", "老师 ", func(input keywordInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher", "search_teachers", "Search teachers by name or teacher code.", trace, requiredCommandTool(s, ident, "keyword", "老师 ", func(input keywordInput) string {
 		return input.Keyword
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "list_filtered_todos", "List todos with optional status, priority, and due-date filters.", func(ctx context.Context, input todoListInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "list_filtered_todos", "List todos with optional status, priority, and due-date filters.", trace, func(ctx context.Context, input todoListInput) (string, error) {
 		return s.runCommand(ctx, ident, todoListCommandText(input))
 	})
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Create a new todo for the user, optionally with content, priority, and due date.", requiredCommandTool(s, ident, "title", "待办 add ", func(input todoInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Create a new todo for the user, optionally with content, priority, and due date.", trace, requiredCommandTool(s, ident, "title", "待办 add ", func(input todoInput) string {
 		return todoCreateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", requiredCommandTool(s, ident, "target", "待办 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", trace, requiredCommandTool(s, ident, "target", "待办 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Mark a completed todo as pending by number, ID, or title from the completed todo list.", requiredCommandTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Mark a completed todo as pending by number, ID, or title from the completed todo list.", trace, requiredCommandTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Update a todo title, content, priority, or due date by number, ID, or title.", requiredCommandTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Update a todo title, content, priority, or due date by number, ID, or title.", trace, requiredCommandTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
 		return todoUpdateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Delete a todo by number, ID, or title from the todo list.", requiredCommandTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Delete a todo by number, ID, or title from the todo list.", trace, requiredCommandTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", requiredCommandTool(s, ident, "target", "作业 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", trace, requiredCommandTool(s, ident, "target", "作业 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", requiredCommandTool(s, ident, "target", "作业 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", trace, requiredCommandTool(s, ident, "target", "作业 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", requiredCommandTool(s, ident, "text", "订阅 导入 ", func(input bulkSubscribeInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", trace, requiredCommandTool(s, ident, "text", "订阅 导入 ", func(input bulkSubscribeInput) string {
 		return input.Text
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "notify", "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", func(ctx context.Context, input notificationInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "notify", "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", trace, func(ctx context.Context, input notificationInput) (string, error) {
 		kind, err := notificationKindCommandArg(input.Kind)
 		if err != nil {
 			return "", err
@@ -306,7 +358,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
+	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", trace, func(_ context.Context, _ emptyInput) (string, error) {
 		return currentTimeMessage(), nil
 	})
 	if err != nil {
@@ -315,7 +367,7 @@ func (s *Service) toolsFor(ident store.Identity) ([]tool.BaseTool, error) {
 	return tools, nil
 }
 
-func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.CommandSpec, tools []tool.BaseTool, commandName, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.CommandSpec, tools []tool.BaseTool, commandName, name, description string, trace *toolTraceRecorder, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	spec, ok := specByName[commandName]
 	if !ok {
 		return nil, fmt.Errorf("agent tool %q references unknown command %q", name, commandName)
@@ -323,7 +375,7 @@ func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.C
 	if !s.commandDependenciesAvailable(spec) {
 		return tools, nil
 	}
-	return appendInferredTool(tools, name, description, fn)
+	return appendInferredTool(tools, name, description, trace, fn)
 }
 
 func requiredCommandTool[I any](s *Service, ident store.Identity, argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
@@ -357,12 +409,55 @@ func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
 	return true
 }
 
-func appendInferredTool[I any](tools []tool.BaseTool, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
-	t, err := utils.InferTool(name, description, fn)
+func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceRecorder, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+	wrapped := func(ctx context.Context, input I) (string, error) {
+		result, err := fn(ctx, input)
+		if trace != nil {
+			trace.Record(name, result, err)
+		}
+		return result, err
+	}
+	t, err := utils.InferTool(name, description, wrapped)
 	if err != nil {
 		return nil, err
 	}
 	return append(tools, t), nil
+}
+
+func appendToolTrace(reply string, trace *toolTraceRecorder) string {
+	calls := trace.Calls()
+	if len(calls) == 0 {
+		return reply
+	}
+	lines := []string{reply, "", "工具调用："}
+	for i, call := range calls {
+		line := fmt.Sprintf("%d. %s", i+1, call.Name)
+		if call.Summary != "" {
+			line += " -> " + call.Summary
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func compactToolResult(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if line == "" {
+			continue
+		}
+		const maxRunes = 80
+		runes := []rune(line)
+		if len(runes) > maxRunes {
+			return string(runes[:maxRunes]) + "..."
+		}
+		return line
+	}
+	return ""
 }
 
 func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {

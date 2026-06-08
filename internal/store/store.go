@@ -73,6 +73,11 @@ type NotificationSettings struct {
 	HomeworkEnabled bool
 }
 
+type AgentSettings struct {
+	Identity        Identity
+	ExposeToolCalls bool
+}
+
 type Store struct {
 	db *gorm.DB
 }
@@ -179,6 +184,20 @@ func (notificationSettingRow) TableName() string {
 	return "notification_settings"
 }
 
+type agentSettingRow struct {
+	UserID           int64  `gorm:"primaryKey"`
+	Platform         string `gorm:"not null"`
+	ExternalUserID   string `gorm:"not null"`
+	ConversationType string
+	ConversationID   string
+	ExposeToolCalls  bool `gorm:"not null"`
+	UpdatedAt        time.Time
+}
+
+func (agentSettingRow) TableName() string {
+	return "agent_settings"
+}
+
 type notificationDeliveryRow struct {
 	ID        int64  `gorm:"primaryKey"`
 	UserID    int64  `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
@@ -231,6 +250,7 @@ func (s *Store) migrate() error {
 		&conversationStateRow{},
 		&interactionRow{},
 		&notificationSettingRow{},
+		&agentSettingRow{},
 		&notificationDeliveryRow{},
 	)
 }
@@ -775,6 +795,54 @@ func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]Notification
 	return out, nil
 }
 
+func (s *Store) AgentSettings(ctx context.Context, ident Identity) (AgentSettings, error) {
+	if err := validateIdentity(ident); err != nil {
+		return AgentSettings{}, err
+	}
+	ident = normalizeIdentity(ident)
+	var row agentSettingRow
+	err := s.db.WithContext(ctx).
+		Joins("JOIN users ON users.id = agent_settings.user_id").
+		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AgentSettings{Identity: ident}, nil
+	}
+	if err != nil {
+		return AgentSettings{}, err
+	}
+	return agentSettingsFromRow(row, ident), nil
+}
+
+func (s *Store) SaveAgentSettings(ctx context.Context, settings AgentSettings) error {
+	settings.Identity = normalizeIdentity(settings.Identity)
+	userID, err := s.EnsureUser(ctx, settings.Identity)
+	if err != nil {
+		return err
+	}
+	now := nowUTC()
+	row := agentSettingRow{
+		UserID:           userID,
+		Platform:         settings.Identity.Platform,
+		ExternalUserID:   settings.Identity.UserID,
+		ConversationType: settings.Identity.ConversationType,
+		ConversationID:   settings.Identity.ConversationID,
+		ExposeToolCalls:  settings.ExposeToolCalls,
+		UpdatedAt:        now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"platform",
+			"external_user_id",
+			"conversation_type",
+			"conversation_id",
+			"expose_tool_calls",
+			"updated_at",
+		}),
+	}).Create(&row).Error
+}
+
 func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
 	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
 	if err != nil {
@@ -842,5 +910,18 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		Identity:        ident,
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
+	}
+}
+
+func agentSettingsFromRow(row agentSettingRow, fallback Identity) AgentSettings {
+	ident := Identity{
+		Platform:         textutil.FirstNonEmpty(row.Platform, fallback.Platform),
+		UserID:           textutil.FirstNonEmpty(row.ExternalUserID, fallback.UserID),
+		ConversationType: textutil.FirstNonEmpty(row.ConversationType, fallback.ConversationType),
+		ConversationID:   textutil.FirstNonEmpty(row.ConversationID, fallback.ConversationID),
+	}
+	return AgentSettings{
+		Identity:        ident,
+		ExposeToolCalls: row.ExposeToolCalls,
 	}
 }

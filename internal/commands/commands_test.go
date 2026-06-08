@@ -215,6 +215,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	}
 	storeCommands := map[string]bool{
 		"notify": true,
+		"agent":  true,
 	}
 	authCommands := map[string]bool{
 		"login":        true,
@@ -234,6 +235,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"homework":     true,
 		"subscription": true,
 		"notify":       true,
+		"agent":        true,
 		"bus":          true,
 		"schedule":     true,
 	}
@@ -471,6 +473,15 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 	}
 	if args[0] != " KB " || args[1] != "ON" {
 		t.Fatalf("notify args mutated = %#v", args)
+	}
+
+	args = []string{" 开 "}
+	normalized = normalizeAgentArgs(args)
+	if strings.Join(normalized, " ") != "on" {
+		t.Fatalf("agent normalized = %#v", normalized)
+	}
+	if args[0] != " 开 " {
+		t.Fatalf("agent args mutated = %#v", args)
 	}
 }
 
@@ -1451,6 +1462,47 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	reply, ok = handler.Handle(ctx, Input{Text: "通知", Identity: paddedIdent})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("padded private reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestAgentSettingsCommand(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	handler := Handler{Store: s, Prefix: "/life"}
+
+	reply, ok := handler.Handle(ctx, Input{Text: "AI 工具", Identity: ident})
+	if !ok || !strings.Contains(reply, "AI 工具调用展示：关") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "AI 工具调用展示：开") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	settings, err := s.AgentSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ExposeToolCalls {
+		t.Fatalf("settings = %#v", settings)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 关", Identity: ident})
+	if !ok || !strings.Contains(reply, "AI 工具调用展示：关") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 maybe", Identity: ident})
+	if !ok || !strings.Contains(reply, "想打开还是关闭") {
+		t.Fatalf("invalid reply = %q, ok = %v", reply, ok)
+	}
+	groupIdent := ident
+	groupIdent.ConversationType = "group"
+	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 开", Identity: groupIdent})
+	if ok || reply != "" {
+		t.Fatalf("group reply = %q, ok = %v", reply, ok)
 	}
 }
 
