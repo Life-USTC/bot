@@ -297,15 +297,26 @@ func TestToolTraceNotifierSendsInvocation(t *testing.T) {
 	}
 
 	trace.Notify(context.Background(), "search_courses", keywordInput{Keyword: "数学分析"})
+	trace.NotifyResult(context.Background(), "search_courses", "课程：数学分析\n教师：张三", nil)
 	trace.Notify(context.Background(), "get_current_time", emptyInput{})
-	if len(messages) != 2 {
+	if len(messages) != 3 {
 		t.Fatalf("messages = %#v", messages)
 	}
 	if messages[0] != `工具调用：search_courses {"keyword":"数学分析"}` {
 		t.Fatalf("message 0 = %q", messages[0])
 	}
-	if messages[1] != "工具调用：get_current_time" {
+	if messages[1] != "工具结果：search_courses\n课程：数学分析\n教师：张三" {
 		t.Fatalf("message 1 = %q", messages[1])
+	}
+	if messages[2] != "工具调用：get_current_time" {
+		t.Fatalf("message 2 = %q", messages[2])
+	}
+}
+
+func TestFormatToolResultTruncatesLongText(t *testing.T) {
+	got := formatToolResult(strings.Repeat("好", 1001))
+	if !strings.HasSuffix(got, "\n...") {
+		t.Fatalf("result was not truncated: %q", got)
 	}
 }
 

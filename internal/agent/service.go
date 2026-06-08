@@ -100,7 +100,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		Description:   "Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
 		Model:         s.model,
-		MaxIterations: 6,
+		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools},
 		},
@@ -219,6 +219,23 @@ func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any) 
 	message := "工具调用：" + name
 	if args := formatToolArgs(input); args != "" {
 		message += " " + args
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.send != nil {
+		_ = r.send(ctx, r.ident, message)
+	}
+}
+
+func (r *toolTraceNotifier) NotifyResult(ctx context.Context, name, result string, err error) {
+	if r == nil {
+		return
+	}
+	message := "工具结果：" + name
+	if err != nil {
+		message += "\n失败：" + formatToolResult(err.Error())
+	} else if formatted := formatToolResult(result); formatted != "" {
+		message += "\n" + formatted
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -405,7 +422,11 @@ func appendInferredTool[I any](tools []tool.BaseTool, name, description string, 
 		if trace != nil {
 			trace.Notify(ctx, name, input)
 		}
-		return fn(ctx, input)
+		result, err := fn(ctx, input)
+		if trace != nil {
+			trace.NotifyResult(ctx, name, result, err)
+		}
+		return result, err
 	}
 	t, err := utils.InferTool(name, description, wrapped)
 	if err != nil {
@@ -429,6 +450,19 @@ func formatToolArgs(input any) string {
 		return string(runes[:maxRunes]) + "..."
 	}
 	return args
+}
+
+func formatToolResult(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	const maxRunes = 1000
+	runes := []rune(value)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "\n..."
+	}
+	return value
 }
 
 func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {
@@ -532,7 +566,8 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 	return reply, nil
 }
 
-const historyTurnLimit = 8
+const historyTurnLimit = 20
+const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
 
 var shanghaiLocation = lifedata.ChinaLocation()
