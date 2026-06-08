@@ -365,8 +365,57 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	}
 	if !strings.Contains(reply, "东区  \t高新区") ||
 		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶 \t𝟶𝟾:𝟺𝟶 ") ||
-		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 ") {
+		!strings.Contains(reply, "✨\t𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 ") {
 		t.Fatalf("reply is not a stop-time table: %q", reply)
+	}
+}
+
+func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(`{
+				"routes":[
+					{"id":"direct","stops":[
+						{"campus":{"nameCn":"东区"}},
+						{"campus":{"nameCn":"西区"}}
+					]},
+					{"id":"via-north","stops":[
+						{"campus":{"nameCn":"东区"}},
+						{"campus":{"nameCn":"北区"}},
+						{"campus":{"nameCn":"西区"}}
+					]}
+				],
+				"trips":[
+					{"routeId":"via-north","dayType":"weekday","departureTime":"09:20","departureMinutes":560,"arrivalTime":"09:35","stopTimes":[
+						{"campusName":"东区","time":"09:20"},{"campusName":"北区"},{"campusName":"西区","time":"09:35"}
+					]},
+					{"routeId":"direct","dayType":"weekday","departureTime":"09:30","departureMinutes":570,"arrivalTime":"09:40","stopTimes":[
+						{"campusName":"东区","time":"09:30"},{"campusName":"西区","time":"09:40"}
+					]}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 9, 0, 0, 0, lifedata.ChinaLocation()))
+	want := strings.Join([]string{
+		"东区 \t西区 ",
+		"𝟶𝟿:𝟹𝟶\t𝟶𝟿:𝟺𝟶",
+		"",
+		"东区 \t北区 \t西区 ",
+		"𝟶𝟿:𝟸𝟶\t　　 \t𝟶𝟿:𝟹𝟻",
+	}, "\n")
+	if reply != want {
+		t.Fatalf("reply = %q, want %q", reply, want)
 	}
 }
 

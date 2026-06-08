@@ -211,8 +211,11 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
+	if options.ShowDeparted && !options.After {
+		items = markNextBusItem(items, effectiveBusNow(now, options))
+	}
 	if options.ExplicitRoute {
-		return strings.Join(formatBusItemsAsStopTimeTable(items), "\n")
+		return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 	}
 	return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 }
@@ -605,6 +608,7 @@ type busItem struct {
 	DepartureTime    string
 	Arrival          string
 	Route            string
+	Highlight        bool
 }
 
 type busStop struct {
@@ -625,10 +629,7 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 }
 
 func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions) []busItem {
-	if !options.Now.IsZero() {
-		now = options.Now
-	}
-	now = now.In(lifedata.ChinaLocation())
+	now = effectiveBusNow(now, options)
 	from, to := busFilter(args)
 	dayType := "weekday"
 	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
@@ -674,6 +675,32 @@ func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, 
 		return items[i].DepartureMinutes < items[j].DepartureMinutes
 	})
 	return items
+}
+
+func effectiveBusNow(now time.Time, options busQueryOptions) time.Time {
+	if !options.Now.IsZero() {
+		now = options.Now
+	}
+	return now.In(lifedata.ChinaLocation())
+}
+
+func markNextBusItem(items []busItem, now time.Time) []busItem {
+	now = now.In(lifedata.ChinaLocation())
+	nowMinutes := now.Hour()*60 + now.Minute()
+	out := append([]busItem(nil), items...)
+	nextIndex := -1
+	for i, item := range out {
+		if item.DepartureMinutes < nowMinutes {
+			continue
+		}
+		if nextIndex < 0 || item.DepartureMinutes < out[nextIndex].DepartureMinutes {
+			nextIndex = i
+		}
+	}
+	if nextIndex >= 0 {
+		out[nextIndex].Highlight = true
+	}
+	return out
 }
 
 func nextBusByRoute(data map[string]any, args []string, now time.Time) []busItem {
@@ -760,8 +787,9 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		return nil
 	}
 	cellWidth := busTableCellWidth(stops, items)
+	showMarker := hasHighlightedBusItem(items)
 	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, formatBusTableCells(stops, cellWidth))
+	lines = append(lines, formatBusTableLine(stops, cellWidth, showMarker, false))
 	for _, item := range items {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
@@ -772,9 +800,18 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 			}
 			row = append(row, timeText)
 		}
-		lines = append(lines, formatBusTableCells(row, cellWidth))
+		lines = append(lines, formatBusTableLine(row, cellWidth, showMarker, item.Highlight))
 	}
 	return lines
+}
+
+func hasHighlightedBusItem(items []busItem) bool {
+	for _, item := range items {
+		if item.Highlight {
+			return true
+		}
+	}
+	return false
 }
 
 func busTableCellWidth(stops []string, items []busItem) int {
@@ -801,6 +838,17 @@ func formatBusTableCells(cells []string, width int) string {
 		out = append(out, textutil.PadRightDisplay(cell, width))
 	}
 	return strings.Join(out, "\t")
+}
+
+func formatBusTableLine(cells []string, width int, showMarker, marked bool) string {
+	line := formatBusTableCells(cells, width)
+	if !showMarker {
+		return line
+	}
+	if marked {
+		return "✨\t" + line
+	}
+	return "\u3000\t" + line
 }
 
 func busTableBlankCell(width int) string {
