@@ -161,6 +161,15 @@ func TestErrorRetCode(t *testing.T) {
 	}
 }
 
+func TestIsLifeAPIError(t *testing.T) {
+	if !isLifeAPIError(life.HTTPError{StatusCode: http.StatusBadGateway}) {
+		t.Fatal("life HTTP error was not classified as API error")
+	}
+	if isLifeAPIError(errors.New("sqlite failure")) {
+		t.Fatal("generic error was classified as API error")
+	}
+}
+
 func TestContextWithTimeoutSetsDeadline(t *testing.T) {
 	ctx, cancel := ContextWithTimeout()
 	defer cancel()

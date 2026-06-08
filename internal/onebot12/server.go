@@ -285,7 +285,16 @@ func write(w libob.ResponseWriter, data any, err error) {
 		w.WriteFailed(retCode, err)
 		return
 	}
-	w.WriteFailed(retCode, fmt.Errorf("Life @ USTC API error: %w", err))
+	if isLifeAPIError(err) {
+		w.WriteFailed(retCode, fmt.Errorf("Life @ USTC API error: %w", err))
+		return
+	}
+	w.WriteFailed(retCode, fmt.Errorf("Life @ USTC action error: %w", err))
+}
+
+func isLifeAPIError(err error) bool {
+	var httpErr life.HTTPError
+	return errors.As(err, &httpErr)
 }
 
 func errorRetCode(err error) int {

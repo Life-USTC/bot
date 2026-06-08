@@ -279,9 +279,9 @@ func (s *Store) userID(ctx context.Context, ident Identity) (int64, bool, error)
 }
 
 func normalizeIdentity(ident Identity) Identity {
-	ident.Platform = strings.TrimSpace(ident.Platform)
+	ident.Platform = textutil.LowerTrim(ident.Platform)
 	ident.UserID = strings.TrimSpace(ident.UserID)
-	ident.ConversationType = strings.TrimSpace(ident.ConversationType)
+	ident.ConversationType = textutil.LowerTrim(ident.ConversationType)
 	ident.ConversationID = strings.TrimSpace(ident.ConversationID)
 	return ident
 }

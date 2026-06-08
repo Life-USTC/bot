@@ -443,6 +443,34 @@ func TestRecentHandledInteractionsTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
+func TestRecentHandledInteractionsNormalizesIdentityCase(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	recordedIdent := Identity{Platform: " NapCat ", UserID: "42", ConversationType: " GROUP ", ConversationID: "100"}
+	lookupIdent := Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100"}
+	if err := s.RecordInteraction(ctx, recordedIdent, Interaction{
+		RawText: "校车",
+		Command: "bus",
+		Handled: true,
+		Reply:   "reply",
+		Status:  "handled",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := s.RecentHandledInteractions(ctx, lookupIdent, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || recent[0].Command != "bus" {
+		t.Fatalf("recent = %#v", recent)
+	}
+}
+
 func TestRecentHandledInteractionsRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
