@@ -85,7 +85,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	if !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t     \t𝟸𝟹:𝟻𝟿") || strings.Contains(reply, "———") {
+	if !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") || strings.Contains(reply, "———") {
 		t.Fatalf("reply = %q", reply)
 	}
 

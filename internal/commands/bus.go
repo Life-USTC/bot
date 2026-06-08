@@ -652,7 +652,7 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
 		for _, stop := range stops {
-			timeText := strings.Repeat(" ", cellWidth)
+			timeText := busTableBlankCell(cellWidth)
 			if stopTime := times[stop]; stopTime != "" {
 				timeText = textutil.MonospaceDigits(stopTime)
 			}
@@ -687,6 +687,13 @@ func formatBusTableCells(cells []string, width int) string {
 		out = append(out, textutil.PadRightDisplay(cell, width))
 	}
 	return strings.Join(out, "\t")
+}
+
+func busTableBlankCell(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return strings.Repeat("\u3000", width/2) + strings.Repeat(" ", width%2)
 }
 
 func busTableStops(items []busItem) []string {
