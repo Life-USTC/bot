@@ -200,7 +200,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
-	return strings.Join(formatBusItemsByDepartureCampus(items, 0), "\n")
+	return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 }
 
 func busHelp() string {
@@ -599,26 +599,105 @@ func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time
 	return out
 }
 
-func formatBusItemsByDepartureCampus(items []busItem, limit int) []string {
+func formatBusItemsByRouteGroup(items []busItem, limit int) []string {
+	items = sortedBusItemsByRouteGroup(items)
 	lines := make([]string, 0, len(items)+4)
-	lastCampus := ""
+	lastGroup := -1
 	for i, item := range items {
 		if limit > 0 && i >= limit {
 			break
 		}
-		campus := item.DepartureCampus
-		if campus == "" {
-			campus = "其他"
-		}
-		if campus != lastCampus {
-			if lastCampus != "" {
+		group := busRouteGroupRank(item)
+		if group != lastGroup {
+			if lastGroup != -1 {
 				lines = append(lines, "")
 			}
-			lastCampus = campus
+			lastGroup = group
 		}
 		lines = append(lines, formatBusItem(item))
 	}
 	return lines
+}
+
+func sortedBusItemsByRouteGroup(items []busItem) []busItem {
+	out := append([]busItem(nil), items...)
+	sort.SliceStable(out, func(i, j int) bool {
+		leftGroup := busRouteGroupRank(out[i])
+		rightGroup := busRouteGroupRank(out[j])
+		if leftGroup != rightGroup {
+			return leftGroup < rightGroup
+		}
+		if campusRank(out[i].DepartureCampus) != campusRank(out[j].DepartureCampus) {
+			return campusRank(out[i].DepartureCampus) < campusRank(out[j].DepartureCampus)
+		}
+		if out[i].DepartureMinutes == out[j].DepartureMinutes {
+			return out[i].Route < out[j].Route
+		}
+		return out[i].DepartureMinutes < out[j].DepartureMinutes
+	})
+	return out
+}
+
+func busRouteGroupRank(item busItem) int {
+	stops := busItemStopNames(item)
+	if hasBusStop(stops, "东区") && hasBusStop(stops, "高新区") {
+		return 0
+	}
+	if isCampusLoopRoute(stops) {
+		return 1
+	}
+	if hasBusStop(stops, "南区") {
+		return 2
+	}
+	return 3
+}
+
+func busItemStopNames(item busItem) []string {
+	if len(item.Stops) > 0 {
+		stops := make([]string, 0, len(item.Stops))
+		for _, stop := range item.Stops {
+			if stop.Name != "" {
+				stops = append(stops, stop.Name)
+			}
+		}
+		return stops
+	}
+	stops := []string{}
+	for _, stop := range strings.Split(item.Route, "→") {
+		stop = strings.TrimSpace(stop)
+		if stop != "" {
+			stops = append(stops, stop)
+		}
+	}
+	if len(stops) == 0 {
+		stops = append(stops, item.DepartureCampus, item.ArrivalCampus)
+	}
+	return stops
+}
+
+func hasBusStop(stops []string, target string) bool {
+	for _, stop := range stops {
+		if stop == target {
+			return true
+		}
+	}
+	return false
+}
+
+func isCampusLoopRoute(stops []string) bool {
+	if len(stops) == 0 {
+		return false
+	}
+	seen := 0
+	for _, stop := range stops {
+		switch stop {
+		case "东区", "北区", "中区", "西区":
+			seen++
+		default:
+			return false
+		}
+	}
+	return seen >= 2
 }
 
 func formatBusItem(item busItem) string {

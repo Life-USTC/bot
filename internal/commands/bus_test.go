@@ -486,10 +486,51 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	if items[0].DepartureCampus != "东区" || items[1].DepartureCampus != "西区" {
 		t.Fatalf("items = %#v", items)
 	}
-	lines := formatBusItemsByDepartureCampus(items, 8)
+	lines := formatBusItemsByRouteGroup(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区\u3000 𝟶𝟿:𝟹𝟶  →  北区\u3000 ———  →  西区\u3000 𝟶𝟿:𝟺𝟻\n\n西区\u3000 𝟶𝟿:𝟶𝟻") {
+	if !strings.Contains(got, "东区\u3000 𝟶𝟿:𝟹𝟶  →  北区\u3000 ———  →  西区\u3000 𝟶𝟿:𝟺𝟻\n西区\u3000 𝟶𝟿:𝟶𝟻") {
 		t.Fatalf("formatted lines = %q", got)
+	}
+}
+
+func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
+	items := []busItem{
+		{
+			DepartureCampus:  "南区",
+			DepartureMinutes: 720,
+			Stops:            []busStop{{Name: "南区", Time: "12:00"}, {Name: "东区", Time: "12:15"}},
+		},
+		{
+			DepartureCampus:  "东区",
+			DepartureMinutes: 570,
+			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "中区", Time: "09:45"}},
+		},
+		{
+			DepartureCampus:  "高新区",
+			DepartureMinutes: 575,
+			Stops:            []busStop{{Name: "高新区", Time: "09:35"}, {Name: "先研院", Time: "09:40"}, {Name: "东区", Time: "10:20"}},
+		},
+		{
+			DepartureCampus:  "先研院",
+			DepartureMinutes: 800,
+			Stops:            []busStop{{Name: "先研院", Time: "13:20"}, {Name: "高新区", Time: "13:30"}},
+		},
+	}
+
+	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
+	highTech := "高新区 𝟶𝟿:𝟹𝟻"
+	campusLoop := "东区\u3000 𝟶𝟿:𝟹𝟶"
+	south := "南区\u3000 𝟷𝟸:𝟶𝟶"
+	other := "先研院 𝟷𝟹:𝟸𝟶"
+	for _, want := range []string{highTech, campusLoop, south, other} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatted lines missing %q: %q", want, got)
+		}
+	}
+	if !(strings.Index(got, highTech) < strings.Index(got, campusLoop) &&
+		strings.Index(got, campusLoop) < strings.Index(got, south) &&
+		strings.Index(got, south) < strings.Index(got, other)) {
+		t.Fatalf("formatted lines not grouped in route order: %q", got)
 	}
 }
 
@@ -499,7 +540,7 @@ func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
 		{DepartureCampus: "西区", Stops: []busStop{{Name: "西区", Time: "09:05"}}},
 	}
 
-	lines := formatBusItemsByDepartureCampus(items, 0)
+	lines := formatBusItemsByRouteGroup(items, 0)
 	got := strings.Join(lines, "\n")
 	if !strings.Contains(got, "东区") || !strings.Contains(got, "西区") {
 		t.Fatalf("formatted lines = %q", got)
