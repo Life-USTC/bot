@@ -105,10 +105,9 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 }
 
 func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, token string, now time.Time) {
-	homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
-	if token, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		homeworks, err = p.Life.SubscribedHomeworks(ctx, token)
-	}
+	homeworks, err := auth.WithRefresh(ctx, p.Auth, ident, token, func(token string) ([]map[string]any, error) {
+		return p.Life.SubscribedHomeworks(ctx, token)
+	})
 	if err != nil {
 		p.logf("load homework notifications failed: %v", err)
 		return
