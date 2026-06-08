@@ -609,8 +609,10 @@ func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time
 		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if campusRank(out[i].DepartureCampus) != campusRank(out[j].DepartureCampus) {
-			return campusRank(out[i].DepartureCampus) < campusRank(out[j].DepartureCampus)
+		leftDeparture := busDepartureCampus(out[i])
+		rightDeparture := busDepartureCampus(out[j])
+		if campusRank(leftDeparture) != campusRank(rightDeparture) {
+			return campusRank(leftDeparture) < campusRank(rightDeparture)
 		}
 		if out[i].DepartureMinutes == out[j].DepartureMinutes {
 			return out[i].Route < out[j].Route
@@ -622,21 +624,15 @@ func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time
 
 func formatBusItemsByRouteGroup(items []busItem, limit int) []string {
 	items = sortedBusItemsByRouteGroup(items)
-	lines := make([]string, 0, len(items)*2)
-	lastKey := ""
+	lines := make([]string, 0, len(items)*3)
 	for i, item := range items {
 		if limit > 0 && i >= limit {
 			break
 		}
-		key, label := busRouteBlock(item)
-		if key != lastKey {
-			if lastKey != "" {
-				lines = append(lines, "")
-			}
-			lines = append(lines, label)
-			lastKey = key
+		if len(lines) > 0 {
+			lines = append(lines, "")
 		}
-		lines = append(lines, formatBusItem(item))
+		lines = append(lines, formatBusItemsAsStopTimeTable([]busItem{item})...)
 	}
 	return lines
 }
@@ -730,18 +726,10 @@ func sortedBusItemsByRouteGroup(items []busItem) []busItem {
 		if leftGroup != rightGroup {
 			return leftGroup < rightGroup
 		}
-		leftFrom, leftTo := busRouteEndpoints(out[i])
-		rightFrom, rightTo := busRouteEndpoints(out[j])
-		if campusRank(leftFrom) != campusRank(rightFrom) {
-			return campusRank(leftFrom) < campusRank(rightFrom)
-		}
-		if campusRank(leftTo) != campusRank(rightTo) {
-			return campusRank(leftTo) < campusRank(rightTo)
-		}
-		leftKey, _ := busRouteBlock(out[i])
-		rightKey, _ := busRouteBlock(out[j])
-		if leftKey != rightKey {
-			return leftKey < rightKey
+		leftDeparture := busDepartureCampus(out[i])
+		rightDeparture := busDepartureCampus(out[j])
+		if campusRank(leftDeparture) != campusRank(rightDeparture) {
+			return campusRank(leftDeparture) < campusRank(rightDeparture)
 		}
 		if out[i].DepartureMinutes == out[j].DepartureMinutes {
 			return out[i].Route < out[j].Route
@@ -751,27 +739,15 @@ func sortedBusItemsByRouteGroup(items []busItem) []busItem {
 	return out
 }
 
-func busRouteBlock(item busItem) (string, string) {
-	from, to := busRouteEndpoints(item)
-	if from != "" && to != "" {
-		label := from + " → " + to
-		return from + "\x00" + to, label
+func busDepartureCampus(item busItem) string {
+	if item.DepartureCampus != "" {
+		return item.DepartureCampus
 	}
-	if item.Route != "" {
-		return item.Route, item.Route
-	}
-	return "校车", "校车"
-}
-
-func busRouteEndpoints(item busItem) (string, string) {
 	stops := busItemStopNames(item)
-	if len(stops) >= 2 {
-		return stops[0], stops[len(stops)-1]
+	if len(stops) > 0 {
+		return stops[0]
 	}
-	if item.DepartureCampus != "" || item.ArrivalCampus != "" {
-		return item.DepartureCampus, item.ArrivalCampus
-	}
-	return "", ""
+	return ""
 }
 
 func busRouteGroupRank(item busItem) int {

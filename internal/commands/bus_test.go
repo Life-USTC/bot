@@ -109,7 +109,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 
 	groupInput.Text = "[CQ:image,file=1.png] 校车"
 	reply, ok = handler.Handle(context.Background(), groupInput)
-	if !ok || !strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟻𝟿") {
+	if !ok || !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("group image caption reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -202,7 +202,7 @@ func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区 → 东区\n南区\u3000 𝟸𝟹:𝟷𝟶") || strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
+	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") || strings.Contains(reply, "𝟸𝟹:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -224,7 +224,7 @@ func TestHandleBusPreferredRouteUsesSavedPreferences(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.busAt(ctx, ident, []string{"我的路线"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区 → 东区\n南区\u3000 𝟸𝟹:𝟷𝟶") || strings.Contains(reply, "东区\u3000 𝟸𝟹:𝟶𝟶") {
+	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") || strings.Contains(reply, "𝟸𝟹:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -588,8 +588,8 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	}
 	lines := formatBusItemsByRouteGroup(items, 8)
 	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区 → 西区\n东区\u3000 𝟶𝟿:𝟹𝟶  →  北区\u3000 ———  →  西区\u3000 𝟶𝟿:𝟺𝟻") ||
-		!strings.Contains(got, "西区 → 东区\n西区\u3000 𝟶𝟿:𝟶𝟻") {
+	if !strings.Contains(got, "东区 \t北区 \t西区 \n𝟶𝟿:𝟹𝟶\t　　 \t𝟶𝟿:𝟺𝟻") ||
+		!strings.Contains(got, "西区 \t东区 \n𝟶𝟿:𝟶𝟻\t𝟶𝟿:𝟸𝟶") {
 		t.Fatalf("formatted lines = %q", got)
 	}
 }
@@ -624,11 +624,11 @@ func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
 	}
 
 	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
-	eastHigh := "高新区 𝟶𝟿:𝟹𝟻"
-	eastWest := "东区\u3000 𝟶𝟿:𝟹𝟶"
-	highTechLocal := "先研院 𝟷𝟹:𝟸𝟶"
-	south := "南区\u3000 𝟷𝟸:𝟶𝟶"
-	other := "北区\u3000 𝟷𝟺:𝟶𝟶"
+	eastHigh := "高新区\t先研院\t东区"
+	eastWest := "东区 \t北区 \t西区"
+	highTechLocal := "先研院\t高新区"
+	south := "南区 \t东区"
+	other := "北区 \t中区"
 	for _, want := range []string{eastHigh, eastWest, highTechLocal, south, other} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatted lines missing %q: %q", want, got)
@@ -655,7 +655,7 @@ func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
 	}
 }
 
-func TestFormatBusItemsGroupsSameEndpointRoutes(t *testing.T) {
+func TestFormatBusItemsByRouteGroupUsesRouteTables(t *testing.T) {
 	items := []busItem{
 		{
 			DepartureMinutes: 570,
@@ -673,12 +673,14 @@ func TestFormatBusItemsGroupsSameEndpointRoutes(t *testing.T) {
 
 	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 	want := strings.Join([]string{
-		"东区 → 西区",
-		"东区\u3000 𝟶𝟿:𝟷𝟶  →  西区\u3000 𝟶𝟿:𝟸𝟻",
-		"东区\u3000 𝟶𝟿:𝟹𝟶  →  北区\u3000 ———  →  西区\u3000 𝟶𝟿:𝟺𝟻",
+		"东区 \t西区 ",
+		"𝟶𝟿:𝟷𝟶\t𝟶𝟿:𝟸𝟻",
 		"",
-		"西区 → 东区",
-		"西区\u3000 𝟶𝟿:𝟸𝟶  →  东区\u3000 𝟶𝟿:𝟹𝟻",
+		"东区 \t北区 \t西区 ",
+		"𝟶𝟿:𝟹𝟶\t　　 \t𝟶𝟿:𝟺𝟻",
+		"",
+		"西区 \t东区 ",
+		"𝟶𝟿:𝟸𝟶\t𝟶𝟿:𝟹𝟻",
 	}, "\n")
 	if got != want {
 		t.Fatalf("formatted lines = %q, want %q", got, want)
