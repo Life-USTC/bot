@@ -953,10 +953,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 			return commandError("作业状态更新失败：", err)
 		}
 		title := lifedata.FirstString(homework, "title")
-		if completed {
-			return "已完成作业：" + title
-		}
-		return "已取消完成：" + title
+		return homeworkCompletionReply(completed, title)
 	}
 	pendingOnly := true
 	if firstArgIs(args, "all") {
@@ -974,6 +971,20 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		return "没有作业。"
 	}
 	return formatHomeworkList(homeworks)
+}
+
+func homeworkCompletionReply(completed bool, title string) string {
+	title = strings.TrimSpace(title)
+	if completed {
+		if title == "" {
+			return "已完成作业。"
+		}
+		return "已完成作业：" + title
+	}
+	if title == "" {
+		return "已取消完成。"
+	}
+	return "已取消完成：" + title
 }
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {

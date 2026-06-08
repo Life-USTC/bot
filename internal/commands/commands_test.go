@@ -866,6 +866,24 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 }
 
+func TestHomeworkCompletionReply(t *testing.T) {
+	tests := []struct {
+		completed bool
+		title     string
+		want      string
+	}{
+		{completed: true, title: "Problem Set 1", want: "已完成作业：Problem Set 1"},
+		{completed: true, title: " \t ", want: "已完成作业。"},
+		{completed: false, title: "Problem Set 1", want: "已取消完成：Problem Set 1"},
+		{completed: false, title: "", want: "已取消完成。"},
+	}
+	for _, tt := range tests {
+		if got := homeworkCompletionReply(tt.completed, tt.title); got != tt.want {
+			t.Fatalf("homeworkCompletionReply(%v, %q) = %q, want %q", tt.completed, tt.title, got, tt.want)
+		}
+	}
+}
+
 func TestResolveHomeworkMatchesDisplayDigitsInTitle(t *testing.T) {
 	homeworks := []map[string]any{
 		{"id": "hw-1", "title": "Problem Set 1"},
