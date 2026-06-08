@@ -544,6 +544,45 @@ func TestNextBusByRouteReturnsOneTripPerRoute(t *testing.T) {
 	}
 }
 
+func TestNextBusItemsByRouteLimitReturnsMultipleTripsPerRoute(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+				},
+			},
+			map[string]any{
+				"id": float64(2),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "西区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:10", "departureMinutes": float64(550), "arrivalTime": "09:25"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "10:10", "departureMinutes": float64(610), "arrivalTime": "10:25"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "11:10", "departureMinutes": float64(670), "arrivalTime": "11:25"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "12:10", "departureMinutes": float64(730), "arrivalTime": "12:25"},
+			map[string]any{"routeId": float64(2), "dayType": "weekday", "departureTime": "09:30", "departureMinutes": float64(570), "arrivalTime": "09:45"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	items := nextBusItemsByRouteLimitWithOptions(data, nil, now, busQueryOptions{}, 3)
+	if len(items) != 4 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].DepartureTime != "09:10" || items[1].DepartureTime != "10:10" || items[2].DepartureTime != "11:10" {
+		t.Fatalf("east-west items = %#v", items)
+	}
+	if strings.Contains(strings.Join([]string{items[0].DepartureTime, items[1].DepartureTime, items[2].DepartureTime}, " "), "12:10") {
+		t.Fatalf("limit did not apply: %#v", items)
+	}
+}
+
 func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{
@@ -658,16 +697,24 @@ func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
 func TestFormatBusItemsByRouteGroupUsesRouteTables(t *testing.T) {
 	items := []busItem{
 		{
+			RouteID:          "east-west-local",
 			DepartureMinutes: 570,
 			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "西区", Time: "09:45"}},
 		},
 		{
+			RouteID:          "east-west-direct",
 			DepartureMinutes: 550,
 			Stops:            []busStop{{Name: "东区", Time: "09:10"}, {Name: "西区", Time: "09:25"}},
 		},
 		{
+			RouteID:          "west-east",
 			DepartureMinutes: 560,
 			Stops:            []busStop{{Name: "西区", Time: "09:20"}, {Name: "东区", Time: "09:35"}},
+		},
+		{
+			RouteID:          "east-west-direct",
+			DepartureMinutes: 610,
+			Stops:            []busStop{{Name: "东区", Time: "10:10"}, {Name: "西区", Time: "10:25"}},
 		},
 	}
 
@@ -675,6 +722,7 @@ func TestFormatBusItemsByRouteGroupUsesRouteTables(t *testing.T) {
 	want := strings.Join([]string{
 		"东区 \t西区 ",
 		"𝟶𝟿:𝟷𝟶\t𝟶𝟿:𝟸𝟻",
+		"𝟷𝟶:𝟷𝟶\t𝟷𝟶:𝟸𝟻",
 		"",
 		"东区 \t北区 \t西区 ",
 		"𝟶𝟿:𝟹𝟶\t　　 \t𝟶𝟿:𝟺𝟻",

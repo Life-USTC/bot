@@ -203,7 +203,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if options.ExplicitRoute {
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
 	} else {
-		items = nextBusByRouteWithOptions(data, routeArgs, now, options)
+		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, busOverviewTripsPerRoute)
 	}
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
@@ -593,26 +593,33 @@ func nextBusByRoute(data map[string]any, args []string, now time.Time) []busItem
 }
 
 func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions) []busItem {
+	return nextBusItemsByRouteLimitWithOptions(data, args, now, options, 1)
+}
+
+func nextBusItemsByRouteLimitWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions, limit int) []busItem {
 	items := nextBusItemsWithOptions(data, args, now, options)
-	byRoute := make(map[string]busItem)
+	byRoute := make(map[string][]busItem)
 	for _, item := range items {
-		key := item.RouteID
-		if key == "" {
-			key = item.Route
+		key := busRouteKey(item)
+		if limit > 0 && len(byRoute[key]) >= limit {
+			continue
 		}
-		if _, exists := byRoute[key]; !exists {
-			byRoute[key] = item
-		}
+		byRoute[key] = append(byRoute[key], item)
 	}
-	out := make([]busItem, 0, len(byRoute))
-	for _, item := range byRoute {
-		out = append(out, item)
+	out := make([]busItem, 0, len(byRoute)*limit)
+	for _, routeItems := range byRoute {
+		out = append(out, routeItems...)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		leftDeparture := busDepartureCampus(out[i])
 		rightDeparture := busDepartureCampus(out[j])
 		if campusRank(leftDeparture) != campusRank(rightDeparture) {
 			return campusRank(leftDeparture) < campusRank(rightDeparture)
+		}
+		leftKey := busRouteKey(out[i])
+		rightKey := busRouteKey(out[j])
+		if leftKey != rightKey {
+			return leftKey < rightKey
 		}
 		if out[i].DepartureMinutes == out[j].DepartureMinutes {
 			return out[i].Route < out[j].Route
@@ -625,14 +632,25 @@ func nextBusByRouteWithOptions(data map[string]any, args []string, now time.Time
 func formatBusItemsByRouteGroup(items []busItem, limit int) []string {
 	items = sortedBusItemsByRouteGroup(items)
 	lines := make([]string, 0, len(items)*3)
+	routeItems := []busItem{}
 	for i, item := range items {
 		if limit > 0 && i >= limit {
 			break
 		}
+		if len(routeItems) > 0 && busRouteKey(item) != busRouteKey(routeItems[0]) {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, formatBusItemsAsStopTimeTable(routeItems)...)
+			routeItems = nil
+		}
+		routeItems = append(routeItems, item)
+	}
+	if len(routeItems) > 0 {
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, formatBusItemsAsStopTimeTable([]busItem{item})...)
+		lines = append(lines, formatBusItemsAsStopTimeTable(routeItems)...)
 	}
 	return lines
 }
@@ -731,12 +749,27 @@ func sortedBusItemsByRouteGroup(items []busItem) []busItem {
 		if campusRank(leftDeparture) != campusRank(rightDeparture) {
 			return campusRank(leftDeparture) < campusRank(rightDeparture)
 		}
+		leftKey := busRouteKey(out[i])
+		rightKey := busRouteKey(out[j])
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
 		if out[i].DepartureMinutes == out[j].DepartureMinutes {
 			return out[i].Route < out[j].Route
 		}
 		return out[i].DepartureMinutes < out[j].DepartureMinutes
 	})
 	return out
+}
+
+func busRouteKey(item busItem) string {
+	if item.RouteID != "" {
+		return item.RouteID
+	}
+	if item.Route != "" {
+		return item.Route
+	}
+	return strings.Join(busItemStopNames(item), " → ")
 }
 
 func busDepartureCampus(item busItem) string {
@@ -1023,3 +1056,4 @@ func busTime(value string, minutes int) string {
 
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
+const busOverviewTripsPerRoute = 3
