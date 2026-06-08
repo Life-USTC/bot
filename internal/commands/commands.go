@@ -565,7 +565,7 @@ func firstArgIn(args []string, values ...string) bool {
 }
 
 func joinedArgs(args []string) string {
-	return strings.TrimSpace(strings.Join(args, " "))
+	return strings.Join(textutil.NonEmpty(args...), " ")
 }
 
 func parseGroupBus(text string) (parsedCommand, bool) {
@@ -1585,7 +1585,7 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: cmd.Raw,
 		Command: cmd.Name,
-		Args:    strings.Join(cmd.Args, " "),
+		Args:    joinedArgs(cmd.Args),
 		Handled: true,
 		Reply:   reply,
 		Status:  store.InteractionStatusHandled,

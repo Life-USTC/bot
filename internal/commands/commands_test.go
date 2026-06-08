@@ -478,6 +478,9 @@ func TestJoinedArgsTrimsJoinedText(t *testing.T) {
 	if got := joinedArgs([]string{" 写", "报告 "}); got != "写 报告" {
 		t.Fatalf("joinedArgs = %q", got)
 	}
+	if got := joinedArgs([]string{"写", " ", "报告"}); got != "写 报告" {
+		t.Fatalf("joinedArgs with blank token = %q", got)
+	}
 	if got := joinedArgs(nil); got != "" {
 		t.Fatalf("joinedArgs(nil) = %q", got)
 	}
@@ -1936,6 +1939,31 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	}
 	if recent[0].Command != "help" {
 		t.Fatalf("logged command = %q, want help", recent[0].Command)
+	}
+}
+
+func TestRecordInteractionUsesJoinedArgs(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	handler := Handler{Store: s}
+	handler.recordInteraction(ctx, ident, parsedCommand{
+		Name: "todo",
+		Args: []string{" done ", " 1 "},
+		Raw:  "td done 1",
+	}, "ok")
+
+	recent, err := s.RecentHandledInteractions(ctx, ident, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || recent[0].Args != "done 1" {
+		t.Fatalf("recent = %#v", recent)
 	}
 }
 
