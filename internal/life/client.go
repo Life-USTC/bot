@@ -126,7 +126,7 @@ func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[strin
 
 func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
 	id = strings.TrimSpace(id)
-	body, err := jsonBody(map[string]any{"completed": true})
+	body, err := completionBody(true)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 
 func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {
 	id = strings.TrimSpace(id)
-	body, err := jsonBody(map[string]any{"completed": completed})
+	body, err := completionBody(completed)
 	if err != nil {
 		return err
 	}
@@ -214,6 +214,10 @@ type dataList struct {
 
 func jsonBody(value any) ([]byte, error) {
 	return json.Marshal(value)
+}
+
+func completionBody(completed bool) ([]byte, error) {
+	return jsonBody(map[string]any{"completed": completed})
 }
 
 func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {

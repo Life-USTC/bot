@@ -198,6 +198,22 @@ func TestSetHomeworkCompletionTrimsID(t *testing.T) {
 	}
 }
 
+func TestCompletionBody(t *testing.T) {
+	for _, completed := range []bool{true, false} {
+		body, err := completionBody(completed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]bool
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got["completed"] != completed {
+			t.Fatalf("completionBody(%v) = %s", completed, body)
+		}
+	}
+}
+
 func TestAuthHeaderTrimsToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
