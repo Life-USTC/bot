@@ -230,7 +230,7 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 		return 0, err
 	}
 	ident = normalizeIdentity(ident)
-	now := time.Now().UTC()
+	now := nowUTC()
 	user := userRow{
 		Platform:       ident.Platform,
 		ExternalUserID: ident.UserID,
@@ -306,6 +306,10 @@ func requireIdentityField(value, name string) error {
 	return nil
 }
 
+func nowUTC() time.Time {
+	return time.Now().UTC()
+}
+
 func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credential) error {
 	cred, err := normalizeCredentialForSave(cred)
 	if err != nil {
@@ -324,7 +328,7 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 		ExpiresAt:    cred.ExpiresAt.UTC(),
 		Scope:        cred.Scope,
 		Resource:     cred.Resource,
-		UpdatedAt:    time.Now().UTC(),
+		UpdatedAt:    nowUTC(),
 	}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
@@ -405,7 +409,7 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
+	now := nowUTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&loginSessionRow{}).
 			Where("user_id = ? AND status IN ?", userID, activeLoginSessionStatuses()).
@@ -547,7 +551,7 @@ func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode
 	}
 	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
 		Where("user_id = ? AND device_code = ?", userID, deviceCode).
-		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()}).Error
+		Updates(map[string]any{"status": status, "updated_at": nowUTC()}).Error
 }
 
 func normalizeLoginSessionUpdate(deviceCode, status string) (string, string, error) {
@@ -574,7 +578,7 @@ func (s *Store) RecordConversationState(ctx context.Context, ident Identity, com
 		UserID:           ident.UserID,
 		LastCommand:      strings.TrimSpace(command),
 		State:            state,
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        nowUTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
 }
@@ -597,7 +601,7 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		Reply:            interaction.Reply,
 		Status:           strings.TrimSpace(interaction.Status),
 		Error:            strings.TrimSpace(interaction.Error),
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        nowUTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
 }
@@ -685,7 +689,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
+	now := nowUTC()
 	row := notificationSettingRow{
 		UserID:           userID,
 		Platform:         settings.Identity.Platform,
@@ -753,7 +757,7 @@ func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identit
 		UserID:    userID,
 		Kind:      kind,
 		ItemKey:   itemKey,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: nowUTC(),
 	}
 	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "kind"}, {Name: "item_key"}},
