@@ -312,24 +312,24 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 
 	if fields[0] == prefix {
 		if len(fields) == 1 {
-			return parsedCommand{Name: "help", Raw: raw}, true
+			return helpCommand(raw), true
 		}
 		name, args := normalizeCommand(fields[1], fields[2:])
 		if name == "" {
-			return parsedCommand{Name: "help", Raw: raw}, true
+			return helpCommand(raw), true
 		}
 		return parsedCommand{Name: name, Args: args, Raw: raw}, true
 	}
 	if strings.HasPrefix(fields[0], prefix) {
 		name, args := normalizeCommand(strings.TrimPrefix(fields[0], prefix), fields[1:])
 		if name == "" {
-			return parsedCommand{Name: "help", Raw: raw}, true
+			return helpCommand(raw), true
 		}
 		return parsedCommand{Name: name, Args: args, Raw: raw}, true
 	}
 
 	if isHelpToken(fields[0]) {
-		return parsedCommand{Name: "help", Raw: raw}, true
+		return helpCommand(raw), true
 	}
 
 	if len(fields) >= 2 {
@@ -344,6 +344,10 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		return parsedCommand{}, false
 	}
 	return parsedCommand{Name: name, Args: args, Raw: raw}, true
+}
+
+func helpCommand(raw string) parsedCommand {
+	return parsedCommand{Name: "help", Raw: raw}
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
