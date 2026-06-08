@@ -289,11 +289,11 @@ var commandSpecs = []CommandSpec{
 }
 
 func isGroup(ident store.Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "group")
+	return store.IsGroupConversation(ident)
 }
 
 func isPrivate(ident store.Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "private")
+	return store.IsPrivateConversation(ident)
 }
 
 func (h Handler) parse(text string) (parsedCommand, bool) {

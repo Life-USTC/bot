@@ -126,7 +126,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func isGroupConversation(ident store.Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "group")
+	return store.IsGroupConversation(ident)
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {

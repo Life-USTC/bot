@@ -68,6 +68,18 @@ func TestIdentityCompletenessHelpersTrimFields(t *testing.T) {
 	if !HasConversationIdentity(full) {
 		t.Fatal("HasConversationIdentity rejected padded full identity")
 	}
+	if !IsPrivateConversation(full) {
+		t.Fatal("IsPrivateConversation rejected padded private conversation type")
+	}
+	if !IsGroupConversation(Identity{ConversationType: " GROUP "}) {
+		t.Fatal("IsGroupConversation rejected padded group conversation type")
+	}
+	if IsPrivateConversation(Identity{ConversationType: "group"}) {
+		t.Fatal("IsPrivateConversation accepted group conversation type")
+	}
+	if IsGroupConversation(Identity{ConversationType: "private"}) {
+		t.Fatal("IsGroupConversation accepted private conversation type")
+	}
 	if HasUserIdentity(Identity{Platform: "napcat", UserID: " "}) {
 		t.Fatal("HasUserIdentity accepted blank user id")
 	}

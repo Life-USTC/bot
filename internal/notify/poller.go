@@ -69,7 +69,7 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func isPrivate(ident store.Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "private")
+	return store.IsPrivateConversation(ident)
 }
 
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) {

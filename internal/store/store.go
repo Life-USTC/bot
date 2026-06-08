@@ -300,6 +300,14 @@ func HasConversationIdentity(ident Identity) bool {
 	return HasUserIdentity(ident) && HasConversationTarget(ident)
 }
 
+func IsGroupConversation(ident Identity) bool {
+	return textutil.TrimEqualFold(ident.ConversationType, "group")
+}
+
+func IsPrivateConversation(ident Identity) bool {
+	return textutil.TrimEqualFold(ident.ConversationType, "private")
+}
+
 func validateIdentity(ident Identity) error {
 	if err := requireIdentityField(ident.Platform, "platform"); err != nil {
 		return err
