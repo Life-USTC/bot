@@ -181,21 +181,22 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if busPreferenceArgs(args) {
 		return h.busPreferences(ctx, ident, data, args)
 	}
-	options := busQueryOptions{}
+	routeArgs, queryOptions := busQueryArgs(args, now)
+	options := queryOptions
 	if !store.IsGroupConversation(ident) {
 		preferences, ok := h.currentBusPreferences(ctx, ident)
 		if ok {
 			options.ShowDeparted = preferences.ShowDepartedTrips
-			if len(args) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
+			if len(routeArgs) == 0 && preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
 				if from, ok := campusNameByID(data, *preferences.PreferredOriginCampusID); ok {
 					if to, ok := campusNameByID(data, *preferences.PreferredDestinationCampusID); ok {
-						args = []string{from, to}
+						routeArgs = []string{from, to}
 					}
 				}
 			}
 		}
 	}
-	items := nextBusByRouteWithOptions(data, args, now, options)
+	items := nextBusByRouteWithOptions(data, routeArgs, now, options)
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
 	}
@@ -268,6 +269,55 @@ func busPreferenceArgs(args []string) bool {
 	default:
 		return false
 	}
+}
+
+func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
+	out := make([]string, 0, len(args))
+	options := busQueryOptions{}
+	for i := 0; i < len(args); i++ {
+		switch normToken(args[i]) {
+		case "after", "之后", "以后":
+			if i+1 < len(args) {
+				if after, ok := parseBusAfterTime(args[i+1], now); ok {
+					options.Now = after
+					i++
+					continue
+				}
+				if i+2 < len(args) {
+					if after, ok := parseBusAfterTime(args[i+1]+" "+args[i+2], now); ok {
+						options.Now = after
+						i += 2
+						continue
+					}
+				}
+			}
+		}
+		out = append(out, args[i])
+	}
+	return out, options
+}
+
+func parseBusAfterTime(value string, now time.Time) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	loc := lifedata.ChinaLocation()
+	now = now.In(loc)
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.In(loc), true
+	}
+	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02T15:04", "15:04"} {
+		parsed, err := time.ParseInLocation(layout, value, loc)
+		if err != nil {
+			continue
+		}
+		if layout == "15:04" {
+			return time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, loc), true
+		}
+		return parsed, true
+	}
+	return time.Time{}, false
 }
 
 func parseBusPreferenceUpdate(data map[string]any, args []string, current life.BusPreferences) (life.BusPreferences, bool, string) {
@@ -455,6 +505,7 @@ type busStop struct {
 
 type busQueryOptions struct {
 	ShowDeparted bool
+	Now          time.Time
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
@@ -462,6 +513,9 @@ func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
 }
 
 func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, options busQueryOptions) []busItem {
+	if !options.Now.IsZero() {
+		now = options.Now
+	}
 	now = now.In(lifedata.ChinaLocation())
 	from, to := busFilter(args)
 	dayType := "weekday"

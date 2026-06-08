@@ -257,6 +257,22 @@ func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 	if got := busCommandText(busInput{To: " 西区 "}); got != "校车 到 西区" {
 		t.Fatalf("to-only busCommandText = %q", got)
 	}
+	if got := busCommandText(busInput{From: "高新区", To: "东区", After: "2026-06-09T09:25:00+08:00"}); got != "校车 高新区 东区 after 2026-06-09T09:25:00+08:00" {
+		t.Fatalf("after busCommandText = %q", got)
+	}
+}
+
+func TestRequiredConfirmationToolDoesNotRunCommand(t *testing.T) {
+	fn := requiredConfirmationTool("target", "待办 delete ", func(input targetInput) string {
+		return input.Target
+	})
+	reply, err := fn(context.Background(), targetInput{Target: " 测试 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "不会自动执行") || !strings.Contains(reply, "待办 delete 测试") {
+		t.Fatalf("reply = %q", reply)
+	}
 }
 
 func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {

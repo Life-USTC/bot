@@ -267,6 +267,45 @@ func TestNextBusItemsUsesShanghaiTime(t *testing.T) {
 	}
 }
 
+func TestBusQueryArgsSupportsAfterTime(t *testing.T) {
+	now := time.Date(2026, 6, 2, 8, 0, 0, 0, lifedata.ChinaLocation())
+	args, options := busQueryArgs([]string{"高新区", "东区", "after", "09:25"}, now)
+	if strings.Join(args, " ") != "高新区 东区" {
+		t.Fatalf("args = %#v", args)
+	}
+	if options.Now.IsZero() || options.Now.Hour() != 9 || options.Now.Minute() != 25 {
+		t.Fatalf("options = %#v", options)
+	}
+	args, options = busQueryArgs([]string{"高新区", "东区", "after", "2026-06-09", "09:25"}, now)
+	if strings.Join(args, " ") != "高新区 东区" || options.Now.Day() != 9 || options.Now.Hour() != 9 || options.Now.Minute() != 25 {
+		t.Fatalf("date args = %#v options = %#v", args, options)
+	}
+}
+
+func TestNextBusItemsUsesAfterTimeOption(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{
+			map[string]any{
+				"id": float64(1),
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"nameCn": "高新区"}},
+					map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+				},
+			},
+		},
+		"trips": []any{
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "06:40", "departureMinutes": float64(400), "arrivalTime": "07:25"},
+			map[string]any{"routeId": float64(1), "dayType": "weekday", "departureTime": "09:40", "departureMinutes": float64(580), "arrivalTime": "10:25"},
+		},
+	}
+	now := time.Date(2026, 6, 2, 8, 0, 0, 0, lifedata.ChinaLocation())
+	after := time.Date(2026, 6, 2, 9, 25, 0, 0, lifedata.ChinaLocation())
+	items := nextBusItemsWithOptions(data, []string{"高新区", "东区"}, now, busQueryOptions{Now: after})
+	if len(items) != 1 || items[0].DepartureTime != "09:40" {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
 func TestNextBusItemsSupportsDestinationOnlyFilter(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{

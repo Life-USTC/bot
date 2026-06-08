@@ -163,8 +163,9 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 type emptyInput struct{}
 
 type busInput struct {
-	From string `json:"from,omitempty" jsonschema_description:"Optional origin campus, such as 东区, 西区, 南区, 高新区"`
-	To   string `json:"to,omitempty" jsonschema_description:"Optional destination campus, such as 东区, 西区, 南区, 高新区"`
+	From  string `json:"from,omitempty" jsonschema_description:"Optional origin campus, such as 东区, 西区, 南区, 高新区"`
+	To    string `json:"to,omitempty" jsonschema_description:"Optional destination campus, such as 东区, 西区, 南区, 高新区"`
+	After string `json:"after,omitempty" jsonschema_description:"Optional earliest departure time, such as 09:25, 2026-06-09 09:25, or RFC3339"`
 }
 
 type bulkSubscribeInput struct {
@@ -263,7 +264,7 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]to
 			}
 		}
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin and destination are optional.", trace, func(ctx context.Context, input busInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin, destination, and earliest departure time are optional. Use after when planning after a class or event.", trace, func(ctx context.Context, input busInput) (string, error) {
 		return s.runCommand(ctx, ident, busCommandText(input))
 	})
 	if err != nil {
@@ -293,55 +294,55 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]to
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Create a new todo for the user, optionally with content, priority, and due date.", trace, requiredCommandTool(s, ident, "title", "待办 add ", func(input todoInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Prepare a todo creation command. This does not create the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("title", "待办 add ", func(input todoInput) string {
 		return todoCreateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Mark a pending todo complete by number, ID, or title from the todo list.", trace, requiredCommandTool(s, ident, "target", "待办 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Prepare a todo completion command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Mark a completed todo as pending by number, ID, or title from the completed todo list.", trace, requiredCommandTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Prepare a todo completion undo command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Update a todo title, content, priority, or due date by number, ID, or title.", trace, requiredCommandTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Prepare a todo update command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 update ", func(input todoUpdateInput) string {
 		return todoUpdateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Delete a todo by number, ID, or title from the todo list.", trace, requiredCommandTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Prepare a todo delete command. This does not delete the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 delete ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Mark a pending homework complete by number, ID, or title from the homework list.", trace, requiredCommandTool(s, ident, "target", "作业 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Prepare a homework completion command. This does not modify homework until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "作业 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Undo completion for a homework by number, ID, or title from the homework list.", trace, requiredCommandTool(s, ident, "target", "作业 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Prepare a homework completion undo command. This does not modify homework until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "作业 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Bulk add teaching sections to the user's calendar subscription from pasted section codes.", trace, requiredCommandTool(s, ident, "text", "订阅 导入 ", func(input bulkSubscribeInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Prepare a bulk subscription import command. This does not change subscriptions until the user confirms by sending the command.", trace, requiredConfirmationTool("text", "订阅 导入 ", func(input bulkSubscribeInput) string {
 		return input.Text
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "notify", "set_notification_settings", "Enable or disable one active push notification type. Use kind=classes for upcoming class reminders or kind=homework for homework reminders.", trace, func(ctx context.Context, input notificationInput) (string, error) {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "notify", "set_notification_settings", "Prepare a notification setting command. This does not change notification settings until the user confirms by sending the command.", trace, func(ctx context.Context, input notificationInput) (string, error) {
 		kind, err := notificationKindCommandArg(input.Kind)
 		if err != nil {
 			return "", err
@@ -350,7 +351,7 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]to
 		if input.Enabled {
 			state = "开"
 		}
-		return s.runCommand(ctx, ident, "通知 "+kind+" "+state)
+		return confirmationRequired("通知设置", "通知 "+kind+" "+state), nil
 	})
 	if err != nil {
 		return nil, err
@@ -383,6 +384,24 @@ func requiredCommandTool[I any](s *Service, ident store.Identity, argName, comma
 		}
 		return s.runCommand(ctx, ident, commandPrefix+arg)
 	}
+}
+
+func requiredConfirmationTool[I any](argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
+	return func(_ context.Context, input I) (string, error) {
+		arg, err := requiredToolArg(argName, value(input))
+		if err != nil {
+			return "", err
+		}
+		return confirmationRequired("需要确认", commandPrefix+arg), nil
+	}
+}
+
+func confirmationRequired(title, command string) string {
+	return strings.Join([]string{
+		title + "：不会自动执行。",
+		"确认请发送：",
+		command,
+	}, "\n")
 }
 
 func commandSpecsByName(specs []commands.CommandSpec) map[string]commands.CommandSpec {
@@ -493,6 +512,9 @@ func busCommandText(input busInput) string {
 		}
 		parts = append(parts, to)
 	}
+	if after := strings.TrimSpace(input.After); after != "" {
+		parts = append(parts, "after", after)
+	}
 	return strings.Join(parts, " ")
 }
 
@@ -565,10 +587,12 @@ func currentInstruction() string {
 func currentInstructionAt(now time.Time) string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
+QQ does not render Markdown tables well. Prefer short plain-text lines and compact bullet lists; avoid Markdown tables unless the user explicitly asks for a table.
 Use tools for Life @ USTC facts instead of guessing.
 Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run.
-You can manage private-chat notification settings with tools when the user asks to turn class or homework reminders on or off.
+For bus planning after a class or event, pass the class/event end time to get_next_bus.after so the bus result is after that time.
+Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user sends the confirmation command.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
 When a tool returns login-required text, tell the user to log in with 登录.`, now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
