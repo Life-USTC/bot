@@ -107,6 +107,8 @@ type parsedCommand struct {
 	Raw  string
 }
 
+var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"}
+
 var commandSpecs = []CommandSpec{
 	{
 		Name:      "login",
@@ -266,7 +268,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "schedule",
-		Aliases:   []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"},
+		Aliases:   scheduleAliases,
 		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
@@ -398,7 +400,7 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 }
 
 func joinedScheduleDay(key string) (string, bool) {
-	for _, scheduleToken := range []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"} {
+	for _, scheduleToken := range scheduleAliases {
 		if strings.HasPrefix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
 				return day, true

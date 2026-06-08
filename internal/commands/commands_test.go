@@ -322,6 +322,14 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			}
 			agentTools[tool.Name] = spec.Name
 		}
+		if spec.Name == "schedule" {
+			for _, alias := range spec.Aliases {
+				parsed, ok := handler.parse(alias + "今天")
+				if !ok || parsed.Name != "schedule" || strings.Join(parsed.Args, " ") != "today" {
+					t.Fatalf("schedule alias %q attached day parsed as %#v, ok = %v", alias, parsed, ok)
+				}
+			}
+		}
 	}
 	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus"} {
 		if !seen[name] {
