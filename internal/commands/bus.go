@@ -645,65 +645,21 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 	if len(stops) == 0 {
 		return nil
 	}
-	widths := busTableColumnWidths(stops, items)
 	lines := make([]string, 0, len(items)+1)
-	header := make([]string, 0, len(stops))
-	for i, stop := range stops {
-		header = append(header, formatBusTableHeaderCell(stop, widths[i], i == len(stops)-1))
-	}
-	lines = append(lines, strings.Join(header, busTableColumnGap))
+	lines = append(lines, strings.Join(stops, "\t"))
 	for _, item := range items {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
-		for i, stop := range stops {
+		for _, stop := range stops {
 			timeText := busMissingTimePlaceholder
 			if stopTime := times[stop]; stopTime != "" {
 				timeText = textutil.MonospaceDigits(stopTime)
 			}
-			row = append(row, formatBusTableCell(timeText, widths[i]))
+			row = append(row, timeText)
 		}
-		lines = append(lines, strings.Join(row, busTableColumnGap))
+		lines = append(lines, strings.Join(row, "\t"))
 	}
 	return lines
-}
-
-func busTableColumnWidths(stops []string, items []busItem) []int {
-	widths := make([]int, len(stops))
-	for i, stop := range stops {
-		widths[i] = textutil.DisplayWidth(stop)
-	}
-	for _, item := range items {
-		times := busStopTimes(item)
-		for i, stop := range stops {
-			timeText := busMissingTimePlaceholder
-			if stopTime := times[stop]; stopTime != "" {
-				timeText = textutil.MonospaceDigits(stopTime)
-			}
-			if width := textutil.DisplayWidth(timeText); width > widths[i] {
-				widths[i] = width
-			}
-		}
-	}
-	return widths
-}
-
-func formatBusTableCell(text string, width int) string {
-	padding := width - textutil.DisplayWidth(text)
-	if padding <= 0 {
-		return text
-	}
-	if text == busMissingTimePlaceholder {
-		padding = min(padding, busMissingTimeMaxPad)
-	}
-	return text + strings.Repeat(busTablePad, padding)
-}
-
-func formatBusTableHeaderCell(text string, width int, last bool) string {
-	cell := formatBusTableCell(text, width)
-	if !last && textutil.DisplayWidth(text) >= width {
-		cell += busTablePad
-	}
-	return cell
 }
 
 func busTableStops(items []busItem) []string {
@@ -1023,6 +979,3 @@ func busTime(value string, minutes int) string {
 
 const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
-const busTableColumnGap = "\u3000"
-const busTablePad = "\u2007"
-const busMissingTimeMaxPad = 1
