@@ -1766,6 +1766,19 @@ func TestBusArgsFromTextAvoidsOneCharCampusInsideWords(t *testing.T) {
 	}
 }
 
+func TestBusArgsFromTextKeepsRepeatedCampusEndpoints(t *testing.T) {
+	tests := map[string][]string{
+		"东区到东区校车":               {"东区", "东区"},
+		"bus from east to east": {"东区", "东区"},
+	}
+	for text, want := range tests {
+		got := busArgsFromText(text)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Fatalf("%q args = %#v, want %#v", text, got, want)
+		}
+	}
+}
+
 func TestNormalizeCommandAliases(t *testing.T) {
 	tests := map[string]string{
 		"待办": "todo",

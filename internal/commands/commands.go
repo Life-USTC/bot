@@ -615,11 +615,12 @@ func busArgsFromText(text string) []string {
 	seen := map[string]bool{}
 	lookupText := strings.ToLower(text)
 	for _, alias := range campusAliases() {
-		if index := campusAliasIndex(lookupText, alias); index >= 0 {
+		for _, index := range campusAliasIndices(lookupText, alias) {
 			campus := campusName(alias)
-			if campus != "" && !seen[campus] {
+			seenKey := campus + "\x00" + strconv.Itoa(index)
+			if campus != "" && !seen[seenKey] {
 				matches = append(matches, match{index: index, campus: campus})
-				seen[campus] = true
+				seen[seenKey] = true
 			}
 		}
 	}
@@ -637,6 +638,23 @@ func busArgsFromText(text string) []string {
 		return []string{"到", args[0]}
 	}
 	return args
+}
+
+func campusAliasIndices(text, alias string) []int {
+	indices := []int{}
+	offset := 0
+	for {
+		index := campusAliasIndex(text[offset:], alias)
+		if index < 0 {
+			return indices
+		}
+		absolute := offset + index
+		indices = append(indices, absolute)
+		offset = absolute + len(alias)
+		if offset >= len(text) {
+			return indices
+		}
+	}
 }
 
 func hasDestinationMarkerBefore(text string, index int) bool {
