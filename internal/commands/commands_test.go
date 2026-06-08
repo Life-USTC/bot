@@ -366,6 +366,13 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 	if !ok || !strings.Contains(reply, "订阅 导入") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
+
+	for _, text := range []string{"课程 help", "教学班 help", "校车 help", "状态 help"} {
+		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !ok || !strings.Contains(reply, "可以直接发：") {
+			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
+		}
+	}
 }
 
 func TestHandleStoreCommandWithoutStoreKeepsHelp(t *testing.T) {

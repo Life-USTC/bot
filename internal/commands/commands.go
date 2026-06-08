@@ -82,6 +82,8 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		spec, ok := commandSpec(cmd.Name)
 		if !ok || spec.Run == nil {
 			reply = h.help()
+		} else if firstArgIs(cmd.Args, "help") && !commandHasHelp(cmd.Name) {
+			reply = h.help()
 		} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
 			reply = "Life @ USTC API unavailable: not configured."
 		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
@@ -374,6 +376,15 @@ func commandSpec(name string) (CommandSpec, bool) {
 		}
 	}
 	return CommandSpec{}, false
+}
+
+func commandHasHelp(name string) bool {
+	switch name {
+	case "login", "todo", "homework", "subscription", "notify", "schedule":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {
