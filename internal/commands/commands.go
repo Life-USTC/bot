@@ -499,7 +499,7 @@ func normalizeScheduleArgs(args []string) []string {
 }
 
 func normalizeNotifyArgs(args []string) []string {
-	out := append([]string(nil), args...)
+	out := copyArgs(args)
 	for i, arg := range out {
 		if isHelpToken(arg) {
 			out[i] = "help"
@@ -535,9 +535,13 @@ func isHelpToken(value string) bool {
 }
 
 func withFirstArg(args []string, value string) []string {
-	next := append([]string(nil), args...)
+	next := copyArgs(args)
 	next[0] = value
 	return next
+}
+
+func copyArgs(args []string) []string {
+	return append([]string(nil), args...)
 }
 
 func hasArgs(args []string) bool {
