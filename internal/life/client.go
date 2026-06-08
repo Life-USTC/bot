@@ -126,6 +126,9 @@ func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[strin
 
 func (c *Client) CompleteTodo(ctx context.Context, token, id string) error {
 	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("todo id is required")
+	}
 	body, err := completionBody(true)
 	if err != nil {
 		return err
@@ -145,6 +148,9 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 
 func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {
 	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("homework id is required")
+	}
 	body, err := completionBody(completed)
 	if err != nil {
 		return err

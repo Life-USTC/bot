@@ -183,6 +183,19 @@ func TestCompleteTodoTrimsID(t *testing.T) {
 	}
 }
 
+func TestCompleteTodoRejectsBlankID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.CompleteTodo(context.Background(), "token", " \t ")
+	if err == nil || !strings.Contains(err.Error(), "todo id") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestSetHomeworkCompletionTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/homeworks/homework-1/completion" || r.Method != http.MethodPut {
@@ -195,6 +208,19 @@ func TestSetHomeworkCompletionTrimsID(t *testing.T) {
 	client := NewClient(server.URL, server.Client())
 	if err := client.SetHomeworkCompletion(context.Background(), "token", " homework-1 ", true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSetHomeworkCompletionRejectsBlankID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.SetHomeworkCompletion(context.Background(), "token", "\n", true)
+	if err == nil || !strings.Contains(err.Error(), "homework id") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
