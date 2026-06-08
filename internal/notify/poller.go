@@ -61,15 +61,11 @@ func (p *Poller) tick(ctx context.Context) {
 		return
 	}
 	for _, setting := range settings {
-		if !isPrivate(setting.Identity) {
+		if !store.IsPrivateConversation(setting.Identity) {
 			continue
 		}
 		p.notifyUser(ctx, setting)
 	}
-}
-
-func isPrivate(ident store.Identity) bool {
-	return store.IsPrivateConversation(ident)
 }
 
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) {

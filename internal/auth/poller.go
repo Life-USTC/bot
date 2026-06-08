@@ -48,7 +48,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 	}
 	for _, session := range sessions {
 		ident := session.Identity
-		if !hasLoginPollIdentity(ident) {
+		if !store.HasConversationIdentity(ident) {
 			continue
 		}
 		if session.Status == "notify_failed" {
@@ -78,7 +78,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 }
 
 func (p *LoginPoller) notifyApproved(ctx context.Context, ident store.Identity, deviceCode string) {
-	if !hasNotificationIdentity(ident) {
+	if !store.HasConversationTarget(ident) {
 		return
 	}
 	if err := p.Notifier.SendLoginMessage(ctx, ident, "登录完成。"); err != nil {
@@ -96,14 +96,6 @@ func (p *LoginPoller) markLoginSession(ctx context.Context, ident store.Identity
 	if err := p.Manager.Store.MarkLoginSession(ctx, ident, deviceCode, status); err != nil {
 		p.logf("mark login session %s failed: %v", status, err)
 	}
-}
-
-func hasNotificationIdentity(ident store.Identity) bool {
-	return store.HasConversationTarget(ident)
-}
-
-func hasLoginPollIdentity(ident store.Identity) bool {
-	return store.HasConversationIdentity(ident)
 }
 
 func (p *LoginPoller) logf(format string, args ...any) {

@@ -64,13 +64,13 @@ type Input struct {
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	cmd, ok := h.parse(input.Text)
-	if !ok && isGroup(input.Identity) {
+	if !ok && store.IsGroupConversation(input.Identity) {
 		cmd, ok = parseGroupBus(input.Text)
 	}
 	if !ok {
 		return "", false
 	}
-	if isGroup(input.Identity) && cmd.Name != "bus" {
+	if store.IsGroupConversation(input.Identity) && cmd.Name != "bus" {
 		return "", false
 	}
 	if !input.SuppressLog {
@@ -286,14 +286,6 @@ var commandSpecs = []CommandSpec{
 			return h.nextClass(ctx, ident)
 		},
 	},
-}
-
-func isGroup(ident store.Identity) bool {
-	return store.IsGroupConversation(ident)
-}
-
-func isPrivate(ident store.Identity) bool {
-	return store.IsPrivateConversation(ident)
 }
 
 func (h Handler) parse(text string) (parsedCommand, bool) {
@@ -1117,7 +1109,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if h.Store == nil {
 		return "存储未配置。"
 	}
-	if !isPrivate(ident) {
+	if !store.IsPrivateConversation(ident) {
 		return "通知只能在私聊里设置。"
 	}
 	settings, err := h.Store.NotificationSettings(ctx, ident)
