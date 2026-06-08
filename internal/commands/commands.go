@@ -510,11 +510,11 @@ func normalizeNotifyArgs(args []string) []string {
 			out[i] = "help"
 			continue
 		}
+		if kind, ok := NormalizeNotificationKind(arg); ok {
+			out[i] = kind
+			continue
+		}
 		switch normToken(arg) {
-		case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
-			out[i] = "classes"
-		case "homework", "hw", "作业":
-			out[i] = "homework"
 		case "on", "enable", "enabled", "open", "开启", "打开", "开":
 			out[i] = "on"
 		case "off", "disable", "disabled", "close", "关闭", "关":
@@ -524,6 +524,17 @@ func normalizeNotifyArgs(args []string) []string {
 		}
 	}
 	return out
+}
+
+func NormalizeNotificationKind(value string) (string, bool) {
+	switch normToken(value) {
+	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
+		return "classes", true
+	case "homework", "hw", "作业":
+		return "homework", true
+	default:
+		return "", false
+	}
 }
 
 func normToken(value string) string {

@@ -500,6 +500,27 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestNormalizeNotificationKind(t *testing.T) {
+	tests := map[string]string{
+		" classes ":  "classes",
+		"kb":         "classes",
+		"课程":         "classes",
+		"上课":         "classes",
+		" homework ": "homework",
+		"HW":         "homework",
+		"作业":         "homework",
+	}
+	for input, want := range tests {
+		got, ok := NormalizeNotificationKind(input)
+		if !ok || got != want {
+			t.Fatalf("%q = %q, %v; want %q, true", input, got, ok, want)
+		}
+	}
+	if got, ok := NormalizeNotificationKind("校车"); ok || got != "" {
+		t.Fatalf("unsupported kind = %q, %v", got, ok)
+	}
+}
+
 func TestJoinedArgsTrimsJoinedText(t *testing.T) {
 	if got := joinedArgs([]string{" 写", "报告 "}); got != "写 报告" {
 		t.Fatalf("joinedArgs = %q", got)

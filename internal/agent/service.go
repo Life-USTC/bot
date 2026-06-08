@@ -334,10 +334,14 @@ func requiredToolArg(name, value string) (string, error) {
 }
 
 func notificationKindCommandArg(value string) (string, error) {
-	switch textutil.LowerTrim(value) {
-	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
+	kind, ok := commands.NormalizeNotificationKind(value)
+	if !ok {
+		return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", value)
+	}
+	switch kind {
+	case "classes":
 		return "课表", nil
-	case "homework", "hw", "作业":
+	case "homework":
 		return "作业", nil
 	default:
 		return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", value)
