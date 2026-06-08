@@ -692,6 +692,9 @@ func formatBusTableCell(text string, width int) string {
 	if padding <= 0 {
 		return text
 	}
+	if text == busMissingTimePlaceholder {
+		return text + strings.Repeat("—", padding)
+	}
 	return text + strings.Repeat(busTablePad, padding)
 }
 
