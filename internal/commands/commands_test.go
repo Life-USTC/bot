@@ -81,6 +81,13 @@ func TestFormatCourseOmitsTrailingTabWhenNameMissing(t *testing.T) {
 	}
 }
 
+func TestFormatSectionOmitsTrailingTabWhenLabelMissing(t *testing.T) {
+	line := formatSection(map[string]any{"code": "MATH1001.01"})
+	if line != "- 𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
 func TestSearchSectionsTrimsKeyword(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("search") != "高等数学" {

@@ -2033,28 +2033,24 @@ func busTime(value string, minutes int) string {
 func formatCourse(course map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(course, "code"))
 	name := lifedata.FirstString(course, "namePrimary", "nameCn", "name")
-	if code == "" {
-		return "- " + name
-	}
-	if name == "" {
-		return "- " + code
-	}
-	return "- " + paddedCourseCode(code) + "\t" + name
+	return formatCodeLabelLine(code, name)
 }
 
 func formatSection(section map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(section, "code"))
 	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := lifedata.NestedString(section, "semester", "name")
-	parts := []string{course, semester}
+	return formatCodeLabelLine(code, strings.Join(textutil.NonEmpty(course, semester), " "))
+}
+
+func formatCodeLabelLine(code, label string) string {
 	if code == "" {
-		return "- " + strings.Join(textutil.NonEmpty(parts...), " ")
+		return "- " + label
 	}
-	suffix := strings.Join(textutil.NonEmpty(parts...), " ")
-	if suffix == "" {
+	if label == "" {
 		return "- " + code
 	}
-	return "- " + paddedCourseCode(code) + "\t" + suffix
+	return "- " + paddedCourseCode(code) + "\t" + label
 }
 
 func paddedCourseCode(code string) string {
