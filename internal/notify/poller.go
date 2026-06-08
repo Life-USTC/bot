@@ -191,7 +191,7 @@ func notificationKey(kind, item string) string {
 
 func scheduleKey(schedule map[string]any, start time.Time) string {
 	sectionID := lifedata.NestedString(schedule, "section", "id")
-	return strings.Join(textutil.NonEmpty(sectionID, start.Format("2006-01-02T15:04"), lifedata.FirstString(schedule, "startTime"), lifedata.FirstString(schedule, "endTime")), "|")
+	return textutil.JoinNonEmpty("|", sectionID, start.Format("2006-01-02T15:04"), lifedata.FirstString(schedule, "startTime"), lifedata.FirstString(schedule, "endTime"))
 }
 
 func formatSchedule(schedule map[string]any) string {
@@ -210,5 +210,5 @@ func formatHomework(homework map[string]any) string {
 	if due != "" {
 		dueLabel = "截止 " + due
 	}
-	return textutil.MonospaceDigits(strings.Join(textutil.NonEmpty(dueLabel, course, title), " · "))
+	return textutil.MonospaceDigits(textutil.JoinNonEmpty(" · ", dueLabel, course, title))
 }

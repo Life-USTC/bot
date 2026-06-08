@@ -27,6 +27,12 @@ func TestNonEmpty(t *testing.T) {
 	}
 }
 
+func TestJoinNonEmpty(t *testing.T) {
+	if got := JoinNonEmpty(" · ", "", " one ", "   ", "two"); got != "one · two" {
+		t.Fatalf("JoinNonEmpty = %q", got)
+	}
+}
+
 func TestTrimEqualFold(t *testing.T) {
 	if !TrimEqualFold(" GROUP ", "group") {
 		t.Fatal("TrimEqualFold did not trim and fold case")

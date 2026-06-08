@@ -556,7 +556,7 @@ func firstArgIn(args []string, values ...string) bool {
 }
 
 func joinedArgs(args []string) string {
-	return strings.Join(textutil.NonEmpty(args...), " ")
+	return textutil.JoinNonEmpty(" ", args...)
 }
 
 func parseGroupBus(text string) (parsedCommand, bool) {
@@ -2030,7 +2030,7 @@ func formatSection(section map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(section, "code"))
 	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
 	semester := lifedata.NestedString(section, "semester", "name")
-	return formatCodeLabelLine(code, strings.Join(textutil.NonEmpty(course, semester), " "))
+	return formatCodeLabelLine(code, textutil.JoinNonEmpty(" ", course, semester))
 }
 
 func formatCodeLabelLine(code, label string) string {
