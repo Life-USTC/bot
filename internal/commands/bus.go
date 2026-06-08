@@ -204,6 +204,9 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
 	} else {
 		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, busOverviewTripsPerRoute)
+		if len(routeArgs) == 0 && !h.showSouthCampusBus(ctx, ident) {
+			items = filterSouthCampusBusItems(items)
+		}
 	}
 	if len(items) == 0 {
 		return "今天后面没查到校车。"
@@ -224,6 +227,7 @@ func busHelp() string {
 		"校车 偏好",
 		"校车 设置 东区 西区",
 		"校车 已发车 开",
+		"校车 南区 开",
 		"校车 已发车 关",
 	}, "\n")
 }
@@ -242,20 +246,34 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	if err != nil {
 		return commandError("校车偏好查不到：", err)
 	}
+	busSettings := h.currentBusSettings(ctx, ident)
+	if showSouth, ok := parseBusShowSouth(args); ok {
+		busSettings.ShowSouthCampus = showSouth
+		args = removeBusShowSouthArgs(args)
+		args = removeBusPreferenceCommandArgs(args)
+	}
 	update, shouldSave, message := parseBusPreferenceUpdate(data, args, preferences)
 	if message != "" {
 		return message
 	}
-	if !shouldSave {
-		return formatBusPreferences(data, preferences, "校车偏好：")
+	shouldSaveBusSettings := busSettings.ShowSouthCampus != h.currentBusSettings(ctx, ident).ShowSouthCampus
+	if !shouldSave && !shouldSaveBusSettings {
+		return formatBusPreferences(data, preferences, busSettings, "校车偏好：")
 	}
-	preferences, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (life.BusPreferences, error) {
-		return h.Life.SetBusPreferences(ctx, token, update)
-	})
-	if err != nil {
-		return commandError("校车偏好保存失败：", err)
+	if shouldSaveBusSettings && h.Store != nil {
+		if err := h.Store.SaveBusSettings(ctx, busSettings); err != nil {
+			return commandError("校车偏好保存失败：", err)
+		}
 	}
-	return formatBusPreferences(data, preferences, "已更新校车偏好：")
+	if shouldSave {
+		preferences, err = auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (life.BusPreferences, error) {
+			return h.Life.SetBusPreferences(ctx, token, update)
+		})
+		if err != nil {
+			return commandError("校车偏好保存失败：", err)
+		}
+	}
+	return formatBusPreferences(data, preferences, busSettings, "已更新校车偏好：")
 }
 
 func (h Handler) currentBusPreferences(ctx context.Context, ident store.Identity) (life.BusPreferences, bool) {
@@ -272,15 +290,31 @@ func (h Handler) currentBusPreferences(ctx context.Context, ident store.Identity
 	return preferences, err == nil
 }
 
+func (h Handler) currentBusSettings(ctx context.Context, ident store.Identity) store.BusSettings {
+	if h.Store == nil {
+		return store.BusSettings{Identity: ident}
+	}
+	settings, err := h.Store.BusSettings(ctx, ident)
+	if err != nil {
+		h.logf("load bus settings failed: %v", err)
+		return store.BusSettings{Identity: ident}
+	}
+	return settings
+}
+
+func (h Handler) showSouthCampusBus(ctx context.Context, ident store.Identity) bool {
+	return h.currentBusSettings(ctx, ident).ShowSouthCampus
+}
+
 func busPreferenceArgs(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
 	switch normToken(args[0]) {
-	case "preference", "preferences", "pref", "prefs", "偏好", "默认", "设置", "set", "已发车", "已出发", "show-departed", "departed":
+	case "preference", "preferences", "pref", "prefs", "偏好", "默认", "设置", "set", "已发车", "已出发", "show-departed", "departed", "南区校车", "show-south", "south-campus":
 		return true
 	default:
-		return false
+		return normToken(args[0]) == "南区" && len(args) > 1 && busBoolArg(args[1])
 	}
 }
 
@@ -384,7 +418,7 @@ func parseBusPreferenceUpdate(data map[string]any, args []string, current life.B
 	}
 }
 
-func formatBusPreferences(data map[string]any, preferences life.BusPreferences, title string) string {
+func formatBusPreferences(data map[string]any, preferences life.BusPreferences, busSettings store.BusSettings, title string) string {
 	route := "未设置"
 	if preferences.PreferredOriginCampusID != nil && preferences.PreferredDestinationCampusID != nil {
 		from, fromOK := campusNameByID(data, *preferences.PreferredOriginCampusID)
@@ -399,10 +433,15 @@ func formatBusPreferences(data map[string]any, preferences life.BusPreferences, 
 	if preferences.ShowDepartedTrips {
 		showDeparted = "显示"
 	}
+	showSouth := "不显示"
+	if busSettings.ShowSouthCampus {
+		showSouth = "显示"
+	}
 	return strings.Join([]string{
 		title,
 		"路线：" + route,
 		"已发车：" + showDeparted,
+		"南区：" + showSouth,
 	}, "\n")
 }
 
@@ -427,6 +466,20 @@ func parseBusShowDeparted(args []string) (bool, bool) {
 	return false, false
 }
 
+func parseBusShowSouth(args []string) (bool, bool) {
+	for i, arg := range args {
+		switch normToken(arg) {
+		case "南区", "南区校车", "show-south", "south-campus":
+			if i+1 < len(args) {
+				if value, ok := parseBusBool(args[i+1]); ok {
+					return value, true
+				}
+			}
+		}
+	}
+	return false, false
+}
+
 func parseBusBool(value string) (bool, bool) {
 	switch normToken(value) {
 	case "on", "true", "1", "yes", "y", "open", "enable", "enabled", "show", "开", "开启", "显示":
@@ -436,6 +489,11 @@ func parseBusBool(value string) (bool, bool) {
 	default:
 		return false, false
 	}
+}
+
+func busBoolArg(value string) bool {
+	_, ok := parseBusBool(value)
+	return ok
 }
 
 func removeBusShowDepartedArgs(args []string) []string {
@@ -451,6 +509,36 @@ func removeBusShowDepartedArgs(args []string) []string {
 			continue
 		default:
 			out = append(out, args[i])
+		}
+	}
+	return out
+}
+
+func removeBusShowSouthArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch normToken(args[i]) {
+		case "南区", "南区校车", "show-south", "south-campus":
+			if i+1 < len(args) {
+				if _, ok := parseBusBool(args[i+1]); ok {
+					i++
+					continue
+				}
+			}
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+func removeBusPreferenceCommandArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		switch normToken(arg) {
+		case "preference", "preferences", "pref", "prefs", "偏好", "默认", "set", "设置":
+			continue
+		default:
+			out = append(out, arg)
 		}
 	}
 	return out
@@ -626,6 +714,17 @@ func nextBusItemsByRouteLimitWithOptions(data map[string]any, args []string, now
 		}
 		return out[i].DepartureMinutes < out[j].DepartureMinutes
 	})
+	return out
+}
+
+func filterSouthCampusBusItems(items []busItem) []busItem {
+	out := make([]busItem, 0, len(items))
+	for _, item := range items {
+		if hasBusStop(busItemStopNames(item), "南区") {
+			continue
+		}
+		out = append(out, item)
+	}
 	return out
 }
 

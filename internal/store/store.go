@@ -78,6 +78,11 @@ type AgentSettings struct {
 	ExposeToolCalls bool
 }
 
+type BusSettings struct {
+	Identity        Identity
+	ShowSouthCampus bool
+}
+
 type Store struct {
 	db *gorm.DB
 }
@@ -198,6 +203,18 @@ func (agentSettingRow) TableName() string {
 	return "agent_settings"
 }
 
+type busSettingRow struct {
+	UserID          int64  `gorm:"primaryKey"`
+	Platform        string `gorm:"not null"`
+	ExternalUserID  string `gorm:"not null"`
+	ShowSouthCampus bool   `gorm:"not null"`
+	UpdatedAt       time.Time
+}
+
+func (busSettingRow) TableName() string {
+	return "bus_settings"
+}
+
 type notificationDeliveryRow struct {
 	ID        int64  `gorm:"primaryKey"`
 	UserID    int64  `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
@@ -251,6 +268,7 @@ func (s *Store) migrate() error {
 		&interactionRow{},
 		&notificationSettingRow{},
 		&agentSettingRow{},
+		&busSettingRow{},
 		&notificationDeliveryRow{},
 	)
 }
@@ -843,6 +861,50 @@ func (s *Store) SaveAgentSettings(ctx context.Context, settings AgentSettings) e
 	}).Create(&row).Error
 }
 
+func (s *Store) BusSettings(ctx context.Context, ident Identity) (BusSettings, error) {
+	if err := validateIdentity(ident); err != nil {
+		return BusSettings{}, err
+	}
+	ident = normalizeIdentity(ident)
+	var row busSettingRow
+	err := s.db.WithContext(ctx).
+		Joins("JOIN users ON users.id = bus_settings.user_id").
+		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return BusSettings{Identity: ident}, nil
+	}
+	if err != nil {
+		return BusSettings{}, err
+	}
+	return busSettingsFromRow(row, ident), nil
+}
+
+func (s *Store) SaveBusSettings(ctx context.Context, settings BusSettings) error {
+	settings.Identity = normalizeIdentity(settings.Identity)
+	userID, err := s.EnsureUser(ctx, settings.Identity)
+	if err != nil {
+		return err
+	}
+	now := nowUTC()
+	row := busSettingRow{
+		UserID:          userID,
+		Platform:        settings.Identity.Platform,
+		ExternalUserID:  settings.Identity.UserID,
+		ShowSouthCampus: settings.ShowSouthCampus,
+		UpdatedAt:       now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"platform",
+			"external_user_id",
+			"show_south_campus",
+			"updated_at",
+		}),
+	}).Create(&row).Error
+}
+
 func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
 	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
 	if err != nil {
@@ -923,5 +985,16 @@ func agentSettingsFromRow(row agentSettingRow, fallback Identity) AgentSettings 
 	return AgentSettings{
 		Identity:        ident,
 		ExposeToolCalls: row.ExposeToolCalls,
+	}
+}
+
+func busSettingsFromRow(row busSettingRow, fallback Identity) BusSettings {
+	ident := Identity{
+		Platform: textutil.FirstNonEmpty(row.Platform, fallback.Platform),
+		UserID:   textutil.FirstNonEmpty(row.ExternalUserID, fallback.UserID),
+	}
+	return BusSettings{
+		Identity:        ident,
+		ShowSouthCampus: row.ShowSouthCampus,
 	}
 }

@@ -584,6 +584,36 @@ func TestRecordInteractionTrimsUnknownDirection(t *testing.T) {
 	}
 }
 
+func TestBusSettingsDefaultAndSave(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42"}
+	settings, err := s.BusSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.ShowSouthCampus {
+		t.Fatalf("default settings = %#v", settings)
+	}
+
+	settings.ShowSouthCampus = true
+	if err := s.SaveBusSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.BusSettings(ctx, Identity{Platform: " NapCat ", UserID: " 42 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.ShowSouthCampus {
+		t.Fatalf("settings = %#v", got)
+	}
+}
+
 func TestRecordInteractionTrimsMetadataOnly(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

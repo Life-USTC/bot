@@ -180,12 +180,28 @@ func TestHandleBusPreferencesViewAndSet(t *testing.T) {
 	}
 	if !strings.Contains(reply, "已更新校车偏好：") ||
 		!strings.Contains(reply, "路线：南区 → 东区") ||
-		!strings.Contains(reply, "已发车：显示") {
+		!strings.Contains(reply, "已发车：显示") ||
+		!strings.Contains(reply, "南区：不显示") {
 		t.Fatalf("reply = %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "校车 设置 南区 开", Identity: ident})
+	if !ok {
+		t.Fatal("set south preference command was not handled")
+	}
+	if !strings.Contains(reply, "南区：显示") {
+		t.Fatalf("reply = %q", reply)
+	}
+	settings, err := handler.Store.BusSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ShowSouthCampus {
+		t.Fatalf("settings = %#v", settings)
 	}
 }
 
-func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
+func TestHandleBusBarePrivateQueryHidesSouthByDefault(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +218,54 @@ func TestHandleBusBarePrivateQueryShowsAllRoutes(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
+	if reply != "今天后面没查到校车。" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusBarePrivateQueryCanShowSouth(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(busPreferenceTestData))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":true}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	if err := handler.Store.SaveBusSettings(ctx, store.BusSettings{Identity: ident, ShowSouthCampus: true}); err != nil {
+		t.Fatal(err)
+	}
+	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
 	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") || strings.Contains(reply, "𝟸𝟹:𝟶𝟶") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleBusExplicitSouthRouteIgnoresSouthPreference(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+			_, _ = w.Write([]byte(busPreferenceTestData))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.busAt(ctx, ident, []string{"南区", "东区"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
