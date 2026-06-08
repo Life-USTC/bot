@@ -403,6 +403,9 @@ func TestIsUnauthorized(t *testing.T) {
 	if !IsUnauthorized(errors.New("GET /api/me returned 401")) {
 		t.Fatal("bodyless 401 error was not recognized")
 	}
+	if !IsUnauthorized(errors.New("GET /api/me RETURNED 401: Unauthorized")) {
+		t.Fatal("case-insensitive 401 error was not recognized")
+	}
 	if !IsUnauthorized(HTTPError{StatusCode: http.StatusUnauthorized}) {
 		t.Fatal("typed 401 error was not recognized")
 	}

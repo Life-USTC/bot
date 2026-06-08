@@ -94,7 +94,7 @@ func IsUnauthorized(err error) bool {
 	if err == nil {
 		return false
 	}
-	text := err.Error()
+	text := strings.ToLower(err.Error())
 	return strings.Contains(text, " returned 401:") || strings.HasSuffix(text, " returned 401")
 }
 
