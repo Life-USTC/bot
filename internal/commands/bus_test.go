@@ -365,7 +365,7 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	}
 	if !strings.Contains(reply, "东区  \t高新区") ||
 		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶 \t𝟶𝟾:𝟺𝟶 ") ||
-		!strings.Contains(reply, "✨\t𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 ") {
+		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 \t✨") {
 		t.Fatalf("reply is not a stop-time table: %q", reply)
 	}
 }

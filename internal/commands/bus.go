@@ -787,9 +787,8 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		return nil
 	}
 	cellWidth := busTableCellWidth(stops, items)
-	showMarker := hasHighlightedBusItem(items)
 	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, formatBusTableLine(stops, cellWidth, showMarker, false))
+	lines = append(lines, formatBusTableCells(stops, cellWidth))
 	for _, item := range items {
 		times := busStopTimes(item)
 		row := make([]string, 0, len(stops))
@@ -800,18 +799,13 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 			}
 			row = append(row, timeText)
 		}
-		lines = append(lines, formatBusTableLine(row, cellWidth, showMarker, item.Highlight))
+		line := formatBusTableCells(row, cellWidth)
+		if item.Highlight {
+			line += "\t✨"
+		}
+		lines = append(lines, line)
 	}
 	return lines
-}
-
-func hasHighlightedBusItem(items []busItem) bool {
-	for _, item := range items {
-		if item.Highlight {
-			return true
-		}
-	}
-	return false
 }
 
 func busTableCellWidth(stops []string, items []busItem) int {
@@ -838,17 +832,6 @@ func formatBusTableCells(cells []string, width int) string {
 		out = append(out, textutil.PadRightDisplay(cell, width))
 	}
 	return strings.Join(out, "\t")
-}
-
-func formatBusTableLine(cells []string, width int, showMarker, marked bool) string {
-	line := formatBusTableCells(cells, width)
-	if !showMarker {
-		return line
-	}
-	if marked {
-		return "✨\t" + line
-	}
-	return "\u3000\t" + line
 }
 
 func busTableBlankCell(width int) string {
