@@ -86,6 +86,26 @@ func TestLifeDataLabelsUseFallbacks(t *testing.T) {
 	}
 }
 
+func TestHomeworkLabel(t *testing.T) {
+	homework := map[string]any{
+		"title":           "Problem Set 1",
+		"submissionDueAt": "2026-06-08T10:00:00+08:00",
+		"section": map[string]any{
+			"course": map[string]any{"namePrimary": "数据库系统"},
+		},
+	}
+	want := "截止 06-08 10:00 · 数据库系统 · Problem Set 1"
+	if got := HomeworkLabel(homework); got != want {
+		t.Fatalf("HomeworkLabel = %q, want %q", got, want)
+	}
+}
+
+func TestHomeworkLabelFallsBackToID(t *testing.T) {
+	if got := HomeworkLabel(map[string]any{"id": "hw-1"}); got != "hw-1" {
+		t.Fatalf("HomeworkLabel fallback = %q", got)
+	}
+}
+
 func TestSchedulePlaceLabelPrefersCustomPlace(t *testing.T) {
 	schedule := map[string]any{
 		"customPlace": "线上",

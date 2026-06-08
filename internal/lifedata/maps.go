@@ -64,6 +64,23 @@ func HomeworkCourseLabel(homework map[string]any) string {
 	return NestedPathString(homework, []string{"section", "course"}, "code")
 }
 
+func HomeworkLabel(homework map[string]any) string {
+	due := FormatAPITime(FirstString(homework, "submissionDueAt"))
+	dueText := ""
+	if due != "" {
+		dueText = "截止 " + due
+	}
+	parts := textutil.NonEmpty(
+		dueText,
+		HomeworkCourseLabel(homework),
+		FirstString(homework, "title"),
+	)
+	if len(parts) == 0 {
+		return FirstString(homework, "id")
+	}
+	return strings.Join(parts, " · ")
+}
+
 func ScheduleCourseLabel(schedule map[string]any) string {
 	name := NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if name != "" {

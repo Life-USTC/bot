@@ -205,21 +205,5 @@ func formatSchedule(schedule map[string]any) string {
 }
 
 func formatHomework(homework map[string]any) string {
-	course := lifedata.HomeworkCourseLabel(homework)
-	title := lifedata.FirstString(homework, "title")
-	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-	parts := []string{}
-	if due != "" {
-		parts = append(parts, "截止 "+due)
-	}
-	if course != "" {
-		parts = append(parts, course)
-	}
-	if title != "" {
-		parts = append(parts, title)
-	}
-	if len(parts) == 0 {
-		return textutil.MonospaceDigits(lifedata.FirstString(homework, "id"))
-	}
-	return textutil.MonospaceDigits(strings.Join(parts, " · "))
+	return textutil.MonospaceDigits(lifedata.HomeworkLabel(homework))
 }
