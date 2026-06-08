@@ -758,7 +758,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 	if !ok {
 		return h.loginRequired()
 	}
-	me, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) (map[string]any, error) {
+	me, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.Me(ctx, token)
 	})
 	if err != nil {
@@ -861,7 +861,7 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token, ti
 }
 
 func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	todos, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) ([]map[string]any, error) {
+	todos, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.Todos(ctx, token, "false")
 	})
 	return todos, err
@@ -952,7 +952,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 }
 
 func (h Handler) homeworks(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	homeworks, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) ([]map[string]any, error) {
+	homeworks, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.SubscribedHomeworks(ctx, token)
 	})
 	lifedata.SortHomeworksByDue(homeworks)
@@ -1165,7 +1165,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	if !ok {
 		return h.loginRequired()
 	}
-	data, err := withRefresh(ctx, ident, token, h.Auth.RefreshIfUnauthorized, func(token string) (map[string]any, error) {
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.CurrentSubscription(ctx, token)
 	})
 	if err != nil {
@@ -1554,14 +1554,6 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 		return token, true
 	}
 	return "", false
-}
-
-func withRefresh[T any](ctx context.Context, ident store.Identity, token string, refresh func(context.Context, store.Identity, error) (string, bool), fetch func(string) (T, error)) (T, error) {
-	data, err := fetch(token)
-	if refreshed, ok := refresh(ctx, ident, err); ok {
-		return fetch(refreshed)
-	}
-	return data, err
 }
 
 func (h Handler) loginRequired() string {
