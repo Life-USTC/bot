@@ -773,6 +773,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			"td 写报告",
 			"td + 买咖啡",
 			"td done 1",
+			"td done 1,2,3",
 			"td undo 1",
 			"td delete 1",
 			"td update 1 title 写报告 priority high due 2026-06-10",
@@ -883,9 +884,13 @@ func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, to
 	if !completed {
 		completedFilter = "true"
 	}
+	targets := splitTodoTargets(target)
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{Completed: completedFilter})
 	if err != nil {
 		return commandError("待办查不到：", err)
+	}
+	if len(targets) > 1 {
+		return h.setTodoCompletionBatch(ctx, ident, token, todos, targets, completed)
 	}
 	todo, ok := resolveTodo(todos, target)
 	if !ok {
@@ -894,11 +899,53 @@ func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, to
 		}
 		return "没找到这条已完成待办。发 td completed 看编号，再试：td undo 1"
 	}
+	return h.setTodoCompletionItem(ctx, ident, token, todo, completed)
+}
+
+func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identity, token string, todos []map[string]any, targets []string, completed bool) string {
+	done := make([]string, 0, len(targets))
+	missing := []string{}
+	for _, target := range targets {
+		todo, ok := resolveTodo(todos, target)
+		if !ok {
+			missing = append(missing, target)
+			continue
+		}
+		reply := h.setTodoCompletionItem(ctx, ident, token, todo, completed)
+		if strings.HasPrefix(reply, "待办完成失败：") || strings.HasPrefix(reply, "待办恢复失败：") || strings.Contains(reply, "没有可用 ID") {
+			return reply
+		}
+		done = append(done, strings.TrimPrefix(strings.TrimPrefix(reply, "已完成："), "已恢复："))
+	}
+	if len(done) == 0 {
+		if completed {
+			return "没找到这些待办。发 td 看编号，再试：td done 1,2,3"
+		}
+		return "没找到这些已完成待办。发 td completed 看编号，再试：td undo 1,2,3"
+	}
+	action := "完成"
+	if !completed {
+		action = "恢复"
+	}
+	lines := []string{fmt.Sprintf("已%s %d 条：", action, len(done))}
+	for _, title := range done {
+		if strings.TrimSpace(title) == "" {
+			title = "待办"
+		}
+		lines = append(lines, "- "+title)
+	}
+	if len(missing) > 0 {
+		lines = append(lines, "没找到："+strings.Join(missing, ", "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) setTodoCompletionItem(ctx context.Context, ident store.Identity, token string, todo map[string]any, completed bool) string {
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
 		return "这条待办没有可用 ID，暂时操作不了。"
 	}
-	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.SetTodoCompleted(ctx, token, id, completed)
 	})
 	if err != nil {
@@ -956,15 +1003,54 @@ func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, ta
 	if err != nil {
 		return commandError("待办查不到：", err)
 	}
+	targets := splitTodoTargets(target)
+	if len(targets) > 1 {
+		return h.deleteTodoBatch(ctx, ident, token, todos, targets)
+	}
 	todo, ok := resolveTodo(todos, target)
 	if !ok {
 		return "没找到这条待办。发 td all 看编号，再试：td delete 1"
 	}
+	return h.deleteTodoItem(ctx, ident, token, todo)
+}
+
+func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, token string, todos []map[string]any, targets []string) string {
+	deleted := make([]string, 0, len(targets))
+	missing := []string{}
+	for _, target := range targets {
+		todo, ok := resolveTodo(todos, target)
+		if !ok {
+			missing = append(missing, target)
+			continue
+		}
+		reply := h.deleteTodoItem(ctx, ident, token, todo)
+		if strings.HasPrefix(reply, "待办删除失败：") || strings.Contains(reply, "没有可用 ID") {
+			return reply
+		}
+		deleted = append(deleted, strings.TrimPrefix(reply, "已删除："))
+	}
+	if len(deleted) == 0 {
+		return "没找到这些待办。发 td all 看编号，再试：td delete 1,2,3"
+	}
+	lines := []string{fmt.Sprintf("已删除 %d 条：", len(deleted))}
+	for _, title := range deleted {
+		if strings.TrimSpace(title) == "" {
+			title = "待办"
+		}
+		lines = append(lines, "- "+title)
+	}
+	if len(missing) > 0 {
+		lines = append(lines, "没找到："+strings.Join(missing, ", "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) deleteTodoItem(ctx context.Context, ident store.Identity, token string, todo map[string]any) string {
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
 		return "这条待办没有可用 ID，暂时删除不了。"
 	}
-	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.DeleteTodo(ctx, token, id)
 	})
 	if err != nil {
@@ -975,6 +1061,27 @@ func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, ta
 		return "已删除。"
 	}
 	return "已删除：" + title
+}
+
+func splitTodoTargets(target string) []string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	if !strings.ContainsAny(target, ",，;；") {
+		return []string{target}
+	}
+	parts := strings.FieldsFunc(target, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '；'
+	})
+	targets := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			targets = append(targets, part)
+		}
+	}
+	return targets
 }
 
 func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {

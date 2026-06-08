@@ -757,6 +757,48 @@ func TestHandleTodoDoneUsesNumericID(t *testing.T) {
 	}
 }
 
+func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	patched := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("completed") != "false" {
+				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			}
+			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/todos/todo-") && r.Method == http.MethodPatch:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(body), `"completed":true`) {
+				t.Fatalf("patch body = %s", body)
+			}
+			patched[strings.TrimPrefix(r.URL.Path, "/api/todos/")] = true
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "代办 完成 1,2,3,4", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	for _, id := range []string{"todo-1", "todo-2", "todo-3", "todo-4"} {
+		if !patched[id] {
+			t.Fatalf("missing patch for %s; patched = %#v", id, patched)
+		}
+	}
+	if !strings.Contains(reply, "已完成 4 条") || !strings.Contains(reply, "回工位收拾") || !strings.Contains(reply, "创建 1") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestHandleTodoListWithFilters(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
