@@ -425,7 +425,7 @@ func normalizeScheduleDay(value string) (string, bool) {
 }
 
 func normalizeSubscriptionArgs(args []string) []string {
-	if len(args) == 0 {
+	if !hasArgs(args) {
 		return args
 	}
 	if isHelpToken(args[0]) {
@@ -439,7 +439,7 @@ func normalizeSubscriptionArgs(args []string) []string {
 }
 
 func normalizeLoginArgs(args []string) []string {
-	if len(args) == 0 {
+	if !hasArgs(args) {
 		return args
 	}
 	if isHelpToken(args[0]) {
@@ -453,7 +453,7 @@ func normalizeLoginArgs(args []string) []string {
 }
 
 func normalizeTodoArgs(args []string) []string {
-	if len(args) == 0 {
+	if !hasArgs(args) {
 		return args
 	}
 	if isHelpToken(args[0]) {
@@ -469,7 +469,7 @@ func normalizeTodoArgs(args []string) []string {
 }
 
 func normalizeHomeworkArgs(args []string) []string {
-	if len(args) == 0 {
+	if !hasArgs(args) {
 		return args
 	}
 	if isHelpToken(args[0]) {
@@ -489,7 +489,7 @@ func normalizeHomeworkArgs(args []string) []string {
 }
 
 func normalizeScheduleArgs(args []string) []string {
-	if len(args) == 0 {
+	if !hasArgs(args) {
 		return args
 	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
