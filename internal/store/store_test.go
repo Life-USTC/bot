@@ -529,6 +529,33 @@ func TestRecordInteractionNormalizesKnownDirection(t *testing.T) {
 	}
 }
 
+func TestRecordInteractionTrimsUnknownDirection(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.RecordInteraction(ctx, ident, Interaction{
+		Direction: " Custom ",
+		RawText:   "custom",
+		Handled:   true,
+		Status:    "handled",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var direction string
+	err = s.db.WithContext(ctx).Raw(`SELECT direction FROM interactions WHERE raw_text = ?`, "custom").Scan(&direction).Error
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direction != "Custom" {
+		t.Fatalf("direction = %q", direction)
+	}
+}
+
 func TestRecordInteractionTrimsMetadataOnly(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

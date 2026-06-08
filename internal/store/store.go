@@ -639,15 +639,14 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 }
 
 func interactionDirection(direction string) string {
-	trimmed := strings.TrimSpace(direction)
-	normalized := strings.ToLower(trimmed)
+	normalized := textutil.LowerTrim(direction)
 	switch normalized {
 	case "":
 		return InteractionDirectionInbound
 	case InteractionDirectionInbound, InteractionDirectionOutbound:
 		return normalized
 	default:
-		return trimmed
+		return strings.TrimSpace(direction)
 	}
 }
 
