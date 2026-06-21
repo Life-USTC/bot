@@ -918,6 +918,54 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	}
 }
 
+func TestHandleFeedbackStoresWhenConfiguredTargetSendFails(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var logs bytes.Buffer
+	handler := Handler{
+		Store:         db,
+		Prefix:        "/life",
+		Logger:        log.New(&logs, "", 0),
+		FeedbackUsers: []string{"bad-target"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+			return errors.New("qq bot invalid request")
+		},
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "反馈 校车显示有点乱", Identity: ident})
+	if !ok || reply != "已收到反馈。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	count, err := db.FeedbackCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("feedback count = %d", count)
+	}
+	if !strings.Contains(logs.String(), "send feedback failed") || !strings.Contains(logs.String(), "qq bot invalid request") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+func TestHandleFeedbackWithoutStoreReportsSendFailure(t *testing.T) {
+	handler := Handler{
+		Prefix:        "/life",
+		FeedbackUsers: []string{"bad-target"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+			return errors.New("qq bot invalid request")
+		},
+	}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "反馈 校车显示有点乱", Identity: testIdentity()})
+	if !ok || reply != "反馈发送失败，请稍后再试。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

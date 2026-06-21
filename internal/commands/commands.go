@@ -937,8 +937,8 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 			ConversationType: "private",
 			ConversationID:   userID,
 		}, message); err != nil {
-			h.markFeedbackSent(ctx, feedbackID, sent)
-			return commandError("反馈发送失败：", err)
+			h.logf("send feedback failed: id=%d platform=%s target=private:%s error=%v", feedbackID, ident.Platform, userID, err)
+			continue
 		}
 		sent++
 	}
@@ -952,8 +952,8 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 			ConversationType: "group",
 			ConversationID:   groupID,
 		}, message); err != nil {
-			h.markFeedbackSent(ctx, feedbackID, sent)
-			return commandError("反馈发送失败：", err)
+			h.logf("send feedback failed: id=%d platform=%s target=group:%s error=%v", feedbackID, ident.Platform, groupID, err)
+			continue
 		}
 		sent++
 	}
@@ -961,7 +961,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		if feedbackID > 0 {
 			return "已收到反馈。"
 		}
-		return "反馈通道还没配置。"
+		return "反馈发送失败，请稍后再试。"
 	}
 	h.markFeedbackSent(ctx, feedbackID, sent)
 	return "已收到反馈，会转给维护者。"
