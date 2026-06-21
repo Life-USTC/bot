@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -407,6 +408,89 @@ func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("feedback count = %d", count)
+	}
+}
+
+func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
+	var targets []store.Identity
+	var messages []string
+	svc := &Service{handler: commands.Handler{
+		Store:          db,
+		FeedbackUsers:  []string{"admin-openid"},
+		FeedbackGroups: []string{"group-openid"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+			targets = append(targets, target)
+			messages = append(messages, message)
+			return nil
+		},
+	}}
+
+	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
+		Category: "api_gap",
+		Content:  "需要按日期查询课表",
+		Context:  "用户问 6.23 课表",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "已转给维护者") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("targets = %#v", targets)
+	}
+	if targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
+		t.Fatalf("private target = %#v", targets[0])
+	}
+	if targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
+		t.Fatalf("group target = %#v", targets[1])
+	}
+	if !strings.Contains(messages[0], "LLM 反馈") || !strings.Contains(messages[0], "需要按日期查询课表") || !strings.Contains(messages[0], "编号：#1") {
+		t.Fatalf("message = %q", messages[0])
+	}
+}
+
+func TestRecordBotFeedbackStoresWhenAdminSendFails(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var logs bytes.Buffer
+	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
+	svc := &Service{
+		logger: log.New(&logs, "", 0),
+		handler: commands.Handler{
+			Store:         db,
+			FeedbackUsers: []string{"bad-openid"},
+			FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+				return errors.New("qq bot invalid request")
+			},
+		},
+	}
+
+	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{Content: "需要按日期查询课表"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "已记录反馈 #1") || strings.Contains(reply, "已转给维护者") {
+		t.Fatalf("reply = %q", reply)
+	}
+	count, err := db.FeedbackCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("feedback count = %d", count)
+	}
+	if !strings.Contains(logs.String(), "send llm feedback failed") || !strings.Contains(logs.String(), "qq bot invalid request") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
 

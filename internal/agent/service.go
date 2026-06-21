@@ -530,10 +530,92 @@ func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, i
 	if err != nil {
 		return "", err
 	}
+	sent := s.sendFeedbackToAdmins(ctx, ident, id, input)
+	if sent > 0 {
+		if id > 0 {
+			return fmt.Sprintf("已记录反馈 #%d，并已转给维护者。", id), nil
+		}
+		return "已记录反馈，并已转给维护者。", nil
+	}
 	if id > 0 {
 		return fmt.Sprintf("已记录反馈 #%d。", id), nil
 	}
 	return "已记录反馈。", nil
+}
+
+func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity, id int64, input feedbackInput) int {
+	if s.handler.FeedbackSend == nil || (len(s.handler.FeedbackUsers) == 0 && len(s.handler.FeedbackGroups) == 0) {
+		return 0
+	}
+	message := formatAgentFeedbackMessage(ident, id, input)
+	sent := 0
+	for _, userID := range s.handler.FeedbackUsers {
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			continue
+		}
+		if err := s.handler.FeedbackSend(ctx, store.Identity{
+			Platform:         ident.Platform,
+			UserID:           userID,
+			ConversationType: "private",
+			ConversationID:   userID,
+		}, message); err != nil {
+			s.logf("send llm feedback failed: id=%d platform=%s target=private:%s error=%v", id, ident.Platform, userID, err)
+			continue
+		}
+		sent++
+	}
+	for _, groupID := range s.handler.FeedbackGroups {
+		groupID = strings.TrimSpace(groupID)
+		if groupID == "" {
+			continue
+		}
+		if err := s.handler.FeedbackSend(ctx, store.Identity{
+			Platform:         ident.Platform,
+			ConversationType: "group",
+			ConversationID:   groupID,
+		}, message); err != nil {
+			s.logf("send llm feedback failed: id=%d platform=%s target=group:%s error=%v", id, ident.Platform, groupID, err)
+			continue
+		}
+		sent++
+	}
+	if sent > 0 && s.handler.Store != nil && id > 0 {
+		if err := s.handler.Store.MarkFeedbackSent(ctx, id); err != nil {
+			s.logf("mark llm feedback sent failed: id=%d error=%v", id, err)
+		}
+	}
+	return sent
+}
+
+func formatAgentFeedbackMessage(ident store.Identity, id int64, input feedbackInput) string {
+	source := strings.TrimSpace(ident.ConversationType)
+	if ident.ConversationID != "" {
+		source += ":" + ident.ConversationID
+	}
+	if source == "" {
+		source = "unknown"
+	}
+	userID := strings.TrimSpace(ident.UserID)
+	if userID == "" {
+		userID = "unknown"
+	}
+	lines := []string{
+		"LLM 反馈",
+		"来源：" + source,
+		"用户：" + userID,
+	}
+	if category := strings.TrimSpace(input.Category); category != "" {
+		lines = append(lines, "分类："+category)
+	}
+	lines = append(lines, "内容："+strings.TrimSpace(input.Content))
+	if contextText := strings.TrimSpace(input.Context); contextText != "" {
+		lines = append(lines, "上下文："+contextText)
+	}
+	if id > 0 {
+		lines = append(lines, fmt.Sprintf("编号：#%d", id))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func sendMessagePart(ctx context.Context, ident store.Identity, send func(context.Context, store.Identity, string) error, input messagePartInput) (string, error) {
