@@ -61,6 +61,7 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	t.Setenv("QQ_BOT_GATEWAY_URL", " wss://gateway.example/ws ")
 	t.Setenv("OPENAI_API_KEY", " api-key ")
 	t.Setenv("OPENAI_BASE_URL", " https://llm.example/v1 ")
+	t.Setenv("BOT_LLM_TIMEOUT_SECONDS", "120")
 
 	cfg := FromEnv()
 	if cfg.OneBotAccessToken != "onebot-token" {
@@ -92,6 +93,9 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	}
 	if cfg.LLMBaseURL != "https://llm.example/v1" {
 		t.Fatalf("LLMBaseURL = %q", cfg.LLMBaseURL)
+	}
+	if cfg.LLMTimeout != 120*time.Second {
+		t.Fatalf("LLMTimeout = %s", cfg.LLMTimeout)
 	}
 }
 

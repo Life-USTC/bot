@@ -68,6 +68,7 @@ BOT_COMMAND_PREFIX=/life
 BOT_DB_PATH=.run/life-ustc-bot.db
 BOT_ENABLE_AGENT=false
 BOT_LLM_MODEL=gpt-4o-mini
+BOT_LLM_TIMEOUT_SECONDS=60
 OPENAI_API_KEY=
 OPENAI_BASE_URL=
 BOT_ALLOW_GROUP_PERSONAL_INFO=false
@@ -115,7 +116,9 @@ remain enabled for diagnostics, but it is not the primary receive path.
 Set `BOT_ENABLE_AGENT=true` with `OPENAI_API_KEY` to enable the optional
 LLM-backed private-chat assistant. The agent uses existing bot commands as
 tools for curriculum, next class, homework, and shuttle bus queries. Group chats
-still use deterministic command handling only.
+still use deterministic command handling only. Increase `BOT_LLM_TIMEOUT_SECONDS`
+for slower reasoning models; failed agent runs store the provider error in
+SQLite `agent_runs.error`.
 
 Set `BOT_ALLOW_GROUP_PERSONAL_INFO=true` to allow read-only personal-info
 commands such as curriculum, homework, todos, and exams in group chats. Mutating

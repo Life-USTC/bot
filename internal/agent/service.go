@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -28,12 +30,16 @@ type Config struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+	Timeout time.Duration
+	Logger  *log.Logger
 }
 
 type Service struct {
 	handler commands.Handler
 	model   *einoopenai.ChatModel
 	enabled bool
+	timeout time.Duration
+	logger  *log.Logger
 }
 
 type Input struct {
@@ -43,8 +49,9 @@ type Input struct {
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
+	timeout := normalizedAgentTimeout(cfg.Timeout)
 	if !cfg.Enabled {
-		return &Service{handler: handler}, nil
+		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -58,7 +65,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	agentHTTPClient := httpClient
 	if httpClient != nil {
 		clone := *httpClient
-		clone.Timeout = agentHTTPTimeout
+		clone.Timeout = timeout
 		agentHTTPClient = &clone
 	}
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
@@ -66,12 +73,12 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		BaseURL:    baseURL,
 		Model:      modelName,
 		HTTPClient: agentHTTPClient,
-		Timeout:    agentHTTPTimeout,
+		Timeout:    timeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
-	return &Service{handler: handler, model: chatModel, enabled: true}, nil
+	return &Service{handler: handler, model: chatModel, enabled: true, timeout: timeout, logger: cfg.Logger}, nil
 }
 
 func (s *Service) Enabled() bool {
@@ -130,7 +137,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 			break
 		}
 		if event.Err != nil {
-			reply := "AI 助手出错：" + event.Err.Error()
+			reply := agentFailureReply(runID, event.Err)
 			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err)
 			return reply, true
 		}
@@ -160,12 +167,12 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 			return nil, err
 		}
 		for _, turn := range history {
-			rawText := strings.TrimSpace(turn.RawText)
+			rawText := compactHistoryText(turn.RawText)
 			if rawText == "" {
 				continue
 			}
 			messages = append(messages, schema.UserMessage(rawText))
-			if reply := strings.TrimSpace(turn.Reply); reply != "" {
+			if reply := compactHistoryText(turn.Reply); reply != "" {
 				messages = append(messages, schema.AssistantMessage(reply, nil))
 			}
 		}
@@ -487,16 +494,23 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {
 	}
 	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, input.Text)
 	if err != nil {
+		s.logf("record agent run failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 		return 0
 	}
 	return id
 }
 
 func (s *Service) finishAgentRun(ctx context.Context, id int64, status, reply string, err error) {
+	if err != nil {
+		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
+	}
 	if s.handler.Store == nil || id <= 0 {
 		return
 	}
-	_ = s.handler.Store.FinishAgentRun(ctx, id, status, reply, err)
+	if finishErr := s.handler.Store.FinishAgentRun(ctx, id, status, reply, err); finishErr != nil {
+		s.logf("finish agent run failed: id=%d status=%s error=%v", id, status, finishErr)
+	}
 }
 
 func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
@@ -752,6 +766,7 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 const historyTurnLimit = 20
 const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
+const maxHistoryTextRunes = 1200
 const pendingConfirmationTTL = 15 * time.Minute
 
 var shanghaiLocation = lifedata.ChinaLocation()
@@ -787,3 +802,54 @@ func currentTimeMessageAt(now time.Time) string {
 }
 
 var _ = schema.Assistant
+
+func normalizedAgentTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return agentHTTPTimeout
+	}
+	return timeout
+}
+
+func compactHistoryText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxHistoryTextRunes {
+		return text
+	}
+	return string(runes[:maxHistoryTextRunes]) + "\n...(历史内容已截断)"
+}
+
+func agentFailureReply(runID int64, err error) string {
+	reply := "AI 助手出错，请稍后重试。"
+	if isTimeoutError(err) {
+		reply = "AI 响应超时，请稍后重试。"
+	}
+	if runID > 0 {
+		reply += fmt.Sprintf("\n记录 #%d", runID)
+	}
+	return reply
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "timeout") || strings.Contains(message, "deadline exceeded")
+}
+
+func (s *Service) logf(format string, args ...any) {
+	if s != nil && s.logger != nil {
+		s.logger.Printf(format, args...)
+	}
+}

@@ -108,6 +108,8 @@ func main() {
 		APIKey:  cfg.LLMAPIKey,
 		BaseURL: cfg.LLMBaseURL,
 		Model:   cfg.LLMModel,
+		Timeout: cfg.LLMTimeout,
+		Logger:  logger,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)
