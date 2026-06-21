@@ -20,6 +20,8 @@ type Client struct {
 	httpClient *http.Client
 }
 
+const userAgent = "life-ustc-bot/1.0"
+
 type HTTPError struct {
 	Method     string
 	Path       string
@@ -405,6 +407,7 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", userAgent)
 	token = strings.TrimSpace(token)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
