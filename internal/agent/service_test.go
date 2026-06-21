@@ -128,9 +128,11 @@ func TestAgentToolConstruction(t *testing.T) {
 		"list_homeworks",
 		"list_subscriptions",
 		"list_todos",
+		"record_bot_feedback",
 		"search_courses",
 		"search_sections",
 		"search_teachers",
+		"send_message_part",
 		"set_notification_settings",
 		"undo_homework_completion",
 		"undo_todo_completion",
@@ -141,6 +143,7 @@ func TestAgentToolConstruction(t *testing.T) {
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
 		"get_current_time",
+		"send_message_part",
 	)
 }
 
@@ -154,6 +157,8 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
 		"get_notification_settings",
+		"record_bot_feedback",
+		"send_message_part",
 		"set_notification_settings",
 	)
 }
@@ -169,7 +174,9 @@ func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"}, nil)
+	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"}, nil, func(context.Context, store.Identity, string) error {
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,15 +270,29 @@ func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 }
 
 func TestRequiredConfirmationToolDoesNotRunCommand(t *testing.T) {
-	fn := requiredConfirmationTool("target", "待办 delete ", func(input targetInput) string {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	fn := requiredConfirmationTool(svc, ident, "target", "待办 delete ", func(input targetInput) string {
 		return input.Target
 	})
 	reply, err := fn(context.Background(), targetInput{Target: " 测试 "})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(reply, "不会自动执行") || !strings.Contains(reply, "待办 delete 测试") {
+	if !strings.Contains(reply, "不会自动执行") || !strings.Contains(reply, "回复 ok 确认") || !strings.Contains(reply, "待办 delete 测试") {
 		t.Fatalf("reply = %q", reply)
+	}
+	pending, err := db.ActivePendingConfirmation(context.Background(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending == nil || pending.Command != "待办 delete 测试" {
+		t.Fatalf("pending = %#v", pending)
 	}
 }
 
@@ -325,6 +346,52 @@ func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 	}
 }
 
+func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	svc := &Service{handler: commands.Handler{Store: db}}
+
+	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
+		Category: "missing_tool",
+		Content:  "需要一个考试地点工具",
+		Context:  "用户问考试在哪里",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "已记录反馈") {
+		t.Fatalf("reply = %q", reply)
+	}
+	count, err := db.FeedbackCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("feedback count = %d", count)
+	}
+}
+
+func TestSendMessagePartUsesSender(t *testing.T) {
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	var gotIdent store.Identity
+	var gotMessage string
+	reply, err := sendMessagePart(context.Background(), ident, func(ctx context.Context, ident store.Identity, message string) error {
+		gotIdent = ident
+		gotMessage = message
+		return nil
+	}, messagePartInput{Content: "第一段"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "已发送。" || gotIdent != ident || gotMessage != "第一段" {
+		t.Fatalf("reply = %q ident = %#v message = %q", reply, gotIdent, gotMessage)
+	}
+}
+
 func TestFormatToolResultTruncatesLongText(t *testing.T) {
 	got := formatToolResult(strings.Repeat("好", 1001))
 	if !strings.HasSuffix(got, "\n...") {
@@ -355,6 +422,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 	instruction := currentInstructionAt(now)
 	if !strings.Contains(instruction, "Current local time is 2026-06-07 18:30 CST.") {
+		t.Fatalf("instruction = %q", instruction)
+	}
+	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
 }

@@ -83,6 +83,60 @@ type BusSettings struct {
 	ShowSouthCampus bool
 }
 
+type AgentRun struct {
+	ID        int64
+	Identity  Identity
+	RawText   string
+	Status    string
+	Reply     string
+	Error     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type FeedbackRecord struct {
+	ID          int64
+	Identity    Identity
+	Source      string
+	Category    string
+	Content     string
+	Context     string
+	Status      string
+	SentToAdmin bool
+	Resolved    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	SentAt      *time.Time
+	ResolvedAt  *time.Time
+}
+
+type PendingConfirmation struct {
+	ID        int64
+	Identity  Identity
+	Command   string
+	Source    string
+	Status    string
+	ExpiresAt time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+const (
+	AgentRunStatusStarted   = "started"
+	AgentRunStatusCompleted = "completed"
+	AgentRunStatusFailed    = "failed"
+	AgentRunStatusIgnored   = "ignored"
+
+	FeedbackStatusOpen     = "open"
+	FeedbackStatusResolved = "resolved"
+
+	PendingConfirmationStatusPending    = "pending"
+	PendingConfirmationStatusConfirmed  = "confirmed"
+	PendingConfirmationStatusSuperseded = "superseded"
+	PendingConfirmationStatusFailed     = "failed"
+	PendingConfirmationStatusExpired    = "expired"
+)
+
 type Store struct {
 	db *gorm.DB
 }
@@ -227,6 +281,68 @@ func (notificationDeliveryRow) TableName() string {
 	return "notification_deliveries"
 }
 
+type agentRunRow struct {
+	ID               int64  `gorm:"primaryKey"`
+	UserID           int64  `gorm:"not null;index"`
+	Platform         string `gorm:"not null;index:idx_agent_runs_conversation_created"`
+	ExternalUserID   string `gorm:"not null"`
+	ConversationType string `gorm:"not null;index:idx_agent_runs_conversation_created"`
+	ConversationID   string `gorm:"not null;index:idx_agent_runs_conversation_created"`
+	RawText          string `gorm:"not null"`
+	Status           string `gorm:"not null;index"`
+	Reply            string
+	Error            string
+	CreatedAt        time.Time `gorm:"index:idx_agent_runs_conversation_created"`
+	UpdatedAt        time.Time
+}
+
+func (agentRunRow) TableName() string {
+	return "agent_runs"
+}
+
+type feedbackRecordRow struct {
+	ID               int64  `gorm:"primaryKey"`
+	UserID           int64  `gorm:"not null;index"`
+	Platform         string `gorm:"not null;index:idx_feedback_records_conversation_created"`
+	ExternalUserID   string `gorm:"not null"`
+	ConversationType string `gorm:"not null;index:idx_feedback_records_conversation_created"`
+	ConversationID   string `gorm:"not null;index:idx_feedback_records_conversation_created"`
+	Source           string `gorm:"not null;index"`
+	Category         string
+	Content          string `gorm:"not null"`
+	Context          string
+	Status           string `gorm:"not null;index"`
+	SentToAdmin      bool   `gorm:"not null"`
+	Resolved         bool   `gorm:"not null"`
+	SentAt           *time.Time
+	ResolvedAt       *time.Time
+	CreatedAt        time.Time `gorm:"index:idx_feedback_records_conversation_created"`
+	UpdatedAt        time.Time
+}
+
+func (feedbackRecordRow) TableName() string {
+	return "feedback_records"
+}
+
+type pendingConfirmationRow struct {
+	ID               int64  `gorm:"primaryKey"`
+	UserID           int64  `gorm:"not null;index"`
+	Platform         string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
+	ExternalUserID   string `gorm:"not null"`
+	ConversationType string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
+	ConversationID   string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
+	Command          string `gorm:"not null"`
+	Source           string
+	Status           string    `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
+	ExpiresAt        time.Time `gorm:"not null;index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (pendingConfirmationRow) TableName() string {
+	return "pending_confirmations"
+}
+
 func Open(path string) (*Store, error) {
 	if path == "" {
 		path = filepath.Join(".run", "life-ustc-bot.db")
@@ -270,6 +386,9 @@ func (s *Store) migrate() error {
 		&agentSettingRow{},
 		&busSettingRow{},
 		&notificationDeliveryRow{},
+		&agentRunRow{},
+		&feedbackRecordRow{},
+		&pendingConfirmationRow{},
 	)
 }
 
@@ -728,6 +847,224 @@ func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
 	var count int64
 	err := s.db.WithContext(ctx).Model(&interactionRow{}).Count(&count).Error
 	return count, err
+}
+
+func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, rawText string) (int64, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return 0, err
+	}
+	ident = normalizeIdentity(ident)
+	userID, err := s.EnsureUser(ctx, ident)
+	if err != nil {
+		return 0, err
+	}
+	now := nowUTC()
+	row := agentRunRow{
+		UserID:           userID,
+		Platform:         ident.Platform,
+		ExternalUserID:   ident.UserID,
+		ConversationType: ident.ConversationType,
+		ConversationID:   ident.ConversationID,
+		RawText:          strings.TrimSpace(rawText),
+		Status:           AgentRunStatusStarted,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if row.RawText == "" {
+		return 0, errors.New("agent run raw text is empty")
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
+func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply string, runErr error) error {
+	if id <= 0 {
+		return nil
+	}
+	status = textutil.LowerTrim(status)
+	if status == "" {
+		status = AgentRunStatusCompleted
+	}
+	errText := ""
+	if runErr != nil {
+		errText = runErr.Error()
+	}
+	return s.db.WithContext(ctx).Model(&agentRunRow{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":     status,
+			"reply":      reply,
+			"error":      strings.TrimSpace(errText),
+			"updated_at": nowUTC(),
+		}).Error
+}
+
+func (s *Store) RecordFeedback(ctx context.Context, ident Identity, feedback FeedbackRecord) (int64, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return 0, err
+	}
+	ident = normalizeIdentity(ident)
+	userID, err := s.EnsureUser(ctx, ident)
+	if err != nil {
+		return 0, err
+	}
+	source := textutil.LowerTrim(feedback.Source)
+	if source == "" {
+		source = "user"
+	}
+	status := textutil.LowerTrim(feedback.Status)
+	if status == "" {
+		status = FeedbackStatusOpen
+	}
+	content := strings.TrimSpace(feedback.Content)
+	if content == "" {
+		return 0, errors.New("feedback content is empty")
+	}
+	now := nowUTC()
+	row := feedbackRecordRow{
+		UserID:           userID,
+		Platform:         ident.Platform,
+		ExternalUserID:   ident.UserID,
+		ConversationType: ident.ConversationType,
+		ConversationID:   ident.ConversationID,
+		Source:           source,
+		Category:         strings.TrimSpace(feedback.Category),
+		Content:          content,
+		Context:          strings.TrimSpace(feedback.Context),
+		Status:           status,
+		SentToAdmin:      feedback.SentToAdmin,
+		Resolved:         feedback.Resolved,
+		SentAt:           feedback.SentAt,
+		ResolvedAt:       feedback.ResolvedAt,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
+func (s *Store) MarkFeedbackSent(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return nil
+	}
+	now := nowUTC()
+	return s.db.WithContext(ctx).Model(&feedbackRecordRow{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"sent_to_admin": true,
+			"sent_at":       &now,
+			"updated_at":    now,
+		}).Error
+}
+
+func (s *Store) FeedbackCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&feedbackRecordRow{}).Count(&count).Error
+	return count, err
+}
+
+func (s *Store) SavePendingConfirmation(ctx context.Context, ident Identity, command, source string, ttl time.Duration) (int64, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return 0, err
+	}
+	ident = normalizeIdentity(ident)
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return 0, errors.New("pending confirmation command is empty")
+	}
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	userID, err := s.EnsureUser(ctx, ident)
+	if err != nil {
+		return 0, err
+	}
+	now := nowUTC()
+	var id int64
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&pendingConfirmationRow{}).
+			Where("user_id = ? AND conversation_type = ? AND conversation_id = ? AND status = ?",
+				userID, ident.ConversationType, ident.ConversationID, PendingConfirmationStatusPending).
+			Updates(map[string]any{
+				"status":     PendingConfirmationStatusSuperseded,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		row := pendingConfirmationRow{
+			UserID:           userID,
+			Platform:         ident.Platform,
+			ExternalUserID:   ident.UserID,
+			ConversationType: ident.ConversationType,
+			ConversationID:   ident.ConversationID,
+			Command:          command,
+			Source:           strings.TrimSpace(source),
+			Status:           PendingConfirmationStatusPending,
+			ExpiresAt:        now.Add(ttl),
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		id = row.ID
+		return nil
+	})
+	return id, err
+}
+
+func (s *Store) ActivePendingConfirmation(ctx context.Context, ident Identity) (*PendingConfirmation, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return nil, err
+	}
+	ident = normalizeIdentity(ident)
+	userID, ok, err := s.userID(ctx, ident)
+	if err != nil || !ok {
+		return nil, err
+	}
+	now := nowUTC()
+	var row pendingConfirmationRow
+	err = s.db.WithContext(ctx).
+		Where("user_id = ? AND conversation_type = ? AND conversation_id = ? AND status = ? AND expires_at > ?",
+			userID, ident.ConversationType, ident.ConversationID, PendingConfirmationStatusPending, now).
+		Order("id DESC").
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &PendingConfirmation{
+		ID:        row.ID,
+		Identity:  ident,
+		Command:   row.Command,
+		Source:    row.Source,
+		Status:    row.Status,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+func (s *Store) MarkPendingConfirmation(ctx context.Context, id int64, status string) error {
+	if id <= 0 {
+		return nil
+	}
+	status = textutil.LowerTrim(status)
+	if status == "" {
+		return errors.New("pending confirmation status is empty")
+	}
+	return s.db.WithContext(ctx).Model(&pendingConfirmationRow{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":     status,
+			"updated_at": nowUTC(),
+		}).Error
 }
 
 func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (NotificationSettings, error) {

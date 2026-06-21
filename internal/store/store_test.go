@@ -1323,3 +1323,104 @@ func TestNotificationDeliveredDoesNotCreateMissingUser(t *testing.T) {
 		t.Fatalf("user count after delivery lookup = %d", count)
 	}
 }
+
+func TestAgentRunLifecycle(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	id, err := s.RecordAgentRun(ctx, ident, "帮我查一下")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == 0 {
+		t.Fatal("agent run id was not set")
+	}
+	if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "查到了", nil); err != nil {
+		t.Fatal(err)
+	}
+	var row agentRunRow
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != AgentRunStatusCompleted || row.RawText != "帮我查一下" || row.Reply != "查到了" {
+		t.Fatalf("agent run row = %#v", row)
+	}
+}
+
+func TestFeedbackRecordAndMarkSent(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "qqbot", UserID: "u", ConversationType: "private", ConversationID: "u"}
+	id, err := s.RecordFeedback(ctx, ident, FeedbackRecord{
+		Source:   "llm",
+		Category: "missing_tool",
+		Content:  "需要考试地点查询工具",
+		Context:  "用户问考试地点",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkFeedbackSent(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	var row feedbackRecordRow
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Source != "llm" || row.Category != "missing_tool" || row.Status != FeedbackStatusOpen || !row.SentToAdmin || row.SentAt == nil {
+		t.Fatalf("feedback row = %#v", row)
+	}
+}
+
+func TestPendingConfirmationSupersedesAndReadsLatest(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	first, err := s.SavePendingConfirmation(ctx, ident, "待办 add A", "agent", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.SavePendingConfirmation(ctx, ident, "待办 add B", "agent", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.ActivePendingConfirmation(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending == nil || pending.ID != second || pending.Command != "待办 add B" {
+		t.Fatalf("pending = %#v", pending)
+	}
+	var firstRow pendingConfirmationRow
+	if err := s.db.WithContext(ctx).First(&firstRow, first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if firstRow.Status != PendingConfirmationStatusSuperseded {
+		t.Fatalf("first status = %q", firstRow.Status)
+	}
+	if err := s.MarkPendingConfirmation(ctx, second, PendingConfirmationStatusConfirmed); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = s.ActivePendingConfirmation(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending != nil {
+		t.Fatalf("confirmed pending still active = %#v", pending)
+	}
+}
