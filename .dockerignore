@@ -1,0 +1,6 @@
+.git
+.run
+.env
+life-ustc-bot
+*.log
+*.pid
