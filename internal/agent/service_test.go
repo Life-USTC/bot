@@ -151,6 +151,7 @@ func TestAgentToolConstruction(t *testing.T) {
 		"get_bot_status",
 		"get_current_semester",
 		"get_current_time",
+		"get_curriculum_for_date",
 		"get_next_bus",
 		"get_next_class",
 		"get_notification_settings",

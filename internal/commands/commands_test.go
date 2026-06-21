@@ -1402,11 +1402,8 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"subscription":{"sections":[
 				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":%q,"startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
 			]}}`, today+"T00:00:00+08:00")
-		case "/api/schedules":
-			if r.URL.Query().Get("sectionId") != "101" {
-				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
-			}
-			_, _ = fmt.Fprintf(w, `{"data":[{"id":1,"date":%q,"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`, today+"T00:00:00+08:00")
+		case "/api/me/subscriptions/schedules":
+			_, _ = fmt.Fprintf(w, `{"schedules":[{"id":1,"date":%q,"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`, today+"T00:00:00+08:00")
 		case "/api/todos":
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
@@ -1501,16 +1498,11 @@ func TestHandleTodayCurriculum(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.URL.Path == "/api/calendar-subscriptions/current":
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
-		case r.URL.Path == "/api/schedules":
-			if r.URL.Query().Get("sectionId") != "101" {
-				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
-			}
+		case r.URL.Path == "/api/me/subscriptions/schedules":
 			if !strings.HasSuffix(r.URL.Query().Get("dateFrom"), "Z") || !strings.HasSuffix(r.URL.Query().Get("dateTo"), "Z") {
 				t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 			}
-			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1527,10 +1519,35 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
+func TestHandleCurriculumForSpecificDate(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	base := time.Date(2026, 6, 21, 12, 0, 0, 0, lifedata.ChinaLocation())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if r.URL.Path != "/api/me/subscriptions/schedules" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if !strings.Contains(r.URL.Query().Get("dateFrom"), "2026-06-22T16:00:00Z") || !strings.Contains(r.URL.Query().Get("dateTo"), "2026-06-23T15:59:59Z") {
+			t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
+		}
+		_, _ = w.Write([]byte(`{"schedules":[{"date":"2026-06-23T00:00:00+08:00","startTime":"07:50","endTime":"09:25","section":{"course":{"namePrimary":"随机过程理论"}},"room":{"namePrimary":"GT-A405"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, []string{"date:6.23"}, base)
+	if !strings.Contains(reply, "𝟶𝟼-𝟸𝟹 课表：") || !strings.Contains(reply, "随机过程理论") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
-	currentCalls := 0
+	scheduleCalls := 0
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -1538,27 +1555,19 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
-			currentCalls++
-			if currentCalls == 1 {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
+			scheduleCalls++
+			if scheduleCalls == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
-					t.Fatalf("initial current authorization = %q", got)
+					t.Fatalf("initial schedules authorization = %q", got)
 				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
-				t.Fatalf("refreshed current authorization = %q", got)
-			}
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/schedules":
-			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
 				t.Fatalf("schedules authorization = %q", got)
 			}
-			if r.URL.Query().Get("sectionId") != "101" {
-				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
-			}
-			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`))
+			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1583,7 +1592,7 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 	today := day.Format("2006-01-02")
 	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
 	refreshRequests := 0
-	currentOldTokenCalls := 0
+	scheduleOldTokenCalls := 0
 	scheduleCalls := 0
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1593,26 +1602,21 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
 			switch r.Header.Get("Authorization") {
 			case "Bearer access":
-				currentOldTokenCalls++
+				scheduleOldTokenCalls++
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 			case "Bearer refreshed":
-				_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
+				scheduleCalls++
+				if scheduleCalls == 1 {
+					_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`, today)))
+					return
+				}
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}]}`, tomorrow)))
 			default:
-				t.Fatalf("current authorization = %q", r.Header.Get("Authorization"))
+				t.Fatalf("schedules authorization = %q", r.Header.Get("Authorization"))
 			}
-		case r.Method == http.MethodGet && r.URL.Path == "/api/schedules":
-			scheduleCalls++
-			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
-				t.Fatalf("schedules authorization = %q", got)
-			}
-			if scheduleCalls == 1 {
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`, today)))
-				return
-			}
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}]}`, tomorrow)))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1625,8 +1629,8 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if refreshRequests != 1 || currentOldTokenCalls != 1 || scheduleCalls != 2 {
-		t.Fatalf("refreshRequests = %d, currentOldTokenCalls = %d, scheduleCalls = %d", refreshRequests, currentOldTokenCalls, scheduleCalls)
+	if refreshRequests != 1 || scheduleOldTokenCalls != 1 || scheduleCalls != 2 {
+		t.Fatalf("refreshRequests = %d, scheduleOldTokenCalls = %d, scheduleCalls = %d", refreshRequests, scheduleOldTokenCalls, scheduleCalls)
 	}
 }
 
@@ -1639,15 +1643,13 @@ func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/calendar-subscriptions/current":
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
-		case r.URL.Path == "/api/schedules":
+		case r.URL.Path == "/api/me/subscriptions/schedules":
 			scheduleCalls++
 			if scheduleCalls == 1 {
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
 				return
 			}
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}]}`, tomorrow)))
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}]}`, tomorrow)))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1669,10 +1671,8 @@ func TestNextClassSkipsPastClassAtFixedTime(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/calendar-subscriptions/current":
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
-		case r.URL.Path == "/api/schedules":
-			_, _ = w.Write([]byte(`{"data":[{"startTime":"09:00","endTime":"09:45","section":{"course":{"namePrimary":"已过去"}}},{"startTime":"11:00","endTime":"11:45","section":{"course":{"namePrimary":"下一节"}}}]}`))
+		case r.URL.Path == "/api/me/subscriptions/schedules":
+			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:00","endTime":"09:45","section":{"course":{"namePrimary":"已过去"}}},{"startTime":"11:00","endTime":"11:45","section":{"course":{"namePrimary":"下一节"}}}]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2289,6 +2289,9 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"明日课标":              {"tomorrow"},
 		"课表明天":              {"tomorrow"},
 		"明日kb":              {"tomorrow"},
+		"课表 6.23":           {"date:6.23"},
+		"6.23 课表":           {"date:6.23"},
+		"课表6月23日":           {"date:6月23日"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {
