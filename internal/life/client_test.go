@@ -90,6 +90,21 @@ func TestNewClientTrimsServerURL(t *testing.T) {
 	}
 }
 
+func TestClientSetsUserAgent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("User-Agent"); got != userAgent {
+			t.Fatalf("user-agent = %q", got)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if err := client.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSearchTrimsQuery(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
