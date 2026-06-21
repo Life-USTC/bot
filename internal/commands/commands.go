@@ -125,6 +125,8 @@ type parsedCommand struct {
 }
 
 var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"}
+var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"}
+var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"}
 
 func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
 	if groupCommandAlwaysAllowed(cmd.Name) {
@@ -277,7 +279,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:       "notify",
-		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送"},
+		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"},
 		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeNotifyArgs,
@@ -490,6 +492,12 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
 		return normalized, normalizedArgs
 	}
+	if tail, ok := splitAttachedAlias(name, attachedFeedbackAliases); ok {
+		return "feedback", append([]string{tail}, args...)
+	}
+	if tail, ok := splitAttachedAlias(name, attachedNotifyAliases); ok {
+		return "notify", normalizeNotifyArgs(append([]string{tail}, args...))
+	}
 	for _, spec := range commandSpecs {
 		for _, alias := range spec.Aliases {
 			if key != commandToken(alias) {
@@ -650,23 +658,29 @@ func normalizeScheduleArgs(args []string) []string {
 }
 
 func normalizeNotifyArgs(args []string) []string {
-	out := copyArgs(args)
-	for i, arg := range out {
+	out := make([]string, 0, len(args)+1)
+	for _, arg := range args {
+		if kind, state, ok := splitCompactNotificationArg(arg); ok {
+			out = append(out, kind, state)
+			continue
+		}
 		if isHelpToken(arg) {
-			out[i] = "help"
+			out = append(out, "help")
 			continue
 		}
 		if kind, ok := NormalizeNotificationKind(arg); ok {
-			out[i] = kind
+			out = append(out, kind)
+			continue
+		}
+		if state, ok := normalizeNotificationState(arg); ok {
+			out = append(out, state)
 			continue
 		}
 		switch normToken(arg) {
-		case "on", "enable", "enabled", "open", "开启", "打开", "开":
-			out[i] = "on"
-		case "off", "disable", "disabled", "close", "关闭", "关":
-			out[i] = "off"
 		case "status", "状态", "查看":
-			out[i] = "status"
+			out = append(out, "status")
+		default:
+			out = append(out, arg)
 		}
 	}
 	return out
@@ -708,12 +722,90 @@ func NormalizeNotificationKind(value string) (string, bool) {
 	}
 }
 
+func normalizeNotificationState(value string) (string, bool) {
+	switch normToken(value) {
+	case "on", "enable", "enabled", "open", "开启", "打开", "开":
+		return "on", true
+	case "off", "disable", "disabled", "close", "关闭", "关":
+		return "off", true
+	default:
+		return "", false
+	}
+}
+
+func splitCompactNotificationArg(value string) (string, string, bool) {
+	token := compactCommandToken(value)
+	if token == "" {
+		return "", "", false
+	}
+	for _, item := range []struct {
+		kind    string
+		aliases []string
+	}{
+		{kind: "classes", aliases: []string{"class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课"}},
+		{kind: "homework", aliases: []string{"homework", "hw", "作业"}},
+	} {
+		for _, alias := range item.aliases {
+			aliasToken := compactCommandToken(alias)
+			if token == aliasToken || !strings.HasPrefix(token, aliasToken) {
+				continue
+			}
+			state, ok := normalizeCompactNotificationState(strings.TrimPrefix(token, aliasToken))
+			if ok {
+				return item.kind, state, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func normalizeCompactNotificationState(value string) (string, bool) {
+	for _, alias := range []string{"on", "enable", "enabled", "open", "开启", "打开", "开"} {
+		if value == compactCommandToken(alias) {
+			return "on", true
+		}
+	}
+	for _, alias := range []string{"off", "disable", "disabled", "close", "关闭", "关"} {
+		if value == compactCommandToken(alias) {
+			return "off", true
+		}
+	}
+	return "", false
+}
+
 func normToken(value string) string {
 	return textutil.LowerTrim(value)
 }
 
 func commandToken(value string) string {
 	return strings.TrimLeft(normToken(value), "/")
+}
+
+func compactCommandToken(value string) string {
+	token := commandToken(value)
+	replacer := strings.NewReplacer("呃", "", "额", "", "嗯", "", "啊", "")
+	return replacer.Replace(token)
+}
+
+func splitAttachedAlias(name string, aliases []string) (string, bool) {
+	key := commandToken(name)
+	display := strings.TrimLeft(strings.TrimSpace(name), "/")
+	for _, alias := range aliases {
+		aliasKey := commandToken(alias)
+		if key == aliasKey || !strings.HasPrefix(key, aliasKey) {
+			continue
+		}
+		displayRunes := []rune(display)
+		aliasRunes := []rune(alias)
+		if len(displayRunes) <= len(aliasRunes) {
+			continue
+		}
+		tail := strings.TrimSpace(string(displayRunes[len(aliasRunes):]))
+		if tail != "" {
+			return tail, true
+		}
+	}
+	return "", false
 }
 
 func isHelpToken(value string) bool {
