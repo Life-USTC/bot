@@ -476,6 +476,15 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 		t.Fatalf("notify args mutated = %#v", args)
 	}
 
+	args = []string{"作业呃开"}
+	normalized = normalizeNotifyArgs(args)
+	if strings.Join(normalized, " ") != "homework on" {
+		t.Fatalf("compact notify normalized = %#v", normalized)
+	}
+	if args[0] != "作业呃开" {
+		t.Fatalf("compact notify args mutated = %#v", args)
+	}
+
 	args = []string{" 开 "}
 	normalized = normalizeAgentArgs(args)
 	if strings.Join(normalized, " ") != "on" {
@@ -1689,9 +1698,17 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
+	reply, ok = handler.Handle(ctx, Input{Text: "设置", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
+		t.Fatalf("settings alias reply = %q, ok = %v", reply, ok)
+	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业呃开", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
+		t.Fatalf("compact typo reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业 开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
@@ -2021,6 +2038,7 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"ks": "exam",
 		"状态": "status",
 		"zt": "status",
+		"设置": "notify",
 		"反馈": "feedback",
 		"fb": "feedback",
 	}
@@ -2033,6 +2051,25 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		if cmd.Name != want {
 			t.Fatalf("%q parsed as %q, want %q", text, cmd.Name, want)
 		}
+	}
+}
+
+func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+
+	cmd, ok := handler.parse("反馈上面的对话问题")
+	if !ok || cmd.Name != "feedback" || strings.Join(cmd.Args, " ") != "上面的对话问题" {
+		t.Fatalf("feedback parsed as %#v, ok=%v", cmd, ok)
+	}
+
+	cmd, ok = handler.parse("通知课表开")
+	if !ok || cmd.Name != "notify" || strings.Join(cmd.Args, " ") != "classes on" {
+		t.Fatalf("notify parsed as %#v, ok=%v", cmd, ok)
+	}
+
+	cmd, ok = handler.parse("设置作业呃开")
+	if !ok || cmd.Name != "notify" || strings.Join(cmd.Args, " ") != "homework on" {
+		t.Fatalf("settings parsed as %#v, ok=%v", cmd, ok)
 	}
 }
 
