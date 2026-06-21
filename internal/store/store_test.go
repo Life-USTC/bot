@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -1349,6 +1350,15 @@ func TestAgentRunLifecycle(t *testing.T) {
 	}
 	if row.Status != AgentRunStatusCompleted || row.RawText != "帮我查一下" || row.Reply != "查到了" {
 		t.Fatalf("agent run row = %#v", row)
+	}
+	if err := s.FinishAgentRun(ctx, id, AgentRunStatusFailed, "失败了", errors.New("deepseek timeout")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != AgentRunStatusFailed || row.Reply != "失败了" || row.Error != "deepseek timeout" {
+		t.Fatalf("failed agent run row = %#v", row)
 	}
 }
 

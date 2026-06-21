@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,6 +93,39 @@ func TestNewNormalizesModelCredentials(t *testing.T) {
 	}
 	if gotPath != "/chat/completions" {
 		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+func TestNewUsesConfiguredTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-test",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	svc, err := New(context.Background(), Config{
+		Enabled: true,
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Model:   "test-model",
+		Timeout: 20 * time.Millisecond,
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	if err == nil || !isTimeoutError(err) {
+		t.Fatalf("Generate error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("configured timeout was not used, elapsed = %s", elapsed)
 	}
 }
 
@@ -464,5 +499,58 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	}
 	if messages[0].Content != "你好" || messages[1].Content != "你好！有什么可以帮你的吗？" || messages[2].Content != "我上面说了什么？" {
 		t.Fatalf("messages = %#v", messages)
+	}
+}
+
+func TestMessagesForCompactsLongHistory(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	longReply := strings.Repeat("课", maxHistoryTextRunes+20)
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "课表",
+		Command: "schedule",
+		Handled: true,
+		Reply:   longReply,
+		Status:  store.InteractionStatusHandled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	messages, err := svc.messagesFor(ctx, Input{Text: "总结一下", Identity: ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("message count = %d", len(messages))
+	}
+	if got := []rune(messages[1].Content); len(got) <= maxHistoryTextRunes || len(got) > maxHistoryTextRunes+20 {
+		t.Fatalf("compacted length = %d", len(got))
+	}
+	if !strings.Contains(messages[1].Content, "历史内容已截断") {
+		t.Fatalf("reply was not marked compacted: %q", messages[1].Content)
+	}
+}
+
+func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
+	reply := agentFailureReply(42, context.DeadlineExceeded)
+	if !strings.Contains(reply, "AI 响应超时") || !strings.Contains(reply, "记录 #42") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "deadline") {
+		t.Fatalf("reply exposes provider error: %q", reply)
+	}
+}
+
+func TestFinishAgentRunLogsErrors(t *testing.T) {
+	var logs bytes.Buffer
+	svc := &Service{logger: log.New(&logs, "", 0)}
+	svc.finishAgentRun(context.Background(), 0, store.AgentRunStatusFailed, "", context.DeadlineExceeded)
+	if !strings.Contains(logs.String(), "agent run failed") || !strings.Contains(logs.String(), "context deadline exceeded") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
