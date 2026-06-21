@@ -197,6 +197,10 @@ type keywordInput struct {
 	Keyword string `json:"keyword" jsonschema_description:"Search keyword, course name, teacher name, or section code"`
 }
 
+type dateInput struct {
+	Date string `json:"date" jsonschema_description:"Target date, such as 2026-06-23, 6.23, or 6月23日"`
+}
+
 type todoInput struct {
 	Title    string `json:"title" jsonschema_description:"Todo title to create"`
 	Content  string `json:"content,omitempty" jsonschema_description:"Optional todo content or note"`
@@ -315,6 +319,12 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendU
 	}
 	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher", "search_teachers", "Search teachers by name or teacher code.", trace, requiredCommandTool(s, ident, "keyword", "老师 ", func(input keywordInput) string {
 		return input.Keyword
+	}))
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "schedule", "get_curriculum_for_date", "Get the user's curriculum for a specific date.", trace, requiredCommandTool(s, ident, "date", "课表 ", func(input dateInput) string {
+		return input.Date
 	}))
 	if err != nil {
 		return nil, err

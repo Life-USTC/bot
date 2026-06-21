@@ -325,12 +325,30 @@ func (c *Client) Schedules(ctx context.Context, token string, values url.Values)
 	return out.Data, nil
 }
 
+func (c *Client) SubscribedSchedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
+	var out struct {
+		Schedules []map[string]any `json:"schedules"`
+	}
+	if err := c.getAuth(ctx, "/api/me/subscriptions/schedules", values, token, &out); err != nil {
+		return nil, err
+	}
+	return out.Schedules, nil
+}
+
 func ScheduleQuery(sectionID, dateFrom, dateTo string) url.Values {
 	values := url.Values{}
 	values.Set("sectionId", strings.TrimSpace(sectionID))
 	values.Set("dateFrom", strings.TrimSpace(dateFrom))
 	values.Set("dateTo", strings.TrimSpace(dateTo))
 	values.Set("limit", "100")
+	return values
+}
+
+func SubscribedScheduleQuery(dateFrom, dateTo string) url.Values {
+	values := url.Values{}
+	values.Set("dateFrom", strings.TrimSpace(dateFrom))
+	values.Set("dateTo", strings.TrimSpace(dateTo))
+	values.Set("limit", "300")
 	return values
 }
 

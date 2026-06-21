@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -545,10 +546,16 @@ func joinedScheduleDay(key string) (string, bool) {
 			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
 				return day, true
 			}
+			if date, ok := normalizeScheduleDateToken(key[len(scheduleToken):]); ok {
+				return date, true
+			}
 		}
 		if strings.HasSuffix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[:len(key)-len(scheduleToken)]); ok {
 				return day, true
+			}
+			if date, ok := normalizeScheduleDateToken(key[:len(key)-len(scheduleToken)]); ok {
+				return date, true
 			}
 		}
 	}
@@ -564,6 +571,48 @@ func normalizeScheduleDay(value string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func normalizeScheduleDateToken(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	if _, ok := parseScheduleDateToken(value, chinaNow()); !ok {
+		return "", false
+	}
+	return "date:" + value, true
+}
+
+func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "date:"))
+	value = strings.Trim(value, "，,。")
+	if value == "" {
+		return time.Time{}, false
+	}
+	loc := lifedata.ChinaLocation()
+	base = base.In(loc)
+	if parsed, err := time.ParseInLocation("2006-01-02", value, loc); err == nil {
+		return parsed, true
+	}
+	if parsed, err := time.ParseInLocation("2006/1/2", value, loc); err == nil {
+		return parsed, true
+	}
+	normalized := strings.NewReplacer("月", "-", "日", "", "/", "-", ".", "-").Replace(value)
+	parts := strings.Split(normalized, "-")
+	if len(parts) != 2 {
+		return time.Time{}, false
+	}
+	month, errMonth := strconv.Atoi(strings.TrimSpace(parts[0]))
+	day, errDay := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errMonth != nil || errDay != nil || month < 1 || month > 12 || day < 1 || day > 31 {
+		return time.Time{}, false
+	}
+	parsed := time.Date(base.Year(), time.Month(month), day, 0, 0, 0, 0, loc)
+	if parsed.Month() != time.Month(month) || parsed.Day() != day {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func normalizeSubscriptionArgs(args []string) []string {
@@ -653,6 +702,9 @@ func normalizeScheduleArgs(args []string) []string {
 	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
 		return withFirstArg(args, day)
+	}
+	if date, ok := normalizeScheduleDateToken(args[0]); ok {
+		return withFirstArg(args, date)
 	}
 	return args
 }
@@ -2186,6 +2238,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 			"课表：查看今明两日",
 			"今天课表",
 			"明天课表",
+			"课表 6.23",
 			"下一节课",
 		}, "\n")
 	}
@@ -2201,6 +2254,13 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if target == "tomorrow" {
 		day = day.AddDate(0, 0, 1)
 		title = "明天课表："
+	} else if strings.HasPrefix(target, "date:") {
+		parsed, ok := parseScheduleDateToken(target, day)
+		if !ok {
+			return "日期格式不太对。可以发：课表 6.23"
+		}
+		day = parsed
+		title = textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -2213,6 +2273,9 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if len(schedules) == 0 {
 		if target == "tomorrow" {
 			return "明天没有课。"
+		}
+		if strings.HasPrefix(target, "date:") {
+			return textutil.MonospaceDigits(day.Format("01-02")) + " 没有课。"
 		}
 		return "今天没有课。"
 	}
@@ -2298,6 +2361,36 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 }
 
 func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
+	all, err := h.subscribedSchedulesForDay(ctx, token, day)
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		all, err = h.subscribedSchedulesForDay(ctx, token, day)
+	}
+	if err == nil {
+		all = lifedata.FilterSchedulesForDay(all, day)
+		lifedata.SortSchedulesByStart(all)
+		return all, token, nil
+	}
+	if !subscribedSchedulesFallbackError(err) {
+		return nil, token, err
+	}
+	return h.schedulesForDayBySections(ctx, ident, token, day)
+}
+
+func (h Handler) subscribedSchedulesForDay(ctx context.Context, token string, day time.Time) ([]map[string]any, error) {
+	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
+	return h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+}
+
+func subscribedSchedulesFallbackError(err error) bool {
+	var httpErr life.HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed
+	}
+	return false
+}
+
+func (h Handler) schedulesForDayBySections(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
 	sub, err := h.Life.CurrentSubscription(ctx, token)
 	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
 		token = refreshed
