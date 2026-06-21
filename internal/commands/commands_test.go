@@ -547,6 +547,42 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
+func TestHandleOKConfirmsPendingCommand(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	_, err := handler.Store.SavePendingConfirmation(ctx, ident, "td 写报告", "agent", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "OK", Identity: ident})
+	if !ok {
+		t.Fatal("ok confirmation was not handled")
+	}
+	if gotBody["title"] != "写报告" || !strings.Contains(reply, "已加待办：写报告") {
+		t.Fatalf("body = %#v, reply = %q", gotBody, reply)
+	}
+	pending, err := handler.Store.ActivePendingConfirmation(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending != nil {
+		t.Fatalf("pending confirmation still active = %#v", pending)
+	}
+}
+
 func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -803,9 +839,15 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
 	sent := []store.Identity{}
 	messages := []string{}
 	handler := Handler{
+		Store:          db,
 		Prefix:         "/life",
 		FeedbackUsers:  []string{"1001"},
 		FeedbackGroups: []string{"2001"},
@@ -834,6 +876,13 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	if !strings.Contains(messages[0], "用户反馈") || !strings.Contains(messages[0], "用户：42") || !strings.Contains(messages[0], "校车显示有点乱") {
 		t.Fatalf("message = %q", messages[0])
 	}
+	count, err := db.FeedbackCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("feedback count = %d", count)
+	}
 }
 
 func TestHandleFeedbackWorksInGroup(t *testing.T) {
@@ -860,6 +909,37 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	}
 }
 
+func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	ident.ConversationType = "group"
+	ident.ConversationID = "3001"
+
+	reply, ok := Handler{Prefix: "/life"}.Handle(ctx, Input{
+		Text:     "课表 help",
+		Identity: ident,
+	})
+	if ok || reply != "" {
+		t.Fatalf("default group personal reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = Handler{Prefix: "/life", AllowGroupPersonalInfo: true}.Handle(ctx, Input{
+		Text:     "课表 help",
+		Identity: ident,
+	})
+	if !ok || !strings.Contains(reply, "课表用法") {
+		t.Fatalf("enabled group schedule reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = Handler{Prefix: "/life", AllowGroupPersonalInfo: true}.Handle(ctx, Input{
+		Text:     "td add 写报告",
+		Identity: ident,
+	})
+	if ok || reply != "" {
+		t.Fatalf("enabled group todo write reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestHandleFeedbackRequiresConfiguredTarget(t *testing.T) {
 	reply, ok := Handler{Prefix: "/life"}.Handle(context.Background(), Input{
 		Text:     "反馈 hello",
@@ -867,6 +947,31 @@ func TestHandleFeedbackRequiresConfiguredTarget(t *testing.T) {
 	})
 	if !ok || reply != "反馈通道还没配置。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleFeedbackRecordsWithoutConfiguredTarget(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	reply, ok := Handler{Prefix: "/life", Store: db}.Handle(ctx, Input{
+		Text:     "反馈 希望支持错别字",
+		Identity: ident,
+	})
+	if !ok || reply != "已收到反馈。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	count, err := db.FeedbackCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("feedback count = %d", count)
 	}
 }
 
@@ -1228,27 +1333,30 @@ func TestFormatHomeworkListGroupsByDueTime(t *testing.T) {
 func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	now := chinaNow()
+	today := now.Format("2006-01-02")
+	wantExamDate := textutil.MonospaceDigits(now.Format("01-02"))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch r.URL.Path {
 		case "/api/calendar-subscriptions/current":
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[
-				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":"2026-06-20T00:00:00+08:00","startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
-			]}}`))
+			_, _ = fmt.Fprintf(w, `{"subscription":{"sections":[
+				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":%q,"startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
+			]}}`, today+"T00:00:00+08:00")
 		case "/api/schedules":
 			if r.URL.Query().Get("sectionId") != "101" {
 				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
 			}
-			_, _ = w.Write([]byte(`{"data":[{"id":1,"date":"2026-06-08T00:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`))
+			_, _ = fmt.Fprintf(w, `{"data":[{"id":1,"date":%q,"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`, today+"T00:00:00+08:00")
 		case "/api/todos":
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
-			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-06-09T18:00:00+08:00"}]}`))
+			_, _ = fmt.Fprintf(w, `{"todos":[{"id":"todo-1","title":"写报告","dueAt":%q}]}`, today+"T18:00:00+08:00")
 		case "/api/me/subscriptions/homeworks":
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"作业一","submissionDueAt":"2026-06-09T23:59:00+08:00","section":{"course":{"namePrimary":"数学分析"}}}]}`))
+			_, _ = fmt.Fprintf(w, `{"homeworks":[{"id":"hw-1","title":"作业一","submissionDueAt":%q,"section":{"course":{"namePrimary":"数学分析"}}}]}`, today+"T23:59:00+08:00")
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1260,7 +1368,7 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	for _, want := range []string{"安排：", "今日课表：", "计算机导论", "待办：", "写报告", "近期作业：", "作业一", "考试：", "𝟶𝟼-𝟸𝟶"} {
+	for _, want := range []string{"安排：", "今日课表：", "计算机导论", "待办：", "写报告", "近期作业：", "作业一", "考试：", wantExamDate} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
@@ -2018,6 +2126,40 @@ func TestNormalizeTodoActionAliases(t *testing.T) {
 		if cmd.Name != "todo" || strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
 			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
 		}
+	}
+}
+
+func TestParseSlashCommandAliases(t *testing.T) {
+	tests := map[string]struct {
+		name string
+		args []string
+	}{
+		"/校车 东区 西区": {name: "bus", args: []string{"东区", "西区"}},
+		"/待办":       {name: "todo"},
+		"/作业":       {name: "homework"},
+		"/课表":       {name: "schedule"},
+	}
+	handler := Handler{Prefix: "/life"}
+	for text, want := range tests {
+		cmd, ok := handler.parse(text)
+		if !ok {
+			t.Fatalf("%q was not parsed", text)
+		}
+		if cmd.Name != want.name || strings.Join(cmd.Args, " ") != strings.Join(want.args, " ") {
+			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
+		}
+	}
+}
+
+func TestHandleRejectsPastedCommandLines(t *testing.T) {
+	text := strings.Join([]string{
+		"待办 add 组合数学 期末考试 due 2026-06-25 07:50",
+		"",
+		"待办 add 随机过程理论 期末考试 due 2026-06-25 09:45",
+	}, "\n")
+	reply, ok := Handler{Prefix: "/life"}.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+	if !ok || reply != "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 

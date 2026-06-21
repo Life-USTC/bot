@@ -20,14 +20,15 @@ import (
 )
 
 type Handler struct {
-	Life           *life.Client
-	Auth           *auth.Manager
-	Store          *store.Store
-	Prefix         string
-	Logger         *log.Logger
-	FeedbackUsers  []string
-	FeedbackGroups []string
-	FeedbackSend   func(context.Context, store.Identity, string) error
+	Life                   *life.Client
+	Auth                   *auth.Manager
+	Store                  *store.Store
+	Prefix                 string
+	Logger                 *log.Logger
+	FeedbackUsers          []string
+	FeedbackGroups         []string
+	FeedbackSend           func(context.Context, store.Identity, string) error
+	AllowGroupPersonalInfo bool
 }
 
 var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
@@ -66,6 +67,11 @@ type Input struct {
 }
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
+	if isConfirmationOK(input.Text) {
+		if reply, ok := h.confirmPending(ctx, input); ok {
+			return reply, true
+		}
+	}
 	cmd, ok := h.parse(input.Text)
 	if !ok && store.IsGroupConversation(input.Identity) {
 		cmd, ok = parseGroupBus(input.Text)
@@ -73,8 +79,16 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if store.IsGroupConversation(input.Identity) && !groupCommandAllowed(cmd.Name) {
+	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(cmd) {
 		return "", false
+	}
+	if h.hasAdditionalCommandLine(input.Text) {
+		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
+		if !input.SuppressLog {
+			h.recordState(ctx, input.Identity, cmd)
+			h.recordInteraction(ctx, input.Identity, cmd, reply)
+		}
+		return reply, true
 	}
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)
@@ -112,8 +126,58 @@ type parsedCommand struct {
 
 var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"}
 
-func groupCommandAllowed(name string) bool {
+func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
+	if groupCommandAlwaysAllowed(cmd.Name) {
+		return true
+	}
+	if !h.AllowGroupPersonalInfo {
+		return false
+	}
+	return groupReadOnlyCommandAllowed(cmd)
+}
+
+func groupCommandAlwaysAllowed(name string) bool {
 	return name == "bus" || name == "feedback"
+}
+
+func groupReadOnlyCommandAllowed(cmd parsedCommand) bool {
+	switch cmd.Name {
+	case "help", "me", "overview", "status", "semester", "course", "section", "teacher", "schedule", "nextclass", "exam":
+		return true
+	case "todo":
+		return groupTodoReadOnlyArgs(cmd.Args)
+	case "homework":
+		return groupHomeworkReadOnlyArgs(cmd.Args)
+	case "subscription":
+		return !hasArgs(cmd.Args) || firstArgIs(cmd.Args, "help")
+	default:
+		return false
+	}
+}
+
+func groupTodoReadOnlyArgs(args []string) bool {
+	if !hasArgs(args) {
+		return true
+	}
+	switch args[0] {
+	case "help", "list", "all", "pending", "completed":
+		return true
+	default:
+		_, ok := normalizeTodoPriority(args[0])
+		return ok
+	}
+}
+
+func groupHomeworkReadOnlyArgs(args []string) bool {
+	if !hasArgs(args) {
+		return true
+	}
+	switch args[0] {
+	case "help", "pending", "all":
+		return true
+	default:
+		return false
+	}
 }
 
 var commandSpecs = []CommandSpec{
@@ -419,7 +483,7 @@ func commandResult(raw, name string, args []string) parsedCommand {
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
-	key := normToken(name)
+	key := commandToken(name)
 	if isHelpToken(key) {
 		return "help", args
 	}
@@ -428,7 +492,7 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	}
 	for _, spec := range commandSpecs {
 		for _, alias := range spec.Aliases {
-			if key != normToken(alias) {
+			if key != commandToken(alias) {
 				continue
 			}
 			if spec.Normalize != nil {
@@ -450,7 +514,7 @@ func commandSpec(name string) (CommandSpec, bool) {
 }
 
 func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {
-	key := normToken(name)
+	key := commandToken(name)
 	if day, ok := joinedScheduleDay(key); ok {
 		return "schedule", []string{day}, true
 	}
@@ -648,6 +712,10 @@ func normToken(value string) string {
 	return textutil.LowerTrim(value)
 }
 
+func commandToken(value string) string {
+	return strings.TrimLeft(normToken(value), "/")
+}
+
 func isHelpToken(value string) bool {
 	switch normToken(value) {
 	case "/help", "/?", "-h", "--help", "help", "?", "？", "帮助", "菜单":
@@ -665,6 +733,26 @@ func withFirstArg(args []string, value string) []string {
 
 func copyArgs(args []string) []string {
 	return append([]string(nil), args...)
+}
+
+func (h Handler) hasAdditionalCommandLine(text string) bool {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	seenCommand := false
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if _, ok := h.parse(line); !ok {
+			continue
+		}
+		if seenCommand {
+			return true
+		}
+		seenCommand = true
+	}
+	return false
 }
 
 func hasArgs(args []string) bool {
@@ -730,10 +818,21 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	if text == "" {
 		return "想反馈什么？例如：反馈 校车时间希望更清楚"
 	}
+	feedbackID, err := h.recordFeedback(ctx, ident, store.FeedbackRecord{
+		Source:   "user",
+		Category: "user_feedback",
+		Content:  text,
+	})
+	if err != nil {
+		return commandError("反馈保存失败：", err)
+	}
 	if h.FeedbackSend == nil || (len(h.FeedbackUsers) == 0 && len(h.FeedbackGroups) == 0) {
+		if feedbackID > 0 {
+			return "已收到反馈。"
+		}
 		return "反馈通道还没配置。"
 	}
-	message := formatFeedbackMessage(ident, text)
+	message := formatFeedbackMessage(ident, text, feedbackID)
 	sent := 0
 	for _, userID := range h.FeedbackUsers {
 		userID = strings.TrimSpace(userID)
@@ -746,6 +845,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 			ConversationType: "private",
 			ConversationID:   userID,
 		}, message); err != nil {
+			h.markFeedbackSent(ctx, feedbackID, sent)
 			return commandError("反馈发送失败：", err)
 		}
 		sent++
@@ -760,17 +860,22 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 			ConversationType: "group",
 			ConversationID:   groupID,
 		}, message); err != nil {
+			h.markFeedbackSent(ctx, feedbackID, sent)
 			return commandError("反馈发送失败：", err)
 		}
 		sent++
 	}
 	if sent == 0 {
+		if feedbackID > 0 {
+			return "已收到反馈。"
+		}
 		return "反馈通道还没配置。"
 	}
+	h.markFeedbackSent(ctx, feedbackID, sent)
 	return "已收到反馈，会转给维护者。"
 }
 
-func formatFeedbackMessage(ident store.Identity, text string) string {
+func formatFeedbackMessage(ident store.Identity, text string, id int64) string {
 	source := ident.ConversationType
 	if ident.ConversationID != "" {
 		source += ":" + ident.ConversationID
@@ -779,12 +884,16 @@ func formatFeedbackMessage(ident store.Identity, text string) string {
 	if userID == "" {
 		userID = "unknown"
 	}
-	return strings.Join([]string{
+	lines := []string{
 		"用户反馈",
 		"来源：" + source,
 		"用户：" + userID,
 		"内容：" + text,
-	}, "\n")
+	}
+	if id > 0 {
+		lines = append(lines, fmt.Sprintf("编号：#%d", id))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
@@ -2224,6 +2333,64 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
 	}
+}
+
+func (h Handler) recordFeedback(ctx context.Context, ident store.Identity, feedback store.FeedbackRecord) (int64, error) {
+	if h.Store == nil || !store.HasConversationIdentity(ident) {
+		return 0, nil
+	}
+	return h.Store.RecordFeedback(ctx, ident, feedback)
+}
+
+func (h Handler) markFeedbackSent(ctx context.Context, feedbackID int64, sent int) {
+	if feedbackID <= 0 || sent <= 0 || h.Store == nil {
+		return
+	}
+	if err := h.Store.MarkFeedbackSent(ctx, feedbackID); err != nil {
+		h.logf("mark feedback sent failed: %v", err)
+	}
+}
+
+func isConfirmationOK(text string) bool {
+	return strings.EqualFold(strings.TrimSpace(text), "ok")
+}
+
+func (h Handler) confirmPending(ctx context.Context, input Input) (string, bool) {
+	if h.Store == nil || !store.HasConversationIdentity(input.Identity) {
+		return "", false
+	}
+	pending, err := h.Store.ActivePendingConfirmation(ctx, input.Identity)
+	if err != nil {
+		reply := commandError("确认读取失败：", err)
+		if !input.SuppressLog {
+			h.recordInteraction(ctx, input.Identity, parsedCommand{Name: "confirm", Raw: strings.TrimSpace(input.Text)}, reply)
+		}
+		return reply, true
+	}
+	if pending == nil {
+		return "", false
+	}
+	reply, handled := h.Handle(ctx, Input{
+		Text:        pending.Command,
+		Identity:    input.Identity,
+		SuppressLog: true,
+	})
+	status := store.PendingConfirmationStatusConfirmed
+	if !handled {
+		status = store.PendingConfirmationStatusFailed
+		reply = "确认命令无法执行：" + pending.Command
+	}
+	if err := h.Store.MarkPendingConfirmation(ctx, pending.ID, status); err != nil {
+		h.logf("mark pending confirmation failed: %v", err)
+	}
+	if !input.SuppressLog {
+		h.recordInteraction(ctx, input.Identity, parsedCommand{
+			Name: "confirm",
+			Args: []string{pending.Command},
+			Raw:  strings.TrimSpace(input.Text),
+		}, reply)
+	}
+	return reply, true
 }
 
 func (h Handler) logf(format string, args ...any) {

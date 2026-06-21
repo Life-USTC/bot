@@ -83,17 +83,22 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if !s.Enabled() || inputText == "" || store.IsGroupConversation(input.Identity) {
 		return "", false
 	}
+	runID := s.recordAgentRun(ctx, input)
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
-		return "AI 工具设置读取失败：" + err.Error(), true
+		reply := "AI 工具设置读取失败：" + err.Error()
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		return reply, true
 	}
 	var trace *toolTraceNotifier
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
-	tools, err := s.toolsFor(input.Identity, trace)
+	tools, err := s.toolsFor(input.Identity, trace, input.SendUpdate)
 	if err != nil {
-		return "AI 工具初始化失败：" + err.Error(), true
+		reply := "AI 工具初始化失败：" + err.Error()
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		return reply, true
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
@@ -106,12 +111,16 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		},
 	})
 	if err != nil {
-		return "AI 助手初始化失败：" + err.Error(), true
+		reply := "AI 助手初始化失败：" + err.Error()
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		return reply, true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 	messages, err := s.messagesFor(ctx, input)
 	if err != nil {
-		return "AI 历史记录读取失败：" + err.Error(), true
+		reply := "AI 历史记录读取失败：" + err.Error()
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		return reply, true
 	}
 	iter := runner.Run(ctx, messages)
 	reply := ""
@@ -121,7 +130,9 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 			break
 		}
 		if event.Err != nil {
-			return "AI 助手出错：" + event.Err.Error(), true
+			reply := "AI 助手出错：" + event.Err.Error()
+			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err)
+			return reply, true
 		}
 		msg, _, err := adk.GetMessage(event)
 		if err != nil || msg == nil {
@@ -133,9 +144,12 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		}
 	}
 	if reply == "" {
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil)
 		return "", false
 	}
-	return cleanQQReply(reply), true
+	reply = cleanQQReply(reply)
+	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil)
+	return reply, true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -207,6 +221,16 @@ type notificationInput struct {
 	Enabled bool   `json:"enabled" jsonschema_description:"Whether to enable this notification type"`
 }
 
+type feedbackInput struct {
+	Category string `json:"category,omitempty" jsonschema_description:"Short category for the feedback, such as missing_tool, bad_result, typo, or api_gap"`
+	Content  string `json:"content" jsonschema_description:"Concrete feedback about missing tools, wrong behavior, tool/API gaps, or user interaction problems"`
+	Context  string `json:"context,omitempty" jsonschema_description:"Relevant user message, tool result, or short context that explains why this feedback matters"`
+}
+
+type messagePartInput struct {
+	Content string `json:"content" jsonschema_description:"One intermediate QQ message to send before the final response"`
+}
+
 type toolTraceNotifier struct {
 	mu    sync.Mutex
 	ident store.Identity
@@ -245,7 +269,7 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
-func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]tool.BaseTool, error) {
+func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, error) {
 	commandSpecs := commands.CommandSpecs()
 	specByName := commandSpecsByName(commandSpecs)
 	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs))
@@ -294,49 +318,49 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]to
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Prepare a todo creation command. This does not create the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("title", "待办 add ", func(input todoInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Prepare a todo creation command. This does not create the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "title", "待办 add ", func(input todoInput) string {
 		return todoCreateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Prepare a todo completion command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Prepare a todo completion command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Prepare a todo completion undo command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Prepare a todo completion undo command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Prepare a todo update command. This does not modify the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 update ", func(input todoUpdateInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Prepare a todo update command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
 		return todoUpdateCommandSuffix(input)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Prepare a todo delete command. This does not delete the todo until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "待办 delete ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Prepare a todo delete command. This does not delete the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Prepare a homework completion command. This does not modify homework until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "作业 done ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Prepare a homework completion command. This does not modify homework until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "作业 done ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Prepare a homework completion undo command. This does not modify homework until the user confirms by sending the command.", trace, requiredConfirmationTool("target", "作业 undo ", func(input targetInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Prepare a homework completion undo command. This does not modify homework until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "作业 undo ", func(input targetInput) string {
 		return input.Target
 	}))
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Prepare a bulk subscription import command. This does not change subscriptions until the user confirms by sending the command.", trace, requiredConfirmationTool("text", "订阅 导入 ", func(input bulkSubscribeInput) string {
+	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Prepare a bulk subscription import command. This does not change subscriptions until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "text", "订阅 导入 ", func(input bulkSubscribeInput) string {
 		return input.Text
 	}))
 	if err != nil {
@@ -351,10 +375,26 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier) ([]to
 		if input.Enabled {
 			state = "开"
 		}
-		return confirmationRequired("通知设置", "通知 "+kind+" "+state), nil
+		return s.prepareConfirmation(ctx, ident, "通知设置", "通知 "+kind+" "+state)
 	})
 	if err != nil {
 		return nil, err
+	}
+	if s.handler.Store != nil {
+		tools, err = appendInferredTool(tools, "record_bot_feedback", "Record feedback about missing LLM tools, bad tool results, typo handling gaps, API gaps, or user interaction problems for maintainers to review.", trace, func(ctx context.Context, input feedbackInput) (string, error) {
+			return s.recordBotFeedback(ctx, ident, input)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if sendUpdate != nil {
+		tools, err = appendInferredTool(tools, "send_message_part", "Send one intermediate QQ message when a long answer should be split. After using this, put only the remaining content in the final answer.", trace, func(ctx context.Context, input messagePartInput) (string, error) {
+			return sendMessagePart(ctx, ident, sendUpdate, input)
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", trace, func(_ context.Context, _ emptyInput) (string, error) {
 		return currentTimeMessage(), nil
@@ -386,22 +426,38 @@ func requiredCommandTool[I any](s *Service, ident store.Identity, argName, comma
 	}
 }
 
-func requiredConfirmationTool[I any](argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
-	return func(_ context.Context, input I) (string, error) {
+func requiredConfirmationTool[I any](s *Service, ident store.Identity, argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
+	return func(ctx context.Context, input I) (string, error) {
 		arg, err := requiredToolArg(argName, value(input))
 		if err != nil {
 			return "", err
 		}
-		return confirmationRequired("需要确认", commandPrefix+arg), nil
+		return s.prepareConfirmation(ctx, ident, "需要确认", commandPrefix+arg)
 	}
 }
 
-func confirmationRequired(title, command string) string {
-	return strings.Join([]string{
+func (s *Service) prepareConfirmation(ctx context.Context, ident store.Identity, title, command string) (string, error) {
+	stored := false
+	if s.handler.Store != nil && store.HasConversationIdentity(ident) {
+		if _, err := s.handler.Store.SavePendingConfirmation(ctx, ident, command, "agent", pendingConfirmationTTL); err != nil {
+			return "", err
+		}
+		stored = true
+	}
+	return confirmationRequired(title, command, stored), nil
+}
+
+func confirmationRequired(title, command string, stored bool) string {
+	lines := []string{
 		title + "：不会自动执行。",
-		"确认请发送：",
-		command,
-	}, "\n")
+	}
+	if stored {
+		lines = append(lines, "回复 ok 确认，或单独发送这一条：")
+	} else {
+		lines = append(lines, "请单独发送这一条：")
+	}
+	lines = append(lines, command)
+	return strings.Join(lines, "\n")
 }
 
 func commandSpecsByName(specs []commands.CommandSpec) map[string]commands.CommandSpec {
@@ -423,6 +479,61 @@ func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {
+	if s.handler.Store == nil || !store.HasConversationIdentity(input.Identity) {
+		return 0
+	}
+	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, input.Text)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+func (s *Service) finishAgentRun(ctx context.Context, id int64, status, reply string, err error) {
+	if s.handler.Store == nil || id <= 0 {
+		return
+	}
+	_ = s.handler.Store.FinishAgentRun(ctx, id, status, reply, err)
+}
+
+func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
+	if s.handler.Store == nil {
+		return "", errors.New("feedback store is unavailable")
+	}
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return "", errors.New("feedback content is required")
+	}
+	id, err := s.handler.Store.RecordFeedback(ctx, ident, store.FeedbackRecord{
+		Source:   "llm",
+		Category: input.Category,
+		Content:  content,
+		Context:  input.Context,
+	})
+	if err != nil {
+		return "", err
+	}
+	if id > 0 {
+		return fmt.Sprintf("已记录反馈 #%d。", id), nil
+	}
+	return "已记录反馈。", nil
+}
+
+func sendMessagePart(ctx context.Context, ident store.Identity, send func(context.Context, store.Identity, string) error, input messagePartInput) (string, error) {
+	if send == nil {
+		return "", errors.New("message sender is unavailable")
+	}
+	content := cleanQQReply(input.Content)
+	if strings.TrimSpace(content) == "" {
+		return "", errors.New("message content is required")
+	}
+	if err := send(ctx, ident, content); err != nil {
+		return "", err
+	}
+	return "已发送。", nil
 }
 
 func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
@@ -641,6 +752,7 @@ func (s *Service) runCommand(ctx context.Context, ident store.Identity, text str
 const historyTurnLimit = 20
 const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
+const pendingConfirmationTTL = 15 * time.Minute
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
@@ -652,11 +764,15 @@ func currentInstructionAt(now time.Time) string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown tables well. Do not use Markdown tables, horizontal rules, blockquotes, or heading markers. Use short plain-text lines and compact numbered lists.
+Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run.
 For bus planning after a class or event, pass the class/event end time to get_next_bus.after so the bus result is after that time.
-Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user sends the confirmation command.
+Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
+When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
+If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context.
+For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
 When a tool returns login-required text, tell the user to log in with 登录.`, now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
