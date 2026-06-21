@@ -54,6 +54,11 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	t.Setenv("BOT_ONEBOT_ACCESS_TOKEN", " onebot-token ")
 	t.Setenv("NAPCAT_ACCESS_TOKEN", " napcat-token ")
 	t.Setenv("NAPCAT_WS_URL", " ws://127.0.0.1:3001 ")
+	t.Setenv("QQ_BOT_APPID", " appid ")
+	t.Setenv("QQ_BOT_APPSECRET", " secret ")
+	t.Setenv("QQ_BOT_TOKEN", " qq-token ")
+	t.Setenv("QQ_BOT_ID", " bot-id ")
+	t.Setenv("QQ_BOT_GATEWAY_URL", " wss://gateway.example/ws ")
 	t.Setenv("OPENAI_API_KEY", " api-key ")
 	t.Setenv("OPENAI_BASE_URL", " https://llm.example/v1 ")
 
@@ -66,6 +71,21 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	}
 	if cfg.NapCatWSURL != "ws://127.0.0.1:3001" {
 		t.Fatalf("NapCatWSURL = %q", cfg.NapCatWSURL)
+	}
+	if cfg.QQBotAppID != "appid" {
+		t.Fatalf("QQBotAppID = %q", cfg.QQBotAppID)
+	}
+	if cfg.QQBotAppSecret != "secret" {
+		t.Fatalf("QQBotAppSecret = %q", cfg.QQBotAppSecret)
+	}
+	if cfg.QQBotToken != "qq-token" {
+		t.Fatalf("QQBotToken = %q", cfg.QQBotToken)
+	}
+	if cfg.QQBotID != "bot-id" {
+		t.Fatalf("QQBotID = %q", cfg.QQBotID)
+	}
+	if cfg.QQBotGatewayURL != "wss://gateway.example/ws" {
+		t.Fatalf("QQBotGatewayURL = %q", cfg.QQBotGatewayURL)
 	}
 	if cfg.LLMAPIKey != "api-key" {
 		t.Fatalf("LLMAPIKey = %q", cfg.LLMAPIKey)
@@ -85,6 +105,15 @@ func TestFromEnvParsesFeedbackTargets(t *testing.T) {
 	}
 	if strings.Join(cfg.FeedbackAdminGroups, ",") != "100,101" {
 		t.Fatalf("FeedbackAdminGroups = %#v", cfg.FeedbackAdminGroups)
+	}
+}
+
+func TestFromEnvParsesAllowGroupPersonalInfo(t *testing.T) {
+	t.Setenv("BOT_ALLOW_GROUP_PERSONAL_INFO", "true")
+
+	cfg := FromEnv()
+	if !cfg.AllowGroupPersonalInfo {
+		t.Fatal("AllowGroupPersonalInfo = false, want true")
 	}
 }
 
@@ -121,6 +150,53 @@ func TestFromEnvFallsBackForEmptyNapCatAPIURLAfterTrim(t *testing.T) {
 	cfg := FromEnv()
 	if cfg.NapCatAPIURL != "http://127.0.0.1:3000" {
 		t.Fatalf("NapCatAPIURL = %q", cfg.NapCatAPIURL)
+	}
+}
+
+func TestFromEnvParsesQQBotConfig(t *testing.T) {
+	t.Setenv("QQ_BOT_APPID", "appid")
+	t.Setenv("QQ_BOT_APPSECRET", "secret")
+	t.Setenv("QQ_BOT_API_BASE_URL", " https://sandbox.api.sgroup.qq.com/// ")
+	t.Setenv("QQ_BOT_TOKEN_URL", " https://bots.qq.com/token ")
+	t.Setenv("QQ_BOT_WEBHOOK_ADDR", " 127.0.0.1:9999 ")
+	t.Setenv("QQ_BOT_WEBHOOK_PATH", " callback ")
+	t.Setenv("QQ_BOT_INTENTS", "33554432")
+
+	cfg := FromEnv()
+	if !cfg.EnableQQBot {
+		t.Fatal("EnableQQBot = false, want true with credentials")
+	}
+	if !cfg.EnableQQBotGateway {
+		t.Fatal("EnableQQBotGateway = false, want true by default")
+	}
+	if !cfg.EnableQQBotWebhook {
+		t.Fatal("EnableQQBotWebhook = false, want true with app secret")
+	}
+	if cfg.QQBotAPIBaseURL != "https://sandbox.api.sgroup.qq.com" {
+		t.Fatalf("QQBotAPIBaseURL = %q", cfg.QQBotAPIBaseURL)
+	}
+	if cfg.QQBotTokenURL != "https://bots.qq.com/token" {
+		t.Fatalf("QQBotTokenURL = %q", cfg.QQBotTokenURL)
+	}
+	if cfg.QQBotWebhookAddr != "127.0.0.1:9999" {
+		t.Fatalf("QQBotWebhookAddr = %q", cfg.QQBotWebhookAddr)
+	}
+	if cfg.QQBotWebhookPath != "/callback" {
+		t.Fatalf("QQBotWebhookPath = %q", cfg.QQBotWebhookPath)
+	}
+	if cfg.QQBotIntents != 33554432 {
+		t.Fatalf("QQBotIntents = %d", cfg.QQBotIntents)
+	}
+}
+
+func TestFromEnvQQBotCanBeDisabled(t *testing.T) {
+	t.Setenv("QQ_BOT_APPID", "appid")
+	t.Setenv("QQ_BOT_APPSECRET", "secret")
+	t.Setenv("BOT_ENABLE_QQ_BOT", "false")
+
+	cfg := FromEnv()
+	if cfg.EnableQQBot {
+		t.Fatal("EnableQQBot = true, want false")
 	}
 }
 
