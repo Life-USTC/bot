@@ -894,6 +894,56 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	}
 }
 
+func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "xc 东区 高新区",
+		Command: "bus",
+		Handled: true,
+		Reply:   "东区 𝟷𝟸:𝟻𝟶  →  高新区 𝟷𝟹:𝟺𝟶",
+		Status:  store.InteractionStatusHandled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "反馈 旧反馈",
+		Command: "feedback",
+		Handled: true,
+		Reply:   "反馈发送失败",
+		Status:  store.InteractionStatusHandled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var message string
+	handler := Handler{
+		Store:         db,
+		Prefix:        "/life",
+		FeedbackUsers: []string{"1001"},
+		FeedbackSend: func(ctx context.Context, target store.Identity, sent string) error {
+			message = sent
+			return nil
+		},
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "反馈 一下", Identity: ident})
+	if !ok || reply != "已收到反馈，会转给维护者。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	for _, want := range []string{"内容：一下", "最近对话：", "用户：xc 东区 高新区", "Bot：东区"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message missing %q: %q", want, message)
+		}
+	}
+	if strings.Contains(message, "旧反馈") || strings.Contains(message, "反馈发送失败") {
+		t.Fatalf("message includes previous feedback: %q", message)
+	}
+}
+
 func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
