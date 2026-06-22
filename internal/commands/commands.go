@@ -129,6 +129,12 @@ var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课�
 var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"}
 var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"}
 
+const (
+	feedbackContextLimit     = 5
+	feedbackContextLookback  = 12
+	feedbackContextTextRunes = 220
+)
+
 func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
 	if groupCommandAlwaysAllowed(cmd.Name) {
 		return true
@@ -962,10 +968,12 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	if text == "" {
 		return "想反馈什么？例如：反馈 校车时间希望更清楚"
 	}
+	contextText := h.feedbackContext(ctx, ident)
 	feedbackID, err := h.recordFeedback(ctx, ident, store.FeedbackRecord{
 		Source:   "user",
 		Category: "user_feedback",
 		Content:  text,
+		Context:  contextText,
 	})
 	if err != nil {
 		return commandError("反馈保存失败：", err)
@@ -976,7 +984,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		}
 		return "反馈通道还没配置。"
 	}
-	message := formatFeedbackMessage(ident, text, feedbackID)
+	message := formatFeedbackMessage(ident, text, contextText, feedbackID)
 	sent := 0
 	for _, userID := range h.FeedbackUsers {
 		userID = strings.TrimSpace(userID)
@@ -1019,7 +1027,53 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	return "已收到反馈，会转给维护者。"
 }
 
-func formatFeedbackMessage(ident store.Identity, text string, id int64) string {
+func (h Handler) feedbackContext(ctx context.Context, ident store.Identity) string {
+	if h.Store == nil || !store.HasConversationIdentity(ident) {
+		return ""
+	}
+	recent, err := h.Store.RecentHandledInteractions(ctx, ident, feedbackContextLookback)
+	if err != nil {
+		h.logf("load feedback context failed: %v", err)
+		return ""
+	}
+	return formatFeedbackContext(recent)
+}
+
+func formatFeedbackContext(interactions []store.Interaction) string {
+	lines := []string{}
+	for _, interaction := range interactions {
+		if strings.EqualFold(strings.TrimSpace(interaction.Command), "feedback") {
+			continue
+		}
+		raw := compactFeedbackContextText(interaction.RawText)
+		reply := compactFeedbackContextText(interaction.Reply)
+		if raw != "" {
+			lines = append(lines, "用户："+raw)
+		}
+		if reply != "" {
+			lines = append(lines, "Bot："+reply)
+		}
+		if len(lines) >= feedbackContextLimit*2 {
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func compactFeedbackContextText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) <= feedbackContextTextRunes {
+		return text
+	}
+	return string(runes[:feedbackContextTextRunes]) + "..."
+}
+
+func formatFeedbackMessage(ident store.Identity, text, contextText string, id int64) string {
 	source := ident.ConversationType
 	if ident.ConversationID != "" {
 		source += ":" + ident.ConversationID
@@ -1033,6 +1087,9 @@ func formatFeedbackMessage(ident store.Identity, text string, id int64) string {
 		"来源：" + source,
 		"用户：" + userID,
 		"内容：" + text,
+	}
+	if strings.TrimSpace(contextText) != "" {
+		lines = append(lines, "最近对话：", contextText)
 	}
 	if id > 0 {
 		lines = append(lines, fmt.Sprintf("编号：#%d", id))
