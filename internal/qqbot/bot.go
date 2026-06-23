@@ -216,10 +216,9 @@ func (b *Bot) ServeWebhookHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read request body", http.StatusBadRequest)
 		return
 	}
-	b.logf("QQ bot webhook request: trace_id=%s content_length=%d body=%s",
+	b.logf("QQ bot webhook request: trace_id=%s content_length=%d",
 		r.Header.Get("X-Tps-trace-ID"),
 		len(body),
-		jsonPreview(body),
 	)
 	pass, err := signature.Verify(strings.TrimSpace(b.AppSecret), r.Header, body)
 	if err != nil || !pass {
@@ -234,7 +233,6 @@ func (b *Bot) ServeWebhookHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode request body", http.StatusBadRequest)
 		return
 	}
-	b.logGatewayFrame("webhook", payload)
 	w.Header().Set("Content-Type", "application/json")
 	switch payload.Op {
 	case int(dto.HTTPCallbackValidation):
@@ -334,7 +332,6 @@ func (b *Bot) runOnce(ctx context.Context) error {
 		b.logf("QQ bot websocket read hello failed: %v", err)
 		return err
 	}
-	b.logGatewayFrame("in", hello)
 	if hello.Op != opHello {
 		return fmt.Errorf("expected QQ bot hello opcode %d, got %d", opHello, hello.Op)
 	}
@@ -346,7 +343,7 @@ func (b *Bot) runOnce(ctx context.Context) error {
 	if interval <= 0 {
 		interval = 45 * time.Second
 	}
-	b.logf("QQ bot hello: heartbeat_interval=%s raw=%s", interval, jsonPreview(hello.D))
+	b.logf("QQ bot hello: heartbeat_interval=%s", interval)
 
 	var seq atomic.Int64
 	var writeMu sync.Mutex
@@ -367,7 +364,6 @@ func (b *Bot) runOnce(ctx context.Context) error {
 			},
 		},
 	}
-	b.logGatewaySend("out", identify)
 	if err := writeGatewayJSON(conn, &writeMu, identify); err != nil {
 		b.logf("QQ bot websocket identify failed: %v", err)
 		return err
@@ -379,7 +375,6 @@ func (b *Bot) runOnce(ctx context.Context) error {
 			b.logf("QQ bot websocket read failed: %v", err)
 			return err
 		}
-		b.logGatewayFrame("in", payload)
 		if payload.S != nil {
 			seq.Store(*payload.S)
 		}
@@ -398,7 +393,6 @@ func (b *Bot) runOnce(ctx context.Context) error {
 			b.logf("QQ bot received invalid session: data=%s", jsonPreview(payload.D))
 			return errors.New("qq bot gateway invalid session")
 		case opHeartbeatACK:
-			b.logf("QQ bot heartbeat ack: seq=%s data=%s", seqText(payload.S), jsonPreview(payload.D))
 		default:
 			b.logf("ignored QQ bot gateway opcode %d", payload.Op)
 		}
@@ -429,7 +423,6 @@ func (b *Bot) sendHeartbeat(conn *websocket.Conn, writeMu *sync.Mutex, seq int64
 		data = seq
 	}
 	payload := gatewaySendPayload{Op: opHeartbeat, D: data}
-	b.logGatewaySend("out", payload)
 	return writeGatewayJSON(conn, writeMu, payload)
 }
 
@@ -440,7 +433,6 @@ func writeGatewayJSON(conn *websocket.Conn, writeMu *sync.Mutex, payload gateway
 }
 
 func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
-	b.logf("QQ bot dispatch: event=%s id=%s seq=%s data=%s", textutil.FirstNonEmpty(payload.T, "<empty>"), payload.ID, seqText(payload.S), jsonPreview(payload.D))
 	switch payload.T {
 	case "READY":
 		b.logReady(payload)
@@ -1065,41 +1057,6 @@ func (b *Bot) recordInteraction(ctx context.Context, ident store.Identity, inter
 func (b *Bot) logf(format string, args ...any) {
 	if b.Logger != nil {
 		b.Logger.Printf(format, args...)
-	}
-}
-
-func (b *Bot) logGatewayFrame(direction string, payload gatewayPayload) {
-	b.logf("QQ bot websocket frame: direction=%s op=%d event=%s id=%s seq=%s data=%s",
-		direction,
-		payload.Op,
-		textutil.FirstNonEmpty(payload.T, "<empty>"),
-		textutil.FirstNonEmpty(payload.ID, "<empty>"),
-		seqText(payload.S),
-		jsonPreview(payload.D),
-	)
-}
-
-func (b *Bot) logGatewaySend(direction string, payload gatewaySendPayload) {
-	b.logf("QQ bot websocket frame: direction=%s op=%d data=%s",
-		direction,
-		payload.Op,
-		jsonPreview(sanitizeGatewaySend(payload)),
-	)
-}
-
-func sanitizeGatewaySend(payload gatewaySendPayload) any {
-	if payload.Op != opIdentify {
-		return payload.D
-	}
-	identify, ok := payload.D.(identifyData)
-	if !ok {
-		return map[string]any{"token": "<redacted>"}
-	}
-	return map[string]any{
-		"token":      "<redacted>",
-		"intents":    identify.Intents,
-		"shard":      identify.Shard,
-		"properties": identify.Properties,
 	}
 }
 
