@@ -98,12 +98,19 @@ func TestDeviceLoginFlow(t *testing.T) {
 			t.Fatalf("device_code = %q", r.Form.Get("device_code"))
 		}
 		w.Header().Set("Content-Type", "application/json")
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "access",
 			"refresh_token": "refresh",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
 			"scope":         oauthScope,
+			"id_token":      idToken,
 		})
 	})
 	server := httptest.NewServer(mux)
@@ -517,12 +524,12 @@ func TestPollDeviceLoginReturnsBodyReadError(t *testing.T) {
 	}
 }
 
-func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
+func TestVerifiedTokenToCredentialAcceptsStringExpiresIn(t *testing.T) {
 	now := authTestNow
-	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{
-		"access_token": "access",
-		"expires_in": "120"
-	}`), "", "", now)
+	cred, err := verifiedTokenToCredential("client", "resource", &VerifiedToken{
+		AccessToken: "access",
+		ExpiresIn:   120,
+	}, "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,9 +538,11 @@ func TestCredentialFromTokenBodyAcceptsStringExpiresIn(t *testing.T) {
 	}
 }
 
-func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
+func TestVerifiedTokenToCredentialDefaultsExpiresIn(t *testing.T) {
 	now := authTestNow
-	cred, err := credentialFromTokenBodyAt("client", "resource", []byte(`{"access_token": "access"}`), "", "", now)
+	cred, err := verifiedTokenToCredential("client", "resource", &VerifiedToken{
+		AccessToken: "access",
+	}, "", "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,13 +551,13 @@ func TestCredentialFromTokenBodyDefaultsExpiresIn(t *testing.T) {
 	}
 }
 
-func TestCredentialFromTokenBodyTrimsTokenStrings(t *testing.T) {
-	cred, err := credentialFromTokenBody("client", "resource", []byte(`{
-		"access_token": " access ",
-		"refresh_token": "   ",
-		"token_type": " Bearer ",
-		"scope": "   "
-	}`), "fallback-refresh", "fallback-scope")
+func TestVerifiedTokenToCredentialTrimsTokenStrings(t *testing.T) {
+	cred, err := verifiedTokenToCredential("client", "resource", &VerifiedToken{
+		AccessToken:  " access ",
+		RefreshToken: "   ",
+		TokenType:    " Bearer ",
+		Scope:        "   ",
+	}, "fallback-refresh", "fallback-scope", authTestNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,6 +575,13 @@ func TestCredentialFromTokenBodyTrimsTokenStrings(t *testing.T) {
 	}
 }
 
+func TestVerifiedTokenToCredentialRequiresAccessToken(t *testing.T) {
+	_, err := verifiedTokenToCredential("client", "resource", &VerifiedToken{}, "", "", authTestNow)
+	if err == nil || !strings.Contains(err.Error(), "missing access_token") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 	var serverURL string
 	refreshRequests := 0
@@ -578,10 +594,17 @@ func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
 		w.Header().Set("Content-Type", "application/json")
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
 			"expires_in":    3600,
+			"id_token":      idToken,
 		})
 	})
 	server := httptest.NewServer(mux)
@@ -677,12 +700,19 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 			t.Fatalf("refresh_token = %q", r.Form.Get("refresh_token"))
 		}
 		w.Header().Set("Content-Type", "application/json")
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
 			"scope":         oauthScope,
+			"id_token":      idToken,
 		})
 	})
 	server := httptest.NewServer(mux)
@@ -742,11 +772,18 @@ func TestWithRefreshRetriesUnauthorized(t *testing.T) {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
 		w.Header().Set("Content-Type", "application/json")
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
+			"id_token":      idToken,
 		})
 	})
 	server := httptest.NewServer(mux)
@@ -801,11 +838,18 @@ func TestWithRefreshVoidRetriesUnauthorized(t *testing.T) {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
 		w.Header().Set("Content-Type", "application/json")
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
+			"id_token":      idToken,
 		})
 	})
 	server := httptest.NewServer(mux)

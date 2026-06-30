@@ -33,7 +33,6 @@ func TestValidateIDToken(t *testing.T) {
 	issuer := "https://auth.example"
 	audience := "https://api.example"
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
-	fixedNow := func() time.Time { return now }
 
 	valid := mustSignIDToken(t, map[string]any{
 		"iss": issuer,
@@ -47,7 +46,7 @@ func TestValidateIDToken(t *testing.T) {
 		token     *VerifiedToken
 		issuer    string
 		audience  string
-		now       func() time.Time
+		now       time.Time
 		wantError string
 	}{
 		{
@@ -67,7 +66,7 @@ func TestValidateIDToken(t *testing.T) {
 			token:    &VerifiedToken{IDToken: valid},
 			issuer:   issuer,
 			audience: audience,
-			now:      fixedNow,
+			now:      now,
 		},
 		{
 			name: "valid token with array audience",
@@ -78,7 +77,7 @@ func TestValidateIDToken(t *testing.T) {
 			})},
 			issuer:   issuer,
 			audience: audience,
-			now:      fixedNow,
+			now:      now,
 		},
 		{
 			name: "wrong issuer",
@@ -89,7 +88,7 @@ func TestValidateIDToken(t *testing.T) {
 			})},
 			issuer:    issuer,
 			audience:  audience,
-			now:       fixedNow,
+			now:       now,
 			wantError: "invalid issuer",
 		},
 		{
@@ -101,7 +100,7 @@ func TestValidateIDToken(t *testing.T) {
 			})},
 			issuer:    issuer,
 			audience:  audience,
-			now:       fixedNow,
+			now:       now,
 			wantError: "invalid audience",
 		},
 		{
@@ -113,7 +112,7 @@ func TestValidateIDToken(t *testing.T) {
 			})},
 			issuer:    issuer,
 			audience:  audience,
-			now:       fixedNow,
+			now:       now,
 			wantError: "invalid audience",
 		},
 		{
@@ -125,7 +124,7 @@ func TestValidateIDToken(t *testing.T) {
 			})},
 			issuer:    issuer,
 			audience:  audience,
-			now:       fixedNow,
+			now:       now,
 			wantError: "id_token expired",
 		},
 		{
@@ -139,11 +138,7 @@ func TestValidateIDToken(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var opts []func() time.Time
-			if tc.now != nil {
-				opts = append(opts, tc.now)
-			}
-			err := tc.token.ValidateIDToken(tc.issuer, tc.audience, opts...)
+			err := tc.token.ValidateIDToken(tc.issuer, tc.audience, tc.now)
 			if tc.wantError == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -168,7 +163,7 @@ func TestValidateIDTokenSkipsEmptyChecks(t *testing.T) {
 		"exp": now.Add(time.Hour).Unix(),
 	})
 	vt := &VerifiedToken{IDToken: tok}
-	if err := vt.ValidateIDToken("", "", func() time.Time { return now }); err != nil {
+	if err := vt.ValidateIDToken("", "", now); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/life"
-	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 	"golang.org/x/oauth2"
@@ -105,7 +104,11 @@ func sanitizeDeviceAuthError(err error) error {
 		if re.ErrorCode != "" {
 			return fmt.Errorf("oauth2: %q %q: %s", re.ErrorCode, re.ErrorDescription, body)
 		}
-		return fmt.Errorf("oauth2: cannot fetch token: %s: %s", re.Response.Status, body)
+		status := "unknown"
+		if re.Response != nil {
+			status = re.Response.Status
+		}
+		return fmt.Errorf("oauth2: cannot fetch token: %s: %s", status, body)
 	}
 	return err
 }
@@ -166,9 +169,9 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		Interval:                int64(session.IntervalSeconds),
 	}
 
-	pollTimeout := time.Duration(session.IntervalSeconds)*time.Second + time.Second
+	pollTimeout := time.Duration(session.IntervalSeconds)*time.Second + 2*time.Second
 	if pollTimeout <= 0 {
-		pollTimeout = 6 * time.Second
+		pollTimeout = 7 * time.Second
 	}
 	pollCtx, cancel := context.WithTimeout(m.oidcContext(ctx), pollTimeout)
 	defer cancel()
@@ -179,9 +182,9 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	}
 
 	issuer := m.expectedIssuer(meta)
-	audience := m.serverURL()
+	audience := session.ClientID
 	vt := newVerifiedToken(tok)
-	if err := vt.ValidateIDToken(issuer, audience); err != nil {
+	if err := vt.ValidateIDToken(issuer, audience, m.now()); err != nil {
 		return PollResult{}, err
 	}
 
@@ -258,9 +261,9 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	}
 
 	issuer := m.expectedIssuer(meta)
-	audience := m.serverURL()
+	audience := cred.ClientID
 	vt := newVerifiedToken(tok)
-	if err := vt.ValidateIDToken(issuer, audience); err != nil {
+	if err := vt.ValidateIDToken(issuer, audience, m.now()); err != nil {
 		return store.Credential{}, err
 	}
 	return verifiedTokenToCredential(cred.ClientID, m.resource(meta), vt, cred.RefreshToken, cred.Scope, m.now())
@@ -472,46 +475,6 @@ func responseBodyText(resp *http.Response) string {
 
 func bodyText(body []byte) string {
 	return textutil.TrimBytesRunes(body, 200)
-}
-
-func credentialFromTokenBody(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string) (store.Credential, error) {
-	return credentialFromTokenBodyAt(clientID, resource, body, fallbackRefresh, fallbackScope, time.Now())
-}
-
-func credentialFromTokenBodyAt(clientID, resource string, body []byte, fallbackRefresh, fallbackScope string, now time.Time) (store.Credential, error) {
-	var tokens map[string]any
-	if err := json.Unmarshal(body, &tokens); err != nil {
-		return store.Credential{}, err
-	}
-	accessToken := tokenString(tokens, "access_token", "")
-	if accessToken == "" {
-		return store.Credential{}, errors.New("token response missing access_token")
-	}
-	expiresIn := 3600
-	if value, ok := lifedata.IntValue(tokens["expires_in"]); ok {
-		expiresIn = value
-	}
-	refreshToken := tokenString(tokens, "refresh_token", fallbackRefresh)
-	scope := tokenString(tokens, "scope", fallbackScope)
-	tokenType := tokenString(tokens, "token_type", "")
-	return store.Credential{
-		ClientID:     clientID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		TokenType:    tokenType,
-		ExpiresAt:    now.Add(time.Duration(expiresIn) * time.Second),
-		Scope:        scope,
-		Resource:     resource,
-	}, nil
-}
-
-func tokenString(tokens map[string]any, key, fallback string) string {
-	value, _ := tokens[key].(string)
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fallback
-	}
-	return value
 }
 
 func (m *Manager) httpClient() *http.Client {
