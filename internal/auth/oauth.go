@@ -52,9 +52,9 @@ func tokenExtraString(tok *oauth2.Token, key string) string {
 // It does not verify the JWT signature; callers should fetch the issuer's
 // JWKS and verify the signature when required.
 //
-// An optional now function can be supplied to make expiration checks
-// deterministic in tests. If omitted, time.Now is used.
-func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now ...func() time.Time) error {
+// The audience for an OIDC ID token is the OAuth client_id. Access-token
+// audience/resource claims must be validated separately against the server URL.
+func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now time.Time) error {
 	if t == nil || t.IDToken == "" {
 		return nil
 	}
@@ -76,11 +76,10 @@ func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now ...func() t
 			return fmt.Errorf("invalid audience, expected %q", audience)
 		}
 	}
-	nowFn := time.Now
-	if len(now) > 0 && now[0] != nil {
-		nowFn = now[0]
+	if now.IsZero() {
+		now = time.Now()
 	}
-	if exp, ok := expiresAtFromClaim(claims["exp"]); ok && !exp.After(nowFn()) {
+	if exp, ok := expiresAtFromClaim(claims["exp"]); ok && !exp.After(now) {
 		return errors.New("id_token expired")
 	}
 	return nil
