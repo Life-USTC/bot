@@ -70,7 +70,7 @@ func FromEnv() Config {
 		QQBotIntents:           envUint64("QQ_BOT_INTENTS", 1<<12|1<<25|1<<26|1<<30),
 		DBPath:                 envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
 		CommandPrefix:          envString("BOT_COMMAND_PREFIX", "/life"),
-		HTTPClientTimeout:      time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 15)) * time.Second,
+		HTTPClientTimeout:      time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 60)) * time.Second,
 		EnableOneBotServer:     envBool("BOT_ENABLE_ONEBOT_SERVER", true),
 		EnableNapCatBridge:     envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
 		EnableQQBot:            envBool("BOT_ENABLE_QQ_BOT", hasQQBotCredentials()),

@@ -2938,6 +2938,9 @@ func chinaNow() time.Time {
 func friendlyError(err error) string {
 	text := err.Error()
 	lower := textutil.LowerTrim(text)
+	if strings.Contains(lower, "unauthorized_client") {
+		return "登录方式未被授权，请联系管理员。"
+	}
 	if life.IsUnauthorized(err) || strings.Contains(lower, "unauthorized") {
 		return "登录已过期。发送：登录"
 	}
