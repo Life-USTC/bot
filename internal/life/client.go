@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/openapi"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -43,6 +44,20 @@ func NewClient(server string, httpClient *http.Client) *Client {
 	return &Client{
 		server:     textutil.TrimTrailingSlash(server),
 		httpClient: httpClient,
+	}
+}
+
+func (c *Client) Typed(ctx context.Context, token string) *openapi.Client {
+	return &openapi.Client{
+		Server: c.server,
+		Client: c.httpClient,
+		RequestEditors: []openapi.RequestEditorFn{
+			func(ctx context.Context, req *http.Request) error {
+				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("User-Agent", userAgent)
+				return nil
+			},
+		},
 	}
 }
 
