@@ -1,11 +1,8 @@
 package auth
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -51,10 +48,13 @@ func tokenExtraString(tok *oauth2.Token, key string) string {
 	return ""
 }
 
-// ValidateIDToken checks the ID token's issuer and audience claims.
+// ValidateIDToken checks the ID token's issuer, audience, and expiration claims.
 // It does not verify the JWT signature; callers should fetch the issuer's
 // JWKS and verify the signature when required.
-func (t *VerifiedToken) ValidateIDToken(issuer, audience string) error {
+//
+// An optional now function can be supplied to make expiration checks
+// deterministic in tests. If omitted, time.Now is used.
+func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now ...func() time.Time) error {
 	if t == nil || t.IDToken == "" {
 		return nil
 	}
@@ -76,7 +76,11 @@ func (t *VerifiedToken) ValidateIDToken(issuer, audience string) error {
 			return fmt.Errorf("invalid audience, expected %q", audience)
 		}
 	}
-	if exp, ok := expiresAtFromClaim(claims["exp"]); ok && !exp.After(time.Now()) {
+	nowFn := time.Now
+	if len(now) > 0 && now[0] != nil {
+		nowFn = now[0]
+	}
+	if exp, ok := expiresAtFromClaim(claims["exp"]); ok && !exp.After(nowFn()) {
 		return errors.New("id_token expired")
 	}
 	return nil
@@ -149,40 +153,6 @@ func tokenExpiresIn(tok *oauth2.Token, fallback int) int {
 		}
 	}
 	return fallback
-}
-
-// jsonContentTypeTransport ensures JSON token responses without a Content-Type
-// header are still parsed as JSON by golang.org/x/oauth2. Some test fixtures do
-// not set the header, and the production server is expected to return JSON.
-type jsonContentTypeTransport struct {
-	base http.RoundTripper
-}
-
-func (t *jsonContentTypeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(req)
-	if err != nil || resp == nil || resp.Body == nil {
-		return resp, err
-	}
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	_ = resp.Body.Close()
-	if readErr != nil {
-		return nil, readErr
-	}
-	if len(body) > 0 {
-		trimmed := bytes.TrimSpace(body)
-		if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-			resp.Header.Set("Content-Type", "application/json")
-		}
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	return resp, nil
-}
-
-func wrapJSONContentTypeTransport(base http.RoundTripper) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return &jsonContentTypeTransport{base: base}
 }
 
 func verifiedTokenToCredential(clientID, resource string, vt *VerifiedToken, fallbackRefresh, fallbackScope string, now time.Time) (store.Credential, error) {

@@ -605,6 +605,7 @@ func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/todos":
 			todoRequests++
@@ -1604,6 +1605,7 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
 			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
 			scheduleCalls++
@@ -1651,6 +1653,7 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
 			switch r.Header.Get("Authorization") {
@@ -1997,6 +2000,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
 			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
 			currentCalls++

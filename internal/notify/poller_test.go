@@ -195,6 +195,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
 	})
 	mux.HandleFunc("/api/calendar-subscriptions/current", func(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +287,7 @@ func TestPollerUsesRefreshedTokenForHomeworks(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
 	})
 	mux.HandleFunc("/api/me/subscriptions/homeworks", func(w http.ResponseWriter, r *http.Request) {
