@@ -299,6 +299,57 @@ func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, co
 	return c.putAuth(ctx, "/api/homeworks/"+url.PathEscape(id)+"/completion", token, body, nil)
 }
 
+type TodoCompletionItem struct {
+	TodoID    string
+	Completed bool
+}
+
+func (c *Client) SetTodoCompletions(ctx context.Context, token string, items []TodoCompletionItem) error {
+	body := openapi.TodoCompletionBatchRequestSchema{}
+	for _, item := range items {
+		body.Items = append(body.Items, struct {
+			Completed bool   `json:"completed"`
+			TodoId    string `json:"todoId"`
+		}{Completed: item.Completed, TodoId: item.TodoID})
+	}
+	resp, err := c.Typed(ctx, token).PatchApiTodosBatch(ctx, body)
+	return typedResponse(resp, err)
+}
+
+type HomeworkCompletionItem struct {
+	HomeworkID string
+	Completed  bool
+}
+
+func (c *Client) SetHomeworkCompletions(ctx context.Context, token string, items []HomeworkCompletionItem) error {
+	body := openapi.HomeworkCompletionBatchRequestSchema{}
+	for _, item := range items {
+		body.Items = append(body.Items, struct {
+			Completed  bool   `json:"completed"`
+			HomeworkId string `json:"homeworkId"`
+		}{Completed: item.Completed, HomeworkId: item.HomeworkID})
+	}
+	resp, err := c.Typed(ctx, token).PutApiHomeworksCompletions(ctx, body)
+	return typedResponse(resp, err)
+}
+
+func (c *Client) BulkSubscribeSections(ctx context.Context, token string, importCodes []string) (map[string]any, error) {
+	resp, err := c.Typed(ctx, token).PostApiCalendarSubscriptionsImportCodes(ctx, openapi.PostApiCalendarSubscriptionsImportCodesJSONRequestBody{
+		Codes: importCodes,
+	})
+	body, err := typedResponseBytes(resp, err)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &out); err != nil {
+			return nil, fmt.Errorf("decode calendar subscriptions import codes: %w", err)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
 	err := c.getAuth(ctx, "/api/calendar-subscriptions/current", nil, token, &out)
@@ -387,6 +438,42 @@ func jsonBody(value any) ([]byte, error) {
 
 func completionBody(completed bool) ([]byte, error) {
 	return jsonBody(map[string]any{"completed": completed})
+}
+
+func typedResponse(resp *http.Response, err error) error {
+	_, err = typedResponseBytes(resp, err)
+	return err
+}
+
+func typedResponseBytes(resp *http.Response, err error) ([]byte, error) {
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Body == nil {
+		return nil, nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if resp.StatusCode >= 400 {
+			return nil, HTTPError{
+				Method:     resp.Request.Method,
+				Path:       resp.Request.URL.Path,
+				StatusCode: resp.StatusCode,
+				Body:       "read response body: " + err.Error(),
+			}
+		}
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, HTTPError{
+			Method:     resp.Request.Method,
+			Path:       resp.Request.URL.Path,
+			StatusCode: resp.StatusCode,
+			Body:       trimBody(body),
+		}
+	}
+	return body, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {

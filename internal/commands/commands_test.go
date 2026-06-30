@@ -807,7 +807,7 @@ func TestHandleTodoDoneUsesNumericID(t *testing.T) {
 func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
-	patched := map[string]bool{}
+	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
@@ -815,16 +815,11 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
-		case strings.HasPrefix(r.URL.Path, "/api/todos/todo-") && r.Method == http.MethodPatch:
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
+		case r.URL.Path == "/api/todos/batch" && r.Method == http.MethodPatch:
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(body), `"completed":true`) {
-				t.Fatalf("patch body = %s", body)
-			}
-			patched[strings.TrimPrefix(r.URL.Path, "/api/todos/")] = true
-			_, _ = w.Write([]byte(`{"completed":true}`))
+			_, _ = w.Write([]byte(`{"results":[]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -836,9 +831,14 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	for _, id := range []string{"todo-1", "todo-2", "todo-3", "todo-4"} {
-		if !patched[id] {
-			t.Fatalf("missing patch for %s; patched = %#v", id, patched)
+	items, ok := gotBody["items"].([]any)
+	if !ok || len(items) != 4 {
+		t.Fatalf("items = %#v", gotBody["items"])
+	}
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok || m["completed"] != true {
+			t.Fatalf("item = %#v", item)
 		}
 	}
 	if !strings.Contains(reply, "已完成 4 条") || !strings.Contains(reply, "回工位收拾") || !strings.Contains(reply, "创建 1") {
@@ -1348,18 +1348,16 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
-	completed := map[string]bool{}
+	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
-		case strings.HasPrefix(r.URL.Path, "/api/homeworks/hw-") && r.Method == http.MethodPut:
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		case r.URL.Path == "/api/homeworks/completions" && r.Method == http.MethodPut:
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
-			completed[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/homeworks/"), "/completion")] = body["completed"] == true
-			_, _ = w.Write([]byte(`{"completed":true}`))
+			_, _ = w.Write([]byte(`{"results":[]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1371,9 +1369,14 @@ func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	for _, id := range []string{"hw-1", "hw-2", "hw-3"} {
-		if !completed[id] {
-			t.Fatalf("missing completion for %s; completed = %#v", id, completed)
+	items, ok := gotBody["items"].([]any)
+	if !ok || len(items) != 3 {
+		t.Fatalf("items = %#v", gotBody["items"])
+	}
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok || m["completed"] != true {
+			t.Fatalf("item = %#v", item)
 		}
 	}
 	if !strings.Contains(reply, "已完成 3 条作业") || !strings.Contains(reply, "Problem Set 1") || !strings.Contains(reply, "Problem Set 3") {
@@ -1933,15 +1936,12 @@ func TestSubscriptionSectionIDIntsSkipsNonPositiveIDs(t *testing.T) {
 func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
-	var replacedIDs []int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"code":"CONT5103P.01"}]}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/sections/match-codes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/import-codes":
 			var req struct {
 				Codes []string `json:"codes"`
 			}
@@ -1953,21 +1953,15 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{
 				"semester":{"nameCn":"2026年春季学期"},
+				"matchedCodes":["CONT5103P.01","CONT6104P.01"],
+				"unmatchedCodes":["BAD000.01"],
 				"sections":[
 					{"id":101,"code":"CONT5103P.01","course":{"namePrimary":"随机过程理论"}},
 					{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}
 				],
-				"unmatchedCodes":["BAD000.01"]
+				"addedCount":1,
+				"alreadySubscribedCount":1
 			}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions":
-			var req struct {
-				SectionIDs []int `json:"sectionIds"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatal(err)
-			}
-			replacedIDs = req.SectionIDs
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1979,9 +1973,6 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if strings.Join(intStrings(replacedIDs), ",") != "101,202" {
-		t.Fatalf("sectionIds = %#v", replacedIDs)
-	}
 	for _, want := range []string{"已订阅 𝟸 个教学班（新增 𝟷 个，已存在 𝟷 个）。", "2026年春季学期", "𝙲𝙾𝙽𝚃𝟼𝟷𝟶𝟺𝙿.𝟶𝟷  \t组合数学", "𝙱𝙰𝙳𝟶𝟶𝟶.𝟶𝟷"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -1992,8 +1983,7 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
-	var replacedIDs []int
-	currentCalls := 0
+	importCalls := 0
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -2002,36 +1992,26 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/calendar-subscriptions/current":
-			currentCalls++
-			if currentCalls == 1 {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/import-codes":
+			importCalls++
+			if importCalls == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
-					t.Fatalf("initial current authorization = %q", got)
+					t.Fatalf("initial import authorization = %q", got)
 				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
-				t.Fatalf("refreshed current authorization = %q", got)
+				t.Fatalf("refreshed import authorization = %q", got)
 			}
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"code":"CONT5103P.01"}]}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/sections/match-codes":
-			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
-				t.Fatalf("match authorization = %q", got)
-			}
-			_, _ = w.Write([]byte(`{"sections":[{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}]}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions":
-			if got := r.Header.Get("Authorization"); got != "Bearer refreshed" {
-				t.Fatalf("replace authorization = %q", got)
-			}
-			var req struct {
-				SectionIDs []int `json:"sectionIds"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatal(err)
-			}
-			replacedIDs = req.SectionIDs
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
+			_, _ = w.Write([]byte(`{
+				"semester":{"nameCn":"2026年春季学期"},
+				"matchedCodes":["CONT6104P.01"],
+				"unmatchedCodes":[],
+				"sections":[{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}],
+				"addedCount":1,
+				"alreadySubscribedCount":0
+			}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2044,8 +2024,11 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if strings.Join(intStrings(replacedIDs), ",") != "101,202" {
-		t.Fatalf("sectionIds = %#v; reply = %q", replacedIDs, reply)
+	if importCalls != 2 {
+		t.Fatalf("importCalls = %d", importCalls)
+	}
+	if !strings.Contains(reply, "组合数学") {
+		t.Fatalf("reply missing course: %q", reply)
 	}
 }
 
