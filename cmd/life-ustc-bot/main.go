@@ -78,7 +78,12 @@ func (r *senderRouter) Available() bool {
 func main() {
 	cfg := config.FromEnv()
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	httpClient := &http.Client{Timeout: cfg.HTTPClientTimeout}
+	httpClient := &http.Client{
+		Timeout: cfg.HTTPClientTimeout,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+		},
+	}
 	lifeClient := life.NewClient(cfg.LifeServer, httpClient)
 	stateStore, err := store.Open(cfg.DBPath)
 	if err != nil {

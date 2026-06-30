@@ -43,8 +43,8 @@ func TestFromEnvFallsBackForInvalidHTTPClientTimeout(t *testing.T) {
 			t.Setenv("BOT_HTTP_TIMEOUT_SECONDS", value)
 
 			cfg := FromEnv()
-			if cfg.HTTPClientTimeout != 15*time.Second {
-				t.Fatalf("HTTPClientTimeout = %s, want 15s", cfg.HTTPClientTimeout)
+			if cfg.HTTPClientTimeout != 60*time.Second {
+				t.Fatalf("HTTPClientTimeout = %s, want 60s", cfg.HTTPClientTimeout)
 			}
 		})
 	}

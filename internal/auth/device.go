@@ -18,7 +18,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
-const oauthScope = "openid profile email offline_access"
+const oauthScope = "openid profile email offline_access rest:read rest:write"
 const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
 type Manager struct {
@@ -239,7 +239,6 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 		"grant_type":    {"refresh_token"},
 		"client_id":     {cred.ClientID},
 		"refresh_token": {cred.RefreshToken},
-		"resource":      {m.resource(meta)},
 	}
 	resp, err := m.postForm(ctx, meta.TokenEndpoint, values)
 	if err != nil {
@@ -323,7 +322,7 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		"client_name":                "life-ustc-onebot",
 		"redirect_uris":              []string{"http://localhost/callback"},
 		"token_endpoint_auth_method": "none",
-		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"grant_types":                []string{"authorization_code", "refresh_token", deviceGrantType},
 		"response_types":             []string{"code"},
 		"scope":                      oauthScope,
 	}
