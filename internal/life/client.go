@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,12 +49,15 @@ func NewClient(server string, httpClient *http.Client) *Client {
 }
 
 func (c *Client) Typed(ctx context.Context, token string) *openapi.Client {
+	token = strings.TrimSpace(token)
 	return &openapi.Client{
 		Server: c.server,
 		Client: c.httpClient,
 		RequestEditors: []openapi.RequestEditorFn{
 			func(ctx context.Context, req *http.Request) error {
-				req.Header.Set("Authorization", "Bearer "+token)
+				if token != "" {
+					req.Header.Set("Authorization", "Bearer "+token)
+				}
 				req.Header.Set("User-Agent", userAgent)
 				return nil
 			},
@@ -63,38 +67,42 @@ func (c *Client) Typed(ctx context.Context, token string) *openapi.Client {
 
 func (c *Client) Health(ctx context.Context) error {
 	var out map[string]any
-	return c.get(ctx, "/api/metadata", nil, &out)
+	resp, err := c.Typed(ctx, "").GetMetadata(ctx)
+	return typedJSON(resp, err, "metadata", &out)
 }
 
 func (c *Client) CurrentSemester(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
-	err := c.get(ctx, "/api/semesters/current", nil, &out)
+	resp, err := c.Typed(ctx, "").GetCurrentSemester(ctx)
+	err = typedJSON(resp, err, "current semester", &out)
 	return out, err
 }
 
 func (c *Client) SearchCourses(ctx context.Context, search string, limit int) ([]map[string]any, error) {
-	return c.list(ctx, "/api/courses", searchQuery(search, limit))
+	params := openapi.ListCoursesParams{}
+	setSearchLimit(&params.Search, &params.Limit, search, limit)
+	resp, err := c.Typed(ctx, "").ListCourses(ctx, &params)
+	return typedDataList(resp, err, "courses")
 }
 
 func (c *Client) SearchSections(ctx context.Context, search string, limit int) ([]map[string]any, error) {
-	return c.list(ctx, "/api/sections", searchQuery(search, limit))
+	params := openapi.ListSectionsParams{}
+	setSearchLimit(&params.Search, &params.Limit, search, limit)
+	resp, err := c.Typed(ctx, "").ListSections(ctx, &params)
+	return typedDataList(resp, err, "sections")
 }
 
 func (c *Client) SearchTeachers(ctx context.Context, search string, limit int) ([]map[string]any, error) {
-	return c.list(ctx, "/api/teachers", searchQuery(search, limit))
-}
-
-func searchQuery(search string, limit int) url.Values {
-	values := url.Values{}
-	search = strings.TrimSpace(search)
-	values.Set("search", search)
-	setLimit(values, limit)
-	return values
+	params := openapi.ListTeachersParams{}
+	setSearchLimit(&params.Search, &params.Limit, search, limit)
+	resp, err := c.Typed(ctx, "").ListTeachers(ctx, &params)
+	return typedDataList(resp, err, "teachers")
 }
 
 func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
-	err := c.get(ctx, "/api/bus", nil, &out)
+	resp, err := c.Typed(ctx, "").QueryBus(ctx, &openapi.QueryBusParams{})
+	err = typedJSON(resp, err, "bus", &out)
 	return out, err
 }
 
@@ -108,25 +116,29 @@ func (c *Client) BusPreferences(ctx context.Context, token string) (BusPreferenc
 	var out struct {
 		Preference BusPreferences `json:"preference"`
 	}
-	err := c.getAuth(ctx, "/api/bus/preferences", nil, token, &out)
+	resp, err := c.Typed(ctx, token).GetBusPreferences(ctx)
+	err = typedJSON(resp, err, "bus preferences", &out)
 	return out.Preference, err
 }
 
 func (c *Client) SetBusPreferences(ctx context.Context, token string, preferences BusPreferences) (BusPreferences, error) {
-	body, err := jsonBody(preferences)
-	if err != nil {
-		return BusPreferences{}, err
-	}
 	var out struct {
 		Preference BusPreferences `json:"preference"`
 	}
-	err = c.postAuth(ctx, "/api/bus/preferences", token, body, &out)
+	body := openapi.SetBusPreferencesJSONRequestBody{
+		PreferredDestinationCampusId: preferences.PreferredDestinationCampusID,
+		PreferredOriginCampusId:      preferences.PreferredOriginCampusID,
+		ShowDepartedTrips:            preferences.ShowDepartedTrips,
+	}
+	resp, err := c.Typed(ctx, token).SetBusPreferences(ctx, body)
+	err = typedJSON(resp, err, "set bus preferences", &out)
 	return out.Preference, err
 }
 
 func (c *Client) Me(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
-	err := c.getAuth(ctx, "/api/me", nil, token, &out)
+	resp, err := c.Typed(ctx, token).GetMe(ctx)
+	err = typedJSON(resp, err, "me", &out)
 	if IsUnauthorized(err) {
 		err = c.getAuth(ctx, "/api/auth/oauth2/userinfo", nil, token, &out)
 	}
@@ -172,23 +184,26 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 }
 
 func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoListOptions) ([]map[string]any, error) {
-	values := url.Values{}
+	params := openapi.ListTodosParams{}
 	if completed := strings.TrimSpace(opts.Completed); completed != "" {
-		values.Set("completed", completed)
+		value := openapi.ListTodosParamsCompleted(completed)
+		params.Completed = &value
 	}
 	if priority := strings.TrimSpace(opts.Priority); priority != "" {
-		values.Set("priority", priority)
+		value := openapi.ListTodosParamsPriority(priority)
+		params.Priority = &value
 	}
 	if dueBefore := strings.TrimSpace(opts.DueBefore); dueBefore != "" {
-		values.Set("dueBefore", dueBefore)
+		params.DueBefore = &dueBefore
 	}
 	if dueAfter := strings.TrimSpace(opts.DueAfter); dueAfter != "" {
-		values.Set("dueAfter", dueAfter)
+		params.DueAfter = &dueAfter
 	}
 	var out struct {
 		Todos []map[string]any `json:"todos"`
 	}
-	if err := c.getAuth(ctx, "/api/todos", values, token, &out); err != nil {
+	resp, err := c.Typed(ctx, token).ListTodos(ctx, &params)
+	if err := typedJSON(resp, err, "todos", &out); err != nil {
 		return nil, err
 	}
 	return out.Todos, nil
@@ -203,22 +218,22 @@ func (c *Client) CreateTodoWithOptions(ctx context.Context, token string, opts T
 	if opts.Title == "" {
 		return nil, errors.New("todo title is required")
 	}
-	bodyValue := map[string]any{"title": opts.Title}
+	body := openapi.CreateTodoJSONRequestBody{Title: opts.Title}
 	if content := strings.TrimSpace(opts.Content); content != "" {
-		bodyValue["content"] = content
+		body.Content = &content
 	}
 	if priority := strings.TrimSpace(opts.Priority); priority != "" {
-		bodyValue["priority"] = priority
+		value := openapi.TodoCreateRequestSchemaPriority(priority)
+		body.Priority = &value
 	}
 	if dueAt := strings.TrimSpace(opts.DueAt); dueAt != "" {
-		bodyValue["dueAt"] = dueAt
-	}
-	body, err := jsonBody(bodyValue)
-	if err != nil {
-		return nil, err
+		value := openapi.TodoCreateRequestSchema_DueAt{}
+		_ = value.FromTodoCreateRequestSchemaDueAt0(dueAt)
+		body.DueAt = &value
 	}
 	var out map[string]any
-	err = c.postAuth(ctx, "/api/todos", token, body, &out)
+	resp, err := c.Typed(ctx, token).CreateTodo(ctx, body)
+	err = typedJSON(resp, err, "create todo", &out)
 	return out, err
 }
 
@@ -231,11 +246,7 @@ func (c *Client) SetTodoCompleted(ctx context.Context, token, id string, complet
 	if id == "" {
 		return errors.New("todo id is required")
 	}
-	body, err := completionBody(completed)
-	if err != nil {
-		return err
-	}
-	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
+	return typedResponse(c.Typed(ctx, token).UpdateTodo(ctx, id, openapi.UpdateTodoJSONRequestBody{Completed: &completed}))
 }
 
 func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpdateOptions) error {
@@ -243,30 +254,35 @@ func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpda
 	if id == "" {
 		return errors.New("todo id is required")
 	}
-	bodyValue := map[string]any{}
+	body := openapi.UpdateTodoJSONRequestBody{}
+	changed := false
 	if title := strings.TrimSpace(opts.Title); title != "" {
-		bodyValue["title"] = title
+		body.Title = &title
+		changed = true
 	}
 	if content := strings.TrimSpace(opts.Content); content != "" {
-		bodyValue["content"] = content
+		body.Content = &content
+		changed = true
 	}
 	if priority := strings.TrimSpace(opts.Priority); priority != "" {
-		bodyValue["priority"] = priority
+		value := openapi.TodoUpdateRequestSchemaPriority(priority)
+		body.Priority = &value
+		changed = true
 	}
 	if dueAt := strings.TrimSpace(opts.DueAt); dueAt != "" {
-		bodyValue["dueAt"] = dueAt
+		value := openapi.TodoUpdateRequestSchema_DueAt{}
+		_ = value.FromTodoUpdateRequestSchemaDueAt0(dueAt)
+		body.DueAt = &value
+		changed = true
 	}
 	if opts.Completed != nil {
-		bodyValue["completed"] = *opts.Completed
+		body.Completed = opts.Completed
+		changed = true
 	}
-	if len(bodyValue) == 0 {
+	if !changed {
 		return errors.New("todo update requires at least one change")
 	}
-	body, err := jsonBody(bodyValue)
-	if err != nil {
-		return err
-	}
-	return c.patchAuth(ctx, "/api/todos/"+url.PathEscape(id), token, body, nil)
+	return typedResponse(c.Typed(ctx, token).UpdateTodo(ctx, id, body))
 }
 
 func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {
@@ -274,14 +290,15 @@ func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {
 	if id == "" {
 		return errors.New("todo id is required")
 	}
-	return c.do(ctx, http.MethodDelete, "/api/todos/"+url.PathEscape(id), nil, token, nil, nil)
+	return typedResponse(c.Typed(ctx, token).DeleteTodo(ctx, id))
 }
 
 func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[string]any, error) {
 	var out struct {
 		Homeworks []map[string]any `json:"homeworks"`
 	}
-	if err := c.getAuth(ctx, "/api/me/subscriptions/homeworks", nil, token, &out); err != nil {
+	resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx)
+	if err := typedJSON(resp, err, "subscribed homeworks", &out); err != nil {
 		return nil, err
 	}
 	return out.Homeworks, nil
@@ -292,11 +309,7 @@ func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, co
 	if id == "" {
 		return errors.New("homework id is required")
 	}
-	body, err := completionBody(completed)
-	if err != nil {
-		return err
-	}
-	return c.putAuth(ctx, "/api/homeworks/"+url.PathEscape(id)+"/completion", token, body, nil)
+	return typedResponse(c.Typed(ctx, token).SetHomeworkCompletion(ctx, id, openapi.SetHomeworkCompletionJSONRequestBody{Completed: completed}))
 }
 
 type TodoCompletionItem struct {
@@ -334,25 +347,28 @@ func (c *Client) SetHomeworkCompletions(ctx context.Context, token string, items
 }
 
 func (c *Client) BulkSubscribeSections(ctx context.Context, token string, importCodes []string) (map[string]any, error) {
-	resp, err := c.Typed(ctx, token).PostApiCalendarSubscriptionsImportCodes(ctx, openapi.PostApiCalendarSubscriptionsImportCodesJSONRequestBody{
-		Codes: importCodes,
-	})
-	body, err := typedResponseBytes(resp, err)
-	if err != nil {
-		return nil, err
-	}
 	var out map[string]any
-	if len(bytes.TrimSpace(body)) > 0 {
-		if err := json.Unmarshal(body, &out); err != nil {
-			return nil, fmt.Errorf("decode calendar subscriptions import codes: %w", err)
+	codes := textutil.NonEmpty(importCodes...)
+	if len(codes) == 0 {
+		return nil, errors.New("section or course code is required")
+	}
+	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
+		Action: openapi.CalendarSubscriptionBatchRequestSchemaActionAdd,
+		Codes:  &codes,
+	})
+	err = typedJSON(resp, err, "bulk subscribe sections", &out)
+	if err == nil && out != nil {
+		if _, ok := out["alreadySubscribedCount"]; !ok {
+			out["alreadySubscribedCount"] = out["unchangedCount"]
 		}
 	}
-	return out, nil
+	return out, err
 }
 
 func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
-	err := c.getAuth(ctx, "/api/calendar-subscriptions/current", nil, token, &out)
+	resp, err := c.Typed(ctx, token).GetCurrentCalendarSubscription(ctx)
+	err = typedJSON(resp, err, "current subscription", &out)
 	return out, err
 }
 
@@ -361,33 +377,33 @@ func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []st
 	if len(codes) == 0 {
 		return nil, errors.New("section code is required")
 	}
-	req := map[string]any{"codes": codes}
+	body := openapi.MatchSectionCodesJSONRequestBody{Codes: codes}
 	semesterID = strings.TrimSpace(semesterID)
 	if semesterID != "" {
-		req["semesterId"] = semesterID
-	}
-	body, err := jsonBody(req)
-	if err != nil {
-		return nil, err
+		semester := openapi.MatchSectionCodesRequestSchema_SemesterId{}
+		_ = semester.FromMatchSectionCodesRequestSchemaSemesterId0(semesterID)
+		body.SemesterId = &semester
 	}
 	var out map[string]any
-	err = c.postAuth(ctx, "/api/sections/match-codes", token, body, &out)
+	resp, err := c.Typed(ctx, token).MatchSectionCodes(ctx, body)
+	err = typedJSON(resp, err, "match section codes", &out)
 	return out, err
 }
 
 func (c *Client) ReplaceCalendarSubscription(ctx context.Context, token string, sectionIDs []int) (map[string]any, error) {
-	body, err := jsonBody(map[string]any{"sectionIds": sectionIDs})
-	if err != nil {
-		return nil, err
-	}
 	var out map[string]any
-	err = c.postAuth(ctx, "/api/calendar-subscriptions", token, body, &out)
+	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
+		Action:     openapi.CalendarSubscriptionBatchRequestSchemaActionSet,
+		SectionIds: &sectionIDs,
+	})
+	err = typedJSON(resp, err, "replace calendar subscription", &out)
 	return out, err
 }
 
 func (c *Client) Schedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
 	var out dataList
-	if err := c.getAuth(ctx, "/api/schedules", values, token, &out); err != nil {
+	resp, err := c.Typed(ctx, token).ListSchedules(ctx, listSchedulesParams(values))
+	if err := typedJSON(resp, err, "schedules", &out); err != nil {
 		return nil, err
 	}
 	return out.Data, nil
@@ -397,7 +413,8 @@ func (c *Client) SubscribedSchedules(ctx context.Context, token string, values u
 	var out struct {
 		Schedules []map[string]any `json:"schedules"`
 	}
-	if err := c.getAuth(ctx, "/api/me/subscriptions/schedules", values, token, &out); err != nil {
+	resp, err := c.Typed(ctx, token).GetApiMeSubscriptionsSchedules(ctx, subscribedSchedulesParams(values))
+	if err := typedJSON(resp, err, "subscribed schedules", &out); err != nil {
 		return nil, err
 	}
 	return out.Schedules, nil
@@ -420,29 +437,34 @@ func SubscribedScheduleQuery(dateFrom, dateTo string) url.Values {
 	return values
 }
 
-func (c *Client) list(ctx context.Context, path string, values url.Values) ([]map[string]any, error) {
-	var out dataList
-	if err := c.get(ctx, path, values, &out); err != nil {
-		return nil, err
-	}
-	return out.Data, nil
-}
-
 type dataList struct {
 	Data []map[string]any `json:"data"`
-}
-
-func jsonBody(value any) ([]byte, error) {
-	return json.Marshal(value)
-}
-
-func completionBody(completed bool) ([]byte, error) {
-	return jsonBody(map[string]any{"completed": completed})
 }
 
 func typedResponse(resp *http.Response, err error) error {
 	_, err = typedResponseBytes(resp, err)
 	return err
+}
+
+func typedJSON(resp *http.Response, err error, label string, out any) error {
+	body, err := typedResponseBytes(resp, err)
+	if err != nil {
+		return err
+	}
+	if out != nil && len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, out); err != nil {
+			return fmt.Errorf("decode %s: %w", label, err)
+		}
+	}
+	return nil
+}
+
+func typedDataList(resp *http.Response, err error, label string) ([]map[string]any, error) {
+	var out dataList
+	if err := typedJSON(resp, err, label, &out); err != nil {
+		return nil, err
+	}
+	return out.Data, nil
 }
 
 func typedResponseBytes(resp *http.Response, err error) ([]byte, error) {
@@ -456,9 +478,10 @@ func typedResponseBytes(resp *http.Response, err error) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		if resp.StatusCode >= 400 {
+			method, path := responseMethodPath(resp)
 			return nil, HTTPError{
-				Method:     resp.Request.Method,
-				Path:       resp.Request.URL.Path,
+				Method:     method,
+				Path:       path,
 				StatusCode: resp.StatusCode,
 				Body:       "read response body: " + err.Error(),
 			}
@@ -466,14 +489,26 @@ func typedResponseBytes(resp *http.Response, err error) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
+		method, path := responseMethodPath(resp)
 		return nil, HTTPError{
-			Method:     resp.Request.Method,
-			Path:       resp.Request.URL.Path,
+			Method:     method,
+			Path:       path,
 			StatusCode: resp.StatusCode,
 			Body:       trimBody(body),
 		}
 	}
 	return body, nil
+}
+
+func responseMethodPath(resp *http.Response) (string, string) {
+	if resp != nil && resp.Request != nil {
+		path := ""
+		if resp.Request.URL != nil {
+			path = resp.Request.URL.Path
+		}
+		return resp.Request.Method, path
+	}
+	return "", ""
 }
 
 func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {
@@ -550,11 +585,53 @@ func (c *Client) do(ctx context.Context, method, path string, values url.Values,
 	return nil
 }
 
-func setLimit(values url.Values, limit int) {
+func setSearchLimit(searchTarget **string, limitTarget **int64, search string, limit int) {
+	search = strings.TrimSpace(search)
+	*searchTarget = &search
 	if limit <= 0 {
 		limit = 5
 	}
-	values.Set("limit", fmt.Sprint(limit))
+	value := int64(limit)
+	*limitTarget = &value
+}
+
+func listSchedulesParams(values url.Values) *openapi.ListSchedulesParams {
+	params := &openapi.ListSchedulesParams{}
+	if value := strings.TrimSpace(values.Get("sectionId")); value != "" {
+		params.SectionId = int64PtrFromString(value)
+	}
+	if value := strings.TrimSpace(values.Get("dateFrom")); value != "" {
+		params.DateFrom = &value
+	}
+	if value := strings.TrimSpace(values.Get("dateTo")); value != "" {
+		params.DateTo = &value
+	}
+	if value := strings.TrimSpace(values.Get("limit")); value != "" {
+		params.Limit = int64PtrFromString(value)
+	}
+	return params
+}
+
+func subscribedSchedulesParams(values url.Values) *openapi.GetApiMeSubscriptionsSchedulesParams {
+	params := &openapi.GetApiMeSubscriptionsSchedulesParams{}
+	if value := strings.TrimSpace(values.Get("dateFrom")); value != "" {
+		params.DateFrom = &value
+	}
+	if value := strings.TrimSpace(values.Get("dateTo")); value != "" {
+		params.DateTo = &value
+	}
+	if value := strings.TrimSpace(values.Get("limit")); value != "" {
+		params.Limit = int64PtrFromString(value)
+	}
+	return params
+}
+
+func int64PtrFromString(value string) *int64 {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 func trimBody(body []byte) string {

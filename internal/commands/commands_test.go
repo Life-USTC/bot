@@ -1941,12 +1941,16 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/import-codes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/batch":
 			var req struct {
-				Codes []string `json:"codes"`
+				Action string   `json:"action"`
+				Codes  []string `json:"codes"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatal(err)
+			}
+			if req.Action != "add" {
+				t.Fatalf("action = %q", req.Action)
 			}
 			if strings.Join(req.Codes, ",") != "CONT5103P.01,CONT6104P.01,BAD000.01" {
 				t.Fatalf("codes = %#v", req.Codes)
@@ -1960,7 +1964,7 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 					{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}
 				],
 				"addedCount":1,
-				"alreadySubscribedCount":1
+				"unchangedCount":1
 			}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1992,7 +1996,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/import-codes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/batch":
 			importCalls++
 			if importCalls == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
@@ -2010,7 +2014,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 				"unmatchedCodes":[],
 				"sections":[{"id":202,"code":"CONT6104P.01","course":{"namePrimary":"组合数学"}}],
 				"addedCount":1,
-				"alreadySubscribedCount":0
+				"unchangedCount":0
 			}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)

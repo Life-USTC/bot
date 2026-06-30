@@ -17,7 +17,40 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const oauthScope = "openid profile email offline_access rest:read rest:write"
+var oauthScope = strings.Join([]string{
+	"openid",
+	"profile",
+	"email",
+	"offline_access",
+	"me:read",
+	"me:write",
+	"todo:read",
+	"todo:write",
+	"homework:read",
+	"homework:write",
+	"subscription:read",
+	"subscription:write",
+	"comment:read",
+	"comment:write",
+	"description:read",
+	"description:write",
+	"upload:read",
+	"upload:write",
+	"dashboard:read",
+	"dashboard:write",
+	"bus:read",
+	"bus:write",
+	"course:read",
+	"course:write",
+	"section:read",
+	"section:write",
+	"teacher:read",
+	"teacher:write",
+	"schedule:read",
+	"schedule:write",
+	"exam:read",
+	"exam:write",
+}, " ")
 
 type Manager struct {
 	Server     string

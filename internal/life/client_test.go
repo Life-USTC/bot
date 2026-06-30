@@ -131,13 +131,6 @@ func TestSearchTrimsQuery(t *testing.T) {
 	}
 }
 
-func TestSearchQuery(t *testing.T) {
-	values := searchQuery(" math ", 0)
-	if values.Get("search") != "math" || values.Get("limit") != "5" {
-		t.Fatalf("values = %s", values.Encode())
-	}
-}
-
 func TestSchedulesUsesDataList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/schedules" {
@@ -530,13 +523,13 @@ func TestSetHomeworkCompletionsSendsBatch(t *testing.T) {
 func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/calendar-subscriptions/import-codes" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/calendar-subscriptions/batch" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"sections":[],"addedCount":0,"alreadySubscribedCount":0}`))
+		_, _ = w.Write([]byte(`{"action":"add","sections":[],"addedCount":0,"unchangedCount":0}`))
 	}))
 	defer server.Close()
 
@@ -549,7 +542,10 @@ func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
 	if !ok || len(codes) != 2 || codes[0] != "MATH1001.01" || codes[1] != "CS1001.02" {
 		t.Fatalf("codes = %#v", gotBody["codes"])
 	}
-	if out["addedCount"] != float64(0) {
+	if gotBody["action"] != "add" {
+		t.Fatalf("action = %#v", gotBody["action"])
+	}
+	if out["addedCount"] != float64(0) || out["alreadySubscribedCount"] != float64(0) {
 		t.Fatalf("out = %#v", out)
 	}
 }
@@ -568,22 +564,6 @@ func TestBulkSubscribeSectionsReturnsHTTPError(t *testing.T) {
 	var httpErr HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestCompletionBody(t *testing.T) {
-	for _, completed := range []bool{true, false} {
-		body, err := completionBody(completed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got map[string]bool
-		if err := json.Unmarshal(body, &got); err != nil {
-			t.Fatal(err)
-		}
-		if got["completed"] != completed {
-			t.Fatalf("completionBody(%v) = %s", completed, body)
-		}
 	}
 }
 
@@ -663,12 +643,6 @@ func TestMatchSectionCodesRejectsBlankCodes(t *testing.T) {
 	}
 	if matches != nil {
 		t.Fatalf("matches = %#v, want nil", matches)
-	}
-}
-
-func TestJSONBodyReturnsMarshalError(t *testing.T) {
-	if _, err := jsonBody(map[string]any{"bad": func() {}}); err == nil {
-		t.Fatal("jsonBody returned nil error")
 	}
 }
 
