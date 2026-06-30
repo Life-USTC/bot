@@ -155,6 +155,9 @@ func tokenExpiresIn(tok *oauth2.Token, fallback int) int {
 }
 
 func verifiedTokenToCredential(clientID, resource string, vt *VerifiedToken, fallbackRefresh, fallbackScope string, now time.Time) (store.Credential, error) {
+	if vt == nil {
+		return store.Credential{}, errors.New("token response is nil")
+	}
 	accessToken := strings.TrimSpace(vt.AccessToken)
 	if accessToken == "" {
 		return store.Credential{}, errors.New("token response missing access_token")
