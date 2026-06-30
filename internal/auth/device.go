@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -62,32 +61,12 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		return nil, err
 	}
 
-	// DeviceAuth does not attach the context to the request, so we initiate the
-	// device authorization request manually to preserve context cancellation.
-	values := url.Values{
-		"client_id": {clientID},
-		"scope":     {oauthScope},
-		"resource":  {m.resource(meta)},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.DeviceAuthorizationEndpoint, strings.NewReader(values.Encode()))
+	conf := m.oauth2Config(meta, clientID)
+	res, err := conf.DeviceAuth(m.oidcContext(ctx), oauth2.SetAuthURLParam("resource", m.resource(meta)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("device authorization request failed: %w", sanitizeDeviceAuthError(err))
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := m.httpClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("device authorization request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device authorization failed (%d): %s", resp.StatusCode, responseBodyText(resp))
-	}
-	var res oauth2.DeviceAuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
-	}
-	if err := validateDeviceAuthResponse(&res); err != nil {
+	if err := validateDeviceAuthResponse(res); err != nil {
 		return nil, err
 	}
 
@@ -117,6 +96,18 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		return nil, err
 	}
 	return session, nil
+}
+
+func sanitizeDeviceAuthError(err error) error {
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) {
+		body := textutil.TrimBytesRunes(bytes.TrimSpace(re.Body), 200)
+		if re.ErrorCode != "" {
+			return fmt.Errorf("oauth2: %q %q: %s", re.ErrorCode, re.ErrorDescription, body)
+		}
+		return fmt.Errorf("oauth2: cannot fetch token: %s: %s", re.Response.Status, body)
+	}
+	return err
 }
 
 func validateDeviceAuthResponse(resp *oauth2.DeviceAuthResponse) error {
@@ -256,6 +247,11 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	}
 
 	ctx = m.oidcContext(ctx)
+	// NOTE: golang.org/x/oauth2.TokenSource does not support extra parameters on
+	// refresh. The server's resource validation only runs when a resource is
+	// explicitly supplied, so omitting it is safe for this provider. If the
+	// server later requires a resource indicator on refresh, implement a custom
+	// token source that includes it in the refresh_token grant request.
 	tok, err := conf.TokenSource(ctx, token).Token()
 	if err != nil {
 		return store.Credential{}, m.mapRefreshError(err)
@@ -381,13 +377,28 @@ func (m *Manager) oauth2Config(meta metadata, clientID string) oauth2.Config {
 	}
 }
 
-func (m *Manager) oidcContext(ctx context.Context) context.Context {
-	client := m.httpClient()
-	wrapped := &http.Client{
-		Timeout:   client.Timeout,
-		Transport: wrapJSONContentTypeTransport(client.Transport),
+type contextBoundTransport struct {
+	base http.RoundTripper
+	ctx  context.Context
+}
+
+func (t *contextBoundTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
 	}
-	return context.WithValue(ctx, oauth2.HTTPClient, wrapped)
+	return base.RoundTrip(req.WithContext(t.ctx))
+}
+
+func contextBoundHTTPClient(ctx context.Context, client *http.Client) *http.Client {
+	return &http.Client{
+		Timeout:   client.Timeout,
+		Transport: &contextBoundTransport{base: client.Transport, ctx: ctx},
+	}
+}
+
+func (m *Manager) oidcContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, oauth2.HTTPClient, contextBoundHTTPClient(ctx, m.httpClient()))
 }
 
 func (m *Manager) expectedIssuer(meta metadata) string {

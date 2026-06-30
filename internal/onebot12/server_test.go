@@ -77,6 +77,7 @@ func TestTodosRefreshesUnauthorizedToken(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",

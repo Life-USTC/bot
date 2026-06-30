@@ -97,6 +97,7 @@ func TestDeviceLoginFlow(t *testing.T) {
 		if r.Form.Get("device_code") != "device" {
 			t.Fatalf("device_code = %q", r.Form.Get("device_code"))
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "access",
 			"refresh_token": "refresh",
@@ -576,6 +577,7 @@ func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
@@ -674,6 +676,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		if r.Form.Get("refresh_token") != "refresh" {
 			t.Fatalf("refresh_token = %q", r.Form.Get("refresh_token"))
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
@@ -738,6 +741,7 @@ func TestWithRefreshRetriesUnauthorized(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
@@ -796,6 +800,7 @@ func TestWithRefreshVoidRetriesUnauthorized(t *testing.T) {
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		refreshRequests++
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
