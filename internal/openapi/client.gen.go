@@ -295,6 +295,57 @@ func (e BusQueryResponseSchemaTripsDayType) Valid() bool {
 	}
 }
 
+// Defines values for CommentBatchDeleteResponseSchemaResults0Success.
+const (
+	CommentBatchDeleteResponseSchemaResults0SuccessTrue CommentBatchDeleteResponseSchemaResults0Success = true
+)
+
+// Valid indicates whether the value is a known member of the CommentBatchDeleteResponseSchemaResults0Success enum.
+func (e CommentBatchDeleteResponseSchemaResults0Success) Valid() bool {
+	switch e {
+	case CommentBatchDeleteResponseSchemaResults0SuccessTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CommentBatchDeleteResponseSchemaResults1ErrorCode.
+const (
+	CommentBatchDeleteResponseSchemaResults1ErrorCodeForbidden CommentBatchDeleteResponseSchemaResults1ErrorCode = "forbidden"
+	CommentBatchDeleteResponseSchemaResults1ErrorCodeLocked    CommentBatchDeleteResponseSchemaResults1ErrorCode = "locked"
+	CommentBatchDeleteResponseSchemaResults1ErrorCodeNotFound  CommentBatchDeleteResponseSchemaResults1ErrorCode = "not_found"
+)
+
+// Valid indicates whether the value is a known member of the CommentBatchDeleteResponseSchemaResults1ErrorCode enum.
+func (e CommentBatchDeleteResponseSchemaResults1ErrorCode) Valid() bool {
+	switch e {
+	case CommentBatchDeleteResponseSchemaResults1ErrorCodeForbidden:
+		return true
+	case CommentBatchDeleteResponseSchemaResults1ErrorCodeLocked:
+		return true
+	case CommentBatchDeleteResponseSchemaResults1ErrorCodeNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CommentBatchDeleteResponseSchemaResults1Success.
+const (
+	CommentBatchDeleteResponseSchemaResults1SuccessFalse CommentBatchDeleteResponseSchemaResults1Success = false
+)
+
+// Valid indicates whether the value is a known member of the CommentBatchDeleteResponseSchemaResults1Success enum.
+func (e CommentBatchDeleteResponseSchemaResults1Success) Valid() bool {
+	switch e {
+	case CommentBatchDeleteResponseSchemaResults1SuccessFalse:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CommentCreateRequestSchemaTargetType.
 const (
 	CommentCreateRequestSchemaTargetTypeCourse         CommentCreateRequestSchemaTargetType = "course"
@@ -451,18 +502,36 @@ func (e CompactOverviewResponseSchemaTodosItemsPriority) Valid() bool {
 	}
 }
 
+// Defines values for DashboardLinkPinBatchRequestSchemaItemsAction.
+const (
+	DashboardLinkPinBatchRequestSchemaItemsActionPin   DashboardLinkPinBatchRequestSchemaItemsAction = "pin"
+	DashboardLinkPinBatchRequestSchemaItemsActionUnpin DashboardLinkPinBatchRequestSchemaItemsAction = "unpin"
+)
+
+// Valid indicates whether the value is a known member of the DashboardLinkPinBatchRequestSchemaItemsAction enum.
+func (e DashboardLinkPinBatchRequestSchemaItemsAction) Valid() bool {
+	switch e {
+	case DashboardLinkPinBatchRequestSchemaItemsActionPin:
+		return true
+	case DashboardLinkPinBatchRequestSchemaItemsActionUnpin:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DashboardLinkPinRequestSchemaAction.
 const (
-	Pin   DashboardLinkPinRequestSchemaAction = "pin"
-	Unpin DashboardLinkPinRequestSchemaAction = "unpin"
+	DashboardLinkPinRequestSchemaActionPin   DashboardLinkPinRequestSchemaAction = "pin"
+	DashboardLinkPinRequestSchemaActionUnpin DashboardLinkPinRequestSchemaAction = "unpin"
 )
 
 // Valid indicates whether the value is a known member of the DashboardLinkPinRequestSchemaAction enum.
 func (e DashboardLinkPinRequestSchemaAction) Valid() bool {
 	switch e {
-	case Pin:
+	case DashboardLinkPinRequestSchemaActionPin:
 		return true
-	case Unpin:
+	case DashboardLinkPinRequestSchemaActionUnpin:
 		return true
 	default:
 		return false
@@ -835,6 +904,123 @@ func (e SubscribedHomeworksResponseSchemaAuditLogsAction) Valid() bool {
 	case SubscribedHomeworksResponseSchemaAuditLogsActionCreated:
 		return true
 	case SubscribedHomeworksResponseSchemaAuditLogsActionDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoBatchDeleteResponseSchemaResults0Success.
+const (
+	TodoBatchDeleteResponseSchemaResults0SuccessTrue TodoBatchDeleteResponseSchemaResults0Success = true
+)
+
+// Valid indicates whether the value is a known member of the TodoBatchDeleteResponseSchemaResults0Success enum.
+func (e TodoBatchDeleteResponseSchemaResults0Success) Valid() bool {
+	switch e {
+	case TodoBatchDeleteResponseSchemaResults0SuccessTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoBatchDeleteResponseSchemaResults1ErrorCode.
+const (
+	TodoBatchDeleteResponseSchemaResults1ErrorCodeForbidden TodoBatchDeleteResponseSchemaResults1ErrorCode = "forbidden"
+	TodoBatchDeleteResponseSchemaResults1ErrorCodeNotFound  TodoBatchDeleteResponseSchemaResults1ErrorCode = "not_found"
+)
+
+// Valid indicates whether the value is a known member of the TodoBatchDeleteResponseSchemaResults1ErrorCode enum.
+func (e TodoBatchDeleteResponseSchemaResults1ErrorCode) Valid() bool {
+	switch e {
+	case TodoBatchDeleteResponseSchemaResults1ErrorCodeForbidden:
+		return true
+	case TodoBatchDeleteResponseSchemaResults1ErrorCodeNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoBatchDeleteResponseSchemaResults1Success.
+const (
+	TodoBatchDeleteResponseSchemaResults1SuccessFalse TodoBatchDeleteResponseSchemaResults1Success = false
+)
+
+// Valid indicates whether the value is a known member of the TodoBatchDeleteResponseSchemaResults1Success enum.
+func (e TodoBatchDeleteResponseSchemaResults1Success) Valid() bool {
+	switch e {
+	case TodoBatchDeleteResponseSchemaResults1SuccessFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoCompletionBatchResponseSchemaResults0Success.
+const (
+	TodoCompletionBatchResponseSchemaResults0SuccessTrue TodoCompletionBatchResponseSchemaResults0Success = true
+)
+
+// Valid indicates whether the value is a known member of the TodoCompletionBatchResponseSchemaResults0Success enum.
+func (e TodoCompletionBatchResponseSchemaResults0Success) Valid() bool {
+	switch e {
+	case TodoCompletionBatchResponseSchemaResults0SuccessTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoCompletionBatchResponseSchemaResults0TodoPriority.
+const (
+	TodoCompletionBatchResponseSchemaResults0TodoPriorityHigh   TodoCompletionBatchResponseSchemaResults0TodoPriority = "high"
+	TodoCompletionBatchResponseSchemaResults0TodoPriorityLow    TodoCompletionBatchResponseSchemaResults0TodoPriority = "low"
+	TodoCompletionBatchResponseSchemaResults0TodoPriorityMedium TodoCompletionBatchResponseSchemaResults0TodoPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the TodoCompletionBatchResponseSchemaResults0TodoPriority enum.
+func (e TodoCompletionBatchResponseSchemaResults0TodoPriority) Valid() bool {
+	switch e {
+	case TodoCompletionBatchResponseSchemaResults0TodoPriorityHigh:
+		return true
+	case TodoCompletionBatchResponseSchemaResults0TodoPriorityLow:
+		return true
+	case TodoCompletionBatchResponseSchemaResults0TodoPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoCompletionBatchResponseSchemaResults1ErrorCode.
+const (
+	Forbidden TodoCompletionBatchResponseSchemaResults1ErrorCode = "forbidden"
+	NotFound  TodoCompletionBatchResponseSchemaResults1ErrorCode = "not_found"
+)
+
+// Valid indicates whether the value is a known member of the TodoCompletionBatchResponseSchemaResults1ErrorCode enum.
+func (e TodoCompletionBatchResponseSchemaResults1ErrorCode) Valid() bool {
+	switch e {
+	case Forbidden:
+		return true
+	case NotFound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoCompletionBatchResponseSchemaResults1Success.
+const (
+	TodoCompletionBatchResponseSchemaResults1SuccessFalse TodoCompletionBatchResponseSchemaResults1Success = false
+)
+
+// Valid indicates whether the value is a known member of the TodoCompletionBatchResponseSchemaResults1Success enum.
+func (e TodoCompletionBatchResponseSchemaResults1Success) Valid() bool {
+	switch e {
+	case TodoCompletionBatchResponseSchemaResults1SuccessFalse:
 		return true
 	default:
 		return false
@@ -1287,19 +1473,19 @@ func (e ListTodosParamsCompleted) Valid() bool {
 
 // Defines values for ListTodosParamsPriority.
 const (
-	High   ListTodosParamsPriority = "high"
-	Low    ListTodosParamsPriority = "low"
-	Medium ListTodosParamsPriority = "medium"
+	ListTodosParamsPriorityHigh   ListTodosParamsPriority = "high"
+	ListTodosParamsPriorityLow    ListTodosParamsPriority = "low"
+	ListTodosParamsPriorityMedium ListTodosParamsPriority = "medium"
 )
 
 // Valid indicates whether the value is a known member of the ListTodosParamsPriority enum.
 func (e ListTodosParamsPriority) Valid() bool {
 	switch e {
-	case High:
+	case ListTodosParamsPriorityHigh:
 		return true
-	case Low:
+	case ListTodosParamsPriorityLow:
 		return true
-	case Medium:
+	case ListTodosParamsPriorityMedium:
 		return true
 	default:
 		return false
@@ -2963,6 +3149,46 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 	} `json:"subscription"`
 }
 
+// CommentBatchDeleteRequestSchema defines model for commentBatchDeleteRequestSchema.
+type CommentBatchDeleteRequestSchema struct {
+	Ids []string `json:"ids"`
+}
+
+// CommentBatchDeleteResponseSchema defines model for commentBatchDeleteResponseSchema.
+type CommentBatchDeleteResponseSchema struct {
+	Results []CommentBatchDeleteResponseSchema_Results_Item `json:"results"`
+}
+
+// CommentBatchDeleteResponseSchemaResults0 defines model for .
+type CommentBatchDeleteResponseSchemaResults0 struct {
+	Id      string                                          `json:"id"`
+	Success CommentBatchDeleteResponseSchemaResults0Success `json:"success"`
+}
+
+// CommentBatchDeleteResponseSchemaResults0Success defines model for CommentBatchDeleteResponseSchema.Results.0.Success.
+type CommentBatchDeleteResponseSchemaResults0Success bool
+
+// CommentBatchDeleteResponseSchemaResults1 defines model for .
+type CommentBatchDeleteResponseSchemaResults1 struct {
+	Error struct {
+		Code    CommentBatchDeleteResponseSchemaResults1ErrorCode `json:"code"`
+		Message string                                            `json:"message"`
+	} `json:"error"`
+	Id      string                                          `json:"id"`
+	Success CommentBatchDeleteResponseSchemaResults1Success `json:"success"`
+}
+
+// CommentBatchDeleteResponseSchemaResults1ErrorCode defines model for CommentBatchDeleteResponseSchema.Results.1.Error.Code.
+type CommentBatchDeleteResponseSchemaResults1ErrorCode string
+
+// CommentBatchDeleteResponseSchemaResults1Success defines model for CommentBatchDeleteResponseSchema.Results.1.Success.
+type CommentBatchDeleteResponseSchemaResults1Success bool
+
+// CommentBatchDeleteResponseSchema_Results_Item defines model for commentBatchDeleteResponseSchema.results.Item.
+type CommentBatchDeleteResponseSchema_Results_Item struct {
+	union json.RawMessage
+}
+
 // CommentCreateRequestSchema defines model for commentCreateRequestSchema.
 type CommentCreateRequestSchema struct {
 	AttachmentIds    *[]string                                    `json:"attachmentIds,omitempty"`
@@ -3807,6 +4033,17 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 		UserId string `json:"userId"`
 	} `json:"subscription"`
 }
+
+// DashboardLinkPinBatchRequestSchema defines model for dashboardLinkPinBatchRequestSchema.
+type DashboardLinkPinBatchRequestSchema struct {
+	Items []struct {
+		Action DashboardLinkPinBatchRequestSchemaItemsAction `json:"action"`
+		Slug   string                                        `json:"slug"`
+	} `json:"items"`
+}
+
+// DashboardLinkPinBatchRequestSchemaItemsAction defines model for DashboardLinkPinBatchRequestSchema.Items.Action.
+type DashboardLinkPinBatchRequestSchemaItemsAction string
 
 // DashboardLinkPinRequestSchema defines model for dashboardLinkPinRequestSchema.
 type DashboardLinkPinRequestSchema struct {
@@ -5926,6 +6163,104 @@ type TeacherDetailSchema struct {
 	Wechat         *string `json:"wechat"`
 }
 
+// TodoBatchDeleteRequestSchema defines model for todoBatchDeleteRequestSchema.
+type TodoBatchDeleteRequestSchema struct {
+	Ids []string `json:"ids"`
+}
+
+// TodoBatchDeleteResponseSchema defines model for todoBatchDeleteResponseSchema.
+type TodoBatchDeleteResponseSchema struct {
+	Results []TodoBatchDeleteResponseSchema_Results_Item `json:"results"`
+}
+
+// TodoBatchDeleteResponseSchemaResults0 defines model for .
+type TodoBatchDeleteResponseSchemaResults0 struct {
+	Id      string                                       `json:"id"`
+	Success TodoBatchDeleteResponseSchemaResults0Success `json:"success"`
+}
+
+// TodoBatchDeleteResponseSchemaResults0Success defines model for TodoBatchDeleteResponseSchema.Results.0.Success.
+type TodoBatchDeleteResponseSchemaResults0Success bool
+
+// TodoBatchDeleteResponseSchemaResults1 defines model for .
+type TodoBatchDeleteResponseSchemaResults1 struct {
+	Error struct {
+		Code    TodoBatchDeleteResponseSchemaResults1ErrorCode `json:"code"`
+		Message string                                         `json:"message"`
+	} `json:"error"`
+	Id      string                                       `json:"id"`
+	Success TodoBatchDeleteResponseSchemaResults1Success `json:"success"`
+}
+
+// TodoBatchDeleteResponseSchemaResults1ErrorCode defines model for TodoBatchDeleteResponseSchema.Results.1.Error.Code.
+type TodoBatchDeleteResponseSchemaResults1ErrorCode string
+
+// TodoBatchDeleteResponseSchemaResults1Success defines model for TodoBatchDeleteResponseSchema.Results.1.Success.
+type TodoBatchDeleteResponseSchemaResults1Success bool
+
+// TodoBatchDeleteResponseSchema_Results_Item defines model for todoBatchDeleteResponseSchema.results.Item.
+type TodoBatchDeleteResponseSchema_Results_Item struct {
+	union json.RawMessage
+}
+
+// TodoCompletionBatchRequestSchema defines model for todoCompletionBatchRequestSchema.
+type TodoCompletionBatchRequestSchema struct {
+	Items []struct {
+		Completed bool   `json:"completed"`
+		TodoId    string `json:"todoId"`
+	} `json:"items"`
+}
+
+// TodoCompletionBatchResponseSchema defines model for todoCompletionBatchResponseSchema.
+type TodoCompletionBatchResponseSchema struct {
+	Results []TodoCompletionBatchResponseSchema_Results_Item `json:"results"`
+}
+
+// TodoCompletionBatchResponseSchemaResults0 defines model for .
+type TodoCompletionBatchResponseSchemaResults0 struct {
+	Completed bool                                             `json:"completed"`
+	Success   TodoCompletionBatchResponseSchemaResults0Success `json:"success"`
+	Todo      struct {
+		Completed bool                                                  `json:"completed"`
+		Content   *string                                               `json:"content"`
+		CreatedAt time.Time                                             `json:"createdAt"`
+		DueAt     *time.Time                                            `json:"dueAt"`
+		Id        string                                                `json:"id"`
+		Priority  TodoCompletionBatchResponseSchemaResults0TodoPriority `json:"priority"`
+		Title     string                                                `json:"title"`
+		UpdatedAt time.Time                                             `json:"updatedAt"`
+	} `json:"todo"`
+	TodoId string `json:"todoId"`
+}
+
+// TodoCompletionBatchResponseSchemaResults0Success defines model for TodoCompletionBatchResponseSchema.Results.0.Success.
+type TodoCompletionBatchResponseSchemaResults0Success bool
+
+// TodoCompletionBatchResponseSchemaResults0TodoPriority defines model for TodoCompletionBatchResponseSchema.Results.0.Todo.Priority.
+type TodoCompletionBatchResponseSchemaResults0TodoPriority string
+
+// TodoCompletionBatchResponseSchemaResults1 defines model for .
+type TodoCompletionBatchResponseSchemaResults1 struct {
+	Completed bool `json:"completed"`
+	Error     struct {
+		Code    TodoCompletionBatchResponseSchemaResults1ErrorCode `json:"code"`
+		Message string                                             `json:"message"`
+	} `json:"error"`
+	Success TodoCompletionBatchResponseSchemaResults1Success `json:"success"`
+	TodoId  string                                           `json:"todoId"`
+}
+
+// TodoCompletionBatchResponseSchemaResults1ErrorCode defines model for TodoCompletionBatchResponseSchema.Results.1.Error.Code.
+type TodoCompletionBatchResponseSchemaResults1ErrorCode string
+
+// TodoCompletionBatchResponseSchemaResults1Success defines model for TodoCompletionBatchResponseSchema.Results.1.Success.
+type TodoCompletionBatchResponseSchemaResults1Success bool
+
+// TodoCompletionBatchResponseSchema_Results_Item defines model for todoCompletionBatchResponseSchema.results.Item.
+type TodoCompletionBatchResponseSchema_Results_Item struct {
+	union json.RawMessage
+}
+
 // TodoCreateRequestSchema defines model for todoCreateRequestSchema.
 type TodoCreateRequestSchema struct {
 	Content  *string                          `json:"content,omitempty"`
@@ -6398,6 +6733,9 @@ type PostApiCalendarSubscriptionsImportCodesJSONRequestBody = MatchSectionCodesR
 // CreateCommentJSONRequestBody defines body for CreateComment for application/json ContentType.
 type CreateCommentJSONRequestBody = CommentCreateRequestSchema
 
+// DeleteApiCommentsBatchJSONRequestBody defines body for DeleteApiCommentsBatch for application/json ContentType.
+type DeleteApiCommentsBatchJSONRequestBody = CommentBatchDeleteRequestSchema
+
 // UpdateCommentJSONRequestBody defines body for UpdateComment for application/json ContentType.
 type UpdateCommentJSONRequestBody = CommentUpdateRequestSchema
 
@@ -6406,6 +6744,9 @@ type AddCommentReactionJSONRequestBody = CommentReactionRequestSchema
 
 // PinDashboardLinkFormdataRequestBody defines body for PinDashboardLink for application/x-www-form-urlencoded ContentType.
 type PinDashboardLinkFormdataRequestBody = DashboardLinkPinRequestSchema
+
+// PostApiDashboardLinksPinBatchJSONRequestBody defines body for PostApiDashboardLinksPinBatch for application/json ContentType.
+type PostApiDashboardLinksPinBatchJSONRequestBody = DashboardLinkPinBatchRequestSchema
 
 // RecordDashboardLinkVisitFormdataRequestBody defines body for RecordDashboardLinkVisit for application/x-www-form-urlencoded ContentType.
 type RecordDashboardLinkVisitFormdataRequestBody = DashboardLinkVisitRequestSchema
@@ -6433,6 +6774,12 @@ type MatchSectionCodesJSONRequestBody = MatchSectionCodesRequestSchema
 
 // CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
 type CreateTodoJSONRequestBody = TodoCreateRequestSchema
+
+// DeleteApiTodosBatchJSONRequestBody defines body for DeleteApiTodosBatch for application/json ContentType.
+type DeleteApiTodosBatchJSONRequestBody = TodoBatchDeleteRequestSchema
+
+// PatchApiTodosBatchJSONRequestBody defines body for PatchApiTodosBatch for application/json ContentType.
+type PatchApiTodosBatchJSONRequestBody = TodoCompletionBatchRequestSchema
 
 // UpdateTodoJSONRequestBody defines body for UpdateTodo for application/json ContentType.
 type UpdateTodoJSONRequestBody = TodoUpdateRequestSchema
@@ -6628,6 +6975,68 @@ func (t AdminUpdateUserRequestSchema_Username) MarshalJSON() ([]byte, error) {
 }
 
 func (t *AdminUpdateUserRequestSchema_Username) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCommentBatchDeleteResponseSchemaResults0 returns the union data inside the CommentBatchDeleteResponseSchema_Results_Item as a CommentBatchDeleteResponseSchemaResults0
+func (t CommentBatchDeleteResponseSchema_Results_Item) AsCommentBatchDeleteResponseSchemaResults0() (CommentBatchDeleteResponseSchemaResults0, error) {
+	var body CommentBatchDeleteResponseSchemaResults0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCommentBatchDeleteResponseSchemaResults0 overwrites any union data inside the CommentBatchDeleteResponseSchema_Results_Item as the provided CommentBatchDeleteResponseSchemaResults0
+func (t *CommentBatchDeleteResponseSchema_Results_Item) FromCommentBatchDeleteResponseSchemaResults0(v CommentBatchDeleteResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCommentBatchDeleteResponseSchemaResults0 performs a merge with any union data inside the CommentBatchDeleteResponseSchema_Results_Item, using the provided CommentBatchDeleteResponseSchemaResults0
+func (t *CommentBatchDeleteResponseSchema_Results_Item) MergeCommentBatchDeleteResponseSchemaResults0(v CommentBatchDeleteResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCommentBatchDeleteResponseSchemaResults1 returns the union data inside the CommentBatchDeleteResponseSchema_Results_Item as a CommentBatchDeleteResponseSchemaResults1
+func (t CommentBatchDeleteResponseSchema_Results_Item) AsCommentBatchDeleteResponseSchemaResults1() (CommentBatchDeleteResponseSchemaResults1, error) {
+	var body CommentBatchDeleteResponseSchemaResults1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCommentBatchDeleteResponseSchemaResults1 overwrites any union data inside the CommentBatchDeleteResponseSchema_Results_Item as the provided CommentBatchDeleteResponseSchemaResults1
+func (t *CommentBatchDeleteResponseSchema_Results_Item) FromCommentBatchDeleteResponseSchemaResults1(v CommentBatchDeleteResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCommentBatchDeleteResponseSchemaResults1 performs a merge with any union data inside the CommentBatchDeleteResponseSchema_Results_Item, using the provided CommentBatchDeleteResponseSchemaResults1
+func (t *CommentBatchDeleteResponseSchema_Results_Item) MergeCommentBatchDeleteResponseSchemaResults1(v CommentBatchDeleteResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CommentBatchDeleteResponseSchema_Results_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CommentBatchDeleteResponseSchema_Results_Item) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -8710,6 +9119,130 @@ func (t *OauthTokenRequestSchema_Resource) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsTodoBatchDeleteResponseSchemaResults0 returns the union data inside the TodoBatchDeleteResponseSchema_Results_Item as a TodoBatchDeleteResponseSchemaResults0
+func (t TodoBatchDeleteResponseSchema_Results_Item) AsTodoBatchDeleteResponseSchemaResults0() (TodoBatchDeleteResponseSchemaResults0, error) {
+	var body TodoBatchDeleteResponseSchemaResults0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodoBatchDeleteResponseSchemaResults0 overwrites any union data inside the TodoBatchDeleteResponseSchema_Results_Item as the provided TodoBatchDeleteResponseSchemaResults0
+func (t *TodoBatchDeleteResponseSchema_Results_Item) FromTodoBatchDeleteResponseSchemaResults0(v TodoBatchDeleteResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodoBatchDeleteResponseSchemaResults0 performs a merge with any union data inside the TodoBatchDeleteResponseSchema_Results_Item, using the provided TodoBatchDeleteResponseSchemaResults0
+func (t *TodoBatchDeleteResponseSchema_Results_Item) MergeTodoBatchDeleteResponseSchemaResults0(v TodoBatchDeleteResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTodoBatchDeleteResponseSchemaResults1 returns the union data inside the TodoBatchDeleteResponseSchema_Results_Item as a TodoBatchDeleteResponseSchemaResults1
+func (t TodoBatchDeleteResponseSchema_Results_Item) AsTodoBatchDeleteResponseSchemaResults1() (TodoBatchDeleteResponseSchemaResults1, error) {
+	var body TodoBatchDeleteResponseSchemaResults1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodoBatchDeleteResponseSchemaResults1 overwrites any union data inside the TodoBatchDeleteResponseSchema_Results_Item as the provided TodoBatchDeleteResponseSchemaResults1
+func (t *TodoBatchDeleteResponseSchema_Results_Item) FromTodoBatchDeleteResponseSchemaResults1(v TodoBatchDeleteResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodoBatchDeleteResponseSchemaResults1 performs a merge with any union data inside the TodoBatchDeleteResponseSchema_Results_Item, using the provided TodoBatchDeleteResponseSchemaResults1
+func (t *TodoBatchDeleteResponseSchema_Results_Item) MergeTodoBatchDeleteResponseSchemaResults1(v TodoBatchDeleteResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t TodoBatchDeleteResponseSchema_Results_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *TodoBatchDeleteResponseSchema_Results_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsTodoCompletionBatchResponseSchemaResults0 returns the union data inside the TodoCompletionBatchResponseSchema_Results_Item as a TodoCompletionBatchResponseSchemaResults0
+func (t TodoCompletionBatchResponseSchema_Results_Item) AsTodoCompletionBatchResponseSchemaResults0() (TodoCompletionBatchResponseSchemaResults0, error) {
+	var body TodoCompletionBatchResponseSchemaResults0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodoCompletionBatchResponseSchemaResults0 overwrites any union data inside the TodoCompletionBatchResponseSchema_Results_Item as the provided TodoCompletionBatchResponseSchemaResults0
+func (t *TodoCompletionBatchResponseSchema_Results_Item) FromTodoCompletionBatchResponseSchemaResults0(v TodoCompletionBatchResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodoCompletionBatchResponseSchemaResults0 performs a merge with any union data inside the TodoCompletionBatchResponseSchema_Results_Item, using the provided TodoCompletionBatchResponseSchemaResults0
+func (t *TodoCompletionBatchResponseSchema_Results_Item) MergeTodoCompletionBatchResponseSchemaResults0(v TodoCompletionBatchResponseSchemaResults0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTodoCompletionBatchResponseSchemaResults1 returns the union data inside the TodoCompletionBatchResponseSchema_Results_Item as a TodoCompletionBatchResponseSchemaResults1
+func (t TodoCompletionBatchResponseSchema_Results_Item) AsTodoCompletionBatchResponseSchemaResults1() (TodoCompletionBatchResponseSchemaResults1, error) {
+	var body TodoCompletionBatchResponseSchemaResults1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodoCompletionBatchResponseSchemaResults1 overwrites any union data inside the TodoCompletionBatchResponseSchema_Results_Item as the provided TodoCompletionBatchResponseSchemaResults1
+func (t *TodoCompletionBatchResponseSchema_Results_Item) FromTodoCompletionBatchResponseSchemaResults1(v TodoCompletionBatchResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodoCompletionBatchResponseSchemaResults1 performs a merge with any union data inside the TodoCompletionBatchResponseSchema_Results_Item, using the provided TodoCompletionBatchResponseSchemaResults1
+func (t *TodoCompletionBatchResponseSchema_Results_Item) MergeTodoCompletionBatchResponseSchemaResults1(v TodoCompletionBatchResponseSchemaResults1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t TodoCompletionBatchResponseSchema_Results_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *TodoCompletionBatchResponseSchema_Results_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsTodoCreateRequestSchemaDueAt0 returns the union data inside the TodoCreateRequestSchema_DueAt as a TodoCreateRequestSchemaDueAt0
 func (t TodoCreateRequestSchema_DueAt) AsTodoCreateRequestSchemaDueAt0() (TodoCreateRequestSchemaDueAt0, error) {
 	var body TodoCreateRequestSchemaDueAt0
@@ -9128,6 +9661,11 @@ type ClientInterface interface {
 
 	CreateComment(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeleteApiCommentsBatchWithBody request with any body
+	DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteComment request
 	DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -9157,6 +9695,11 @@ type ClientInterface interface {
 	PinDashboardLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiDashboardLinksPinBatchWithBody request with any body
+	PostApiDashboardLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiDashboardLinksPinBatch(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// VisitDashboardLink request
 	VisitDashboardLink(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -9301,6 +9844,16 @@ type ClientInterface interface {
 	CreateTodoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateTodo(ctx context.Context, body CreateTodoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiTodosBatchWithBody request with any body
+	DeleteApiTodosBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteApiTodosBatch(ctx context.Context, body DeleteApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchApiTodosBatchWithBody request with any body
+	PatchApiTodosBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchApiTodosBatch(ctx context.Context, body PatchApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteTodo request
 	DeleteTodo(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10028,6 +10581,30 @@ func (c *Client) CreateComment(ctx context.Context, body CreateCommentJSONReques
 	return c.Client.Do(req)
 }
 
+func (c *Client) DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiCommentsBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiCommentsBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteCommentRequest(c.Server, id)
 	if err != nil {
@@ -10150,6 +10727,30 @@ func (c *Client) PinDashboardLinkWithBody(ctx context.Context, contentType strin
 
 func (c *Client) PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPinDashboardLinkRequestWithFormdataBody(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiDashboardLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiDashboardLinksPinBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiDashboardLinksPinBatch(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiDashboardLinksPinBatchRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10762,6 +11363,54 @@ func (c *Client) CreateTodoWithBody(ctx context.Context, contentType string, bod
 
 func (c *Client) CreateTodo(ctx context.Context, body CreateTodoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateTodoRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiTodosBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiTodosBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiTodosBatch(ctx context.Context, body DeleteApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiTodosBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchApiTodosBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApiTodosBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchApiTodosBatch(ctx context.Context, body PatchApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApiTodosBatchRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -12862,6 +13511,46 @@ func NewCreateCommentRequestWithBody(server string, contentType string, body io.
 	return req, nil
 }
 
+// NewDeleteApiCommentsBatchRequest calls the generic DeleteApiCommentsBatch builder with application/json body
+func NewDeleteApiCommentsBatchRequest(server string, body DeleteApiCommentsBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteApiCommentsBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteApiCommentsBatchRequestWithBody generates requests for DeleteApiCommentsBatch with any type of body
+func NewDeleteApiCommentsBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/comments/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDeleteCommentRequest generates requests for DeleteComment
 func NewDeleteCommentRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -13250,6 +13939,46 @@ func NewPinDashboardLinkRequestWithBody(server string, contentType string, body 
 	}
 
 	operationPath := fmt.Sprintf("/api/dashboard-links/pin")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostApiDashboardLinksPinBatchRequest calls the generic PostApiDashboardLinksPinBatch builder with application/json body
+func NewPostApiDashboardLinksPinBatchRequest(server string, body PostApiDashboardLinksPinBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiDashboardLinksPinBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiDashboardLinksPinBatchRequestWithBody generates requests for PostApiDashboardLinksPinBatch with any type of body
+func NewPostApiDashboardLinksPinBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/dashboard-links/pin/batch")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -15464,6 +16193,86 @@ func NewCreateTodoRequestWithBody(server string, contentType string, body io.Rea
 	return req, nil
 }
 
+// NewDeleteApiTodosBatchRequest calls the generic DeleteApiTodosBatch builder with application/json body
+func NewDeleteApiTodosBatchRequest(server string, body DeleteApiTodosBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteApiTodosBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteApiTodosBatchRequestWithBody generates requests for DeleteApiTodosBatch with any type of body
+func NewDeleteApiTodosBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/todos/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPatchApiTodosBatchRequest calls the generic PatchApiTodosBatch builder with application/json body
+func NewPatchApiTodosBatchRequest(server string, body PatchApiTodosBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchApiTodosBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPatchApiTodosBatchRequestWithBody generates requests for PatchApiTodosBatch with any type of body
+func NewPatchApiTodosBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/todos/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDeleteTodoRequest generates requests for DeleteTodo
 func NewDeleteTodoRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -16148,6 +16957,11 @@ type ClientWithResponsesInterface interface {
 
 	CreateCommentWithResponse(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error)
 
+	// DeleteApiCommentsBatchWithBodyWithResponse request with any body
+	DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
+
+	DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
+
 	// DeleteCommentWithResponse request
 	DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error)
 
@@ -16177,6 +16991,11 @@ type ClientWithResponsesInterface interface {
 	PinDashboardLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
 
 	PinDashboardLinkWithFormdataBodyWithResponse(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
+
+	// PostApiDashboardLinksPinBatchWithBodyWithResponse request with any body
+	PostApiDashboardLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error)
+
+	PostApiDashboardLinksPinBatchWithResponse(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error)
 
 	// VisitDashboardLinkWithResponse request
 	VisitDashboardLinkWithResponse(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*VisitDashboardLinkResponse, error)
@@ -16321,6 +17140,16 @@ type ClientWithResponsesInterface interface {
 	CreateTodoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTodoResponse, error)
 
 	CreateTodoWithResponse(ctx context.Context, body CreateTodoJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTodoResponse, error)
+
+	// DeleteApiTodosBatchWithBodyWithResponse request with any body
+	DeleteApiTodosBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiTodosBatchResponse, error)
+
+	DeleteApiTodosBatchWithResponse(ctx context.Context, body DeleteApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiTodosBatchResponse, error)
+
+	// PatchApiTodosBatchWithBodyWithResponse request with any body
+	PatchApiTodosBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApiTodosBatchResponse, error)
+
+	PatchApiTodosBatchWithResponse(ctx context.Context, body PatchApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApiTodosBatchResponse, error)
 
 	// DeleteTodoWithResponse request
 	DeleteTodoWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteTodoResponse, error)
@@ -17755,6 +18584,39 @@ func (r CreateCommentResponse) ContentType() string {
 	return ""
 }
 
+type DeleteApiCommentsBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentBatchDeleteResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiCommentsBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiCommentsBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApiCommentsBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeleteCommentResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -18011,6 +18873,39 @@ func (r PinDashboardLinkResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PinDashboardLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostApiDashboardLinksPinBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DashboardLinkPinResponseSchema
+	JSON400      *DashboardLinkPinResponseSchema
+	JSON401      *OpenApiErrorSchema
+	JSON500      *DashboardLinkPinResponseSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiDashboardLinksPinBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiDashboardLinksPinBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApiDashboardLinksPinBatchResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -19322,6 +20217,70 @@ func (r CreateTodoResponse) ContentType() string {
 	return ""
 }
 
+type DeleteApiTodosBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *TodoBatchDeleteResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiTodosBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiTodosBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApiTodosBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PatchApiTodosBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *TodoCompletionBatchResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchApiTodosBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchApiTodosBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchApiTodosBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeleteTodoResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -20185,6 +21144,23 @@ func (c *ClientWithResponses) CreateCommentWithResponse(ctx context.Context, bod
 	return ParseCreateCommentResponse(rsp)
 }
 
+// DeleteApiCommentsBatchWithBodyWithResponse request with arbitrary body returning *DeleteApiCommentsBatchResponse
+func (c *ClientWithResponses) DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
+	rsp, err := c.DeleteApiCommentsBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiCommentsBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
+	rsp, err := c.DeleteApiCommentsBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiCommentsBatchResponse(rsp)
+}
+
 // DeleteCommentWithResponse request returning *DeleteCommentResponse
 func (c *ClientWithResponses) DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error) {
 	rsp, err := c.DeleteComment(ctx, id, reqEditors...)
@@ -20279,6 +21255,23 @@ func (c *ClientWithResponses) PinDashboardLinkWithFormdataBodyWithResponse(ctx c
 		return nil, err
 	}
 	return ParsePinDashboardLinkResponse(rsp)
+}
+
+// PostApiDashboardLinksPinBatchWithBodyWithResponse request with arbitrary body returning *PostApiDashboardLinksPinBatchResponse
+func (c *ClientWithResponses) PostApiDashboardLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error) {
+	rsp, err := c.PostApiDashboardLinksPinBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiDashboardLinksPinBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiDashboardLinksPinBatchWithResponse(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error) {
+	rsp, err := c.PostApiDashboardLinksPinBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiDashboardLinksPinBatchResponse(rsp)
 }
 
 // VisitDashboardLinkWithResponse request returning *VisitDashboardLinkResponse
@@ -20729,6 +21722,40 @@ func (c *ClientWithResponses) CreateTodoWithResponse(ctx context.Context, body C
 		return nil, err
 	}
 	return ParseCreateTodoResponse(rsp)
+}
+
+// DeleteApiTodosBatchWithBodyWithResponse request with arbitrary body returning *DeleteApiTodosBatchResponse
+func (c *ClientWithResponses) DeleteApiTodosBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiTodosBatchResponse, error) {
+	rsp, err := c.DeleteApiTodosBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiTodosBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteApiTodosBatchWithResponse(ctx context.Context, body DeleteApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiTodosBatchResponse, error) {
+	rsp, err := c.DeleteApiTodosBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiTodosBatchResponse(rsp)
+}
+
+// PatchApiTodosBatchWithBodyWithResponse request with arbitrary body returning *PatchApiTodosBatchResponse
+func (c *ClientWithResponses) PatchApiTodosBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApiTodosBatchResponse, error) {
+	rsp, err := c.PatchApiTodosBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApiTodosBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchApiTodosBatchWithResponse(ctx context.Context, body PatchApiTodosBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApiTodosBatchResponse, error) {
+	rsp, err := c.PatchApiTodosBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApiTodosBatchResponse(rsp)
 }
 
 // DeleteTodoWithResponse request returning *DeleteTodoResponse
@@ -22262,6 +23289,53 @@ func ParseCreateCommentResponse(rsp *http.Response) (*CreateCommentResponse, err
 	return response, nil
 }
 
+// ParseDeleteApiCommentsBatchResponse parses an HTTP response from a DeleteApiCommentsBatchWithResponse call
+func ParseDeleteApiCommentsBatchResponse(rsp *http.Response) (*DeleteApiCommentsBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiCommentsBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommentBatchDeleteResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeleteCommentResponse parses an HTTP response from a DeleteCommentWithResponse call
 func ParseDeleteCommentResponse(rsp *http.Response) (*DeleteCommentResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -22607,6 +23681,53 @@ func ParsePinDashboardLinkResponse(rsp *http.Response) (*PinDashboardLinkRespons
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiDashboardLinksPinBatchResponse parses an HTTP response from a PostApiDashboardLinksPinBatchWithResponse call
+func ParsePostApiDashboardLinksPinBatchResponse(rsp *http.Response) (*PostApiDashboardLinksPinBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiDashboardLinksPinBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -23983,6 +25104,86 @@ func ParseCreateTodoResponse(rsp *http.Response) (*CreateTodoResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IdResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApiTodosBatchResponse parses an HTTP response from a DeleteApiTodosBatchWithResponse call
+func ParseDeleteApiTodosBatchResponse(rsp *http.Response) (*DeleteApiTodosBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApiTodosBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TodoBatchDeleteResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchApiTodosBatchResponse parses an HTTP response from a PatchApiTodosBatchWithResponse call
+func ParsePatchApiTodosBatchResponse(rsp *http.Response) (*PatchApiTodosBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchApiTodosBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TodoCompletionBatchResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
