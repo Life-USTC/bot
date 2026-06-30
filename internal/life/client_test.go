@@ -442,6 +442,135 @@ func TestSetHomeworkCompletionRejectsBlankID(t *testing.T) {
 	}
 }
 
+func TestSetTodoCompletionsSendsBatch(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos/batch" || r.Method != http.MethodPatch {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.SetTodoCompletions(context.Background(), "token", []TodoCompletionItem{
+		{TodoID: "todo-1", Completed: true},
+		{TodoID: "todo-2", Completed: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, ok := gotBody["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("items = %#v", gotBody["items"])
+	}
+	first, _ := items[0].(map[string]any)
+	if first["todoId"] != "todo-1" || first["completed"] != true {
+		t.Fatalf("first item = %#v", first)
+	}
+	second, _ := items[1].(map[string]any)
+	if second["todoId"] != "todo-2" || second["completed"] != false {
+		t.Fatalf("second item = %#v", second)
+	}
+}
+
+func TestSetTodoCompletionsReturnsHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.SetTodoCompletions(context.Background(), "token", []TodoCompletionItem{{TodoID: "todo-1", Completed: true}})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSetHomeworkCompletionsSendsBatch(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/homeworks/completions" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	err := client.SetHomeworkCompletions(context.Background(), "token", []HomeworkCompletionItem{
+		{HomeworkID: "hw-1", Completed: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, ok := gotBody["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v", gotBody["items"])
+	}
+	first, _ := items[0].(map[string]any)
+	if first["homeworkId"] != "hw-1" || first["completed"] != true {
+		t.Fatalf("first item = %#v", first)
+	}
+}
+
+func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/calendar-subscriptions/import-codes" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"sections":[],"addedCount":0,"alreadySubscribedCount":0}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	out, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01", "CS1001.02"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, ok := gotBody["codes"].([]any)
+	if !ok || len(codes) != 2 || codes[0] != "MATH1001.01" || codes[1] != "CS1001.02" {
+		t.Fatalf("codes = %#v", gotBody["codes"])
+	}
+	if out["addedCount"] != float64(0) {
+		t.Fatalf("out = %#v", out)
+	}
+}
+
+func TestBulkSubscribeSectionsReturnsHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	_, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestCompletionBody(t *testing.T) {
 	for _, completed := range []bool{true, false} {
 		body, err := completionBody(completed)

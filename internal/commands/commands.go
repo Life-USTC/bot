@@ -1300,6 +1300,7 @@ func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, to
 }
 
 func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identity, token string, todos []map[string]any, targets []string, completed bool) string {
+	items := make([]life.TodoCompletionItem, 0, len(targets))
 	done := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
@@ -1308,11 +1309,23 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 			missing = append(missing, target)
 			continue
 		}
-		reply := h.setTodoCompletionItem(ctx, ident, token, todo, completed)
-		if strings.HasPrefix(reply, "待办完成失败：") || strings.HasPrefix(reply, "待办恢复失败：") || strings.Contains(reply, "没有可用 ID") {
-			return reply
+		id := lifedata.FirstString(todo, "id")
+		if id == "" {
+			return "这条待办没有可用 ID，暂时操作不了。"
 		}
-		done = append(done, strings.TrimPrefix(strings.TrimPrefix(reply, "已完成："), "已恢复："))
+		items = append(items, life.TodoCompletionItem{TodoID: id, Completed: completed})
+		done = append(done, lifedata.FirstString(todo, "title"))
+	}
+	if len(items) > 0 {
+		err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+			return h.Life.SetTodoCompletions(ctx, token, items)
+		})
+		if err != nil {
+			if completed {
+				return commandError("待办完成失败：", err)
+			}
+			return commandError("待办恢复失败：", err)
+		}
 	}
 	if len(done) == 0 {
 		if completed {
@@ -1823,6 +1836,7 @@ func homeworkCompletionReply(completed bool, title string) string {
 }
 
 func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Identity, token string, homeworks []map[string]any, targets []string, completed bool) string {
+	items := make([]life.HomeworkCompletionItem, 0, len(targets))
 	done := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
@@ -1831,11 +1845,20 @@ func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Ide
 			missing = append(missing, target)
 			continue
 		}
-		reply := h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
-		if strings.HasPrefix(reply, "作业状态更新失败：") || strings.Contains(reply, "没有可用 ID") {
-			return reply
+		id := lifedata.FirstString(homework, "id")
+		if id == "" {
+			return "这条作业没有可用 ID，暂时改不了。"
 		}
-		done = append(done, strings.TrimPrefix(strings.TrimPrefix(reply, "已完成作业："), "已取消完成："))
+		items = append(items, life.HomeworkCompletionItem{HomeworkID: id, Completed: completed})
+		done = append(done, lifedata.FirstString(homework, "title"))
+	}
+	if len(items) > 0 {
+		err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+			return h.Life.SetHomeworkCompletions(ctx, token, items)
+		})
+		if err != nil {
+			return commandError("作业状态更新失败：", err)
+		}
 	}
 	if len(done) == 0 {
 		return "没找到这些作业。发 作业 看编号，再试：作业 done 1,2,3"
@@ -2167,56 +2190,15 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	if !ok {
 		return h.loginRequired()
 	}
-	current, err := h.Life.CurrentSubscription(ctx, token)
-	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		token = refreshed
-		current, err = h.Life.CurrentSubscription(ctx, token)
-	}
-	if err != nil {
-		return commandError("日程订阅查不到：", err)
-	}
-	matches, err := h.Life.MatchSectionCodes(ctx, token, codes, "")
-	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		token = refreshed
-		matches, err = h.Life.MatchSectionCodes(ctx, token, codes, "")
-	}
-	if err != nil {
-		return commandError("教学班匹配失败：", err)
-	}
-	sections := matchSections(matches)
-	if len(sections) == 0 {
-		return formatBulkSubscriptionResult(matches, sections, codes, 0, 0)
-	}
-	existing := subscriptionSectionIDInts(current)
-	existingSet := make(map[int]bool, len(existing))
-	for _, id := range existing {
-		existingSet[id] = true
-	}
-	union := append([]int(nil), existing...)
-	added := 0
-	already := 0
-	for _, section := range sections {
-		id := lifedata.FirstInt(section, "id")
-		if id <= 0 {
-			continue
-		}
-		if existingSet[id] {
-			already++
-			continue
-		}
-		existingSet[id] = true
-		union = append(union, id)
-		added++
-	}
-	sort.Ints(union)
-	_, err = h.Life.ReplaceCalendarSubscription(ctx, token, union)
-	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		token = refreshed
-		_, err = h.Life.ReplaceCalendarSubscription(ctx, token, union)
-	}
+	matches, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.BulkSubscribeSections(ctx, token, codes)
+	})
 	if err != nil {
 		return commandError("订阅更新失败：", err)
 	}
+	sections := matchSections(matches)
+	added := lifedata.FirstInt(matches, "addedCount")
+	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
 	return formatBulkSubscriptionResult(matches, sections, nil, added, already)
 }
 
