@@ -16,10 +16,10 @@ import (
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	"golang.org/x/oauth2"
 )
 
 const oauthScope = "openid profile email offline_access rest:read rest:write"
-const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
 type Manager struct {
 	Server     string
@@ -33,15 +33,6 @@ type metadata struct {
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
 	RegistrationEndpoint        string `json:"registration_endpoint"`
-}
-
-type deviceAuthResponse struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int    `json:"expires_in"`
-	Interval                int    `json:"interval"`
 }
 
 type PollResult struct {
@@ -70,11 +61,21 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.postForm(ctx, meta.DeviceAuthorizationEndpoint, url.Values{
+
+	// DeviceAuth does not attach the context to the request, so we initiate the
+	// device authorization request manually to preserve context cancellation.
+	values := url.Values{
 		"client_id": {clientID},
 		"scope":     {oauthScope},
 		"resource":  {m.resource(meta)},
-	})
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meta.DeviceAuthorizationEndpoint, strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, err := m.httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("device authorization request failed: %w", err)
 	}
@@ -82,24 +83,33 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("device authorization failed (%d): %s", resp.StatusCode, responseBodyText(resp))
 	}
-	var out deviceAuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	var res oauth2.DeviceAuthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
+	}
+	if err := validateDeviceAuthResponse(&res); err != nil {
 		return nil, err
 	}
-	if err := validateDeviceAuthResponse(out); err != nil {
-		return nil, err
-	}
-	interval := out.Interval
+
+	interval := int(res.Interval)
 	if interval <= 0 {
 		interval = 5
 	}
+	expiresIn := 600
+	if !res.Expiry.IsZero() {
+		expiresIn = int(time.Until(res.Expiry).Seconds() + 0.5)
+		if expiresIn <= 0 {
+			expiresIn = 600
+		}
+	}
+
 	session := &store.LoginSession{
-		DeviceCode:              out.DeviceCode,
-		UserCode:                out.UserCode,
-		VerificationURI:         out.VerificationURI,
-		VerificationURIComplete: out.VerificationURIComplete,
+		DeviceCode:              res.DeviceCode,
+		UserCode:                res.UserCode,
+		VerificationURI:         res.VerificationURI,
+		VerificationURIComplete: res.VerificationURIComplete,
 		ClientID:                clientID,
-		ExpiresAt:               m.now().Add(time.Duration(out.ExpiresIn) * time.Second),
+		ExpiresAt:               m.now().Add(time.Duration(expiresIn) * time.Second),
 		IntervalSeconds:         interval,
 		Status:                  "pending",
 	}
@@ -109,15 +119,17 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 	return session, nil
 }
 
-func validateDeviceAuthResponse(resp deviceAuthResponse) error {
+func validateDeviceAuthResponse(resp *oauth2.DeviceAuthResponse) error {
 	switch {
+	case resp == nil:
+		return errors.New("device authorization response missing")
 	case resp.DeviceCode == "":
 		return errors.New("device authorization response missing device_code")
 	case resp.UserCode == "":
 		return errors.New("device authorization response missing user_code")
 	case resp.VerificationURI == "" && resp.VerificationURIComplete == "":
 		return errors.New("device authorization response missing verification_uri")
-	case resp.ExpiresIn <= 0:
+	case resp.Expiry.IsZero():
 		return errors.New("device authorization response missing expires_in")
 	default:
 		return nil
@@ -140,55 +152,57 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	}
+
 	meta, err := m.discover(ctx)
 	if err != nil {
 		return PollResult{}, err
 	}
-	resp, err := m.postForm(ctx, meta.TokenEndpoint, url.Values{
-		"grant_type":  {deviceGrantType},
-		"client_id":   {session.ClientID},
-		"device_code": {session.DeviceCode},
-		"resource":    {m.resource(meta)},
-	})
+
+	conf := m.oauth2Config(meta, session.ClientID)
+	// DeviceAccessToken uses real time for its internal deadline; convert the
+	// manager-clock-relative expiration to a real future time.
+	remaining := session.ExpiresAt.Sub(m.now())
+	if remaining <= 0 {
+		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
+		return PollResult{Message: "验证码已过期。发送：登录"}, nil
+	}
+	dar := &oauth2.DeviceAuthResponse{
+		DeviceCode:              session.DeviceCode,
+		UserCode:                session.UserCode,
+		VerificationURI:         session.VerificationURI,
+		VerificationURIComplete: session.VerificationURIComplete,
+		Expiry:                  time.Now().Add(remaining),
+		Interval:                int64(session.IntervalSeconds),
+	}
+
+	pollTimeout := time.Duration(session.IntervalSeconds)*time.Second + time.Second
+	if pollTimeout <= 0 {
+		pollTimeout = 6 * time.Second
+	}
+	pollCtx, cancel := context.WithTimeout(m.oidcContext(ctx), pollTimeout)
+	defer cancel()
+
+	tok, err := conf.DeviceAccessToken(pollCtx, dar, oauth2.SetAuthURLParam("resource", m.resource(meta)))
+	if err != nil {
+		return m.mapPollError(ctx, ident, *session, err)
+	}
+
+	issuer := m.expectedIssuer(meta)
+	audience := m.serverURL()
+	vt := newVerifiedToken(tok)
+	if err := vt.ValidateIDToken(issuer, audience); err != nil {
+		return PollResult{}, err
+	}
+
+	cred, err := verifiedTokenToCredential(session.ClientID, m.resource(meta), vt, "", "", m.now())
 	if err != nil {
 		return PollResult{}, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return PollResult{}, fmt.Errorf("token poll response read failed: %w", err)
+	if err := authStore.SaveCredential(ctx, ident, cred); err != nil {
+		return PollResult{}, err
 	}
-	if resp.StatusCode == http.StatusOK {
-		cred, err := credentialFromTokenBodyAt(session.ClientID, m.resource(meta), body, "", "", m.now())
-		if err != nil {
-			return PollResult{}, err
-		}
-		if err := authStore.SaveCredential(ctx, ident, cred); err != nil {
-			return PollResult{}, err
-		}
-		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
-		return PollResult{Authorized: true, Message: "登录完成。"}, nil
-	}
-	var errResp struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &errResp); err != nil {
-		return PollResult{}, fmt.Errorf("token poll returned invalid JSON (%d): %w", resp.StatusCode, err)
-	}
-	switch errResp.Error {
-	case "authorization_pending":
-		return PollResult{Pending: true, Message: "等待确认登录。"}, nil
-	case "slow_down":
-		return PollResult{SlowDown: true, Message: "轮询频率受限，稍后继续检查。"}, nil
-	case "expired_token":
-		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "验证码已过期。发送：登录"}, nil
-	case "access_denied":
-		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
-		return PollResult{Message: "登录已取消。发送：登录"}, nil
-	default:
-		return PollResult{}, fmt.Errorf("token poll failed (%d): %s", resp.StatusCode, bodyText(body))
-	}
+	_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
+	return PollResult{Authorized: true, Message: "登录完成。"}, nil
 }
 
 func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string, error) {
@@ -235,24 +249,25 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if err != nil {
 		return store.Credential{}, err
 	}
-	values := url.Values{
-		"grant_type":    {"refresh_token"},
-		"client_id":     {cred.ClientID},
-		"refresh_token": {cred.RefreshToken},
+	conf := m.oauth2Config(meta, cred.ClientID)
+	token := &oauth2.Token{
+		RefreshToken: cred.RefreshToken,
+		Expiry:       m.now().Add(-time.Hour),
 	}
-	resp, err := m.postForm(ctx, meta.TokenEndpoint, values)
+
+	ctx = m.oidcContext(ctx)
+	tok, err := conf.TokenSource(ctx, token).Token()
 	if err != nil {
+		return store.Credential{}, m.mapRefreshError(err)
+	}
+
+	issuer := m.expectedIssuer(meta)
+	audience := m.serverURL()
+	vt := newVerifiedToken(tok)
+	if err := vt.ValidateIDToken(issuer, audience); err != nil {
 		return store.Credential{}, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return store.Credential{}, fmt.Errorf("refresh response read failed: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return store.Credential{}, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, bodyText(body))
-	}
-	return credentialFromTokenBodyAt(cred.ClientID, m.resource(meta), body, cred.RefreshToken, cred.Scope, m.now())
+	return verifiedTokenToCredential(cred.ClientID, m.resource(meta), vt, cred.RefreshToken, cred.Scope, m.now())
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
@@ -322,7 +337,7 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 		"client_name":                "life-ustc-onebot",
 		"redirect_uris":              []string{"http://localhost/callback"},
 		"token_endpoint_auth_method": "none",
-		"grant_types":                []string{"authorization_code", "refresh_token", deviceGrantType},
+		"grant_types":                []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"},
 		"response_types":             []string{"code"},
 		"scope":                      oauthScope,
 	}
@@ -355,13 +370,74 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 	return result.ClientID, nil
 }
 
-func (m *Manager) postForm(ctx context.Context, endpoint string, values url.Values) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
-	if err != nil {
-		return nil, err
+func (m *Manager) oauth2Config(meta metadata, clientID string) oauth2.Config {
+	return oauth2.Config{
+		ClientID: clientID,
+		Scopes:   strings.Fields(oauthScope),
+		Endpoint: oauth2.Endpoint{
+			DeviceAuthURL: meta.DeviceAuthorizationEndpoint,
+			TokenURL:      meta.TokenEndpoint,
+		},
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return m.httpClient().Do(req)
+}
+
+func (m *Manager) oidcContext(ctx context.Context) context.Context {
+	client := m.httpClient()
+	wrapped := &http.Client{
+		Timeout:   client.Timeout,
+		Transport: wrapJSONContentTypeTransport(client.Transport),
+	}
+	return context.WithValue(ctx, oauth2.HTTPClient, wrapped)
+}
+
+func (m *Manager) expectedIssuer(meta metadata) string {
+	if iss := strings.TrimSpace(meta.Issuer); iss != "" {
+		return strings.TrimRight(iss, "/")
+	}
+	return m.serverURL()
+}
+
+func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, session store.LoginSession, err error) (PollResult, error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return PollResult{Pending: true, Message: "等待确认登录。"}, nil
+	}
+
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) {
+		switch re.ErrorCode {
+		case "authorization_pending":
+			return PollResult{Pending: true, Message: "等待确认登录。"}, nil
+		case "slow_down":
+			return PollResult{SlowDown: true, Message: "轮询频率受限，稍后继续检查。"}, nil
+		case "expired_token":
+			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
+			return PollResult{Message: "验证码已过期。发送：登录"}, nil
+		case "access_denied":
+			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
+			return PollResult{Message: "登录已取消。发送：登录"}, nil
+		}
+
+		status := 0
+		if re.Response != nil {
+			status = re.Response.StatusCode
+		}
+		if status == http.StatusBadRequest && !json.Valid(re.Body) {
+			return PollResult{}, fmt.Errorf("token poll returned invalid JSON (%d): %w", status, err)
+		}
+	}
+
+	if msg := err.Error(); strings.Contains(msg, "read failed") {
+		return PollResult{}, fmt.Errorf("token poll response read failed: %w", err)
+	}
+
+	return PollResult{}, fmt.Errorf("token poll failed: %w", err)
+}
+
+func (m *Manager) mapRefreshError(err error) error {
+	if msg := err.Error(); strings.Contains(msg, "read failed") {
+		return fmt.Errorf("refresh response read failed: %w", err)
+	}
+	return err
 }
 
 func (m *Manager) resource(meta metadata) string {
