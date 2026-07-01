@@ -58,7 +58,7 @@ func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now time.Time) 
 	if t == nil || t.IDToken == "" {
 		return nil
 	}
-	parsed, err := jwt.ParseSigned(t.IDToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
+	parsed, err := jwt.ParseSigned(t.IDToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256, jose.EdDSA})
 	if err != nil {
 		return fmt.Errorf("invalid id_token: %w", err)
 	}
