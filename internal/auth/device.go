@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -276,19 +277,11 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if err != nil {
 		return store.Credential{}, err
 	}
-	conf := m.oauth2Config(meta, cred.ClientID)
-	token := &oauth2.Token{
-		RefreshToken: cred.RefreshToken,
-		Expiry:       m.now().Add(-time.Hour),
+	resource := strings.TrimSpace(cred.Resource)
+	if resource == "" {
+		resource = m.resource(meta)
 	}
-
-	ctx = m.oidcContext(ctx)
-	// NOTE: golang.org/x/oauth2.TokenSource does not support extra parameters on
-	// refresh. The server's resource validation only runs when a resource is
-	// explicitly supplied, so omitting it is safe for this provider. If the
-	// server later requires a resource indicator on refresh, implement a custom
-	// token source that includes it in the refresh_token grant request.
-	tok, err := conf.TokenSource(ctx, token).Token()
+	tok, err := m.refreshTokenRequest(ctx, meta.TokenEndpoint, cred.ClientID, cred.RefreshToken, cred.Scope, resource)
 	if err != nil {
 		return store.Credential{}, m.mapRefreshError(err)
 	}
@@ -300,6 +293,83 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 		return store.Credential{}, err
 	}
 	return verifiedTokenToCredential(cred.ClientID, m.resource(meta), vt, cred.RefreshToken, cred.Scope, m.now())
+}
+
+func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, refreshToken, scope, resource string) (*oauth2.Token, error) {
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	form.Set("client_id", clientID)
+	if scope = strings.TrimSpace(scope); scope != "" {
+		form.Set("scope", scope)
+	}
+	if resource = strings.TrimSpace(resource); resource != "" {
+		form.Set("resource", resource)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.httpClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("token refresh returned %d with invalid JSON", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if desc, _ := raw["error_description"].(string); strings.TrimSpace(desc) != "" {
+			return nil, fmt.Errorf("%s", strings.TrimSpace(desc))
+		}
+		if code, _ := raw["error"].(string); strings.TrimSpace(code) != "" {
+			return nil, fmt.Errorf("%s", strings.TrimSpace(code))
+		}
+		return nil, fmt.Errorf("token refresh failed with status %d", resp.StatusCode)
+	}
+
+	accessToken, _ := raw["access_token"].(string)
+	tokenType, _ := raw["token_type"].(string)
+	nextRefreshToken, _ := raw["refresh_token"].(string)
+	expiresIn := tokenExpiresInFromRaw(raw)
+	tok := &oauth2.Token{
+		AccessToken:  strings.TrimSpace(accessToken),
+		TokenType:    strings.TrimSpace(tokenType),
+		RefreshToken: strings.TrimSpace(nextRefreshToken),
+		ExpiresIn:    int64(expiresIn),
+	}
+	if expiresIn > 0 {
+		tok.Expiry = m.now().Add(time.Duration(expiresIn) * time.Second)
+	}
+	return tok.WithExtra(raw), nil
+}
+
+func tokenExpiresInFromRaw(raw map[string]any) int {
+	switch v := raw["expires_in"].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case string:
+		if n, err := parseIntString(v); err == nil && n > 0 {
+			return int(n)
+		}
+	}
+	return 0
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
