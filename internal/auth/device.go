@@ -342,7 +342,12 @@ func (m *Manager) requireStore() (*store.Store, error) {
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
 	var lastErr error
 	server := m.serverURL()
-	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
+	for _, path := range []string{
+		"/.well-known/oauth-authorization-server/api/auth",
+		"/api/auth/.well-known/openid-configuration",
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/openid-configuration",
+	} {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server+path, nil)
 		if err != nil {
 			return metadata{}, err
