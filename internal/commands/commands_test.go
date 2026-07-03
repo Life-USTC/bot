@@ -601,8 +601,7 @@ func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
-			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case handleOAuthRefreshMetadata(w, r, serverURL):
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
 			w.Header().Set("Content-Type", "application/json")
@@ -1605,8 +1604,7 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
-			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case handleOAuthRefreshMetadata(w, r, serverURL):
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
@@ -1652,8 +1650,7 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
-			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case handleOAuthRefreshMetadata(w, r, serverURL):
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
 			w.Header().Set("Content-Type", "application/json")
@@ -1991,8 +1988,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/.well-known/oauth-authorization-server":
-			_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		case handleOAuthRefreshMetadata(w, r, serverURL):
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
@@ -2581,6 +2577,22 @@ func testAuthedHandlerWithCredential(t *testing.T, server *httptest.Server, iden
 		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
 		Store:  s,
 		Prefix: "/life",
+	}
+}
+
+func handleOAuthRefreshMetadata(w http.ResponseWriter, r *http.Request, serverURL string) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	switch r.URL.Path {
+	case "/.well-known/oauth-authorization-server/api/auth",
+		"/api/auth/.well-known/openid-configuration",
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/openid-configuration":
+		_, _ = fmt.Fprintf(w, `{"issuer":%q,"token_endpoint":%q}`, serverURL, serverURL+"/token")
+		return true
+	default:
+		return false
 	}
 }
 
