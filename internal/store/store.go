@@ -30,7 +30,8 @@ type Credential struct {
 	TokenType    string
 	ExpiresAt    time.Time
 	Scope        string
-	Resource     string
+	// Resource is a space-separated list of requested OAuth resource indicators.
+	Resource string
 }
 
 type LoginSession struct {
@@ -43,6 +44,9 @@ type LoginSession struct {
 	IntervalSeconds         int
 	Status                  string
 	Identity                Identity
+	// Resources is a space-separated list of OAuth resource indicators requested
+	// during device authorization.
+	Resources string
 }
 
 type Interaction struct {
@@ -181,6 +185,7 @@ type loginSessionRow struct {
 	VerificationURI         string
 	VerificationURIComplete string
 	ClientID                string
+	Resources               string
 	ExpiresAt               time.Time `gorm:"not null;index:idx_login_sessions_user_status"`
 	IntervalSeconds         int
 	Status                  string `gorm:"not null;index:idx_login_sessions_user_status"`
@@ -616,6 +621,7 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 			VerificationURI:         session.VerificationURI,
 			VerificationURIComplete: session.VerificationURIComplete,
 			ClientID:                session.ClientID,
+			Resources:               session.Resources,
 			ExpiresAt:               session.ExpiresAt.UTC(),
 			IntervalSeconds:         session.IntervalSeconds,
 			Status:                  session.Status,
@@ -632,6 +638,7 @@ func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
 	session.VerificationURI = strings.TrimSpace(session.VerificationURI)
 	session.VerificationURIComplete = strings.TrimSpace(session.VerificationURIComplete)
 	session.ClientID = strings.TrimSpace(session.ClientID)
+	session.Resources = strings.Join(strings.Fields(session.Resources), " ")
 	session.Status = strings.TrimSpace(session.Status)
 	if session.DeviceCode == "" {
 		return LoginSession{}, errors.New("login session device code is empty")
@@ -669,6 +676,7 @@ func (s *Store) ActiveLoginSession(ctx context.Context, ident Identity) (*LoginS
 		VerificationURI:         row.VerificationURI,
 		VerificationURIComplete: row.VerificationURIComplete,
 		ClientID:                row.ClientID,
+		Resources:               row.Resources,
 		ExpiresAt:               row.ExpiresAt,
 		IntervalSeconds:         row.IntervalSeconds,
 		Status:                  row.Status,
@@ -713,6 +721,7 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 			VerificationURI:         row.VerificationURI,
 			VerificationURIComplete: row.VerificationURIComplete,
 			ClientID:                row.ClientID,
+			Resources:               row.Resources,
 			ExpiresAt:               row.ExpiresAt,
 			IntervalSeconds:         row.IntervalSeconds,
 			Status:                  row.Status,

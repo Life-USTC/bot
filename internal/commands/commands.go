@@ -34,12 +34,6 @@ type Handler struct {
 
 var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
 
-type AgentToolSpec struct {
-	Name        string
-	Description string
-	CommandText string
-}
-
 type CommandSpec struct {
 	Name       string
 	Aliases    []string
@@ -48,7 +42,6 @@ type CommandSpec struct {
 	NeedsStore bool
 	NeedsAuth  bool
 	Normalize  func([]string) []string
-	AgentTools []AgentToolSpec
 	Run        func(Handler, context.Context, store.Identity, []string) string
 }
 
@@ -56,7 +49,6 @@ func CommandSpecs() []CommandSpec {
 	specs := append([]CommandSpec(nil), commandSpecs...)
 	for i := range specs {
 		specs[i].Aliases = append([]string(nil), specs[i].Aliases...)
-		specs[i].AgentTools = append([]AgentToolSpec(nil), specs[i].AgentTools...)
 	}
 	return specs
 }
@@ -213,11 +205,6 @@ var commandSpecs = []CommandSpec{
 		Aliases:   []string{"me", "我", "我的", "profile", "个人"},
 		NeedsLife: true,
 		NeedsAuth: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_profile",
-			Description: "Get the logged-in user's profile status.",
-			CommandText: "我",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.me(ctx, ident)
 		},
@@ -229,11 +216,6 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeTodoArgs,
-		AgentTools: []AgentToolSpec{{
-			Name:        "list_todos",
-			Description: "List the user's pending todos.",
-			CommandText: "待办",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.todo(ctx, ident, args)
 		},
@@ -254,11 +236,6 @@ var commandSpecs = []CommandSpec{
 		Aliases:   []string{"overview", "today", "jr", "ddl", "deadline", "deadlines", "今日", "今天", "安排", "日程安排"},
 		NeedsLife: true,
 		NeedsAuth: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_today_overview",
-			Description: "Get today's classes plus pending todos, due-soon homework, and upcoming exams.",
-			CommandText: "今日",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.overview(ctx, ident)
 		},
@@ -270,11 +247,6 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeSubscriptionArgs,
-		AgentTools: []AgentToolSpec{{
-			Name:        "list_subscriptions",
-			Description: "List the user's current calendar section subscriptions.",
-			CommandText: "订阅",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.subscription(ctx, ident, args)
 		},
@@ -285,11 +257,6 @@ var commandSpecs = []CommandSpec{
 		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeNotifyArgs,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_notification_settings",
-			Description: "Get the user's active push notification settings for upcoming classes and homework reminders.",
-			CommandText: "通知",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
 		},
@@ -327,11 +294,6 @@ var commandSpecs = []CommandSpec{
 		Name:      "status",
 		Aliases:   []string{"status", "zt", "状态"},
 		NeedsLife: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_bot_status",
-			Description: "Get Life API reachability and login status.",
-			CommandText: "状态",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.status(ctx, ident)
 		},
@@ -340,11 +302,6 @@ var commandSpecs = []CommandSpec{
 		Name:      "semester",
 		Aliases:   []string{"semester", "term", "学期", "xq"},
 		NeedsLife: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_current_semester",
-			Description: "Get the current Life USTC semester.",
-			CommandText: "学期",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.currentSemester(ctx)
 		},
@@ -389,11 +346,6 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeScheduleArgs,
-		AgentTools: []AgentToolSpec{
-			{Name: "get_two_day_curriculum", Description: "Get the user's curriculum for today and tomorrow.", CommandText: "课表"},
-			{Name: "get_today_curriculum", Description: "Get the user's curriculum for today.", CommandText: "课表 今天"},
-			{Name: "get_tomorrow_curriculum", Description: "Get the user's curriculum for tomorrow.", CommandText: "课表 明天"},
-		},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.curriculum(ctx, ident, args)
 		},
@@ -403,11 +355,6 @@ var commandSpecs = []CommandSpec{
 		Aliases:   []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
 		NeedsLife: true,
 		NeedsAuth: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "get_next_class",
-			Description: "Get the user's next upcoming class.",
-			CommandText: "下一节课",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.nextClass(ctx, ident)
 		},
@@ -417,11 +364,6 @@ var commandSpecs = []CommandSpec{
 		Aliases:   []string{"exam", "exams", "ks", "考试"},
 		NeedsLife: true,
 		NeedsAuth: true,
-		AgentTools: []AgentToolSpec{{
-			Name:        "list_exams",
-			Description: "List exams from the user's subscribed teaching sections.",
-			CommandText: "考试",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.exams(ctx, ident)
 		},

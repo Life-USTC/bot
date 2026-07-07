@@ -13,10 +13,12 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
-	"github.com/Life-USTC/Bot/internal/life"
+	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -138,55 +140,30 @@ func TestAgentToolConstruction(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	svc := &Service{handler: commands.Handler{
-		Life:  life.NewClient("https://life.example", &http.Client{}),
-		Auth:  &auth.Manager{Store: db},
-		Store: db,
-	}}
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveCredential(context.Background(), ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "access",
+		RefreshToken: "refresh",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mcpURL, mcpHTTPClient, closeMCP := newAgentMCPTestServer(t)
+	defer closeMCP()
+
+	svc := &Service{
+		handler:   commands.Handler{Store: db},
+		auth:      &auth.Manager{Store: db},
+		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
+	}
 	assertAgentToolNames(t, svc,
-		"add_todo",
-		"bulk_subscribe_sections",
-		"complete_homework",
-		"complete_todo",
-		"delete_todo",
-		"get_bot_status",
-		"get_course_by_jw_id",
 		"get_current_semester",
 		"get_current_time",
-		"get_curriculum_for_date",
-		"get_my_dashboard",
-		"get_next_bus",
-		"get_next_class",
-		"get_notification_settings",
-		"get_profile",
-		"get_section_by_jw_id",
-		"get_teacher_by_id",
-		"get_today_curriculum",
-		"get_today_overview",
-		"get_tomorrow_curriculum",
-		"get_two_day_curriculum",
-		"get_upcoming_deadlines",
-		"list_bus_routes",
-		"list_exams",
-		"list_exams_by_section",
-		"list_filtered_todos",
-		"list_homeworks",
-		"list_homeworks_by_section",
-		"list_my_subscribed_sections",
-		"list_schedules_by_section",
-		"list_semesters",
-		"list_subscriptions",
-		"list_todos",
+		"list_my_homeworks",
 		"record_bot_feedback",
-		"search_courses",
-		"search_sections",
-		"search_teachers",
 		"send_message_part",
-		"set_notification_settings",
-		"undo_homework_completion",
-		"undo_todo_completion",
-		"unsubscribe_section_by_jw_id",
-		"update_todo",
+		"search_courses",
 	)
 }
 
@@ -206,25 +183,34 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
-		"get_notification_settings",
 		"record_bot_feedback",
 		"send_message_part",
-		"set_notification_settings",
 	)
 }
 
-func TestAppendCommandBackedToolRejectsUnknownCommand(t *testing.T) {
-	_, err := appendCommandBackedTool(&Service{}, map[string]commands.CommandSpec{}, nil, "missing", "bad_tool", "Bad tool.", nil, func(context.Context, emptyInput) (string, error) {
-		return "", nil
-	})
-	if err == nil || !strings.Contains(err.Error(), `unknown command "missing"`) {
-		t.Fatalf("error = %v", err)
+func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	svc := &Service{
+		enabled:   true,
+		handler:   commands.Handler{Store: db},
+		auth:      &auth.Manager{Store: db},
+		mcpClient: botmcp.New("http://127.0.0.1:1/api/mcp", http.DefaultClient),
+	}
+	reply, ok := svc.Handle(context.Background(), Input{Text: "帮我看看作业", Identity: ident})
+	if !ok || reply != "需要先登录。发送：登录" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, err := svc.toolsFor(store.Identity{ConversationType: "private"}, nil, func(context.Context, store.Identity, string) error {
+	tools, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
 		return nil
 	})
 	if err != nil {
@@ -244,6 +230,24 @@ func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	return names
 }
 
+func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func()) {
+	t.Helper()
+	mcpServer := mcpserver.NewMCPServer("agent-test", "1.0.0")
+	for _, tool := range []mcpgo.Tool{
+		mcpgo.NewTool("list_my_homeworks", mcpgo.WithDescription("List my homeworks.")),
+		mcpgo.NewTool("search_courses", mcpgo.WithDescription("Search courses.")),
+		mcpgo.NewTool("get_current_semester", mcpgo.WithDescription("Get current semester.")),
+	} {
+		tool := tool
+		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return mcpgo.NewToolResultText(`{"ok":true}`), nil
+		})
+	}
+	handler := mcpserver.NewStreamableHTTPServer(mcpServer)
+	server := httptest.NewServer(handler)
+	return server.URL, server.Client(), server.Close
+}
+
 func assertAgentToolNames(t *testing.T, svc *Service, wantNames ...string) {
 	t.Helper()
 	names := agentToolNames(t, svc)
@@ -259,72 +263,6 @@ func assertAgentToolNames(t *testing.T, svc *Service, wantNames ...string) {
 		if !names[name] {
 			t.Fatalf("missing tool %q; tools = %#v", name, names)
 		}
-	}
-}
-
-func TestRequiredToolArgTrimsAndRejectsBlank(t *testing.T) {
-	got, err := requiredToolArg("keyword", "  计算机网络  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "计算机网络" {
-		t.Fatalf("arg = %q", got)
-	}
-	_, err = requiredToolArg("keyword", " \t\n ")
-	if err == nil || !strings.Contains(err.Error(), "keyword") {
-		t.Fatalf("blank arg error = %v", err)
-	}
-}
-
-func TestRequiredCommandToolTrimsArgAndRunsCommand(t *testing.T) {
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	svc := &Service{handler: commands.Handler{Store: db}}
-	fn := requiredCommandTool[targetInput](svc, ident, "target", "通知 ", func(input targetInput) string {
-		return input.Target
-	})
-	reply, err := fn(context.Background(), targetInput{Target: " 作业 开 "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(reply, "作业提醒：开") {
-		t.Fatalf("reply = %q", reply)
-	}
-	settings, err := db.NotificationSettings(context.Background(), ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !settings.HomeworkEnabled {
-		t.Fatalf("settings = %#v", settings)
-	}
-}
-
-func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
-	if got := busCommandText(busInput{From: " 东区 ", To: " 西区 "}); got != "校车 东区 西区" {
-		t.Fatalf("busCommandText = %q", got)
-	}
-	if got := busCommandText(busInput{From: "  ", To: "\t"}); got != "校车" {
-		t.Fatalf("blank busCommandText = %q", got)
-	}
-	if got := busCommandText(busInput{To: " 西区 "}); got != "校车 到 西区" {
-		t.Fatalf("to-only busCommandText = %q", got)
-	}
-	if got := busCommandText(busInput{From: "高新区", To: "东区", After: "2026-06-09T09:25:00+08:00"}); got != "校车 高新区 东区 after 2026-06-09T09:25:00+08:00" {
-		t.Fatalf("after busCommandText = %q", got)
-	}
-}
-
-func TestListHomeworksCommandTextBuildsSemesterFilter(t *testing.T) {
-	if got := listHomeworksCommandText(listHomeworksInput{}); got != "作业" {
-		t.Fatalf("default = %q", got)
-	}
-	if got := listHomeworksCommandText(listHomeworksInput{IncludeCompleted: true, SemesterID: 7}); got != "作业 all semester_id 7" {
-		t.Fatalf("semester_id = %q", got)
 	}
 }
 
@@ -352,81 +290,6 @@ func TestToolErrorCatchingMiddlewareReturnsErrorAsResult(t *testing.T) {
 	}
 }
 
-func TestResolveHomeworkSemesterInputResolvesNameToID(t *testing.T) {
-	ctx := context.Background()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/semesters" || r.Method != http.MethodGet {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"data":[{"id":2,"jwId":202501,"namePrimary":"2026年春季学期"}]}`))
-	}))
-	defer server.Close()
-
-	svc := &Service{handler: commands.Handler{Life: life.NewClient(server.URL, server.Client())}}
-	resolved, err := svc.resolveHomeworkSemesterInput(ctx, listHomeworksInput{SemesterName: "2026年春季学期"})
-	if err != nil {
-		t.Fatalf("resolve error = %v", err)
-	}
-	if resolved.SemesterID != 2 || resolved.SemesterName != "" {
-		t.Fatalf("resolved = %+v", resolved)
-	}
-
-	_, err = svc.resolveHomeworkSemesterInput(ctx, listHomeworksInput{SemesterName: "不存在的学期"})
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("missing semester error = %v", err)
-	}
-}
-
-func TestRequiredConfirmationToolDoesNotRunCommand(t *testing.T) {
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	svc := &Service{handler: commands.Handler{Store: db}}
-	fn := requiredConfirmationTool(svc, ident, "target", "待办 delete ", func(input targetInput) string {
-		return input.Target
-	})
-	reply, err := fn(context.Background(), targetInput{Target: " 测试 "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(reply, "不会自动执行") || !strings.Contains(reply, "回复 ok 确认") || !strings.Contains(reply, "待办 delete 测试") {
-		t.Fatalf("reply = %q", reply)
-	}
-	pending, err := db.ActivePendingConfirmation(context.Background(), ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending == nil || pending.Command != "待办 delete 测试" {
-		t.Fatalf("pending = %#v", pending)
-	}
-}
-
-func TestNotificationKindCommandArgAcceptsCommandAliases(t *testing.T) {
-	tests := map[string]string{
-		" classes ": "课表",
-		"kb":        "课表",
-		"课表":        "课表",
-		"作业":        "作业",
-		"HW":        "作业",
-	}
-	for input, want := range tests {
-		got, err := notificationKindCommandArg(input)
-		if err != nil {
-			t.Fatalf("%q error = %v", input, err)
-		}
-		if got != want {
-			t.Fatalf("%q = %q, want %q", input, got, want)
-		}
-	}
-	_, err := notificationKindCommandArg("bus")
-	if err == nil || !strings.Contains(err.Error(), "unsupported notification kind") {
-		t.Fatalf("unsupported kind error = %v", err)
-	}
-}
-
 func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	var messages []string
@@ -441,7 +304,9 @@ func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 		},
 	}
 
-	trace.Notify(context.Background(), "search_courses", keywordInput{Keyword: "数学分析"}, "课程：数学分析\n教师：张三", nil)
+	trace.Notify(context.Background(), "search_courses", struct {
+		Keyword string `json:"keyword"`
+	}{Keyword: "数学分析"}, "课程：数学分析\n教师：张三", nil)
 	trace.Notify(context.Background(), "get_current_time", emptyInput{}, "", nil)
 	if len(messages) != 2 {
 		t.Fatalf("messages = %#v", messages)

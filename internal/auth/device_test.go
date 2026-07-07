@@ -83,6 +83,11 @@ func TestDeviceLoginFlow(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
 	})
 	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		wantResources := []string{serverURL, serverURL + "/api/mcp"}
+		if got := r.Form["resource"]; strings.Join(got, " ") != strings.Join(wantResources, " ") {
+			t.Fatalf("device resources = %#v, want %#v", got, wantResources)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code":               "device",
 			"user_code":                 "USER-CODE",
@@ -96,6 +101,10 @@ func TestDeviceLoginFlow(t *testing.T) {
 		_ = r.ParseForm()
 		if r.Form.Get("device_code") != "device" {
 			t.Fatalf("device_code = %q", r.Form.Get("device_code"))
+		}
+		wantResources := []string{serverURL, serverURL + "/api/mcp"}
+		if got := r.Form["resource"]; strings.Join(got, " ") != strings.Join(wantResources, " ") {
+			t.Fatalf("token resources = %#v, want %#v", got, wantResources)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		idToken := mustSignIDToken(t, map[string]any{
@@ -133,6 +142,9 @@ func TestDeviceLoginFlow(t *testing.T) {
 	if session.UserCode != "USER-CODE" {
 		t.Fatalf("session = %#v", session)
 	}
+	if want := server.URL + " " + server.URL + "/api/mcp"; session.Resources != want {
+		t.Fatalf("session resources = %q, want %q", session.Resources, want)
+	}
 	if want := now.Add(600 * time.Second); !session.ExpiresAt.Equal(want) {
 		t.Fatalf("session expires_at = %s, want %s", session.ExpiresAt, want)
 	}
@@ -149,6 +161,13 @@ func TestDeviceLoginFlow(t *testing.T) {
 	}
 	if token != "access" {
 		t.Fatalf("token = %q", token)
+	}
+	cred, err := s.Credential(context.Background(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := server.URL + " " + server.URL + "/api/mcp"; cred == nil || cred.Resource != want {
+		t.Fatalf("credential resource = %#v, want %q", cred, want)
 	}
 }
 
@@ -699,6 +718,10 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		if r.Form.Get("refresh_token") != "refresh" {
 			t.Fatalf("refresh_token = %q", r.Form.Get("refresh_token"))
 		}
+		wantResources := []string{serverURL, serverURL + "/api/mcp"}
+		if got := r.Form["resource"]; strings.Join(got, " ") != strings.Join(wantResources, " ") {
+			t.Fatalf("refresh resources = %#v, want %#v", got, wantResources)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		idToken := mustSignIDToken(t, map[string]any{
 			"iss": serverURL,
@@ -734,7 +757,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		RefreshToken: "refresh",
 		TokenType:    "Bearer",
 		ExpiresAt:    now.Add(time.Hour),
-		Resource:     server.URL,
+		Resource:     server.URL + " " + server.URL + "/api/mcp",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -753,6 +776,9 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 	}
 	if cred == nil || cred.AccessToken != "new-access" || cred.RefreshToken != "new-refresh" {
 		t.Fatalf("credential = %#v", cred)
+	}
+	if want := server.URL + " " + server.URL + "/api/mcp"; cred.Resource != want {
+		t.Fatalf("credential resource = %q, want %q", cred.Resource, want)
 	}
 	if want := now.Add(time.Hour); !cred.ExpiresAt.Equal(want) {
 		t.Fatalf("expires_at = %s, want %s", cred.ExpiresAt, want)

@@ -205,7 +205,6 @@ func TestFriendlyError(t *testing.T) {
 func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
 	aliases := map[string]string{}
-	agentTools := map[string]string{}
 	handler := Handler{Prefix: "/life"}
 	lifeCommands := map[string]bool{
 		"me":                           true,
@@ -310,28 +309,6 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
 			}
 		}
-		for _, tool := range spec.AgentTools {
-			if strings.TrimSpace(tool.Name) == "" {
-				t.Fatalf("command %q has agent tool with empty name", spec.Name)
-			}
-			if strings.TrimSpace(tool.Description) == "" {
-				t.Fatalf("agent tool %q for %q has empty description", tool.Name, spec.Name)
-			}
-			if strings.TrimSpace(tool.CommandText) == "" {
-				t.Fatalf("agent tool %q for %q has empty command text", tool.Name, spec.Name)
-			}
-			if owner, ok := agentTools[tool.Name]; ok {
-				t.Fatalf("agent tool %q for %q already belongs to %q", tool.Name, spec.Name, owner)
-			}
-			parsed, ok := handler.parse(tool.CommandText)
-			if !ok {
-				t.Fatalf("agent tool %q for %q command text %q was not parsed", tool.Name, spec.Name, tool.CommandText)
-			}
-			if parsed.Name != spec.Name {
-				t.Fatalf("agent tool %q command text parsed as %q, want %q", tool.Name, parsed.Name, spec.Name)
-			}
-			agentTools[tool.Name] = spec.Name
-		}
 		if spec.Name == "schedule" {
 			for _, alias := range spec.Aliases {
 				parsed, ok := handler.parse(alias + "今天")
@@ -354,33 +331,23 @@ func TestCommandSpecsReturnsIsolatedSlices(t *testing.T) {
 		t.Fatal("missing command specs")
 	}
 	aliasIndex := -1
-	toolIndex := -1
 	for i, spec := range specs {
 		if len(spec.Aliases) > 0 && aliasIndex == -1 {
 			aliasIndex = i
 		}
-		if len(spec.AgentTools) > 0 && toolIndex == -1 {
-			toolIndex = i
-		}
 	}
-	if aliasIndex == -1 || toolIndex == -1 {
-		t.Fatalf("aliasIndex = %d, toolIndex = %d", aliasIndex, toolIndex)
+	if aliasIndex == -1 {
+		t.Fatal("missing command spec aliases")
 	}
 
 	aliasName := specs[aliasIndex].Name
-	toolName := specs[toolIndex].Name
 	specs[aliasIndex].Aliases[0] = "mutated"
-	specs[toolIndex].AgentTools[0].CommandText = "mutated"
 
 	handler := Handler{Prefix: "/life"}
 	fresh := CommandSpecs()
 	parsed, ok := handler.parse(fresh[aliasIndex].Aliases[0])
 	if !ok || parsed.Name != aliasName {
 		t.Fatalf("alias command parsed as %q, ok = %v, want %q", parsed.Name, ok, aliasName)
-	}
-	parsed, ok = handler.parse(fresh[toolIndex].AgentTools[0].CommandText)
-	if !ok || parsed.Name != toolName {
-		t.Fatalf("agent tool command parsed as %q, ok = %v, want %q", parsed.Name, ok, toolName)
 	}
 }
 

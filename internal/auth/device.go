@@ -94,8 +94,8 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		return nil, err
 	}
 
-	conf := m.oauth2Config(meta, clientID)
-	res, err := conf.DeviceAuth(m.oidcContext(ctx), oauth2.SetAuthURLParam("resource", m.resource(meta)))
+	resources := m.resources(meta)
+	res, err := m.deviceAuth(ctx, meta.DeviceAuthorizationEndpoint, clientID, resources)
 	if err != nil {
 		return nil, fmt.Errorf("device authorization request failed: %w", sanitizeDeviceAuthError(err))
 	}
@@ -124,6 +124,7 @@ func (m *Manager) BeginDeviceLogin(ctx context.Context, ident store.Identity) (*
 		ExpiresAt:               m.now().Add(time.Duration(expiresIn) * time.Second),
 		IntervalSeconds:         interval,
 		Status:                  "pending",
+		Resources:               joinResources(resources),
 	}
 	if err := authStore.SaveLoginSession(ctx, ident, *session); err != nil {
 		return nil, err
@@ -164,6 +165,24 @@ func validateDeviceAuthResponse(resp *oauth2.DeviceAuthResponse) error {
 	}
 }
 
+func splitResources(resource string) []string {
+	parts := strings.Fields(resource)
+	seen := make(map[string]struct{}, len(parts))
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		out = append(out, part)
+	}
+	return out
+}
+
+func joinResources(resources []string) string {
+	return strings.Join(splitResources(strings.Join(resources, " ")), " ")
+}
+
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
@@ -186,7 +205,6 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{}, err
 	}
 
-	conf := m.oauth2Config(meta, session.ClientID)
 	// DeviceAccessToken uses real time for its internal deadline; convert the
 	// manager-clock-relative expiration to a real future time.
 	remaining := session.ExpiresAt.Sub(m.now())
@@ -194,15 +212,6 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 		return PollResult{Message: "验证码已过期。发送：登录"}, nil
 	}
-	dar := &oauth2.DeviceAuthResponse{
-		DeviceCode:              session.DeviceCode,
-		UserCode:                session.UserCode,
-		VerificationURI:         session.VerificationURI,
-		VerificationURIComplete: session.VerificationURIComplete,
-		Expiry:                  time.Now().Add(remaining),
-		Interval:                int64(session.IntervalSeconds),
-	}
-
 	pollTimeout := time.Duration(session.IntervalSeconds)*time.Second + 2*time.Second
 	if pollTimeout <= 0 {
 		pollTimeout = 7 * time.Second
@@ -210,7 +219,11 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	pollCtx, cancel := context.WithTimeout(m.oidcContext(ctx), pollTimeout)
 	defer cancel()
 
-	tok, err := conf.DeviceAccessToken(pollCtx, dar, oauth2.SetAuthURLParam("resource", m.resource(meta)))
+	resources := splitResources(session.Resources)
+	if len(resources) == 0 {
+		resources = []string{m.resource(meta)}
+	}
+	tok, err := m.deviceAccessToken(pollCtx, meta.TokenEndpoint, session.ClientID, session.DeviceCode, resources)
 	if err != nil {
 		return m.mapPollError(ctx, ident, *session, err)
 	}
@@ -222,7 +235,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{}, err
 	}
 
-	cred, err := verifiedTokenToCredential(session.ClientID, m.resource(meta), vt, "", "", m.now())
+	cred, err := verifiedTokenToCredential(session.ClientID, joinResources(resources), vt, "", "", m.now())
 	if err != nil {
 		return PollResult{}, err
 	}
@@ -277,11 +290,11 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if err != nil {
 		return store.Credential{}, err
 	}
-	resource := strings.TrimSpace(cred.Resource)
-	if resource == "" {
-		resource = m.resource(meta)
+	resources := splitResources(cred.Resource)
+	if len(resources) == 0 {
+		resources = []string{m.resource(meta)}
 	}
-	tok, err := m.refreshTokenRequest(ctx, meta.TokenEndpoint, cred.ClientID, cred.RefreshToken, cred.Scope, resource)
+	tok, err := m.refreshTokenRequest(ctx, meta.TokenEndpoint, cred.ClientID, cred.RefreshToken, cred.Scope, resources)
 	if err != nil {
 		return store.Credential{}, m.mapRefreshError(err)
 	}
@@ -292,10 +305,10 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if err := vt.ValidateIDToken(issuer, audience, m.now()); err != nil {
 		return store.Credential{}, err
 	}
-	return verifiedTokenToCredential(cred.ClientID, m.resource(meta), vt, cred.RefreshToken, cred.Scope, m.now())
+	return verifiedTokenToCredential(cred.ClientID, joinResources(resources), vt, cred.RefreshToken, cred.Scope, m.now())
 }
 
-func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, refreshToken, scope, resource string) (*oauth2.Token, error) {
+func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, refreshToken, scope string, resources []string) (*oauth2.Token, error) {
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
@@ -303,8 +316,27 @@ func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, r
 	if scope = strings.TrimSpace(scope); scope != "" {
 		form.Set("scope", scope)
 	}
-	if resource = strings.TrimSpace(resource); resource != "" {
-		form.Set("resource", resource)
+	for _, resource := range resources {
+		if resource = strings.TrimSpace(resource); resource != "" {
+			form.Add("resource", resource)
+		}
+	}
+
+	return m.tokenRequest(ctx, endpoint, form)
+}
+
+func (m *Manager) deviceAuth(ctx context.Context, endpoint, clientID string, resources []string) (*oauth2.DeviceAuthResponse, error) {
+	if endpoint == "" {
+		return nil, errors.New("server does not support OAuth device authorization")
+	}
+
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("scope", oauthScope)
+	for _, resource := range resources {
+		if resource = strings.TrimSpace(resource); resource != "" {
+			form.Add("resource", resource)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
@@ -324,18 +356,54 @@ func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, r
 	if err != nil {
 		return nil, err
 	}
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("token refresh returned %d with invalid JSON", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, retrieveError(resp, body)
+	}
+	var dar oauth2.DeviceAuthResponse
+	if err := json.Unmarshal(body, &dar); err != nil {
+		return nil, fmt.Errorf("device authorization returned %d with invalid JSON", resp.StatusCode)
+	}
+	return &dar, nil
+}
+
+func (m *Manager) deviceAccessToken(ctx context.Context, endpoint, clientID, deviceCode string, resources []string) (*oauth2.Token, error) {
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("client_id", clientID)
+	form.Set("device_code", deviceCode)
+	for _, resource := range resources {
+		if resource = strings.TrimSpace(resource); resource != "" {
+			form.Add("resource", resource)
+		}
+	}
+	return m.tokenRequest(ctx, endpoint, form)
+}
+
+func (m *Manager) tokenRequest(ctx context.Context, endpoint string, form url.Values) (*oauth2.Token, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.httpClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if desc, _ := raw["error_description"].(string); strings.TrimSpace(desc) != "" {
-			return nil, fmt.Errorf("%s", strings.TrimSpace(desc))
-		}
-		if code, _ := raw["error"].(string); strings.TrimSpace(code) != "" {
-			return nil, fmt.Errorf("%s", strings.TrimSpace(code))
-		}
-		return nil, fmt.Errorf("token refresh failed with status %d", resp.StatusCode)
+		return nil, retrieveError(resp, body)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("token response returned %d with invalid JSON", resp.StatusCode)
 	}
 
 	accessToken, _ := raw["access_token"].(string)
@@ -352,6 +420,17 @@ func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, r
 		tok.Expiry = m.now().Add(time.Duration(expiresIn) * time.Second)
 	}
 	return tok.WithExtra(raw), nil
+}
+
+func retrieveError(resp *http.Response, body []byte) *oauth2.RetrieveError {
+	re := &oauth2.RetrieveError{Response: resp, Body: body}
+	var raw map[string]any
+	if json.Unmarshal(body, &raw) == nil {
+		re.ErrorCode, _ = raw["error"].(string)
+		re.ErrorDescription, _ = raw["error_description"].(string)
+		re.ErrorURI, _ = raw["error_uri"].(string)
+	}
+	return re
 }
 
 func tokenExpiresInFromRaw(raw map[string]any) int {
@@ -567,6 +646,14 @@ func (m *Manager) resource(meta metadata) string {
 		return strings.TrimRight(issuer, "/")
 	}
 	return m.serverURL()
+}
+
+func (m *Manager) resources(meta metadata) []string {
+	return splitResources(strings.Join([]string{m.resource(meta), m.mcpResource()}, " "))
+}
+
+func (m *Manager) mcpResource() string {
+	return m.serverURL() + "/api/mcp"
 }
 
 func (m *Manager) serverURL() string {

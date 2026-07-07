@@ -109,12 +109,14 @@ func main() {
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
-		Enabled: cfg.EnableAgent,
-		APIKey:  cfg.LLMAPIKey,
-		BaseURL: cfg.LLMBaseURL,
-		Model:   cfg.LLMModel,
-		Timeout: cfg.LLMTimeout,
-		Logger:  logger,
+		Enabled:     cfg.EnableAgent,
+		APIKey:      cfg.LLMAPIKey,
+		BaseURL:     cfg.LLMBaseURL,
+		Model:       cfg.LLMModel,
+		Timeout:     cfg.LLMTimeout,
+		Logger:      logger,
+		MCPBaseURL:  strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
+		AuthManager: authManager,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)

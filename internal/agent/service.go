@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +19,10 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -33,6 +34,9 @@ type Config struct {
 	Model   string
 	Timeout time.Duration
 	Logger  *log.Logger
+
+	MCPBaseURL  string
+	AuthManager *auth.Manager
 }
 
 type Service struct {
@@ -41,6 +45,9 @@ type Service struct {
 	enabled bool
 	timeout time.Duration
 	logger  *log.Logger
+
+	mcpClient *botmcp.Client
+	auth      *auth.Manager
 }
 
 type Input struct {
@@ -51,8 +58,16 @@ type Input struct {
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
 	timeout := normalizedAgentTimeout(cfg.Timeout)
+	authManager := cfg.AuthManager
+	if authManager == nil {
+		authManager = handler.Auth
+	}
+	var mcpClient *botmcp.Client
+	if mcpBaseURL := strings.TrimSpace(cfg.MCPBaseURL); mcpBaseURL != "" {
+		mcpClient = botmcp.New(mcpBaseURL, httpClient)
+	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger}, nil
+		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -79,7 +94,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
-	return &Service{handler: handler, model: chatModel, enabled: true, timeout: timeout, logger: cfg.Logger}, nil
+	return &Service{handler: handler, model: chatModel, enabled: true, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
 }
 
 func (s *Service) Enabled() bool {
@@ -102,8 +117,13 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
-	tools, err := s.toolsFor(input.Identity, trace, input.SendUpdate)
+	tools, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
 	if err != nil {
+		if errors.Is(err, auth.ErrNotLoggedIn) {
+			reply := "需要先登录。发送：登录"
+			s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil)
+			return reply, true
+		}
 		reply := "AI 工具初始化失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
 		return reply, true
@@ -193,61 +213,6 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 
 type emptyInput struct{}
 
-type busInput struct {
-	From  string `json:"from,omitempty" jsonschema_description:"Optional origin campus, such as 东区, 西区, 南区, 高新区"`
-	To    string `json:"to,omitempty" jsonschema_description:"Optional destination campus, such as 东区, 西区, 南区, 高新区"`
-	After string `json:"after,omitempty" jsonschema_description:"Optional earliest departure time, such as 09:25, 2026-06-09 09:25, or RFC3339"`
-}
-
-type bulkSubscribeInput struct {
-	Text string `json:"text" jsonschema_description:"Pasted section codes or text containing section codes, for example CONT5103P.01 CONT6104P.01"`
-}
-
-type keywordInput struct {
-	Keyword string `json:"keyword" jsonschema_description:"Search keyword, course name, teacher name, or section code"`
-}
-
-type dateInput struct {
-	Date string `json:"date" jsonschema_description:"Target date, such as 2026-06-23, 6.23, or 6月23日"`
-}
-
-type listHomeworksInput struct {
-	SemesterID       int64  `json:"semester_id,omitempty" jsonschema_description:"Numeric semester ID filter (preferred; use list_semesters to find IDs)"`
-	SemesterName     string `json:"semester_name,omitempty" jsonschema_description:"Semester name like '2026春季' or '2026年春季学期'; will be resolved to an ID"`
-	IncludeCompleted bool   `json:"include_completed,omitempty" jsonschema_description:"Include completed homeworks; default is pending only"`
-}
-
-type todoInput struct {
-	Title    string `json:"title" jsonschema_description:"Todo title to create"`
-	Content  string `json:"content,omitempty" jsonschema_description:"Optional todo content or note"`
-	Priority string `json:"priority,omitempty" jsonschema_description:"Optional priority: low, medium, or high"`
-	DueAt    string `json:"due_at,omitempty" jsonschema_description:"Optional due date, such as 2026-06-10 or an RFC3339 datetime"`
-}
-
-type todoListInput struct {
-	Status    string `json:"status,omitempty" jsonschema_description:"Optional status filter: pending, completed, or all"`
-	Priority  string `json:"priority,omitempty" jsonschema_description:"Optional priority filter: low, medium, or high"`
-	DueBefore string `json:"due_before,omitempty" jsonschema_description:"Optional due-before date, such as 2026-06-10"`
-	DueAfter  string `json:"due_after,omitempty" jsonschema_description:"Optional due-after date, such as 2026-06-10"`
-}
-
-type todoUpdateInput struct {
-	Target   string `json:"target" jsonschema_description:"Todo number, ID, or title shown in the latest list response"`
-	Title    string `json:"title,omitempty" jsonschema_description:"Optional new todo title"`
-	Content  string `json:"content,omitempty" jsonschema_description:"Optional new content or note"`
-	Priority string `json:"priority,omitempty" jsonschema_description:"Optional new priority: low, medium, or high"`
-	DueAt    string `json:"due_at,omitempty" jsonschema_description:"Optional new due date, such as 2026-06-10 or an RFC3339 datetime"`
-}
-
-type targetInput struct {
-	Target string `json:"target" jsonschema_description:"Item number, ID, or title shown in the latest list response"`
-}
-
-type notificationInput struct {
-	Kind    string `json:"kind" jsonschema_description:"Notification type to change: classes for upcoming class reminders, homework for homework due reminders"`
-	Enabled bool   `json:"enabled" jsonschema_description:"Whether to enable this notification type"`
-}
-
 type feedbackInput struct {
 	Category string `json:"category,omitempty" jsonschema_description:"Short category for the feedback, such as missing_tool, bad_result, typo, or api_gap"`
 	Content  string `json:"content" jsonschema_description:"Concrete feedback about missing tools, wrong behavior, tool/API gaps, or user interaction problems"`
@@ -256,56 +221,6 @@ type feedbackInput struct {
 
 type messagePartInput struct {
 	Content string `json:"content" jsonschema_description:"One intermediate QQ message to send before the final response"`
-}
-
-type searchCoursesInput struct {
-	Keyword          string `json:"keyword,omitempty" jsonschema_description:"Search keyword, course name, code, or teacher name"`
-	EducationLevelID int64  `json:"education_level_id,omitempty" jsonschema_description:"Optional education level ID filter"`
-	CategoryID       int64  `json:"category_id,omitempty" jsonschema_description:"Optional course category ID filter"`
-	ClassTypeID      int64  `json:"class_type_id,omitempty" jsonschema_description:"Optional class type ID filter"`
-	Limit            int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
-}
-
-type searchSectionsInput struct {
-	Keyword      string `json:"keyword,omitempty" jsonschema_description:"Search keyword, course name, section code, or teacher name"`
-	CourseID     int64  `json:"course_id,omitempty" jsonschema_description:"Optional course ID filter"`
-	CourseJwID   int64  `json:"course_jw_id,omitempty" jsonschema_description:"Optional course JW ID filter"`
-	SemesterID   int64  `json:"semester_id,omitempty" jsonschema_description:"Optional semester ID filter"`
-	SemesterJwID int64  `json:"semester_jw_id,omitempty" jsonschema_description:"Optional semester JW ID filter"`
-	CampusID     int64  `json:"campus_id,omitempty" jsonschema_description:"Optional campus ID filter"`
-	DepartmentID int64  `json:"department_id,omitempty" jsonschema_description:"Optional department ID filter"`
-	TeacherID    int64  `json:"teacher_id,omitempty" jsonschema_description:"Optional teacher ID filter"`
-	TeacherCode  string `json:"teacher_code,omitempty" jsonschema_description:"Optional teacher code filter"`
-	Limit        int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
-}
-
-type searchTeachersInput struct {
-	Keyword      string `json:"keyword,omitempty" jsonschema_description:"Search keyword or teacher name"`
-	DepartmentID int64  `json:"department_id,omitempty" jsonschema_description:"Optional department ID filter"`
-	Limit        int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
-}
-
-type jwIdInput struct {
-	JwID int64 `json:"jw_id" jsonschema_description:"JW ID of the teaching section or course"`
-}
-
-type idInput struct {
-	ID int64 `json:"id" jsonschema_description:"ID of the teacher"`
-}
-
-type sectionJwIdDateRangeInput struct {
-	SectionJwID int64  `json:"section_jw_id" jsonschema_description:"Teaching section JW ID"`
-	DateFrom    string `json:"date_from" jsonschema_description:"Start date (YYYY-MM-DD)"`
-	DateTo      string `json:"date_to" jsonschema_description:"End date (YYYY-MM-DD)"`
-}
-
-type busRouteInput struct {
-	From string `json:"from,omitempty" jsonschema_description:"Optional origin campus name, such as 东区"`
-	To   string `json:"to,omitempty" jsonschema_description:"Optional destination campus name, such as 西区"`
-}
-
-type dayLimitInput struct {
-	DayLimit int `json:"day_limit,omitempty" jsonschema_description:"Number of days to look ahead (default 7)"`
 }
 
 type toolTraceNotifier struct {
@@ -346,229 +261,41 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
-func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, error) {
-	commandSpecs := commands.CommandSpecs()
-	specByName := commandSpecsByName(commandSpecs)
-	tools := make([]tool.BaseTool, 0, countAgentCommandTools(commandSpecs))
+func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, error) {
+	tools := make([]tool.BaseTool, 0)
 	var err error
-	for _, commandSpec := range commandSpecs {
-		if !s.commandDependenciesAvailable(commandSpec) {
-			continue
+	if s.mcpClient != nil && s.auth != nil {
+		token, err := s.auth.AccessToken(ctx, ident)
+		if err != nil {
+			return nil, fmt.Errorf("get MCP access token: %w", err)
 		}
-		for _, toolSpec := range commandSpec.AgentTools {
-			toolSpec := toolSpec
-			tools, err = appendInferredTool(tools, toolSpec.Name, toolSpec.Description, trace, func(ctx context.Context, _ emptyInput) (string, error) {
-				return s.runCommand(ctx, ident, toolSpec.CommandText)
-			})
+		mcpTools, err := s.mcpClient.Tools(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
+			token, err := s.auth.AccessToken(ctx, ident)
 			if err != nil {
-				return nil, err
+				if trace != nil {
+					trace.Notify(ctx, name, args, "", err)
+				}
+				if errors.Is(err, auth.ErrNotLoggedIn) {
+					return "需要先登录。发送：登录", nil
+				}
+				return "", err
 			}
-		}
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "bus", "get_next_bus", "Get next shuttle bus departures. Origin, destination, and earliest departure time are optional. Use after when planning after a class or event.", trace, func(ctx context.Context, input busInput) (string, error) {
-		return s.runCommand(ctx, ident, busCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "course_search", "search_courses", "Search courses by keyword with optional filters (education level, category, class type).", trace, func(ctx context.Context, input searchCoursesInput) (string, error) {
-		return s.runCommand(ctx, ident, searchCoursesCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section_search", "search_sections", "Search teaching sections by keyword with optional filters (course, semester, campus, department, teacher). Use this before subscribing by natural language.", trace, func(ctx context.Context, input searchSectionsInput) (string, error) {
-		return s.runCommand(ctx, ident, searchSectionsCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher_search", "search_teachers", "Search teachers by keyword with optional department filter.", trace, func(ctx context.Context, input searchTeachersInput) (string, error) {
-		return s.runCommand(ctx, ident, searchTeachersCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "list_semesters", "list_semesters", "List available Life USTC semesters.", trace, func(ctx context.Context, _ emptyInput) (string, error) {
-		return s.runCommand(ctx, ident, "学期列表")
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "course_by_jw_id", "get_course_by_jw_id", "Get a course by its JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
-		if input.JwID <= 0 {
-			return "", errors.New("jw_id is required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("课程编号 %d", input.JwID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section_by_jw_id", "get_section_by_jw_id", "Get a teaching section by its JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
-		if input.JwID <= 0 {
-			return "", errors.New("jw_id is required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("教学班编号 %d", input.JwID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher_by_id", "get_teacher_by_id", "Get a teacher by ID.", trace, func(ctx context.Context, input idInput) (string, error) {
-		if input.ID <= 0 {
-			return "", errors.New("id is required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("老师编号 %d", input.ID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "bus_routes", "list_bus_routes", "List campus bus routes with optional origin and destination campus filters.", trace, func(ctx context.Context, input busRouteInput) (string, error) {
-		return s.runCommand(ctx, ident, busRouteCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "unsubscribe_section_by_jw_id", "unsubscribe_section_by_jw_id", "Unsubscribe from a teaching section by its JW ID. Requires user confirmation.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
-		if input.JwID <= 0 {
-			return "", errors.New("jw_id is required")
-		}
-		return s.prepareConfirmation(ctx, ident, "需要确认", fmt.Sprintf("退订教学班 %d", input.JwID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "my_subscribed_sections", "list_my_subscribed_sections", "List the user's current subscribed teaching sections.", trace, func(ctx context.Context, _ emptyInput) (string, error) {
-		return s.runCommand(ctx, ident, "我的订阅")
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section_schedules", "list_schedules_by_section", "List schedules for a teaching section by JW ID and date range.", trace, func(ctx context.Context, input sectionJwIdDateRangeInput) (string, error) {
-		if input.SectionJwID <= 0 {
-			return "", errors.New("section_jw_id is required")
-		}
-		if strings.TrimSpace(input.DateFrom) == "" || strings.TrimSpace(input.DateTo) == "" {
-			return "", errors.New("date_from and date_to are required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("教学班课表 %d %s %s", input.SectionJwID, input.DateFrom, input.DateTo))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section_exams", "list_exams_by_section", "List exams for a teaching section by JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
-		if input.JwID <= 0 {
-			return "", errors.New("jw_id is required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("教学班考试 %d", input.JwID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section_homeworks", "list_homeworks_by_section", "List homeworks for a teaching section by JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
-		if input.JwID <= 0 {
-			return "", errors.New("jw_id is required")
-		}
-		return s.runCommand(ctx, ident, fmt.Sprintf("教学班作业 %d", input.JwID))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "list_homeworks", "List the user's homework across subscribed sections, grouped by overdue, nearby, and future. Filter by semester_id (numeric, from list_semesters) or semester_name (e.g. '2026春季'). Set include_completed to true to show finished items.", trace, func(ctx context.Context, input listHomeworksInput) (string, error) {
-		resolved, err := s.resolveHomeworkSemesterInput(ctx, input)
+			result, err := s.mcpClient.Call(ctx, token, name, args)
+			if trace != nil {
+				trace.Notify(ctx, name, args, result, err)
+			}
+			return result, err
+		})
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		return s.runCommand(ctx, ident, listHomeworksCommandText(resolved))
-	})
-	if err != nil {
-		return nil, err
+		tools = append(tools, einoTools...)
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "dashboard", "get_my_dashboard", "Get the logged-in user's dashboard overview (classes, todos, homework, exams).", trace, func(ctx context.Context, _ emptyInput) (string, error) {
-		return s.runCommand(ctx, ident, "概览")
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "upcoming_deadlines", "get_upcoming_deadlines", "Get the user's upcoming deadlines (todos, homework, exams) within a number of days.", trace, func(ctx context.Context, input dayLimitInput) (string, error) {
-		return s.runCommand(ctx, ident, upcomingDeadlinesCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "schedule", "get_curriculum_for_date", "Get the user's curriculum for a specific date.", trace, requiredCommandTool(s, ident, "date", "课表 ", func(input dateInput) string {
-		return input.Date
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "list_filtered_todos", "List todos with optional status, priority, and due-date filters.", trace, func(ctx context.Context, input todoListInput) (string, error) {
-		return s.runCommand(ctx, ident, todoListCommandText(input))
-	})
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "add_todo", "Prepare a todo creation command. This does not create the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "title", "待办 add ", func(input todoInput) string {
-		return todoCreateCommandSuffix(input)
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "complete_todo", "Prepare a todo completion command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 done ", func(input targetInput) string {
-		return input.Target
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "undo_todo_completion", "Prepare a todo completion undo command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 undo ", func(input targetInput) string {
-		return input.Target
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "update_todo", "Prepare a todo update command. This does not modify the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 update ", func(input todoUpdateInput) string {
-		return todoUpdateCommandSuffix(input)
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "todo", "delete_todo", "Prepare a todo delete command. This does not delete the todo until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "待办 delete ", func(input targetInput) string {
-		return input.Target
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "complete_homework", "Prepare a homework completion command. This does not modify homework until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "作业 done ", func(input targetInput) string {
-		return input.Target
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "undo_homework_completion", "Prepare a homework completion undo command. This does not modify homework until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "target", "作业 undo ", func(input targetInput) string {
-		return input.Target
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "subscription", "bulk_subscribe_sections", "Prepare a bulk subscription import command. This does not change subscriptions until the user confirms by replying ok or sending the command.", trace, requiredConfirmationTool(s, ident, "text", "订阅 导入 ", func(input bulkSubscribeInput) string {
-		return input.Text
-	}))
-	if err != nil {
-		return nil, err
-	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "notify", "set_notification_settings", "Prepare a notification setting command. This does not change notification settings until the user confirms by sending the command.", trace, func(ctx context.Context, input notificationInput) (string, error) {
-		kind, err := notificationKindCommandArg(input.Kind)
-		if err != nil {
-			return "", err
-		}
-		state := "关"
-		if input.Enabled {
-			state = "开"
-		}
-		return s.prepareConfirmation(ctx, ident, "通知设置", "通知 "+kind+" "+state)
-	})
-	if err != nil {
-		return nil, err
-	}
+
 	if s.handler.Store != nil {
 		tools, err = appendInferredTool(tools, "record_bot_feedback", "Record feedback about missing LLM tools, bad tool results, typo handling gaps, API gaps, or user interaction problems for maintainers to review.", trace, func(ctx context.Context, input feedbackInput) (string, error) {
 			return s.recordBotFeedback(ctx, ident, input)
@@ -592,82 +319,6 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendU
 		return nil, err
 	}
 	return tools, nil
-}
-
-func appendCommandBackedTool[I any](s *Service, specByName map[string]commands.CommandSpec, tools []tool.BaseTool, commandName, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
-	spec, ok := specByName[commandName]
-	if !ok {
-		return nil, fmt.Errorf("agent tool %q references unknown command %q", name, commandName)
-	}
-	if !s.commandDependenciesAvailable(spec) {
-		return tools, nil
-	}
-	return appendInferredTool(tools, name, description, trace, fn)
-}
-
-func requiredCommandTool[I any](s *Service, ident store.Identity, argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
-	return func(ctx context.Context, input I) (string, error) {
-		arg, err := requiredToolArg(argName, value(input))
-		if err != nil {
-			return "", err
-		}
-		return s.runCommand(ctx, ident, commandPrefix+arg)
-	}
-}
-
-func requiredConfirmationTool[I any](s *Service, ident store.Identity, argName, commandPrefix string, value func(I) string) func(context.Context, I) (string, error) {
-	return func(ctx context.Context, input I) (string, error) {
-		arg, err := requiredToolArg(argName, value(input))
-		if err != nil {
-			return "", err
-		}
-		return s.prepareConfirmation(ctx, ident, "需要确认", commandPrefix+arg)
-	}
-}
-
-func (s *Service) prepareConfirmation(ctx context.Context, ident store.Identity, title, command string) (string, error) {
-	stored := false
-	if s.handler.Store != nil && store.HasConversationIdentity(ident) {
-		if _, err := s.handler.Store.SavePendingConfirmation(ctx, ident, command, "agent", pendingConfirmationTTL); err != nil {
-			return "", err
-		}
-		stored = true
-	}
-	return confirmationRequired(title, command, stored), nil
-}
-
-func confirmationRequired(title, command string, stored bool) string {
-	lines := []string{
-		title + "：不会自动执行。",
-	}
-	if stored {
-		lines = append(lines, "回复 ok 确认，或单独发送这一条：")
-	} else {
-		lines = append(lines, "请单独发送这一条：")
-	}
-	lines = append(lines, command)
-	return strings.Join(lines, "\n")
-}
-
-func commandSpecsByName(specs []commands.CommandSpec) map[string]commands.CommandSpec {
-	out := make(map[string]commands.CommandSpec, len(specs))
-	for _, spec := range specs {
-		out[spec.Name] = spec
-	}
-	return out
-}
-
-func (s *Service) commandDependenciesAvailable(spec commands.CommandSpec) bool {
-	if spec.NeedsLife && s.handler.Life == nil {
-		return false
-	}
-	if spec.NeedsAuth && (s.handler.Auth == nil || s.handler.Auth.Store == nil) {
-		return false
-	}
-	if spec.NeedsStore && s.handler.Store == nil {
-		return false
-	}
-	return true
 }
 
 func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {
@@ -923,247 +574,10 @@ func formatToolResult(value string) string {
 	return value
 }
 
-func countAgentCommandTools(commandSpecs []commands.CommandSpec) int {
-	count := 0
-	for _, commandSpec := range commandSpecs {
-		count += len(commandSpec.AgentTools)
-	}
-	return count
-}
-
-func requiredToolArg(name, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", fmt.Errorf("%s is required", name)
-	}
-	return value, nil
-}
-
-func notificationKindCommandArg(value string) (string, error) {
-	kind, ok := commands.NormalizeNotificationKind(value)
-	if !ok {
-		return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", value)
-	}
-	switch kind {
-	case "classes":
-		return "课表", nil
-	case "homework":
-		return "作业", nil
-	default:
-		return "", fmt.Errorf("unsupported notification kind %q; use classes or homework", value)
-	}
-}
-
-func busCommandText(input busInput) string {
-	parts := []string{"校车"}
-	if from := strings.TrimSpace(input.From); from != "" {
-		parts = append(parts, from)
-	}
-	if to := strings.TrimSpace(input.To); to != "" {
-		if len(parts) == 1 {
-			parts = append(parts, "到")
-		}
-		parts = append(parts, to)
-	}
-	if after := strings.TrimSpace(input.After); after != "" {
-		parts = append(parts, "after", after)
-	}
-	return strings.Join(parts, " ")
-}
-
-func searchCoursesCommandText(input searchCoursesInput) string {
-	parts := []string{"课程搜索"}
-	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
-		parts = append(parts, "keyword", keyword)
-	}
-	if input.EducationLevelID > 0 {
-		parts = append(parts, "education_level_id", strconv.FormatInt(input.EducationLevelID, 10))
-	}
-	if input.CategoryID > 0 {
-		parts = append(parts, "category_id", strconv.FormatInt(input.CategoryID, 10))
-	}
-	if input.ClassTypeID > 0 {
-		parts = append(parts, "class_type_id", strconv.FormatInt(input.ClassTypeID, 10))
-	}
-	if input.Limit > 0 {
-		parts = append(parts, "limit", strconv.Itoa(input.Limit))
-	}
-	return strings.Join(parts, " ")
-}
-
-func searchSectionsCommandText(input searchSectionsInput) string {
-	parts := []string{"教学班搜索"}
-	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
-		parts = append(parts, "keyword", keyword)
-	}
-	if input.CourseID > 0 {
-		parts = append(parts, "course_id", strconv.FormatInt(input.CourseID, 10))
-	}
-	if input.CourseJwID > 0 {
-		parts = append(parts, "course_jw_id", strconv.FormatInt(input.CourseJwID, 10))
-	}
-	if input.SemesterID > 0 {
-		parts = append(parts, "semester_id", strconv.FormatInt(input.SemesterID, 10))
-	}
-	if input.SemesterJwID > 0 {
-		parts = append(parts, "semester_jw_id", strconv.FormatInt(input.SemesterJwID, 10))
-	}
-	if input.CampusID > 0 {
-		parts = append(parts, "campus_id", strconv.FormatInt(input.CampusID, 10))
-	}
-	if input.DepartmentID > 0 {
-		parts = append(parts, "department_id", strconv.FormatInt(input.DepartmentID, 10))
-	}
-	if input.TeacherID > 0 {
-		parts = append(parts, "teacher_id", strconv.FormatInt(input.TeacherID, 10))
-	}
-	if code := strings.TrimSpace(input.TeacherCode); code != "" {
-		parts = append(parts, "teacher_code", code)
-	}
-	if input.Limit > 0 {
-		parts = append(parts, "limit", strconv.Itoa(input.Limit))
-	}
-	return strings.Join(parts, " ")
-}
-
-func searchTeachersCommandText(input searchTeachersInput) string {
-	parts := []string{"老师搜索"}
-	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
-		parts = append(parts, "keyword", keyword)
-	}
-	if input.DepartmentID > 0 {
-		parts = append(parts, "department_id", strconv.FormatInt(input.DepartmentID, 10))
-	}
-	if input.Limit > 0 {
-		parts = append(parts, "limit", strconv.Itoa(input.Limit))
-	}
-	return strings.Join(parts, " ")
-}
-
-func busRouteCommandText(input busRouteInput) string {
-	parts := []string{"校车路线"}
-	if from := strings.TrimSpace(input.From); from != "" {
-		parts = append(parts, "from", from)
-	}
-	if to := strings.TrimSpace(input.To); to != "" {
-		parts = append(parts, "to", to)
-	}
-	return strings.Join(parts, " ")
-}
-
-func upcomingDeadlinesCommandText(input dayLimitInput) string {
-	if input.DayLimit <= 0 {
-		return "近期截止"
-	}
-	return fmt.Sprintf("近期截止 %d", input.DayLimit)
-}
-
-func listHomeworksCommandText(input listHomeworksInput) string {
-	parts := []string{"作业"}
-	if input.IncludeCompleted {
-		parts = append(parts, "all")
-	}
-	if input.SemesterID > 0 {
-		parts = append(parts, "semester_id", strconv.FormatInt(input.SemesterID, 10))
-	}
-	return strings.Join(parts, " ")
-}
-
-func semesterNameMatches(semester map[string]any, name string) bool {
-	for _, key := range []string{"namePrimary", "nameCn", "name"} {
-		if strings.Contains(lifedata.FirstString(semester, key), name) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) resolveHomeworkSemesterInput(ctx context.Context, input listHomeworksInput) (listHomeworksInput, error) {
-	name := strings.TrimSpace(input.SemesterName)
-	if name == "" {
-		return input, nil
-	}
-	if s.handler.Life == nil {
-		return input, errors.New("life client unavailable")
-	}
-	semesters, err := s.handler.Life.ListSemesters(ctx, 1, 50)
-	if err != nil {
-		return input, fmt.Errorf("list semesters: %w", err)
-	}
-	for _, semester := range semesters {
-		if !semesterNameMatches(semester, name) {
-			continue
-		}
-		if id := lifedata.FirstInt(semester, "id"); id > 0 {
-			input.SemesterID = int64(id)
-			input.SemesterName = ""
-			return input, nil
-		}
-	}
-	return input, fmt.Errorf("semester not found: %q", name)
-}
-
-func todoListCommandText(input todoListInput) string {
-	parts := []string{"待办", "list"}
-	if status := strings.TrimSpace(input.Status); status != "" {
-		parts = append(parts, status)
-	}
-	if priority := strings.TrimSpace(input.Priority); priority != "" {
-		parts = append(parts, "priority", priority)
-	}
-	if dueBefore := strings.TrimSpace(input.DueBefore); dueBefore != "" {
-		parts = append(parts, "before", dueBefore)
-	}
-	if dueAfter := strings.TrimSpace(input.DueAfter); dueAfter != "" {
-		parts = append(parts, "after", dueAfter)
-	}
-	return strings.Join(parts, " ")
-}
-
-func todoCreateCommandSuffix(input todoInput) string {
-	parts := []string{strings.TrimSpace(input.Title)}
-	if dueAt := strings.TrimSpace(input.DueAt); dueAt != "" {
-		parts = append(parts, "due", dueAt)
-	}
-	if priority := strings.TrimSpace(input.Priority); priority != "" {
-		parts = append(parts, "priority", priority)
-	}
-	if content := strings.TrimSpace(input.Content); content != "" {
-		parts = append(parts, "content", content)
-	}
-	return strings.Join(parts, " ")
-}
-
-func todoUpdateCommandSuffix(input todoUpdateInput) string {
-	parts := []string{strings.TrimSpace(input.Target)}
-	if title := strings.TrimSpace(input.Title); title != "" {
-		parts = append(parts, "title", title)
-	}
-	if dueAt := strings.TrimSpace(input.DueAt); dueAt != "" {
-		parts = append(parts, "due", dueAt)
-	}
-	if priority := strings.TrimSpace(input.Priority); priority != "" {
-		parts = append(parts, "priority", priority)
-	}
-	if content := strings.TrimSpace(input.Content); content != "" {
-		parts = append(parts, "content", content)
-	}
-	return strings.Join(parts, " ")
-}
-
-func (s *Service) runCommand(ctx context.Context, ident store.Identity, text string) (string, error) {
-	reply, ok := s.handler.Handle(ctx, commands.Input{Text: text, Identity: ident, SuppressLog: true})
-	if !ok {
-		return "", fmt.Errorf("command %q was not handled", text)
-	}
-	return reply, nil
-}
-
 const historyTurnLimit = 20
 const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
 const maxHistoryTextRunes = 1200
-const pendingConfirmationTTL = 15 * time.Minute
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
