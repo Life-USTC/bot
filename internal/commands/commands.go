@@ -431,6 +431,133 @@ var commandSpecs = []CommandSpec{
 			return h.exams(ctx, ident)
 		},
 	},
+	{
+		Name:      "list_semesters",
+		Aliases:   []string{"list_semesters", "学期列表"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.listSemesters(ctx, args)
+		},
+	},
+	{
+		Name:      "course_search",
+		Aliases:   []string{"course_search", "课程搜索"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.searchCoursesWithFilters(ctx, args)
+		},
+	},
+	{
+		Name:      "section_search",
+		Aliases:   []string{"section_search", "教学班搜索"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.searchSectionsWithFilters(ctx, args)
+		},
+	},
+	{
+		Name:      "teacher_search",
+		Aliases:   []string{"teacher_search", "老师搜索"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.searchTeachersWithFilters(ctx, args)
+		},
+	},
+	{
+		Name:      "course_by_jw_id",
+		Aliases:   []string{"course_by_jw_id", "课程编号"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.getCourseByJwID(ctx, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "section_by_jw_id",
+		Aliases:   []string{"section_by_jw_id", "教学班编号"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.getSectionByJwID(ctx, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "teacher_by_id",
+		Aliases:   []string{"teacher_by_id", "老师编号"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.getTeacherByID(ctx, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "bus_routes",
+		Aliases:   []string{"bus_routes", "校车路线"},
+		NeedsLife: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.busRoutes(ctx, args)
+		},
+	},
+	{
+		Name:      "unsubscribe_section_by_jw_id",
+		Aliases:   []string{"unsubscribe_section_by_jw_id", "退订教学班"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.unsubscribeSectionByJwID(ctx, ident, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "my_subscribed_sections",
+		Aliases:   []string{"my_subscribed_sections", "我的订阅"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.mySubscribedSections(ctx, ident)
+		},
+	},
+	{
+		Name:      "section_schedules",
+		Aliases:   []string{"section_schedules", "教学班课表"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.sectionSchedules(ctx, ident, args)
+		},
+	},
+	{
+		Name:      "section_exams",
+		Aliases:   []string{"section_exams", "教学班考试"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.sectionExams(ctx, ident, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "section_homeworks",
+		Aliases:   []string{"section_homeworks", "教学班作业"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.sectionHomeworks(ctx, ident, joinedArgs(args))
+		},
+	},
+	{
+		Name:      "dashboard",
+		Aliases:   []string{"dashboard", "概览"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.myDashboard(ctx, ident)
+		},
+	},
+	{
+		Name:      "upcoming_deadlines",
+		Aliases:   []string{"upcoming_deadlines", "近期截止"},
+		NeedsLife: true,
+		NeedsAuth: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.upcomingDeadlines(ctx, ident, args)
+		},
+	},
 }
 
 func (h Handler) parse(text string) (parsedCommand, bool) {
@@ -930,8 +1057,7 @@ func joinedArgs(args []string) string {
 }
 
 func (h Handler) help() string {
-	return strings.Join([]string{
-		"可以直接发：",
+	return "可以直接发：" + strings.Join([]string{
 		"待办 / td",
 		"td 写报告",
 		"td done 1",
@@ -953,7 +1079,7 @@ func (h Handler) help() string {
 		"老师 张",
 		"考试 / ks",
 		"登录 / 登录 状态",
-	}, "\n")
+	}, "；")
 }
 
 func (h Handler) feedback(ctx context.Context, ident store.Identity, args []string) string {
@@ -2621,6 +2747,559 @@ func (h Handler) logf(format string, args ...any) {
 	if h.Logger != nil {
 		h.Logger.Printf(format, args...)
 	}
+}
+
+func parseIntArg(value string) (int64, bool) {
+	v, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	return v, err == nil && v > 0
+}
+
+func parseKeywordSearchArgs(args []string, keywordKey string, filterKeys map[string]bool) (string, map[string]string) {
+	values := make(map[string]string, len(filterKeys))
+	var keywordParts []string
+	for i := 0; i < len(args); i++ {
+		key := normToken(args[i])
+		if key == keywordKey {
+			j := i + 1
+			for ; j < len(args); j++ {
+				if filterKeys[normToken(args[j])] {
+					break
+				}
+			}
+			keywordParts = append(keywordParts, args[i+1:j]...)
+			i = j - 1
+			continue
+		}
+		if filterKeys[key] {
+			if i+1 < len(args) {
+				values[key] = args[i+1]
+				i++
+			}
+			continue
+		}
+		keywordParts = append(keywordParts, args[i])
+	}
+	return joinedArgs(keywordParts), values
+}
+
+func parseSearchCoursesArgs(args []string) life.SearchCoursesOptions {
+	filterKeys := map[string]bool{
+		"education_level_id": true,
+		"category_id":        true,
+		"class_type_id":      true,
+		"limit":              true,
+	}
+	keyword, values := parseKeywordSearchArgs(args, "keyword", filterKeys)
+	opts := life.SearchCoursesOptions{Keyword: keyword}
+	if v, ok := parseIntArg(values["education_level_id"]); ok {
+		opts.EducationLevelID = v
+	}
+	if v, ok := parseIntArg(values["category_id"]); ok {
+		opts.CategoryID = v
+	}
+	if v, ok := parseIntArg(values["class_type_id"]); ok {
+		opts.ClassTypeID = v
+	}
+	if v, ok := parseIntArg(values["limit"]); ok {
+		opts.Limit = int(v)
+	}
+	return opts
+}
+
+func parseSearchSectionsArgs(args []string) life.SearchSectionsOptions {
+	filterKeys := map[string]bool{
+		"course_id":      true,
+		"course_jw_id":   true,
+		"semester_id":    true,
+		"semester_jw_id": true,
+		"campus_id":      true,
+		"department_id":  true,
+		"teacher_id":     true,
+		"teacher_code":   true,
+		"limit":          true,
+	}
+	keyword, values := parseKeywordSearchArgs(args, "keyword", filterKeys)
+	opts := life.SearchSectionsOptions{Keyword: keyword}
+	if v, ok := parseIntArg(values["course_id"]); ok {
+		opts.CourseID = v
+	}
+	if v, ok := parseIntArg(values["course_jw_id"]); ok {
+		opts.CourseJwID = v
+	}
+	if v, ok := parseIntArg(values["semester_id"]); ok {
+		opts.SemesterID = v
+	}
+	if v, ok := parseIntArg(values["semester_jw_id"]); ok {
+		opts.SemesterJwID = v
+	}
+	if v, ok := parseIntArg(values["campus_id"]); ok {
+		opts.CampusID = v
+	}
+	if v, ok := parseIntArg(values["department_id"]); ok {
+		opts.DepartmentID = v
+	}
+	if v, ok := parseIntArg(values["teacher_id"]); ok {
+		opts.TeacherID = v
+	}
+	if code := strings.TrimSpace(values["teacher_code"]); code != "" {
+		opts.TeacherCode = code
+	}
+	if v, ok := parseIntArg(values["limit"]); ok {
+		opts.Limit = int(v)
+	}
+	return opts
+}
+
+func parseSearchTeachersArgs(args []string) life.SearchTeachersOptions {
+	filterKeys := map[string]bool{
+		"department_id": true,
+		"limit":         true,
+	}
+	keyword, values := parseKeywordSearchArgs(args, "keyword", filterKeys)
+	opts := life.SearchTeachersOptions{Keyword: keyword}
+	if v, ok := parseIntArg(values["department_id"]); ok {
+		opts.DepartmentID = v
+	}
+	if v, ok := parseIntArg(values["limit"]); ok {
+		opts.Limit = int(v)
+	}
+	return opts
+}
+
+func (h Handler) listSemesters(ctx context.Context, args []string) string {
+	page, limit := 1, 20
+	if v, ok := parseIntArg(joinedArgs(args)); ok {
+		limit = int(v)
+	}
+	semesters, err := h.Life.ListSemesters(ctx, page, limit)
+	if err != nil {
+		return commandError("学期查不到：", err)
+	}
+	if len(semesters) == 0 {
+		return "没有学期数据。"
+	}
+	lines := []string{"学期："}
+	for _, semester := range semesters {
+		name := lifedata.FirstString(semester, "namePrimary", "nameCn", "name")
+		if name == "" {
+			name = lifedata.FirstString(semester, "id")
+		}
+		start := lifedata.FormatAPITime(lifedata.FirstString(semester, "startDate"))
+		end := lifedata.FormatAPITime(lifedata.FirstString(semester, "endDate"))
+		label := name
+		if start != "" || end != "" {
+			label += "（" + strings.TrimSpace(start+" ~ "+end) + "）"
+		}
+		lines = append(lines, "- "+label)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) searchCoursesWithFilters(ctx context.Context, args []string) string {
+	opts := parseSearchCoursesArgs(args)
+	if opts.Keyword == "" && opts.EducationLevelID == 0 && opts.CategoryID == 0 && opts.ClassTypeID == 0 {
+		return "请输入搜索条件，例如：课程搜索 数学分析"
+	}
+	courses, err := h.Life.SearchCoursesWithFilters(ctx, opts)
+	if err != nil {
+		return commandError("课程查不到：", err)
+	}
+	if len(courses) == 0 {
+		return "没找到课程。"
+	}
+	lines := []string{"课程："}
+	for _, course := range courses {
+		lines = append(lines, formatCourse(course))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) searchSectionsWithFilters(ctx context.Context, args []string) string {
+	opts := parseSearchSectionsArgs(args)
+	if opts.Keyword == "" && opts.CourseID == 0 && opts.CourseJwID == 0 && opts.SemesterID == 0 &&
+		opts.SemesterJwID == 0 && opts.CampusID == 0 && opts.DepartmentID == 0 &&
+		opts.TeacherID == 0 && opts.TeacherCode == "" {
+		return "请输入搜索条件，例如：教学班搜索 高等数学"
+	}
+	sections, err := h.Life.SearchSectionsWithFilters(ctx, opts)
+	if err != nil {
+		return commandError("教学班查不到：", err)
+	}
+	if len(sections) == 0 {
+		return "没找到教学班。"
+	}
+	lines := []string{"教学班："}
+	for _, section := range sections {
+		lines = append(lines, formatSection(section))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) string {
+	opts := parseSearchTeachersArgs(args)
+	if opts.Keyword == "" && opts.DepartmentID == 0 {
+		return "请输入搜索条件，例如：老师搜索 张"
+	}
+	teachers, err := h.Life.SearchTeachersWithFilters(ctx, opts)
+	if err != nil {
+		return commandError("老师查不到：", err)
+	}
+	if len(teachers) == 0 {
+		return "没找到老师。"
+	}
+	lines := []string{"老师："}
+	for _, teacher := range teachers {
+		lines = append(lines, formatTeacher(teacher))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
+	jwId, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供课程 JW ID。"
+	}
+	course, err := h.Life.GetCourseByJwID(ctx, jwId)
+	if err != nil {
+		return commandError("课程查不到：", err)
+	}
+	return "课程：\n" + formatCourse(course)
+}
+
+func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
+	jwId, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供教学班 JW ID。"
+	}
+	section, err := h.Life.GetSectionByJwID(ctx, jwId)
+	if err != nil {
+		return commandError("教学班查不到：", err)
+	}
+	return "教学班：\n" + formatSection(section)
+}
+
+func (h Handler) getTeacherByID(ctx context.Context, raw string) string {
+	id, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供老师 ID。"
+	}
+	teacher, err := h.Life.GetTeacherByID(ctx, id)
+	if err != nil {
+		return commandError("老师查不到：", err)
+	}
+	return "老师：\n" + formatTeacher(teacher)
+}
+
+type busRouteQuery struct {
+	From string
+	To   string
+}
+
+func parseBusRouteArgs(args []string) busRouteQuery {
+	var out busRouteQuery
+	for i := 0; i < len(args); i++ {
+		switch normToken(args[i]) {
+		case "from", "从":
+			if i+1 < len(args) {
+				out.From = campusName(args[i+1])
+				i++
+			}
+		case "to", "到":
+			if i+1 < len(args) {
+				out.To = campusName(args[i+1])
+				i++
+			}
+		default:
+			if campus := campusName(args[i]); campus != "" {
+				if out.From == "" {
+					out.From = campus
+				} else if out.To == "" {
+					out.To = campus
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (h Handler) busRoutes(ctx context.Context, args []string) string {
+	opts := parseBusRouteArgs(args)
+	var originID, destID int64
+	if opts.From != "" || opts.To != "" {
+		data, err := h.Life.Bus(ctx)
+		if err != nil {
+			return commandError("校车路线查不到：", err)
+		}
+		if opts.From != "" {
+			id, ok := campusIDByName(data, opts.From)
+			if !ok {
+				return "没找到出发校区：" + opts.From
+			}
+			originID = int64(id)
+		}
+		if opts.To != "" {
+			id, ok := campusIDByName(data, opts.To)
+			if !ok {
+				return "没找到到达校区：" + opts.To
+			}
+			destID = int64(id)
+		}
+	}
+	routes, err := h.Life.ListBusRoutes(ctx, originID, destID)
+	if err != nil {
+		return commandError("校车路线查不到：", err)
+	}
+	return formatBusRoutes(routes)
+}
+
+func formatBusRoutes(data map[string]any) string {
+	routes := lifedata.MapSlice(data["routes"])
+	if len(routes) == 0 {
+		return "没查到校车路线。"
+	}
+	lines := []string{"校车路线："}
+	for _, route := range routes {
+		name := lifedata.FirstString(route, "nameCn", "namePrimary", "name")
+		origin := lifedata.NestedString(route, "originCampus", "namePrimary", "nameCn", "name")
+		dest := lifedata.NestedString(route, "destinationCampus", "namePrimary", "nameCn", "name")
+		stops := make([]string, 0)
+		for _, stop := range lifedata.MapSlice(route["stops"]) {
+			campus := lifedata.NestedString(stop, "campus", "namePrimary", "nameCn", "name")
+			if campus != "" {
+				stops = append(stops, campus)
+			}
+		}
+		routeLabel := textutil.JoinNonEmpty(" → ", origin, dest)
+		line := "- " + name
+		if routeLabel != "" && routeLabel != name {
+			line += "（" + routeLabel + "）"
+		}
+		if len(stops) > 0 {
+			line += " 经停 " + strings.Join(stops, "、")
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) unsubscribeSectionByJwID(ctx context.Context, ident store.Identity, raw string) string {
+	jwId, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供教学班 JW ID。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.UnsubscribeSectionByJwID(ctx, token, jwId)
+	})
+	if err != nil {
+		return commandError("退订失败：", err)
+	}
+	return "已退订教学班。"
+}
+
+func (h Handler) mySubscribedSections(ctx context.Context, ident store.Identity) string {
+	return h.subscriptionList(ctx, ident)
+}
+
+func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, args []string) string {
+	if len(args) < 3 {
+		return "用法：教学班课表 <JW ID> <开始日期> <结束日期>"
+	}
+	jwId, ok := parseIntArg(args[0])
+	if !ok {
+		return "JW ID 无效。"
+	}
+	dateFrom, dateTo := args[1], args[2]
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	schedules, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
+		return h.Life.ListSchedulesBySection(ctx, token, jwId, dateFrom, dateTo)
+	})
+	if err != nil {
+		return commandError("课表查不到：", err)
+	}
+	if len(schedules) == 0 {
+		return "该时间段没有课。"
+	}
+	lifedata.SortSchedulesByStart(schedules)
+	lines := []string{"教学班课表："}
+	for _, schedule := range schedules {
+		lines = append(lines, formatSchedule(schedule))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) sectionExams(ctx context.Context, ident store.Identity, raw string) string {
+	jwId, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供教学班 JW ID。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	section, err := h.Life.GetSectionByJwID(ctx, jwId)
+	if err != nil {
+		return commandError("教学班查不到：", err)
+	}
+	exams, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
+		return h.Life.ListExamsBySection(ctx, token, jwId)
+	})
+	if err != nil {
+		return commandError("考试查不到：", err)
+	}
+	if len(exams) == 0 {
+		return "该教学班没有考试。"
+	}
+	wrapped := make([]subscriptionExam, len(exams))
+	for i, exam := range exams {
+		wrapped[i] = subscriptionExam{exam: exam, section: section}
+	}
+	sortSubscriptionExams(wrapped)
+	lines := []string{"考试："}
+	for i, item := range wrapped {
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(wrapped)-i, true))
+			break
+		}
+		lines = append(lines, formatNumberedLine(i+1, formatExam(item)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, raw string) string {
+	jwId, ok := parseIntArg(raw)
+	if !ok {
+		return "需要提供教学班 JW ID。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	homeworks, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
+		return h.Life.ListHomeworksBySection(ctx, token, jwId)
+	})
+	if err != nil {
+		return commandError("作业查不到：", err)
+	}
+	lifedata.SortHomeworksByDue(homeworks)
+	if len(homeworks) == 0 {
+		return "该教学班没有作业。"
+	}
+	lines := []string{"作业："}
+	for i, homework := range homeworks {
+		if i >= listDisplayLimit {
+			lines = append(lines, moreLine(len(homeworks)-i, true))
+			break
+		}
+		lines = append(lines, formatNumberedLine(i+1, formatHomework(homework)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func dashboardItemSlice(data map[string]any, key string) []map[string]any {
+	container, _ := data[key].(map[string]any)
+	return lifedata.MapSlice(container["items"])
+}
+
+func (h Handler) myDashboard(ctx context.Context, ident store.Identity) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.GetMyDashboard(ctx, token)
+	})
+	if err != nil {
+		return commandError("概览查不到：", err)
+	}
+	return formatDashboard(data, "我的概览")
+}
+
+func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, args []string) string {
+	dayLimit := 7
+	if len(args) > 0 {
+		if v, ok := parseIntArg(args[0]); ok {
+			dayLimit = int(v)
+		}
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.GetUpcomingDeadlines(ctx, token, dayLimit)
+	})
+	if err != nil {
+		return commandError("近期截止查不到：", err)
+	}
+	return formatDashboard(data, fmt.Sprintf("未来 %d 天截止", dayLimit))
+}
+
+func formatDashboard(data map[string]any, title string) string {
+	counts, _ := data["counts"].(map[string]any)
+	lines := []string{title + "："}
+	if counts != nil {
+		parts := []string{}
+		if n := lifedata.FirstInt(counts, "todaySchedules"); n > 0 {
+			parts = append(parts, fmt.Sprintf("今日课表 %d", n))
+		}
+		if n := lifedata.FirstInt(counts, "pendingHomeworks"); n > 0 {
+			parts = append(parts, fmt.Sprintf("待交作业 %d", n))
+		}
+		if n := lifedata.FirstInt(counts, "dueSoonHomeworks"); n > 0 {
+			parts = append(parts, fmt.Sprintf("近期作业 %d", n))
+		}
+		if n := lifedata.FirstInt(counts, "upcomingExams"); n > 0 {
+			parts = append(parts, fmt.Sprintf("考试 %d", n))
+		}
+		if len(parts) > 0 {
+			lines = append(lines, strings.Join(parts, " · "))
+		}
+	}
+	dueTodos := dashboardItemSlice(data, "dueTodos")
+	if len(dueTodos) > 0 {
+		lines = append(lines, "", "待办：")
+		for i, todo := range dueTodos {
+			if i >= listDisplayLimit {
+				lines = append(lines, moreLine(len(dueTodos)-i, true))
+				break
+			}
+			lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
+		}
+	}
+	homeworks := dashboardItemSlice(data, "homeworks")
+	if len(homeworks) > 0 {
+		lines = append(lines, "", "作业：")
+		for i, homework := range homeworks {
+			if i >= listDisplayLimit {
+				lines = append(lines, moreLine(len(homeworks)-i, true))
+				break
+			}
+			lines = append(lines, formatNumberedLine(i+1, formatHomework(homework)))
+		}
+	}
+	exams := dashboardItemSlice(data, "exams")
+	if len(exams) > 0 {
+		lines = append(lines, "", "考试：")
+		for i, exam := range exams {
+			if i >= listDisplayLimit {
+				lines = append(lines, moreLine(len(exams)-i, true))
+				break
+			}
+			sectionMap, _ := exam["section"].(map[string]any)
+			lines = append(lines, formatNumberedLine(i+1, formatExam(subscriptionExam{exam: exam, section: sectionMap})))
+		}
+	}
+	if len(lines) == 1 {
+		return title + "\n暂无近期截止。"
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {

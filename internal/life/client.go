@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/openapi"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -97,6 +98,230 @@ func (c *Client) SearchTeachers(ctx context.Context, search string, limit int) (
 	setSearchLimit(&params.Search, &params.Limit, search, limit)
 	resp, err := c.Typed(ctx, "").ListTeachers(ctx, &params)
 	return typedDataList(resp, err, "teachers")
+}
+
+type SearchCoursesOptions struct {
+	Keyword          string
+	EducationLevelID int64
+	CategoryID       int64
+	ClassTypeID      int64
+	Limit            int
+}
+
+type SearchSectionsOptions struct {
+	Keyword      string
+	CourseID     int64
+	CourseJwID   int64
+	SemesterID   int64
+	SemesterJwID int64
+	CampusID     int64
+	DepartmentID int64
+	TeacherID    int64
+	TeacherCode  string
+	Limit        int
+}
+
+type SearchTeachersOptions struct {
+	Keyword      string
+	DepartmentID int64
+	Limit        int
+}
+
+func (c *Client) SearchCoursesWithFilters(ctx context.Context, opts SearchCoursesOptions) ([]map[string]any, error) {
+	params := openapi.ListCoursesParams{}
+	setSearchLimit(&params.Search, &params.Limit, opts.Keyword, opts.Limit)
+	if opts.EducationLevelID > 0 {
+		params.EducationLevelId = &opts.EducationLevelID
+	}
+	if opts.CategoryID > 0 {
+		params.CategoryId = &opts.CategoryID
+	}
+	if opts.ClassTypeID > 0 {
+		params.ClassTypeId = &opts.ClassTypeID
+	}
+	resp, err := c.Typed(ctx, "").ListCourses(ctx, &params)
+	return typedDataList(resp, err, "courses")
+}
+
+func (c *Client) SearchSectionsWithFilters(ctx context.Context, opts SearchSectionsOptions) ([]map[string]any, error) {
+	params := openapi.ListSectionsParams{}
+	setSearchLimit(&params.Search, &params.Limit, opts.Keyword, opts.Limit)
+	if opts.CourseID > 0 {
+		params.CourseId = &opts.CourseID
+	}
+	if opts.CourseJwID > 0 {
+		params.CourseJwId = &opts.CourseJwID
+	}
+	if opts.SemesterID > 0 {
+		params.SemesterId = &opts.SemesterID
+	}
+	if opts.SemesterJwID > 0 {
+		params.SemesterJwId = &opts.SemesterJwID
+	}
+	if opts.CampusID > 0 {
+		params.CampusId = &opts.CampusID
+	}
+	if opts.DepartmentID > 0 {
+		params.DepartmentId = &opts.DepartmentID
+	}
+	if opts.TeacherID > 0 {
+		params.TeacherId = &opts.TeacherID
+	}
+	if opts.TeacherCode != "" {
+		params.TeacherCode = &opts.TeacherCode
+	}
+	resp, err := c.Typed(ctx, "").ListSections(ctx, &params)
+	return typedDataList(resp, err, "sections")
+}
+
+func (c *Client) SearchTeachersWithFilters(ctx context.Context, opts SearchTeachersOptions) ([]map[string]any, error) {
+	params := openapi.ListTeachersParams{}
+	setSearchLimit(&params.Search, &params.Limit, opts.Keyword, opts.Limit)
+	if opts.DepartmentID > 0 {
+		params.DepartmentId = &opts.DepartmentID
+	}
+	resp, err := c.Typed(ctx, "").ListTeachers(ctx, &params)
+	return typedDataList(resp, err, "teachers")
+}
+
+func (c *Client) ListSemesters(ctx context.Context, page, limit int) ([]map[string]any, error) {
+	params := openapi.ListSemestersParams{}
+	if page > 0 {
+		params.Page = int64Ptr(int64(page))
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	params.Limit = int64Ptr(int64(limit))
+	resp, err := c.Typed(ctx, "").ListSemesters(ctx, &params)
+	return typedDataList(resp, err, "semesters")
+}
+
+func (c *Client) GetCourseByJwID(ctx context.Context, jwId int64) (map[string]any, error) {
+	var out map[string]any
+	resp, err := c.Typed(ctx, "").GetCourse(ctx, jwId)
+	err = typedJSON(resp, err, "course", &out)
+	return out, err
+}
+
+func (c *Client) GetSectionByJwID(ctx context.Context, jwId int64) (map[string]any, error) {
+	var out map[string]any
+	resp, err := c.Typed(ctx, "").GetSection(ctx, jwId)
+	err = typedJSON(resp, err, "section", &out)
+	return out, err
+}
+
+func (c *Client) GetTeacherByID(ctx context.Context, id int64) (map[string]any, error) {
+	var out map[string]any
+	resp, err := c.Typed(ctx, "").GetTeacher(ctx, id)
+	err = typedJSON(resp, err, "teacher", &out)
+	return out, err
+}
+
+func (c *Client) ListBusRoutes(ctx context.Context, originCampusID, destinationCampusID int64) (map[string]any, error) {
+	params := openapi.GetApiBusRoutesParams{}
+	if originCampusID > 0 {
+		params.OriginCampusId = &originCampusID
+	}
+	if destinationCampusID > 0 {
+		params.DestinationCampusId = &destinationCampusID
+	}
+	var out map[string]any
+	resp, err := c.Typed(ctx, "").GetApiBusRoutes(ctx, &params)
+	err = typedJSON(resp, err, "bus routes", &out)
+	return out, err
+}
+
+func (c *Client) UnsubscribeSectionByJwID(ctx context.Context, token string, jwId int64) (map[string]any, error) {
+	sub, err := c.CurrentSubscription(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	sections := lifedata.SubscriptionSections(sub)
+	sectionID := 0
+	for _, section := range sections {
+		if lifedata.FirstInt(section, "jwId") == int(jwId) {
+			sectionID = lifedata.FirstInt(section, "id")
+			break
+		}
+	}
+	if sectionID == 0 {
+		return nil, fmt.Errorf("section jwId %d is not in current subscription", jwId)
+	}
+	var out map[string]any
+	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
+		Action:     openapi.CalendarSubscriptionBatchRequestSchemaActionRemove,
+		SectionIds: &[]int{sectionID},
+	})
+	err = typedJSON(resp, err, "unsubscribe section", &out)
+	return out, err
+}
+
+func (c *Client) ListSubscribedSections(ctx context.Context, token string) ([]map[string]any, error) {
+	sub, err := c.CurrentSubscription(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	return lifedata.SubscriptionSections(sub), nil
+}
+
+func (c *Client) ListSchedulesBySection(ctx context.Context, token string, sectionJwId int64, dateFrom, dateTo string) ([]map[string]any, error) {
+	limit := int64(100)
+	params := openapi.GetSectionSchedulesParams{
+		DateFrom: &dateFrom,
+		DateTo:   &dateTo,
+		Limit:    &limit,
+	}
+	var out []map[string]any
+	resp, err := c.Typed(ctx, token).GetSectionSchedules(ctx, sectionJwId, &params)
+	if err := typedJSON(resp, err, "section schedules", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListExamsBySection(ctx context.Context, token string, sectionJwId int64) ([]map[string]any, error) {
+	section, err := c.GetSectionByJwID(ctx, sectionJwId)
+	if err != nil {
+		return nil, err
+	}
+	return lifedata.MapSlice(section["exams"]), nil
+}
+
+func (c *Client) ListHomeworksBySection(ctx context.Context, token string, sectionJwId int64) ([]map[string]any, error) {
+	params := openapi.ListHomeworksParams{SectionJwId: &sectionJwId}
+	var out struct {
+		Homeworks []map[string]any `json:"homeworks"`
+	}
+	resp, err := c.Typed(ctx, token).ListHomeworks(ctx, &params)
+	if err := typedJSON(resp, err, "section homeworks", &out); err != nil {
+		return nil, err
+	}
+	return out.Homeworks, nil
+}
+
+func (c *Client) GetMyDashboard(ctx context.Context, token string) (map[string]any, error) {
+	params := openapi.GetApiMeOverviewParams{}
+	var out map[string]any
+	resp, err := c.Typed(ctx, token).GetApiMeOverview(ctx, &params)
+	err = typedJSON(resp, err, "dashboard", &out)
+	return out, err
+}
+
+func (c *Client) GetUpcomingDeadlines(ctx context.Context, token string, dayLimit int) (map[string]any, error) {
+	params := openapi.GetApiMeOverviewParams{}
+	if dayLimit > 0 {
+		params.HomeworkWindowDays = int64Ptr(int64(dayLimit))
+	}
+	params.Limit = int64Ptr(int64(50))
+	var out map[string]any
+	resp, err := c.Typed(ctx, token).GetApiMeOverview(ctx, &params)
+	err = typedJSON(resp, err, "upcoming deadlines", &out)
+	return out, err
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }
 
 func (c *Client) Bus(ctx context.Context) (map[string]any, error) {

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -242,6 +243,56 @@ type messagePartInput struct {
 	Content string `json:"content" jsonschema_description:"One intermediate QQ message to send before the final response"`
 }
 
+type searchCoursesInput struct {
+	Keyword          string `json:"keyword,omitempty" jsonschema_description:"Search keyword, course name, code, or teacher name"`
+	EducationLevelID int64  `json:"education_level_id,omitempty" jsonschema_description:"Optional education level ID filter"`
+	CategoryID       int64  `json:"category_id,omitempty" jsonschema_description:"Optional course category ID filter"`
+	ClassTypeID      int64  `json:"class_type_id,omitempty" jsonschema_description:"Optional class type ID filter"`
+	Limit            int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
+}
+
+type searchSectionsInput struct {
+	Keyword      string `json:"keyword,omitempty" jsonschema_description:"Search keyword, course name, section code, or teacher name"`
+	CourseID     int64  `json:"course_id,omitempty" jsonschema_description:"Optional course ID filter"`
+	CourseJwID   int64  `json:"course_jw_id,omitempty" jsonschema_description:"Optional course JW ID filter"`
+	SemesterID   int64  `json:"semester_id,omitempty" jsonschema_description:"Optional semester ID filter"`
+	SemesterJwID int64  `json:"semester_jw_id,omitempty" jsonschema_description:"Optional semester JW ID filter"`
+	CampusID     int64  `json:"campus_id,omitempty" jsonschema_description:"Optional campus ID filter"`
+	DepartmentID int64  `json:"department_id,omitempty" jsonschema_description:"Optional department ID filter"`
+	TeacherID    int64  `json:"teacher_id,omitempty" jsonschema_description:"Optional teacher ID filter"`
+	TeacherCode  string `json:"teacher_code,omitempty" jsonschema_description:"Optional teacher code filter"`
+	Limit        int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
+}
+
+type searchTeachersInput struct {
+	Keyword      string `json:"keyword,omitempty" jsonschema_description:"Search keyword or teacher name"`
+	DepartmentID int64  `json:"department_id,omitempty" jsonschema_description:"Optional department ID filter"`
+	Limit        int    `json:"limit,omitempty" jsonschema_description:"Optional result limit (default 5)"`
+}
+
+type jwIdInput struct {
+	JwID int64 `json:"jw_id" jsonschema_description:"JW ID of the teaching section or course"`
+}
+
+type idInput struct {
+	ID int64 `json:"id" jsonschema_description:"ID of the teacher"`
+}
+
+type sectionJwIdDateRangeInput struct {
+	SectionJwID int64  `json:"section_jw_id" jsonschema_description:"Teaching section JW ID"`
+	DateFrom    string `json:"date_from" jsonschema_description:"Start date (YYYY-MM-DD)"`
+	DateTo      string `json:"date_to" jsonschema_description:"End date (YYYY-MM-DD)"`
+}
+
+type busRouteInput struct {
+	From string `json:"from,omitempty" jsonschema_description:"Optional origin campus name, such as 东区"`
+	To   string `json:"to,omitempty" jsonschema_description:"Optional destination campus name, such as 西区"`
+}
+
+type dayLimitInput struct {
+	DayLimit int `json:"day_limit,omitempty" jsonschema_description:"Number of days to look ahead (default 7)"`
+}
+
 type toolTraceNotifier struct {
 	mu    sync.Mutex
 	ident store.Identity
@@ -305,21 +356,117 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendU
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "course", "search_courses", "Search courses by name, code, or teacher keyword.", trace, requiredCommandTool(s, ident, "keyword", "课程 ", func(input keywordInput) string {
-		return input.Keyword
-	}))
+	tools, err = appendCommandBackedTool(s, specByName, tools, "course_search", "search_courses", "Search courses by keyword with optional filters (education level, category, class type).", trace, func(ctx context.Context, input searchCoursesInput) (string, error) {
+		return s.runCommand(ctx, ident, searchCoursesCommandText(input))
+	})
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "section", "search_sections", "Search teaching sections by course name, section code, or teacher keyword. Use this before subscribing by natural language.", trace, requiredCommandTool(s, ident, "keyword", "教学班 ", func(input keywordInput) string {
-		return input.Keyword
-	}))
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section_search", "search_sections", "Search teaching sections by keyword with optional filters (course, semester, campus, department, teacher). Use this before subscribing by natural language.", trace, func(ctx context.Context, input searchSectionsInput) (string, error) {
+		return s.runCommand(ctx, ident, searchSectionsCommandText(input))
+	})
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher", "search_teachers", "Search teachers by name or teacher code.", trace, requiredCommandTool(s, ident, "keyword", "老师 ", func(input keywordInput) string {
-		return input.Keyword
-	}))
+	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher_search", "search_teachers", "Search teachers by keyword with optional department filter.", trace, func(ctx context.Context, input searchTeachersInput) (string, error) {
+		return s.runCommand(ctx, ident, searchTeachersCommandText(input))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "list_semesters", "list_semesters", "List available Life USTC semesters.", trace, func(ctx context.Context, _ emptyInput) (string, error) {
+		return s.runCommand(ctx, ident, "学期列表")
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "course_by_jw_id", "get_course_by_jw_id", "Get a course by its JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
+		if input.JwID <= 0 {
+			return "", errors.New("jw_id is required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("课程编号 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section_by_jw_id", "get_section_by_jw_id", "Get a teaching section by its JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
+		if input.JwID <= 0 {
+			return "", errors.New("jw_id is required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("教学班编号 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "teacher_by_id", "get_teacher_by_id", "Get a teacher by ID.", trace, func(ctx context.Context, input idInput) (string, error) {
+		if input.ID <= 0 {
+			return "", errors.New("id is required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("老师编号 %d", input.ID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "bus_routes", "list_bus_routes", "List campus bus routes with optional origin and destination campus filters.", trace, func(ctx context.Context, input busRouteInput) (string, error) {
+		return s.runCommand(ctx, ident, busRouteCommandText(input))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "unsubscribe_section_by_jw_id", "unsubscribe_section_by_jw_id", "Unsubscribe from a teaching section by its JW ID. Requires user confirmation.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
+		if input.JwID <= 0 {
+			return "", errors.New("jw_id is required")
+		}
+		return s.prepareConfirmation(ctx, ident, "需要确认", fmt.Sprintf("退订教学班 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "my_subscribed_sections", "list_my_subscribed_sections", "List the user's current subscribed teaching sections.", trace, func(ctx context.Context, _ emptyInput) (string, error) {
+		return s.runCommand(ctx, ident, "我的订阅")
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section_schedules", "list_schedules_by_section", "List schedules for a teaching section by JW ID and date range.", trace, func(ctx context.Context, input sectionJwIdDateRangeInput) (string, error) {
+		if input.SectionJwID <= 0 {
+			return "", errors.New("section_jw_id is required")
+		}
+		if strings.TrimSpace(input.DateFrom) == "" || strings.TrimSpace(input.DateTo) == "" {
+			return "", errors.New("date_from and date_to are required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("教学班课表 %d %s %s", input.SectionJwID, input.DateFrom, input.DateTo))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section_exams", "list_exams_by_section", "List exams for a teaching section by JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
+		if input.JwID <= 0 {
+			return "", errors.New("jw_id is required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("教学班考试 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "section_homeworks", "list_homeworks_by_section", "List homeworks for a teaching section by JW ID.", trace, func(ctx context.Context, input jwIdInput) (string, error) {
+		if input.JwID <= 0 {
+			return "", errors.New("jw_id is required")
+		}
+		return s.runCommand(ctx, ident, fmt.Sprintf("教学班作业 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "dashboard", "get_my_dashboard", "Get the logged-in user's dashboard overview (classes, todos, homework, exams).", trace, func(ctx context.Context, _ emptyInput) (string, error) {
+		return s.runCommand(ctx, ident, "概览")
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "upcoming_deadlines", "get_upcoming_deadlines", "Get the user's upcoming deadlines (todos, homework, exams) within a number of days.", trace, func(ctx context.Context, input dayLimitInput) (string, error) {
+		return s.runCommand(ctx, ident, upcomingDeadlinesCommandText(input))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -797,6 +944,93 @@ func busCommandText(input busInput) string {
 		parts = append(parts, "after", after)
 	}
 	return strings.Join(parts, " ")
+}
+
+func searchCoursesCommandText(input searchCoursesInput) string {
+	parts := []string{"课程搜索"}
+	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
+		parts = append(parts, "keyword", keyword)
+	}
+	if input.EducationLevelID > 0 {
+		parts = append(parts, "education_level_id", strconv.FormatInt(input.EducationLevelID, 10))
+	}
+	if input.CategoryID > 0 {
+		parts = append(parts, "category_id", strconv.FormatInt(input.CategoryID, 10))
+	}
+	if input.ClassTypeID > 0 {
+		parts = append(parts, "class_type_id", strconv.FormatInt(input.ClassTypeID, 10))
+	}
+	if input.Limit > 0 {
+		parts = append(parts, "limit", strconv.Itoa(input.Limit))
+	}
+	return strings.Join(parts, " ")
+}
+
+func searchSectionsCommandText(input searchSectionsInput) string {
+	parts := []string{"教学班搜索"}
+	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
+		parts = append(parts, "keyword", keyword)
+	}
+	if input.CourseID > 0 {
+		parts = append(parts, "course_id", strconv.FormatInt(input.CourseID, 10))
+	}
+	if input.CourseJwID > 0 {
+		parts = append(parts, "course_jw_id", strconv.FormatInt(input.CourseJwID, 10))
+	}
+	if input.SemesterID > 0 {
+		parts = append(parts, "semester_id", strconv.FormatInt(input.SemesterID, 10))
+	}
+	if input.SemesterJwID > 0 {
+		parts = append(parts, "semester_jw_id", strconv.FormatInt(input.SemesterJwID, 10))
+	}
+	if input.CampusID > 0 {
+		parts = append(parts, "campus_id", strconv.FormatInt(input.CampusID, 10))
+	}
+	if input.DepartmentID > 0 {
+		parts = append(parts, "department_id", strconv.FormatInt(input.DepartmentID, 10))
+	}
+	if input.TeacherID > 0 {
+		parts = append(parts, "teacher_id", strconv.FormatInt(input.TeacherID, 10))
+	}
+	if code := strings.TrimSpace(input.TeacherCode); code != "" {
+		parts = append(parts, "teacher_code", code)
+	}
+	if input.Limit > 0 {
+		parts = append(parts, "limit", strconv.Itoa(input.Limit))
+	}
+	return strings.Join(parts, " ")
+}
+
+func searchTeachersCommandText(input searchTeachersInput) string {
+	parts := []string{"老师搜索"}
+	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
+		parts = append(parts, "keyword", keyword)
+	}
+	if input.DepartmentID > 0 {
+		parts = append(parts, "department_id", strconv.FormatInt(input.DepartmentID, 10))
+	}
+	if input.Limit > 0 {
+		parts = append(parts, "limit", strconv.Itoa(input.Limit))
+	}
+	return strings.Join(parts, " ")
+}
+
+func busRouteCommandText(input busRouteInput) string {
+	parts := []string{"校车路线"}
+	if from := strings.TrimSpace(input.From); from != "" {
+		parts = append(parts, "from", from)
+	}
+	if to := strings.TrimSpace(input.To); to != "" {
+		parts = append(parts, "to", to)
+	}
+	return strings.Join(parts, " ")
+}
+
+func upcomingDeadlinesCommandText(input dayLimitInput) string {
+	if input.DayLimit <= 0 {
+		return "近期截止"
+	}
+	return fmt.Sprintf("近期截止 %d", input.DayLimit)
 }
 
 func todoListCommandText(input todoListInput) string {

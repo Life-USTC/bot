@@ -157,6 +157,17 @@ func TestHandleHelpAliases(t *testing.T) {
 	}
 }
 
+func TestHelpReplyIsCompact(t *testing.T) {
+	reply := Handler{}.help()
+	want := "可以直接发：待办 / td；td 写报告；td done 1；作业 / hw；作业 done 1；今日 / ddl；校车 / xc；xc 东区 西区；今天课表 / 明天课表；下一节课；订阅；通知；AI 工具；状态 / status；我 / me；反馈 你的建议；课程 数学分析；教学班 高等数学；老师 张；考试 / ks；登录 / 登录 状态"
+	if reply != want {
+		t.Fatalf("reply = %q, want %q", reply, want)
+	}
+	if strings.ContainsAny(reply, "\n\r\x1b") {
+		t.Fatalf("reply contains control separator: %q", reply)
+	}
+}
+
 func TestIsHelpToken(t *testing.T) {
 	for _, token := range []string{"/help", "/?", "-h", "--help", " help ", "?", "？", "帮助", "菜单"} {
 		if !isHelpToken(token) {
@@ -212,6 +223,21 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"schedule":     true,
 		"nextclass":    true,
 		"exam":         true,
+		"list_semesters":               true,
+		"course_search":                true,
+		"section_search":               true,
+		"teacher_search":               true,
+		"course_by_jw_id":              true,
+		"section_by_jw_id":             true,
+		"teacher_by_id":                true,
+		"bus_routes":                   true,
+		"unsubscribe_section_by_jw_id": true,
+		"my_subscribed_sections":       true,
+		"section_schedules":            true,
+		"section_exams":                true,
+		"section_homeworks":            true,
+		"dashboard":                    true,
+		"upcoming_deadlines":           true,
 	}
 	storeCommands := map[string]bool{
 		"notify": true,
@@ -228,6 +254,13 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"schedule":     true,
 		"nextclass":    true,
 		"exam":         true,
+		"unsubscribe_section_by_jw_id": true,
+		"my_subscribed_sections":       true,
+		"section_schedules":            true,
+		"section_exams":                true,
+		"section_homeworks":            true,
+		"dashboard":                    true,
+		"upcoming_deadlines":           true,
 	}
 	helpCommands := map[string]bool{
 		"login":        true,
@@ -2536,6 +2569,375 @@ func TestAccessTokenReturnsFalseWhenUnavailable(t *testing.T) {
 	token, ok = handler.accessToken(ctx, ident)
 	if ok || token != "" {
 		t.Fatalf("missing credential token = %q, ok = %v", token, ok)
+	}
+}
+
+func TestParseSearchCoursesArgsWithFilters(t *testing.T) {
+	opts := parseSearchCoursesArgs([]string{"keyword", "数学分析", "education_level_id", "1", "category_id", "2", "class_type_id", "3", "limit", "10"})
+	if opts.Keyword != "数学分析" || opts.EducationLevelID != 1 || opts.CategoryID != 2 || opts.ClassTypeID != 3 || opts.Limit != 10 {
+		t.Fatalf("opts = %#v", opts)
+	}
+}
+
+func TestParseSearchSectionsArgsWithFilters(t *testing.T) {
+	opts := parseSearchSectionsArgs([]string{
+		"keyword", "高等数学",
+		"course_id", "11",
+		"course_jw_id", "12",
+		"semester_id", "13",
+		"semester_jw_id", "14",
+		"campus_id", "15",
+		"department_id", "16",
+		"teacher_id", "17",
+		"teacher_code", "T001",
+		"limit", "20",
+	})
+	if opts.Keyword != "高等数学" ||
+		opts.CourseID != 11 || opts.CourseJwID != 12 ||
+		opts.SemesterID != 13 || opts.SemesterJwID != 14 ||
+		opts.CampusID != 15 || opts.DepartmentID != 16 ||
+		opts.TeacherID != 17 || opts.TeacherCode != "T001" ||
+		opts.Limit != 20 {
+		t.Fatalf("opts = %#v", opts)
+	}
+}
+
+func TestParseSearchTeachersArgsWithFilters(t *testing.T) {
+	opts := parseSearchTeachersArgs([]string{"keyword", "张", "department_id", "5", "limit", "8"})
+	if opts.Keyword != "张" || opts.DepartmentID != 5 || opts.Limit != 8 {
+		t.Fatalf("opts = %#v", opts)
+	}
+}
+
+func TestHandleCourseSearchWithFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/courses" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("search") != "数学分析" || q.Get("educationLevelId") != "1" || q.Get("categoryId") != "2" || q.Get("classTypeId") != "3" || q.Get("limit") != "10" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1006","namePrimary":"数学分析"}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "课程搜索 keyword 数学分析 education_level_id 1 category_id 2 class_type_id 3 limit 10"})
+	if !ok || !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟼") || !strings.Contains(reply, "数学分析") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleSectionSearchWithFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("search") != "高等数学" || q.Get("courseId") != "11" || q.Get("teacherCode") != "T001" || q.Get("limit") != "20" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001.01","course":{"namePrimary":"高等数学"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "教学班搜索 keyword 高等数学 course_id 11 teacher_code T001 limit 20"})
+	if !ok || !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷") || !strings.Contains(reply, "高等数学") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleTeacherSearchWithFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/teachers" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("search") != "张" || q.Get("departmentId") != "5" || q.Get("limit") != "8" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"T001","namePrimary":"张三","department":{"namePrimary":"数学科学学院"},"teacherTitle":{"namePrimary":"教授"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "老师搜索 keyword 张 department_id 5 limit 8"})
+	if !ok || !strings.Contains(reply, "张三") || !strings.Contains(reply, "数学科学学院") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleCourseByJwID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/courses/123" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"code":"CS1001","namePrimary":"计算机导论"}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "课程编号 123"})
+	if !ok || !strings.Contains(reply, "𝙲𝚂𝟷𝟶𝟶𝟷") || !strings.Contains(reply, "计算机导论") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleSectionByJwID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections/456" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"name":"2026春季"}}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "教学班编号 456"})
+	if !ok || !strings.Contains(reply, "𝙲𝚂𝟷𝟶𝟶𝟷.𝟶𝟷") || !strings.Contains(reply, "计算机导论") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleTeacherByID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/teachers/12" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":12,"code":"T001","namePrimary":"张三","department":{"namePrimary":"数学科学学院"},"teacherTitle":{"namePrimary":"教授"}}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "老师编号 12"})
+	if !ok || !strings.Contains(reply, "张三") || !strings.Contains(reply, "教授") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleListSemesters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/semesters" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "20" {
+			t.Fatalf("limit = %q", r.URL.Query().Get("limit"))
+		}
+		_, _ = w.Write([]byte(`{"data":[{"namePrimary":"2026春季","startDate":"2026-02-17T00:00:00+08:00","endDate":"2026-07-06T00:00:00+08:00"}]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "学期列表"})
+	if !ok || !strings.Contains(reply, "2026春季") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestFormatBusRoutes(t *testing.T) {
+	reply := formatBusRoutes(map[string]any{
+		"routes": []any{
+			map[string]any{
+				"nameCn":      "东高新线",
+				"originCampus": map[string]any{"namePrimary": "东区"},
+				"destinationCampus": map[string]any{"namePrimary": "高新区"},
+				"stops": []any{
+					map[string]any{"campus": map[string]any{"namePrimary": "东区"}},
+					map[string]any{"campus": map[string]any{"namePrimary": "高新区"}},
+				},
+			},
+		},
+	})
+	want := "东高新线（东区 → 高新区） 经停 东区、高新区"
+	if !strings.Contains(reply, want) {
+		t.Fatalf("reply = %q, want %q", reply, want)
+	}
+}
+
+func TestHandleBusRoutes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/bus/routes":
+			_, _ = w.Write([]byte(`{"routes":[{"nameCn":"东高新线","originCampus":{"namePrimary":"东区"},"destinationCampus":{"namePrimary":"高新区"},"stops":[]}],"campuses":[{"id":1,"namePrimary":"东区"},{"id":2,"namePrimary":"高新区"}]}`))
+		case "/api/bus":
+			_, _ = w.Write([]byte(`{"campuses":[{"id":1,"namePrimary":"东区"},{"id":2,"namePrimary":"高新区"}]}`))
+		default:
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "校车路线 from 东区 to 高新区"})
+	if !ok || !strings.Contains(reply, "东高新线") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleSectionSchedules(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections/789/schedules" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("dateFrom") != "2026-06-01" || q.Get("dateTo") != "2026-06-07" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "教学班课表 789 2026-06-01 2026-06-07", Identity: ident})
+	if !ok || !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "西区 𝟹𝙰𝟸𝟶𝟺") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleSectionExams(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sections/321" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"code":"MATH1001.01","course":{"namePrimary":"数学分析"},"exams":[{"id":1,"examDate":"2026-06-20T00:00:00+08:00","startTime":1430,"endTime":1630,"examMode":"闭卷","examRooms":[{"room":"3A101"}]}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "教学班考试 321", Identity: ident})
+	if !ok || !strings.Contains(reply, "数学分析") || !strings.Contains(reply, "𝟶𝟼-𝟸𝟶") || !strings.Contains(reply, "闭卷") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleSectionHomeworks(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/homeworks" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("sectionJwId") != "654" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "教学班作业 654", Identity: ident})
+	if !ok || !strings.Contains(reply, "Problem Set") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestFormatDashboard(t *testing.T) {
+	data := map[string]any{
+		"counts": map[string]any{
+			"todaySchedules":   2,
+			"pendingHomeworks": 3,
+			"dueSoonHomeworks": 1,
+			"upcomingExams":    4,
+		},
+		"dueTodos": map[string]any{
+			"items": []any{map[string]any{"title": "写报告", "dueAt": "2026-06-10T18:00:00+08:00"}},
+		},
+		"homeworks": map[string]any{
+			"items": []any{map[string]any{"title": "Problem Set 1", "submissionDueAt": "2026-06-03T12:00:00+08:00"}},
+		},
+		"exams": map[string]any{
+			"items": []any{
+				map[string]any{
+					"section":  map[string]any{"course": map[string]any{"namePrimary": "数学分析"}},
+					"examDate": "2026-06-20T00:00:00+08:00",
+					"startTime": 900,
+					"endTime":   1100,
+					"examRooms": []any{map[string]any{"room": "3A101"}},
+				},
+			},
+		},
+	}
+	reply := formatDashboard(data, "我的概览")
+	for _, want := range []string{"我的概览", "今日课表 2", "待办：", "作业：", "考试：", "数学分析"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+}
+
+func TestHandleDashboard(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/me/overview" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"counts":{"todaySchedules":1,"pendingHomeworks":1},"dueTodos":{"items":[{"title":"写报告"}]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "概览", Identity: ident})
+	if !ok || !strings.Contains(reply, "我的概览") || !strings.Contains(reply, "写报告") || !strings.Contains(reply, "作业一") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleUpcomingDeadlines(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/me/overview" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("homeworkWindowDays") != "14" || q.Get("limit") != "50" {
+			t.Fatalf("query = %s", q.Encode())
+		}
+		_, _ = w.Write([]byte(`{"counts":{"upcomingExams":1},"dueTodos":{"items":[]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "近期截止 14", Identity: ident})
+	if !ok || !strings.Contains(reply, "未来 14 天截止") || !strings.Contains(reply, "作业一") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHandleUnsubscribeSectionByJwID(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/calendar-subscriptions/current" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"jwId":999,"code":"CS1001.01","course":{"namePrimary":"计算机导论"}}]}}`))
+		case r.URL.Path == "/api/calendar-subscriptions/batch" && r.Method == http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["action"] != "remove" {
+				t.Fatalf("action = %q", body["action"])
+			}
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "退订教学班 999", Identity: ident})
+	if !ok || reply != "已退订教学班。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
