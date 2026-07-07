@@ -115,7 +115,16 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		Model:         s.model,
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
-			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools},
+			ToolsNodeConfig: compose.ToolsNodeConfig{
+				Tools: tools,
+				UnknownToolsHandler: func(ctx context.Context, name, input string) (string, error) {
+					return fmt.Sprintf("未知工具：%s", name), nil
+				},
+				ToolCallMiddlewares: []compose.ToolMiddleware{{
+					Invokable:  toolErrorCatchingMiddleware,
+					Streamable: streamToolErrorCatchingMiddleware,
+				}},
+			},
 		},
 	})
 	if err != nil {
@@ -1218,6 +1227,26 @@ func agentFailureReply(runID int64, err error) string {
 		reply += fmt.Sprintf("\n记录 #%d", runID)
 	}
 	return reply
+}
+
+func toolErrorCatchingMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+		out, err := next(ctx, input)
+		if err != nil {
+			return &compose.ToolOutput{Result: "工具调用失败：" + err.Error()}, nil
+		}
+		return out, nil
+	}
+}
+
+func streamToolErrorCatchingMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
+	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
+		out, err := next(ctx, input)
+		if err != nil {
+			return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{"工具调用失败：" + err.Error()})}, nil
+		}
+		return out, nil
+	}
 }
 
 func isTimeoutError(err error) bool {

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/Life-USTC/Bot/internal/auth"
@@ -324,6 +325,30 @@ func TestListHomeworksCommandTextBuildsSemesterFilter(t *testing.T) {
 	}
 	if got := listHomeworksCommandText(listHomeworksInput{IncludeCompleted: true, SemesterID: 7}); got != "作业 all semester_id 7" {
 		t.Fatalf("semester_id = %q", got)
+	}
+}
+
+func TestToolErrorCatchingMiddlewareReturnsErrorAsResult(t *testing.T) {
+	ctx := context.Background()
+	input := &compose.ToolInput{Name: "test_tool", Arguments: "{}", CallID: "call-1"}
+
+	failing := toolErrorCatchingMiddleware(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+		return nil, errors.New("bad args")
+	})
+	out, err := failing(ctx, input)
+	if err != nil {
+		t.Fatalf("middleware returned error: %v", err)
+	}
+	if out == nil || !strings.Contains(out.Result, "bad args") {
+		t.Fatalf("result = %q", out.Result)
+	}
+
+	ok := toolErrorCatchingMiddleware(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+		return &compose.ToolOutput{Result: "ok"}, nil
+	})
+	out, err = ok(ctx, input)
+	if err != nil || out.Result != "ok" {
+		t.Fatalf("ok result = %q, err = %v", out.Result, err)
 	}
 }
 
