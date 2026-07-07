@@ -203,9 +203,9 @@ type dateInput struct {
 }
 
 type listHomeworksInput struct {
-	SemesterID       int64 `json:"semester_id,omitempty" jsonschema_description:"Optional semester ID filter (use list_semesters to find IDs)"`
-	SemesterJwID     int64 `json:"semester_jw_id,omitempty" jsonschema_description:"Optional semester JW ID filter"`
-	IncludeCompleted bool  `json:"include_completed,omitempty" jsonschema_description:"Include completed homeworks; default is pending only"`
+	SemesterID       int64  `json:"semester_id,omitempty" jsonschema_description:"Numeric semester ID filter (preferred; use list_semesters to find IDs)"`
+	SemesterName     string `json:"semester_name,omitempty" jsonschema_description:"Semester name like '2026春季' or '2026年春季学期'; will be resolved to an ID"`
+	IncludeCompleted bool   `json:"include_completed,omitempty" jsonschema_description:"Include completed homeworks; default is pending only"`
 }
 
 type todoInput struct {
@@ -464,8 +464,12 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendU
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "list_homeworks", "List the user's homework across subscribed sections, grouped by overdue, nearby, and future. Optionally filter by semester_id or semester_jw_id (use list_semesters to find IDs). Set include_completed to true to show finished items.", trace, func(ctx context.Context, input listHomeworksInput) (string, error) {
-		return s.runCommand(ctx, ident, listHomeworksCommandText(input))
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "list_homeworks", "List the user's homework across subscribed sections, grouped by overdue, nearby, and future. Filter by semester_id (numeric, from list_semesters) or semester_name (e.g. '2026春季'). Set include_completed to true to show finished items.", trace, func(ctx context.Context, input listHomeworksInput) (string, error) {
+		resolved, err := s.resolveHomeworkSemesterInput(ctx, input)
+		if err != nil {
+			return "", err
+		}
+		return s.runCommand(ctx, ident, listHomeworksCommandText(resolved))
 	})
 	if err != nil {
 		return nil, err
@@ -1053,10 +1057,41 @@ func listHomeworksCommandText(input listHomeworksInput) string {
 	if input.SemesterID > 0 {
 		parts = append(parts, "semester_id", strconv.FormatInt(input.SemesterID, 10))
 	}
-	if input.SemesterJwID > 0 {
-		parts = append(parts, "semester_jw_id", strconv.FormatInt(input.SemesterJwID, 10))
-	}
 	return strings.Join(parts, " ")
+}
+
+func semesterNameMatches(semester map[string]any, name string) bool {
+	for _, key := range []string{"namePrimary", "nameCn", "name"} {
+		if strings.Contains(lifedata.FirstString(semester, key), name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) resolveHomeworkSemesterInput(ctx context.Context, input listHomeworksInput) (listHomeworksInput, error) {
+	name := strings.TrimSpace(input.SemesterName)
+	if name == "" {
+		return input, nil
+	}
+	if s.handler.Life == nil {
+		return input, errors.New("life client unavailable")
+	}
+	semesters, err := s.handler.Life.ListSemesters(ctx, 1, 50)
+	if err != nil {
+		return input, fmt.Errorf("list semesters: %w", err)
+	}
+	for _, semester := range semesters {
+		if !semesterNameMatches(semester, name) {
+			continue
+		}
+		if id := lifedata.FirstInt(semester, "id"); id > 0 {
+			input.SemesterID = int64(id)
+			input.SemesterName = ""
+			return input, nil
+		}
+	}
+	return input, fmt.Errorf("semester not found: %q", name)
 }
 
 func todoListCommandText(input todoListInput) string {

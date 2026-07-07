@@ -325,8 +325,30 @@ func TestListHomeworksCommandTextBuildsSemesterFilter(t *testing.T) {
 	if got := listHomeworksCommandText(listHomeworksInput{IncludeCompleted: true, SemesterID: 7}); got != "作业 all semester_id 7" {
 		t.Fatalf("semester_id = %q", got)
 	}
-	if got := listHomeworksCommandText(listHomeworksInput{SemesterJwID: 202501}); got != "作业 semester_jw_id 202501" {
-		t.Fatalf("semester_jw_id = %q", got)
+}
+
+func TestResolveHomeworkSemesterInputResolvesNameToID(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/semesters" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":2,"jwId":202501,"namePrimary":"2026年春季学期"}]}`))
+	}))
+	defer server.Close()
+
+	svc := &Service{handler: commands.Handler{Life: life.NewClient(server.URL, server.Client())}}
+	resolved, err := svc.resolveHomeworkSemesterInput(ctx, listHomeworksInput{SemesterName: "2026年春季学期"})
+	if err != nil {
+		t.Fatalf("resolve error = %v", err)
+	}
+	if resolved.SemesterID != 2 || resolved.SemesterName != "" {
+		t.Fatalf("resolved = %+v", resolved)
+	}
+
+	_, err = svc.resolveHomeworkSemesterInput(ctx, listHomeworksInput{SemesterName: "不存在的学期"})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("missing semester error = %v", err)
 	}
 }
 
