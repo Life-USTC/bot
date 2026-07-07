@@ -208,21 +208,21 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	agentTools := map[string]string{}
 	handler := Handler{Prefix: "/life"}
 	lifeCommands := map[string]bool{
-		"me":           true,
-		"todo":         true,
-		"homework":     true,
-		"overview":     true,
-		"subscription": true,
-		"ping":         true,
-		"status":       true,
-		"semester":     true,
-		"course":       true,
-		"section":      true,
-		"teacher":      true,
-		"bus":          true,
-		"schedule":     true,
-		"nextclass":    true,
-		"exam":         true,
+		"me":                           true,
+		"todo":                         true,
+		"homework":                     true,
+		"overview":                     true,
+		"subscription":                 true,
+		"ping":                         true,
+		"status":                       true,
+		"semester":                     true,
+		"course":                       true,
+		"section":                      true,
+		"teacher":                      true,
+		"bus":                          true,
+		"schedule":                     true,
+		"nextclass":                    true,
+		"exam":                         true,
 		"list_semesters":               true,
 		"course_search":                true,
 		"section_search":               true,
@@ -244,16 +244,16 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"agent":  true,
 	}
 	authCommands := map[string]bool{
-		"login":        true,
-		"logout":       true,
-		"me":           true,
-		"todo":         true,
-		"homework":     true,
-		"overview":     true,
-		"subscription": true,
-		"schedule":     true,
-		"nextclass":    true,
-		"exam":         true,
+		"login":                        true,
+		"logout":                       true,
+		"me":                           true,
+		"todo":                         true,
+		"homework":                     true,
+		"overview":                     true,
+		"subscription":                 true,
+		"schedule":                     true,
+		"nextclass":                    true,
+		"exam":                         true,
 		"unsubscribe_section_by_jw_id": true,
 		"my_subscribed_sections":       true,
 		"section_schedules":            true,
@@ -1374,6 +1374,44 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 	if !completed || !strings.Contains(reply, "已完成作业：Problem Set 1") {
 		t.Fatalf("completed = %v, reply = %q", completed, reply)
+	}
+}
+
+func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/me/subscriptions/homeworks" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"homeworks":[
+			{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
+			{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
+		]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业 semester_id 2", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "组合数学") || !strings.Contains(reply, "Spring HW") {
+		t.Fatalf("reply missing spring homework: %q", reply)
+	}
+	if strings.Contains(reply, "数据库系统") || strings.Contains(reply, "Summer HW") {
+		t.Fatalf("reply included summer homework: %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 all semester_jw_id 202501", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "组合数学") || !strings.Contains(reply, "Spring HW") {
+		t.Fatalf("reply missing spring homework for jw_id: %q", reply)
+	}
+	if strings.Contains(reply, "数据库系统") || strings.Contains(reply, "Summer HW") {
+		t.Fatalf("reply included summer homework for jw_id: %q", reply)
 	}
 }
 
@@ -2740,8 +2778,8 @@ func TestFormatBusRoutes(t *testing.T) {
 	reply := formatBusRoutes(map[string]any{
 		"routes": []any{
 			map[string]any{
-				"nameCn":      "东高新线",
-				"originCampus": map[string]any{"namePrimary": "东区"},
+				"nameCn":            "东高新线",
+				"originCampus":      map[string]any{"namePrimary": "东区"},
 				"destinationCampus": map[string]any{"namePrimary": "高新区"},
 				"stops": []any{
 					map[string]any{"campus": map[string]any{"namePrimary": "东区"}},
@@ -2855,8 +2893,8 @@ func TestFormatDashboard(t *testing.T) {
 		"exams": map[string]any{
 			"items": []any{
 				map[string]any{
-					"section":  map[string]any{"course": map[string]any{"namePrimary": "数学分析"}},
-					"examDate": "2026-06-20T00:00:00+08:00",
+					"section":   map[string]any{"course": map[string]any{"namePrimary": "数学分析"}},
+					"examDate":  "2026-06-20T00:00:00+08:00",
 					"startTime": 900,
 					"endTime":   1100,
 					"examRooms": []any{map[string]any{"room": "3A101"}},

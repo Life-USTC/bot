@@ -202,6 +202,12 @@ type dateInput struct {
 	Date string `json:"date" jsonschema_description:"Target date, such as 2026-06-23, 6.23, or 6月23日"`
 }
 
+type listHomeworksInput struct {
+	SemesterID       int64 `json:"semester_id,omitempty" jsonschema_description:"Optional semester ID filter (use list_semesters to find IDs)"`
+	SemesterJwID     int64 `json:"semester_jw_id,omitempty" jsonschema_description:"Optional semester JW ID filter"`
+	IncludeCompleted bool  `json:"include_completed,omitempty" jsonschema_description:"Include completed homeworks; default is pending only"`
+}
+
 type todoInput struct {
 	Title    string `json:"title" jsonschema_description:"Todo title to create"`
 	Content  string `json:"content,omitempty" jsonschema_description:"Optional todo content or note"`
@@ -454,6 +460,12 @@ func (s *Service) toolsFor(ident store.Identity, trace *toolTraceNotifier, sendU
 			return "", errors.New("jw_id is required")
 		}
 		return s.runCommand(ctx, ident, fmt.Sprintf("教学班作业 %d", input.JwID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendCommandBackedTool(s, specByName, tools, "homework", "list_homeworks", "List the user's homework across subscribed sections, grouped by overdue, nearby, and future. Optionally filter by semester_id or semester_jw_id (use list_semesters to find IDs). Set include_completed to true to show finished items.", trace, func(ctx context.Context, input listHomeworksInput) (string, error) {
+		return s.runCommand(ctx, ident, listHomeworksCommandText(input))
 	})
 	if err != nil {
 		return nil, err
@@ -1031,6 +1043,20 @@ func upcomingDeadlinesCommandText(input dayLimitInput) string {
 		return "近期截止"
 	}
 	return fmt.Sprintf("近期截止 %d", input.DayLimit)
+}
+
+func listHomeworksCommandText(input listHomeworksInput) string {
+	parts := []string{"作业"}
+	if input.IncludeCompleted {
+		parts = append(parts, "all")
+	}
+	if input.SemesterID > 0 {
+		parts = append(parts, "semester_id", strconv.FormatInt(input.SemesterID, 10))
+	}
+	if input.SemesterJwID > 0 {
+		parts = append(parts, "semester_jw_id", strconv.FormatInt(input.SemesterJwID, 10))
+	}
+	return strings.Join(parts, " ")
 }
 
 func todoListCommandText(input todoListInput) string {

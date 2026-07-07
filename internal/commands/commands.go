@@ -245,11 +245,6 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Normalize: normalizeHomeworkArgs,
-		AgentTools: []AgentToolSpec{{
-			Name:        "list_homeworks",
-			Description: "List the user's homework grouped by overdue, nearby, and future.",
-			CommandText: "作业",
-		}},
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.homework(ctx, ident, args)
 		},
@@ -1896,7 +1891,10 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		return strings.Join([]string{
 			"作业用法：",
 			"作业",
+			"作业 all",
 			"作业 pending",
+			"作业 semester_id <学期ID>",
+			"作业 semester_jw_id <学期JW ID>",
 			"作业 done 1",
 			"作业 done 1,2,3",
 			"作业 undo 1",
@@ -1929,22 +1927,93 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		return h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
 	}
-	pendingOnly := true
-	if firstArgIs(args, "all") {
-		pendingOnly = false
-	}
+	listArgs := parseHomeworkListArgs(args)
 	homeworks, err := h.homeworks(ctx, ident, token)
 	if err != nil {
 		return commandError("作业查不到：", err)
 	}
-	homeworks = filterHomeworks(homeworks, pendingOnly)
+	if listArgs.semesterID > 0 || listArgs.semesterJwID > 0 {
+		homeworks = filterHomeworksBySemester(homeworks, listArgs.semesterID, listArgs.semesterJwID)
+	}
+	homeworks = filterHomeworks(homeworks, !listArgs.all)
 	if len(homeworks) == 0 {
-		if pendingOnly {
-			return "没有未完成作业。"
+		if listArgs.all {
+			return "没有作业。"
 		}
-		return "没有作业。"
+		return "没有未完成作业。"
 	}
 	return formatHomeworkList(homeworks)
+}
+
+type homeworkListArgs struct {
+	all          bool
+	semesterID   int64
+	semesterJwID int64
+}
+
+func parseHomeworkListArgs(args []string) homeworkListArgs {
+	var out homeworkListArgs
+	i := 0
+	if i < len(args) {
+		switch normToken(args[i]) {
+		case "all":
+			out.all = true
+			i++
+		case "pending":
+			i++
+		}
+	}
+	for i < len(args) {
+		key := normToken(args[i])
+		if i+1 >= len(args) {
+			break
+		}
+		value := args[i+1]
+		switch key {
+		case "semester_id":
+			if v, ok := parseIntArg(value); ok {
+				out.semesterID = v
+				i += 2
+				continue
+			}
+		case "semester_jw_id":
+			if v, ok := parseIntArg(value); ok {
+				out.semesterJwID = v
+				i += 2
+				continue
+			}
+		}
+		i++
+	}
+	return out
+}
+
+func homeworkSemesterIDs(homework map[string]any) (id, jwID int64) {
+	section, _ := homework["section"].(map[string]any)
+	if section == nil {
+		return
+	}
+	semester, _ := section["semester"].(map[string]any)
+	if semester == nil {
+		return
+	}
+	return int64(lifedata.FirstInt(semester, "id")), int64(lifedata.FirstInt(semester, "jwId"))
+}
+
+func filterHomeworksBySemester(homeworks []map[string]any, semesterID, semesterJwID int64) []map[string]any {
+	out := make([]map[string]any, 0, len(homeworks))
+	for _, homework := range homeworks {
+		id, jwID := homeworkSemesterIDs(homework)
+		if semesterID > 0 && id == semesterID {
+			out = append(out, homework)
+			continue
+		}
+		if semesterJwID > 0 && jwID == semesterJwID {
+			out = append(out, homework)
+			continue
+		}
+	}
+	return out
 }
 
 func homeworkCompletionReply(completed bool, title string) string {

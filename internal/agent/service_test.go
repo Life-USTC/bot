@@ -318,6 +318,18 @@ func TestBusCommandTextTrimsOptionalCampuses(t *testing.T) {
 	}
 }
 
+func TestListHomeworksCommandTextBuildsSemesterFilter(t *testing.T) {
+	if got := listHomeworksCommandText(listHomeworksInput{}); got != "作业" {
+		t.Fatalf("default = %q", got)
+	}
+	if got := listHomeworksCommandText(listHomeworksInput{IncludeCompleted: true, SemesterID: 7}); got != "作业 all semester_id 7" {
+		t.Fatalf("semester_id = %q", got)
+	}
+	if got := listHomeworksCommandText(listHomeworksInput{SemesterJwID: 202501}); got != "作业 semester_jw_id 202501" {
+		t.Fatalf("semester_jw_id = %q", got)
+	}
+}
+
 func TestRequiredConfirmationToolDoesNotRunCommand(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
