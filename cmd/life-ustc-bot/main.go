@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/auth"
@@ -19,6 +20,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/notify"
 	"github.com/Life-USTC/Bot/internal/onebot12"
 	"github.com/Life-USTC/Bot/internal/qqbot"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -96,6 +98,24 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
+	var mediaStore *responses.MediaStore
+	if cfg.EnableImageResponses && cfg.PublicBaseURL != "" {
+		mediaStore = responses.NewMediaStore(strings.TrimRight(cfg.PublicBaseURL, "/")+"/media", cfg.MediaTTL)
+		mediaServer := &http.Server{Addr: cfg.MediaAddr, Handler: mediaStore}
+		go func() {
+			if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Printf("media server stopped: %v", err)
+			}
+		}()
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = mediaServer.Shutdown(shutdownCtx)
+		}()
+		logger.Printf("Media server listening on %s", cfg.MediaAddr)
+	} else if cfg.EnableImageResponses {
+		logger.Printf("Image responses disabled: BOT_PUBLIC_BASE_URL is empty")
+	}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
 		Life:                   lifeClient,
@@ -107,6 +127,7 @@ func main() {
 		FeedbackGroups:         cfg.FeedbackAdminGroups,
 		FeedbackSend:           messageRouter.SendMessage,
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
+		EnableImageResponses:   cfg.EnableImageResponses && mediaStore != nil,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled:     cfg.EnableAgent,

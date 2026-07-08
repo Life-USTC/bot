@@ -71,6 +71,11 @@ BOT_LLM_MODEL=gpt-4o-mini
 BOT_LLM_TIMEOUT_SECONDS=60
 OPENAI_API_KEY=
 OPENAI_BASE_URL=
+BOT_ENABLE_IMAGE_RESPONSES=false
+BOT_PUBLIC_BASE_URL=
+BOT_MEDIA_ADDR=127.0.0.1:2281
+BOT_IMAGE_FONT_PATH=
+BOT_MEDIA_TTL_SECONDS=300
 BOT_ALLOW_GROUP_PERSONAL_INFO=false
 BOT_FEEDBACK_ADMIN_USERS=
 BOT_FEEDBACK_ADMIN_GROUPS=
@@ -112,6 +117,13 @@ event delivery. Configure the QQ bot platform callback URL to
 `http(s)://<public-host>/qqbot`, select the message events you need, and make
 sure the callback can reach `QQ_BOT_WEBHOOK_ADDR`. The websocket gateway can
 remain enabled for diagnostics, but it is not the primary receive path.
+
+Set `BOT_ENABLE_IMAGE_RESPONSES=true` plus `BOT_PUBLIC_BASE_URL=https://<public-host>`
+to let schedule, todo list, overview, dashboard, and upcoming-deadline replies
+send a short-lived PNG image before falling back to text. Route `/media/*` from
+the public host to `BOT_MEDIA_ADDR`. The runtime image installs
+`fonts-noto-cjk`; set `BOT_IMAGE_FONT_PATH` only when overriding the default
+font.
 
 Set `BOT_ENABLE_AGENT=true` with `OPENAI_API_KEY` to enable the optional
 LLM-backed private-chat assistant. The agent uses existing bot commands as
