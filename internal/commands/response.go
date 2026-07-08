@@ -24,7 +24,7 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	if !successfulImageText(text) {
 		return nil
 	}
-	imageText := textutil.PlainMonospace(text)
+	imageText := imageRenderText(text)
 	switch cmd.Name {
 	case "schedule":
 		if firstArgIs(cmd.Args, "help") {
@@ -45,6 +45,29 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	default:
 		return nil
 	}
+}
+
+func imageRenderText(text string) string {
+	text = textutil.PlainMonospace(text)
+	var out strings.Builder
+	out.Grow(len(text))
+	for _, r := range text {
+		switch r {
+		case '\t':
+			out.WriteString("  ")
+		case '\n':
+			out.WriteRune(r)
+		case '\r':
+			continue
+		default:
+			if r < ' ' {
+				out.WriteRune(' ')
+				continue
+			}
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func imageTitle(text, fallback string) string {

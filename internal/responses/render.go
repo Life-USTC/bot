@@ -101,7 +101,32 @@ func drawText(dst *image.RGBA, face font.Face, x, y int, text string, c color.Co
 		Face: face,
 		Dot:  fixed.P(x, y),
 	}
-	d.DrawString(text)
+	d.DrawString(drawableText(face, text))
+}
+
+func drawableText(face font.Face, text string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	for _, r := range text {
+		switch r {
+		case '\t':
+			out.WriteString("  ")
+		case '\n':
+			out.WriteRune(r)
+		case '\r':
+			continue
+		default:
+			if r < ' ' {
+				out.WriteRune(' ')
+				continue
+			}
+			if _, ok := face.GlyphAdvance(r); !ok {
+				continue
+			}
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func wrappedLines(lines []string, maxRunes int) []string {

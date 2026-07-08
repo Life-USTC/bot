@@ -801,8 +801,11 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	if img.Title != "07-08 课表" {
 		t.Fatalf("title = %q", img.Title)
 	}
-	if !strings.Contains(img.AltText, "1. \tMATH1001 09:50") {
+	if !strings.Contains(img.AltText, "1.   MATH1001 09:50") {
 		t.Fatalf("alt text = %q", img.AltText)
+	}
+	if strings.Contains(img.AltText, "\t") {
+		t.Fatalf("alt text still uses tabs: %q", img.AltText)
 	}
 	if strings.Contains(img.AltText, "𝟷") || strings.Contains(img.AltText, "𝙼") {
 		t.Fatalf("alt text still uses mathematical monospace characters: %q", img.AltText)
