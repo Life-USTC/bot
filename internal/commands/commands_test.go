@@ -790,6 +790,25 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 	}
 }
 
+func TestImageResponseUsesPlainFontText(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "𝟶𝟽-𝟶𝟾 课表：\n𝟷. \t𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷 𝟶𝟿:𝟻𝟶"
+
+	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
+	if img == nil {
+		t.Fatal("image = nil")
+	}
+	if img.Title != "07-08 课表" {
+		t.Fatalf("title = %q", img.Title)
+	}
+	if !strings.Contains(img.AltText, "1. \tMATH1001 09:50") {
+		t.Fatalf("alt text = %q", img.AltText)
+	}
+	if strings.Contains(img.AltText, "𝟷") || strings.Contains(img.AltText, "𝙼") {
+		t.Fatalf("alt text still uses mathematical monospace characters: %q", img.AltText)
+	}
+}
+
 func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

@@ -97,6 +97,25 @@ func PlainDigits(text string) string {
 	return string(out)
 }
 
+func PlainMonospace(text string) string {
+	out := make([]rune, 0, len(text))
+	for _, r := range text {
+		switch {
+		case r >= '𝙰' && r <= '𝚉':
+			out = append(out, 'A'+(r-'𝙰'))
+		case r >= '𝚊' && r <= '𝚣':
+			out = append(out, 'a'+(r-'𝚊'))
+		case r >= '𝟶' && r <= '𝟿':
+			out = append(out, '0'+(r-'𝟶'))
+		case r >= '０' && r <= '９':
+			out = append(out, '0'+(r-'０'))
+		default:
+			out = append(out, r)
+		}
+	}
+	return string(out)
+}
+
 func PadRightDisplay(text string, width int) string {
 	return PadRightDisplayWith(text, width, " ")
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 type Response struct {
@@ -23,23 +24,24 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	if !successfulImageText(text) {
 		return nil
 	}
+	imageText := textutil.PlainMonospace(text)
 	switch cmd.Name {
 	case "schedule":
 		if firstArgIs(cmd.Args, "help") {
 			return nil
 		}
-		return responses.NewTextImage("schedule", imageTitle(text, "课表"), text)
+		return responses.NewTextImage("schedule", imageTitle(imageText, "课表"), imageText)
 	case "todo":
 		if !todoImageArgs(cmd.Args) {
 			return nil
 		}
-		return responses.NewTextImage("todo", imageTitle(text, "待办"), text)
+		return responses.NewTextImage("todo", imageTitle(imageText, "待办"), imageText)
 	case "overview":
-		return responses.NewTextImage("overview", imageTitle(text, "今日安排"), text)
+		return responses.NewTextImage("overview", imageTitle(imageText, "今日安排"), imageText)
 	case "dashboard":
-		return responses.NewTextImage("dashboard", imageTitle(text, "我的概览"), text)
+		return responses.NewTextImage("dashboard", imageTitle(imageText, "我的概览"), imageText)
 	case "upcoming_deadlines":
-		return responses.NewTextImage("deadlines", imageTitle(text, "近期截止"), text)
+		return responses.NewTextImage("deadlines", imageTitle(imageText, "近期截止"), imageText)
 	default:
 		return nil
 	}
