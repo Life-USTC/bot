@@ -736,6 +736,109 @@ func TestHandleScheduleHelpAliases(t *testing.T) {
 	}
 }
 
+func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
+	ctx := context.Background()
+	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+
+	response, ok := handler.HandleResponse(ctx, Input{Text: "/help", Identity: testIdentity()})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	text, ok := handler.Handle(ctx, Input{Text: "/help", Identity: testIdentity()})
+	if !ok {
+		t.Fatal("Handle did not handle the command")
+	}
+	if response.Text != text {
+		t.Fatalf("HandleResponse text = %q, Handle text = %q", response.Text, text)
+	}
+	if response.Image != nil {
+		t.Fatalf("help response image = %#v, want nil", response.Image)
+	}
+}
+
+func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if r.URL.Path != "/api/me/subscriptions/schedules" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	handler.EnableImageResponses = true
+	response, ok := handler.HandleResponse(ctx, Input{Text: "今天课表", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(response.Text, "数据库系统") {
+		t.Fatalf("text = %q", response.Text)
+	}
+	if response.Image == nil {
+		t.Fatal("image = nil, want schedule image")
+	}
+	if response.Image.Kind != "schedule" || response.Image.Title != "今天课表" {
+		t.Fatalf("image = %#v", response.Image)
+	}
+	if !strings.Contains(response.Image.AltText, "数据库系统") {
+		t.Fatalf("alt text = %q", response.Image.AltText)
+	}
+}
+
+func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","priority":"high"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	response, ok := handler.HandleResponse(ctx, Input{Text: "td", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(response.Text, "写报告") {
+		t.Fatalf("text = %q", response.Text)
+	}
+	if response.Image != nil {
+		t.Fatalf("image = %#v, want nil", response.Image)
+	}
+}
+
+func TestHandleResponseLeavesTodoMutationTextOnly(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":"todo-1","title":"写报告"}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	handler.EnableImageResponses = true
+	response, ok := handler.HandleResponse(ctx, Input{Text: "td 写报告", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(response.Text, "已加待办：写报告") {
+		t.Fatalf("text = %q", response.Text)
+	}
+	if response.Image != nil {
+		t.Fatalf("todo mutation image = %#v, want nil", response.Image)
+	}
+}
+
 func TestHandleTodoDoneByIndex(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
