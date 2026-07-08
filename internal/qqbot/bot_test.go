@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/tencent-connect/botgo/interaction/signature"
 
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -65,6 +67,129 @@ func TestSendMessageFetchesTokenAndSendsGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
+	var uploaded map[string]any
+	var sent map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			if err := json.NewDecoder(r.Body).Decode(&uploaded); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token"})
+		case "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	mediaStore := responses.NewMediaStore(server.URL+"/media", time.Minute)
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: mediaStore,
+	}
+	message := &incomingMessage{
+		ID:   "message-id",
+		Type: "C2C_MESSAGE_CREATE",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "今天课表：\n数据库系统",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表：\n数据库系统"),
+	}
+
+	err := bot.SendResponse(context.Background(), message, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploaded["file_type"].(float64) != 1 || uploaded["srv_send_msg"].(bool) {
+		t.Fatalf("upload body = %#v", uploaded)
+	}
+	if !strings.HasPrefix(uploaded["url"].(string), server.URL+"/media/") {
+		t.Fatalf("upload url = %q", uploaded["url"])
+	}
+	if sent["msg_type"].(float64) != 7 {
+		t.Fatalf("sent body = %#v", sent)
+	}
+	media := sent["media"].(map[string]any)
+	if media["file_info"] != "file-token" {
+		t.Fatalf("media = %#v", media)
+	}
+	if sent["msg_id"] != "message-id" || sent["msg_seq"].(float64) != 1 {
+		t.Fatalf("passive fields = %#v", sent)
+	}
+}
+
+func TestSendResponseFallsBackToTextWhenQQImageUploadFails(t *testing.T) {
+	var textBody sendMessageRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/groups/group-openid/files":
+			http.Error(w, "upload rejected", http.StatusBadRequest)
+		case "/v2/groups/group-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&textBody); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	mediaStore := responses.NewMediaStore(server.URL+"/media", time.Minute)
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: mediaStore,
+	}
+	message := &incomingMessage{
+		ID:   "message-id",
+		Type: "GROUP_AT_MESSAGE_CREATE",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "member-openid",
+			ConversationType: "group",
+			ConversationID:   "group-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "待办：\n1. 写报告",
+		Image: responses.NewTextImage("todo", "待办", "待办：\n1. 写报告"),
+	}
+
+	err := bot.SendResponse(context.Background(), message, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if textBody.MsgType != 0 || textBody.Content != "\n\n"+response.Text {
+		t.Fatalf("text fallback body = %#v", textBody)
+	}
+}
+
 func TestQQBotOutgoingMessageAddsLeadingBlankLineForGroups(t *testing.T) {
 	got := qqBotOutgoingMessage(store.Identity{ConversationType: " group "}, "\nhello")
 	if got != "\n\nhello" {
@@ -75,6 +200,17 @@ func TestQQBotOutgoingMessageAddsLeadingBlankLineForGroups(t *testing.T) {
 	if got != "hello" {
 		t.Fatalf("private message = %q", got)
 	}
+}
+
+func testResponseFontPath(t *testing.T) string {
+	t.Helper()
+	for _, path := range responses.DefaultFontPathsForTest() {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	t.Skip("no CJK font found")
+	return ""
 }
 
 func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) {
