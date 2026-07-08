@@ -385,6 +385,104 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	}
 }
 
+func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *testing.T) {
+	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/courses" {
+			t.Fatalf("unexpected Life API path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
+	}))
+	defer lifeServer.Close()
+
+	bridge := &Bridge{
+		Handler: commands.Handler{
+			Life:   life.NewClient(lifeServer.URL, lifeServer.Client()),
+			Prefix: "/life",
+		},
+	}
+	upgrader := websocket.Upgrader{}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		go bridge.handleReverseConn(context.Background(), conn)
+	}))
+	defer wsServer.Close()
+
+	wsURL := "ws" + wsServer.URL[len("http"):]
+	conn1, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn1.Close() }()
+	waitForReverseSeq(t, bridge, 1)
+
+	conn2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForReverseSeq(t, bridge, 2)
+	_ = conn2.Close()
+	waitForNoActiveReverseConn(t, bridge)
+
+	err = conn1.WriteJSON(map[string]any{
+		"post_type":    "message",
+		"message_type": "private",
+		"raw_message":  "/life course calculus",
+		"user_id":      456,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn1.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var frame map[string]any
+	if err := conn1.ReadJSON(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame["action"] != "send_private_msg" {
+		t.Fatalf("action = %v", frame["action"])
+	}
+	params := frame["params"].(map[string]any)
+	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
+		t.Fatalf("message = %q", params["message"])
+	}
+}
+
+func waitForReverseSeq(t *testing.T, bridge *Bridge, want uint64) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		bridge.reverseMu.Lock()
+		got := bridge.reverseSeq
+		bridge.reverseMu.Unlock()
+		if got >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	bridge.reverseMu.Lock()
+	got := bridge.reverseSeq
+	bridge.reverseMu.Unlock()
+	t.Fatalf("reverseSeq = %d, want at least %d", got, want)
+}
+
+func waitForNoActiveReverseConn(t *testing.T, bridge *Bridge) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		conn, _ := bridge.activeReverseConn()
+		if conn == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("active reverse connection was not cleared")
+}
+
 func TestRunTrimsAccessToken(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	authHeader := make(chan string, 1)
