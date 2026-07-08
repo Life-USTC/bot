@@ -78,12 +78,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		modelName = "gpt-4o-mini"
 	}
 	baseURL := textutil.TrimTrailingSlash(cfg.BaseURL)
-	agentHTTPClient := httpClient
-	if httpClient != nil {
-		clone := *httpClient
-		clone.Timeout = timeout
-		agentHTTPClient = &clone
-	}
+	agentHTTPClient := newAgentHTTPClient(httpClient, timeout, cfg.Logger)
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
 		APIKey:     apiKey,
 		BaseURL:    baseURL,
