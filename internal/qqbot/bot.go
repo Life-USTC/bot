@@ -23,6 +23,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -57,6 +58,8 @@ type Bot struct {
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
+	Renderer   responses.Renderer
+	MediaStore *responses.MediaStore
 
 	tokenMu        sync.Mutex
 	accessToken    string
@@ -151,11 +154,26 @@ type incomingMessage struct {
 }
 
 type sendMessageRequest struct {
-	Content string `json:"content"`
-	MsgType int    `json:"msg_type"`
-	MsgID   string `json:"msg_id,omitempty"`
-	EventID string `json:"event_id,omitempty"`
-	MsgSeq  int    `json:"msg_seq,omitempty"`
+	Content string     `json:"content,omitempty"`
+	MsgType int        `json:"msg_type"`
+	MsgID   string     `json:"msg_id,omitempty"`
+	EventID string     `json:"event_id,omitempty"`
+	MsgSeq  int        `json:"msg_seq,omitempty"`
+	Media   *mediaInfo `json:"media,omitempty"`
+}
+
+type mediaInfo struct {
+	FileInfo json.RawMessage `json:"file_info,omitempty"`
+}
+
+type richMediaUploadRequest struct {
+	FileType   int    `json:"file_type"`
+	URL        string `json:"url"`
+	SrvSendMsg bool   `json:"srv_send_msg"`
+}
+
+type richMediaUploadResponse struct {
+	FileInfo json.RawMessage `json:"file_info"`
 }
 
 func (b *Bot) Run(ctx context.Context) error {
@@ -456,8 +474,8 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			b.logf("QQ bot ignored message: event=%s text=%q", payload.T, trimLogText(message.Text))
 			return
 		}
-		if err := b.Send(ctx, message, reply); err != nil {
-			b.recordOutbound(ctx, message.Identity, reply, store.InteractionStatusFailed, err)
+		if err := b.SendResponse(ctx, message, reply); err != nil {
+			b.recordOutbound(ctx, message.Identity, reply.Text, store.InteractionStatusFailed, err)
 			b.logf("send QQ bot reply failed: %v", err)
 			return
 		}
@@ -490,8 +508,8 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 		b.logf("QQ bot ignored interaction: type=%s text=%q", message.Type, trimLogText(message.Text))
 		return
 	}
-	if err := b.Send(ctx, message, reply); err != nil {
-		b.recordOutbound(ctx, message.Identity, reply, store.InteractionStatusFailed, err)
+	if err := b.SendResponse(ctx, message, reply); err != nil {
+		b.recordOutbound(ctx, message.Identity, reply.Text, store.InteractionStatusFailed, err)
 		b.logf("send QQ bot interaction reply failed: %v", err)
 		return
 	}
@@ -685,17 +703,20 @@ func (b *Bot) cleanContent(content string) string {
 	return strings.TrimSpace(content)
 }
 
-func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (string, bool) {
-	reply, ok := b.Handler.Handle(ctx, commands.Input{
+func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
+	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
 		Text:     message.Text,
 		Identity: message.Identity,
 	})
 	if !ok {
-		reply, ok = b.handleAgent(ctx, message)
+		agentReply, agentOK := b.handleAgent(ctx, message)
+		if agentOK {
+			return commands.Response{Text: agentReply, Kind: "agent"}, true
+		}
 	}
 	if !ok {
 		b.recordIgnored(ctx, message)
-		return "", false
+		return commands.Response{}, false
 	}
 	return reply, true
 }
@@ -737,6 +758,44 @@ func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) e
 	return nil
 }
 
+func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
+	if message == nil {
+		return errors.New("qq bot message is nil")
+	}
+	if response.Image != nil && b.MediaStore != nil {
+		if err := b.sendImageResponse(ctx, message, response); err == nil {
+			b.recordOutbound(ctx, message.Identity, response.Text, store.InteractionStatusSent, nil)
+			return nil
+		} else {
+			b.logf("QQ bot image response failed: %v", err)
+		}
+	}
+	return b.Send(ctx, message, response.Text)
+}
+
+func (b *Bot) sendImageResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
+	imageURL, err := b.prepareImageURL(response.Image)
+	if err != nil {
+		return err
+	}
+	fileInfo, err := b.uploadRichMedia(ctx, message.Identity, imageURL)
+	if err != nil {
+		return err
+	}
+	return b.sendRichMediaTo(ctx, message.Identity, fileInfo, message.ID, message.EventID, message.nextReplySeq())
+}
+
+func (b *Bot) prepareImageURL(img *responses.Image) (string, error) {
+	if img.URL != "" {
+		return img.URL, nil
+	}
+	data, _, _, err := b.Renderer.RenderPNG(img)
+	if err != nil {
+		return "", err
+	}
+	return b.MediaStore.PutPNG(data)
+}
+
 func (b *Bot) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
 	return b.SendMessage(ctx, ident, message)
 }
@@ -761,6 +820,72 @@ func qqBotOutgoingMessage(ident store.Identity, message string) string {
 		return message
 	}
 	return "\n\n" + strings.TrimLeft(message, "\r\n")
+}
+
+func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageURL string) (json.RawMessage, error) {
+	token, err := b.accessTokenForRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path, err := richMediaUploadPath(ident)
+	if err != nil {
+		return nil, err
+	}
+	var out richMediaUploadResponse
+	err = b.openAPI(ctx, http.MethodPost, path, token, richMediaUploadRequest{
+		FileType:   1,
+		URL:        imageURL,
+		SrvSendMsg: false,
+	}, &out)
+	if err != nil {
+		return nil, err
+	}
+	if len(out.FileInfo) == 0 {
+		return nil, errors.New("qq bot rich media upload missing file_info")
+	}
+	return out.FileInfo, nil
+}
+
+func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, msgID, eventID string, msgSeq int) error {
+	token, err := b.accessTokenForRequest(ctx)
+	if err != nil {
+		return err
+	}
+	path, err := sendPath(ident)
+	if err != nil {
+		return err
+	}
+	body := sendMessageRequest{
+		MsgType: 7,
+		Media:   &mediaInfo{FileInfo: fileInfo},
+	}
+	if strings.TrimSpace(msgID) != "" {
+		body.MsgID = strings.TrimSpace(msgID)
+		body.MsgSeq = msgSeq
+	}
+	if strings.TrimSpace(eventID) != "" {
+		body.EventID = strings.TrimSpace(eventID)
+	}
+	return b.openAPI(ctx, http.MethodPost, path, token, body, nil)
+}
+
+func richMediaUploadPath(ident store.Identity) (string, error) {
+	switch textutil.LowerTrim(ident.ConversationType) {
+	case "group":
+		groupID := strings.TrimSpace(ident.ConversationID)
+		if groupID == "" {
+			return "", errors.New("qq bot group openid is empty")
+		}
+		return "/v2/groups/" + url.PathEscape(groupID) + "/files", nil
+	case "private", "":
+		openID := textutil.FirstNonEmpty(ident.ConversationID, ident.UserID)
+		if openID == "" {
+			return "", errors.New("qq bot user openid is empty")
+		}
+		return "/v2/users/" + url.PathEscape(openID) + "/files", nil
+	default:
+		return "", fmt.Errorf("qq bot rich media unsupported for conversation type %q", ident.ConversationType)
+	}
 }
 
 func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, eventID string, msgSeq int) error {

@@ -212,6 +212,8 @@ func main() {
 			Agent:      agentService,
 			HTTPClient: httpClient,
 			Logger:     logger,
+			Renderer:   renderer,
+			MediaStore: mediaStore,
 		}
 		messageRouter.Add("qqbot", qqBot)
 		if cfg.EnableQQBotWebhook {
