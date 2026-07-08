@@ -9,15 +9,18 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -69,6 +72,89 @@ func TestSendGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendResponsePostsImageSegmentWhenAvailable(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/send_private_msg" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	mediaStore := responses.NewMediaStore(server.URL+"/media", time.Minute)
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: mediaStore,
+	}
+	response := commands.Response{
+		Text:  "今天课表：\n数据库系统",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表：\n数据库系统"),
+	}
+
+	err := bridge.SendResponse(context.Background(), messageEvent{MessageType: "private", UserID: 456}, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, ok := gotBody["message"].([]any)
+	if !ok || len(message) != 1 {
+		t.Fatalf("message = %#v", gotBody["message"])
+	}
+	segment := message[0].(map[string]any)
+	if segment["type"] != "image" {
+		t.Fatalf("segment = %#v", segment)
+	}
+	data := segment["data"].(map[string]any)
+	if !strings.HasPrefix(data["file"].(string), server.URL+"/media/") {
+		t.Fatalf("file = %q", data["file"])
+	}
+}
+
+func TestSendResponseFallsBackToTextWhenImagePostFails(t *testing.T) {
+	requests := 0
+	var fallbackBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			_, _ = w.Write([]byte(`{"status":"failed","message":"image rejected"}`))
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&fallbackBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	mediaStore := responses.NewMediaStore(server.URL+"/media", time.Minute)
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: mediaStore,
+	}
+	response := commands.Response{
+		Text:  "待办：\n1. 写报告",
+		Image: responses.NewTextImage("todo", "待办", "待办：\n1. 写报告"),
+	}
+
+	err := bridge.SendResponse(context.Background(), messageEvent{MessageType: "private", UserID: 456}, response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	if fallbackBody["message"] != response.Text {
+		t.Fatalf("fallback body = %#v", fallbackBody)
+	}
+}
+
 func TestSendTrimsAccessToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth := r.Header.Get("Authorization"); auth != "Bearer token" {
@@ -88,6 +174,17 @@ func TestSendTrimsAccessToken(t *testing.T) {
 	}, "hello"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testResponseFontPath(t *testing.T) string {
+	t.Helper()
+	for _, path := range responses.DefaultFontPathsForTest() {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	t.Skip("no CJK font found")
+	return ""
 }
 
 func TestSendTrimsAPIURL(t *testing.T) {
@@ -325,8 +422,8 @@ func TestHandleMessageRecordsIgnored(t *testing.T) {
 		RawMessage:  "not a command",
 		UserID:      456,
 	})
-	if ok || reply != "" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	if ok || reply.Text != "" {
+		t.Fatalf("reply = %#v, ok = %v", reply, ok)
 	}
 	count, err := db.InteractionCount(context.Background())
 	if err != nil {
@@ -354,8 +451,8 @@ func TestRecordIgnoredLogsStoreError(t *testing.T) {
 		RawMessage: "not a command",
 		UserID:     456,
 	})
-	if ok || reply != "" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	if ok || reply.Text != "" {
+		t.Fatalf("reply = %#v, ok = %v", reply, ok)
 	}
 	if !strings.Contains(logs.String(), "record ignored interaction failed") {
 		t.Fatalf("logs = %q", logs.String())
