@@ -11,6 +11,7 @@ require (
 	github.com/mark3labs/mcp-go v0.55.1
 	github.com/oapi-codegen/runtime v1.4.2
 	github.com/tencent-connect/botgo v0.2.1
+	golang.org/x/image v0.34.0
 	golang.org/x/oauth2 v0.36.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1

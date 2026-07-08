@@ -12,7 +12,10 @@ FROM debian:bookworm-slim
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-RUN mkdir -p /data \
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends fonts-noto-cjk \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& mkdir -p /data \
 	&& chown 10001:10001 /data
 
 WORKDIR /app
