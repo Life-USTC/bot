@@ -430,7 +430,7 @@ git commit -m "feat(bot): add rich command response envelope"
 Run:
 
 ```bash
-go get golang.org/x/image@v0.43.0
+go get golang.org/x/image@v0.34.0
 ```
 
 Expected: `go.mod` gains `golang.org/x/image` and `go.sum` is updated.
