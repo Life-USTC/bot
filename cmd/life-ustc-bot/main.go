@@ -99,6 +99,7 @@ func main() {
 		Store:      stateStore,
 	}
 	var mediaStore *responses.MediaStore
+	renderer := responses.Renderer{FontPath: cfg.ImageFontPath}
 	if cfg.EnableImageResponses && cfg.PublicBaseURL != "" {
 		mediaStore = responses.NewMediaStore(strings.TrimRight(cfg.PublicBaseURL, "/")+"/media", cfg.MediaTTL)
 		mediaServer := &http.Server{Addr: cfg.MediaAddr, Handler: mediaStore}
@@ -168,6 +169,8 @@ func main() {
 			Agent:       agentService,
 			HTTPClient:  httpClient,
 			Logger:      logger,
+			Renderer:    renderer,
+			MediaStore:  mediaStore,
 		}
 		messageRouter.Add("napcat", napcatBridge)
 		go func() {
@@ -184,6 +187,8 @@ func main() {
 			Agent:       agentService,
 			HTTPClient:  httpClient,
 			Logger:      logger,
+			Renderer:    renderer,
+			MediaStore:  mediaStore,
 		}
 		messageRouter.Add("napcat", napcatBridge)
 		go func() {
