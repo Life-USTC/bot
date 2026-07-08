@@ -121,6 +121,12 @@ func TestPlainDigits(t *testing.T) {
 	}
 }
 
+func TestPlainMonospace(t *testing.T) {
+	if got := PlainMonospace("𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷 Room ３"); got != "MATH1001 Room 3" {
+		t.Fatalf("PlainMonospace = %q", got)
+	}
+}
+
 func TestDisplayWidth(t *testing.T) {
 	if got := DisplayWidth("A中𝟷"); got != 4 {
 		t.Fatalf("DisplayWidth = %d", got)
