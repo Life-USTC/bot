@@ -30,6 +30,7 @@ type Handler struct {
 	FeedbackGroups         []string
 	FeedbackSend           func(context.Context, store.Identity, string) error
 	AllowGroupPersonalInfo bool
+	EnableImageResponses   bool
 }
 
 var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
@@ -60,9 +61,14 @@ type Input struct {
 }
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
+	response, ok := h.HandleResponse(ctx, input)
+	return response.Text, ok
+}
+
+func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
 	if isConfirmationOK(input.Text) {
 		if reply, ok := h.confirmPending(ctx, input); ok {
-			return reply, true
+			return textResponse(reply), true
 		}
 	}
 	cmd, ok := h.parse(input.Text)
@@ -70,10 +76,10 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 		cmd, ok = parseGroupBus(input.Text)
 	}
 	if !ok {
-		return "", false
+		return Response{}, false
 	}
 	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(cmd) {
-		return "", false
+		return Response{}, false
 	}
 	if h.hasAdditionalCommandLine(input.Text) {
 		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
@@ -81,7 +87,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 			h.recordState(ctx, input.Identity, cmd)
 			h.recordInteraction(ctx, input.Identity, cmd, reply)
 		}
-		return reply, true
+		return textResponse(reply), true
 	}
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)
@@ -108,7 +114,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}
-	return reply, true
+	return Response{Text: reply, Image: h.imageResponseFor(cmd, reply), Kind: cmd.Name}, true
 }
 
 type parsedCommand struct {
