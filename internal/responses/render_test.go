@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"image/png"
 	"testing"
+
+	"golang.org/x/image/font/basicfont"
 )
 
 func TestRendererCreatesValidPNG(t *testing.T) {
@@ -40,6 +42,13 @@ func TestRendererDimensionsAreStable(t *testing.T) {
 	}
 	if width1 != width2 || height1 != height2 {
 		t.Fatalf("first=%dx%d second=%dx%d", width1, height1, width2, height2)
+	}
+}
+
+func TestDrawableTextSkipsUnsupportedGlyphs(t *testing.T) {
+	got := drawableText(basicfont.Face7x13, "A\t✨B")
+	if got != "A  B" {
+		t.Fatalf("drawableText = %q", got)
 	}
 }
 
