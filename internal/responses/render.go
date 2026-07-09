@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,26 +48,34 @@ var defaultFontPaths = []string{
 }
 
 var busSansFontPaths = []string{
-	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Regular.otf",
 	"/usr/share/fonts/adobe-source-han-sans-cn-fonts/SourceHanSansCN-Regular.otf",
+	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc",
+	"/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc",
 }
 
 var busSansBoldFontPaths = []string{
-	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Bold.otf",
 	"/usr/share/fonts/adobe-source-han-sans-cn-fonts/SourceHanSansCN-Bold.otf",
+	"/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Bold.ttc",
+	"/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc",
 }
 
 var busMonoFontPaths = []string{
 	"/tmp/FiraCode/ttf/FiraCode-Regular.ttf",
 	"/tmp/FiraCode/ttf/FiraCode-Medium.ttf",
+	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 }
 
 var busSerifFontPaths = []string{
 	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Regular.otf",
+	"/usr/share/fonts/google-noto-serif-cjk-vf-fonts/NotoSerifCJK-VF.ttc",
+	"/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
 }
 
 var busSerifBoldFontPaths = []string{
 	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Bold.otf",
+	"/usr/share/fonts/google-noto-serif-cjk-vf-fonts/NotoSerifCJK-VF.ttc",
+	"/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc",
 }
 
 func (r Renderer) serifFontFace(size float64) (font.Face, error) {
@@ -143,6 +152,35 @@ type busRenderTable struct {
 	Rows   []busRenderRow
 }
 
+func (t busRenderTable) endpoints() (start, end string) {
+	if len(t.Header) == 0 {
+		return "", ""
+	}
+	return strings.TrimSpace(t.Header[0]), strings.TrimSpace(t.Header[len(t.Header)-1])
+}
+
+func (t busRenderTable) endpointsKey() string {
+	start, end := t.endpoints()
+	if start == "" || end == "" || start == end {
+		return start + end
+	}
+	if start < end {
+		return start + "→" + end
+	}
+	return end + "→" + start
+}
+
+func (t busRenderTable) directionKey() string {
+	parts := make([]string, 0, len(t.Header))
+	for _, h := range t.Header {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			parts = append(parts, h)
+		}
+	}
+	return strings.Join(parts, "→")
+}
+
 type busRenderRow struct {
 	Cells     []string
 	Highlight bool
@@ -155,23 +193,26 @@ type busStopHeader struct {
 }
 
 type busRenderLayout struct {
-	ColumnWidth    int
-	TableWidths    []int
-	TablePositions []image.Point
-	TableTop       int
-	HeaderLines    []string
-	FooterLines    []string
-	NextTime       string
-	NextWait       string
-	TableBottom    int
-	FooterY        int
-	Height         int
-	LogoOpacity    float64
-	LogoCenterX    int
-	LogoCenterY    int
-	LogoSize       int
-	UsesSerifFont  bool
-	TableHeaders   [][]busStopHeader
+	ColumnWidth          int
+	TableWidths          []int
+	TableColumnWidths    []int
+	TablePositions       []image.Point
+	TableTop             int
+	HeaderLines          []string
+	FooterLines          []string
+	NextTime             string
+	NextWait             string
+	TableBottom          int
+	FooterY              int
+	Height               int
+	LogoOpacity          float64
+	LogoCenterX          int
+	LogoCenterY          int
+	LogoSize             int
+	UsesSerifFont        bool
+	TableHeaders         [][]busStopHeader
+	TableDirectionLabels []string
+	VerticalLayout       bool
 }
 
 func (r Renderer) renderBusPNG(img *Image) ([]byte, int, int, error) {
@@ -190,31 +231,36 @@ func (r Renderer) renderBusPNG(img *Image) ([]byte, int, int, error) {
 	width := s(logicalWidth)
 	height := s(logicalHeight)
 
-	sansFace, err := r.sansFontFace(float64(12 * scale))
+	// Typography: serif for brand/title/station headers, sans for metadata, mono for times.
+	brandFace, err := r.serifFontFace(float64(11 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	headFace, err := r.sansFontFace(float64(12 * scale))
+	titleFace, err := r.serifFontFace(float64(11 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	waitFace, err := r.sansFontFace(float64(12 * scale))
+	metaFace, err := r.sansFontFace(float64(9 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	tableHeadFace, err := r.sansFontFace(float64(18 * scale))
+	waitFace, err := r.sansFontFace(float64(9 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	tableHeadBoldFace, err := r.sansBoldFontFace(float64(18 * scale))
+	tableHeadFace, err := r.serifFontFace(float64(13 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	monoFace, err := r.monoFontFace(float64(20 * scale))
+	tableHeadBoldFace, err := r.serifBoldFontFace(float64(13 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	bodyFace, err := r.sansFontFace(float64(18 * scale))
+	monoFace, err := r.monoFontFace(float64(14 * scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	bodyFace, err := r.sansFontFace(float64(13 * scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -235,25 +281,29 @@ func (r Renderer) renderBusPNG(img *Image) ([]byte, int, int, error) {
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), layout.LogoSize*scale, layout.LogoOpacity)
-	drawText(canvas, headFace, marginX, s(32), layout.HeaderLines[0], muted)
-	drawText(canvas, sansFace, marginX, s(56), layout.HeaderLines[1], ink)
+	drawText(canvas, brandFace, marginX, s(28), layout.HeaderLines[0], muted)
+	drawText(canvas, titleFace, marginX, s(48), layout.HeaderLines[1], ink)
 	if layout.NextTime != "" {
-		drawRightText(canvas, headFace, width-marginX, s(32), "下一班 "+layout.NextTime, muted)
-		drawRightText(canvas, waitFace, width-marginX, s(56), layout.NextWait, accent)
+		drawRightText(canvas, metaFace, width-marginX, s(28), "下一班 "+layout.NextTime, muted)
+		drawRightText(canvas, waitFace, width-marginX, s(48), layout.NextWait, accent)
 	}
 
 	for i, table := range tables {
 		tableW := s(layout.TableWidths[i])
+		colW := s(layout.TableColumnWidths[i])
 		position := layout.TablePositions[i]
 		x := s(position.X)
 		y := s(position.Y)
-		renderedHeaders := busStopHeaders(table.Header, layout.HeaderLines[1])
-		drawBusTable(canvas, renderedHeaders, table, x, y, tableW, s(layout.ColumnWidth), headerH, rowH, scale, tableHeadFace, tableHeadBoldFace, bodyFace, monoFace, headBg, rowBg, highlightBg, line, ink, muted, departed, accent)
+		if label := layout.TableDirectionLabels[i]; label != "" {
+			drawText(canvas, metaFace, x, y-s(13), label, muted)
+		}
+		renderedHeaders := layout.TableHeaders[i]
+		drawBusTable(canvas, renderedHeaders, table, x, y, tableW, colW, headerH, rowH, scale, tableHeadFace, tableHeadBoldFace, bodyFace, monoFace, headBg, rowBg, highlightBg, line, ink, muted, departed, accent)
 	}
 
 	footerY := s(layout.FooterY)
-	drawRightText(canvas, headFace, width-marginX, footerY, layout.FooterLines[0], muted)
-	drawRightText(canvas, headFace, width-marginX, footerY+s(18), layout.FooterLines[1], muted)
+	drawRightText(canvas, metaFace, width-marginX, footerY, layout.FooterLines[0], muted)
+	drawRightText(canvas, metaFace, width-marginX, footerY+s(14), layout.FooterLines[1], muted)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, canvas); err != nil {
@@ -492,6 +542,102 @@ func maxBusTableColumns(tables []busRenderTable) int {
 	return maxColumns
 }
 
+// busTablePairRows groups tables by their unordered endpoints. Within each group,
+// tables whose headers are exact reverses of each other are paired and placed on
+// the same row when they fit. A group never shares a row with another group, so
+// unrelated routes are not displayed side by side.
+func busTablePairRows(tables []busRenderTable, availableWidth, columnWidth, gap int) [][]busRenderTable {
+	if len(tables) == 0 {
+		return nil
+	}
+	if len(tables) == 1 {
+		return [][]busRenderTable{{tables[0]}}
+	}
+
+	groups := make(map[string][]int)
+	order := []string{}
+	for i, t := range tables {
+		key := t.endpointsKey()
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], i)
+	}
+
+	// Groups that contain an exact reverse pair are laid out first.
+	sort.SliceStable(order, func(i, j int) bool {
+		return hasReversePair(groups[order[i]], tables) && !hasReversePair(groups[order[j]], tables)
+	})
+
+	var rows [][]busRenderTable
+	for _, key := range order {
+		rows = append(rows, pairRowsForGroup(groups[key], tables, availableWidth, columnWidth, gap)...)
+	}
+	return rows
+}
+
+func hasReversePair(indices []int, tables []busRenderTable) bool {
+	for i, idxI := range indices {
+		for j := i + 1; j < len(indices); j++ {
+			if isReverseRoute(tables[idxI].Header, tables[indices[j]].Header) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func pairRowsForGroup(indices []int, tables []busRenderTable, availableWidth, columnWidth, gap int) [][]busRenderTable {
+	if len(indices) == 1 {
+		return [][]busRenderTable{{tables[indices[0]]}}
+	}
+	paired := make(map[int]bool)
+	var rows [][]busRenderTable
+	for i, idxI := range indices {
+		if paired[idxI] {
+			continue
+		}
+		tI := tables[idxI]
+		pairIdx := -1
+		for j := i + 1; j < len(indices); j++ {
+			idxJ := indices[j]
+			if paired[idxJ] {
+				continue
+			}
+			if isReverseRoute(tI.Header, tables[idxJ].Header) {
+				pairIdx = idxJ
+				break
+			}
+		}
+		if pairIdx >= 0 {
+			paired[pairIdx] = true
+			tJ := tables[pairIdx]
+			pairWidth := len(tI.Header)*columnWidth + gap + len(tJ.Header)*columnWidth
+			if pairWidth <= availableWidth {
+				rows = append(rows, []busRenderTable{tI, tJ})
+			} else {
+				rows = append(rows, []busRenderTable{tI})
+				rows = append(rows, []busRenderTable{tJ})
+			}
+		} else {
+			rows = append(rows, []busRenderTable{tI})
+		}
+	}
+	return rows
+}
+
+func isReverseRoute(a, b []string) bool {
+	if len(a) != len(b) || len(a) == 0 {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if strings.TrimSpace(a[i]) != strings.TrimSpace(b[len(b)-1-i]) {
+			return false
+		}
+	}
+	return true
+}
+
 func busTablesHeight(tables []busRenderTable, headerH, rowH int) int {
 	if len(tables) == 0 {
 		return 0
@@ -582,50 +728,39 @@ func drawBusLogoWatermark(dst *image.RGBA, bounds image.Rectangle, size int, opa
 	if logo == nil {
 		return
 	}
-	step := size * 3 / 2
-	// build a larger tile layer to allow rotation without clipping
-	diag := int(math.Ceil(math.Sqrt(float64(bounds.Dx()*bounds.Dx() + bounds.Dy()*bounds.Dy()))))
-	layer := image.NewRGBA(image.Rect(0, 0, diag, diag))
-	draw.Draw(layer, layer.Bounds(), &image.Uniform{C: color.RGBA{0, 0, 0, 0}}, image.Point{}, draw.Src)
-	center := bounds.Min.Add(bounds.Max).Div(2)
-	startX := center.X - diag/2
-	startY := center.Y - diag/2
-	for x := startX; x < startX+diag+size; x += step {
-		col := (x - startX) / step
-		yOffset := 0
-		if col%2 == 1 {
-			yOffset = step / 2
-		}
-		for y := startY - yOffset; y < startY+diag+size; y += step {
-			drawLogoTile(layer, logo, x+size/2, y+size/2, size, opacity)
-		}
-	}
-	rotated := rotateLayer(layer, -math.Pi/6)
-	draw.Draw(dst, bounds, rotated, image.Point{X: (rotated.Bounds().Dx() - bounds.Dx()) / 2, Y: (rotated.Bounds().Dy() - bounds.Dy()) / 2}, draw.Over)
+	// Place the logo mostly outside the canvas so only the top-left quadrant peeks
+	// into the bottom-right corner. This keeps it visible as a watermark without
+	// overlapping the footer text or table content.
+	centerX := bounds.Max.X + size/4
+	centerY := bounds.Max.Y + size/4
+	drawRotatedLogoTile(dst, logo, centerX, centerY, size, opacity, -math.Pi/6)
 }
 
-func rotateLayer(src *image.RGBA, angle float64) *image.RGBA {
+func drawRotatedLogoTile(dst *image.RGBA, src image.Image, centerX, centerY, size int, opacity float64, angle float64) {
 	bounds := src.Bounds()
-	centerX := float64(bounds.Dx()) / 2
-	centerY := float64(bounds.Dy()) / 2
+	if bounds.Empty() || size <= 0 || opacity <= 0 {
+		return
+	}
 	cosA := math.Cos(angle)
 	sinA := math.Sin(angle)
-	dst := image.NewRGBA(bounds)
-	for y := 0; y < bounds.Dy(); y++ {
-		for x := 0; x < bounds.Dx(); x++ {
-			dx := float64(x) - centerX
-			dy := float64(y) - centerY
-			// inverse rotation: sample from source at rotated coordinates
-			u := dx*cosA + dy*sinA + centerX
-			v := -dx*sinA + dy*cosA + centerY
-			ui, vi := int(u), int(v)
-			if ui < bounds.Min.X || ui >= bounds.Max.X || vi < bounds.Min.Y || vi >= bounds.Max.Y {
+	half := float64(size) / 2
+	for y := centerY - size/2; y <= centerY+size/2; y++ {
+		for x := centerX - size/2; x <= centerX+size/2; x++ {
+			if !image.Pt(x, y).In(dst.Bounds()) {
 				continue
 			}
-			dst.SetRGBA(x, y, src.RGBAAt(ui, vi))
+			dx := float64(x-centerX)
+			dy := float64(y-centerY)
+			u := dx*cosA - dy*sinA + half
+			v := dx*sinA + dy*cosA + half
+			if u < 0 || v < 0 || u >= float64(size) || v >= float64(size) {
+				continue
+			}
+			sx := bounds.Min.X + int(u*float64(bounds.Dx())/float64(size))
+			sy := bounds.Min.Y + int(v*float64(bounds.Dy())/float64(size))
+			blendPixel(dst, x, y, src.At(sx, sy), opacity)
 		}
 	}
-	return dst
 }
 
 func drawLogoTile(dst *image.RGBA, src image.Image, centerX, centerY, size int, opacity float64) {
@@ -710,19 +845,31 @@ func (r Renderer) loadFont(candidates []string, size float64) (font.Face, error)
 	return opentype.NewFace(parsed, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
 }
 
-func busStopHeaders(headers []string, title string) []busStopHeader {
+func busStopHeaders(headers []string, addPrefix bool) []busStopHeader {
 	if len(headers) == 0 {
 		return nil
 	}
-	from, to := parseBusEndpoints(title)
+	from, to := "", ""
+	if len(headers) > 0 {
+		from = strings.TrimSpace(headers[0])
+	}
+	if len(headers) > 1 {
+		to = strings.TrimSpace(headers[len(headers)-1])
+	}
 	out := make([]busStopHeader, len(headers))
 	for i, h := range headers {
 		h = strings.TrimSpace(h)
 		out[i].Text = h
-		if h == from && h != "" {
+		if i == 0 && h == from && h != "" {
+			if addPrefix {
+				out[i].Text = "出发·" + h
+			}
 			out[i].Emphasize = true
 		}
-		if h == to && h != "" && h != from {
+		if i == len(headers)-1 && h == to && h != "" && h != from {
+			if addPrefix {
+				out[i].Text = "到·" + h
+			}
 			out[i].Emphasize = true
 		}
 	}
@@ -755,68 +902,103 @@ func busRenderLayoutFor(img *Image, now time.Time) busRenderLayout {
 		canvasWidth      = 920
 		leftMargin       = 52
 		rightMargin      = 52
-		gap              = 28
-		tableTop         = 80
-		headerH          = 34
-		rowH             = 42
-		marginBelowTable = 24
-		footerLineGap    = 18
-		marginBottom     = 10
+		gap              = 20
+		headerH          = 26
+		rowH             = 32
+		marginBelowTable = 18
+		footerLineGap    = 14
+		marginBottom     = 12
 	)
-	columnWidth := 112
+	columnWidth := 88
+	availableWidth := canvasWidth - leftMargin - rightMargin
+
+	showDirectionLabels := busRenderTitle(img) == "校车"
+	tableTop := 72
+	if showDirectionLabels {
+		tableTop = 84
+	}
+
+	rows := busTablePairRows(tables, availableWidth, columnWidth, gap)
+	verticalLayout := len(rows) > 1 || (len(rows) == 1 && len(rows[0]) > 1)
+
 	tablePositions := make([]image.Point, 0, len(tables))
 	tableBottom := tableTop
-	x := leftMargin
 	y := tableTop
-	rowBottom := tableTop
-	for _, table := range tables {
-		tableW := len(table.Header) * columnWidth
-		tableH := headerH + len(table.Rows)*rowH
-		if x > leftMargin && x+tableW > canvasWidth-rightMargin {
-			x = leftMargin
-			y = rowBottom + gap
+	for _, row := range rows {
+		x := leftMargin
+		rowBottom := y
+		for _, table := range row {
+			tableW := len(table.Header) * columnWidth
+			if tableW > availableWidth {
+				tableW = availableWidth
+			}
+			tablePositions = append(tablePositions, image.Point{X: x, Y: y})
+			bottom := y + headerH + len(table.Rows)*rowH
+			if bottom > rowBottom {
+				rowBottom = bottom
+			}
+			if bottom > tableBottom {
+				tableBottom = bottom
+			}
+			x += tableW + gap
 		}
-		tablePositions = append(tablePositions, image.Point{X: x, Y: y})
-		bottom := y + tableH
-		if bottom > rowBottom {
-			rowBottom = bottom
-		}
-		if bottom > tableBottom {
-			tableBottom = bottom
-		}
-		x += tableW + gap
+		y = rowBottom + gap
 	}
+
 	footerY := tableBottom + marginBelowTable
 	height := footerY + footerLineGap + marginBottom
 	nextTime, nextWait := busNextWait(tables, "校车 · "+busRenderTitle(img), now)
+	title := busRenderTitle(img)
+	if title == "校车" {
+		title = "全部路线"
+	}
 	layout := busRenderLayout{
 		ColumnWidth: columnWidth,
 		TableTop:    tableTop,
 		HeaderLines: []string{
 			"Life @ USTC",
-			"校车 · " + busRenderTitle(img),
+			"校车 · " + title,
 		},
 		FooterLines: []string{
 			now.Format("2006-01-02 15:04") + "（" + busDayType(now) + "）",
 			"2026 春季学期时刻表 / 蜗壳小道消息",
 		},
-		NextTime:       nextTime,
-		NextWait:       nextWait,
-		TableBottom:    tableBottom,
-		FooterY:        footerY,
-		Height:         height,
-		LogoOpacity:    0.15,
-		LogoCenterX:    0,
-		LogoCenterY:    0,
-		LogoSize:       210,
-		UsesSerifFont:  true,
-		TableWidths:    []int{},
-		TablePositions: tablePositions,
-		TableHeaders:   [][]busStopHeader{},
+		NextTime:             nextTime,
+		NextWait:             nextWait,
+		TableBottom:          tableBottom,
+		FooterY:              footerY,
+		Height:               height,
+		LogoOpacity:          0.15,
+		LogoCenterX:          0,
+		LogoCenterY:          0,
+		LogoSize:             120,
+		UsesSerifFont:        true,
+		TableWidths:          []int{},
+		TablePositions:       tablePositions,
+		TableColumnWidths:    []int{},
+		TableDirectionLabels: []string{},
+		TableHeaders:         [][]busStopHeader{},
+		VerticalLayout:       verticalLayout,
 	}
-	for _, table := range tables {
-		layout.TableWidths = append(layout.TableWidths, len(table.Header)*layout.ColumnWidth)
-		layout.TableHeaders = append(layout.TableHeaders, busStopHeaders(table.Header, layout.HeaderLines[1]))
+	addPrefix := true
+	for _, row := range rows {
+		for _, table := range row {
+			w := len(table.Header) * columnWidth
+			colW := columnWidth
+			if len(row) == 1 && w > availableWidth {
+				w = availableWidth
+				colW = w / max(1, len(table.Header))
+			}
+			layout.TableWidths = append(layout.TableWidths, w)
+			layout.TableColumnWidths = append(layout.TableColumnWidths, colW)
+			dir := table.directionKey()
+			if showDirectionLabels && dir != "" {
+				layout.TableDirectionLabels = append(layout.TableDirectionLabels, dir)
+			} else {
+				layout.TableDirectionLabels = append(layout.TableDirectionLabels, "")
+			}
+			layout.TableHeaders = append(layout.TableHeaders, busStopHeaders(table.Header, addPrefix))
+		}
 	}
 	return layout
 }

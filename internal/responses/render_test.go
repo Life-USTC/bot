@@ -92,17 +92,17 @@ func TestBusRenderTablesParseSeparateStationTables(t *testing.T) {
 func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	layout := busRenderLayoutFor(testBusImage(), mustTime(t, "2026-07-09T15:28:00+08:00"))
 
-	if layout.ColumnWidth != 112 {
-		t.Fatalf("column width = %d, want 112", layout.ColumnWidth)
+	if layout.ColumnWidth != 88 {
+		t.Fatalf("column width = %d, want 88", layout.ColumnWidth)
 	}
-	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{448, 336}) {
+	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{352, 264}) {
 		t.Fatalf("table widths = %#v", got)
 	}
-	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 80}, {X: 528, Y: 80}}) {
-		t.Fatalf("table positions = %#v", got)
+	if got := layout.TableColumnWidths; !reflect.DeepEqual(got, []int{88, 88}) {
+		t.Fatalf("table column widths = %#v", got)
 	}
-	if got := layout.HeaderLines; !reflect.DeepEqual(got, []string{"Life @ USTC", "校车 · 东区 → 西区"}) {
-		t.Fatalf("header lines = %#v", got)
+	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 72}, {X: 52, Y: 182}}) {
+		t.Fatalf("table positions = %#v", got)
 	}
 	if layout.NextWait != "12 分钟" {
 		t.Fatalf("next wait = %q, want 12 分钟", layout.NextWait)
@@ -110,43 +110,107 @@ func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	if got := layout.FooterLines; !reflect.DeepEqual(got, []string{"2026-07-09 15:28（工作日）", "2026 春季学期时刻表 / 蜗壳小道消息"}) {
 		t.Fatalf("footer lines = %#v", got)
 	}
-	if layout.FooterY-layout.TableBottom < 16 {
-		t.Fatalf("footer/table spacing = %d, want at least 16", layout.FooterY-layout.TableBottom)
+	if layout.FooterY-layout.TableBottom < 12 {
+		t.Fatalf("footer/table spacing = %d, want at least 12", layout.FooterY-layout.TableBottom)
 	}
-	if layout.Height != layout.FooterY+28 {
-		t.Fatalf("height = %d, want content-driven footerY+28", layout.Height)
+	if layout.Height != layout.FooterY+26 {
+		t.Fatalf("height = %d, want footerY+26", layout.Height)
 	}
 	if layout.LogoOpacity > 0.20 {
-		t.Fatalf("logo opacity = %.2f, want at most 0.20 for grid watermark", layout.LogoOpacity)
+		t.Fatalf("logo opacity = %.2f, want at most 0.20", layout.LogoOpacity)
 	}
-	if layout.LogoSize < 200 || layout.LogoSize > 250 {
-		t.Fatalf("logo size = %d, want around 210 for grid watermark", layout.LogoSize)
+	if layout.LogoSize < 100 || layout.LogoSize > 140 {
+		t.Fatalf("logo size = %d, want around 120", layout.LogoSize)
 	}
 	if !layout.UsesSerifFont {
 		t.Fatalf("want serif font used for bus render")
 	}
-	if got := layout.TableHeaders[0]; len(got) != 4 || got[0].Text != "东区" || !got[0].Emphasize || got[1].Text != "西区" || !got[1].Emphasize {
+	if got := layout.TableHeaders[0]; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
 		t.Fatalf("first table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[1]; len(got) != 3 || got[0].Text != "东区" || !got[0].Emphasize || got[2].Text != "西区" || !got[2].Emphasize {
+	if got := layout.TableHeaders[1]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
 		t.Fatalf("second table headers = %#v", got)
+	}
+	if layout.TableTop != 72 {
+		t.Fatalf("table top = %d, want 72 for non-all mode", layout.TableTop)
+	}
+	if !layout.VerticalLayout {
+		t.Fatalf("vertical layout = false, want true for route variants")
 	}
 }
 
 func TestBusRenderLayoutWrapsAllRouteTablesWithoutShrinkingColumns(t *testing.T) {
 	layout := busRenderLayoutFor(testBusAllImage(), mustTime(t, "2026-07-09T15:28:00+08:00"))
 
-	if layout.ColumnWidth != 112 {
-		t.Fatalf("column width = %d, want 112", layout.ColumnWidth)
+	if layout.ColumnWidth != 88 {
+		t.Fatalf("column width = %d, want 88", layout.ColumnWidth)
 	}
-	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{448, 336, 336}) {
+	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{264, 264, 352}) {
 		t.Fatalf("table widths = %#v", got)
 	}
-	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 80}, {X: 528, Y: 80}, {X: 52, Y: 226}}) {
+	if got := layout.TableColumnWidths; !reflect.DeepEqual(got, []int{88, 88, 88}) {
+		t.Fatalf("table column widths = %#v", got)
+	}
+	if got := layout.HeaderLines; !reflect.DeepEqual(got, []string{"Life @ USTC", "校车 · 全部路线"}) {
+		t.Fatalf("header lines = %#v", got)
+	}
+	if layout.TableTop != 84 {
+		t.Fatalf("table top = %d, want 84 for all mode", layout.TableTop)
+	}
+	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 336, Y: 84}, {X: 52, Y: 194}}) {
 		t.Fatalf("table positions = %#v", got)
 	}
-	if layout.TableBottom != 344 {
-		t.Fatalf("table bottom = %d, want 344", layout.TableBottom)
+	if layout.TableBottom != 284 {
+		t.Fatalf("table bottom = %d, want 284", layout.TableBottom)
+	}
+	if !layout.VerticalLayout {
+		t.Fatalf("vertical layout = false, want true")
+	}
+	if got := layout.TableDirectionLabels; !reflect.DeepEqual(got, []string{"东区→北区→西区", "西区→北区→东区", "东区→西区→先研院→高新区"}) {
+		t.Fatalf("direction labels = %#v", got)
+	}
+	if got := layout.TableHeaders[0]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
+		t.Fatalf("first table headers = %#v", got)
+	}
+	if got := layout.TableHeaders[1]; len(got) != 3 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[2].Text != "到·东区" || !got[2].Emphasize {
+		t.Fatalf("second table headers = %#v", got)
+	}
+	if got := layout.TableHeaders[2]; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
+		t.Fatalf("third table headers = %#v", got)
+	}
+}
+
+func TestBusRenderPairsOnlyExactReverseRoutes(t *testing.T) {
+	img := NewTextImage("bus", "校车", strings.Join([]string{
+		"东区\t西区",
+		"14:30\t14:40",
+		"",
+		"东区\t北区\t西区",
+		"15:30\t15:35\t15:40",
+		"",
+		"西区\t东区",
+		"16:00\t16:10",
+	}, "\n"))
+	layout := busRenderLayoutFor(img, mustTime(t, "2026-07-09T15:28:00+08:00"))
+	// The two exact reverse two-stop routes are paired on the same row.
+	// The different three-stop route stays on its own row.
+	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 248, Y: 84}, {X: 52, Y: 162}}) {
+		t.Fatalf("positions = %#v", got)
+	}
+	if got := layout.TableDirectionLabels; !reflect.DeepEqual(got, []string{"东区→西区", "西区→东区", "东区→北区→西区"}) {
+		t.Fatalf("direction labels = %#v", got)
+	}
+	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{176, 176, 264}) {
+		t.Fatalf("table widths = %#v", got)
+	}
+	if got := layout.TableHeaders[0]; len(got) != 2 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "到·西区" || !got[1].Emphasize {
+		t.Fatalf("first table headers = %#v", got)
+	}
+	if got := layout.TableHeaders[1]; len(got) != 2 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[1].Text != "到·东区" || !got[1].Emphasize {
+		t.Fatalf("second table headers = %#v", got)
+	}
+	if got := layout.TableHeaders[2]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "北区" || got[2].Text != "到·西区" || !got[2].Emphasize {
+		t.Fatalf("third table headers = %#v", got)
 	}
 }
 
@@ -234,17 +298,17 @@ func testBusImage() *Image {
 
 func testBusAllImage() *Image {
 	return NewTextImage("bus", "校车", strings.Join([]string{
-		"东区\t西区\t先研院\t高新区",
-		"14:30\t14:40\t14:52\t15:05",
-		"16:00\t16:10\t16:22\t16:35",
+		"东区	西区	先研院	高新区",
+		"14:30	14:40	14:52	15:05",
+		"16:00	16:10	16:22	16:35",
 		"",
-		"东区\t北区\t西区",
-		"15:30\t15:35\t15:40\t✨",
-		"15:50\t15:55\t16:00",
+		"东区	北区	西区",
+		"15:30	15:35	15:40	✨",
+		"15:50	15:55	16:00",
 		"",
-		"高新区\t先研院\t西区",
-		"15:40\t15:50\t16:10",
-		"16:10\t16:20\t16:40",
+		"西区	北区	东区",
+		"15:40	15:45	16:00",
+		"16:10	16:15	16:30",
 	}, "\n"))
 }
 
