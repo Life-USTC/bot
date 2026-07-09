@@ -12,7 +12,8 @@ FROM debian:bookworm-slim
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-RUN apt-get update \
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g; s|security.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+	&& apt-get update \
 	&& apt-get install -y --no-install-recommends fonts-noto-cjk \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /data \

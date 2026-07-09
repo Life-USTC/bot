@@ -42,9 +42,18 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		return responses.NewTextImage("dashboard", imageTitle(imageText, "我的概览"), imageText)
 	case "upcoming_deadlines":
 		return responses.NewTextImage("deadlines", imageTitle(imageText, "近期截止"), imageText)
+	case "bus":
+		if firstArgIs(cmd.Args, "help") || busPreferenceArgs(cmd.Args) {
+			return nil
+		}
+		return responses.NewTextImage("bus", busImageTitle(cmd.Args), busImageRenderText(text))
 	default:
 		return nil
 	}
+}
+
+func busImageRenderText(text string) string {
+	return textutil.PlainMonospace(text)
 }
 
 func imageRenderText(text string) string {
@@ -80,6 +89,20 @@ func imageTitle(text, fallback string) string {
 	return first
 }
 
+func busImageTitle(args []string) string {
+	campuses := busCampusesFromArgs(args)
+	if len(campuses) >= 2 {
+		return "校车 " + campuses[0] + " → " + campuses[1]
+	}
+	if len(campuses) == 1 {
+		if len(args) > 0 && (normToken(args[0]) == "to" || normToken(args[0]) == "到") {
+			return "校车 到 " + campuses[0]
+		}
+		return "校车 " + campuses[0]
+	}
+	return "校车"
+}
+
 func successfulImageText(text string) bool {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -94,6 +117,8 @@ func successfulImageText(text string) bool {
 		"今日安排查不到：",
 		"概览查不到：",
 		"近期截止查不到：",
+		"校车查不到：",
+		"今天后面没查到校车。",
 	}
 	for _, prefix := range rejectPrefixes {
 		if strings.HasPrefix(text, prefix) {

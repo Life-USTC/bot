@@ -812,6 +812,42 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
+func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"东区   西区",
+		"09:10  09:25",
+		"",
+		"西区   东区",
+		"09:20  09:35",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区", "西区"}}, text)
+	if img == nil {
+		t.Fatal("image = nil, want bus image")
+	}
+	if img.Kind != "bus" || img.Title != "校车 东区 → 西区" {
+		t.Fatalf("image = %#v", img)
+	}
+	if !strings.Contains(img.AltText, "09:10") || !strings.Contains(img.AltText, "西区") {
+		t.Fatalf("alt text = %q", img.AltText)
+	}
+
+	for name, tc := range map[string]struct {
+		cmd  parsedCommand
+		text string
+	}{
+		"help":       {cmd: parsedCommand{Name: "bus", Args: []string{"help"}}, text: busHelp()},
+		"preference": {cmd: parsedCommand{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
+		"no service": {cmd: parsedCommand{Name: "bus"}, text: "今天后面没查到校车。"},
+		"error":      {cmd: parsedCommand{Name: "bus"}, text: "校车查不到：server exploded"},
+	} {
+		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
+			t.Fatalf("%s image = %#v, want nil", name, got)
+		}
+	}
+}
+
 func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

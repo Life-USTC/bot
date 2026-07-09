@@ -203,7 +203,11 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if options.ExplicitRoute {
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
 	} else {
-		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, busOverviewTripsPerRoute)
+		limit := busOverviewTripsPerRoute
+		if options.ShowAll {
+			limit = 0
+		}
+		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, limit)
 		if len(routeArgs) == 0 && !h.showSouthCampusBus(ctx, ident) {
 			items = filterSouthCampusBusItems(items)
 		}
@@ -326,7 +330,8 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 	options := busQueryOptions{}
 	for i := 0; i < len(args); i++ {
 		switch normToken(args[i]) {
-		case "all", "全部", "所有":
+		case "all", "al", "全部", "所有":
+			options.ShowAll = true
 			continue
 		case "preferred", "preference-route", "pref-route", "我的路线", "偏好路线", "默认路线":
 			options.UsePreferredRoute = true
@@ -348,6 +353,16 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 					}
 				}
 			}
+		case "show-departed", "departed", "已发车", "已出发":
+			if i+1 < len(args) {
+				if value, ok := parseBusBool(args[i+1]); ok {
+					options.ShowDeparted = value
+					i++
+					continue
+				}
+			}
+			options.ShowDeparted = true
+			continue
 		}
 		out = append(out, args[i])
 	}
@@ -622,6 +637,7 @@ type busQueryOptions struct {
 	After             bool
 	UsePreferredRoute bool
 	ExplicitRoute     bool
+	ShowAll           bool
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {

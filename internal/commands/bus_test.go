@@ -114,6 +114,34 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}
 }
 
+func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:15","stopTimes":[{"campusName":"东区","time":"08:00"},{"campusName":"西区","time":"08:15"}]},
+				{"routeId":1,"dayType":"weekday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:15","stopTimes":[{"campusName":"东区","time":"09:00"},{"campusName":"西区","time":"09:15"}]},
+				{"routeId":1,"dayType":"weekday","departureTime":"10:00","departureMinutes":600,"arrivalTime":"10:15","stopTimes":[{"campusName":"东区","time":"10:00"},{"campusName":"西区","time":"10:15"}]},
+				{"routeId":1,"dayType":"weekday","departureTime":"11:00","departureMinutes":660,"arrivalTime":"11:15","stopTimes":[{"campusName":"东区","time":"11:00"},{"campusName":"西区","time":"11:15"}]},
+				{"routeId":1,"dayType":"weekday","departureTime":"12:00","departureMinutes":720,"arrivalTime":"12:15","stopTimes":[{"campusName":"东区","time":"12:00"},{"campusName":"西区","time":"12:15"}]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	now := time.Date(2026, 6, 2, 10, 30, 0, 0, lifedata.ChinaLocation())
+	reply := handler.busAt(context.Background(), store.Identity{}, []string{"al", "已发车", "开"}, now)
+	for _, want := range []string{"𝟶𝟾:𝟶𝟶", "𝟶𝟿:𝟶𝟶", "𝟷𝟶:𝟶𝟶", "𝟷𝟷:𝟶𝟶", "𝟷𝟸:𝟶𝟶"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %s: %q", want, reply)
+		}
+	}
+}
+
 func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/bus" {
@@ -903,5 +931,41 @@ func TestBusArgsFromTextKeepsRepeatedCampusEndpoints(t *testing.T) {
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Fatalf("%q args = %#v, want %#v", text, got, want)
 		}
+	}
+}
+
+func TestBusQueryArgsRecognizesShowDeparted(t *testing.T) {
+	now := time.Now()
+	_, options := busQueryArgs([]string{"东区", "西区", "已发车", "开"}, now)
+	if !options.ShowDeparted {
+		t.Fatalf("ShowDeparted = false, want true")
+	}
+	_, options = busQueryArgs([]string{"东区", "西区", "已发车", "关"}, now)
+	if options.ShowDeparted {
+		t.Fatalf("ShowDeparted = true, want false")
+	}
+	_, options = busQueryArgs([]string{"东区", "西区", "已发车"}, now)
+	if !options.ShowDeparted {
+		t.Fatalf("ShowDeparted = false, want true for bare 已发车")
+	}
+	_, options = busQueryArgs([]string{"东区", "西区"}, now)
+	if options.ShowDeparted {
+		t.Fatalf("ShowDeparted = true, want false by default")
+	}
+}
+
+func TestBusQueryArgsTreatsAlAsAllAlias(t *testing.T) {
+	args, options := busQueryArgs([]string{"al", "已发车", "开"}, time.Now())
+	if len(args) != 0 {
+		t.Fatalf("args = %#v, want empty route args for all alias", args)
+	}
+	if !options.ShowDeparted {
+		t.Fatalf("ShowDeparted = false, want true")
+	}
+	if options.ExplicitRoute {
+		t.Fatalf("ExplicitRoute = true, want false for all alias")
+	}
+	if !options.ShowAll {
+		t.Fatalf("ShowAll = false, want true for all alias")
 	}
 }
