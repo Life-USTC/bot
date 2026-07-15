@@ -30,26 +30,67 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		if firstArgIs(cmd.Args, "help") {
 			return nil
 		}
-		return responses.NewTextImage("schedule", imageTitle(imageText, "课表"), imageText)
+		return richTextImage("schedule", imageTitle(imageText, "课表"), imageText)
 	case "todo":
 		if !todoImageArgs(cmd.Args) {
 			return nil
 		}
-		return responses.NewTextImage("todo", imageTitle(imageText, "待办"), imageText)
+		return richTextImage("todo", imageTitle(imageText, "待办"), imageText)
 	case "overview":
-		return responses.NewTextImage("overview", imageTitle(imageText, "今日安排"), imageText)
+		return richTextImage("overview", imageTitle(imageText, "今日安排"), imageText)
 	case "dashboard":
-		return responses.NewTextImage("dashboard", imageTitle(imageText, "我的概览"), imageText)
+		return richTextImage("dashboard", imageTitle(imageText, "我的概览"), imageText)
 	case "upcoming_deadlines":
-		return responses.NewTextImage("deadlines", imageTitle(imageText, "近期截止"), imageText)
+		return richTextImage("deadlines", imageTitle(imageText, "近期截止"), imageText)
 	case "bus":
 		if firstArgIs(cmd.Args, "help") || busPreferenceArgs(cmd.Args) {
 			return nil
 		}
-		return responses.NewTextImage("bus", busImageTitle(cmd.Args), busImageRenderText(text))
+		title := busImageTitle(cmd.Args)
+		body := busImageRenderText(text)
+		return responses.NewRichTextImage("bus", busRichText(title, body), body)
 	default:
 		return nil
 	}
+}
+
+func richTextImage(kind, title, text string) *responses.Image {
+	body := strings.Split(strings.TrimSpace(text), "\n")
+	if len(body) > 0 {
+		first := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(body[0]), "："), ":")
+		if first == strings.TrimSpace(title) {
+			body = body[1:]
+		}
+	}
+	richText := strings.TrimSpace("# " + strings.TrimSpace(title) + "\n\n" + strings.Join(body, "\n"))
+	return responses.NewRichTextImage(kind, richText, text)
+}
+
+func busRichText(title, text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	out := []string{"# " + strings.TrimSpace(title), ""}
+	atHeader := true
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			out = append(out, "")
+			atHeader = true
+			continue
+		}
+		cells := strings.Fields(line)
+		if len(cells) == 0 {
+			continue
+		}
+		out = append(out, "| "+strings.Join(cells, " | ")+" |")
+		if atHeader {
+			separators := make([]string, len(cells))
+			for i := range separators {
+				separators[i] = "---"
+			}
+			out = append(out, "| "+strings.Join(separators, " | ")+" |")
+			atHeader = false
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func busImageRenderText(text string) string {

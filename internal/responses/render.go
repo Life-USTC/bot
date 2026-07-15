@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"image/png"
 	"math"
 	"os"
 	"sort"
@@ -98,54 +97,10 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if img == nil || strings.TrimSpace(img.AltText) == "" {
 		return nil, 0, 0, errors.New("response image is empty")
 	}
-	if strings.TrimSpace(img.Kind) == "bus" {
-		return r.renderBusPNG(img)
+	if strings.TrimSpace(img.RichText) == "" {
+		return nil, 0, 0, errors.New("response rich text is empty")
 	}
-	face, err := r.fontFace(30)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	titleFace, err := r.fontFace(38)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	labelFace, err := r.fontFace(20)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	theme := cardTheme(img.Kind)
-	lines := wrappedLines(img.Lines, 38)
-	width := 920
-	lineHeight := 40
-	height := 156 + len(lines)*lineHeight + 42
-	if height < 280 {
-		height = 280
-	}
-	space := imageRenderSpace{Width: width, Height: height, Scale: 1}
-	canvas := image.NewRGBA(space.bounds())
-	drawRect(canvas, canvas.Bounds(), theme.Background)
-	card := image.Rect(30, 30, width-30, height-30)
-	drawRect(canvas, image.Rect(card.Min.X+5, card.Min.Y+6, card.Max.X+5, card.Max.Y+6), theme.Shadow)
-	drawRect(canvas, card, color.RGBA{255, 255, 255, 255})
-	drawRect(canvas, image.Rect(card.Min.X, card.Min.Y, card.Max.X, card.Min.Y+96), theme.Header)
-	drawRect(canvas, image.Rect(card.Min.X, card.Min.Y, card.Min.X+10, card.Max.Y), theme.Accent)
-	drawRect(canvas, image.Rect(card.Min.X, card.Min.Y, card.Max.X, card.Min.Y+1), theme.Border)
-	drawRect(canvas, image.Rect(card.Min.X, card.Max.Y-1, card.Max.X, card.Max.Y), theme.Border)
-	drawRect(canvas, image.Rect(card.Min.X, card.Min.Y, card.Min.X+1, card.Max.Y), theme.Border)
-	drawRect(canvas, image.Rect(card.Max.X-1, card.Min.Y, card.Max.X, card.Max.Y), theme.Border)
-	drawRect(canvas, image.Rect(58, 126, width-58, 127), theme.Border)
-	drawText(canvas, labelFace, 58, 65, theme.Label, theme.Accent)
-	drawText(canvas, titleFace, 58, 106, img.Title, theme.Title)
-	y := 166
-	for _, line := range lines {
-		drawText(canvas, face, 58, y, line, theme.Body)
-		y += lineHeight
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, canvas); err != nil {
-		return nil, 0, 0, err
-	}
-	return buf.Bytes(), space.px(space.Width), space.px(space.Height), nil
+	return r.renderRichPNG(img.RichText)
 }
 
 type busRenderTable struct {
@@ -269,106 +224,6 @@ type busRenderLayout struct {
 	LogoSize       int
 	UsesSerifFont  bool
 	VerticalLayout bool
-}
-
-func (r Renderer) renderBusPNG(img *Image) ([]byte, int, int, error) {
-	tables := busRenderTables(img)
-	if len(tables) == 0 {
-		return r.renderTextBusFallbackPNG(img)
-	}
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
-	markBusRowsByTime(tables, "校车 · "+busRenderTitle(img), now)
-	layout := busRenderLayoutFor(img, now)
-
-	space := layout.Space
-	s := space.px
-	width := space.px(space.Width)
-	height := space.px(space.Height)
-
-	// Typography: serif for brand/title/station headers, sans for metadata, mono for times.
-	brandFace, err := r.serifFontFace(float64(11 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	titleFace, err := r.serifFontFace(float64(11 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	metaFace, err := r.sansFontFace(float64(9 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	waitFace, err := r.sansFontFace(float64(9 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	tableHeadFace, err := r.serifFontFace(float64(13 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	tableHeadBoldFace, err := r.serifBoldFontFace(float64(13 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	monoFace, err := r.monoFontFace(float64(14 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	bodyFace, err := r.sansFontFace(float64(13 * space.Scale))
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
-	marginX := s(layout.Metrics.LeftMargin)
-	headerH := s(layout.Metrics.TableHeaderHeight)
-	rowH := s(layout.Metrics.TableRowHeight)
-
-	canvas := image.NewRGBA(space.bounds())
-	bg := color.RGBA{244, 248, 250, 255}
-	ink := color.RGBA{15, 23, 42, 255}
-	muted := color.RGBA{100, 116, 139, 255}
-	line := color.RGBA{221, 229, 235, 255}
-	rowBg := color.RGBA{255, 255, 255, 255}
-	headBg := color.RGBA{248, 250, 252, 255}
-	highlightBg := color.RGBA{224, 246, 239, 255}
-	departed := color.RGBA{148, 163, 184, 255}
-	accent := color.RGBA{15, 118, 110, 255}
-	drawRect(canvas, canvas.Bounds(), bg)
-	drawBusLogoWatermark(canvas, canvas.Bounds(), s(layout.LogoSize), layout.LogoOpacity)
-	drawText(canvas, brandFace, marginX, s(28), layout.HeaderLines[0], muted)
-	drawText(canvas, titleFace, marginX, s(48), layout.HeaderLines[1], ink)
-	if layout.NextTime != "" {
-		drawRightText(canvas, metaFace, width-marginX, s(28), "下一班 "+layout.NextTime, muted)
-		drawRightText(canvas, waitFace, width-marginX, s(48), layout.NextWait, accent)
-	}
-
-	for i, table := range tables {
-		tableLayout := layout.Tables[i]
-		tableW := s(tableLayout.Bounds.Dx())
-		colW := s(tableLayout.ColumnWidth)
-		x := s(tableLayout.Bounds.Min.X)
-		y := s(tableLayout.Bounds.Min.Y)
-		if tableLayout.DirectionLabel != "" {
-			drawText(canvas, metaFace, x, y-s(layout.Metrics.DirectionLabelGap), tableLayout.DirectionLabel, muted)
-		}
-		drawBusTable(canvas, tableLayout.Headers, table, x, y, tableW, colW, headerH, rowH, space.Scale, tableHeadFace, tableHeadBoldFace, bodyFace, monoFace, headBg, rowBg, highlightBg, line, ink, muted, departed, accent)
-	}
-
-	footerY := s(layout.FooterY)
-	drawRightText(canvas, metaFace, width-marginX, footerY, layout.FooterLines[0], muted)
-	drawRightText(canvas, metaFace, width-marginX, footerY+s(layout.Metrics.FooterLineGap), layout.FooterLines[1], muted)
-
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, canvas); err != nil {
-		return nil, 0, 0, err
-	}
-	return buf.Bytes(), width, height, nil
-}
-
-func (r Renderer) renderTextBusFallbackPNG(img *Image) ([]byte, int, int, error) {
-	clone := *img
-	clone.Kind = "schedule"
-	return r.RenderPNG(&clone)
 }
 
 func busRenderTitle(img *Image) string {
