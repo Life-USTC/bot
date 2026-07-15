@@ -7,12 +7,14 @@ import (
 	"image/png"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/image/font"
 )
 
 type richRenderMetrics struct {
-	Width             int
+	MinWidth          int
+	MaxWidth          int
 	Scale             int
 	MarginX           int
 	HeaderTop         int
@@ -21,7 +23,8 @@ type richRenderMetrics struct {
 	TextRowHeight     int
 	TableHeaderHeight int
 	TableRowHeight    int
-	TableColumnWidth  int
+	TextPaddingX      int
+	TableCellPaddingX int
 	TableColumnGap    int
 	TableRowGap       int
 	FooterGap         int
@@ -31,7 +34,8 @@ type richRenderMetrics struct {
 
 func defaultRichRenderMetrics() richRenderMetrics {
 	return richRenderMetrics{
-		Width:             920,
+		MinWidth:          320,
+		MaxWidth:          920,
 		Scale:             2,
 		MarginX:           52,
 		HeaderTop:         28,
@@ -40,7 +44,8 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		TextRowHeight:     42,
 		TableHeaderHeight: 28,
 		TableRowHeight:    32,
-		TableColumnWidth:  120,
+		TextPaddingX:      20,
+		TableCellPaddingX: 14,
 		TableColumnGap:    20,
 		TableRowGap:       30,
 		FooterGap:         24,
@@ -70,14 +75,28 @@ type richLayout struct {
 
 func layoutRichText(doc richDocument, now time.Time) richLayout {
 	m := defaultRichRenderMetrics()
-	availableWidth := m.Width - 2*m.MarginX
+	tables := []busRenderTable{}
+	for _, block := range doc.Blocks {
+		if block.Table != nil {
+			tables = append(tables, *block.Table)
+		}
+	}
+	nextTime, nextWait := busNextWait(tables, doc.Title, now)
+	contentWidth := measureRichDocument(doc, m)
+	if nextTime != "" {
+		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
+		contentWidth = max(contentWidth, headerWidth)
+	}
+	canvasWidth := min(m.MaxWidth, max(m.MinWidth, contentWidth+2*m.MarginX))
+	availableWidth := canvasWidth - 2*m.MarginX
 	y := m.ContentTop
 	nodes := []richLayoutNode{}
+	lastGap := 0
 	for _, block := range doc.Blocks {
 		if block.Table == nil {
 			lines := []string{}
 			for _, line := range block.Lines {
-				lines = append(lines, wrapRichLine(line, 42)...)
+				lines = append(lines, wrapRichLineToWidth(line, availableWidth-2*m.TextPaddingX, 13)...)
 			}
 			if len(lines) == 0 {
 				continue
@@ -88,10 +107,12 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 				Lines:  lines,
 			})
 			y += height + m.BlockGap
+			lastGap = m.BlockGap
 			continue
 		}
 		table := block.Table
-		width := len(table.Header) * m.TableColumnWidth
+		columnWidth := measureRichTableColumnWidth(*table, m)
+		width := len(table.Header) * columnWidth
 		if width > availableWidth {
 			width = availableWidth
 		}
@@ -105,21 +126,15 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			ColW:   colW,
 		})
 		y += height + m.TableRowGap
+		lastGap = m.TableRowGap
 	}
 	if len(nodes) > 0 {
-		y -= m.BlockGap
+		y -= lastGap
 	}
 	footerY := y + m.FooterGap
 	height := footerY + m.FooterLineGap + m.BottomMargin
-	tables := []busRenderTable{}
-	for _, block := range doc.Blocks {
-		if block.Table != nil {
-			tables = append(tables, *block.Table)
-		}
-	}
-	nextTime, nextWait := busNextWait(tables, doc.Title, now)
 	return richLayout{
-		Space:    imageRenderSpace{Width: m.Width, Height: height, Scale: m.Scale},
+		Space:    imageRenderSpace{Width: canvasWidth, Height: height, Scale: m.Scale},
 		Metrics:  m,
 		Title:    doc.Title,
 		Nodes:    nodes,
@@ -129,22 +144,70 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 	}
 }
 
-func wrapRichLine(line string, limit int) []string {
+func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
+	width := richTextWidth(doc.Title, 18)
+	for _, block := range doc.Blocks {
+		if block.Table != nil {
+			width = max(width, len(block.Table.Header)*measureRichTableColumnWidth(*block.Table, metrics))
+			continue
+		}
+		for _, line := range block.Lines {
+			width = max(width, richTextWidth(line, 13)+2*metrics.TextPaddingX)
+		}
+	}
+	// The timestamp and source footer are right-aligned on separate lines.
+	return max(width, richTextWidth("2006-01-02 15:04（工作日）", 9))
+}
+
+func measureRichTableColumnWidth(table busRenderTable, metrics richRenderMetrics) int {
+	width := 0
+	for _, cell := range table.Header {
+		width = max(width, richTextWidth(cell, 13))
+	}
+	for _, row := range table.Rows {
+		for _, cell := range row.Cells {
+			width = max(width, richTextWidth(cell, 14))
+		}
+	}
+	return width + 2*metrics.TableCellPaddingX
+}
+
+func richTextWidth(text string, fontSize int) int {
+	width := 0.0
+	for _, r := range text {
+		switch {
+		case unicode.Is(unicode.Han, r), unicode.Is(unicode.Hiragana, r), unicode.Is(unicode.Katakana, r), unicode.Is(unicode.Hangul, r):
+			width += float64(fontSize)
+		case unicode.IsSpace(r):
+			width += float64(fontSize) * 0.35
+		default:
+			width += float64(fontSize) * 0.62
+		}
+	}
+	return int(width + 0.5)
+}
+
+func wrapRichLineToWidth(line string, maxWidth, fontSize int) []string {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil
 	}
-	runes := []rune(line)
-	if len(runes) <= limit {
+	if richTextWidth(line, fontSize) <= maxWidth {
 		return []string{line}
 	}
 	out := []string{}
-	for len(runes) > limit {
-		out = append(out, string(runes[:limit]))
-		runes = runes[limit:]
+	current := []rune{}
+	for _, r := range []rune(line) {
+		candidate := append(current, r)
+		if len(current) > 0 && richTextWidth(string(candidate), fontSize) > maxWidth {
+			out = append(out, string(current))
+			current = []rune{r}
+			continue
+		}
+		current = candidate
 	}
-	if len(runes) > 0 {
-		out = append(out, string(runes))
+	if len(current) > 0 {
+		out = append(out, string(current))
 	}
 	return out
 }
@@ -248,7 +311,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 			if i%2 == 1 {
 				drawRect(canvas, image.Rect(x, rowY, s(node.Bounds.Max.X), rowY+s(layout.Metrics.TextRowHeight)), headBg)
 			}
-			drawText(canvas, faces.Body, x+s(20), rowY+s(28), text, ink)
+			drawText(canvas, faces.Body, x+s(layout.Metrics.TextPaddingX), rowY+s(28), text, ink)
 			if i < len(node.Lines)-1 {
 				drawRect(canvas, image.Rect(x, rowY+s(layout.Metrics.TextRowHeight)-layout.Space.Scale, s(node.Bounds.Max.X), rowY+s(layout.Metrics.TextRowHeight)), line)
 			}

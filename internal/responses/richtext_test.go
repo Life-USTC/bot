@@ -78,3 +78,30 @@ func TestRendererLayoutDependsOnRichTextNotResponseKind(t *testing.T) {
 		t.Fatalf("schedule=%dx%d dashboard=%dx%d", firstWidth, firstHeight, secondWidth, secondHeight)
 	}
 }
+
+func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	short := layoutRichText(parseRichText("# 待办\n\n买咖啡"), now)
+	wide := layoutRichText(parseRichText("# 待办\n\n完成一份包含数据库实验结果和性能分析的课程报告"), now)
+	tall := layoutRichText(parseRichText("# 待办\n\n买咖啡\n提交报告\n参加会议"), now)
+
+	if short.Space.Width >= wide.Space.Width {
+		t.Fatalf("short width = %d, wide width = %d", short.Space.Width, wide.Space.Width)
+	}
+	if short.Space.Height >= tall.Space.Height {
+		t.Fatalf("short height = %d, tall height = %d", short.Space.Height, tall.Space.Height)
+	}
+	if wide.Space.Width > wide.Metrics.MaxWidth {
+		t.Fatalf("wide width = %d, max = %d", wide.Space.Width, wide.Metrics.MaxWidth)
+	}
+}
+
+func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	narrow := layoutRichText(parseRichText("# 表格\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"), now)
+	wide := layoutRichText(parseRichText("# 表格\n\n| 很长的站点名称 | 另一个站点 |\n| --- | --- |\n| 14:30 | 14:45 |"), now)
+
+	if narrow.Nodes[0].Bounds.Dx() >= wide.Nodes[0].Bounds.Dx() {
+		t.Fatalf("narrow table = %d, wide table = %d", narrow.Nodes[0].Bounds.Dx(), wide.Nodes[0].Bounds.Dx())
+	}
+}
