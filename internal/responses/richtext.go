@@ -8,8 +8,9 @@ type richDocument struct {
 }
 
 type richBlock struct {
-	Lines []string
-	Table *busRenderTable
+	Heading string
+	Lines   []string
+	Table   *busRenderTable
 }
 
 func parseRichText(text string) richDocument {
@@ -29,6 +30,18 @@ func parseRichText(text string) richDocument {
 		if len(lines) == 0 {
 			break
 		}
+		heading := ""
+		if value, ok := richSectionHeading(lines[0]); ok {
+			heading = value
+			lines = lines[1:]
+			for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+				lines = lines[1:]
+			}
+		}
+		if len(lines) == 0 {
+			doc.Blocks = append(doc.Blocks, richBlock{Heading: heading})
+			break
+		}
 		if isRichTableLine(lines[0]) {
 			block := []string{}
 			for len(lines) > 0 && isRichTableLine(lines[0]) {
@@ -36,23 +49,35 @@ func parseRichText(text string) richDocument {
 				lines = lines[1:]
 			}
 			if table := parseRichTable(block); table != nil {
-				doc.Blocks = append(doc.Blocks, richBlock{Table: table})
+				doc.Blocks = append(doc.Blocks, richBlock{Heading: heading, Table: table})
 			}
 			continue
 		}
 		block := []string{}
 		for len(lines) > 0 && strings.TrimSpace(lines[0]) != "" && !isRichTableLine(lines[0]) {
+			if _, ok := richSectionHeading(lines[0]); ok {
+				break
+			}
 			block = append(block, strings.TrimSpace(lines[0]))
 			lines = lines[1:]
 		}
-		if len(block) > 0 {
-			doc.Blocks = append(doc.Blocks, richBlock{Lines: block})
+		if heading != "" || len(block) > 0 {
+			doc.Blocks = append(doc.Blocks, richBlock{Heading: heading, Lines: block})
 		}
 	}
 	if doc.Title == "" {
 		doc.Title = "Life @ USTC"
 	}
 	return doc
+}
+
+func richSectionHeading(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "## ") {
+		return "", false
+	}
+	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+	return heading, heading != ""
 }
 
 func isRichTableLine(line string) bool {

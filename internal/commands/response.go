@@ -62,8 +62,30 @@ func richTextImage(kind, title, text string) *responses.Image {
 			body = body[1:]
 		}
 	}
+	body = richTextSectionLines(body)
 	richText := strings.TrimSpace("# " + strings.TrimSpace(title) + "\n\n" + strings.Join(body, "\n"))
 	return responses.NewRichTextImage(kind, richText, text)
+}
+
+func richTextSectionLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	atSectionStart := true
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			out = append(out, "")
+			atSectionStart = true
+			continue
+		}
+		if atSectionStart && (strings.HasSuffix(trimmed, "：") || strings.HasSuffix(trimmed, ":")) {
+			trimmed = strings.TrimSuffix(strings.TrimSuffix(trimmed, "："), ":")
+			out = append(out, "## "+strings.TrimSpace(trimmed))
+		} else {
+			out = append(out, line)
+		}
+		atSectionStart = false
+	}
+	return out
 }
 
 func busRichText(title, text string) string {

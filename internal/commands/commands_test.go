@@ -812,6 +812,24 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
+func TestRichTextImageMarksSectionHeadings(t *testing.T) {
+	img := richTextImage("overview", "07-15 安排", strings.Join([]string{
+		"07-15 安排：",
+		"今日课表：",
+		"1. 09:50 数据库系统",
+		"",
+		"待办：",
+		"1. 18:00 写报告",
+	}, "\n"))
+	want := "# 07-15 安排\n\n## 今日课表\n1. 09:50 数据库系统\n\n## 待办\n1. 18:00 写报告"
+	if img == nil {
+		t.Fatal("image = nil")
+	}
+	if img.RichText != want {
+		t.Fatalf("rich text = %q, want %q", img.RichText, want)
+	}
+}
+
 func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{

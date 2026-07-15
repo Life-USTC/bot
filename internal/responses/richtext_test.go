@@ -31,6 +31,26 @@ func TestParseRichTextBuildsTextAndTableBlocks(t *testing.T) {
 	}
 }
 
+func TestParseRichTextBuildsSectionBlocks(t *testing.T) {
+	doc := parseRichText(`# 今日安排
+
+## 今日课表
+09:50 数据库系统
+
+## 待办
+18:00 写报告`)
+
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("blocks = %#v", doc.Blocks)
+	}
+	if doc.Blocks[0].Heading != "今日课表" || !reflect.DeepEqual(doc.Blocks[0].Lines, []string{"09:50 数据库系统"}) {
+		t.Fatalf("first block = %#v", doc.Blocks[0])
+	}
+	if doc.Blocks[1].Heading != "待办" || !reflect.DeepEqual(doc.Blocks[1].Lines, []string{"18:00 写报告"}) {
+		t.Fatalf("second block = %#v", doc.Blocks[1])
+	}
+}
+
 func TestLayoutRichTextKeepsNodesInsideCanvasWithoutOverlap(t *testing.T) {
 	doc := parseRichText(`# 今日安排
 
@@ -96,6 +116,29 @@ func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	}
 }
 
+func TestRichTextAndTableRowsShareGridMetrics(t *testing.T) {
+	metrics := defaultRichRenderMetrics()
+	if metrics.TextPaddingX != metrics.TableCellPaddingX {
+		t.Fatalf("text padding = %d, table padding = %d", metrics.TextPaddingX, metrics.TableCellPaddingX)
+	}
+	if metrics.TextRowHeight != metrics.TableRowHeight {
+		t.Fatalf("text row = %d, table row = %d", metrics.TextRowHeight, metrics.TableRowHeight)
+	}
+	if metrics.BlockGap != metrics.TableRowGap {
+		t.Fatalf("block gap = %d, table gap = %d", metrics.BlockGap, metrics.TableRowGap)
+	}
+}
+
+func TestLayoutRichTextUsesTableHeaderHeightForSections(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 今日安排\n\n## 今日课表\n09:50 数据库系统\n14:00 计算机网络"), now)
+	node := layout.Nodes[0]
+	wantHeight := layout.Metrics.TableHeaderHeight + 2*layout.Metrics.TextRowHeight
+	if node.Heading != "今日课表" || node.Bounds.Dy() != wantHeight {
+		t.Fatalf("node = %#v, want height %d", node, wantHeight)
+	}
+}
+
 func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	narrow := layoutRichText(parseRichText("# 表格\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"), now)
@@ -142,6 +185,19 @@ func TestLayoutRichTextEmphasizesEndpointNamesWithoutPrefixes(t *testing.T) {
 	headers := layout.Nodes[0].Header
 	if len(headers) != 3 || headers[0].Text != "东区" || !headers[0].Emphasize || headers[1].Emphasize || headers[2].Text != "西区" || !headers[2].Emphasize {
 		t.Fatalf("headers = %#v", headers)
+	}
+}
+
+func TestLayoutRichTextKeepsBusSemanticsOutOfOtherTables(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 课表\n\n| 时间 | 课程 | 教室 |\n| --- | --- | --- |\n| 14:30 | Database Systems | 3A204 |"), now)
+	if layout.NextTime != "" || layout.NextWait != "" {
+		t.Fatalf("next bus metadata = %q %q", layout.NextTime, layout.NextWait)
+	}
+	for _, header := range layout.Nodes[0].Header {
+		if header.Emphasize {
+			t.Fatalf("non-bus header emphasized: %#v", layout.Nodes[0].Header)
+		}
 	}
 }
 
