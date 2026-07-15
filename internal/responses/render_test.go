@@ -50,10 +50,14 @@ func TestRendererDimensionsAreStable(t *testing.T) {
 	}
 }
 
-func TestDrawableTextSkipsUnsupportedGlyphs(t *testing.T) {
-	got := drawableText(basicfont.Face7x13, "A\t✨B")
+func TestMixedFontRunsSkipUnsupportedGlyphs(t *testing.T) {
+	var text strings.Builder
+	for _, run := range mixedFontRuns("A\t✨B", basicfont.Face7x13, basicfont.Face7x13) {
+		text.WriteString(run.Text)
+	}
+	got := text.String()
 	if got != "A  B" {
-		t.Fatalf("drawableText = %q", got)
+		t.Fatalf("mixed font text = %q", got)
 	}
 }
 
@@ -275,53 +279,91 @@ func TestBusRenderTitleParse(t *testing.T) {
 	}
 }
 
-func TestBusCellIsNumeric(t *testing.T) {
-	cases := []struct {
-		cell string
-		want bool
-	}{
-		{"14:30", true},
-		{"15:05", true},
-		{"08:00", true},
-		{"东区", false},
-		{"西区", false},
-		{"", false},
-		{"✨", false},
-		{"30 分钟", true},
-	}
-	for _, c := range cases {
-		if got := busCellIsNumeric(c.cell); got != c.want {
-			t.Fatalf("busCellIsNumeric(%q) = %v, want %v", c.cell, got, c.want)
+func TestUsesMonoFontForDigitsLatinAndASCIIPunctuation(t *testing.T) {
+	for r, want := range map[rune]bool{
+		'0': true,
+		'A': true,
+		'z': true,
+		'é': true,
+		':': true,
+		'~': true,
+		' ': true,
+		'校': false,
+		'·': false,
+	} {
+		if got := usesMonoFont(r); got != want {
+			t.Fatalf("usesMonoFont(%q) = %v, want %v", r, got, want)
 		}
 	}
 }
 
-func TestDrawBusTableKeepsGridLinesAboveRowBackgrounds(t *testing.T) {
+func TestMonoFontFaceHasFixedLatinAdvance(t *testing.T) {
+	hasMonoFont := false
+	for _, path := range busMonoFontPaths {
+		if fileExists(path) {
+			hasMonoFont = true
+			break
+		}
+	}
+	if !hasMonoFont {
+		t.Skip("no monospace font found")
+	}
+	face, err := (Renderer{}).monoFontFace(14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	narrow, ok := face.GlyphAdvance('i')
+	if !ok {
+		t.Fatal("monospace font has no i glyph")
+	}
+	wide, ok := face.GlyphAdvance('W')
+	if !ok {
+		t.Fatal("monospace font has no W glyph")
+	}
+	if narrow != wide {
+		t.Fatalf("glyph advances differ: i=%v W=%v", narrow, wide)
+	}
+}
+
+func TestDrawBusTableUsesHorizontalSeparatorsWithoutVerticalBorders(t *testing.T) {
 	canvas := image.NewRGBA(image.Rect(0, 0, 160, 120))
 	line := color.RGBA{1, 2, 3, 255}
+	headerBg := color.RGBA{240, 240, 240, 255}
+	rowBg := color.RGBA{255, 255, 255, 255}
+	highlightBg := color.RGBA{244, 244, 245, 255}
 	drawBusTable(canvas,
 		[]busStopHeader{{Text: "东区"}, {Text: "西区"}},
 		busRenderTable{
 			Header: []string{"东区", "西区"},
 			Rows: []busRenderRow{
 				{Cells: []string{"14:30", "14:40"}},
-				{Cells: []string{"15:30", "15:40"}},
+				{Cells: []string{"15:30", "15:40"}, Highlight: true},
 			},
 		},
-		10, 10, 100, 50, 20, 30, 1,
-		basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13,
-		color.RGBA{240, 240, 240, 255}, color.RGBA{255, 255, 255, 255}, color.RGBA{220, 250, 220, 255}, line,
-		color.RGBA{0, 0, 0, 255}, color.RGBA{80, 80, 80, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{0, 120, 0, 255})
+		10, 10, 100, 50, 20, 30, 4, 1,
+		basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13,
+		headerBg, rowBg, highlightBg, line,
+		color.RGBA{0, 0, 0, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{0, 0, 0, 255})
 
-	checks := map[string]image.Point{
-		"left border over striped row":      {10, 65},
-		"right border over striped row":     {109, 65},
-		"vertical divider over striped row": {60, 65},
-		"bottom border":                     {40, 89},
-	}
-	for name, p := range checks {
+	for name, p := range map[string]image.Point{
+		"header separator": {55, 30},
+		"row separator":    {55, 60},
+	} {
 		if got := canvas.RGBAAt(p.X, p.Y); got != line {
 			t.Fatalf("%s pixel = %#v, want %#v", name, got, line)
+		}
+	}
+	for name, check := range map[string]struct {
+		point image.Point
+		want  color.RGBA
+	}{
+		"no top border":       {point: image.Pt(50, 10), want: headerBg},
+		"no left border":      {point: image.Pt(10, 45), want: rowBg},
+		"no vertical divider": {point: image.Pt(60, 45), want: rowBg},
+		"no bottom border":    {point: image.Pt(50, 89), want: highlightBg},
+	} {
+		if got := canvas.RGBAAt(check.point.X, check.point.Y); got != check.want {
+			t.Fatalf("%s pixel = %#v, want %#v", name, got, check.want)
 		}
 	}
 }

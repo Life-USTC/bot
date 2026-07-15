@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -60,9 +61,22 @@ var busSansBoldFontPaths = []string{
 }
 
 var busMonoFontPaths = []string{
+	"/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
+	"/usr/share/fonts/fira-code/FiraCode-Regular.ttf",
 	"/tmp/FiraCode/ttf/FiraCode-Regular.ttf",
 	"/tmp/FiraCode/ttf/FiraCode-Medium.ttf",
-	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	"/usr/share/fonts/google-noto-vf-fonts/NotoSansMono[wght].ttf",
+	"/usr/share/fonts/google-noto-sans-mono-cjk-vf-fonts/NotoSansMonoCJK-VF.ttc",
+	"/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+}
+
+var busMonoBoldFontPaths = []string{
+	"/usr/share/fonts/truetype/firacode/FiraCode-Bold.ttf",
+	"/usr/share/fonts/fira-code/FiraCode-Bold.ttf",
+	"/tmp/FiraCode/ttf/FiraCode-Bold.ttf",
+	"/usr/share/fonts/google-noto-vf-fonts/NotoSansMono[wght].ttf",
+	"/usr/share/fonts/google-noto-sans-mono-cjk-vf-fonts/NotoSansMonoCJK-VF.ttc",
+	"/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
 }
 
 var busSerifFontPaths = []string{
@@ -323,22 +337,6 @@ func parseTwoDigitNumber(value string) (int, bool) {
 	return out, true
 }
 
-func busCellIsNumeric(cell string) bool {
-	cell = strings.TrimSpace(cell)
-	if cell == "" {
-		return false
-	}
-	if _, ok := parseBusClock(cell); ok {
-		return true
-	}
-	for _, r := range cell {
-		if r >= '0' && r <= '9' {
-			return true
-		}
-	}
-	return false
-}
-
 func markBusRowsByTime(tables []busRenderTable, title string, now time.Time) {
 	now = now.In(time.FixedZone("CST", 8*60*60))
 	nowMinutes := now.Hour()*60 + now.Minute()
@@ -561,7 +559,7 @@ func busTableHeight(table busRenderTable, headerH, rowH int) int {
 	return headerH + len(table.Rows)*rowH
 }
 
-func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRenderTable, x, y, width, colW, headerH, rowH, scale int, headerFace, headerEmphasisFace, bodyFace, monoFace font.Face, headerBg, rowBg, highlightBg, line, ink, muted, departed, accent color.RGBA) {
+func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRenderTable, x, y, width, colW, headerH, rowH, cellPadding, scale int, headerFace, headerMonoFace, headerEmphasisFace, headerEmphasisMonoFace, bodyFace, monoFace font.Face, headerBg, rowBg, highlightBg, line, ink, departed, highlightText color.RGBA) {
 	height := busTableHeight(table, headerH, rowH)
 	cols := max(1, len(table.Header))
 
@@ -571,48 +569,29 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 		rowY := y + headerH + ri*rowH
 		if row.Highlight {
 			drawRect(dst, image.Rect(x, rowY, x+width, rowY+rowH), highlightBg)
-		} else if ri%2 == 1 {
-			drawRect(dst, image.Rect(x, rowY, x+width, rowY+rowH), color.RGBA{248, 250, 252, 255})
 		}
 	}
 
-	for ci := 0; ci <= cols; ci++ {
-		lineX := x + ci*colW
-		if ci == cols {
-			lineX = x + width - scale
-		}
-		drawRect(dst, image.Rect(lineX, y, lineX+scale, y+height), line)
-	}
-	for ri := 0; ri <= len(table.Rows)+1; ri++ {
-		lineY := y
-		switch {
-		case ri == 0:
-			lineY = y
-		case ri == 1:
-			lineY = y + headerH
-		case ri == len(table.Rows)+1:
-			lineY = y + height - scale
-		default:
-			lineY = y + headerH + (ri-1)*rowH
-		}
+	for ri := 0; ri < len(table.Rows); ri++ {
+		lineY := y + headerH + ri*rowH
 		drawRect(dst, image.Rect(x, lineY, x+width, lineY+scale), line)
 	}
 
 	for i, header := range renderedHeaders {
 		cellX := x + i*colW
 		face := headerFace
-		textColor := muted
+		monoFace := headerMonoFace
 		if header.Emphasize {
 			face = headerEmphasisFace
-			textColor = ink
+			monoFace = headerEmphasisMonoFace
 		}
-		drawCenteredText(dst, face, cellX, cellX+colW, y+headerH/2+5*scale, header.Text, textColor)
+		drawMixedText(dst, face, monoFace, cellX+cellPadding, y+headerH/2+5*scale, header.Text, ink)
 	}
 	for ri, row := range table.Rows {
 		rowY := y + headerH + ri*rowH
 		textColor := ink
 		if row.Highlight {
-			textColor = accent
+			textColor = highlightText
 		} else if row.Departed {
 			textColor = departed
 		}
@@ -622,11 +601,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 				cell = row.Cells[ci]
 			}
 			cellX := x + ci*colW
-			cellFace := bodyFace
-			if busCellIsNumeric(cell) {
-				cellFace = monoFace
-			}
-			drawCenteredText(dst, cellFace, cellX, cellX+colW, rowY+rowH/2+5*scale, cell, textColor)
+			drawMixedText(dst, bodyFace, monoFace, cellX+cellPadding, rowY+rowH/2+5*scale, cell, textColor)
 		}
 	}
 }
@@ -715,23 +690,39 @@ func (r Renderer) sansFontFace(size float64) (font.Face, error) {
 }
 
 func (r Renderer) monoFontFace(size float64) (font.Face, error) {
-	face, err := r.loadFont(busMonoFontPaths, size)
+	face, err := loadFirstFont(busMonoFontPaths, size)
 	if err == nil {
 		return face, nil
 	}
 	return r.sansFontFace(size)
 }
 
+func (r Renderer) monoBoldFontFace(size float64) (font.Face, error) {
+	face, err := loadFirstFont(busMonoBoldFontPaths, size)
+	if err == nil {
+		return face, nil
+	}
+	return r.monoFontFace(size)
+}
+
 func (r Renderer) loadFont(candidates []string, size float64) (font.Face, error) {
 	path := strings.TrimSpace(r.FontPath)
 	if path == "" {
-		for _, candidate := range candidates {
-			if fileExists(candidate) {
-				path = candidate
-				break
-			}
+		return loadFirstFont(candidates, size)
+	}
+	return loadFontPath(path, size)
+}
+
+func loadFirstFont(candidates []string, size float64) (font.Face, error) {
+	for _, candidate := range candidates {
+		if fileExists(candidate) {
+			return loadFontPath(candidate, size)
 		}
 	}
+	return nil, errors.New("no font path configured")
+}
+
+func loadFontPath(path string, size float64) (font.Face, error) {
 	if path == "" {
 		return nil, errors.New("no font path configured")
 	}
@@ -944,44 +935,102 @@ func drawRect(dst *image.RGBA, rect image.Rectangle, c color.Color) {
 	draw.Draw(dst, rect, &image.Uniform{C: c}, image.Point{}, draw.Src)
 }
 
-func drawText(dst *image.RGBA, face font.Face, x, y int, text string, c color.Color) {
-	d := &font.Drawer{
-		Dst:  dst,
-		Src:  image.NewUniform(c),
-		Face: face,
-		Dot:  fixed.P(x, y),
-	}
-	d.DrawString(drawableText(face, text))
+type mixedFontRun struct {
+	Text string
+	Face font.Face
 }
 
-func drawCenteredText(dst *image.RGBA, face font.Face, left, right, y int, text string, c color.Color) {
-	text = drawableText(face, text)
-	x := left + (right-left-textWidth(face, text))/2
-	if x < left+4 {
-		x = left + 4
+func drawMixedText(dst *image.RGBA, textFace, monoFace font.Face, x, y int, text string, c color.Color) {
+	d := &font.Drawer{Dst: dst, Src: image.NewUniform(c), Dot: fixed.P(x, y)}
+	for _, run := range mixedFontRuns(text, textFace, monoFace) {
+		d.Face = run.Face
+		d.DrawString(run.Text)
 	}
-	d := &font.Drawer{
-		Dst:  dst,
-		Src:  image.NewUniform(c),
-		Face: face,
-		Dot:  fixed.P(x, y),
-	}
-	d.DrawString(text)
 }
 
-func drawRightText(dst *image.RGBA, face font.Face, right, y int, text string, c color.Color) {
-	text = drawableText(face, text)
-	d := &font.Drawer{
-		Dst:  dst,
-		Src:  image.NewUniform(c),
-		Face: face,
-		Dot:  fixed.P(right-textWidth(face, text), y),
+func drawRightMixedText(dst *image.RGBA, textFace, monoFace font.Face, right, y int, text string, c color.Color) {
+	runs := mixedFontRuns(text, textFace, monoFace)
+	advance := fixed.Int26_6(0)
+	for _, run := range runs {
+		advance += font.MeasureString(run.Face, run.Text)
 	}
-	d.DrawString(text)
+	dot := fixed.P(right, y)
+	dot.X -= advance
+	d := &font.Drawer{Dst: dst, Src: image.NewUniform(c), Dot: dot}
+	for _, run := range runs {
+		d.Face = run.Face
+		d.DrawString(run.Text)
+	}
 }
 
-func textWidth(face font.Face, text string) int {
-	return font.MeasureString(face, text).Ceil()
+func mixedFontRuns(text string, textFace, monoFace font.Face) []mixedFontRun {
+	runs := []mixedFontRun{}
+	var current strings.Builder
+	currentMono := false
+	hasCurrent := false
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		face := textFace
+		if currentMono {
+			face = monoFace
+		}
+		runs = append(runs, mixedFontRun{Text: current.String(), Face: face})
+		current.Reset()
+	}
+	appendRune := func(r rune) {
+		mono := usesMonoFont(r)
+		face, fallback := textFace, monoFace
+		if mono {
+			face, fallback = monoFace, textFace
+		}
+		if !fontHasGlyph(face, r) {
+			if !fontHasGlyph(fallback, r) {
+				return
+			}
+			mono = !mono
+		}
+		if hasCurrent && mono != currentMono {
+			flush()
+		}
+		currentMono = mono
+		hasCurrent = true
+		current.WriteRune(r)
+	}
+	for _, r := range text {
+		switch r {
+		case '\t':
+			appendRune(' ')
+			appendRune(' ')
+		case '\r':
+			continue
+		case '\n':
+			appendRune(' ')
+		default:
+			if r < ' ' {
+				r = ' '
+			}
+			appendRune(r)
+		}
+	}
+	flush()
+	return runs
+}
+
+func usesMonoFont(r rune) bool {
+	if r >= ' ' && r <= unicode.MaxASCII {
+		return true
+	}
+	return unicode.IsDigit(r) || unicode.Is(unicode.Latin, r)
+}
+
+func fontHasGlyph(face font.Face, r rune) bool {
+	if face == nil {
+		return false
+	}
+	_, ok := face.GlyphAdvance(r)
+	return ok
 }
 
 func loadBusLogo() image.Image {
@@ -1029,31 +1078,6 @@ func blendPixel(dst *image.RGBA, x, y int, src color.Color, opacity float64) {
 		B: uint8((float64(sb>>8)*alpha + float64(db>>8)*inv) + 0.5),
 		A: uint8((float64(sa>>8)*alpha + float64(da>>8)*inv) + 0.5),
 	})
-}
-
-func drawableText(face font.Face, text string) string {
-	var out strings.Builder
-	out.Grow(len(text))
-	for _, r := range text {
-		switch r {
-		case '\t':
-			out.WriteString("  ")
-		case '\n':
-			out.WriteRune(r)
-		case '\r':
-			continue
-		default:
-			if r < ' ' {
-				out.WriteRune(' ')
-				continue
-			}
-			if _, ok := face.GlyphAdvance(r); !ok {
-				continue
-			}
-			out.WriteRune(r)
-		}
-	}
-	return out.String()
 }
 
 func wrappedLines(lines []string, maxRunes int) []string {

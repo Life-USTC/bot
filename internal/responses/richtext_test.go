@@ -99,10 +99,21 @@ func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	narrow := layoutRichText(parseRichText("# 表格\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"), now)
-	wide := layoutRichText(parseRichText("# 表格\n\n| 很长的站点名称 | 另一个站点 |\n| --- | --- |\n| 14:30 | 14:45 |"), now)
+	wide := layoutRichText(parseRichText("# 表格\n\n| 一个非常非常长的站点名称 | 另一个同样很长的站点名称 |\n| --- | --- |\n| 14:30 | 14:45 |"), now)
 
 	if narrow.Nodes[0].Bounds.Dx() >= wide.Nodes[0].Bounds.Dx() {
 		t.Fatalf("narrow table = %d, wide table = %d", narrow.Nodes[0].Bounds.Dx(), wide.Nodes[0].Bounds.Dx())
+	}
+}
+
+func TestLayoutRichTextStretchesTablesAcrossSharedGrid(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 北区 | 西区 |\n| --- | --- | --- |\n| 14:30 | 14:35 | 14:45 |\n\n| 南区 | 东区 |\n| --- | --- |\n| 15:00 | 15:15 |"), now)
+	want := layout.Space.Width - 2*layout.Metrics.MarginX
+	for i, node := range layout.Nodes {
+		if node.Bounds.Dx() != want {
+			t.Fatalf("table %d width = %d, want %d", i, node.Bounds.Dx(), want)
+		}
 	}
 }
 

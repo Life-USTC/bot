@@ -45,7 +45,7 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		TableHeaderHeight: 28,
 		TableRowHeight:    32,
 		TextPaddingX:      20,
-		TableCellPaddingX: 14,
+		TableCellPaddingX: 8,
 		TableColumnGap:    20,
 		TableRowGap:       30,
 		FooterGap:         24,
@@ -111,11 +111,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			continue
 		}
 		table := block.Table
-		columnWidth := measureRichTableColumnWidth(*table, m)
-		width := len(table.Header) * columnWidth
-		if width > availableWidth {
-			width = availableWidth
-		}
+		width := availableWidth
 		colW := width / max(1, len(table.Header))
 		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
 		nodes = append(nodes, richLayoutNode{
@@ -217,12 +213,17 @@ func wrapRichLineToWidth(line string, maxWidth, fontSize int) []string {
 }
 
 type richFaces struct {
-	Title font.Face
-	Meta  font.Face
-	Body  font.Face
-	Head  font.Face
-	Bold  font.Face
-	Mono  font.Face
+	Title     font.Face
+	TitleMono font.Face
+	Meta      font.Face
+	MetaMono  font.Face
+	Body      font.Face
+	BodyMono  font.Face
+	Head      font.Face
+	HeadMono  font.Face
+	Bold      font.Face
+	BoldMono  font.Face
+	Mono      font.Face
 }
 
 func (r Renderer) richFaces(scale int) (richFaces, error) {
@@ -233,11 +234,23 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	if err != nil {
 		return richFaces{}, err
 	}
+	titleMono, err := load(r.monoBoldFontFace, 18)
+	if err != nil {
+		return richFaces{}, err
+	}
 	meta, err := load(r.sansFontFace, 9)
 	if err != nil {
 		return richFaces{}, err
 	}
+	metaMono, err := load(r.monoFontFace, 9)
+	if err != nil {
+		return richFaces{}, err
+	}
 	body, err := load(r.sansFontFace, 13)
+	if err != nil {
+		return richFaces{}, err
+	}
+	bodyMono, err := load(r.monoFontFace, 13)
 	if err != nil {
 		return richFaces{}, err
 	}
@@ -249,11 +262,22 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	if err != nil {
 		return richFaces{}, err
 	}
+	boldMono, err := load(r.monoBoldFontFace, 13)
+	if err != nil {
+		return richFaces{}, err
+	}
 	mono, err := load(r.monoFontFace, 14)
 	if err != nil {
 		return richFaces{}, err
 	}
-	return richFaces{Title: title, Meta: meta, Body: body, Head: head, Bold: bold, Mono: mono}, nil
+	return richFaces{
+		Title: title, TitleMono: titleMono,
+		Meta: meta, MetaMono: metaMono,
+		Body: body, BodyMono: bodyMono,
+		Head: head, HeadMono: bodyMono,
+		Bold: bold, BoldMono: boldMono,
+		Mono: mono,
+	}, nil
 }
 
 func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
@@ -280,27 +304,27 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 		return nil, 0, 0, err
 	}
 	canvas := image.NewRGBA(layout.Space.bounds())
-	bg := color.RGBA{244, 248, 250, 255}
-	ink := color.RGBA{15, 23, 42, 255}
-	muted := color.RGBA{100, 116, 139, 255}
-	line := color.RGBA{221, 229, 235, 255}
-	rowBg := color.RGBA{255, 255, 255, 255}
-	headBg := color.RGBA{248, 250, 252, 255}
-	highlightBg := color.RGBA{224, 246, 239, 255}
-	departed := color.RGBA{148, 163, 184, 255}
+	bg := color.RGBA{250, 250, 250, 255}
+	ink := color.RGBA{39, 39, 42, 255}
+	muted := color.RGBA{113, 113, 122, 255}
+	line := color.RGBA{212, 212, 216, 255}
+	rowBg := bg
+	headBg := bg
+	highlightBg := color.RGBA{244, 244, 245, 255}
+	departed := color.RGBA{132, 132, 132, 255}
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
-	drawText(canvas, faces.Title, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
+	drawMixedText(canvas, faces.Title, faces.TitleMono, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
+		drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
+		drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
 	}
 	for _, node := range layout.Nodes {
 		x, y := s(node.Bounds.Min.X), s(node.Bounds.Min.Y)
 		if node.Table != nil {
-			drawBusTable(canvas, node.Header, *node.Table, x, y, s(node.Bounds.Dx()), s(node.ColW), s(layout.Metrics.TableHeaderHeight), s(layout.Metrics.TableRowHeight), layout.Space.Scale, faces.Head, faces.Bold, faces.Body, faces.Mono, headBg, rowBg, highlightBg, line, ink, muted, departed, accent)
+			drawBusTable(canvas, node.Header, *node.Table, x, y, s(node.Bounds.Dx()), s(node.ColW), s(layout.Metrics.TableHeaderHeight), s(layout.Metrics.TableRowHeight), s(layout.Metrics.TableCellPaddingX), layout.Space.Scale, faces.Head, faces.HeadMono, faces.Bold, faces.BoldMono, faces.Body, faces.Mono, headBg, rowBg, highlightBg, line, ink, departed, ink)
 			continue
 		}
 		drawRect(canvas, image.Rect(x, y, s(node.Bounds.Max.X), s(node.Bounds.Max.Y)), rowBg)
@@ -309,7 +333,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 			if i%2 == 1 {
 				drawRect(canvas, image.Rect(x, rowY, s(node.Bounds.Max.X), rowY+s(layout.Metrics.TextRowHeight)), headBg)
 			}
-			drawText(canvas, faces.Body, x+s(layout.Metrics.TextPaddingX), rowY+s(28), text, ink)
+			drawMixedText(canvas, faces.Body, faces.BodyMono, x+s(layout.Metrics.TextPaddingX), rowY+s(28), text, ink)
 			if i < len(node.Lines)-1 {
 				drawRect(canvas, image.Rect(x, rowY+s(layout.Metrics.TextRowHeight)-layout.Space.Scale, s(node.Bounds.Max.X), rowY+s(layout.Metrics.TextRowHeight)), line)
 			}
@@ -318,8 +342,8 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	footerY := s(layout.FooterY)
 	right := s(layout.Space.Width - layout.Metrics.MarginX)
 	footerLines := richFooterLines(now)
-	drawRightText(canvas, faces.Meta, right, footerY, footerLines[0], muted)
-	drawRightText(canvas, faces.Meta, right, footerY+s(layout.Metrics.FooterLineGap), footerLines[1], muted)
+	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY, footerLines[0], muted)
+	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY+s(layout.Metrics.FooterLineGap), footerLines[1], muted)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, canvas); err != nil {
 		return nil, 0, 0, err

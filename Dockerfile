@@ -14,7 +14,7 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g; s|security.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
 	&& apt-get update \
-	&& apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-cjk-extra \
+	&& apt-get install -y --no-install-recommends fonts-firacode fonts-noto-cjk fonts-noto-cjk-extra \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /data \
 	&& chown 10001:10001 /data
