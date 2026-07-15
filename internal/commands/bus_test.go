@@ -142,7 +142,7 @@ func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
 	}
 }
 
-func TestBusAtImageModeShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
+func TestBusAtImageModeOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -156,10 +156,48 @@ func TestBusAtImageModeShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
 		EnableImageResponses: true,
 	}
 	now := time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation())
-	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "西区"}, now)
+	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, nil, now)
 	for _, want := range []string{"东区", "西区", "南区", "𝟸𝟹:𝟶𝟶", "𝟸𝟹:𝟷𝟶"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %s: %q", want, reply)
+		}
+	}
+}
+
+func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[
+				{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"先研院"}},{"campus":{"nameCn":"高新区"}}]},
+				{"id":2,"stops":[{"campus":{"nameCn":"高新区"}},{"campus":{"nameCn":"先研院"}},{"campus":{"nameCn":"东区"}}]},
+				{"id":3,"stops":[{"campus":{"nameCn":"南区"}},{"campus":{"nameCn":"东区"}}]}
+			],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:40"},
+				{"routeId":2,"dayType":"weekday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:40"},
+				{"routeId":3,"dayType":"weekday","departureTime":"09:10","departureMinutes":550,"arrivalTime":"09:25"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{
+		Life:                 life.NewClient(server.URL, server.Client()),
+		EnableImageResponses: true,
+	}
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
+	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "高新区"}, now)
+	for _, want := range []string{"𝟶𝟾:𝟶𝟶", "𝟶𝟾:𝟺𝟶", "𝟶𝟿:𝟶𝟶", "𝟶𝟿:𝟺𝟶"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %s: %q", want, reply)
+		}
+	}
+	for _, unwanted := range []string{"南区", "𝟶𝟿:𝟷𝟶", "𝟶𝟿:𝟸𝟻"} {
+		if strings.Contains(reply, unwanted) {
+			t.Fatalf("reply contains unrelated route %s: %q", unwanted, reply)
 		}
 	}
 }

@@ -200,12 +200,15 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		}
 	}
 	if h.EnableImageResponses {
-		routeArgs = nil
-		options.ExplicitRoute = false
 		options.UsePreferredRoute = false
 		options.ShowAll = true
 		options.ShowDeparted = true
 		options.After = false
+		if options.ExplicitRoute {
+			options.BidirectionalRoute = true
+		} else {
+			routeArgs = nil
+		}
 	}
 	var items []busItem
 	if options.ExplicitRoute {
@@ -640,12 +643,13 @@ type busStop struct {
 }
 
 type busQueryOptions struct {
-	ShowDeparted      bool
-	Now               time.Time
-	After             bool
-	UsePreferredRoute bool
-	ExplicitRoute     bool
-	ShowAll           bool
+	ShowDeparted       bool
+	Now                time.Time
+	After              bool
+	UsePreferredRoute  bool
+	ExplicitRoute      bool
+	BidirectionalRoute bool
+	ShowAll            bool
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {
@@ -679,7 +683,11 @@ func nextBusItemsWithOptions(data map[string]any, args []string, now time.Time, 
 		if len(routeStops) == 0 {
 			routeStops = tripStopNames(trip)
 		}
-		if !routeMatches(routeStops, from, to) {
+		matchesRoute := routeMatches(routeStops, from, to)
+		if options.BidirectionalRoute && from != "" && to != "" {
+			matchesRoute = matchesRoute || routeMatches(routeStops, to, from)
+		}
+		if !matchesRoute {
 			continue
 		}
 		routeID := lifedata.FirstString(trip, "routeId")
