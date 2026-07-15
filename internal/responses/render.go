@@ -606,7 +606,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			face = headerEmphasisFace
 			textColor = ink
 		}
-		drawCenteredText(dst, face, cellX, cellX+colW, y+24*scale, header.Text, textColor)
+		drawCenteredText(dst, face, cellX, cellX+colW, y+headerH/2+5*scale, header.Text, textColor)
 	}
 	for ri, row := range table.Rows {
 		rowY := y + headerH + ri*rowH
@@ -626,7 +626,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			if busCellIsNumeric(cell) {
 				cellFace = monoFace
 			}
-			drawCenteredText(dst, cellFace, cellX, cellX+colW, rowY+29*scale, cell, textColor)
+			drawCenteredText(dst, cellFace, cellX, cellX+colW, rowY+rowH/2+5*scale, cell, textColor)
 		}
 	}
 }
