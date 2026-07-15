@@ -2456,11 +2456,18 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if !ok {
 		return h.loginRequired()
 	}
-	schedules, _, err := h.schedulesForDay(ctx, ident, token, day)
+	schedules, token, err := h.schedulesForDay(ctx, ident, token, day)
 	if err != nil {
 		return commandError("课表查不到：", err)
 	}
 	if len(schedules) == 0 {
+		hasSubscriptions, subscriptionErr := h.hasSubscribedSections(ctx, ident, token)
+		if subscriptionErr != nil {
+			return "没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。"
+		}
+		if !hasSubscriptions {
+			return "没有查到已关注的班级，无法确认当天是否有课。请先恢复或关注对应学期的课程。"
+		}
 		if target == "tomorrow" {
 			return "明天没有课。"
 		}
@@ -2478,6 +2485,16 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 		lines = append(lines, formatSchedule(schedule))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity, token string) (bool, error) {
+	subscription, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
+	if err != nil {
+		return false, err
+	}
+	return len(lifedata.SubscriptionSectionIDs(subscription)) > 0, nil
 }
 
 func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, today time.Time) string {
