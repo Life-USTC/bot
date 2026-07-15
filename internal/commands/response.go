@@ -30,7 +30,9 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		if firstArgIs(cmd.Args, "help") {
 			return nil
 		}
-		return richTextImage("schedule", imageTitle(imageText, "课表"), imageText)
+		plainText := textutil.PlainMonospace(text)
+		title := imageTitle(plainText, "课表")
+		return responses.NewRichTextImage("schedule", scheduleRichText(title, plainText), imageText)
 	case "todo":
 		if !todoImageArgs(cmd.Args) {
 			return nil
@@ -52,6 +54,88 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	default:
 		return nil
 	}
+}
+
+func scheduleRichText(title, text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) > 0 {
+		first := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(lines[0]), "："), ":")
+		if first == strings.TrimSpace(title) {
+			lines = lines[1:]
+		}
+	}
+
+	out := []string{"# " + strings.TrimSpace(title), ""}
+	atSectionStart := true
+	inTable := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			out = append(out, "")
+			atSectionStart = true
+			inTable = false
+			continue
+		}
+		if atSectionStart && (strings.HasSuffix(trimmed, "：") || strings.HasSuffix(trimmed, ":")) {
+			heading := strings.TrimSuffix(strings.TrimSuffix(trimmed, "："), ":")
+			out = append(out, "## "+strings.TrimSpace(heading))
+			atSectionStart = false
+			inTable = false
+			continue
+		}
+		if cells, ok := scheduleRichTableCells(line); ok {
+			if !inTable {
+				out = append(out,
+					markdownRichTableRow([]string{"校区", "教室", "时间", "课程"}),
+					markdownRichTableRow([]string{"---", "---", "---", "---"}),
+				)
+			}
+			out = append(out, markdownRichTableRow(cells))
+			inTable = true
+		} else {
+			out = append(out, imageRenderText(line))
+			inTable = false
+		}
+		atSectionStart = false
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func scheduleRichTableCells(line string) ([]string, bool) {
+	columns := strings.Split(line, "\t")
+	if len(columns) < 3 {
+		return nil, false
+	}
+	place := strings.TrimSpace(columns[0])
+	timeRange := strings.TrimSpace(columns[1])
+	course := strings.TrimSpace(strings.Join(columns[2:], " "))
+	if timeRange == "" || course == "" {
+		return nil, false
+	}
+	campus, room := scheduleCampusAndRoom(place)
+	return []string{campus, room, timeRange, course}, true
+}
+
+func scheduleCampusAndRoom(place string) (string, string) {
+	parts := strings.Fields(strings.TrimSpace(place))
+	if len(parts) == 0 {
+		return "", ""
+	}
+	campus := campusName(parts[0])
+	switch campus {
+	case "东区", "西区", "中区", "北区", "南区", "高新区", "先研院":
+		return campus, strings.TrimSpace(strings.TrimPrefix(place, parts[0]))
+	default:
+		return "", strings.TrimSpace(place)
+	}
+}
+
+func markdownRichTableRow(cells []string) string {
+	trimmed := make([]string, len(cells))
+	for i, cell := range cells {
+		trimmed[i] = strings.TrimSpace(cell)
+	}
+	return "| " + strings.Join(trimmed, " | ") + " |"
 }
 
 func richTextImage(kind, title, text string) *responses.Image {
@@ -98,11 +182,11 @@ func busRichText(title, text string) string {
 			atHeader = true
 			continue
 		}
-		cells := strings.Fields(line)
+		cells := richTextTableCells(line)
 		if len(cells) == 0 {
 			continue
 		}
-		out = append(out, "| "+strings.Join(cells, " | ")+" |")
+		out = append(out, markdownRichTableRow(cells))
 		if atHeader {
 			separators := make([]string, len(cells))
 			for i := range separators {
@@ -113,6 +197,17 @@ func busRichText(title, text string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func richTextTableCells(line string) []string {
+	if !strings.Contains(line, "\t") {
+		return strings.Fields(line)
+	}
+	cells := strings.Split(line, "\t")
+	for i := range cells {
+		cells[i] = strings.TrimSpace(cells[i])
+	}
+	return cells
 }
 
 func busImageRenderText(text string) string {

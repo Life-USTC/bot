@@ -812,6 +812,47 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
+func TestScheduleImageUsesSeparateCampusAndRoomColumns(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"今天课表：",
+		"西区 3A204\t09:50-11:25\t数据库系统",
+		"高新区 GT-B112\t14:00-15:35\tComputer Networks",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "schedule", Args: []string{"today"}}, text)
+	want := strings.Join([]string{
+		"# 今天课表",
+		"",
+		"| 校区 | 教室 | 时间 | 课程 |",
+		"| --- | --- | --- | --- |",
+		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
+		"| 高新区 | GT-B112 | 14:00-15:35 | Computer Networks |",
+	}, "\n")
+	if img == nil || img.RichText != want {
+		t.Fatalf("rich text = %q, want %q", img.RichText, want)
+	}
+}
+
+func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"今明两日课表：",
+		"今天：",
+		"西区 3A204\t09:50-11:25\t数据库系统",
+		"",
+		"明天：",
+		"先研院 1A201\t16:00-17:35\tMachine Learning",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
+	if img == nil || !strings.Contains(img.RichText, "## 今天\n| 校区 | 教室 | 时间 | 课程 |") ||
+		!strings.Contains(img.RichText, "## 明天\n| 校区 | 教室 | 时间 | 课程 |") ||
+		strings.Count(img.RichText, "| 校区 | 教室 | 时间 | 课程 |") != 2 {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+}
+
 func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 	img := richTextImage("overview", "07-15 安排", strings.Join([]string{
 		"07-15 安排：",
@@ -866,6 +907,19 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
 			t.Fatalf("%s image = %#v, want nil", name, got)
 		}
+	}
+}
+
+func TestBusImagePreservesEmptyIntermediateStopCells(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"东区\t西区\t先研院\t高新区",
+		"06:50\t07:00\t　　\t07:40",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "bus"}, text)
+	if img == nil || !strings.Contains(img.RichText, "| 06:50 | 07:00 |  | 07:40 |") {
+		t.Fatalf("rich text = %q", img.RichText)
 	}
 }
 

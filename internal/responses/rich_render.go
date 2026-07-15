@@ -86,6 +86,9 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		}
 	}
 	nextTime, nextWait := busNextWait(tables, doc.Title, now)
+	if isBus && richDocumentHasOnlyTables(doc) {
+		return layoutRichBusTables(doc, m, nextTime, nextWait)
+	}
 	contentWidth := measureRichDocument(doc, m)
 	if nextTime != "" {
 		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
@@ -150,6 +153,115 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		NextWait: nextWait,
 		FooterY:  footerY,
 	}
+}
+
+func richDocumentHasOnlyTables(doc richDocument) bool {
+	if len(doc.Blocks) == 0 {
+		return false
+	}
+	for _, block := range doc.Blocks {
+		if block.Table == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWait string) richLayout {
+	maxContentWidth := m.MaxWidth - 2*m.MarginX
+	measured := make([]richLayoutNode, 0, len(doc.Blocks))
+	for _, block := range doc.Blocks {
+		table := block.Table
+		columnWidths := fitRichTableColumnWidths(measureRichTableColumnWidths(*table, m), maxContentWidth)
+		width := sumRichWidths(columnWidths)
+		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
+		if block.Heading != "" {
+			height += m.TableHeaderHeight
+		}
+		measured = append(measured, richLayoutNode{
+			Bounds:       image.Rect(0, 0, width, height),
+			Heading:      block.Heading,
+			Table:        table,
+			Header:       richTableHeaders(table.Header, true),
+			Label:        table.directionKey(),
+			ColumnWidths: columnWidths,
+		})
+	}
+
+	rows := packRichTableNodes(measured, maxContentWidth, m.TableColumnGap)
+	contentWidth := max(richTextWidth(doc.Title, 18), richTextWidth("15:04 · 工作日", 9))
+	for _, row := range rows {
+		contentWidth = max(contentWidth, richTableRowWidth(row, m.TableColumnGap))
+	}
+	if nextTime != "" {
+		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
+		contentWidth = max(contentWidth, headerWidth)
+	}
+	canvasWidth := min(m.MaxWidth, max(m.MinWidth, contentWidth+2*m.MarginX))
+
+	y := m.ContentTop
+	nodes := make([]richLayoutNode, 0, len(measured))
+	for _, row := range rows {
+		x := m.MarginX
+		rowHeight := 0
+		for _, node := range row {
+			width, height := node.Bounds.Dx(), node.Bounds.Dy()
+			node.Bounds = image.Rect(x, y, x+width, y+height)
+			nodes = append(nodes, node)
+			x += width + m.TableColumnGap
+			rowHeight = max(rowHeight, height)
+		}
+		y += rowHeight + m.TableRowGap
+	}
+	if len(rows) > 0 {
+		y -= m.TableRowGap
+	}
+	footerY := y + m.FooterGap
+	height := footerY + m.FooterLineGap + m.BottomMargin
+	return richLayout{
+		Space:    imageRenderSpace{Width: canvasWidth, Height: height, Scale: m.Scale},
+		Metrics:  m,
+		Title:    doc.Title,
+		Nodes:    nodes,
+		NextTime: nextTime,
+		NextWait: nextWait,
+		FooterY:  footerY,
+	}
+}
+
+func packRichTableNodes(nodes []richLayoutNode, maxWidth, gap int) [][]richLayoutNode {
+	rows := [][]richLayoutNode{}
+	row := []richLayoutNode{}
+	rowWidth := 0
+	for _, node := range nodes {
+		nextWidth := node.Bounds.Dx()
+		if len(row) > 0 {
+			nextWidth += gap
+		}
+		if len(row) > 0 && rowWidth+nextWidth > maxWidth {
+			rows = append(rows, row)
+			row = nil
+			rowWidth = 0
+			nextWidth = node.Bounds.Dx()
+		}
+		row = append(row, node)
+		rowWidth += nextWidth
+	}
+	if len(row) > 0 {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func richTableRowWidth(row []richLayoutNode, gap int) int {
+	width := 0
+	for i, node := range row {
+		if i > 0 {
+			width += gap
+		}
+		width += node.Bounds.Dx()
+	}
+	return width
 }
 
 func richDocumentIsBus(doc richDocument) bool {
@@ -241,8 +353,8 @@ func richTextWidth(text string, fontSize int) int {
 		switch {
 		case unicode.Is(unicode.Han, r), unicode.Is(unicode.Hiragana, r), unicode.Is(unicode.Katakana, r), unicode.Is(unicode.Hangul, r):
 			width += float64(fontSize)
-		case unicode.IsSpace(r):
-			width += float64(fontSize) * 0.35
+		case r == '\u3000':
+			width += float64(fontSize)
 		default:
 			width += float64(fontSize) * 0.62
 		}
@@ -376,7 +488,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	rowBg := bg
 	headBg := bg
 	highlightBg := color.RGBA{244, 244, 245, 255}
-	departed := color.RGBA{132, 132, 132, 255}
+	departed := muted
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)

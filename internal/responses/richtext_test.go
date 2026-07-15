@@ -168,6 +168,32 @@ func TestLayoutRichTextUsesIntrinsicTableWidths(t *testing.T) {
 	}
 }
 
+func TestLayoutRichTextPacksBusTablesAcrossRows(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 西区 |\n| --- | --- |\n| 09:00 | 09:15 |\n\n| 西区 | 东区 |\n| --- | --- |\n| 09:20 | 09:35 |\n\n| 南区 | 东区 |\n| --- | --- |\n| 09:30 | 09:45 |"), now)
+
+	if len(layout.Nodes) != 3 {
+		t.Fatalf("nodes = %d", len(layout.Nodes))
+	}
+	for i := 1; i < len(layout.Nodes); i++ {
+		if layout.Nodes[i].Bounds.Min.Y != layout.Nodes[0].Bounds.Min.Y {
+			t.Fatalf("table %d y = %d, first y = %d", i, layout.Nodes[i].Bounds.Min.Y, layout.Nodes[0].Bounds.Min.Y)
+		}
+		if layout.Nodes[i].Bounds.Min.X <= layout.Nodes[i-1].Bounds.Max.X {
+			t.Fatalf("table %d overlaps previous: %v and %v", i, layout.Nodes[i-1].Bounds, layout.Nodes[i].Bounds)
+		}
+	}
+}
+
+func TestLayoutRichTextKeepsNonBusTablesStacked(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 今明两日课表\n\n## 今天\n| 校区 | 教室 | 时间 | 课程 |\n| --- | --- | --- | --- |\n| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |\n\n## 明天\n| 校区 | 教室 | 时间 | 课程 |\n| --- | --- | --- | --- |\n| 先研院 | 1A201 | 16:00-17:35 | Machine Learning |"), now)
+
+	if len(layout.Nodes) != 2 || layout.Nodes[1].Bounds.Min.Y <= layout.Nodes[0].Bounds.Max.Y {
+		t.Fatalf("nodes = %#v", layout.Nodes)
+	}
+}
+
 func TestLayoutRichTextMeasuresColumnsIndependently(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	layout := layoutRichText(parseRichText("# 表格\n\n| A | 一个很长的站点名称 |\n| --- | --- |\n| 1 | 14:30 |"), now)
@@ -239,5 +265,11 @@ func TestRichFooterOnlyShowsTimeDayTypeAndSource(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 34, 0, 0, time.FixedZone("CST", 8*60*60))
 	if got, want := richFooterLines(now), [2]string{"12:34 · 工作日", "Life@USTC"}; got != want {
 		t.Fatalf("footer = %#v, want %#v", got, want)
+	}
+}
+
+func TestRichTextWidthTreatsASCIIWhitespaceAsMonospace(t *testing.T) {
+	if got, want := richTextWidth("A A", 14), richTextWidth("AAA", 14); got != want {
+		t.Fatalf("spaced width = %d, dense width = %d", got, want)
 	}
 }
