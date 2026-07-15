@@ -105,3 +105,22 @@ func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
 		t.Fatalf("narrow table = %d, wide table = %d", narrow.Nodes[0].Bounds.Dx(), wide.Nodes[0].Bounds.Dx())
 	}
 }
+
+func TestLayoutRichTextUsesEqualOuterMargins(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 表格\n\n| 东区始发站 | 西区中转站 | 先研院站点 | 高新区终点 |\n| --- | --- | --- | --- |\n| 14:30 | 14:40 | 14:52 | 15:05 |"), now)
+	want := layout.Metrics.MarginX
+
+	if top := layout.Metrics.BrandBaseline - 11; top != want {
+		t.Fatalf("top margin = %d, want %d", top, want)
+	}
+	if left := layout.Nodes[0].Bounds.Min.X; left != want {
+		t.Fatalf("left margin = %d, want %d", left, want)
+	}
+	if right := layout.Space.Width - layout.Nodes[0].Bounds.Max.X; right != want {
+		t.Fatalf("right margin = %d, want %d", right, want)
+	}
+	if bottom := layout.Space.Height - layout.FooterY - layout.Metrics.FooterLineGap; bottom != want {
+		t.Fatalf("bottom margin = %d, want %d", bottom, want)
+	}
+}

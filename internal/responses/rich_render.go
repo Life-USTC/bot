@@ -17,7 +17,7 @@ type richRenderMetrics struct {
 	MaxWidth          int
 	Scale             int
 	MarginX           int
-	HeaderTop         int
+	BrandBaseline     int
 	ContentTop        int
 	BlockGap          int
 	TextRowHeight     int
@@ -37,9 +37,9 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		MinWidth:          320,
 		MaxWidth:          920,
 		Scale:             2,
-		MarginX:           52,
-		HeaderTop:         28,
-		ContentTop:        84,
+		MarginX:           32,
+		BrandBaseline:     43,
+		ContentTop:        97,
 		BlockGap:          20,
 		TextRowHeight:     42,
 		TableHeaderHeight: 28,
@@ -50,7 +50,7 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		TableRowGap:       30,
 		FooterGap:         24,
 		FooterLineGap:     14,
-		BottomMargin:      12,
+		BottomMargin:      32,
 	}
 }
 
@@ -292,12 +292,12 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
-	drawText(canvas, faces.Brand, s(layout.Metrics.MarginX), s(layout.Metrics.HeaderTop), "Life @ USTC", muted)
-	drawText(canvas, faces.Title, s(layout.Metrics.MarginX), s(layout.Metrics.HeaderTop+26), layout.Title, ink)
+	drawText(canvas, faces.Brand, s(layout.Metrics.MarginX), s(layout.Metrics.BrandBaseline), "Life @ USTC", muted)
+	drawText(canvas, faces.Title, s(layout.Metrics.MarginX), s(layout.Metrics.BrandBaseline+26), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.HeaderTop), "下一班 "+layout.NextTime, muted)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.HeaderTop+26), layout.NextWait, accent)
+		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.BrandBaseline), "下一班 "+layout.NextTime, muted)
+		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.BrandBaseline+26), layout.NextWait, accent)
 	}
 	for _, node := range layout.Nodes {
 		x, y := s(node.Bounds.Min.X), s(node.Bounds.Min.Y)
