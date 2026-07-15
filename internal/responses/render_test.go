@@ -92,16 +92,16 @@ func TestBusRenderTablesParseSeparateStationTables(t *testing.T) {
 func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	layout := busRenderLayoutFor(testBusImage(), mustTime(t, "2026-07-09T15:28:00+08:00"))
 
-	if layout.ColumnWidth != 88 {
-		t.Fatalf("column width = %d, want 88", layout.ColumnWidth)
+	if layout.Metrics.ColumnWidth != 88 {
+		t.Fatalf("column width = %d, want 88", layout.Metrics.ColumnWidth)
 	}
-	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{352, 264}) {
+	if got := busLayoutWidths(layout); !reflect.DeepEqual(got, []int{352, 264}) {
 		t.Fatalf("table widths = %#v", got)
 	}
-	if got := layout.TableColumnWidths; !reflect.DeepEqual(got, []int{88, 88}) {
+	if got := busLayoutColumnWidths(layout); !reflect.DeepEqual(got, []int{88, 88}) {
 		t.Fatalf("table column widths = %#v", got)
 	}
-	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 72}, {X: 52, Y: 182}}) {
+	if got := busLayoutPositions(layout); !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 72}, {X: 52, Y: 220}}) {
 		t.Fatalf("table positions = %#v", got)
 	}
 	if layout.NextWait != "12 分钟" {
@@ -113,8 +113,8 @@ func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	if layout.FooterY-layout.TableBottom < 12 {
 		t.Fatalf("footer/table spacing = %d, want at least 12", layout.FooterY-layout.TableBottom)
 	}
-	if layout.Height != layout.FooterY+26 {
-		t.Fatalf("height = %d, want footerY+26", layout.Height)
+	if layout.Space.Height != layout.FooterY+26 {
+		t.Fatalf("height = %d, want footerY+26", layout.Space.Height)
 	}
 	if layout.LogoOpacity > 0.20 {
 		t.Fatalf("logo opacity = %.2f, want at most 0.20", layout.LogoOpacity)
@@ -125,10 +125,10 @@ func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	if !layout.UsesSerifFont {
 		t.Fatalf("want serif font used for bus render")
 	}
-	if got := layout.TableHeaders[0]; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
+	if got := layout.Tables[0].Headers; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
 		t.Fatalf("first table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[1]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
+	if got := layout.Tables[1].Headers; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
 		t.Fatalf("second table headers = %#v", got)
 	}
 	if layout.TableTop != 72 {
@@ -137,18 +137,19 @@ func TestBusRenderLayoutUsesFixedColumnsAndCompactMetadata(t *testing.T) {
 	if !layout.VerticalLayout {
 		t.Fatalf("vertical layout = false, want true for route variants")
 	}
+	assertBusTablesDoNotOverlap(t, layout)
 }
 
 func TestBusRenderLayoutWrapsAllRouteTablesWithoutShrinkingColumns(t *testing.T) {
 	layout := busRenderLayoutFor(testBusAllImage(), mustTime(t, "2026-07-09T15:28:00+08:00"))
 
-	if layout.ColumnWidth != 88 {
-		t.Fatalf("column width = %d, want 88", layout.ColumnWidth)
+	if layout.Metrics.ColumnWidth != 88 {
+		t.Fatalf("column width = %d, want 88", layout.Metrics.ColumnWidth)
 	}
-	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{264, 264, 352}) {
+	if got := busLayoutWidths(layout); !reflect.DeepEqual(got, []int{264, 264, 352}) {
 		t.Fatalf("table widths = %#v", got)
 	}
-	if got := layout.TableColumnWidths; !reflect.DeepEqual(got, []int{88, 88, 88}) {
+	if got := busLayoutColumnWidths(layout); !reflect.DeepEqual(got, []int{88, 88, 88}) {
 		t.Fatalf("table column widths = %#v", got)
 	}
 	if got := layout.HeaderLines; !reflect.DeepEqual(got, []string{"Life @ USTC", "校车 · 全部路线"}) {
@@ -157,27 +158,28 @@ func TestBusRenderLayoutWrapsAllRouteTablesWithoutShrinkingColumns(t *testing.T)
 	if layout.TableTop != 84 {
 		t.Fatalf("table top = %d, want 84 for all mode", layout.TableTop)
 	}
-	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 336, Y: 84}, {X: 52, Y: 194}}) {
+	if got := busLayoutPositions(layout); !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 336, Y: 84}, {X: 52, Y: 232}}) {
 		t.Fatalf("table positions = %#v", got)
 	}
-	if layout.TableBottom != 284 {
-		t.Fatalf("table bottom = %d, want 284", layout.TableBottom)
+	if layout.TableBottom != 350 {
+		t.Fatalf("table bottom = %d, want 350", layout.TableBottom)
 	}
 	if !layout.VerticalLayout {
 		t.Fatalf("vertical layout = false, want true")
 	}
-	if got := layout.TableDirectionLabels; !reflect.DeepEqual(got, []string{"东区→北区→西区", "西区→北区→东区", "东区→西区→先研院→高新区"}) {
+	if got := busLayoutDirectionLabels(layout); !reflect.DeepEqual(got, []string{"东区→北区→西区", "西区→北区→东区", "东区→西区→先研院→高新区"}) {
 		t.Fatalf("direction labels = %#v", got)
 	}
-	if got := layout.TableHeaders[0]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
+	if got := layout.Tables[0].Headers; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[2].Text != "到·西区" || !got[2].Emphasize {
 		t.Fatalf("first table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[1]; len(got) != 3 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[2].Text != "到·东区" || !got[2].Emphasize {
+	if got := layout.Tables[1].Headers; len(got) != 3 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[2].Text != "到·东区" || !got[2].Emphasize {
 		t.Fatalf("second table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[2]; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
+	if got := layout.Tables[2].Headers; len(got) != 4 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[3].Text != "到·高新区" || !got[3].Emphasize {
 		t.Fatalf("third table headers = %#v", got)
 	}
+	assertBusTablesDoNotOverlap(t, layout)
 }
 
 func TestBusRenderPairsOnlyExactReverseRoutes(t *testing.T) {
@@ -194,23 +196,73 @@ func TestBusRenderPairsOnlyExactReverseRoutes(t *testing.T) {
 	layout := busRenderLayoutFor(img, mustTime(t, "2026-07-09T15:28:00+08:00"))
 	// The two exact reverse two-stop routes are paired on the same row.
 	// The different three-stop route stays on its own row.
-	if got := layout.TablePositions; !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 248, Y: 84}, {X: 52, Y: 162}}) {
+	if got := busLayoutPositions(layout); !reflect.DeepEqual(got, []image.Point{{X: 52, Y: 84}, {X: 248, Y: 84}, {X: 52, Y: 190}}) {
 		t.Fatalf("positions = %#v", got)
 	}
-	if got := layout.TableDirectionLabels; !reflect.DeepEqual(got, []string{"东区→西区", "西区→东区", "东区→北区→西区"}) {
+	if got := busLayoutDirectionLabels(layout); !reflect.DeepEqual(got, []string{"东区→西区", "西区→东区", "东区→北区→西区"}) {
 		t.Fatalf("direction labels = %#v", got)
 	}
-	if got := layout.TableWidths; !reflect.DeepEqual(got, []int{176, 176, 264}) {
+	if got := busLayoutWidths(layout); !reflect.DeepEqual(got, []int{176, 176, 264}) {
 		t.Fatalf("table widths = %#v", got)
 	}
-	if got := layout.TableHeaders[0]; len(got) != 2 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "到·西区" || !got[1].Emphasize {
+	if got := layout.Tables[0].Headers; len(got) != 2 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "到·西区" || !got[1].Emphasize {
 		t.Fatalf("first table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[1]; len(got) != 2 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[1].Text != "到·东区" || !got[1].Emphasize {
+	if got := layout.Tables[1].Headers; len(got) != 2 || got[0].Text != "出发·西区" || !got[0].Emphasize || got[1].Text != "到·东区" || !got[1].Emphasize {
 		t.Fatalf("second table headers = %#v", got)
 	}
-	if got := layout.TableHeaders[2]; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "北区" || got[2].Text != "到·西区" || !got[2].Emphasize {
+	if got := layout.Tables[2].Headers; len(got) != 3 || got[0].Text != "出发·东区" || !got[0].Emphasize || got[1].Text != "北区" || got[2].Text != "到·西区" || !got[2].Emphasize {
 		t.Fatalf("third table headers = %#v", got)
+	}
+	assertBusTablesDoNotOverlap(t, layout)
+}
+
+func busLayoutWidths(layout busRenderLayout) []int {
+	out := make([]int, len(layout.Tables))
+	for i, table := range layout.Tables {
+		out[i] = table.Bounds.Dx()
+	}
+	return out
+}
+
+func busLayoutColumnWidths(layout busRenderLayout) []int {
+	out := make([]int, len(layout.Tables))
+	for i, table := range layout.Tables {
+		out[i] = table.ColumnWidth
+	}
+	return out
+}
+
+func busLayoutPositions(layout busRenderLayout) []image.Point {
+	out := make([]image.Point, len(layout.Tables))
+	for i, table := range layout.Tables {
+		out[i] = table.Bounds.Min
+	}
+	return out
+}
+
+func busLayoutDirectionLabels(layout busRenderLayout) []string {
+	out := make([]string, len(layout.Tables))
+	for i, table := range layout.Tables {
+		out[i] = table.DirectionLabel
+	}
+	return out
+}
+
+func assertBusTablesDoNotOverlap(t *testing.T, layout busRenderLayout) {
+	t.Helper()
+	if layout.Metrics.TableRowGap < layout.Metrics.DirectionLabelGap+9 {
+		t.Fatalf("table row gap %d does not reserve direction label height", layout.Metrics.TableRowGap)
+	}
+	for i, table := range layout.Tables {
+		if !table.Bounds.In(image.Rect(0, 0, layout.Space.Width, layout.TableBottom+1)) {
+			t.Fatalf("table %d bounds %v exceed layout", i, table.Bounds)
+		}
+		for j := i + 1; j < len(layout.Tables); j++ {
+			if table.Bounds.Overlaps(layout.Tables[j].Bounds) {
+				t.Fatalf("table %d bounds %v overlap table %d bounds %v", i, table.Bounds, j, layout.Tables[j].Bounds)
+			}
+		}
 	}
 }
 
