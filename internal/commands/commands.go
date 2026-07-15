@@ -1570,17 +1570,13 @@ func resolveTodo(todos []map[string]any, target string) (map[string]any, bool) {
 func formatTodo(todo map[string]any) string {
 	title := lifedata.FirstString(todo, "title")
 	due := lifedata.FormatAPITime(lifedata.FirstString(todo, "dueAt"))
-	parts := []string{}
 	if due != "" {
-		parts = append(parts, "截止 "+due)
+		due = "截止 " + due
 	}
-	if title != "" {
-		parts = append(parts, title)
-	}
-	if len(parts) == 0 {
+	if due == "" && title == "" {
 		return lifedata.FirstString(todo, "id")
 	}
-	return strings.Join(parts, " ")
+	return strings.TrimRight(strings.Join([]string{due, title}, "\t"), "\t")
 }
 
 func todoListOptionsFromArgs(args []string) (life.TodoListOptions, bool, error) {
@@ -1808,7 +1804,7 @@ func appendOverviewSection[T any](lines []string, title string, items []T, forma
 	if len(lines) > 1 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, title+"：")
+	lines = append(lines, fmt.Sprintf("%s (%d)：", title, len(items)))
 	for i, item := range items {
 		if i >= 3 {
 			lines = append(lines, moreLine(len(items)-i, true))
@@ -2086,7 +2082,19 @@ func normalizedLookupText(value string) string {
 }
 
 func formatHomework(homework map[string]any) string {
-	return textutil.MonospaceDigits(lifedata.HomeworkLabel(homework))
+	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
+	if due != "" {
+		due = "截止 " + due
+	}
+	cells := []string{
+		due,
+		lifedata.HomeworkCourseLabel(homework),
+		lifedata.FirstString(homework, "title"),
+	}
+	if strings.Trim(strings.Join(cells, ""), " \t") == "" {
+		return lifedata.FirstString(homework, "id")
+	}
+	return textutil.MonospaceDigits(strings.TrimRight(strings.Join(cells, "\t"), "\t"))
 }
 
 func formatHomeworkList(homeworks []map[string]any) string {
@@ -2644,22 +2652,16 @@ scheduleLoop:
 func formatSchedule(schedule map[string]any) string {
 	timeRange := lifedata.ScheduleTimeRange(schedule)
 	course := lifedata.ScheduleCourseLabel(schedule)
-	place := lifedata.SchedulePlaceLabel(schedule)
-	columns := []string{}
-	place = strings.TrimSpace(place)
-	if place != "" {
-		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceASCII(place), schedulePlaceColumnWidth))
-	}
-	if timeRange != "" {
-		columns = append(columns, textutil.PadRightDisplay(textutil.MonospaceDigits(timeRange), scheduleTimeColumnWidth))
-	}
-	if course != "" {
-		columns = append(columns, course)
-	}
-	if len(columns) == 0 {
+	place := strings.TrimSpace(lifedata.SchedulePlaceLabel(schedule))
+	if place == "" && timeRange == "" && course == "" {
 		return textutil.MonospaceDigits(lifedata.ScheduleFallbackLabel(schedule))
 	}
-	return strings.TrimRight(strings.Join(columns, "\t"), " ")
+	cells := []string{
+		textutil.MonospaceASCII(place),
+		textutil.MonospaceDigits(timeRange),
+		course,
+	}
+	return strings.TrimRight(strings.Join(cells, "\t"), "\t")
 }
 
 func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string, bool) {
@@ -3259,29 +3261,10 @@ func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, ar
 }
 
 func formatDashboard(data map[string]any, title string) string {
-	counts, _ := data["counts"].(map[string]any)
 	lines := []string{title + "："}
-	if counts != nil {
-		parts := []string{}
-		if n := lifedata.FirstInt(counts, "todaySchedules"); n > 0 {
-			parts = append(parts, fmt.Sprintf("今日课表 %d", n))
-		}
-		if n := lifedata.FirstInt(counts, "pendingHomeworks"); n > 0 {
-			parts = append(parts, fmt.Sprintf("待交作业 %d", n))
-		}
-		if n := lifedata.FirstInt(counts, "dueSoonHomeworks"); n > 0 {
-			parts = append(parts, fmt.Sprintf("近期作业 %d", n))
-		}
-		if n := lifedata.FirstInt(counts, "upcomingExams"); n > 0 {
-			parts = append(parts, fmt.Sprintf("考试 %d", n))
-		}
-		if len(parts) > 0 {
-			lines = append(lines, strings.Join(parts, " · "))
-		}
-	}
 	dueTodos := dashboardItemSlice(data, "dueTodos")
 	if len(dueTodos) > 0 {
-		lines = append(lines, "", "待办：")
+		lines = append(lines, "", fmt.Sprintf("待办 (%d)：", len(dueTodos)))
 		for i, todo := range dueTodos {
 			if i >= listDisplayLimit {
 				lines = append(lines, moreLine(len(dueTodos)-i, true))
@@ -3292,7 +3275,7 @@ func formatDashboard(data map[string]any, title string) string {
 	}
 	homeworks := dashboardItemSlice(data, "homeworks")
 	if len(homeworks) > 0 {
-		lines = append(lines, "", "作业：")
+		lines = append(lines, "", fmt.Sprintf("作业 (%d)：", len(homeworks)))
 		for i, homework := range homeworks {
 			if i >= listDisplayLimit {
 				lines = append(lines, moreLine(len(homeworks)-i, true))
@@ -3303,7 +3286,7 @@ func formatDashboard(data map[string]any, title string) string {
 	}
 	exams := dashboardItemSlice(data, "exams")
 	if len(exams) > 0 {
-		lines = append(lines, "", "考试：")
+		lines = append(lines, "", fmt.Sprintf("考试 (%d)：", len(exams)))
 		for i, exam := range exams {
 			if i >= listDisplayLimit {
 				lines = append(lines, moreLine(len(exams)-i, true))
@@ -3516,11 +3499,11 @@ func formatExam(item subscriptionExam) string {
 	sectionCode := lifedata.FirstString(item.section, "code")
 	mode := lifedata.FirstString(item.exam, "examMode")
 	rooms := formatExamRooms(item.exam)
-	parts := textutil.NonEmpty(date, timeRange, course, sectionCode, mode, rooms)
-	if len(parts) == 0 {
+	cells := []string{date, timeRange, course, sectionCode, mode, rooms}
+	if strings.Trim(strings.Join(cells, ""), " \t") == "" {
 		return lifedata.FirstString(item.exam, "id")
 	}
-	return textutil.MonospaceASCII(textutil.MonospaceDigits(strings.Join(parts, " · ")))
+	return textutil.MonospaceASCII(textutil.MonospaceDigits(strings.TrimRight(strings.Join(cells, "\t"), "\t")))
 }
 
 func formatExamDate(exam map[string]any) string {
@@ -3598,8 +3581,6 @@ func paddedCourseCode(code string) string {
 const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
 const listDisplayLimit = 8
-const schedulePlaceColumnWidth = 8
-const scheduleTimeColumnWidth = 11
 
 func moreLine(count int, monospace bool) string {
 	line := fmt.Sprintf("...and %d more", count)

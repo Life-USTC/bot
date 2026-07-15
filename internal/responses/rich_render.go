@@ -13,8 +13,6 @@ import (
 )
 
 type richRenderMetrics struct {
-	MinWidth          int
-	MaxWidth          int
 	Scale             int
 	MarginX           int
 	TitleBaseline     int
@@ -34,8 +32,6 @@ type richRenderMetrics struct {
 
 func defaultRichRenderMetrics() richRenderMetrics {
 	return richRenderMetrics{
-		MinWidth:          320,
-		MaxWidth:          920,
 		Scale:             2,
 		MarginX:           32,
 		TitleBaseline:     50,
@@ -94,16 +90,17 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
 		contentWidth = max(contentWidth, headerWidth)
 	}
-	canvasWidth := min(m.MaxWidth, max(m.MinWidth, contentWidth+2*m.MarginX))
-	availableWidth := canvasWidth - 2*m.MarginX
+	canvasWidth := contentWidth + 2*m.MarginX
 	y := m.ContentTop
 	nodes := []richLayoutNode{}
 	lastGap := 0
 	for _, block := range doc.Blocks {
 		if block.Table == nil {
-			lines := []string{}
+			lines := make([]string, 0, len(block.Lines))
 			for _, line := range block.Lines {
-				lines = append(lines, wrapRichLineToWidth(line, availableWidth-2*m.TextPaddingX, 13)...)
+				if strings.TrimSpace(line) != "" {
+					lines = append(lines, line)
+				}
 			}
 			if block.Heading == "" && len(lines) == 0 {
 				continue
@@ -113,7 +110,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 				height += m.TableHeaderHeight
 			}
 			nodes = append(nodes, richLayoutNode{
-				Bounds:  image.Rect(m.MarginX, y, m.MarginX+availableWidth, y+height),
+				Bounds:  image.Rect(m.MarginX, y, m.MarginX+measureRichBlockWidth(block, m), y+height),
 				Heading: block.Heading,
 				Lines:   lines,
 			})
@@ -122,7 +119,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			continue
 		}
 		table := block.Table
-		columnWidths := fitRichTableColumnWidths(measureRichTableColumnWidths(*table, m), availableWidth)
+		columnWidths := measureRichTableColumnWidths(*table, m)
 		width := sumRichWidths(columnWidths)
 		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
 		if block.Heading != "" {
@@ -132,7 +129,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			Bounds:       image.Rect(m.MarginX, y, m.MarginX+width, y+height),
 			Heading:      block.Heading,
 			Table:        table,
-			Header:       richTableHeaders(table.Header, isBus),
+			Header:       richTableHeaders(*table),
 			Label:        table.directionKey(),
 			ColumnWidths: columnWidths,
 		})
@@ -168,11 +165,10 @@ func richDocumentHasOnlyTables(doc richDocument) bool {
 }
 
 func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWait string) richLayout {
-	maxContentWidth := m.MaxWidth - 2*m.MarginX
 	measured := make([]richLayoutNode, 0, len(doc.Blocks))
 	for _, block := range doc.Blocks {
 		table := block.Table
-		columnWidths := fitRichTableColumnWidths(measureRichTableColumnWidths(*table, m), maxContentWidth)
+		columnWidths := measureRichTableColumnWidths(*table, m)
 		width := sumRichWidths(columnWidths)
 		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
 		if block.Heading != "" {
@@ -182,22 +178,22 @@ func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWa
 			Bounds:       image.Rect(0, 0, width, height),
 			Heading:      block.Heading,
 			Table:        table,
-			Header:       richTableHeaders(table.Header, true),
+			Header:       richTableHeaders(*table),
 			Label:        table.directionKey(),
 			ColumnWidths: columnWidths,
 		})
 	}
 
-	rows := packRichTableNodes(measured, maxContentWidth, m.TableColumnGap)
 	contentWidth := max(richTextWidth(doc.Title, 18), richTextWidth("15:04 · 工作日", 9))
-	for _, row := range rows {
-		contentWidth = max(contentWidth, richTableRowWidth(row, m.TableColumnGap))
-	}
 	if nextTime != "" {
 		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
 		contentWidth = max(contentWidth, headerWidth)
 	}
-	canvasWidth := min(m.MaxWidth, max(m.MinWidth, contentWidth+2*m.MarginX))
+	rows := packRichTableNodes(measured, contentWidth, m)
+	for _, row := range rows {
+		contentWidth = max(contentWidth, richTableRowWidth(row, m.TableColumnGap))
+	}
+	canvasWidth := contentWidth + 2*m.MarginX
 
 	y := m.ContentTop
 	nodes := make([]richLayoutNode, 0, len(measured))
@@ -229,28 +225,52 @@ func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWa
 	}
 }
 
-func packRichTableNodes(nodes []richLayoutNode, maxWidth, gap int) [][]richLayoutNode {
-	rows := [][]richLayoutNode{}
-	row := []richLayoutNode{}
-	rowWidth := 0
-	for _, node := range nodes {
-		nextWidth := node.Bounds.Dx()
-		if len(row) > 0 {
-			nextWidth += gap
-		}
-		if len(row) > 0 && rowWidth+nextWidth > maxWidth {
-			rows = append(rows, row)
-			row = nil
-			rowWidth = 0
-			nextWidth = node.Bounds.Dx()
-		}
-		row = append(row, node)
-		rowWidth += nextWidth
+func packRichTableNodes(nodes []richLayoutNode, baseContentWidth int, metrics richRenderMetrics) [][]richLayoutNode {
+	if len(nodes) == 0 {
+		return nil
 	}
-	if len(row) > 0 {
-		rows = append(rows, row)
+	bestRows := [][]richLayoutNode{append([]richLayoutNode(nil), nodes...)}
+	bestLongestSide := 0
+	bestArea := 0
+	for columns := 1; columns <= len(nodes); columns++ {
+		rows := richTableRowsByColumnCount(nodes, columns)
+		contentWidth, contentHeight := richTableRowsSize(rows, metrics.TableColumnGap, metrics.TableRowGap)
+		pageWidth := max(baseContentWidth, contentWidth) + 2*metrics.MarginX
+		pageHeight := metrics.ContentTop + contentHeight + metrics.FooterGap + metrics.FooterLineGap + metrics.BottomMargin
+		longestSide := max(pageWidth, pageHeight)
+		area := pageWidth * pageHeight
+		if bestLongestSide == 0 || longestSide < bestLongestSide || longestSide == bestLongestSide && area < bestArea {
+			bestRows = rows
+			bestLongestSide = longestSide
+			bestArea = area
+		}
+	}
+	return bestRows
+}
+
+func richTableRowsByColumnCount(nodes []richLayoutNode, columns int) [][]richLayoutNode {
+	rows := make([][]richLayoutNode, 0, (len(nodes)+columns-1)/columns)
+	for start := 0; start < len(nodes); start += columns {
+		end := min(len(nodes), start+columns)
+		rows = append(rows, append([]richLayoutNode(nil), nodes[start:end]...))
 	}
 	return rows
+}
+
+func richTableRowsSize(rows [][]richLayoutNode, columnGap, rowGap int) (int, int) {
+	width, height := 0, 0
+	for i, row := range rows {
+		width = max(width, richTableRowWidth(row, columnGap))
+		if i > 0 {
+			height += rowGap
+		}
+		rowHeight := 0
+		for _, node := range row {
+			rowHeight = max(rowHeight, node.Bounds.Dy())
+		}
+		height += rowHeight
+	}
+	return width, height
 }
 
 func richTableRowWidth(row []richLayoutNode, gap int) int {
@@ -269,30 +289,35 @@ func richDocumentIsBus(doc richDocument) bool {
 	return title == "校车" || strings.HasPrefix(title, "校车 ")
 }
 
-func richTableHeaders(headers []string, emphasizeEndpoints bool) []busStopHeader {
-	if emphasizeEndpoints {
-		return busStopHeaders(headers, false)
-	}
-	out := make([]busStopHeader, len(headers))
-	for i, header := range headers {
-		out[i].Text = strings.TrimSpace(header)
+func richTableHeaders(table busRenderTable) []busStopHeader {
+	out := make([]busStopHeader, len(table.Header))
+	for i, header := range table.Header {
+		out[i] = busStopHeader{Text: strings.TrimSpace(header)}
+		if i < len(table.HeaderEmphasis) {
+			out[i].Emphasize = table.HeaderEmphasis[i]
+		}
 	}
 	return out
+}
+
+func measureRichBlockWidth(block richBlock, metrics richRenderMetrics) int {
+	width := 0
+	if block.Heading != "" {
+		width = richTextWidth(block.Heading, 13) + 2*metrics.TextPaddingX
+	}
+	if block.Table != nil {
+		return max(width, sumRichWidths(measureRichTableColumnWidths(*block.Table, metrics)))
+	}
+	for _, line := range block.Lines {
+		width = max(width, richTextWidth(line, 13)+2*metrics.TextPaddingX)
+	}
+	return width
 }
 
 func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
 	width := richTextWidth(doc.Title, 18)
 	for _, block := range doc.Blocks {
-		if block.Heading != "" {
-			width = max(width, richTextWidth(block.Heading, 13)+2*metrics.TextPaddingX)
-		}
-		if block.Table != nil {
-			width = max(width, sumRichWidths(measureRichTableColumnWidths(*block.Table, metrics)))
-			continue
-		}
-		for _, line := range block.Lines {
-			width = max(width, richTextWidth(line, 13)+2*metrics.TextPaddingX)
-		}
+		width = max(width, measureRichBlockWidth(block, metrics))
 	}
 	// The timestamp and source footer are right-aligned on separate lines.
 	return max(width, richTextWidth("15:04 · 工作日", 9))
@@ -320,25 +345,6 @@ func measureRichTableColumnWidths(table busRenderTable, metrics richRenderMetric
 	return widths
 }
 
-func fitRichTableColumnWidths(widths []int, maxWidth int) []int {
-	fitted := append([]int(nil), widths...)
-	total := sumRichWidths(fitted)
-	if len(fitted) == 0 || total <= maxWidth {
-		return fitted
-	}
-
-	used := 0
-	for i, width := range fitted {
-		fitted[i] = width * maxWidth / total
-		used += fitted[i]
-	}
-	for i := 0; used < maxWidth; i = (i + 1) % len(fitted) {
-		fitted[i]++
-		used++
-	}
-	return fitted
-}
-
 func sumRichWidths(widths []int) int {
 	total := 0
 	for _, width := range widths {
@@ -360,31 +366,6 @@ func richTextWidth(text string, fontSize int) int {
 		}
 	}
 	return int(width + 0.5)
-}
-
-func wrapRichLineToWidth(line string, maxWidth, fontSize int) []string {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return nil
-	}
-	if richTextWidth(line, fontSize) <= maxWidth {
-		return []string{line}
-	}
-	out := []string{}
-	current := []rune{}
-	for _, r := range []rune(line) {
-		candidate := append(current, r)
-		if len(current) > 0 && richTextWidth(string(candidate), fontSize) > maxWidth {
-			out = append(out, string(current))
-			current = []rune{r}
-			continue
-		}
-		current = candidate
-	}
-	if len(current) > 0 {
-		out = append(out, string(current))
-	}
-	return out
 }
 
 type richFaces struct {

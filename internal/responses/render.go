@@ -118,8 +118,9 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 }
 
 type busRenderTable struct {
-	Header []string
-	Rows   []busRenderRow
+	Header         []string
+	HeaderEmphasis []bool
+	Rows           []busRenderRow
 }
 
 func (t busRenderTable) endpoints() (start, end string) {

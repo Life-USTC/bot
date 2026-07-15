@@ -93,11 +93,15 @@ func parseRichTable(lines []string) *busRenderTable {
 	if len(header) == 0 {
 		return nil
 	}
+	headerEmphasis := make([]bool, len(header))
+	for i, cell := range header {
+		header[i], headerEmphasis[i] = richStrongCell(cell)
+	}
 	start := 1
 	if richTableSeparator(lines[1]) {
 		start = 2
 	}
-	table := &busRenderTable{Header: header}
+	table := &busRenderTable{Header: header, HeaderEmphasis: headerEmphasis}
 	for _, line := range lines[start:] {
 		cells := richTableCells(line)
 		if len(cells) == 0 {
@@ -118,6 +122,14 @@ func parseRichTable(lines []string) *busRenderTable {
 		return nil
 	}
 	return table
+}
+
+func richStrongCell(cell string) (string, bool) {
+	cell = strings.TrimSpace(cell)
+	if len(cell) >= 4 && strings.HasPrefix(cell, "**") && strings.HasSuffix(cell, "**") {
+		return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(cell, "**"), "**")), true
+	}
+	return cell, false
 }
 
 func richTableCells(line string) []string {

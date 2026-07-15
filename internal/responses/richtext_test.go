@@ -101,8 +101,10 @@ func TestRendererLayoutDependsOnRichTextNotResponseKind(t *testing.T) {
 
 func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
-	short := layoutRichText(parseRichText("# 待办\n\n买咖啡"), now)
-	wide := layoutRichText(parseRichText("# 待办\n\n完成一份包含数据库实验结果和性能分析的课程报告"), now)
+	shortDoc := parseRichText("# 待办\n\n买咖啡")
+	wideDoc := parseRichText("# 待办\n\n完成一份包含数据库实验结果和性能分析的课程报告")
+	short := layoutRichText(shortDoc, now)
+	wide := layoutRichText(wideDoc, now)
 	tall := layoutRichText(parseRichText("# 待办\n\n买咖啡\n提交报告\n参加会议"), now)
 
 	if short.Space.Width >= wide.Space.Width {
@@ -111,8 +113,8 @@ func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	if short.Space.Height >= tall.Space.Height {
 		t.Fatalf("short height = %d, tall height = %d", short.Space.Height, tall.Space.Height)
 	}
-	if wide.Space.Width > wide.Metrics.MaxWidth {
-		t.Fatalf("wide width = %d, max = %d", wide.Space.Width, wide.Metrics.MaxWidth)
+	if got, want := wide.Space.Width, measureRichDocument(wideDoc, wide.Metrics)+2*wide.Metrics.MarginX; got != want {
+		t.Fatalf("wide width = %d, measured width = %d", got, want)
 	}
 }
 
@@ -175,13 +177,23 @@ func TestLayoutRichTextPacksBusTablesAcrossRows(t *testing.T) {
 	if len(layout.Nodes) != 3 {
 		t.Fatalf("nodes = %d", len(layout.Nodes))
 	}
-	for i := 1; i < len(layout.Nodes); i++ {
-		if layout.Nodes[i].Bounds.Min.Y != layout.Nodes[0].Bounds.Min.Y {
-			t.Fatalf("table %d y = %d, first y = %d", i, layout.Nodes[i].Bounds.Min.Y, layout.Nodes[0].Bounds.Min.Y)
+	canvas := image.Rect(0, 0, layout.Space.Width, layout.Space.Height)
+	for i, node := range layout.Nodes {
+		if !node.Bounds.In(canvas) {
+			t.Fatalf("table %d outside canvas: %v in %v", i, node.Bounds, canvas)
 		}
-		if layout.Nodes[i].Bounds.Min.X <= layout.Nodes[i-1].Bounds.Max.X {
-			t.Fatalf("table %d overlaps previous: %v and %v", i, layout.Nodes[i-1].Bounds, layout.Nodes[i].Bounds)
+		for j := i + 1; j < len(layout.Nodes); j++ {
+			if node.Bounds.Overlaps(layout.Nodes[j].Bounds) {
+				t.Fatalf("table %d overlaps table %d: %v and %v", i, j, node.Bounds, layout.Nodes[j].Bounds)
+			}
 		}
+	}
+	widestRow := 0
+	for _, node := range layout.Nodes {
+		widestRow = max(widestRow, node.Bounds.Max.X-layout.Metrics.MarginX)
+	}
+	if layout.Space.Width < widestRow+layout.Metrics.MarginX {
+		t.Fatalf("canvas width = %d, content right edge = %d", layout.Space.Width, widestRow)
 	}
 }
 
@@ -204,19 +216,18 @@ func TestLayoutRichTextMeasuresColumnsIndependently(t *testing.T) {
 	}
 }
 
-func TestLayoutRichTextFitsOnlyTablesWiderThanCanvas(t *testing.T) {
+func TestLayoutRichTextDoesNotClampWideTables(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
-	layout := layoutRichText(parseRichText("# 表格\n\n| 一个非常非常非常非常非常非常非常非常长的站点名称 | 另一个非常非常非常非常非常非常非常非常长的站点名称 | 第三个非常非常非常非常非常非常非常非常长的站点名称 |\n| --- | --- | --- |\n| 14:30 | 14:45 | 15:00 |"), now)
+	doc := parseRichText("# 表格\n\n| 一个非常非常非常非常非常非常非常非常长的站点名称 | 另一个非常非常非常非常非常非常非常非常长的站点名称 | 第三个非常非常非常非常非常非常非常非常长的站点名称 |\n| --- | --- | --- |\n| 14:30 | 14:45 | 15:00 |")
+	layout := layoutRichText(doc, now)
 	node := layout.Nodes[0]
-	want := layout.Space.Width - 2*layout.Metrics.MarginX
+	want := sumRichWidths(measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics))
 
 	if node.Bounds.Dx() != want || sumRichWidths(node.ColumnWidths) != want {
-		t.Fatalf("table width = %d, columns = %v, available = %d", node.Bounds.Dx(), node.ColumnWidths, want)
+		t.Fatalf("table width = %d, columns = %v, measured = %d", node.Bounds.Dx(), node.ColumnWidths, want)
 	}
-	for i, width := range node.ColumnWidths {
-		if width <= 0 {
-			t.Fatalf("column %d width = %d", i, width)
-		}
+	if got := layout.Space.Width; got != want+2*layout.Metrics.MarginX {
+		t.Fatalf("canvas width = %d, want %d", got, want+2*layout.Metrics.MarginX)
 	}
 }
 
@@ -239,9 +250,19 @@ func TestLayoutRichTextUsesEqualOuterMargins(t *testing.T) {
 	}
 }
 
-func TestLayoutRichTextEmphasizesEndpointNamesWithoutPrefixes(t *testing.T) {
+func TestLayoutRichTextDoesNotEmphasizeAllRoutesHeaders(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 北区 | 西区 |\n| --- | --- | --- |\n| 14:30 | 14:35 | 14:45 |"), now)
+	for _, header := range layout.Nodes[0].Header {
+		if header.Emphasize {
+			t.Fatalf("all-routes header emphasized: %#v", layout.Nodes[0].Header)
+		}
+	}
+}
+
+func TestLayoutRichTextEmphasizesOnlyMarkedBusEndpoints(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| **东区** | 北区 | **西区** |\n| --- | --- | --- |\n| 14:30 | 14:35 | 14:45 |"), now)
 	headers := layout.Nodes[0].Header
 	if len(headers) != 3 || headers[0].Text != "东区" || !headers[0].Emphasize || headers[1].Emphasize || headers[2].Text != "西区" || !headers[2].Emphasize {
 		t.Fatalf("headers = %#v", headers)

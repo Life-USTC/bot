@@ -856,18 +856,55 @@ func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
 func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 	img := richTextImage("overview", "07-15 安排", strings.Join([]string{
 		"07-15 安排：",
-		"今日课表：",
-		"1. 09:50 数据库系统",
+		"今日课表 (1)：",
+		"1.\t西区 3A204\t09:50-11:25\t数据库系统",
 		"",
-		"待办：",
-		"1. 18:00 写报告",
+		"待办 (1)：",
+		"1.\t截止 07-15 18:00\t写报告",
+		"",
+		"近期作业 (1)：",
+		"1.\t截止 07-16 23:59\t数据库系统\tProblem Set 4",
+		"",
+		"考试 (1)：",
+		"1.\t07-20\t14:30-16:30\t数学分析\tMATH1001.01\t闭卷\t3A101",
 	}, "\n"))
-	want := "# 07-15 安排\n\n## 今日课表\n1. 09:50 数据库系统\n\n## 待办\n1. 18:00 写报告"
 	if img == nil {
 		t.Fatal("image = nil")
 	}
-	if img.RichText != want {
-		t.Fatalf("rich text = %q, want %q", img.RichText, want)
+	for _, want := range []string{
+		"## 今日课表 (1)\n| 校区 | 教室 | 时间 | 课程 |",
+		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
+		"## 待办 (1)\n| # | 截止 | 待办 |",
+		"| 1 | 07-15 18:00 | 写报告 |",
+		"## 近期作业 (1)\n| # | 截止 | 课程 | 作业 |",
+		"| 1 | 07-16 23:59 | 数据库系统 | Problem Set 4 |",
+		"## 考试 (1)\n| # | 日期 | 时间 | 课程 | 教学班 | 方式 | 教室 |",
+		"| 1 | 07-20 | 14:30-16:30 | 数学分析 | MATH1001.01 | 闭卷 | 3A101 |",
+	} {
+		if !strings.Contains(img.RichText, want) {
+			t.Fatalf("rich text missing %q: %q", want, img.RichText)
+		}
+	}
+	if strings.Contains(img.RichText, " · ") {
+		t.Fatalf("rich text still uses dot separators: %q", img.RichText)
+	}
+}
+
+func TestTodoImageUsesTable(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t截止 07-16 18:00\t写报告\n2.\t\t买咖啡")
+	if img == nil || !strings.Contains(img.RichText, "| # | 截止 | 待办 |") ||
+		!strings.Contains(img.RichText, "| 1 | 07-16 18:00 | 写报告 |") ||
+		!strings.Contains(img.RichText, "| 2 |  | 买咖啡 |") {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+}
+
+func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
+	if img == nil || !strings.Contains(img.RichText, "|  |  | ...and 4 more |") {
+		t.Fatalf("rich text = %q", img.RichText)
 	}
 }
 
@@ -890,6 +927,9 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 	}
 	if !strings.HasPrefix(img.RichText, "# 校车\n\n") || strings.Contains(img.RichText, "Life @ USTC") {
 		t.Fatalf("rich text = %q", img.RichText)
+	}
+	if !strings.Contains(img.RichText, "| **东区** | **西区** |") {
+		t.Fatalf("queried endpoints are not emphasized: %q", img.RichText)
 	}
 	if !strings.Contains(img.AltText, "09:10") || !strings.Contains(img.AltText, "西区") {
 		t.Fatalf("alt text = %q", img.AltText)
@@ -920,6 +960,24 @@ func TestBusImagePreservesEmptyIntermediateStopCells(t *testing.T) {
 	img := handler.imageResponseFor(parsedCommand{Name: "bus"}, text)
 	if img == nil || !strings.Contains(img.RichText, "| 06:50 | 07:00 |  | 07:40 |") {
 		t.Fatalf("rich text = %q", img.RichText)
+	}
+	if strings.Contains(img.RichText, "**") {
+		t.Fatalf("all-routes headers should not be emphasized: %q", img.RichText)
+	}
+}
+
+func TestBusImageEmphasizesOnlyBothQueriedEndpoints(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "东区\t西区\t先研院\t高新区\n06:50\t07:00\t07:20\t07:40"
+
+	queried := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区", "西区"}}, text)
+	if queried == nil || !strings.Contains(queried.RichText, "| **东区** | **西区** | 先研院 | 高新区 |") {
+		t.Fatalf("queried rich text = %q", queried.RichText)
+	}
+
+	oneEndpoint := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区"}}, text)
+	if oneEndpoint == nil || strings.Contains(oneEndpoint.RichText, "**") {
+		t.Fatalf("one-endpoint rich text = %q", oneEndpoint.RichText)
 	}
 }
 
@@ -1509,7 +1567,7 @@ func TestFormatTodoDueDateFirst(t *testing.T) {
 		"title": "写报告",
 		"dueAt": "2026-05-14T23:55:00+08:00",
 	}))
-	if line != "截止 𝟶𝟻-𝟷𝟺 𝟸𝟹:𝟻𝟻 写报告" {
+	if line != "截止 𝟶𝟻-𝟷𝟺 𝟸𝟹:𝟻𝟻\t写报告" {
 		t.Fatalf("line = %q", line)
 	}
 }
@@ -1567,7 +1625,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶 · 数据库系统 · Problem Set 𝟷") {
+	if !strings.Contains(reply, "已逾期：") || !strings.Contains(reply, "截止 𝟶𝟼-𝟶𝟹 𝟷𝟸:𝟶𝟶\t数据库系统\tProblem Set 𝟷") {
 		t.Fatalf("reply = %q", reply)
 	}
 
@@ -1749,7 +1807,7 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	for _, want := range []string{"安排：", "今日课表：", "计算机导论", "待办：", "写报告", "近期作业：", "作业一", "考试：", wantExamDate} {
+	for _, want := range []string{"安排：", "今日课表 (1)：", "计算机导论", "待办 (1)：", "写报告", "近期作业 (1)：", "作业一", "考试 (1)：", wantExamDate} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
@@ -1780,8 +1838,8 @@ func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
 	}
 	for _, want := range []string{
 		"考试：",
-		"𝟷. \t𝟶𝟼-𝟷𝟶 · 𝟶𝟿:𝟶𝟶-𝟷𝟷:𝟶𝟶 · 计算机导论 · 𝙲𝚂𝟷𝟶𝟶𝟷.𝟶𝟷 · 𝙶𝚃-𝙱𝟷𝟷𝟸",
-		"𝟸. \t𝟶𝟼-𝟸𝟶 · 𝟷𝟺:𝟹𝟶-𝟷𝟼:𝟹𝟶 · 数学分析 · 𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷 · 闭卷 · 𝟹𝙰𝟷𝟶𝟷",
+		"𝟷. \t𝟶𝟼-𝟷𝟶\t𝟶𝟿:𝟶𝟶-𝟷𝟷:𝟶𝟶\t计算机导论\t𝙲𝚂𝟷𝟶𝟶𝟷.𝟶𝟷\t\t𝙶𝚃-𝙱𝟷𝟷𝟸",
+		"𝟸. \t𝟶𝟼-𝟸𝟶\t𝟷𝟺:𝟹𝟶-𝟷𝟼:𝟹𝟶\t数学分析\t𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷\t闭卷\t𝟹𝙰𝟷𝟶𝟷",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -1812,7 +1870,7 @@ func TestFormatExamDateUnknown(t *testing.T) {
 		exam:    map[string]any{"id": "exam-1"},
 		section: map[string]any{"course": map[string]any{"namePrimary": "随机过程"}},
 	})
-	if line != "日期待定 · 随机过程" {
+	if line != "日期待定\t\t随机过程" {
 		t.Fatalf("line = %q", line)
 	}
 }
@@ -2306,7 +2364,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 	}
 }
 
-func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
+func TestFormatScheduleUsesFixedColumns(t *testing.T) {
 	line := formatSchedule(map[string]any{
 		"startTime":   "07:50",
 		"endTime":     "09:25",
@@ -2315,19 +2373,19 @@ func TestFormatScheduleLocationFirstAndFixedWidth(t *testing.T) {
 			"course": map[string]any{"namePrimary": "随机过程理论"},
 		},
 	})
-	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻 \t𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻\t随机过程理论" {
+	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻\t𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻\t随机过程理论" {
 		t.Fatalf("line = %q", line)
 	}
 }
 
-func TestFormatScheduleOmitsMissingTimeColumn(t *testing.T) {
+func TestFormatSchedulePreservesMissingTimeColumn(t *testing.T) {
 	line := formatSchedule(map[string]any{
 		"customPlace": "GT-A405",
 		"section": map[string]any{
 			"course": map[string]any{"namePrimary": "随机过程理论"},
 		},
 	})
-	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻 \t随机过程理论" {
+	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻\t\t随机过程理论" {
 		t.Fatalf("line = %q", line)
 	}
 }
@@ -3106,10 +3164,13 @@ func TestFormatDashboard(t *testing.T) {
 		},
 	}
 	reply := formatDashboard(data, "我的概览")
-	for _, want := range []string{"我的概览", "今日课表 2", "待办：", "作业：", "考试：", "数学分析"} {
+	for _, want := range []string{"我的概览", "待办 (1)：", "作业 (1)：", "考试 (1)：", "数学分析"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
+	}
+	if strings.Contains(reply, "今日课表 2") || strings.Contains(reply, "待交作业 3") || strings.Contains(reply, " · ") {
+		t.Fatalf("reply still contains the summary line: %q", reply)
 	}
 }
 
