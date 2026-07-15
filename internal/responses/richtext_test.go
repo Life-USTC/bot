@@ -149,13 +149,47 @@ func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
 	}
 }
 
-func TestLayoutRichTextStretchesTablesAcrossSharedGrid(t *testing.T) {
+func TestLayoutRichTextUsesIntrinsicTableWidths(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 北区 | 西区 |\n| --- | --- | --- |\n| 14:30 | 14:35 | 14:45 |\n\n| 南区 | 东区 |\n| --- | --- |\n| 15:00 | 15:15 |"), now)
+
+	if got, want := layout.Nodes[0].Bounds.Dx(), sumRichWidths(layout.Nodes[0].ColumnWidths); got != want {
+		t.Fatalf("first table width = %d, column widths = %d", got, want)
+	}
+	if got, want := layout.Nodes[1].Bounds.Dx(), sumRichWidths(layout.Nodes[1].ColumnWidths); got != want {
+		t.Fatalf("second table width = %d, column widths = %d", got, want)
+	}
+	if layout.Nodes[0].Bounds.Dx() <= layout.Nodes[1].Bounds.Dx() {
+		t.Fatalf("three-column table = %d, two-column table = %d", layout.Nodes[0].Bounds.Dx(), layout.Nodes[1].Bounds.Dx())
+	}
+	available := layout.Space.Width - 2*layout.Metrics.MarginX
+	if layout.Nodes[1].Bounds.Dx() >= available {
+		t.Fatalf("narrow table width = %d, available = %d", layout.Nodes[1].Bounds.Dx(), available)
+	}
+}
+
+func TestLayoutRichTextMeasuresColumnsIndependently(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 表格\n\n| A | 一个很长的站点名称 |\n| --- | --- |\n| 1 | 14:30 |"), now)
+	widths := layout.Nodes[0].ColumnWidths
+
+	if len(widths) != 2 || widths[0] >= widths[1] {
+		t.Fatalf("column widths = %v", widths)
+	}
+}
+
+func TestLayoutRichTextFitsOnlyTablesWiderThanCanvas(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 表格\n\n| 一个非常非常非常非常非常非常非常非常长的站点名称 | 另一个非常非常非常非常非常非常非常非常长的站点名称 | 第三个非常非常非常非常非常非常非常非常长的站点名称 |\n| --- | --- | --- |\n| 14:30 | 14:45 | 15:00 |"), now)
+	node := layout.Nodes[0]
 	want := layout.Space.Width - 2*layout.Metrics.MarginX
-	for i, node := range layout.Nodes {
-		if node.Bounds.Dx() != want {
-			t.Fatalf("table %d width = %d, want %d", i, node.Bounds.Dx(), want)
+
+	if node.Bounds.Dx() != want || sumRichWidths(node.ColumnWidths) != want {
+		t.Fatalf("table width = %d, columns = %v, available = %d", node.Bounds.Dx(), node.ColumnWidths, want)
+	}
+	for i, width := range node.ColumnWidths {
+		if width <= 0 {
+			t.Fatalf("column %d width = %d", i, width)
 		}
 	}
 }

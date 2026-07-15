@@ -340,7 +340,7 @@ func TestDrawBusTableUsesHorizontalSeparatorsWithoutVerticalBorders(t *testing.T
 				{Cells: []string{"15:30", "15:40"}, Highlight: true},
 			},
 		},
-		10, 10, 100, 50, 20, 30, 4, 1,
+		10, 10, 100, []int{40, 60}, 20, 30, 4, 1,
 		basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13,
 		headerBg, rowBg, highlightBg, line,
 		color.RGBA{0, 0, 0, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{0, 0, 0, 255})
@@ -365,6 +365,31 @@ func TestDrawBusTableUsesHorizontalSeparatorsWithoutVerticalBorders(t *testing.T
 		if got := canvas.RGBAAt(check.point.X, check.point.Y); got != check.want {
 			t.Fatalf("%s pixel = %#v, want %#v", name, got, check.want)
 		}
+	}
+}
+
+func TestDrawBusTableUsesMeasuredColumnOffsets(t *testing.T) {
+	canvas := image.NewRGBA(image.Rect(0, 0, 140, 60))
+	ink := color.RGBA{1, 2, 3, 255}
+	background := color.RGBA{255, 255, 255, 255}
+	drawBusTable(canvas,
+		[]busStopHeader{{}, {Text: "X"}},
+		busRenderTable{Header: []string{"", "X"}},
+		10, 10, 100, []int{20, 80}, 20, 30, 4, 1,
+		basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13, basicfont.Face7x13,
+		background, background, background, background,
+		ink, ink, ink)
+
+	minX := canvas.Bounds().Max.X
+	for y := 10; y < 30; y++ {
+		for x := 0; x < canvas.Bounds().Max.X; x++ {
+			if canvas.RGBAAt(x, y) == ink {
+				minX = min(minX, x)
+			}
+		}
+	}
+	if minX < 34 || minX >= 42 {
+		t.Fatalf("second column starts at x=%d, want text near x=34", minX)
 	}
 }
 

@@ -559,9 +559,9 @@ func busTableHeight(table busRenderTable, headerH, rowH int) int {
 	return headerH + len(table.Rows)*rowH
 }
 
-func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRenderTable, x, y, width, colW, headerH, rowH, cellPadding, scale int, headerFace, headerMonoFace, headerEmphasisFace, headerEmphasisMonoFace, bodyFace, monoFace font.Face, headerBg, rowBg, highlightBg, line, ink, departed, highlightText color.RGBA) {
+func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRenderTable, x, y, width int, columnWidths []int, headerH, rowH, cellPadding, scale int, headerFace, headerMonoFace, headerEmphasisFace, headerEmphasisMonoFace, bodyFace, monoFace font.Face, headerBg, rowBg, highlightBg, line, ink, departed, highlightText color.RGBA) {
 	height := busTableHeight(table, headerH, rowH)
-	cols := max(1, len(table.Header))
+	cols := min(len(table.Header), len(columnWidths))
 
 	drawRect(dst, image.Rect(x, y, x+width, y+height), rowBg)
 	drawRect(dst, image.Rect(x, y, x+width, y+headerH), headerBg)
@@ -577,8 +577,11 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 		drawRect(dst, image.Rect(x, lineY, x+width, lineY+scale), line)
 	}
 
+	cellX := x
 	for i, header := range renderedHeaders {
-		cellX := x + i*colW
+		if i >= cols {
+			break
+		}
 		face := headerFace
 		monoFace := headerMonoFace
 		if header.Emphasize {
@@ -586,6 +589,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			monoFace = headerEmphasisMonoFace
 		}
 		drawMixedText(dst, face, monoFace, cellX+cellPadding, y+headerH/2+5*scale, header.Text, ink)
+		cellX += columnWidths[i]
 	}
 	for ri, row := range table.Rows {
 		rowY := y + headerH + ri*rowH
@@ -595,13 +599,14 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 		} else if row.Departed {
 			textColor = departed
 		}
+		cellX := x
 		for ci := 0; ci < cols; ci++ {
 			cell := ""
 			if ci < len(row.Cells) {
 				cell = row.Cells[ci]
 			}
-			cellX := x + ci*colW
 			drawMixedText(dst, bodyFace, monoFace, cellX+cellPadding, rowY+rowH/2+5*scale, cell, textColor)
+			cellX += columnWidths[ci]
 		}
 	}
 }

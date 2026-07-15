@@ -55,13 +55,13 @@ func defaultRichRenderMetrics() richRenderMetrics {
 }
 
 type richLayoutNode struct {
-	Bounds  image.Rectangle
-	Heading string
-	Lines   []string
-	Table   *busRenderTable
-	Header  []busStopHeader
-	Label   string
-	ColW    int
+	Bounds       image.Rectangle
+	Heading      string
+	Lines        []string
+	Table        *busRenderTable
+	Header       []busStopHeader
+	Label        string
+	ColumnWidths []int
 }
 
 type richLayout struct {
@@ -119,19 +119,19 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			continue
 		}
 		table := block.Table
-		width := availableWidth
-		colW := width / max(1, len(table.Header))
+		columnWidths := fitRichTableColumnWidths(measureRichTableColumnWidths(*table, m), availableWidth)
+		width := sumRichWidths(columnWidths)
 		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
 		if block.Heading != "" {
 			height += m.TableHeaderHeight
 		}
 		nodes = append(nodes, richLayoutNode{
-			Bounds:  image.Rect(m.MarginX, y, m.MarginX+width, y+height),
-			Heading: block.Heading,
-			Table:   table,
-			Header:  richTableHeaders(table.Header, isBus),
-			Label:   table.directionKey(),
-			ColW:    colW,
+			Bounds:       image.Rect(m.MarginX, y, m.MarginX+width, y+height),
+			Heading:      block.Heading,
+			Table:        table,
+			Header:       richTableHeaders(table.Header, isBus),
+			Label:        table.directionKey(),
+			ColumnWidths: columnWidths,
 		})
 		y += height + m.TableRowGap
 		lastGap = m.TableRowGap
@@ -175,7 +175,7 @@ func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
 			width = max(width, richTextWidth(block.Heading, 13)+2*metrics.TextPaddingX)
 		}
 		if block.Table != nil {
-			width = max(width, len(block.Table.Header)*measureRichTableColumnWidth(*block.Table, metrics))
+			width = max(width, sumRichWidths(measureRichTableColumnWidths(*block.Table, metrics)))
 			continue
 		}
 		for _, line := range block.Lines {
@@ -190,17 +190,49 @@ func richFooterLines(now time.Time) [2]string {
 	return [2]string{now.Format("15:04") + " · " + busDayType(now), "Life@USTC"}
 }
 
-func measureRichTableColumnWidth(table busRenderTable, metrics richRenderMetrics) int {
-	width := 0
-	for _, cell := range table.Header {
-		width = max(width, richTextWidth(cell, 13))
+func measureRichTableColumnWidths(table busRenderTable, metrics richRenderMetrics) []int {
+	widths := make([]int, len(table.Header))
+	for i, cell := range table.Header {
+		widths[i] = richTextWidth(cell, 13)
 	}
 	for _, row := range table.Rows {
-		for _, cell := range row.Cells {
-			width = max(width, richTextWidth(cell, 14))
+		for i, cell := range row.Cells {
+			if i < len(widths) {
+				widths[i] = max(widths[i], richTextWidth(cell, 14))
+			}
 		}
 	}
-	return width + 2*metrics.TableCellPaddingX
+	for i := range widths {
+		widths[i] += 2 * metrics.TableCellPaddingX
+	}
+	return widths
+}
+
+func fitRichTableColumnWidths(widths []int, maxWidth int) []int {
+	fitted := append([]int(nil), widths...)
+	total := sumRichWidths(fitted)
+	if len(fitted) == 0 || total <= maxWidth {
+		return fitted
+	}
+
+	used := 0
+	for i, width := range fitted {
+		fitted[i] = width * maxWidth / total
+		used += fitted[i]
+	}
+	for i := 0; used < maxWidth; i = (i + 1) % len(fitted) {
+		fitted[i]++
+		used++
+	}
+	return fitted
+}
+
+func sumRichWidths(widths []int) int {
+	total := 0
+	for _, width := range widths {
+		total += width
+	}
+	return total
 }
 
 func richTextWidth(text string, fontSize int) int {
@@ -363,7 +395,11 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 				tableY += s(layout.Metrics.TableHeaderHeight)
 				drawRect(canvas, image.Rect(x, tableY, s(node.Bounds.Max.X), tableY+layout.Space.Scale), line)
 			}
-			drawBusTable(canvas, node.Header, *node.Table, x, tableY, s(node.Bounds.Dx()), s(node.ColW), s(layout.Metrics.TableHeaderHeight), s(layout.Metrics.TableRowHeight), s(layout.Metrics.TableCellPaddingX), layout.Space.Scale, faces.Head, faces.HeadMono, faces.Bold, faces.BoldMono, faces.Body, faces.Mono, headBg, rowBg, highlightBg, line, ink, departed, ink)
+			columnWidths := make([]int, len(node.ColumnWidths))
+			for i, width := range node.ColumnWidths {
+				columnWidths[i] = s(width)
+			}
+			drawBusTable(canvas, node.Header, *node.Table, x, tableY, s(node.Bounds.Dx()), columnWidths, s(layout.Metrics.TableHeaderHeight), s(layout.Metrics.TableRowHeight), s(layout.Metrics.TableCellPaddingX), layout.Space.Scale, faces.Head, faces.HeadMono, faces.Bold, faces.BoldMono, faces.Body, faces.Mono, headBg, rowBg, highlightBg, line, ink, departed, ink)
 			continue
 		}
 		drawRect(canvas, image.Rect(x, y, s(node.Bounds.Max.X), s(node.Bounds.Max.Y)), rowBg)
