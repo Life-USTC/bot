@@ -46,7 +46,7 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		if firstArgIs(cmd.Args, "help") || busPreferenceArgs(cmd.Args) {
 			return nil
 		}
-		title := busImageTitle(cmd.Args)
+		title := "校车"
 		body := busImageRenderText(text)
 		return responses.NewRichTextImage("bus", busRichText(title, body), body)
 	default:
@@ -128,20 +128,6 @@ func imageTitle(text, fallback string) string {
 		return fallback
 	}
 	return first
-}
-
-func busImageTitle(args []string) string {
-	campuses := busCampusesFromArgs(args)
-	if len(campuses) >= 2 {
-		return "校车 " + campuses[0] + " → " + campuses[1]
-	}
-	if len(campuses) == 1 {
-		if len(args) > 0 && (normToken(args[0]) == "to" || normToken(args[0]) == "到") {
-			return "校车 到 " + campuses[0]
-		}
-		return "校车 " + campuses[0]
-	}
-	return "校车"
 }
 
 func successfulImageText(text string) bool {

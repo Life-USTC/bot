@@ -199,6 +199,14 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			}
 		}
 	}
+	if h.EnableImageResponses {
+		routeArgs = nil
+		options.ExplicitRoute = false
+		options.UsePreferredRoute = false
+		options.ShowAll = true
+		options.ShowDeparted = true
+		options.After = false
+	}
 	var items []busItem
 	if options.ExplicitRoute {
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
@@ -208,7 +216,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			limit = 0
 		}
 		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, limit)
-		if len(routeArgs) == 0 && !h.showSouthCampusBus(ctx, ident) {
+		if len(routeArgs) == 0 && !h.EnableImageResponses && !h.showSouthCampusBus(ctx, ident) {
 			items = filterSouthCampusBusItems(items)
 		}
 	}

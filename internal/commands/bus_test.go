@@ -142,6 +142,28 @@ func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
 	}
 }
 
+func TestBusAtImageModeShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(busPreferenceTestData))
+	}))
+	defer server.Close()
+
+	handler := Handler{
+		Life:                 life.NewClient(server.URL, server.Client()),
+		EnableImageResponses: true,
+	}
+	now := time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation())
+	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "西区"}, now)
+	for _, want := range []string{"东区", "西区", "南区", "𝟸𝟹:𝟶𝟶", "𝟸𝟹:𝟷𝟶"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %s: %q", want, reply)
+		}
+	}
+}
+
 func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/bus" {

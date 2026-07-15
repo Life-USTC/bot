@@ -826,8 +826,11 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 	if img == nil {
 		t.Fatal("image = nil, want bus image")
 	}
-	if img.Kind != "bus" || img.Title != "校车 东区 → 西区" {
+	if img.Kind != "bus" || img.Title != "校车" {
 		t.Fatalf("image = %#v", img)
+	}
+	if !strings.HasPrefix(img.RichText, "# 校车\n\n") || strings.Contains(img.RichText, "Life @ USTC") {
+		t.Fatalf("rich text = %q", img.RichText)
 	}
 	if !strings.Contains(img.AltText, "09:10") || !strings.Contains(img.AltText, "西区") {
 		t.Fatalf("alt text = %q", img.AltText)

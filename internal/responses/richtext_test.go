@@ -111,7 +111,7 @@ func TestLayoutRichTextUsesEqualOuterMargins(t *testing.T) {
 	layout := layoutRichText(parseRichText("# 表格\n\n| 东区始发站 | 西区中转站 | 先研院站点 | 高新区终点 |\n| --- | --- | --- | --- |\n| 14:30 | 14:40 | 14:52 | 15:05 |"), now)
 	want := layout.Metrics.MarginX
 
-	if top := layout.Metrics.BrandBaseline - 11; top != want {
+	if top := layout.Metrics.TitleBaseline - 18; top != want {
 		t.Fatalf("top margin = %d, want %d", top, want)
 	}
 	if left := layout.Nodes[0].Bounds.Min.X; left != want {
@@ -122,5 +122,21 @@ func TestLayoutRichTextUsesEqualOuterMargins(t *testing.T) {
 	}
 	if bottom := layout.Space.Height - layout.FooterY - layout.Metrics.FooterLineGap; bottom != want {
 		t.Fatalf("bottom margin = %d, want %d", bottom, want)
+	}
+}
+
+func TestLayoutRichTextEmphasizesEndpointNamesWithoutPrefixes(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 北区 | 西区 |\n| --- | --- | --- |\n| 14:30 | 14:35 | 14:45 |"), now)
+	headers := layout.Nodes[0].Header
+	if len(headers) != 3 || headers[0].Text != "东区" || !headers[0].Emphasize || headers[1].Emphasize || headers[2].Text != "西区" || !headers[2].Emphasize {
+		t.Fatalf("headers = %#v", headers)
+	}
+}
+
+func TestRichFooterOnlyShowsTimeDayTypeAndSource(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 34, 0, 0, time.FixedZone("CST", 8*60*60))
+	if got, want := richFooterLines(now), [2]string{"12:34 · 工作日", "Life@USTC"}; got != want {
+		t.Fatalf("footer = %#v, want %#v", got, want)
 	}
 }

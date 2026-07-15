@@ -17,7 +17,7 @@ type richRenderMetrics struct {
 	MaxWidth          int
 	Scale             int
 	MarginX           int
-	BrandBaseline     int
+	TitleBaseline     int
 	ContentTop        int
 	BlockGap          int
 	TextRowHeight     int
@@ -38,8 +38,8 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		MaxWidth:          920,
 		Scale:             2,
 		MarginX:           32,
-		BrandBaseline:     43,
-		ContentTop:        97,
+		TitleBaseline:     50,
+		ContentTop:        82,
 		BlockGap:          20,
 		TextRowHeight:     42,
 		TableHeaderHeight: 28,
@@ -121,7 +121,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		nodes = append(nodes, richLayoutNode{
 			Bounds: image.Rect(m.MarginX, y, m.MarginX+width, y+height),
 			Table:  table,
-			Header: busStopHeaders(table.Header, true),
+			Header: busStopHeaders(table.Header, false),
 			Label:  table.directionKey(),
 			ColW:   colW,
 		})
@@ -156,7 +156,11 @@ func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
 		}
 	}
 	// The timestamp and source footer are right-aligned on separate lines.
-	return max(width, richTextWidth("2006-01-02 15:04（工作日）", 9))
+	return max(width, richTextWidth("15:04 · 工作日", 9))
+}
+
+func richFooterLines(now time.Time) [2]string {
+	return [2]string{now.Format("15:04") + " · " + busDayType(now), "Life@USTC"}
 }
 
 func measureRichTableColumnWidth(table busRenderTable, metrics richRenderMetrics) int {
@@ -213,7 +217,6 @@ func wrapRichLineToWidth(line string, maxWidth, fontSize int) []string {
 }
 
 type richFaces struct {
-	Brand font.Face
 	Title font.Face
 	Meta  font.Face
 	Body  font.Face
@@ -225,10 +228,6 @@ type richFaces struct {
 func (r Renderer) richFaces(scale int) (richFaces, error) {
 	load := func(fn func(float64) (font.Face, error), size int) (font.Face, error) {
 		return fn(float64(size * scale))
-	}
-	brand, err := load(r.sansFontFace, 11)
-	if err != nil {
-		return richFaces{}, err
 	}
 	title, err := load(r.sansBoldFontFace, 18)
 	if err != nil {
@@ -254,7 +253,7 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	if err != nil {
 		return richFaces{}, err
 	}
-	return richFaces{Brand: brand, Title: title, Meta: meta, Body: body, Head: head, Bold: bold, Mono: mono}, nil
+	return richFaces{Title: title, Meta: meta, Body: body, Head: head, Bold: bold, Mono: mono}, nil
 }
 
 func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
@@ -292,12 +291,11 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
-	drawText(canvas, faces.Brand, s(layout.Metrics.MarginX), s(layout.Metrics.BrandBaseline), "Life @ USTC", muted)
-	drawText(canvas, faces.Title, s(layout.Metrics.MarginX), s(layout.Metrics.BrandBaseline+26), layout.Title, ink)
+	drawText(canvas, faces.Title, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.BrandBaseline), "下一班 "+layout.NextTime, muted)
-		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.BrandBaseline+26), layout.NextWait, accent)
+		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
+		drawRightText(canvas, faces.Meta, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
 	}
 	for _, node := range layout.Nodes {
 		x, y := s(node.Bounds.Min.X), s(node.Bounds.Min.Y)
@@ -319,8 +317,9 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	}
 	footerY := s(layout.FooterY)
 	right := s(layout.Space.Width - layout.Metrics.MarginX)
-	drawRightText(canvas, faces.Meta, right, footerY, now.Format("2006-01-02 15:04")+"（"+busDayType(now)+"）", muted)
-	drawRightText(canvas, faces.Meta, right, footerY+s(layout.Metrics.FooterLineGap), "Life @ USTC / 蜗壳小道消息", muted)
+	footerLines := richFooterLines(now)
+	drawRightText(canvas, faces.Meta, right, footerY, footerLines[0], muted)
+	drawRightText(canvas, faces.Meta, right, footerY+s(layout.Metrics.FooterLineGap), footerLines[1], muted)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, canvas); err != nil {
 		return nil, 0, 0, err
