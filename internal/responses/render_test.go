@@ -368,7 +368,7 @@ func TestDrawBusTableUsesHorizontalSeparatorsWithoutVerticalBorders(t *testing.T
 	}
 }
 
-func TestDrawBusTableUsesMeasuredColumnOffsets(t *testing.T) {
+func TestDrawBusTableCentersHeadersWithinMeasuredColumns(t *testing.T) {
 	canvas := image.NewRGBA(image.Rect(0, 0, 140, 60))
 	ink := color.RGBA{1, 2, 3, 255}
 	background := color.RGBA{255, 255, 255, 255}
@@ -388,8 +388,8 @@ func TestDrawBusTableUsesMeasuredColumnOffsets(t *testing.T) {
 			}
 		}
 	}
-	if minX < 34 || minX >= 42 {
-		t.Fatalf("second column starts at x=%d, want text near x=34", minX)
+	if minX < 66 || minX >= 71 {
+		t.Fatalf("second column starts at x=%d, want centered text near x=67", minX)
 	}
 }
 

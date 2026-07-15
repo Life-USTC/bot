@@ -12,6 +12,11 @@ import (
 	"golang.org/x/image/font"
 )
 
+const (
+	richMetaFontSize = 9
+	richNextFontSize = richMetaFontSize + 2
+)
+
 type richRenderMetrics struct {
 	Scale             int
 	MarginX           int
@@ -87,7 +92,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 	}
 	contentWidth := measureRichDocument(doc, m)
 	if nextTime != "" {
-		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
+		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, richNextFontSize) + 40
 		contentWidth = max(contentWidth, headerWidth)
 	}
 	canvasWidth := contentWidth + 2*m.MarginX
@@ -184,12 +189,12 @@ func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWa
 		})
 	}
 
-	contentWidth := max(richTextWidth(doc.Title, 18), richTextWidth("15:04 · 工作日", 9))
+	contentWidth := max(richTextWidth(doc.Title, 18), richTextWidth("15:04 · 工作日", richMetaFontSize))
 	if nextTime != "" {
-		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, 9) + 40
+		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, richNextFontSize) + 40
 		contentWidth = max(contentWidth, headerWidth)
 	}
-	rows := packRichTableNodes(measured, contentWidth, m)
+	rows := groupRichBusTableNodes(measured)
 	for _, row := range rows {
 		contentWidth = max(contentWidth, richTableRowWidth(row, m.TableColumnGap))
 	}
@@ -225,52 +230,64 @@ func layoutRichBusTables(doc richDocument, m richRenderMetrics, nextTime, nextWa
 	}
 }
 
-func packRichTableNodes(nodes []richLayoutNode, baseContentWidth int, metrics richRenderMetrics) [][]richLayoutNode {
-	if len(nodes) == 0 {
-		return nil
-	}
-	bestRows := [][]richLayoutNode{append([]richLayoutNode(nil), nodes...)}
-	bestLongestSide := 0
-	bestArea := 0
-	for columns := 1; columns <= len(nodes); columns++ {
-		rows := richTableRowsByColumnCount(nodes, columns)
-		contentWidth, contentHeight := richTableRowsSize(rows, metrics.TableColumnGap, metrics.TableRowGap)
-		pageWidth := max(baseContentWidth, contentWidth) + 2*metrics.MarginX
-		pageHeight := metrics.ContentTop + contentHeight + metrics.FooterGap + metrics.FooterLineGap + metrics.BottomMargin
-		longestSide := max(pageWidth, pageHeight)
-		area := pageWidth * pageHeight
-		if bestLongestSide == 0 || longestSide < bestLongestSide || longestSide == bestLongestSide && area < bestArea {
-			bestRows = rows
-			bestLongestSide = longestSide
-			bestArea = area
+func groupRichBusTableNodes(nodes []richLayoutNode) [][]richLayoutNode {
+	highTech := make([]richLayoutNode, 0, len(nodes))
+	other := make([]richLayoutNode, 0, len(nodes))
+	for _, node := range nodes {
+		if richBusTableServesCampus(node.Table, "高新区") {
+			highTech = append(highTech, node)
+		} else {
+			other = append(other, node)
 		}
 	}
-	return bestRows
-}
-
-func richTableRowsByColumnCount(nodes []richLayoutNode, columns int) [][]richLayoutNode {
-	rows := make([][]richLayoutNode, 0, (len(nodes)+columns-1)/columns)
-	for start := 0; start < len(nodes); start += columns {
-		end := min(len(nodes), start+columns)
-		rows = append(rows, append([]richLayoutNode(nil), nodes[start:end]...))
+	highTech = orderRichBusTablePairs(highTech)
+	other = orderRichBusTablePairs(other)
+	rows := make([][]richLayoutNode, 0, 2)
+	if len(highTech) > 0 {
+		rows = append(rows, highTech)
+	}
+	if len(other) > 0 {
+		rows = append(rows, other)
 	}
 	return rows
 }
 
-func richTableRowsSize(rows [][]richLayoutNode, columnGap, rowGap int) (int, int) {
-	width, height := 0, 0
-	for i, row := range rows {
-		width = max(width, richTableRowWidth(row, columnGap))
-		if i > 0 {
-			height += rowGap
+func orderRichBusTablePairs(nodes []richLayoutNode) []richLayoutNode {
+	ordered := make([]richLayoutNode, 0, len(nodes))
+	used := make([]bool, len(nodes))
+	for i, node := range nodes {
+		if used[i] {
+			continue
 		}
-		rowHeight := 0
-		for _, node := range row {
-			rowHeight = max(rowHeight, node.Bounds.Dy())
+		ordered = append(ordered, node)
+		used[i] = true
+		if node.Table == nil {
+			continue
 		}
-		height += rowHeight
+		for j := i + 1; j < len(nodes); j++ {
+			if used[j] || nodes[j].Table == nil {
+				continue
+			}
+			if isReverseRoute(node.Table.Header, nodes[j].Table.Header) {
+				ordered = append(ordered, nodes[j])
+				used[j] = true
+				break
+			}
+		}
 	}
-	return width, height
+	return ordered
+}
+
+func richBusTableServesCampus(table *busRenderTable, campus string) bool {
+	if table == nil {
+		return false
+	}
+	for _, header := range table.Header {
+		if strings.TrimSpace(header) == campus {
+			return true
+		}
+	}
+	return false
 }
 
 func richTableRowWidth(row []richLayoutNode, gap int) int {
@@ -371,6 +388,8 @@ func richTextWidth(text string, fontSize int) int {
 type richFaces struct {
 	Title     font.Face
 	TitleMono font.Face
+	Next      font.Face
+	NextMono  font.Face
 	Meta      font.Face
 	MetaMono  font.Face
 	Body      font.Face
@@ -394,11 +413,19 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	if err != nil {
 		return richFaces{}, err
 	}
-	meta, err := load(r.sansFontFace, 9)
+	next, err := load(r.sansFontFace, richNextFontSize)
 	if err != nil {
 		return richFaces{}, err
 	}
-	metaMono, err := load(r.monoFontFace, 9)
+	nextMono, err := load(r.monoFontFace, richNextFontSize)
+	if err != nil {
+		return richFaces{}, err
+	}
+	meta, err := load(r.sansFontFace, richMetaFontSize)
+	if err != nil {
+		return richFaces{}, err
+	}
+	metaMono, err := load(r.monoFontFace, richMetaFontSize)
 	if err != nil {
 		return richFaces{}, err
 	}
@@ -428,6 +455,7 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	}
 	return richFaces{
 		Title: title, TitleMono: titleMono,
+		Next: next, NextMono: nextMono,
 		Meta: meta, MetaMono: metaMono,
 		Body: body, BodyMono: bodyMono,
 		Head: head, HeadMono: bodyMono,
@@ -476,8 +504,8 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	drawMixedText(canvas, faces.Title, faces.TitleMono, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
-		drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
-		drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
+		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
+		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
 	}
 	for _, node := range layout.Nodes {
 		x, y := s(node.Bounds.Min.X), s(node.Bounds.Min.Y)

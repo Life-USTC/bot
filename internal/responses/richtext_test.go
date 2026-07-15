@@ -197,6 +197,44 @@ func TestLayoutRichTextPacksBusTablesAcrossRows(t *testing.T) {
 	}
 }
 
+func TestLayoutRichTextGroupsHighTechBusTablesOnFirstRow(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 西区 |\n| --- | --- |\n| 09:00 | 09:15 |\n\n| 高新区 | 先研院 | 东区 |\n| --- | --- | --- |\n| 09:20 | 09:30 | 10:00 |\n\n| 西区 | 东区 |\n| --- | --- |\n| 10:10 | 10:25 |\n\n| 东区 | 先研院 | 高新区 |\n| --- | --- | --- |\n| 10:30 | 11:00 | 11:10 |"), now)
+
+	if len(layout.Nodes) != 4 {
+		t.Fatalf("nodes = %d", len(layout.Nodes))
+	}
+	firstRowY := layout.Nodes[0].Bounds.Min.Y
+	secondRowY := layout.Nodes[2].Bounds.Min.Y
+	if layout.Nodes[1].Bounds.Min.Y != firstRowY || secondRowY <= firstRowY || layout.Nodes[3].Bounds.Min.Y != secondRowY {
+		t.Fatalf("row positions = %v, %v, %v, %v", layout.Nodes[0].Bounds, layout.Nodes[1].Bounds, layout.Nodes[2].Bounds, layout.Nodes[3].Bounds)
+	}
+	for i, node := range layout.Nodes {
+		servesHighTech := richBusTableServesCampus(node.Table, "高新区")
+		if i < 2 && !servesHighTech || i >= 2 && servesHighTech {
+			t.Fatalf("table %d grouped incorrectly: %#v", i, node.Table.Header)
+		}
+	}
+	widestRightEdge := max(layout.Nodes[1].Bounds.Max.X, layout.Nodes[3].Bounds.Max.X)
+	if got := layout.Space.Width - widestRightEdge; got != layout.Metrics.MarginX {
+		t.Fatalf("right margin = %d, want %d", got, layout.Metrics.MarginX)
+	}
+}
+
+func TestLayoutRichTextKeepsReverseBusRoutesTogether(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	layout := layoutRichText(parseRichText("# 校车\n\n| 东区 | 南区 |\n| --- | --- |\n| 09:00 | 09:15 |\n\n| 西区 | 南区 |\n| --- | --- |\n| 09:20 | 09:35 |\n\n| 南区 | 东区 |\n| --- | --- |\n| 09:40 | 09:55 |\n\n| 南区 | 西区 |\n| --- | --- |\n| 10:00 | 10:15 |"), now)
+
+	got := make([]string, 0, len(layout.Nodes))
+	for _, node := range layout.Nodes {
+		got = append(got, node.Label)
+	}
+	want := []string{"东区→南区", "南区→东区", "西区→南区", "南区→西区"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("route order = %#v, want %#v", got, want)
+	}
+}
+
 func TestLayoutRichTextKeepsNonBusTablesStacked(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	layout := layoutRichText(parseRichText("# 今明两日课表\n\n## 今天\n| 校区 | 教室 | 时间 | 课程 |\n| --- | --- | --- | --- |\n| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |\n\n## 明天\n| 校区 | 教室 | 时间 | 课程 |\n| --- | --- | --- | --- |\n| 先研院 | 1A201 | 16:00-17:35 | Machine Learning |"), now)
@@ -286,6 +324,12 @@ func TestRichFooterOnlyShowsTimeDayTypeAndSource(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 34, 0, 0, time.FixedZone("CST", 8*60*60))
 	if got, want := richFooterLines(now), [2]string{"12:34 · 工作日", "Life@USTC"}; got != want {
 		t.Fatalf("footer = %#v, want %#v", got, want)
+	}
+}
+
+func TestRichNextBusTextIsTwoFontSizesLargerThanMetadata(t *testing.T) {
+	if richNextFontSize != richMetaFontSize+2 {
+		t.Fatalf("next font size = %d, metadata = %d", richNextFontSize, richMetaFontSize)
 	}
 }
 

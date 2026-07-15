@@ -589,7 +589,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			face = headerEmphasisFace
 			monoFace = headerEmphasisMonoFace
 		}
-		drawMixedText(dst, face, monoFace, cellX+cellPadding, y+headerH/2+5*scale, header.Text, ink)
+		drawCenteredMixedText(dst, face, monoFace, cellX+columnWidths[i]/2, y+headerH/2+5*scale, header.Text, ink)
 		cellX += columnWidths[i]
 	}
 	for ri, row := range table.Rows {
@@ -638,8 +638,8 @@ func drawRotatedLogoTile(dst *image.RGBA, src image.Image, centerX, centerY, siz
 			if !image.Pt(x, y).In(dst.Bounds()) {
 				continue
 			}
-			dx := float64(x-centerX)
-			dy := float64(y-centerY)
+			dx := float64(x - centerX)
+			dy := float64(y - centerY)
 			u := dx*cosA - dy*sinA + half
 			v := dx*sinA + dy*cosA + half
 			if u < 0 || v < 0 || u >= float64(size) || v >= float64(size) {
@@ -954,19 +954,34 @@ func drawMixedText(dst *image.RGBA, textFace, monoFace font.Face, x, y int, text
 	}
 }
 
-func drawRightMixedText(dst *image.RGBA, textFace, monoFace font.Face, right, y int, text string, c color.Color) {
+func drawCenteredMixedText(dst *image.RGBA, textFace, monoFace font.Face, center, y int, text string, c color.Color) {
 	runs := mixedFontRuns(text, textFace, monoFace)
-	advance := fixed.Int26_6(0)
-	for _, run := range runs {
-		advance += font.MeasureString(run.Face, run.Text)
-	}
-	dot := fixed.P(right, y)
-	dot.X -= advance
+	dot := fixed.P(center, y)
+	dot.X -= mixedTextAdvance(runs) / 2
 	d := &font.Drawer{Dst: dst, Src: image.NewUniform(c), Dot: dot}
 	for _, run := range runs {
 		d.Face = run.Face
 		d.DrawString(run.Text)
 	}
+}
+
+func drawRightMixedText(dst *image.RGBA, textFace, monoFace font.Face, right, y int, text string, c color.Color) {
+	runs := mixedFontRuns(text, textFace, monoFace)
+	dot := fixed.P(right, y)
+	dot.X -= mixedTextAdvance(runs)
+	d := &font.Drawer{Dst: dst, Src: image.NewUniform(c), Dot: dot}
+	for _, run := range runs {
+		d.Face = run.Face
+		d.DrawString(run.Text)
+	}
+}
+
+func mixedTextAdvance(runs []mixedFontRun) fixed.Int26_6 {
+	advance := fixed.Int26_6(0)
+	for _, run := range runs {
+		advance += font.MeasureString(run.Face, run.Text)
+	}
+	return advance
 }
 
 func mixedFontRuns(text string, textFace, monoFace font.Face) []mixedFontRun {
