@@ -226,11 +226,11 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	load := func(fn func(float64) (font.Face, error), size int) (font.Face, error) {
 		return fn(float64(size * scale))
 	}
-	brand, err := load(r.serifFontFace, 11)
+	brand, err := load(r.sansFontFace, 11)
 	if err != nil {
 		return richFaces{}, err
 	}
-	title, err := load(r.serifBoldFontFace, 18)
+	title, err := load(r.sansBoldFontFace, 18)
 	if err != nil {
 		return richFaces{}, err
 	}
@@ -242,11 +242,11 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	if err != nil {
 		return richFaces{}, err
 	}
-	head, err := load(r.serifFontFace, 13)
+	head, err := load(r.sansFontFace, 13)
 	if err != nil {
 		return richFaces{}, err
 	}
-	bold, err := load(r.serifBoldFontFace, 13)
+	bold, err := load(r.sansBoldFontFace, 13)
 	if err != nil {
 		return richFaces{}, err
 	}
