@@ -1929,6 +1929,52 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 	}
 }
 
+func TestHandleCurriculumDoesNotClaimNoClassWithoutSubscriptions(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	base := time.Date(2026, 5, 4, 12, 0, 0, 0, lifedata.ChinaLocation())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me/subscriptions/schedules":
+			_, _ = w.Write([]byte(`{"schedules":[]}`))
+		case "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, []string{"date:5.3"}, base)
+	if !strings.Contains(reply, "没有查到已关注的班级") || strings.Contains(reply, "没有课") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHandleCurriculumConfirmsNoClassWhenSubscriptionsExist(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	base := time.Date(2026, 5, 4, 12, 0, 0, 0, lifedata.ChinaLocation())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/me/subscriptions/schedules":
+			_, _ = w.Write([]byte(`{"schedules":[]}`))
+		case "/api/calendar-subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":71}]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, []string{"date:5.3"}, base)
+	if !strings.Contains(reply, "没有课") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
