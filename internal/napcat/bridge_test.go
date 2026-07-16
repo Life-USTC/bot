@@ -115,6 +115,41 @@ func TestSendResponsePostsImageSegmentWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSendRichMessagePostsImageSegmentForIdentity(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/send_private_msg" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	image := responses.NewTextImage("class_reminder", "课前提醒", "课前提醒：\n数据库系统")
+	err := bridge.SendRichMessage(context.Background(), store.Identity{
+		Platform:         "napcat",
+		UserID:           "456",
+		ConversationType: "private",
+		ConversationID:   "456",
+	}, image.AltText, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, ok := gotBody["message"].([]any)
+	if !ok || len(message) != 1 || message[0].(map[string]any)["type"] != "image" {
+		t.Fatalf("message = %#v", gotBody["message"])
+	}
+}
+
 func TestSendResponseFallsBackToTextWhenImagePostFails(t *testing.T) {
 	requests := 0
 	var fallbackBody map[string]any

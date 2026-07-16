@@ -27,6 +27,7 @@ import (
 type messageSender interface {
 	SendMessage(ctx context.Context, ident store.Identity, message string) error
 	SendLoginMessage(ctx context.Context, ident store.Identity, message string) error
+	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
 }
 
 type platformSender struct {
@@ -51,6 +52,19 @@ func (r *senderRouter) SendMessage(ctx context.Context, ident store.Identity, me
 
 func (r *senderRouter) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
 	return r.send(ctx, ident, message, true)
+}
+
+func (r *senderRouter) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
+	platform := strings.ToLower(strings.TrimSpace(ident.Platform))
+	for _, item := range r.senders {
+		if item.platform == platform {
+			return item.sender.SendRichMessage(ctx, ident, message, image)
+		}
+	}
+	if len(r.senders) == 1 {
+		return r.senders[0].sender.SendRichMessage(ctx, ident, message, image)
+	}
+	return fmt.Errorf("no message sender configured for platform %q", ident.Platform)
 }
 
 func (r *senderRouter) send(ctx context.Context, ident store.Identity, message string, login bool) error {
@@ -242,11 +256,12 @@ func main() {
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
 		notificationPoller := &notify.Poller{
-			Life:   lifeClient,
-			Auth:   authManager,
-			Store:  stateStore,
-			Sender: messageRouter,
-			Logger: logger,
+			Life:                 lifeClient,
+			Auth:                 authManager,
+			Store:                stateStore,
+			Sender:               messageRouter,
+			Logger:               logger,
+			EnableImageResponses: handler.EnableImageResponses,
 		}
 		go notificationPoller.Run(ctx)
 		logger.Printf("Notification poller started")

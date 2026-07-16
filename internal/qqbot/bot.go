@@ -800,6 +800,25 @@ func (b *Bot) SendLoginMessage(ctx context.Context, ident store.Identity, messag
 	return b.SendMessage(ctx, ident, message)
 }
 
+func (b *Bot) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
+	if image != nil && b.MediaStore != nil {
+		imageURL, err := b.prepareImageURL(image)
+		if err == nil {
+			var fileInfo json.RawMessage
+			fileInfo, err = b.uploadRichMedia(ctx, ident, imageURL)
+			if err == nil {
+				err = b.sendRichMediaTo(ctx, ident, fileInfo, "", "", 0)
+			}
+		}
+		if err == nil {
+			b.recordOutbound(ctx, ident, message, store.InteractionStatusSent, nil)
+			return nil
+		}
+		b.logf("QQ bot proactive image response failed: %v", err)
+	}
+	return b.SendMessage(ctx, ident, message)
+}
+
 func (b *Bot) SendMessage(ctx context.Context, ident store.Identity, message string) error {
 	outgoing := qqBotOutgoingMessage(ident, message)
 	err := b.sendTo(ctx, ident, outgoing, "", "", 0)

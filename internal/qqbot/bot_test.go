@@ -137,6 +137,95 @@ func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
 	}
 }
 
+func TestSendRichMessageUploadsAndSendsProactiveC2CImage(t *testing.T) {
+	var sent map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token"})
+		case "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	image := responses.NewTextImage("homework_reminder", "作业提醒", "作业提醒：\nProblem Set 1")
+	err := bot.SendRichMessage(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, image.AltText, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent["msg_type"].(float64) != 7 {
+		t.Fatalf("sent body = %#v", sent)
+	}
+	if _, ok := sent["msg_id"]; ok {
+		t.Fatalf("proactive message should not contain msg_id: %#v", sent)
+	}
+}
+
+func TestSendRichMessageFallsBackToProactiveText(t *testing.T) {
+	var sent sendMessageRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			http.Error(w, "upload rejected", http.StatusBadRequest)
+		case "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	image := responses.NewTextImage("homework_reminder", "作业提醒", "作业提醒：\nProblem Set 1")
+	err := bot.SendRichMessage(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, image.AltText, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.MsgType != 0 || sent.Content != image.AltText || sent.MsgID != "" || sent.MsgSeq != 0 {
+		t.Fatalf("fallback body = %#v", sent)
+	}
+}
+
 func TestSendResponseFallsBackToTextWhenQQImageUploadFails(t *testing.T) {
 	var textBody sendMessageRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

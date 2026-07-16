@@ -933,6 +933,16 @@ func cardTheme(kind string) responseCardTheme {
 		theme.Accent = color.RGBA{234, 88, 12, 255}
 	case "schedule":
 		theme.Label = "课表"
+	case "homework":
+		theme.Label = "作业"
+	case "exam":
+		theme.Label = "考试"
+	case "nextclass":
+		theme.Label = "下一节"
+	case "class_reminder":
+		theme.Label = "课前提醒"
+	case "homework_reminder":
+		theme.Label = "作业提醒"
 	}
 	return theme
 }

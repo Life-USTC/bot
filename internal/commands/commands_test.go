@@ -19,6 +19,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -885,6 +886,7 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 			t.Fatalf("rich text missing %q: %q", want, img.RichText)
 		}
 	}
+	assertResponseImageRenders(t, img)
 	if strings.Contains(img.RichText, " · ") {
 		t.Fatalf("rich text still uses dot separators: %q", img.RichText)
 	}
@@ -905,6 +907,116 @@ func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
 	if img == nil || !strings.Contains(img.RichText, "|  |  | ...and 4 more |") {
 		t.Fatalf("rich text = %q", img.RichText)
+	}
+}
+
+func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"作业：",
+		"已逾期：",
+		"1.\t截止 07-15 23:59\t数据库系统\tProblem Set 1",
+		"",
+		"近期：",
+		"2.\t截止 07-18 23:59\t数学分析\t习题课作业",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "homework"}, text)
+	if img == nil || img.Kind != "homework" || img.Title != "作业" {
+		t.Fatalf("image = %#v", img)
+	}
+	for _, want := range []string{
+		"## 已逾期\n| # | 截止 | 课程 | 作业 |",
+		"| 1 | 07-15 23:59 | 数据库系统 | Problem Set 1 |",
+		"## 近期\n| # | 截止 | 课程 | 作业 |",
+	} {
+		if !strings.Contains(img.RichText, want) {
+			t.Fatalf("rich text missing %q: %q", want, img.RichText)
+		}
+	}
+
+	for _, cmd := range []parsedCommand{
+		{Name: "homework", Args: []string{"help"}},
+		{Name: "homework", Args: []string{"done", "1"}},
+		{Name: "homework", Args: []string{"undo", "1"}},
+	} {
+		if got := handler.imageResponseFor(cmd, text); got != nil {
+			t.Fatalf("non-list image = %#v, want nil", got)
+		}
+	}
+	for _, reply := range []string{"没有未完成作业。", "作业查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "homework"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+	sectionImage := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, "作业：\n1.\t截止 07-18 23:59\t\tProblem Set 1")
+	if sectionImage == nil || !strings.Contains(sectionImage.RichText, "| 1 | 07-18 23:59 |  | Problem Set 1 |") {
+		t.Fatalf("section homework image = %#v", sectionImage)
+	}
+	for _, reply := range []string{"需要提供教学班 JW ID。", "该教学班没有作业。"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, reply); got != nil {
+			t.Fatalf("section empty/error image = %#v, want nil", got)
+		}
+	}
+}
+
+func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "考试：\n1.\t07-20\t14:30-16:30\t数学分析\tMATH1001.01\t闭卷\t3A101"
+
+	for _, name := range []string{"exam", "section_exams"} {
+		img := handler.imageResponseFor(parsedCommand{Name: name}, text)
+		if img == nil || img.Kind != "exam" || img.Title != "考试" {
+			t.Fatalf("%s image = %#v", name, img)
+		}
+		if !strings.Contains(img.RichText, "| # | 日期 | 时间 | 课程 | 教学班 | 方式 | 教室 |") ||
+			!strings.Contains(img.RichText, "| 1 | 07-20 | 14:30-16:30 | 数学分析 | MATH1001.01 | 闭卷 | 3A101 |") {
+			t.Fatalf("%s rich text = %q", name, img.RichText)
+		}
+		assertResponseImageRenders(t, img)
+	}
+
+	for _, reply := range []string{"没有订阅课程考试。", "该教学班没有考试。", "考试查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "exam"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+	for _, reply := range []string{"需要提供教学班 JW ID。", "教学班查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "section_exams"}, reply); got != nil {
+			t.Fatalf("section error image = %#v, want nil", got)
+		}
+	}
+}
+
+func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "下一节课：\n西区 3A204\t09:50-11:25\t数据库系统"
+
+	img := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, text)
+	if img == nil || img.Kind != "nextclass" || img.Title != "下一节课" {
+		t.Fatalf("image = %#v", img)
+	}
+	if !strings.Contains(img.RichText, "| 校区 | 教室 | 时间 | 课程 |") ||
+		!strings.Contains(img.RichText, "| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |") {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+	assertResponseImageRenders(t, img)
+
+	for _, reply := range []string{"接下来一周没查到课。", "下一节课查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+}
+
+func assertResponseImageRenders(t *testing.T, image *responses.Image) {
+	t.Helper()
+	data, width, height, err := (responses.Renderer{}).RenderPNG(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || width <= 0 || height <= 0 {
+		t.Fatalf("rendered image len=%d size=%dx%d", len(data), width, height)
 	}
 }
 

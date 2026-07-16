@@ -335,6 +335,14 @@ func (b *Bridge) SendLoginMessage(ctx context.Context, ident store.Identity, mes
 	return b.SendMessage(ctx, ident, message)
 }
 
+func (b *Bridge) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
+	event, err := messageEventFromIdentity(ident)
+	if err != nil {
+		return err
+	}
+	return b.SendResponse(ctx, event, commands.Response{Text: message, Image: image})
+}
+
 func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message string) error {
 	event, err := messageEventFromIdentity(ident)
 	if err != nil {

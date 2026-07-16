@@ -9,6 +9,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -19,17 +20,18 @@ const (
 )
 
 type Sender interface {
-	SendMessage(ctx context.Context, ident store.Identity, message string) error
+	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
 }
 
 type Poller struct {
-	Life     *life.Client
-	Auth     *auth.Manager
-	Store    *store.Store
-	Sender   Sender
-	Interval time.Duration
-	Now      func() time.Time
-	Logger   *log.Logger
+	Life                 *life.Client
+	Auth                 *auth.Manager
+	Store                *store.Store
+	Sender               Sender
+	Interval             time.Duration
+	Now                  func() time.Time
+	Logger               *log.Logger
+	EnableImageResponses bool
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -94,7 +96,12 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 			continue
 		}
 		key := notificationKey(classKind, scheduleKey(schedule, start))
-		p.sendNotificationOnce(ctx, ident, classKind, key, "课前提醒：\n"+formatSchedule(schedule))
+		message := "课前提醒：\n" + formatSchedule(schedule)
+		var image *responses.Image
+		if p.EnableImageResponses {
+			image = classReminderImage(schedule, message)
+		}
+		p.sendNotificationOnce(ctx, ident, classKind, key, message, image)
 	}
 	return token
 }
@@ -117,11 +124,16 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 			continue
 		}
 		key := notificationKey(homeworkKind, textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
-		p.sendNotificationOnce(ctx, ident, homeworkKind, key, "作业提醒：\n"+formatHomework(homework))
+		message := "作业提醒：\n" + formatHomework(homework)
+		var image *responses.Image
+		if p.EnableImageResponses {
+			image = homeworkReminderImage(homework, message)
+		}
+		p.sendNotificationOnce(ctx, ident, homeworkKind, key, message, image)
 	}
 }
 
-func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity, kind, key, message string) {
+func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity, kind, key, message string, image *responses.Image) {
 	delivered, err := p.Store.NotificationDelivered(ctx, ident, kind, key)
 	if err != nil {
 		p.logf("check %s notification delivery failed: %v", kind, err)
@@ -130,7 +142,7 @@ func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity,
 	if delivered {
 		return
 	}
-	if err := p.Sender.SendMessage(ctx, ident, message); err != nil {
+	if err := p.Sender.SendRichMessage(ctx, ident, message, image); err != nil {
 		p.logf("send %s notification failed: %v", kind, err)
 		return
 	}
@@ -206,4 +218,52 @@ func formatSchedule(schedule map[string]any) string {
 
 func formatHomework(homework map[string]any) string {
 	return textutil.MonospaceDigits(lifedata.HomeworkLabel(homework))
+}
+
+func classReminderImage(schedule map[string]any, altText string) *responses.Image {
+	return reminderTableImage("class_reminder", "课前提醒",
+		[]string{"地点", "时间", "课程"},
+		[]string{
+			lifedata.SchedulePlaceLabel(schedule),
+			lifedata.ScheduleTimeRange(schedule),
+			lifedata.ScheduleCourseLabel(schedule),
+		}, altText)
+}
+
+func homeworkReminderImage(homework map[string]any, altText string) *responses.Image {
+	title := lifedata.FirstString(homework, "title")
+	if title == "" {
+		title = lifedata.FirstString(homework, "id")
+	}
+	return reminderTableImage("homework_reminder", "作业提醒",
+		[]string{"截止", "课程", "作业"},
+		[]string{
+			lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt")),
+			lifedata.HomeworkCourseLabel(homework),
+			title,
+		}, altText)
+}
+
+func reminderTableImage(kind, title string, headers, cells []string, altText string) *responses.Image {
+	separators := make([]string, len(headers))
+	for i := range separators {
+		separators[i] = "---"
+	}
+	richText := strings.Join([]string{
+		"# " + title,
+		"",
+		reminderTableRow(headers),
+		reminderTableRow(separators),
+		reminderTableRow(cells),
+	}, "\n")
+	return responses.NewRichTextImage(kind, richText, altText)
+}
+
+func reminderTableRow(cells []string) string {
+	clean := make([]string, len(cells))
+	for i, cell := range cells {
+		cell = strings.ReplaceAll(cell, "|", "｜")
+		clean[i] = strings.Join(strings.Fields(cell), " ")
+	}
+	return "| " + strings.Join(clean, " | ") + " |"
 }

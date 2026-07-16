@@ -39,6 +39,22 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		}
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("todo", imageTitle(plainText, "待办"), plainText)
+	case "homework":
+		if !homeworkImageArgs(cmd.Args) {
+			return nil
+		}
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("homework", imageTitle(plainText, "作业"), plainText)
+	case "section_homeworks":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("homework", imageTitle(plainText, "作业"), plainText)
+	case "exam", "section_exams":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("exam", imageTitle(plainText, "考试"), plainText)
+	case "nextclass":
+		plainText := textutil.PlainMonospace(text)
+		title := imageTitle(plainText, "下一节课")
+		return responses.NewRichTextImage("nextclass", scheduleRichText(title, plainText), imageText)
 	case "overview":
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("overview", imageTitle(plainText, "今日安排"), plainText)
@@ -165,7 +181,7 @@ func richTextTableSections(kind string, lines []string) []string {
 	}
 	block := []string{}
 	flush := func() {
-		if table, ok := richImageTable(section, block); ok {
+		if table, ok := richImageTable(kind, section, block); ok {
 			out = append(out, table...)
 		} else {
 			out = append(out, block...)
@@ -189,7 +205,7 @@ func richTextTableSections(kind string, lines []string) []string {
 	return out
 }
 
-func richImageTable(section string, lines []string) ([]string, bool) {
+func richImageTable(kind, section string, lines []string) ([]string, bool) {
 	data := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if strings.TrimSpace(line) != "" {
@@ -202,7 +218,11 @@ func richImageTable(section string, lines []string) ([]string, bool) {
 
 	var headers []string
 	var cellsFor func(string) ([]string, bool)
-	switch richImageSectionKind(section) {
+	sectionKind := richImageSectionKind(section)
+	if sectionKind == "" && (kind == "homework" || kind == "exam") {
+		sectionKind = kind
+	}
+	switch sectionKind {
 	case "schedule":
 		headers = []string{"校区", "教室", "时间", "课程"}
 		cellsFor = overviewScheduleRichTableCells
@@ -444,11 +464,22 @@ func successfulImageText(text string) bool {
 		"Life @ USTC API unavailable",
 		"课表查不到：",
 		"待办查不到：",
+		"作业查不到：",
+		"考试查不到：",
+		"下一节课查不到：",
+		"教学班查不到：",
 		"今日安排查不到：",
 		"概览查不到：",
 		"近期截止查不到：",
 		"校车查不到：",
 		"今天后面没查到校车。",
+		"没有作业。",
+		"没有未完成作业。",
+		"该教学班没有作业。",
+		"没有订阅课程考试。",
+		"该教学班没有考试。",
+		"接下来一周没查到课。",
+		"需要提供教学班 JW ID。",
 	}
 	for _, prefix := range rejectPrefixes {
 		if strings.HasPrefix(text, prefix) {
@@ -469,4 +500,8 @@ func todoImageArgs(args []string) bool {
 		_, ok := normalizeTodoPriority(args[0])
 		return ok
 	}
+}
+
+func homeworkImageArgs(args []string) bool {
+	return !firstArgIn(args, "help", "done", "undo")
 }

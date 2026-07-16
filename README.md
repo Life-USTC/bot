@@ -119,9 +119,10 @@ sure the callback can reach `QQ_BOT_WEBHOOK_ADDR`. The websocket gateway can
 remain enabled for diagnostics, but it is not the primary receive path.
 
 Set `BOT_ENABLE_IMAGE_RESPONSES=true` plus `BOT_PUBLIC_BASE_URL=https://<public-host>`
-to let schedule, todo list, overview, dashboard, and upcoming-deadline replies
-send a short-lived PNG image before falling back to text. Route `/media/*` from
-the public host to `BOT_MEDIA_ADDR`. The runtime image installs
+to let schedule, next-class, todo list, homework list, exam list, overview,
+dashboard, upcoming-deadline, bus timetable, and reminder replies send a
+short-lived PNG image before falling back to text. Route `/media/*` from the
+public host to `BOT_MEDIA_ADDR`. The runtime image installs
 `fonts-noto-cjk` and `fonts-firacode`; set `BOT_IMAGE_FONT_PATH` only when
 overriding the default Chinese font.
 
