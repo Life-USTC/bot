@@ -1975,6 +1975,30 @@ func TestHandleCurriculumConfirmsNoClassWhenSubscriptionsExist(t *testing.T) {
 	}
 }
 
+func TestParseScheduleDateTokenSupportsDottedFullDate(t *testing.T) {
+	base := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
+	parsed, ok := parseScheduleDateToken("date:2022.05.03", base)
+	if !ok {
+		t.Fatal("date was not parsed")
+	}
+	if got := parsed.Format("2006-01-02"); got != "2022-05-03" {
+		t.Fatalf("parsed date = %q, want 2022-05-03", got)
+	}
+}
+
+func TestCurriculumRejectsInvalidDateInsteadOfUsingToday(t *testing.T) {
+	base := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
+	reply := (Handler{}).curriculumAt(
+		context.Background(),
+		testIdentity(),
+		[]string{"2022.05.99"},
+		base,
+	)
+	if !strings.Contains(reply, "日期格式不太对") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
 func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -2705,6 +2729,7 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"课表明天":              {"tomorrow"},
 		"明日kb":              {"tomorrow"},
 		"课表 6.23":           {"date:6.23"},
+		"课表 2022.05.03":     {"date:2022.05.03"},
 		"6.23 课表":           {"date:6.23"},
 		"课表6月23日":           {"date:6月23日"},
 	}

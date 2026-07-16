@@ -674,8 +674,17 @@ func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
 	if parsed, err := time.ParseInLocation("2006/1/2", value, loc); err == nil {
 		return parsed, true
 	}
-	normalized := strings.NewReplacer("月", "-", "日", "", "/", "-", ".", "-").Replace(value)
+	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "/", "-", ".", "-").Replace(value)
 	parts := strings.Split(normalized, "-")
+	year := base.Year()
+	if len(parts) == 3 {
+		parsedYear, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil || parsedYear < 1 {
+			return time.Time{}, false
+		}
+		year = parsedYear
+		parts = parts[1:]
+	}
 	if len(parts) != 2 {
 		return time.Time{}, false
 	}
@@ -684,8 +693,8 @@ func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
 	if errMonth != nil || errDay != nil || month < 1 || month > 12 || day < 1 || day > 31 {
 		return time.Time{}, false
 	}
-	parsed := time.Date(base.Year(), time.Month(month), day, 0, 0, 0, 0, loc)
-	if parsed.Month() != time.Month(month) || parsed.Day() != day {
+	parsed := time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc)
+	if parsed.Year() != year || parsed.Month() != time.Month(month) || parsed.Day() != day {
 		return time.Time{}, false
 	}
 	return parsed, true
@@ -2429,6 +2438,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 			"今天课表",
 			"明天课表",
 			"课表 6.23",
+			"课表 2022.05.03",
 			"下一节课",
 		}, "\n")
 	}
@@ -2451,6 +2461,8 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 		}
 		day = parsed
 		title = textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
+	} else if target != "today" {
+		return "日期格式不太对。可以发：课表 6.23 或课表 2022.05.03"
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
