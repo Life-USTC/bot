@@ -18,46 +18,45 @@ import (
 )
 
 const (
-	BearerAuthScopes         bearerAuthContextKey         = "bearerAuth.Scopes"
-	CalendarFeedTokenScopes  calendarFeedTokenContextKey  = "calendarFeedToken.Scopes"
-	InternalBearerAuthScopes internalBearerAuthContextKey = "internalBearerAuth.Scopes"
-	McpBearerAuthScopes      mcpBearerAuthContextKey      = "mcpBearerAuth.Scopes"
-	SessionCookieScopes      sessionCookieContextKey      = "sessionCookie.Scopes"
+	BearerAuthScopes        bearerAuthContextKey        = "bearerAuth.Scopes"
+	CalendarFeedTokenScopes calendarFeedTokenContextKey = "calendarFeedToken.Scopes"
+	McpBearerAuthScopes     mcpBearerAuthContextKey     = "mcpBearerAuth.Scopes"
+	SessionCookieScopes     sessionCookieContextKey     = "sessionCookie.Scopes"
 )
 
-// Defines values for AdminCommentsResponseSchemaCommentsStatus.
+// Defines values for AdminCommentsResponseSchemaDataStatus.
 const (
-	AdminCommentsResponseSchemaCommentsStatusActive     AdminCommentsResponseSchemaCommentsStatus = "active"
-	AdminCommentsResponseSchemaCommentsStatusDeleted    AdminCommentsResponseSchemaCommentsStatus = "deleted"
-	AdminCommentsResponseSchemaCommentsStatusSoftbanned AdminCommentsResponseSchemaCommentsStatus = "softbanned"
+	AdminCommentsResponseSchemaDataStatusActive     AdminCommentsResponseSchemaDataStatus = "active"
+	AdminCommentsResponseSchemaDataStatusDeleted    AdminCommentsResponseSchemaDataStatus = "deleted"
+	AdminCommentsResponseSchemaDataStatusSoftbanned AdminCommentsResponseSchemaDataStatus = "softbanned"
 )
 
-// Valid indicates whether the value is a known member of the AdminCommentsResponseSchemaCommentsStatus enum.
-func (e AdminCommentsResponseSchemaCommentsStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the AdminCommentsResponseSchemaDataStatus enum.
+func (e AdminCommentsResponseSchemaDataStatus) Valid() bool {
 	switch e {
-	case AdminCommentsResponseSchemaCommentsStatusActive:
+	case AdminCommentsResponseSchemaDataStatusActive:
 		return true
-	case AdminCommentsResponseSchemaCommentsStatusDeleted:
+	case AdminCommentsResponseSchemaDataStatusDeleted:
 		return true
-	case AdminCommentsResponseSchemaCommentsStatusSoftbanned:
+	case AdminCommentsResponseSchemaDataStatusSoftbanned:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for AdminCommentsResponseSchemaCommentsVisibility.
+// Defines values for AdminCommentsResponseSchemaDataVisibility.
 const (
-	AdminCommentsResponseSchemaCommentsVisibilityLoggedInOnly AdminCommentsResponseSchemaCommentsVisibility = "logged_in_only"
-	AdminCommentsResponseSchemaCommentsVisibilityPublic       AdminCommentsResponseSchemaCommentsVisibility = "public"
+	AdminCommentsResponseSchemaDataVisibilityLoggedInOnly AdminCommentsResponseSchemaDataVisibility = "logged_in_only"
+	AdminCommentsResponseSchemaDataVisibilityPublic       AdminCommentsResponseSchemaDataVisibility = "public"
 )
 
-// Valid indicates whether the value is a known member of the AdminCommentsResponseSchemaCommentsVisibility enum.
-func (e AdminCommentsResponseSchemaCommentsVisibility) Valid() bool {
+// Valid indicates whether the value is a known member of the AdminCommentsResponseSchemaDataVisibility enum.
+func (e AdminCommentsResponseSchemaDataVisibility) Valid() bool {
 	switch e {
-	case AdminCommentsResponseSchemaCommentsVisibilityLoggedInOnly:
+	case AdminCommentsResponseSchemaDataVisibilityLoggedInOnly:
 		return true
-	case AdminCommentsResponseSchemaCommentsVisibilityPublic:
+	case AdminCommentsResponseSchemaDataVisibilityPublic:
 		return true
 	default:
 		return false
@@ -487,15 +486,15 @@ func (e CommentUpdateRequestSchemaVisibility) Valid() bool {
 	}
 }
 
-// Defines values for CommentsListResponseSchemaTargetTargetId2.
+// Defines values for CommentsListResponseSchemaMetaTargetTargetId2.
 const (
-	CommentsListResponseSchemaTargetTargetId2LessThannil CommentsListResponseSchemaTargetTargetId2 = "<nil>"
+	CommentsListResponseSchemaMetaTargetTargetId2LessThannil CommentsListResponseSchemaMetaTargetTargetId2 = "<nil>"
 )
 
-// Valid indicates whether the value is a known member of the CommentsListResponseSchemaTargetTargetId2 enum.
-func (e CommentsListResponseSchemaTargetTargetId2) Valid() bool {
+// Valid indicates whether the value is a known member of the CommentsListResponseSchemaMetaTargetTargetId2 enum.
+func (e CommentsListResponseSchemaMetaTargetTargetId2) Valid() bool {
 	switch e {
-	case CommentsListResponseSchemaTargetTargetId2LessThannil:
+	case CommentsListResponseSchemaMetaTargetTargetId2LessThannil:
 		return true
 	default:
 		return false
@@ -892,42 +891,6 @@ const (
 func (e OauthTokenResponseSchemaTokenType) Valid() bool {
 	switch e {
 	case Bearer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ReadinessResponseSchemaChecksDatabaseStatus.
-const (
-	ReadinessResponseSchemaChecksDatabaseStatusError ReadinessResponseSchemaChecksDatabaseStatus = "error"
-	ReadinessResponseSchemaChecksDatabaseStatusOk    ReadinessResponseSchemaChecksDatabaseStatus = "ok"
-)
-
-// Valid indicates whether the value is a known member of the ReadinessResponseSchemaChecksDatabaseStatus enum.
-func (e ReadinessResponseSchemaChecksDatabaseStatus) Valid() bool {
-	switch e {
-	case ReadinessResponseSchemaChecksDatabaseStatusError:
-		return true
-	case ReadinessResponseSchemaChecksDatabaseStatusOk:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ReadinessResponseSchemaStatus.
-const (
-	ReadinessResponseSchemaStatusDegraded ReadinessResponseSchemaStatus = "degraded"
-	ReadinessResponseSchemaStatusOk       ReadinessResponseSchemaStatus = "ok"
-)
-
-// Valid indicates whether the value is a known member of the ReadinessResponseSchemaStatus enum.
-func (e ReadinessResponseSchemaStatus) Valid() bool {
-	switch e {
-	case ReadinessResponseSchemaStatusDegraded:
-		return true
-	case ReadinessResponseSchemaStatusOk:
 		return true
 	default:
 		return false
@@ -1620,7 +1583,7 @@ type UnderscoreUnderscoreSchema1 struct {
 
 // AdminCommentsResponseSchema defines model for adminCommentsResponseSchema.
 type AdminCommentsResponseSchema struct {
-	Comments []struct {
+	Data []struct {
 		AuthorName *string `json:"authorName"`
 		Body       string  `json:"body"`
 		Course     *struct {
@@ -1670,8 +1633,8 @@ type AdminCommentsResponseSchema struct {
 				NameCn string `json:"nameCn"`
 			} `json:"teacher"`
 		} `json:"sectionTeacher"`
-		SectionTeacherId *int                                      `json:"sectionTeacherId"`
-		Status           AdminCommentsResponseSchemaCommentsStatus `json:"status"`
+		SectionTeacherId *int                                  `json:"sectionTeacherId"`
+		Status           AdminCommentsResponseSchemaDataStatus `json:"status"`
 		Teacher          *struct {
 			Id     int    `json:"id"`
 			NameCn string `json:"nameCn"`
@@ -1681,16 +1644,22 @@ type AdminCommentsResponseSchema struct {
 		User      *struct {
 			Name *string `json:"name"`
 		} `json:"user"`
-		UserId     *string                                       `json:"userId"`
-		Visibility AdminCommentsResponseSchemaCommentsVisibility `json:"visibility"`
-	} `json:"comments"`
+		UserId     *string                                   `json:"userId"`
+		Visibility AdminCommentsResponseSchemaDataVisibility `json:"visibility"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
-// AdminCommentsResponseSchemaCommentsStatus defines model for AdminCommentsResponseSchema.Comments.Status.
-type AdminCommentsResponseSchemaCommentsStatus string
+// AdminCommentsResponseSchemaDataStatus defines model for AdminCommentsResponseSchema.Data.Status.
+type AdminCommentsResponseSchemaDataStatus string
 
-// AdminCommentsResponseSchemaCommentsVisibility defines model for AdminCommentsResponseSchema.Comments.Visibility.
-type AdminCommentsResponseSchemaCommentsVisibility string
+// AdminCommentsResponseSchemaDataVisibility defines model for AdminCommentsResponseSchema.Data.Visibility.
+type AdminCommentsResponseSchemaDataVisibility string
 
 // AdminCreateSuspensionRequestSchema defines model for adminCreateSuspensionRequestSchema.
 type AdminCreateSuspensionRequestSchema struct {
@@ -1713,7 +1682,7 @@ type AdminCreateSuspensionRequestSchema_ExpiresAt struct {
 
 // AdminDescriptionsResponseSchema defines model for adminDescriptionsResponseSchema.
 type AdminDescriptionsResponseSchema struct {
-	Descriptions []struct {
+	Data []struct {
 		Content string `json:"content"`
 		Course  *struct {
 			Code   string `json:"code"`
@@ -1761,12 +1730,18 @@ type AdminDescriptionsResponseSchema struct {
 		} `json:"teacher"`
 		TeacherId *int      `json:"teacherId"`
 		UpdatedAt time.Time `json:"updatedAt"`
-	} `json:"descriptions"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
 // AdminHomeworksResponseSchema defines model for adminHomeworksResponseSchema.
 type AdminHomeworksResponseSchema struct {
-	Homeworks []struct {
+	Data []struct {
 		CreatedAt time.Time `json:"createdAt"`
 		CreatedBy *struct {
 			Id       string  `json:"id"`
@@ -1801,7 +1776,13 @@ type AdminHomeworksResponseSchema struct {
 			Name     *string `json:"name"`
 			Username *string `json:"username"`
 		} `json:"updatedBy"`
-	} `json:"homeworks"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
 // AdminModerateCommentRequestSchema defines model for adminModerateCommentRequestSchema.
@@ -1924,7 +1905,7 @@ type AdminSuspensionResponseSchema struct {
 
 // AdminSuspensionsResponseSchema defines model for adminSuspensionsResponseSchema.
 type AdminSuspensionsResponseSchema struct {
-	Suspensions []struct {
+	Data []struct {
 		CreatedAt   time.Time  `json:"createdAt"`
 		CreatedById *string    `json:"createdById"`
 		ExpiresAt   *time.Time `json:"expiresAt"`
@@ -1938,7 +1919,7 @@ type AdminSuspensionsResponseSchema struct {
 			Name *string `json:"name"`
 		} `json:"user,omitempty"`
 		UserId string `json:"userId"`
-	} `json:"suspensions"`
+	} `json:"data"`
 }
 
 // AdminUpdateUserRequestSchema defines model for adminUpdateUserRequestSchema.
@@ -3829,55 +3810,63 @@ type CommentUpdateResponseSchema struct {
 
 // CommentsListResponseSchema defines model for commentsListResponseSchema.
 type CommentsListResponseSchema struct {
-	Comments    []UnderscoreUnderscoreSchema1 `json:"comments"`
-	HiddenCount int                           `json:"hiddenCount"`
-	Target      struct {
-		CourseId                  *int                                       `json:"courseId"`
-		CourseJwId                *int                                       `json:"courseJwId"`
-		CourseName                *string                                    `json:"courseName"`
-		HomeworkId                *string                                    `json:"homeworkId"`
-		HomeworkSectionCode       *string                                    `json:"homeworkSectionCode"`
-		HomeworkSectionJwId       *int                                       `json:"homeworkSectionJwId"`
-		HomeworkTitle             *string                                    `json:"homeworkTitle"`
-		SectionCode               *string                                    `json:"sectionCode"`
-		SectionId                 *int                                       `json:"sectionId"`
-		SectionJwId               *int                                       `json:"sectionJwId"`
-		SectionTeacherCourseJwId  *int                                       `json:"sectionTeacherCourseJwId"`
-		SectionTeacherCourseName  *string                                    `json:"sectionTeacherCourseName"`
-		SectionTeacherId          *int                                       `json:"sectionTeacherId"`
-		SectionTeacherSectionCode *string                                    `json:"sectionTeacherSectionCode"`
-		SectionTeacherSectionId   *int                                       `json:"sectionTeacherSectionId"`
-		SectionTeacherSectionJwId *int                                       `json:"sectionTeacherSectionJwId"`
-		SectionTeacherTeacherId   *int                                       `json:"sectionTeacherTeacherId"`
-		SectionTeacherTeacherName *string                                    `json:"sectionTeacherTeacherName"`
-		TargetId                  CommentsListResponseSchema_Target_TargetId `json:"targetId"`
-		TeacherId                 *int                                       `json:"teacherId"`
-		TeacherName               *string                                    `json:"teacherName"`
-		Type                      string                                     `json:"type"`
-	} `json:"target"`
-	Viewer struct {
-		Image               *string    `json:"image"`
-		IsAdmin             bool       `json:"isAdmin"`
-		IsAuthenticated     bool       `json:"isAuthenticated"`
-		IsSuspended         bool       `json:"isSuspended"`
-		Name                *string    `json:"name"`
-		SuspensionExpiresAt *time.Time `json:"suspensionExpiresAt"`
-		SuspensionReason    *string    `json:"suspensionReason"`
-		UserId              *string    `json:"userId"`
-	} `json:"viewer"`
+	Data []UnderscoreUnderscoreSchema1 `json:"data"`
+	Meta struct {
+		HiddenCount int `json:"hiddenCount"`
+		Target      struct {
+			CourseId                  *int                                            `json:"courseId"`
+			CourseJwId                *int                                            `json:"courseJwId"`
+			CourseName                *string                                         `json:"courseName"`
+			HomeworkId                *string                                         `json:"homeworkId"`
+			HomeworkSectionCode       *string                                         `json:"homeworkSectionCode"`
+			HomeworkSectionJwId       *int                                            `json:"homeworkSectionJwId"`
+			HomeworkTitle             *string                                         `json:"homeworkTitle"`
+			SectionCode               *string                                         `json:"sectionCode"`
+			SectionId                 *int                                            `json:"sectionId"`
+			SectionJwId               *int                                            `json:"sectionJwId"`
+			SectionTeacherCourseJwId  *int                                            `json:"sectionTeacherCourseJwId"`
+			SectionTeacherCourseName  *string                                         `json:"sectionTeacherCourseName"`
+			SectionTeacherId          *int                                            `json:"sectionTeacherId"`
+			SectionTeacherSectionCode *string                                         `json:"sectionTeacherSectionCode"`
+			SectionTeacherSectionId   *int                                            `json:"sectionTeacherSectionId"`
+			SectionTeacherSectionJwId *int                                            `json:"sectionTeacherSectionJwId"`
+			SectionTeacherTeacherId   *int                                            `json:"sectionTeacherTeacherId"`
+			SectionTeacherTeacherName *string                                         `json:"sectionTeacherTeacherName"`
+			TargetId                  CommentsListResponseSchema_Meta_Target_TargetId `json:"targetId"`
+			TeacherId                 *int                                            `json:"teacherId"`
+			TeacherName               *string                                         `json:"teacherName"`
+			Type                      string                                          `json:"type"`
+		} `json:"target"`
+		Viewer struct {
+			Image               *string    `json:"image"`
+			IsAdmin             bool       `json:"isAdmin"`
+			IsAuthenticated     bool       `json:"isAuthenticated"`
+			IsSuspended         bool       `json:"isSuspended"`
+			Name                *string    `json:"name"`
+			SuspensionExpiresAt *time.Time `json:"suspensionExpiresAt"`
+			SuspensionReason    *string    `json:"suspensionReason"`
+			UserId              *string    `json:"userId"`
+		} `json:"viewer"`
+	} `json:"meta"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
-// CommentsListResponseSchemaTargetTargetId0 defines model for .
-type CommentsListResponseSchemaTargetTargetId0 = int
+// CommentsListResponseSchemaMetaTargetTargetId0 defines model for .
+type CommentsListResponseSchemaMetaTargetTargetId0 = int
 
-// CommentsListResponseSchemaTargetTargetId1 defines model for .
-type CommentsListResponseSchemaTargetTargetId1 = string
+// CommentsListResponseSchemaMetaTargetTargetId1 defines model for .
+type CommentsListResponseSchemaMetaTargetTargetId1 = string
 
-// CommentsListResponseSchemaTargetTargetId2 defines model for CommentsListResponseSchema.Target.TargetId.2.
-type CommentsListResponseSchemaTargetTargetId2 string
+// CommentsListResponseSchemaMetaTargetTargetId2 defines model for CommentsListResponseSchema.Meta.Target.TargetId.2.
+type CommentsListResponseSchemaMetaTargetTargetId2 string
 
-// CommentsListResponseSchema_Target_TargetId defines model for CommentsListResponseSchema.Target.TargetId.
-type CommentsListResponseSchema_Target_TargetId struct {
+// CommentsListResponseSchema_Meta_Target_TargetId defines model for CommentsListResponseSchema.Meta.Target.TargetId.
+type CommentsListResponseSchema_Meta_Target_TargetId struct {
 	union json.RawMessage
 }
 
@@ -5953,29 +5942,6 @@ type PublicUserProfileResponseSchema struct {
 	} `json:"weeks"`
 }
 
-// ReadinessResponseSchema defines model for readinessResponseSchema.
-type ReadinessResponseSchema struct {
-	Checks struct {
-		Database struct {
-			DurationMs float32                                     `json:"durationMs"`
-			Status     ReadinessResponseSchemaChecksDatabaseStatus `json:"status"`
-		} `json:"database"`
-		Storage struct {
-			Binding string  `json:"binding"`
-			Reason  *string `json:"reason,omitempty"`
-			Status  string  `json:"status"`
-		} `json:"storage"`
-	} `json:"checks"`
-	Status        ReadinessResponseSchemaStatus `json:"status"`
-	UptimeSeconds float32                       `json:"uptimeSeconds"`
-}
-
-// ReadinessResponseSchemaChecksDatabaseStatus defines model for ReadinessResponseSchema.Checks.Database.Status.
-type ReadinessResponseSchemaChecksDatabaseStatus string
-
-// ReadinessResponseSchemaStatus defines model for ReadinessResponseSchema.Status.
-type ReadinessResponseSchemaStatus string
-
 // SectionDetailSchema defines model for sectionDetailSchema.
 type SectionDetailSchema struct {
 	ActualPeriods *int `json:"actualPeriods"`
@@ -6902,16 +6868,24 @@ type UploadRenameResponseSchema struct {
 
 // UploadsListResponseSchema defines model for uploadsListResponseSchema.
 type UploadsListResponseSchema struct {
-	MaxFileSizeBytes int `json:"maxFileSizeBytes"`
-	QuotaBytes       int `json:"quotaBytes"`
-	Uploads          []struct {
+	Data []struct {
 		CreatedAt time.Time `json:"createdAt"`
 		Filename  string    `json:"filename"`
 		Id        string    `json:"id"`
 		Key       string    `json:"key"`
 		Size      int       `json:"size"`
-	} `json:"uploads"`
-	UsedBytes int `json:"usedBytes"`
+	} `json:"data"`
+	Meta struct {
+		MaxFileSizeBytes int `json:"maxFileSizeBytes"`
+		QuotaBytes       int `json:"quotaBytes"`
+		UsedBytes        int `json:"usedBytes"`
+	} `json:"meta"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
@@ -6919,9 +6893,6 @@ type bearerAuthContextKey string
 
 // calendarFeedTokenContextKey is the context key for calendarFeedToken security scheme
 type calendarFeedTokenContextKey string
-
-// internalBearerAuthContextKey is the context key for internalBearerAuth security scheme
-type internalBearerAuthContextKey string
 
 // mcpBearerAuthContextKey is the context key for mcpBearerAuth security scheme
 type mcpBearerAuthContextKey string
@@ -6932,7 +6903,13 @@ type sessionCookieContextKey string
 // ListAdminCommentsParams defines parameters for ListAdminComments.
 type ListAdminCommentsParams struct {
 	Status *ListAdminCommentsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
-	Limit  *int64                         `form:"limit,omitempty" json:"limit,omitempty"`
+	Page   *int64                         `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListAdminCommentsParamsStatus defines parameters for ListAdminComments.
@@ -6943,7 +6920,13 @@ type ListAdminDescriptionsParams struct {
 	TargetType *ListAdminDescriptionsParamsTargetType `form:"targetType,omitempty" json:"targetType,omitempty"`
 	HasContent *ListAdminDescriptionsParamsHasContent `form:"hasContent,omitempty" json:"hasContent,omitempty"`
 	Search     *string                                `form:"search,omitempty" json:"search,omitempty"`
-	Limit      *int64                                 `form:"limit,omitempty" json:"limit,omitempty"`
+	Page       *int64                                 `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListAdminDescriptionsParamsTargetType defines parameters for ListAdminDescriptions.
@@ -6956,7 +6939,13 @@ type ListAdminDescriptionsParamsHasContent string
 type ListAdminHomeworksParams struct {
 	Status *ListAdminHomeworksParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 	Search *string                         `form:"search,omitempty" json:"search,omitempty"`
-	Limit  *int64                          `form:"limit,omitempty" json:"limit,omitempty"`
+	Page   *int64                          `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListAdminHomeworksParamsStatus defines parameters for ListAdminHomeworks.
@@ -6966,7 +6955,12 @@ type ListAdminHomeworksParamsStatus string
 type ListAdminUsersParams struct {
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 	Page   *int64  `form:"page,omitempty" json:"page,omitempty"`
-	Limit  *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // QueryBusParams defines parameters for QueryBus.
@@ -7016,6 +7010,13 @@ type ListCommentsParams struct {
 	TeacherId        *int64                       `form:"teacherId,omitempty" json:"teacherId,omitempty"`
 	HomeworkId       *string                      `form:"homeworkId,omitempty" json:"homeworkId,omitempty"`
 	SectionTeacherId *int64                       `form:"sectionTeacherId,omitempty" json:"sectionTeacherId,omitempty"`
+	Page             *int64                       `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListCommentsParamsTargetType defines parameters for ListComments.
@@ -7036,7 +7037,12 @@ type ListCoursesParams struct {
 	CategoryId       *int64  `form:"categoryId,omitempty" json:"categoryId,omitempty"`
 	ClassTypeId      *int64  `form:"classTypeId,omitempty" json:"classTypeId,omitempty"`
 	Page             *int64  `form:"page,omitempty" json:"page,omitempty"`
-	Limit            *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // VisitDashboardLinkParams defines parameters for VisitDashboardLink.
@@ -7104,7 +7110,12 @@ type ListSchedulesParams struct {
 	DateFrom    *string `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
 	DateTo      *string `form:"dateTo,omitempty" json:"dateTo,omitempty"`
 	Page        *int64  `form:"page,omitempty" json:"page,omitempty"`
-	Limit       *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListSectionsParams defines parameters for ListSections.
@@ -7121,7 +7132,12 @@ type ListSectionsParams struct {
 	Ids          *string `form:"ids,omitempty" json:"ids,omitempty"`
 	JwIds        *string `form:"jwIds,omitempty" json:"jwIds,omitempty"`
 	Page         *int64  `form:"page,omitempty" json:"page,omitempty"`
-	Limit        *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // GetSectionsCalendarParams defines parameters for GetSectionsCalendar.
@@ -7138,7 +7154,12 @@ type GetSectionSchedulesParams struct {
 
 // ListSemestersParams defines parameters for ListSemesters.
 type ListSemestersParams struct {
-	Page  *int64 `form:"page,omitempty" json:"page,omitempty"`
+	Page *int64 `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
 	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
@@ -7147,7 +7168,12 @@ type ListTeachersParams struct {
 	DepartmentId *int64  `form:"departmentId,omitempty" json:"departmentId,omitempty"`
 	Search       *string `form:"search,omitempty" json:"search,omitempty"`
 	Page         *int64  `form:"page,omitempty" json:"page,omitempty"`
-	Limit        *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListTodosParams defines parameters for ListTodos.
@@ -7164,6 +7190,17 @@ type ListTodosParamsCompleted string
 
 // ListTodosParamsPriority defines parameters for ListTodos.
 type ListTodosParamsPriority string
+
+// ListUploadsParams defines parameters for ListUploads.
+type ListUploadsParams struct {
+	Page *int64 `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // PutApiUploadsObjectParams defines parameters for PutApiUploadsObject.
 type PutApiUploadsObjectParams struct {
@@ -8028,22 +8065,22 @@ func (t *CommentCreateRequestSchema_TeacherId) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// AsCommentsListResponseSchemaTargetTargetId0 returns the union data inside the CommentsListResponseSchema_Target_TargetId as a CommentsListResponseSchemaTargetTargetId0
-func (t CommentsListResponseSchema_Target_TargetId) AsCommentsListResponseSchemaTargetTargetId0() (CommentsListResponseSchemaTargetTargetId0, error) {
-	var body CommentsListResponseSchemaTargetTargetId0
+// AsCommentsListResponseSchemaMetaTargetTargetId0 returns the union data inside the CommentsListResponseSchema_Meta_Target_TargetId as a CommentsListResponseSchemaMetaTargetTargetId0
+func (t CommentsListResponseSchema_Meta_Target_TargetId) AsCommentsListResponseSchemaMetaTargetTargetId0() (CommentsListResponseSchemaMetaTargetTargetId0, error) {
+	var body CommentsListResponseSchemaMetaTargetTargetId0
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromCommentsListResponseSchemaTargetTargetId0 overwrites any union data inside the CommentsListResponseSchema_Target_TargetId as the provided CommentsListResponseSchemaTargetTargetId0
-func (t *CommentsListResponseSchema_Target_TargetId) FromCommentsListResponseSchemaTargetTargetId0(v CommentsListResponseSchemaTargetTargetId0) error {
+// FromCommentsListResponseSchemaMetaTargetTargetId0 overwrites any union data inside the CommentsListResponseSchema_Meta_Target_TargetId as the provided CommentsListResponseSchemaMetaTargetTargetId0
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) FromCommentsListResponseSchemaMetaTargetTargetId0(v CommentsListResponseSchemaMetaTargetTargetId0) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeCommentsListResponseSchemaTargetTargetId0 performs a merge with any union data inside the CommentsListResponseSchema_Target_TargetId, using the provided CommentsListResponseSchemaTargetTargetId0
-func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSchemaTargetTargetId0(v CommentsListResponseSchemaTargetTargetId0) error {
+// MergeCommentsListResponseSchemaMetaTargetTargetId0 performs a merge with any union data inside the CommentsListResponseSchema_Meta_Target_TargetId, using the provided CommentsListResponseSchemaMetaTargetTargetId0
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) MergeCommentsListResponseSchemaMetaTargetTargetId0(v CommentsListResponseSchemaMetaTargetTargetId0) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -8054,22 +8091,22 @@ func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSc
 	return err
 }
 
-// AsCommentsListResponseSchemaTargetTargetId1 returns the union data inside the CommentsListResponseSchema_Target_TargetId as a CommentsListResponseSchemaTargetTargetId1
-func (t CommentsListResponseSchema_Target_TargetId) AsCommentsListResponseSchemaTargetTargetId1() (CommentsListResponseSchemaTargetTargetId1, error) {
-	var body CommentsListResponseSchemaTargetTargetId1
+// AsCommentsListResponseSchemaMetaTargetTargetId1 returns the union data inside the CommentsListResponseSchema_Meta_Target_TargetId as a CommentsListResponseSchemaMetaTargetTargetId1
+func (t CommentsListResponseSchema_Meta_Target_TargetId) AsCommentsListResponseSchemaMetaTargetTargetId1() (CommentsListResponseSchemaMetaTargetTargetId1, error) {
+	var body CommentsListResponseSchemaMetaTargetTargetId1
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromCommentsListResponseSchemaTargetTargetId1 overwrites any union data inside the CommentsListResponseSchema_Target_TargetId as the provided CommentsListResponseSchemaTargetTargetId1
-func (t *CommentsListResponseSchema_Target_TargetId) FromCommentsListResponseSchemaTargetTargetId1(v CommentsListResponseSchemaTargetTargetId1) error {
+// FromCommentsListResponseSchemaMetaTargetTargetId1 overwrites any union data inside the CommentsListResponseSchema_Meta_Target_TargetId as the provided CommentsListResponseSchemaMetaTargetTargetId1
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) FromCommentsListResponseSchemaMetaTargetTargetId1(v CommentsListResponseSchemaMetaTargetTargetId1) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeCommentsListResponseSchemaTargetTargetId1 performs a merge with any union data inside the CommentsListResponseSchema_Target_TargetId, using the provided CommentsListResponseSchemaTargetTargetId1
-func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSchemaTargetTargetId1(v CommentsListResponseSchemaTargetTargetId1) error {
+// MergeCommentsListResponseSchemaMetaTargetTargetId1 performs a merge with any union data inside the CommentsListResponseSchema_Meta_Target_TargetId, using the provided CommentsListResponseSchemaMetaTargetTargetId1
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) MergeCommentsListResponseSchemaMetaTargetTargetId1(v CommentsListResponseSchemaMetaTargetTargetId1) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -8080,22 +8117,22 @@ func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSc
 	return err
 }
 
-// AsCommentsListResponseSchemaTargetTargetId2 returns the union data inside the CommentsListResponseSchema_Target_TargetId as a CommentsListResponseSchemaTargetTargetId2
-func (t CommentsListResponseSchema_Target_TargetId) AsCommentsListResponseSchemaTargetTargetId2() (CommentsListResponseSchemaTargetTargetId2, error) {
-	var body CommentsListResponseSchemaTargetTargetId2
+// AsCommentsListResponseSchemaMetaTargetTargetId2 returns the union data inside the CommentsListResponseSchema_Meta_Target_TargetId as a CommentsListResponseSchemaMetaTargetTargetId2
+func (t CommentsListResponseSchema_Meta_Target_TargetId) AsCommentsListResponseSchemaMetaTargetTargetId2() (CommentsListResponseSchemaMetaTargetTargetId2, error) {
+	var body CommentsListResponseSchemaMetaTargetTargetId2
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromCommentsListResponseSchemaTargetTargetId2 overwrites any union data inside the CommentsListResponseSchema_Target_TargetId as the provided CommentsListResponseSchemaTargetTargetId2
-func (t *CommentsListResponseSchema_Target_TargetId) FromCommentsListResponseSchemaTargetTargetId2(v CommentsListResponseSchemaTargetTargetId2) error {
+// FromCommentsListResponseSchemaMetaTargetTargetId2 overwrites any union data inside the CommentsListResponseSchema_Meta_Target_TargetId as the provided CommentsListResponseSchemaMetaTargetTargetId2
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) FromCommentsListResponseSchemaMetaTargetTargetId2(v CommentsListResponseSchemaMetaTargetTargetId2) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeCommentsListResponseSchemaTargetTargetId2 performs a merge with any union data inside the CommentsListResponseSchema_Target_TargetId, using the provided CommentsListResponseSchemaTargetTargetId2
-func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSchemaTargetTargetId2(v CommentsListResponseSchemaTargetTargetId2) error {
+// MergeCommentsListResponseSchemaMetaTargetTargetId2 performs a merge with any union data inside the CommentsListResponseSchema_Meta_Target_TargetId, using the provided CommentsListResponseSchemaMetaTargetTargetId2
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) MergeCommentsListResponseSchemaMetaTargetTargetId2(v CommentsListResponseSchemaMetaTargetTargetId2) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -8106,12 +8143,12 @@ func (t *CommentsListResponseSchema_Target_TargetId) MergeCommentsListResponseSc
 	return err
 }
 
-func (t CommentsListResponseSchema_Target_TargetId) MarshalJSON() ([]byte, error) {
+func (t CommentsListResponseSchema_Meta_Target_TargetId) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
 }
 
-func (t *CommentsListResponseSchema_Target_TargetId) UnmarshalJSON(b []byte) error {
+func (t *CommentsListResponseSchema_Meta_Target_TargetId) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -10415,14 +10452,8 @@ type ClientInterface interface {
 	// GetMetadata request
 	GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListMetrics request
-	ListMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetOpenApiSpec request
 	GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListReadiness request
-	ListReadiness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSchedules request
 	ListSchedules(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10489,7 +10520,7 @@ type ClientInterface interface {
 	UpdateTodo(ctx context.Context, id string, body UpdateTodoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListUploads request
-	ListUploads(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListUploads(ctx context.Context, params *ListUploadsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateUploadWithBody request with any body
 	CreateUploadWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -11818,32 +11849,8 @@ func (c *Client) GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn)
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListMetricsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetOpenApiSpecRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListReadiness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListReadinessRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -12130,8 +12137,8 @@ func (c *Client) UpdateTodo(ctx context.Context, id string, body UpdateTodoJSONR
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListUploads(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListUploadsRequest(c.Server)
+func (c *Client) ListUploads(ctx context.Context, params *ListUploadsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUploadsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -12746,6 +12753,30 @@ func NewListAdminCommentsRequest(server string, params *ListAdminCommentsParams)
 
 		}
 
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
@@ -12883,6 +12914,30 @@ func NewListAdminDescriptionsRequest(server string, params *ListAdminDescription
 
 		}
 
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
@@ -12999,6 +13054,30 @@ func NewListAdminHomeworksRequest(server string, params *ListAdminHomeworksParam
 		if params.Search != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -13212,6 +13291,18 @@ func NewListAdminUsersRequest(server string, params *ListAdminUsersParams) (*htt
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -14210,6 +14301,42 @@ func NewListCommentsRequest(server string, params *ListCommentsParams) (*http.Re
 
 		}
 
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -14602,6 +14729,18 @@ func NewListCoursesRequest(server string, params *ListCoursesParams) (*http.Requ
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -15845,33 +15984,6 @@ func NewGetMetadataRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewListMetricsRequest generates requests for ListMetrics
-func NewListMetricsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/metrics")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewGetOpenApiSpecRequest generates requests for GetOpenApiSpec
 func NewGetOpenApiSpecRequest(server string) (*http.Request, error) {
 	var err error
@@ -15882,33 +15994,6 @@ func NewGetOpenApiSpecRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/api/openapi")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListReadinessRequest generates requests for ListReadiness
-func NewListReadinessRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/readiness")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16077,6 +16162,18 @@ func NewListSchedulesRequest(server string, params *ListSchedulesParams) (*http.
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -16275,6 +16372,18 @@ func NewListSectionsRequest(server string, params *ListSectionsParams) (*http.Re
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -16627,6 +16736,18 @@ func NewListSemestersRequest(server string, params *ListSemestersParams) (*http.
 
 		}
 
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
@@ -16735,6 +16856,18 @@ func NewListTeachersRequest(server string, params *ListTeachersParams) (*http.Re
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -17108,7 +17241,7 @@ func NewUpdateTodoRequestWithBody(server string, id string, contentType string, 
 }
 
 // NewListUploadsRequest generates requests for ListUploads
-func NewListUploadsRequest(server string) (*http.Request, error) {
+func NewListUploadsRequest(server string, params *ListUploadsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -17124,6 +17257,57 @@ func NewListUploadsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -17849,14 +18033,8 @@ type ClientWithResponsesInterface interface {
 	// GetMetadataWithResponse request
 	GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error)
 
-	// ListMetricsWithResponse request
-	ListMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMetricsResponse, error)
-
 	// GetOpenApiSpecWithResponse request
 	GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error)
-
-	// ListReadinessWithResponse request
-	ListReadinessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReadinessResponse, error)
 
 	// ListSchedulesWithResponse request
 	ListSchedulesWithResponse(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error)
@@ -17923,7 +18101,7 @@ type ClientWithResponsesInterface interface {
 	UpdateTodoWithResponse(ctx context.Context, id string, body UpdateTodoJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTodoResponse, error)
 
 	// ListUploadsWithResponse request
-	ListUploadsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUploadsResponse, error)
+	ListUploadsWithResponse(ctx context.Context, params *ListUploadsParams, reqEditors ...RequestEditorFn) (*ListUploadsResponse, error)
 
 	// CreateUploadWithBodyWithResponse request with any body
 	CreateUploadWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateUploadResponse, error)
@@ -18460,6 +18638,8 @@ type ModerateAdminCommentResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -18526,6 +18706,8 @@ type UpdateAdminDescriptionResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -18591,6 +18773,8 @@ type DeleteAdminHomeworkResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -18651,11 +18835,13 @@ func (r ListAdminSuspensionsResponse) ContentType() string {
 type CreateAdminSuspensionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *AdminSuspensionResponseSchema
+	JSON201      *AdminSuspensionResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -18689,6 +18875,8 @@ type UpdateAdminSuspensionResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -18755,6 +18943,8 @@ type UpdateAdminUserResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19061,6 +19251,8 @@ type SetBusPreferencesResponse struct {
 	JSON200      *BusPreferenceResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19126,6 +19318,8 @@ type DeleteApiCalendarSubscriptionsResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19159,6 +19353,8 @@ type AppendCalendarSubscriptionSectionsResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19191,6 +19387,8 @@ type SetCalendarSubscriptionResponse struct {
 	JSON200      *CalendarSubscriptionCreateResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19224,6 +19422,8 @@ type BatchUpdateCalendarSubscriptionResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19288,6 +19488,8 @@ type PostApiCalendarSubscriptionsImportCodesResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19382,11 +19584,13 @@ func (r ListCommentsResponse) ContentType() string {
 type CreateCommentResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *IdResponseSchema
+	JSON201      *IdResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19420,6 +19624,8 @@ type DeleteApiCommentsBatchResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19453,6 +19659,8 @@ type DeleteCommentResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19519,6 +19727,8 @@ type UpdateCommentResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19552,6 +19762,8 @@ type RemoveCommentReactionResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19586,6 +19798,8 @@ type AddCommentReactionResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19681,7 +19895,9 @@ type PinDashboardLinkResponse struct {
 	JSON200      *DashboardLinkPinResponseSchema
 	JSON400      *DashboardLinkPinResponseSchema
 	JSON401      *DashboardLinkPinResponseSchema
+	JSON429      *OpenApiErrorSchema
 	JSON500      *DashboardLinkPinResponseSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19714,7 +19930,9 @@ type PostApiDashboardLinksPinBatchResponse struct {
 	JSON200      *DashboardLinkPinResponseSchema
 	JSON400      *DashboardLinkPinResponseSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
 	JSON500      *DashboardLinkPinResponseSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19839,6 +20057,8 @@ type UpsertDescriptionResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19929,11 +20149,13 @@ func (r ListHomeworksResponse) ContentType() string {
 type CreateHomeworkResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *HomeworkCreateResponseSchema
+	JSON201      *HomeworkCreateResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19966,6 +20188,8 @@ type PutApiHomeworksCompletionsResponse struct {
 	JSON200      *HomeworkCompletionBatchResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -19999,6 +20223,8 @@ type DeleteHomeworkResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -20033,6 +20259,8 @@ type UpdateHomeworkResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -20066,6 +20294,8 @@ type SetHomeworkCompletionResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -20157,8 +20387,8 @@ func (r DeleteApiMcpResponse) ContentType() string {
 type ListMcpResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
+	JSON405      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -20220,6 +20450,8 @@ type CreateMcpResponse struct {
 	HTTPResponse *http.Response
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -20518,35 +20750,6 @@ func (r GetMetadataResponse) ContentType() string {
 	return ""
 }
 
-type ListMetricsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r ListMetricsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListMetricsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListMetricsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 type GetOpenApiSpecResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -20571,37 +20774,6 @@ func (r GetOpenApiSpecResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetOpenApiSpecResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListReadinessResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *ReadinessResponseSchema
-	JSON503      *ReadinessResponseSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r ListReadinessResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListReadinessResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListReadinessResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -21017,9 +21189,11 @@ func (r ListTodosResponse) ContentType() string {
 type CreateTodoResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *IdResponseSchema
+	JSON201      *IdResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21052,6 +21226,8 @@ type DeleteApiTodosBatchResponse struct {
 	JSON200      *TodoBatchDeleteResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21084,6 +21260,8 @@ type PatchApiTodosBatchResponse struct {
 	JSON200      *TodoCompletionBatchResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21117,6 +21295,8 @@ type DeleteTodoResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21151,6 +21331,8 @@ type UpdateTodoResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21181,6 +21363,7 @@ type ListUploadsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *UploadsListResponseSchema
+	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 }
 
@@ -21216,6 +21399,8 @@ type CreateUploadResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON413      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21249,6 +21434,8 @@ type CompleteUploadResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21283,6 +21470,8 @@ type PutApiUploadsObjectResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON413      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21316,7 +21505,9 @@ type DeleteUploadResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
 	JSON502      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -21351,6 +21542,8 @@ type UpdateUploadResponse struct {
 	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -22418,15 +22611,6 @@ func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEd
 	return ParseGetMetadataResponse(rsp)
 }
 
-// ListMetricsWithResponse request returning *ListMetricsResponse
-func (c *ClientWithResponses) ListMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMetricsResponse, error) {
-	rsp, err := c.ListMetrics(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListMetricsResponse(rsp)
-}
-
 // GetOpenApiSpecWithResponse request returning *GetOpenApiSpecResponse
 func (c *ClientWithResponses) GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error) {
 	rsp, err := c.GetOpenApiSpec(ctx, reqEditors...)
@@ -22434,15 +22618,6 @@ func (c *ClientWithResponses) GetOpenApiSpecWithResponse(ctx context.Context, re
 		return nil, err
 	}
 	return ParseGetOpenApiSpecResponse(rsp)
-}
-
-// ListReadinessWithResponse request returning *ListReadinessResponse
-func (c *ClientWithResponses) ListReadinessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReadinessResponse, error) {
-	rsp, err := c.ListReadiness(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListReadinessResponse(rsp)
 }
 
 // ListSchedulesWithResponse request returning *ListSchedulesResponse
@@ -22648,8 +22823,8 @@ func (c *ClientWithResponses) UpdateTodoWithResponse(ctx context.Context, id str
 }
 
 // ListUploadsWithResponse request returning *ListUploadsResponse
-func (c *ClientWithResponses) ListUploadsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUploadsResponse, error) {
-	rsp, err := c.ListUploads(ctx, reqEditors...)
+func (c *ClientWithResponses) ListUploadsWithResponse(ctx context.Context, params *ListUploadsParams, reqEditors ...RequestEditorFn) (*ListUploadsResponse, error) {
+	rsp, err := c.ListUploads(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -23097,6 +23272,20 @@ func ParseModerateAdminCommentResponse(rsp *http.Response) (*ModerateAdminCommen
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23191,6 +23380,20 @@ func ParseUpdateAdminDescriptionResponse(rsp *http.Response) (*UpdateAdminDescri
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23278,6 +23481,20 @@ func ParseDeleteAdminHomeworkResponse(rsp *http.Response) (*DeleteAdminHomeworkR
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23330,12 +23547,12 @@ func ParseCreateAdminSuspensionResponse(rsp *http.Response) (*CreateAdminSuspens
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest AdminSuspensionResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON200 = &dest
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
@@ -23364,6 +23581,20 @@ func ParseCreateAdminSuspensionResponse(rsp *http.Response) (*CreateAdminSuspens
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -23411,6 +23642,20 @@ func ParseUpdateAdminSuspensionResponse(rsp *http.Response) (*UpdateAdminSuspens
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -23505,6 +23750,20 @@ func ParseUpdateAdminUserResponse(rsp *http.Response) (*UpdateAdminUserResponse,
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -23799,6 +24058,20 @@ func ParseSetBusPreferencesResponse(rsp *http.Response) (*SetBusPreferencesRespo
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23886,6 +24159,20 @@ func ParseDeleteApiCalendarSubscriptionsResponse(rsp *http.Response) (*DeleteApi
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23933,6 +24220,20 @@ func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*Appen
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -23972,6 +24273,20 @@ func ParseSetCalendarSubscriptionResponse(rsp *http.Response) (*SetCalendarSubsc
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24019,6 +24334,20 @@ func ParseBatchUpdateCalendarSubscriptionResponse(rsp *http.Response) (*BatchUpd
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24099,6 +24428,20 @@ func ParsePostApiCalendarSubscriptionsImportCodesResponse(rsp *http.Response) (*
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24206,12 +24549,12 @@ func ParseCreateCommentResponse(rsp *http.Response) (*CreateCommentResponse, err
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest IdResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON200 = &dest
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
@@ -24240,6 +24583,20 @@ func ParseCreateCommentResponse(rsp *http.Response) (*CreateCommentResponse, err
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24288,6 +24645,20 @@ func ParseDeleteApiCommentsBatchResponse(rsp *http.Response) (*DeleteApiComments
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -24334,6 +24705,20 @@ func ParseDeleteCommentResponse(rsp *http.Response) (*DeleteCommentResponse, err
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24429,6 +24814,20 @@ func ParseUpdateCommentResponse(rsp *http.Response) (*UpdateCommentResponse, err
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -24475,6 +24874,20 @@ func ParseRemoveCommentReactionResponse(rsp *http.Response) (*RemoveCommentReact
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24529,6 +24942,20 @@ func ParseAddCommentReactionResponse(rsp *http.Response) (*AddCommentReactionRes
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24643,12 +25070,26 @@ func ParsePinDashboardLinkResponse(rsp *http.Response) (*PinDashboardLinkRespons
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest DashboardLinkPinResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24690,12 +25131,26 @@ func ParsePostApiDashboardLinksPinBatchResponse(rsp *http.Response) (*PostApiDas
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest DashboardLinkPinResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24823,6 +25278,20 @@ func ParseUpsertDescriptionResponse(rsp *http.Response) (*UpsertDescriptionRespo
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -24898,12 +25367,12 @@ func ParseCreateHomeworkResponse(rsp *http.Response) (*CreateHomeworkResponse, e
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest HomeworkCreateResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON200 = &dest
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
@@ -24932,6 +25401,20 @@ func ParseCreateHomeworkResponse(rsp *http.Response) (*CreateHomeworkResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -24972,6 +25455,20 @@ func ParsePutApiHomeworksCompletionsResponse(rsp *http.Response) (*PutApiHomewor
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -25019,6 +25516,20 @@ func ParseDeleteHomeworkResponse(rsp *http.Response) (*DeleteHomeworkResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -25074,6 +25585,20 @@ func ParseUpdateHomeworkResponse(rsp *http.Response) (*UpdateHomeworkResponse, e
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -25120,6 +25645,20 @@ func ParseSetHomeworkCompletionResponse(rsp *http.Response) (*SetHomeworkComplet
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -25206,19 +25745,19 @@ func ParseListMcpResponse(rsp *http.Response) (*ListMcpResponse, error) {
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
 
 	}
 
@@ -25278,6 +25817,20 @@ func ParseCreateMcpResponse(rsp *http.Response) (*CreateMcpResponse, error) {
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -25520,22 +26073,6 @@ func ParseGetMetadataResponse(rsp *http.Response) (*GetMetadataResponse, error) 
 	return response, nil
 }
 
-// ParseListMetricsResponse parses an HTTP response from a ListMetricsWithResponse call
-func ParseListMetricsResponse(rsp *http.Response) (*ListMetricsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListMetricsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	return response, nil
-}
-
 // ParseGetOpenApiSpecResponse parses an HTTP response from a GetOpenApiSpecWithResponse call
 func ParseGetOpenApiSpecResponse(rsp *http.Response) (*GetOpenApiSpecResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -25556,39 +26093,6 @@ func ParseGetOpenApiSpecResponse(rsp *http.Response) (*GetOpenApiSpecResponse, e
 			return nil, err
 		}
 		response.JSON200 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListReadinessResponse parses an HTTP response from a ListReadinessWithResponse call
-func ParseListReadinessResponse(rsp *http.Response) (*ListReadinessResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListReadinessResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ReadinessResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest ReadinessResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
 
 	}
 
@@ -26059,12 +26563,12 @@ func ParseCreateTodoResponse(rsp *http.Response) (*CreateTodoResponse, error) {
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest IdResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON200 = &dest
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
@@ -26079,6 +26583,20 @@ func ParseCreateTodoResponse(rsp *http.Response) (*CreateTodoResponse, error) {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -26120,6 +26638,20 @@ func ParseDeleteApiTodosBatchResponse(rsp *http.Response) (*DeleteApiTodosBatchR
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -26159,6 +26691,20 @@ func ParsePatchApiTodosBatchResponse(rsp *http.Response) (*PatchApiTodosBatchRes
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -26206,6 +26752,20 @@ func ParseDeleteTodoResponse(rsp *http.Response) (*DeleteTodoResponse, error) {
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -26261,6 +26821,20 @@ func ParseUpdateTodoResponse(rsp *http.Response) (*UpdateTodoResponse, error) {
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -26286,6 +26860,13 @@ func ParseListUploadsResponse(rsp *http.Response) (*ListUploadsResponse, error) 
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
@@ -26348,6 +26929,20 @@ func ParseCreateUploadResponse(rsp *http.Response) (*CreateUploadResponse, error
 		}
 		response.JSON413 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -26394,6 +26989,20 @@ func ParseCompleteUploadResponse(rsp *http.Response) (*CompleteUploadResponse, e
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -26449,6 +27058,20 @@ func ParsePutApiUploadsObjectResponse(rsp *http.Response) (*PutApiUploadsObjectR
 		}
 		response.JSON413 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -26496,12 +27119,26 @@ func ParseDeleteUploadResponse(rsp *http.Response) (*DeleteUploadResponse, error
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 502:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON502 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -26556,6 +27193,20 @@ func ParseUpdateUploadResponse(rsp *http.Response) (*UpdateUploadResponse, error
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
