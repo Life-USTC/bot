@@ -8778,6 +8778,7 @@
         "type": "object",
         "properties": {
           "sectionIds": {
+            "maxItems": 500,
             "type": "array",
             "items": {
               "type": "integer",
@@ -9479,6 +9480,7 @@
         "type": "object",
         "properties": {
           "sectionIds": {
+            "maxItems": 500,
             "type": "array",
             "items": {
               "type": "integer",
@@ -10195,6 +10197,7 @@
         "type": "object",
         "properties": {
           "sectionIds": {
+            "maxItems": 500,
             "type": "array",
             "items": {
               "type": "integer",
