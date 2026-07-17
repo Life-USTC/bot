@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -166,6 +167,171 @@ func TestSendRichMessagePostsImageSegmentForIdentity(t *testing.T) {
 	message, ok := gotBody["message"].([]any)
 	if !ok || len(message) != 1 || message[0].(map[string]any)["type"] != "image" {
 		t.Fatalf("message = %#v", gotBody["message"])
+	}
+}
+
+func TestSendResponseForwardsCachedNapCatImage(t *testing.T) {
+	sendRequests := 0
+	forwardRequests := 0
+	var forwardBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/send_private_msg":
+			sendRequests++
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":103}}`))
+		case "/forward_friend_single_msg":
+			forwardRequests++
+			if err := json.NewDecoder(r.Body).Decode(&forwardBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":null}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+	event := messageEvent{MessageType: "private", UserID: 456}
+
+	if err := bridge.SendResponse(context.Background(), event, response); err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.SendResponse(context.Background(), event, response); err != nil {
+		t.Fatal(err)
+	}
+	if sendRequests != 1 || forwardRequests != 1 {
+		t.Fatalf("send requests = %d forward requests = %d", sendRequests, forwardRequests)
+	}
+	if forwardBody["user_id"].(float64) != 456 || forwardBody["message_id"] != "103" {
+		t.Fatalf("forward body = %#v", forwardBody)
+	}
+}
+
+func TestSendResponseReplacesRejectedNapCatForward(t *testing.T) {
+	sendRequests := 0
+	forwardRequests := 0
+	forwardIDs := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/send_private_msg":
+			sendRequests++
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":` + strconv.Itoa(100+sendRequests) + `}}`))
+		case "/forward_friend_single_msg":
+			forwardRequests++
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			forwardIDs = append(forwardIDs, body["message_id"].(string))
+			if forwardRequests == 1 {
+				_, _ = w.Write([]byte(`{"status":"failed","retcode":1,"message":"source expired"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":null}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+	event := messageEvent{MessageType: "private", UserID: 456}
+
+	for range 3 {
+		if err := bridge.SendResponse(context.Background(), event, response); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sendRequests != 2 || forwardRequests != 2 {
+		t.Fatalf("send requests = %d forward requests = %d", sendRequests, forwardRequests)
+	}
+	if strings.Join(forwardIDs, ",") != "101,102" {
+		t.Fatalf("forward IDs = %#v", forwardIDs)
+	}
+}
+
+func TestForwardCachedImageReturnsSourceAcceptance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/forward_friend_single_msg" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":null}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	receipt, err := bridge.forwardCachedImage(
+		context.Background(),
+		nil,
+		nil,
+		messageEvent{MessageType: "private", UserID: 456},
+		"source-103",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.DeliveryMethod != store.DeliveryMethodForward ||
+		receipt.SourceMessageID != "source-103" ||
+		receipt.PlatformMessageID != "" ||
+		receipt.AcceptedAt.IsZero() {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSendResponseDoesNotRetryUncertainNapCatForward(t *testing.T) {
+	sendRequests := 0
+	forwardRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/send_private_msg":
+			sendRequests++
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":103}}`))
+		case "/forward_friend_single_msg":
+			forwardRequests++
+			_, _ = w.Write([]byte(`{`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+	event := messageEvent{MessageType: "private", UserID: 456}
+
+	if err := bridge.SendResponse(context.Background(), event, response); err != nil {
+		t.Fatal(err)
+	}
+	err := bridge.SendResponse(context.Background(), event, response)
+	if err == nil || !isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
+	}
+	if sendRequests != 1 || forwardRequests != 1 {
+		t.Fatalf("send requests = %d forward requests = %d", sendRequests, forwardRequests)
 	}
 }
 

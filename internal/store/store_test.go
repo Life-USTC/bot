@@ -126,6 +126,8 @@ func TestRecordInteractionStoresPlatformAcceptanceReceipt(t *testing.T) {
 		Handled:           true,
 		Status:            InteractionStatusAccepted,
 		PlatformMessageID: " message-123 ",
+		DeliveryMethod:    " media_cache ",
+		SourceMessageID:   " source-456 ",
 		AcceptedAt:        acceptedAt,
 	}); err != nil {
 		t.Fatal(err)
@@ -140,6 +142,9 @@ func TestRecordInteractionStoresPlatformAcceptanceReceipt(t *testing.T) {
 	}
 	if !row.AcceptedAt.Equal(acceptedAt.UTC()) {
 		t.Fatalf("accepted_at = %s, want %s", row.AcceptedAt, acceptedAt.UTC())
+	}
+	if row.DeliveryMethod != DeliveryMethodMediaCache || row.SourceMessageID != "source-456" {
+		t.Fatalf("delivery metadata = method %q source %q", row.DeliveryMethod, row.SourceMessageID)
 	}
 }
 

@@ -59,12 +59,16 @@ type Interaction struct {
 	Status            string
 	Error             string
 	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
 	AcceptedAt        time.Time
 	CreatedAt         time.Time
 }
 
 type MessageAcceptance struct {
 	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
 	AcceptedAt        time.Time
 }
 
@@ -79,6 +83,10 @@ const (
 	// InteractionStatusSent is retained for existing records and callers.
 	InteractionStatusSent   = "sent"
 	InteractionStatusFailed = "failed"
+
+	DeliveryMethodMediaUpload = "media_upload"
+	DeliveryMethodMediaCache  = "media_cache"
+	DeliveryMethodForward     = "forward"
 )
 
 type NotificationSettings struct {
@@ -247,6 +255,8 @@ type interactionRow struct {
 	Status            string
 	Error             string
 	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
 	AcceptedAt        *time.Time
 	CreatedAt         time.Time `gorm:"index:idx_interactions_conversation_created"`
 }
@@ -913,6 +923,8 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		Status:            strings.TrimSpace(interaction.Status),
 		Error:             strings.TrimSpace(interaction.Error),
 		PlatformMessageID: strings.TrimSpace(interaction.PlatformMessageID),
+		DeliveryMethod:    textutil.LowerTrim(interaction.DeliveryMethod),
+		SourceMessageID:   strings.TrimSpace(interaction.SourceMessageID),
 		AcceptedAt:        acceptedAt,
 		CreatedAt:         nowUTC(),
 	}
@@ -962,6 +974,8 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 			Status:            row.Status,
 			Error:             row.Error,
 			PlatformMessageID: row.PlatformMessageID,
+			DeliveryMethod:    row.DeliveryMethod,
+			SourceMessageID:   row.SourceMessageID,
 			AcceptedAt:        dereferenceTime(row.AcceptedAt),
 			CreatedAt:         row.CreatedAt,
 		})

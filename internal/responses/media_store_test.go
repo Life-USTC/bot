@@ -54,3 +54,18 @@ func TestMediaStoreExpiresPNG(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
+
+func TestMediaStoreReusesURLForIdenticalPNG(t *testing.T) {
+	store := NewMediaStore("https://bot.example/media", time.Minute)
+	first, err := store.PutPNG([]byte{0x89, 'P', 'N', 'G'})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.PutPNG([]byte{0x89, 'P', 'N', 'G'})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("identical PNG URLs differ: %q != %q", first, second)
+	}
+}

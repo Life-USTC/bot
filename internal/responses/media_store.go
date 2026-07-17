@@ -2,6 +2,7 @@ package responses
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -17,6 +18,7 @@ type MediaStore struct {
 
 	mu    sync.Mutex
 	items map[string]mediaItem
+	ids   map[string]string
 }
 
 type mediaItem struct {
@@ -40,6 +42,7 @@ func NewMediaStoreWithClock(baseURL string, ttl time.Duration, now func() time.T
 		ttl:     ttl,
 		now:     now,
 		items:   map[string]mediaItem{},
+		ids:     map[string]string{},
 	}
 }
 
@@ -53,14 +56,20 @@ func (s *MediaStore) PutPNG(data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", errors.New("png data is empty")
 	}
-	idBytes := make([]byte, 16)
-	if _, err := rand.Read(idBytes); err != nil {
-		return "", err
-	}
-	id := hex.EncodeToString(idBytes) + ".png"
+	sum := sha256.Sum256(data)
+	contentKey := hex.EncodeToString(sum[:])
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.ids[contentKey]
+	if id == "" {
+		idBytes := make([]byte, 16)
+		if _, err := rand.Read(idBytes); err != nil {
+			return "", err
+		}
+		id = hex.EncodeToString(idBytes) + ".png"
+		s.ids[contentKey] = id
+	}
 	s.items[id] = mediaItem{data: append([]byte(nil), data...), expiresAt: s.now().Add(s.ttl)}
-	s.mu.Unlock()
 	return s.baseURL + "/" + id, nil
 }
 
