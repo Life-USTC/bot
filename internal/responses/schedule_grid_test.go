@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestScheduleGridItemBoundsMergePeriods(t *testing.T) {
@@ -19,6 +20,31 @@ func TestScheduleGridItemBoundsMergePeriods(t *testing.T) {
 	}
 	if got, want := rect.Dx(), metrics.DayWidth; got != want {
 		t.Fatalf("cell width = %d, want %d", got, want)
+	}
+}
+
+func TestScheduleGridUsesStrongDayPartDividers(t *testing.T) {
+	grid := testScheduleGrid()
+	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
+	for _, boundary := range []int{5, 10} {
+		rect, ok := scheduleGridDividerBounds(boundary, metrics)
+		if !ok {
+			t.Fatalf("boundary %d was rejected", boundary)
+		}
+		if rect.Dy() < 4 || rect.Dx() != metrics.gridWidth() {
+			t.Fatalf("boundary %d bounds = %v", boundary, rect)
+		}
+	}
+}
+
+func TestScheduleGridFindsTodayColumn(t *testing.T) {
+	grid := testScheduleGrid()
+	location := time.FixedZone("CST", 8*60*60)
+	if got := scheduleGridTodayIndex(grid, time.Date(2026, 7, 17, 12, 0, 0, 0, location)); got != 5 {
+		t.Fatalf("today index = %d, want 5", got)
+	}
+	if got := scheduleGridTodayIndex(grid, time.Date(2026, 7, 20, 12, 0, 0, 0, location)); got != -1 {
+		t.Fatalf("outside week today index = %d, want -1", got)
 	}
 }
 

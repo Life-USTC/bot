@@ -25,6 +25,8 @@ type scheduleGridMetrics struct {
 	BottomMargin  int
 }
 
+const scheduleGridDividerThickness = 4
+
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
 	dayWidth := 156
 	if dayCount == 1 {
@@ -72,10 +74,34 @@ func scheduleGridItemBounds(item ScheduleGridItem, metrics scheduleGridMetrics) 
 	return image.Rect(left, top, left+metrics.DayWidth, top+(item.EndPeriod-item.StartPeriod+1)*metrics.RowHeight), true
 }
 
+func scheduleGridDividerBounds(boundary int, metrics scheduleGridMetrics) (image.Rectangle, bool) {
+	if boundary <= 0 || boundary >= metrics.PeriodCount {
+		return image.Rectangle{}, false
+	}
+	y := metrics.GridTop + metrics.HeaderHeight + boundary*metrics.RowHeight
+	top := y - scheduleGridDividerThickness/2
+	return image.Rect(metrics.MarginX, top, metrics.MarginX+metrics.gridWidth(), top+scheduleGridDividerThickness), true
+}
+
+func scheduleGridTodayIndex(grid *ScheduleGrid, now time.Time) int {
+	if grid == nil {
+		return -1
+	}
+	today := now.Format("01-02")
+	for i, day := range grid.Days {
+		if strings.TrimSpace(day.Date) == today {
+			return i
+		}
+	}
+	return -1
+}
+
 func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byte, int, int, error) {
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
 	space := metrics.space()
 	s := space.px
+	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	todayIndex := scheduleGridTodayIndex(grid, now)
 	faces, err := r.richFaces(space.Scale)
 	if err != nil {
 		return nil, 0, 0, err
@@ -85,9 +111,12 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	background := color.RGBA{250, 250, 250, 255}
 	headerBackground := color.RGBA{244, 244, 245, 255}
 	alternateBackground := color.RGBA{248, 250, 252, 255}
+	todayHeaderBackground := color.RGBA{204, 251, 241, 255}
+	todayBackground := color.RGBA{240, 253, 250, 255}
 	ink := color.RGBA{39, 39, 42, 255}
 	muted := color.RGBA{113, 113, 122, 255}
 	line := color.RGBA{203, 213, 225, 255}
+	divider := color.RGBA{100, 116, 139, 255}
 	accent := color.RGBA{15, 118, 110, 255}
 	courseBackgrounds := []color.RGBA{
 		{224, 242, 254, 255},
@@ -115,9 +144,19 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	for dayIndex, day := range grid.Days {
 		left := metrics.MarginX + metrics.LabelWidth + dayIndex*metrics.DayWidth
 		rect := image.Rect(left, metrics.GridTop, left+metrics.DayWidth, metrics.GridTop+metrics.HeaderHeight)
-		drawScheduleGridCell(canvas, rect, s, headerBackground, line)
-		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+23), day.Label, ink)
-		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+43), day.Date, muted)
+		cellBackground := headerBackground
+		headerText := day.Label
+		headerColor := ink
+		dateColor := muted
+		if dayIndex == todayIndex {
+			cellBackground = todayHeaderBackground
+			headerText += " · 今天"
+			headerColor = accent
+			dateColor = accent
+		}
+		drawScheduleGridCell(canvas, rect, s, cellBackground, line)
+		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+23), headerText, headerColor)
+		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+43), day.Date, dateColor)
 	}
 
 	for periodIndex, period := range grid.Periods {
@@ -132,16 +171,12 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(labelRect.Min.X+metrics.LabelWidth/2), s(labelRect.Min.Y+43), period.Time, muted)
 		for dayIndex := range grid.Days {
 			left := metrics.MarginX + metrics.LabelWidth + dayIndex*metrics.DayWidth
-			drawScheduleGridCell(canvas, image.Rect(left, top, left+metrics.DayWidth, top+metrics.RowHeight), s, rowBackground, line)
+			cellBackground := rowBackground
+			if dayIndex == todayIndex {
+				cellBackground = todayBackground
+			}
+			drawScheduleGridCell(canvas, image.Rect(left, top, left+metrics.DayWidth, top+metrics.RowHeight), s, cellBackground, line)
 		}
-	}
-
-	for _, boundary := range []int{5, 10} {
-		if boundary >= len(grid.Periods) {
-			continue
-		}
-		y := metrics.GridTop + metrics.HeaderHeight + boundary*metrics.RowHeight
-		drawRect(canvas, image.Rect(s(metrics.MarginX), s(y-1), s(metrics.MarginX+metrics.gridWidth()), s(y+1)), line)
 	}
 
 	for itemIndex, item := range grid.Items {
@@ -166,8 +201,24 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), location, muted)
 	}
 
+	if todayIndex >= 0 {
+		left := metrics.MarginX + metrics.LabelWidth + todayIndex*metrics.DayWidth
+		top := metrics.GridTop
+		bottom := metrics.gridBottom()
+		thickness := s(2)
+		drawRect(canvas, image.Rect(s(left), s(top), s(left)+thickness, s(bottom)), accent)
+		drawRect(canvas, image.Rect(s(left+metrics.DayWidth)-thickness, s(top), s(left+metrics.DayWidth), s(bottom)), accent)
+	}
+	for _, boundary := range []int{5, 10} {
+		rect, ok := scheduleGridDividerBounds(boundary, metrics)
+		if !ok {
+			continue
+		}
+		drawRect(canvas, image.Rect(s(rect.Min.X), s(rect.Min.Y), s(rect.Max.X), s(rect.Max.Y)), divider)
+	}
+
 	footerY := s(metrics.gridBottom() + metrics.FooterGap)
-	footerLines := richFooterLines(time.Now().In(time.FixedZone("CST", 8*60*60)))
+	footerLines := richFooterLines(now)
 	right := s(space.Width - metrics.MarginX)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY, footerLines[0], muted)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY+s(14), footerLines[1], muted)
