@@ -66,6 +66,8 @@ BOT_ONEBOT_HTTP_PORT=6700
 BOT_ONEBOT_ACCESS_TOKEN=
 BOT_COMMAND_PREFIX=/life
 BOT_DB_PATH=.run/life-ustc-bot.db
+BOT_BUILD_VERSION=dev
+BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS=300
 BOT_ENABLE_AGENT=false
 BOT_LLM_MODEL=gpt-4o-mini
 BOT_LLM_TIMEOUT_SECONDS=60
@@ -102,6 +104,11 @@ BOT_ENABLE_QQ_BOT_WEBHOOK=
 QQ_BOT_WEBHOOK_ADDR=0.0.0.0:2290
 QQ_BOT_WEBHOOK_PATH=/qqbot
 ```
+
+Public, user-independent read commands are cached in SQLite for the configured
+TTL. `BOT_BUILD_VERSION` is part of every cache key, and `scripts/deploy-cn.sh`
+sets it to the deployed Git revision so a new deployment cannot reuse results
+from an older version.
 
 If a NapCat WebSocket server is configured instead, set `NAPCAT_WS_URL` and the
 bot will dial it. Otherwise it listens for NapCat reverse WebSocket connections.

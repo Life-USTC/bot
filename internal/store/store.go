@@ -125,6 +125,16 @@ type PendingConfirmation struct {
 	UpdatedAt time.Time
 }
 
+type PublicCommandCacheEntry struct {
+	Version   string
+	Command   string
+	Args      string
+	Response  string
+	ExpiresAt time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 const (
 	AgentRunStatusStarted   = "started"
 	AgentRunStatusCompleted = "completed"
@@ -348,6 +358,21 @@ func (pendingConfirmationRow) TableName() string {
 	return "pending_confirmations"
 }
 
+type publicCommandCacheRow struct {
+	ID        int64     `gorm:"primaryKey"`
+	Version   string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:1"`
+	Command   string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:2"`
+	Args      string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:3"`
+	Response  string    `gorm:"not null"`
+	ExpiresAt time.Time `gorm:"not null;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (publicCommandCacheRow) TableName() string {
+	return "public_command_cache"
+}
+
 func Open(path string) (*Store, error) {
 	if path == "" {
 		path = filepath.Join(".run", "life-ustc-bot.db")
@@ -394,7 +419,78 @@ func (s *Store) migrate() error {
 		&agentRunRow{},
 		&feedbackRecordRow{},
 		&pendingConfirmationRow{},
+		&publicCommandCacheRow{},
 	)
+}
+
+func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
+	version = strings.TrimSpace(version)
+	command = strings.TrimSpace(command)
+	if version == "" || command == "" {
+		return PublicCommandCacheEntry{}, false, errors.New("public command cache version and command are required")
+	}
+	if now.IsZero() {
+		now = nowUTC()
+	}
+	var row publicCommandCacheRow
+	err := s.db.WithContext(ctx).
+		Where("version = ? AND command = ? AND args = ? AND expires_at > ?", version, command, strings.TrimSpace(args), now.UTC()).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return PublicCommandCacheEntry{}, false, nil
+	}
+	if err != nil {
+		return PublicCommandCacheEntry{}, false, err
+	}
+	return PublicCommandCacheEntry{
+		Version:   row.Version,
+		Command:   row.Command,
+		Args:      row.Args,
+		Response:  row.Response,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, true, nil
+}
+
+func (s *Store) SavePublicCommandCache(ctx context.Context, entry PublicCommandCacheEntry) error {
+	entry.Version = strings.TrimSpace(entry.Version)
+	entry.Command = strings.TrimSpace(entry.Command)
+	entry.Args = strings.TrimSpace(entry.Args)
+	if entry.Version == "" || entry.Command == "" || strings.TrimSpace(entry.Response) == "" || entry.ExpiresAt.IsZero() {
+		return errors.New("public command cache entry is incomplete")
+	}
+	now := nowUTC()
+	row := publicCommandCacheRow{
+		Version:   entry.Version,
+		Command:   entry.Command,
+		Args:      entry.Args,
+		Response:  entry.Response,
+		ExpiresAt: entry.ExpiresAt.UTC(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "version"}, {Name: "command"}, {Name: "args"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"response":   row.Response,
+			"expires_at": row.ExpiresAt,
+			"updated_at": row.UpdatedAt,
+		}),
+	}).Create(&row).Error
+}
+
+func (s *Store) PurgePublicCommandCache(ctx context.Context, version string, now time.Time) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return errors.New("public command cache version is required")
+	}
+	if now.IsZero() {
+		now = nowUTC()
+	}
+	return s.db.WithContext(ctx).
+		Where("version <> ? OR expires_at <= ?", version, now.UTC()).
+		Delete(&publicCommandCacheRow{}).Error
 }
 
 func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {

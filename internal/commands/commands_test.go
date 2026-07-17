@@ -40,6 +40,53 @@ func TestHandleCourseSearch(t *testing.T) {
 	}
 }
 
+func TestHandlePublicCommandSharesCacheAcrossUsersAndAliases(t *testing.T) {
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
+	}))
+	defer server.Close()
+
+	stateStore, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stateStore.Close() }()
+	handler := Handler{
+		Life:        life.NewClient(server.URL, server.Client()),
+		Prefix:      "/life",
+		PublicCache: NewPublicCommandCache(stateStore, "version-a", time.Minute, nil),
+	}
+
+	first, ok := handler.Handle(context.Background(), Input{
+		Text: "/life course calculus",
+		Identity: store.Identity{
+			Platform: "napcat", UserID: "1", ConversationType: "private", ConversationID: "1",
+		},
+		SuppressLog: true,
+	})
+	if !ok {
+		t.Fatal("first command was not handled")
+	}
+	second, ok := handler.Handle(context.Background(), Input{
+		Text: "课程 calculus",
+		Identity: store.Identity{
+			Platform: "qqbot", UserID: "2", ConversationType: "private", ConversationID: "2",
+		},
+		SuppressLog: true,
+	})
+	if !ok {
+		t.Fatal("second command was not handled")
+	}
+	if first != second {
+		t.Fatalf("cached reply changed: first = %q, second = %q", first, second)
+	}
+	if got := atomic.LoadInt32(&requests); got != 1 {
+		t.Fatalf("upstream requests = %d, want 1", got)
+	}
+}
+
 func TestHandleCasualCourseSearch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("search") != "数学分析" {
@@ -451,6 +498,20 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"schedule":     true,
 		"feedback":     true,
 	}
+	publicCacheCommands := map[string]bool{
+		"semester":         true,
+		"course":           true,
+		"section":          true,
+		"teacher":          true,
+		"list_semesters":   true,
+		"course_search":    true,
+		"section_search":   true,
+		"teacher_search":   true,
+		"course_by_jw_id":  true,
+		"section_by_jw_id": true,
+		"teacher_by_id":    true,
+		"bus_routes":       true,
+	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -475,6 +536,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		}
 		if spec.HasHelp != helpCommands[spec.Name] {
 			t.Fatalf("command %q HasHelp = %v", spec.Name, spec.HasHelp)
+		}
+		if spec.PublicCache != publicCacheCommands[spec.Name] {
+			t.Fatalf("command %q PublicCache = %v", spec.Name, spec.PublicCache)
 		}
 		seen[spec.Name] = true
 		for _, alias := range spec.Aliases {

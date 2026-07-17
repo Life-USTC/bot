@@ -106,6 +106,16 @@ func main() {
 		logger.Fatalf("open sqlite store: %v", err)
 	}
 	defer func() { _ = stateStore.Close() }()
+	publicCommandCache := commands.NewPublicCommandCache(
+		stateStore,
+		cfg.BuildVersion,
+		cfg.PublicCommandCacheTTL,
+		logger,
+	)
+	if err := publicCommandCache.Purge(context.Background()); err != nil {
+		logger.Printf("purge public command cache: %v", err)
+	}
+	logger.Printf("Public command cache enabled: version=%s ttl=%s", cfg.BuildVersion, cfg.PublicCommandCacheTTL)
 	messageRouter := &senderRouter{}
 	authManager := &auth.Manager{
 		Server:     cfg.LifeServer,
@@ -144,6 +154,7 @@ func main() {
 		FeedbackSend:           messageRouter.SendMessage,
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
 		EnableImageResponses:   cfg.EnableImageResponses && mediaStore != nil,
+		PublicCache:            publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled:     cfg.EnableAgent,

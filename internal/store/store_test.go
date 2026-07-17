@@ -8,6 +8,81 @@ import (
 	"time"
 )
 
+func TestPublicCommandCacheUsesVersionAndExpiration(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	now := time.Date(2026, 7, 17, 13, 0, 0, 0, time.UTC)
+	entry := PublicCommandCacheEntry{
+		Version:   " version-a ",
+		Command:   " course ",
+		Args:      " math ",
+		Response:  "first",
+		ExpiresAt: now.Add(5 * time.Minute),
+	}
+	if err := s.SavePublicCommandCache(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := s.PublicCommandCache(ctx, "version-a", "course", "math", now)
+	if err != nil || !ok || got.Response != "first" {
+		t.Fatalf("cache hit = %#v, ok = %v, err = %v", got, ok, err)
+	}
+	if _, ok, err := s.PublicCommandCache(ctx, "version-b", "course", "math", now); err != nil || ok {
+		t.Fatalf("different-version cache ok = %v, err = %v", ok, err)
+	}
+	if _, ok, err := s.PublicCommandCache(ctx, "version-a", "course", "math", now.Add(5*time.Minute)); err != nil || ok {
+		t.Fatalf("expired cache ok = %v, err = %v", ok, err)
+	}
+
+	entry.Response = "updated"
+	entry.ExpiresAt = now.Add(10 * time.Minute)
+	if err := s.SavePublicCommandCache(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err = s.PublicCommandCache(ctx, "version-a", "course", "math", now)
+	if err != nil || !ok || got.Response != "updated" {
+		t.Fatalf("updated cache = %#v, ok = %v, err = %v", got, ok, err)
+	}
+
+	if err := s.SavePublicCommandCache(ctx, PublicCommandCacheEntry{
+		Version: "version-b", Command: "teacher", Args: "zhang", Response: "teacher", ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgePublicCommandCache(ctx, "version-b", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.PublicCommandCache(ctx, "version-a", "course", "math", now); err != nil || ok {
+		t.Fatalf("old-version cache survived purge: ok = %v, err = %v", ok, err)
+	}
+	if got, ok, err := s.PublicCommandCache(ctx, "version-b", "teacher", "zhang", now); err != nil || !ok || got.Response != "teacher" {
+		t.Fatalf("current-version cache = %#v, ok = %v, err = %v", got, ok, err)
+	}
+}
+
+func TestPublicCommandCacheRejectsIncompleteEntries(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	if err := s.SavePublicCommandCache(context.Background(), PublicCommandCacheEntry{}); err == nil {
+		t.Fatal("incomplete cache entry was accepted")
+	}
+	if _, _, err := s.PublicCommandCache(context.Background(), "", "course", "", time.Now()); err == nil {
+		t.Fatal("blank cache version was accepted")
+	}
+	if err := s.PurgePublicCommandCache(context.Background(), "", time.Now()); err == nil {
+		t.Fatal("blank purge version was accepted")
+	}
+}
+
 func TestEnsureUserRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

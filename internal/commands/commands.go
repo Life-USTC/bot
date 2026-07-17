@@ -32,19 +32,21 @@ type Handler struct {
 	FeedbackSend           func(context.Context, store.Identity, string) error
 	AllowGroupPersonalInfo bool
 	EnableImageResponses   bool
+	PublicCache            *PublicCommandCache
 }
 
 var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
 
 type CommandSpec struct {
-	Name       string
-	Aliases    []string
-	HasHelp    bool
-	NeedsLife  bool
-	NeedsStore bool
-	NeedsAuth  bool
-	Normalize  func([]string) []string
-	Run        func(Handler, context.Context, store.Identity, []string) string
+	Name        string
+	Aliases     []string
+	HasHelp     bool
+	NeedsLife   bool
+	NeedsStore  bool
+	NeedsAuth   bool
+	PublicCache bool
+	Normalize   func([]string) []string
+	Run         func(Handler, context.Context, store.Identity, []string) string
 }
 
 func CommandSpecs() []CommandSpec {
@@ -108,6 +110,10 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 			reply = "登录未配置。"
 		} else if spec.NeedsStore && h.Store == nil {
 			reply = "存储未配置。"
+		} else if spec.PublicCache && h.PublicCache != nil {
+			reply = h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
+				return spec.Run(h, ctx, input.Identity, cmd.Args)
+			})
 		} else {
 			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 		}
@@ -308,33 +314,37 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "semester",
-		Aliases:   []string{"semester", "term", "学期", "xq"},
-		NeedsLife: true,
+		Name:        "semester",
+		Aliases:     []string{"semester", "term", "学期", "xq"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.currentSemester(ctx)
 		},
 	},
 	{
-		Name:      "course",
-		Aliases:   []string{"course", "kc", "课程"},
-		NeedsLife: true,
+		Name:        "course",
+		Aliases:     []string{"course", "kc", "课程"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "section",
-		Aliases:   []string{"section", "class", "bj", "教学班", "班级"},
-		NeedsLife: true,
+		Name:        "section",
+		Aliases:     []string{"section", "class", "bj", "教学班", "班级"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchSections(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "teacher",
-		Aliases:   []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
-		NeedsLife: true,
+		Name:        "teacher",
+		Aliases:     []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchTeachers(ctx, joinedArgs(args))
 		},
@@ -378,65 +388,73 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "list_semesters",
-		Aliases:   []string{"list_semesters", "学期列表"},
-		NeedsLife: true,
+		Name:        "list_semesters",
+		Aliases:     []string{"list_semesters", "学期列表"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.listSemesters(ctx, args)
 		},
 	},
 	{
-		Name:      "course_search",
-		Aliases:   []string{"course_search", "课程搜索"},
-		NeedsLife: true,
+		Name:        "course_search",
+		Aliases:     []string{"course_search", "课程搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchCoursesWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "section_search",
-		Aliases:   []string{"section_search", "教学班搜索"},
-		NeedsLife: true,
+		Name:        "section_search",
+		Aliases:     []string{"section_search", "教学班搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchSectionsWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "teacher_search",
-		Aliases:   []string{"teacher_search", "老师搜索"},
-		NeedsLife: true,
+		Name:        "teacher_search",
+		Aliases:     []string{"teacher_search", "老师搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchTeachersWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "course_by_jw_id",
-		Aliases:   []string{"course_by_jw_id", "课程编号"},
-		NeedsLife: true,
+		Name:        "course_by_jw_id",
+		Aliases:     []string{"course_by_jw_id", "课程编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getCourseByJwID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "section_by_jw_id",
-		Aliases:   []string{"section_by_jw_id", "教学班编号"},
-		NeedsLife: true,
+		Name:        "section_by_jw_id",
+		Aliases:     []string{"section_by_jw_id", "教学班编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getSectionByJwID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "teacher_by_id",
-		Aliases:   []string{"teacher_by_id", "老师编号"},
-		NeedsLife: true,
+		Name:        "teacher_by_id",
+		Aliases:     []string{"teacher_by_id", "老师编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getTeacherByID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "bus_routes",
-		Aliases:   []string{"bus_routes", "校车路线"},
-		NeedsLife: true,
+		Name:        "bus_routes",
+		Aliases:     []string{"bus_routes", "校车路线"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.busRoutes(ctx, args)
 		},

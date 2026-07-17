@@ -37,6 +37,32 @@ func TestFromEnvParsesHTTPClientTimeout(t *testing.T) {
 	}
 }
 
+func TestFromEnvParsesPublicCommandCacheConfig(t *testing.T) {
+	t.Setenv("BOT_BUILD_VERSION", " revision-123 ")
+	t.Setenv("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", "120")
+
+	cfg := FromEnv()
+	if cfg.BuildVersion != "revision-123" {
+		t.Fatalf("BuildVersion = %q", cfg.BuildVersion)
+	}
+	if cfg.PublicCommandCacheTTL != 2*time.Minute {
+		t.Fatalf("PublicCommandCacheTTL = %s, want 2m", cfg.PublicCommandCacheTTL)
+	}
+}
+
+func TestFromEnvFallsBackForInvalidPublicCommandCacheTTL(t *testing.T) {
+	for _, value := range []string{"bad", "0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", value)
+
+			cfg := FromEnv()
+			if cfg.PublicCommandCacheTTL != 5*time.Minute {
+				t.Fatalf("PublicCommandCacheTTL = %s, want 5m", cfg.PublicCommandCacheTTL)
+			}
+		})
+	}
+}
+
 func TestFromEnvFallsBackForInvalidHTTPClientTimeout(t *testing.T) {
 	for _, value := range []string{"bad", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
