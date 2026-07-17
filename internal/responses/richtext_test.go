@@ -74,6 +74,32 @@ func TestLayoutRichTextKeepsNodesInsideCanvasWithoutOverlap(t *testing.T) {
 	}
 }
 
+func TestLayoutRichTextCompactsHelpIntroBelowTitle(t *testing.T) {
+	doc := parseRichText(`# Bot 帮助
+常用快捷入口：校车 · 今日课表
+发送“帮助 快捷入口”查看全部快捷入口。
+
+## 日程与课程
+| 命令 | 说明 |
+| --- | --- |
+| 日程 | 查看日程 |`)
+	layout := layoutRichText(doc, time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if len(layout.Nodes) < 2 {
+		t.Fatalf("layout nodes = %#v", layout.Nodes)
+	}
+	intro := layout.Nodes[0]
+	if intro.Bounds.Min.Y != 58 || intro.Bounds.Dy() != 48 || intro.RowHeight != 24 || !intro.Compact ||
+		!reflect.DeepEqual(intro.Lines, []string{
+			"常用快捷入口：校车 · 今日课表",
+			"发送“帮助 快捷入口”查看全部快捷入口。",
+		}) {
+		t.Fatalf("intro node = %#v", intro)
+	}
+	if gap := layout.Nodes[1].Bounds.Min.Y - intro.Bounds.Max.Y; gap != layout.Metrics.BlockGap {
+		t.Fatalf("intro-to-table gap = %d, want %d", gap, layout.Metrics.BlockGap)
+	}
+}
+
 func TestNewTextImageRemovesDuplicateHeadingFromRichText(t *testing.T) {
 	img := NewTextImage("schedule", "今天课表", "今天课表：\n09:50 数据库系统")
 	if img.RichText != "# 今天课表\n\n09:50 数据库系统" {

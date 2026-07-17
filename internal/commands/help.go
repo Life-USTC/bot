@@ -332,9 +332,7 @@ func helpRichText(args ...string) string {
 func helpOverviewRichText() string {
 	lines := []string{
 		"# Bot 帮助",
-		"",
 		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
-		"",
 		"发送“帮助 快捷入口”查看全部快捷入口；发送“帮助 课表”等命令查看具体用法。",
 	}
 	for _, section := range helpOverviewSections() {
