@@ -542,6 +542,10 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		return helpCommand(raw, fields[1:]...), true
 	}
 
+	if name, args, ok := normalizeHierarchicalCommand(commandToken(fields[0]), fields[1:]); ok {
+		return commandResult(raw, name, args), true
+	}
+
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		if name, args, ok := normalizeJoinedCommand(joined, fields[2:]); ok {
@@ -569,6 +573,9 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	if isHelpToken(key) {
 		return "help", args
 	}
+	if normalized, normalizedArgs, ok := normalizeHierarchicalCommand(key, args); ok {
+		return normalized, normalizedArgs
+	}
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
 		return normalized, normalizedArgs
 	}
@@ -590,6 +597,215 @@ func normalizeCommand(name string, args []string) (string, []string) {
 		}
 	}
 	return "", args
+}
+
+func normalizeHierarchicalCommand(name string, args []string) (string, []string, bool) {
+	help := func(topic string) (string, []string, bool) {
+		return "help", []string{topic}, true
+	}
+	action := ""
+	rest := args
+	if len(args) > 0 {
+		action = commandToken(args[0])
+		rest = args[1:]
+	}
+	if isHelpToken(action) {
+		return help(name)
+	}
+
+	switch name {
+	case "日程":
+		switch action {
+		case "":
+			return help("日程")
+		case "今日", "今天":
+			return "overview", rest, true
+		case "概览", "汇总":
+			return "dashboard", rest, true
+		case "截止", "近期截止":
+			return "upcoming_deadlines", rest, true
+		}
+	case "课表":
+		switch action {
+		case "":
+			return "schedule", nil, true
+		case "下一节", "下一节课", "下节课":
+			return "nextclass", rest, true
+		case "单日":
+			if len(rest) == 0 {
+				return "schedule", []string{"today"}, true
+			}
+			if day, ok := normalizeScheduleDay(commandToken(rest[0])); ok {
+				return "schedule", []string{day}, true
+			}
+		}
+		return "schedule", normalizeScheduleArgs(args), true
+	case "待办":
+		return "todo", normalizeTodoArgs(args), true
+	case "作业":
+		if action == "列表" || action == "查看" {
+			rest = translateCommandFields(rest, homeworkFieldAliases)
+			return "homework", normalizeHomeworkArgs(rest), true
+		}
+		return "homework", normalizeHomeworkArgs(translateCommandFields(args, homeworkFieldAliases)), true
+	case "考试":
+		if action == "" {
+			return "exam", nil, true
+		}
+	case "课程":
+		switch action {
+		case "":
+			return help("课程")
+		case "搜索", "查询":
+			return "course_search", translateCommandFields(rest, courseFieldAliases), true
+		case "查看", "详情", "编号":
+			return "course_by_jw_id", rest, true
+		}
+	case "教学班", "班级":
+		switch action {
+		case "":
+			return help("教学班")
+		case "搜索", "查询":
+			return "section_search", translateCommandFields(rest, sectionFieldAliases), true
+		case "查看", "详情", "编号":
+			return "section_by_jw_id", rest, true
+		case "课表":
+			return "section_schedules", rest, true
+		case "考试":
+			return "section_exams", rest, true
+		case "作业":
+			return "section_homeworks", rest, true
+		}
+	case "老师", "教师":
+		switch action {
+		case "":
+			return help("老师")
+		case "搜索", "查询":
+			return "teacher_search", translateCommandFields(rest, teacherFieldAliases), true
+		case "查看", "详情", "编号":
+			return "teacher_by_id", rest, true
+		}
+	case "学期":
+		switch action {
+		case "", "当前":
+			return "semester", rest, true
+		case "列表":
+			return "list_semesters", rest, true
+		}
+	case "订阅":
+		switch action {
+		case "":
+			return "subscription", nil, true
+		case "列表", "查看":
+			return "my_subscribed_sections", rest, true
+		case "添加", "新增", "导入":
+			return "subscription", append([]string{"import"}, rest...), true
+		case "删除", "移除", "退订":
+			return "unsubscribe_section_by_jw_id", rest, true
+		case "链接", "日历":
+			return "subscription", []string{"link"}, true
+		}
+	case "校车":
+		switch action {
+		case "":
+			return "bus", nil, true
+		case "查询":
+			return "bus", rest, true
+		case "路线":
+			return "bus_routes", rest, true
+		case "偏好":
+			if len(rest) == 0 {
+				return "bus", []string{"偏好"}, true
+			}
+			switch commandToken(rest[0]) {
+			case "路线":
+				return "bus", append([]string{"设置"}, rest[1:]...), true
+			case "已发车", "南区":
+				return "bus", rest, true
+			}
+		}
+	case "账户", "账号":
+		switch action {
+		case "":
+			return help("账户")
+		case "信息", "我":
+			return "me", rest, true
+		case "登录":
+			return "login", normalizeLoginArgs(rest), true
+		case "登录状态":
+			return "login", []string{"status"}, true
+		case "退出", "登出":
+			return "logout", rest, true
+		case "状态":
+			return "status", rest, true
+		}
+	case "设置":
+		switch action {
+		case "":
+			return "notify", nil, true
+		case "通知", "提醒":
+			return "notify", normalizeNotifyArgs(rest), true
+		case "工具调用", "ai工具", "ai":
+			return "agent", normalizeAgentArgs(rest), true
+		}
+	case "系统":
+		switch action {
+		case "":
+			return help("系统")
+		case "状态":
+			return "status", rest, true
+		case "检查", "连通性":
+			return "ping", rest, true
+		}
+	}
+	return "", args, false
+}
+
+var homeworkFieldAliases = map[string]string{
+	"学期id":   "semester_id",
+	"学期jwid": "semester_jw_id",
+}
+
+var courseFieldAliases = map[string]string{
+	"关键词":    "keyword",
+	"培养层次":   "education_level_id",
+	"培养层次id": "education_level_id",
+	"类别":     "category_id",
+	"课程类别":   "category_id",
+	"类别id":   "category_id",
+	"课堂类型":   "class_type_id",
+	"类型":     "class_type_id",
+	"课堂类型id": "class_type_id",
+	"数量":     "limit",
+}
+
+var sectionFieldAliases = map[string]string{
+	"关键词":    "keyword",
+	"课程id":   "course_id",
+	"课程jwid": "course_jw_id",
+	"学期id":   "semester_id",
+	"学期jwid": "semester_jw_id",
+	"校区id":   "campus_id",
+	"院系id":   "department_id",
+	"老师id":   "teacher_id",
+	"老师代码":   "teacher_code",
+	"数量":     "limit",
+}
+
+var teacherFieldAliases = map[string]string{
+	"关键词":  "keyword",
+	"院系id": "department_id",
+	"数量":   "limit",
+}
+
+func translateCommandFields(args []string, aliases map[string]string) []string {
+	out := copyArgs(args)
+	for i, arg := range out {
+		if translated, ok := aliases[commandToken(arg)]; ok {
+			out[i] = translated
+		}
+	}
+	return out
 }
 
 func commandSpec(name string) (CommandSpec, bool) {
@@ -779,7 +995,7 @@ func normalizeTodoArgs(args []string) []string {
 		return withFirstArg(args, "add")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
-	case "undo", "undone", "reopen", "reset", "取消", "撤销":
+	case "undo", "undone", "reopen", "reset", "取消", "撤销", "恢复":
 		return withFirstArg(args, "undo")
 	case "delete", "del", "remove", "rm", "删除":
 		return withFirstArg(args, "delete")
@@ -807,7 +1023,7 @@ func normalizeHomeworkArgs(args []string) []string {
 	switch normToken(args[0]) {
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
-	case "undo", "undone", "reset", "取消", "撤销":
+	case "undo", "undone", "reset", "取消", "撤销", "恢复":
 		return withFirstArg(args, "undo")
 	case "pending", "未完成":
 		return withFirstArg(args, "pending")

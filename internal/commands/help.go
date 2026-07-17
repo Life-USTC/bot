@@ -3,6 +3,7 @@ package commands
 import "strings"
 
 type helpRow struct {
+	topic       string
 	commandName string
 	command     string
 	description string
@@ -16,73 +17,43 @@ type helpSection struct {
 func helpOverviewSections() []helpSection {
 	return []helpSection{
 		{
-			title: "基础与账户",
+			title: "日程与课程",
 			rows: []helpRow{
-				{commandName: "login", command: "登录", description: "登录 Life@USTC"},
-				{commandName: "logout", command: "退出", description: "退出并清除登录状态"},
-				{commandName: "me", command: "我（me）", description: "查看当前登录用户"},
-				{commandName: "status", command: "状态（status）", description: "查看服务与登录状态"},
-				{commandName: "ping", command: "ping（p）", description: "检查 Life@USTC API"},
-				{commandName: "semester", command: "学期", description: "查看当前学期"},
-				{commandName: "list_semesters", command: "学期列表", description: "查看学期列表"},
-			},
-		},
-		{
-			title: "课程与日程",
-			rows: []helpRow{
-				{commandName: "overview", command: "今日（ddl）", description: "查看今日汇总"},
-				{commandName: "schedule", command: "课表", description: "查看周课表或单日课表"},
-				{commandName: "nextclass", command: "下一节课", description: "查看最近一节课"},
-				{commandName: "exam", command: "考试（ks）", description: "查看考试"},
-				{commandName: "course", command: "课程", description: "搜索课程"},
-				{commandName: "section", command: "教学班", description: "搜索教学班"},
-				{commandName: "teacher", command: "老师", description: "搜索老师"},
-				{commandName: "dashboard", command: "概览", description: "汇总待办、作业和考试"},
-				{commandName: "upcoming_deadlines", command: "近期截止", description: "查看近期截止事项"},
+				{topic: "agenda", command: "日程", description: "今日安排、综合概览与近期截止"},
+				{topic: "schedule", command: "课表", description: "周课表、单日课表与下一节课"},
+				{topic: "exam", command: "考试（ks）", description: "查看已订阅课程的考试"},
 			},
 		},
 		{
 			title: "任务",
 			rows: []helpRow{
-				{commandName: "todo", command: "待办（td）", description: "查看和管理待办"},
-				{commandName: "homework", command: "作业（hw）", description: "查看和管理作业"},
+				{topic: "todo", command: "待办（td）", description: "查看和管理待办"},
+				{topic: "homework", command: "作业（hw）", description: "查看和管理作业"},
 			},
 		},
 		{
-			title: "订阅与通知",
+			title: "教学资源",
 			rows: []helpRow{
-				{commandName: "subscription", command: "订阅", description: "管理教学班订阅"},
-				{commandName: "my_subscribed_sections", command: "我的订阅", description: "查看已订阅教学班"},
-				{commandName: "unsubscribe_section_by_jw_id", command: "退订教学班", description: "按 JW ID 退订"},
-				{commandName: "notify", command: "通知", description: "管理课表和作业提醒"},
+				{topic: "course", command: "课程", description: "搜索或查看课程"},
+				{topic: "section", command: "教学班", description: "搜索教学班及查看相关信息"},
+				{topic: "teacher", command: "老师", description: "搜索或查看老师"},
+				{topic: "semester", command: "学期", description: "查看当前学期或学期列表"},
+				{topic: "subscription", command: "订阅", description: "管理教学班与日历订阅"},
 			},
 		},
 		{
-			title: "校车",
+			title: "校园服务",
 			rows: []helpRow{
-				{commandName: "bus", command: "校车（xc）", description: "查询班次与设置偏好"},
-				{commandName: "bus_routes", command: "校车路线", description: "查询校车路线"},
+				{topic: "bus", command: "校车（xc）", description: "查询班次、路线与设置偏好"},
 			},
 		},
 		{
-			title: "高级查询",
+			title: "账户与系统",
 			rows: []helpRow{
-				{commandName: "course_search", command: "课程搜索", description: "按字段搜索课程"},
-				{commandName: "section_search", command: "教学班搜索", description: "按字段搜索教学班"},
-				{commandName: "teacher_search", command: "老师搜索", description: "按字段搜索老师"},
-				{commandName: "course_by_jw_id", command: "课程编号", description: "按 JW ID 查看课程"},
-				{commandName: "section_by_jw_id", command: "教学班编号", description: "按 JW ID 查看教学班"},
-				{commandName: "teacher_by_id", command: "老师编号", description: "按 ID 查看老师"},
-				{commandName: "section_schedules", command: "教学班课表", description: "查看指定教学班课表"},
-				{commandName: "section_exams", command: "教学班考试", description: "查看指定教学班考试"},
-				{commandName: "section_homeworks", command: "教学班作业", description: "查看指定教学班作业"},
-			},
-		},
-		{
-			title: "AI 与反馈",
-			rows: []helpRow{
-				{commandName: "agent", command: "AI 工具", description: "设置工具调用展示"},
-				{commandName: "feedback", command: "反馈", description: "向管理员提交反馈"},
+				{topic: "account", command: "账户", description: "登录、退出与查看账户信息"},
+				{topic: "settings", command: "设置", description: "管理通知与工具调用展示"},
+				{topic: "system", command: "系统", description: "查看服务状态与检查连通性"},
+				{topic: "feedback", command: "反馈", description: "向管理员提交反馈"},
 			},
 		},
 	}
@@ -91,161 +62,213 @@ func helpOverviewSections() []helpSection {
 func helpDetailSections() []helpSection {
 	return []helpSection{
 		{
-			title: "基础与账户",
+			title: "快捷入口",
 			rows: []helpRow{
-				{commandName: "login", command: "登录", description: "开始 Life@USTC 登录"},
-				{commandName: "login", command: "登录 状态", description: "查询当前登录流程"},
-				{commandName: "logout", command: "退出", description: "退出并清除登录状态"},
-				{commandName: "me", command: "我（me）", description: "查看当前登录用户"},
-				{commandName: "status", command: "状态（status）", description: "查看服务与登录状态"},
-				{commandName: "ping", command: "ping（p）", description: "检查 Life@USTC API 是否可用"},
-				{commandName: "semester", command: "学期", description: "查看当前学期"},
-				{commandName: "list_semesters", command: "学期列表", description: "列出最近 20 个学期"},
-				{commandName: "list_semesters", command: "学期列表 10", description: "指定返回的学期数量"},
+				{topic: "shortcuts", commandName: "bus", command: "校车（xc）", description: "直接查询接下来的校车"},
+				{topic: "shortcuts", commandName: "schedule", command: "今日课表（单日课表）", description: "相当于“课表 单日 今天”"},
+				{topic: "shortcuts", commandName: "login", command: "登录", description: "相当于“账户 登录”"},
+				{topic: "shortcuts", commandName: "todo", command: "待办（td）", description: "直接查看未完成待办"},
+				{topic: "shortcuts", commandName: "homework", command: "作业（hw）", description: "直接查看未完成作业"},
+				{topic: "shortcuts", commandName: "overview", command: "今日（ddl）", description: "相当于“日程 今日”"},
+				{topic: "shortcuts", commandName: "dashboard", command: "概览", description: "相当于“日程 概览”"},
+				{topic: "shortcuts", commandName: "upcoming_deadlines", command: "近期截止 14", description: "相当于“日程 截止 14”"},
+				{topic: "shortcuts", commandName: "schedule", command: "明日课表", description: "相当于“课表 单日 明天”"},
+				{topic: "shortcuts", commandName: "nextclass", command: "下一节课", description: "相当于“课表 下一节”"},
+				{topic: "shortcuts", commandName: "me", command: "我（me）", description: "相当于“账户 信息”"},
+				{topic: "shortcuts", commandName: "logout", command: "退出", description: "相当于“账户 退出”"},
+				{topic: "shortcuts", commandName: "status", command: "状态（status）", description: "相当于“系统 状态”"},
+				{topic: "shortcuts", commandName: "notify", command: "通知", description: "相当于“设置 通知”"},
+				{topic: "shortcuts", commandName: "agent", command: "AI 工具", description: "相当于“设置 工具调用”"},
 			},
 		},
 		{
-			title: "课程与日程",
+			title: "日程",
 			rows: []helpRow{
-				{commandName: "overview", command: "今日（ddl）", description: "汇总今日课程、待办和作业"},
-				{commandName: "schedule", command: "课表", description: "查看本周课表"},
-				{commandName: "schedule", command: "课表 本周", description: "查看本周课表"},
-				{commandName: "schedule", command: "课表 下周", description: "查看下周课表"},
-				{commandName: "schedule", command: "课表 第3周", description: "查看指定教学周"},
-				{commandName: "schedule", command: "课表 05.06", description: "查看该日期所在周"},
-				{commandName: "schedule", command: "课表 7.20周", description: "用月日查看所在周"},
-				{commandName: "schedule", command: "课表 2026-05-06", description: "用完整日期查看所在周"},
-				{commandName: "schedule", command: "今日课表（单日课表）", description: "只查看今天的课表"},
-				{commandName: "schedule", command: "明日课表", description: "只查看明天的课表"},
-				{commandName: "nextclass", command: "下一节课", description: "查看最近一节课"},
-				{commandName: "exam", command: "考试（ks）", description: "查看已订阅课程的考试"},
-				{commandName: "course", command: "课程 数学分析", description: "按关键词搜索课程"},
-				{commandName: "section", command: "教学班 高等数学", description: "按关键词搜索教学班"},
-				{commandName: "teacher", command: "老师 张", description: "按关键词搜索老师"},
-				{commandName: "dashboard", command: "概览", description: "汇总待办、作业和考试"},
-				{commandName: "upcoming_deadlines", command: "近期截止", description: "查看未来 7 天的截止事项"},
-				{commandName: "upcoming_deadlines", command: "近期截止 14", description: "指定未来天数"},
+				{topic: "agenda", commandName: "overview", command: "日程 今日", description: "汇总今日课程、待办和作业"},
+				{topic: "agenda", commandName: "dashboard", command: "日程 概览", description: "汇总待办、作业和考试"},
+				{topic: "agenda", commandName: "upcoming_deadlines", command: "日程 截止", description: "查看未来 7 天的截止事项"},
+				{topic: "agenda", commandName: "upcoming_deadlines", command: "日程 截止 14", description: "指定未来天数"},
+			},
+		},
+		{
+			title: "课表",
+			rows: []helpRow{
+				{topic: "schedule", commandName: "schedule", command: "课表", description: "查看本周课表"},
+				{topic: "schedule", commandName: "schedule", command: "课表 本周", description: "查看本周课表"},
+				{topic: "schedule", commandName: "schedule", command: "课表 下周", description: "查看下周课表"},
+				{topic: "schedule", commandName: "schedule", command: "课表 第3周", description: "查看指定教学周"},
+				{topic: "schedule", commandName: "schedule", command: "课表 05.06", description: "查看该日期所在周"},
+				{topic: "schedule", commandName: "schedule", command: "课表 7.20周", description: "用月日查看所在周"},
+				{topic: "schedule", commandName: "schedule", command: "课表 2026-05-06", description: "用完整日期查看所在周"},
+				{topic: "schedule", commandName: "schedule", command: "课表 单日 今天", description: "只查看今天的课表"},
+				{topic: "schedule", commandName: "schedule", command: "课表 单日 明天", description: "只查看明天的课表"},
+				{topic: "schedule", commandName: "nextclass", command: "课表 下一节", description: "查看最近一节课"},
 			},
 		},
 		{
 			title: "待办",
 			rows: []helpRow{
-				{commandName: "todo", command: "待办（td）", description: "查看未完成待办"},
-				{commandName: "todo", command: "待办 全部", description: "查看全部待办"},
-				{commandName: "todo", command: "待办 未完成", description: "只查看未完成待办"},
-				{commandName: "todo", command: "待办 已完成", description: "只查看已完成待办"},
-				{commandName: "todo", command: "待办 高", description: "按优先级筛选待办"},
-				{commandName: "todo", command: "待办 列表 截止前 2026-06-10", description: "筛选指定日期前截止的待办"},
-				{commandName: "todo", command: "待办 列表 截止后 2026-06-10", description: "筛选指定日期后截止的待办"},
-				{commandName: "todo", command: "待办 列表 优先级 高", description: "在列表中按优先级筛选"},
-				{commandName: "todo", command: "待办 写报告", description: "快速新增待办"},
-				{commandName: "todo", command: "待办 新增 写报告", description: "新增待办"},
-				{commandName: "todo", command: "待办 新增 写报告 内容 完成初稿 截止 2026-06-10 优先级 高", description: "新增带内容、截止日期和优先级的待办"},
-				{commandName: "todo", command: "待办 完成 1", description: "完成第 1 条待办"},
-				{commandName: "todo", command: "待办 完成 1,2,3", description: "批量完成待办"},
-				{commandName: "todo", command: "待办 撤销 1", description: "恢复已完成待办"},
-				{commandName: "todo", command: "待办 撤销 1,2,3", description: "批量恢复已完成待办"},
-				{commandName: "todo", command: "待办 删除 1", description: "删除第 1 条待办"},
-				{commandName: "todo", command: "待办 删除 1,2,3", description: "批量删除待办"},
-				{commandName: "todo", command: "待办 更新 1 标题 新标题", description: "修改待办标题"},
-				{commandName: "todo", command: "待办 更新 1 内容 新备注", description: "修改待办内容"},
-				{commandName: "todo", command: "待办 更新 1 截止 2026-06-12", description: "修改待办截止日期"},
-				{commandName: "todo", command: "待办 更新 1 优先级 中", description: "修改待办优先级"},
-				{commandName: "todo", command: "待办 更新 1 完成", description: "把待办标为已完成"},
-				{commandName: "todo", command: "待办 更新 1 未完成", description: "把待办恢复为未完成"},
+				{topic: "todo", commandName: "todo", command: "待办", description: "查看未完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 全部", description: "查看全部待办"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 未完成", description: "只查看未完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 已完成", description: "只查看已完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 优先级 高", description: "按优先级筛选"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 截止前 2026-06-10", description: "筛选该日期前截止的待办"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 截止后 2026-06-10", description: "筛选该日期后截止的待办"},
+				{topic: "todo", commandName: "todo", command: "待办 添加 写报告", description: "新增待办"},
+				{topic: "todo", commandName: "todo", command: "待办 添加 写报告 内容 完成初稿 截止 2026-06-10 优先级 高", description: "新增带详细信息的待办"},
+				{topic: "todo", commandName: "todo", command: "待办 完成 1", description: "完成第 1 条待办"},
+				{topic: "todo", commandName: "todo", command: "待办 完成 1,2,3", description: "批量完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 恢复 1", description: "恢复已完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 恢复 1,2,3", description: "批量恢复已完成待办"},
+				{topic: "todo", commandName: "todo", command: "待办 删除 1", description: "删除第 1 条待办"},
+				{topic: "todo", commandName: "todo", command: "待办 删除 1,2,3", description: "批量删除待办"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 标题 新标题", description: "修改待办标题"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 内容 新备注", description: "修改待办内容"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 截止 2026-06-12", description: "修改截止日期"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 优先级 中", description: "修改优先级"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 完成", description: "标为已完成"},
+				{topic: "todo", commandName: "todo", command: "待办 更新 1 未完成", description: "恢复为未完成"},
 			},
 		},
 		{
 			title: "作业",
 			rows: []helpRow{
-				{commandName: "homework", command: "作业（hw）", description: "查看未完成作业"},
-				{commandName: "homework", command: "作业 未完成", description: "只查看未完成作业"},
-				{commandName: "homework", command: "作业 全部", description: "查看全部作业"},
-				{commandName: "homework", command: "作业 semester_id <学期 ID>", description: "按学期 ID 筛选"},
-				{commandName: "homework", command: "作业 semester_jw_id <学期 JW ID>", description: "按学期 JW ID 筛选"},
-				{commandName: "homework", command: "作业 完成 1", description: "完成第 1 条作业"},
-				{commandName: "homework", command: "作业 完成 1,2,3", description: "批量完成作业"},
-				{commandName: "homework", command: "作业 撤销 1", description: "取消作业完成状态"},
-				{commandName: "homework", command: "作业 撤销 1,2,3", description: "批量取消完成状态"},
+				{topic: "homework", commandName: "homework", command: "作业", description: "查看未完成作业"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 未完成", description: "只查看未完成作业"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 全部", description: "查看全部作业"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 学期ID <ID>", description: "按学期 ID 筛选"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 学期JWID <JW ID>", description: "按学期 JW ID 筛选"},
+				{topic: "homework", commandName: "homework", command: "作业 完成 1", description: "完成第 1 条作业"},
+				{topic: "homework", commandName: "homework", command: "作业 完成 1,2,3", description: "批量完成作业"},
+				{topic: "homework", commandName: "homework", command: "作业 恢复 1", description: "取消第 1 条作业的完成状态"},
+				{topic: "homework", commandName: "homework", command: "作业 恢复 1,2,3", description: "批量取消完成状态"},
 			},
 		},
 		{
-			title: "订阅与通知",
+			title: "考试",
 			rows: []helpRow{
-				{commandName: "subscription", command: "订阅", description: "查看已订阅教学班"},
-				{commandName: "subscription", command: "订阅 链接", description: "查看私有日历订阅链接"},
-				{commandName: "subscription", command: "订阅 导入 CONT5103P.01 CONT6104P.01", description: "批量订阅教学班"},
-				{commandName: "subscription", command: "订阅 CONT5103P.01", description: "直接订阅教学班代码"},
-				{commandName: "my_subscribed_sections", command: "我的订阅", description: "查看已订阅教学班"},
-				{commandName: "unsubscribe_section_by_jw_id", command: "退订教学班 <JW ID>", description: "按 JW ID 退订教学班"},
-				{commandName: "notify", command: "通知", description: "查看通知设置"},
-				{commandName: "notify", command: "通知 状态", description: "查看通知设置"},
-				{commandName: "notify", command: "通知 课表 开", description: "开启课前提醒"},
-				{commandName: "notify", command: "通知 课表 关", description: "关闭课前提醒"},
-				{commandName: "notify", command: "通知 作业 开", description: "开启作业提醒"},
-				{commandName: "notify", command: "通知 作业 关", description: "关闭作业提醒"},
+				{topic: "exam", commandName: "exam", command: "考试", description: "查看已订阅课程的考试"},
+			},
+		},
+		{
+			title: "课程",
+			rows: []helpRow{
+				{topic: "course", commandName: "course", command: "课程 数学分析", description: "按关键词快速搜索课程"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 数学分析", description: "搜索课程"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 关键词 数学分析", description: "显式指定关键词"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 培养层次ID <ID>", description: "按培养层次筛选"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 类别ID <ID>", description: "按课程类别筛选"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 课堂类型ID <ID>", description: "按课堂类型筛选"},
+				{topic: "course", commandName: "course_search", command: "课程 搜索 数学分析 数量 <数量>", description: "限制返回数量"},
+				{topic: "course", commandName: "course_by_jw_id", command: "课程 查看 <JW ID>", description: "按 JW ID 查看详情"},
+			},
+		},
+		{
+			title: "教学班",
+			rows: []helpRow{
+				{topic: "section", commandName: "section", command: "教学班 高等数学", description: "按关键词快速搜索教学班"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 高等数学", description: "搜索教学班"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 关键词 高等数学", description: "显式指定关键词"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 课程ID <ID>", description: "按课程 ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 课程JWID <JW ID>", description: "按课程 JW ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 学期ID <ID>", description: "按学期 ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 学期JWID <JW ID>", description: "按学期 JW ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 校区ID <ID>", description: "按校区 ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 院系ID <ID>", description: "按院系 ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 老师ID <ID>", description: "按老师 ID 筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 老师代码 <代码>", description: "按老师代码筛选"},
+				{topic: "section", commandName: "section_search", command: "教学班 搜索 高等数学 数量 <数量>", description: "限制返回数量"},
+				{topic: "section", commandName: "section_by_jw_id", command: "教学班 查看 <JW ID>", description: "按 JW ID 查看详情"},
+				{topic: "section", commandName: "section_schedules", command: "教学班 课表 <JW ID> <开始日期> <结束日期>", description: "查看日期范围内的课表"},
+				{topic: "section", commandName: "section_exams", command: "教学班 考试 <JW ID>", description: "查看指定教学班考试"},
+				{topic: "section", commandName: "section_homeworks", command: "教学班 作业 <JW ID>", description: "查看指定教学班作业"},
+			},
+		},
+		{
+			title: "老师",
+			rows: []helpRow{
+				{topic: "teacher", commandName: "teacher", command: "老师 张", description: "按关键词快速搜索老师"},
+				{topic: "teacher", commandName: "teacher_search", command: "老师 搜索 张", description: "搜索老师"},
+				{topic: "teacher", commandName: "teacher_search", command: "老师 搜索 关键词 张", description: "显式指定关键词"},
+				{topic: "teacher", commandName: "teacher_search", command: "老师 搜索 院系ID <ID>", description: "按院系 ID 筛选"},
+				{topic: "teacher", commandName: "teacher_search", command: "老师 搜索 张 数量 <数量>", description: "限制返回数量"},
+				{topic: "teacher", commandName: "teacher_by_id", command: "老师 查看 <ID>", description: "按 ID 查看详情"},
+			},
+		},
+		{
+			title: "学期",
+			rows: []helpRow{
+				{topic: "semester", commandName: "semester", command: "学期", description: "查看当前学期"},
+				{topic: "semester", commandName: "semester", command: "学期 当前", description: "查看当前学期"},
+				{topic: "semester", commandName: "list_semesters", command: "学期 列表", description: "列出最近 20 个学期"},
+				{topic: "semester", commandName: "list_semesters", command: "学期 列表 10", description: "指定返回数量"},
+			},
+		},
+		{
+			title: "订阅",
+			rows: []helpRow{
+				{topic: "subscription", commandName: "subscription", command: "订阅", description: "查看已订阅教学班"},
+				{topic: "subscription", commandName: "my_subscribed_sections", command: "订阅 列表", description: "查看已订阅教学班"},
+				{topic: "subscription", commandName: "subscription", command: "订阅 添加 CONT5103P.01 CONT6104P.01", description: "批量订阅教学班"},
+				{topic: "subscription", commandName: "unsubscribe_section_by_jw_id", command: "订阅 删除 <JW ID>", description: "按 JW ID 退订教学班"},
+				{topic: "subscription", commandName: "subscription", command: "订阅 链接", description: "查看私有日历订阅链接"},
 			},
 		},
 		{
 			title: "校车",
 			rows: []helpRow{
-				{commandName: "bus", command: "校车（xc）", description: "查看接下来各路线的校车"},
-				{commandName: "bus", command: "校车 全部", description: "查看今天全部班次"},
-				{commandName: "bus", command: "校车 我的路线", description: "查看偏好路线"},
-				{commandName: "bus", command: "校车 东区 西区", description: "查询指定路线"},
-				{commandName: "bus", command: "校车 之后 14:00", description: "查询指定时间后的全部路线"},
-				{commandName: "bus", command: "校车 东区 西区 之后 14:00", description: "查询指定时间后的班次"},
-				{commandName: "bus", command: "校车 东区 西区 已发车", description: "查询路线并包含已发车班次"},
-				{commandName: "bus", command: "校车 偏好", description: "查看校车偏好"},
-				{commandName: "bus", command: "校车 设置 东区 西区", description: "设置偏好路线"},
-				{commandName: "bus", command: "校车 已发车 开", description: "默认显示已发车班次"},
-				{commandName: "bus", command: "校车 已发车 关", description: "默认隐藏已发车班次"},
-				{commandName: "bus", command: "校车 南区 开", description: "显示南区校车"},
-				{commandName: "bus", command: "校车 南区 关", description: "隐藏南区校车"},
-				{commandName: "bus_routes", command: "校车路线", description: "列出全部校车路线"},
-				{commandName: "bus_routes", command: "校车路线 从 东区 到 西区", description: "筛选起点和终点"},
+				{topic: "bus", commandName: "bus", command: "校车", description: "查看接下来各路线的校车"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 全部", description: "查看今天全部班次"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 我的路线", description: "查看偏好路线"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 东区 西区", description: "查询指定路线"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 之后 14:00", description: "查询指定时间后的全部路线"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 东区 西区 之后 14:00", description: "查询指定时间后的班次"},
+				{topic: "bus", commandName: "bus", command: "校车 查询 东区 西区 已发车", description: "查询并包含已发车班次"},
+				{topic: "bus", commandName: "bus_routes", command: "校车 路线", description: "列出全部校车路线"},
+				{topic: "bus", commandName: "bus_routes", command: "校车 路线 从 东区 到 西区", description: "筛选起点和终点"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好", description: "查看校车偏好"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好 路线 东区 西区", description: "设置偏好路线"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好 已发车 开", description: "默认显示已发车班次"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好 已发车 关", description: "默认隐藏已发车班次"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好 南区 开", description: "显示南区校车"},
+				{topic: "bus", commandName: "bus", command: "校车 偏好 南区 关", description: "隐藏南区校车"},
 			},
 		},
 		{
-			title: "高级查询",
+			title: "账户",
 			rows: []helpRow{
-				{commandName: "course_search", command: "课程搜索 <关键词>", description: "高级搜索课程"},
-				{commandName: "course_search", command: "课程搜索 keyword 数学分析", description: "用 keyword 指定课程关键词"},
-				{commandName: "course_search", command: "课程搜索 education_level_id <ID>", description: "按培养层次筛选课程"},
-				{commandName: "course_search", command: "课程搜索 category_id <ID>", description: "按课程类别筛选"},
-				{commandName: "course_search", command: "课程搜索 class_type_id <ID>", description: "按课堂类型筛选"},
-				{commandName: "course_search", command: "课程搜索 数学分析 limit <数量>", description: "限制课程结果数量"},
-				{commandName: "section_search", command: "教学班搜索 <关键词>", description: "高级搜索教学班"},
-				{commandName: "section_search", command: "教学班搜索 keyword 高等数学", description: "用 keyword 指定教学班关键词"},
-				{commandName: "section_search", command: "教学班搜索 course_id <ID>", description: "按课程 ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 course_jw_id <JW ID>", description: "按课程 JW ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 semester_id <ID>", description: "按学期 ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 semester_jw_id <JW ID>", description: "按学期 JW ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 campus_id <ID>", description: "按校区 ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 department_id <ID>", description: "按院系 ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 teacher_id <ID>", description: "按老师 ID 筛选"},
-				{commandName: "section_search", command: "教学班搜索 teacher_code <代码>", description: "按老师代码筛选"},
-				{commandName: "section_search", command: "教学班搜索 高等数学 limit <数量>", description: "限制教学班结果数量"},
-				{commandName: "teacher_search", command: "老师搜索 <关键词>", description: "高级搜索老师"},
-				{commandName: "teacher_search", command: "老师搜索 keyword 张", description: "用 keyword 指定老师关键词"},
-				{commandName: "teacher_search", command: "老师搜索 department_id <ID>", description: "按院系 ID 筛选老师"},
-				{commandName: "teacher_search", command: "老师搜索 张 limit <数量>", description: "限制老师结果数量"},
-				{commandName: "course_by_jw_id", command: "课程编号 <JW ID>", description: "按 JW ID 查看课程详情"},
-				{commandName: "section_by_jw_id", command: "教学班编号 <JW ID>", description: "按 JW ID 查看教学班详情"},
-				{commandName: "teacher_by_id", command: "老师编号 <ID>", description: "按 ID 查看老师详情"},
-				{commandName: "section_schedules", command: "教学班课表 <JW ID> <开始日期> <结束日期>", description: "查看教学班在日期范围内的课表"},
-				{commandName: "section_exams", command: "教学班考试 <JW ID>", description: "查看指定教学班考试"},
-				{commandName: "section_homeworks", command: "教学班作业 <JW ID>", description: "查看指定教学班作业"},
+				{topic: "account", commandName: "login", command: "账户 登录", description: "开始 Life@USTC 登录"},
+				{topic: "account", commandName: "login", command: "账户 登录状态", description: "查询当前登录流程"},
+				{topic: "account", commandName: "me", command: "账户 信息", description: "查看当前登录用户"},
+				{topic: "account", commandName: "status", command: "账户 状态", description: "查看服务与登录状态"},
+				{topic: "account", commandName: "logout", command: "账户 退出", description: "退出并清除登录状态"},
 			},
 		},
 		{
-			title: "AI 与反馈",
+			title: "设置",
 			rows: []helpRow{
-				{commandName: "agent", command: "AI 工具", description: "查看工具调用展示设置"},
-				{commandName: "agent", command: "AI 工具 状态", description: "查看工具调用展示设置"},
-				{commandName: "agent", command: "AI 工具 开", description: "显示 LLM 工具调用"},
-				{commandName: "agent", command: "AI 工具 关", description: "隐藏 LLM 工具调用"},
-				{commandName: "feedback", command: "反馈 <你的建议>", description: "向管理员提交反馈"},
+				{topic: "settings", commandName: "notify", command: "设置 通知", description: "查看通知设置"},
+				{topic: "settings", commandName: "notify", command: "设置 通知 课表 开", description: "开启课前提醒"},
+				{topic: "settings", commandName: "notify", command: "设置 通知 课表 关", description: "关闭课前提醒"},
+				{topic: "settings", commandName: "notify", command: "设置 通知 作业 开", description: "开启作业提醒"},
+				{topic: "settings", commandName: "notify", command: "设置 通知 作业 关", description: "关闭作业提醒"},
+				{topic: "settings", commandName: "agent", command: "设置 工具调用", description: "查看工具调用展示设置"},
+				{topic: "settings", commandName: "agent", command: "设置 工具调用 开", description: "显示 LLM 工具调用"},
+				{topic: "settings", commandName: "agent", command: "设置 工具调用 关", description: "隐藏 LLM 工具调用"},
+			},
+		},
+		{
+			title: "系统",
+			rows: []helpRow{
+				{topic: "system", commandName: "status", command: "系统 状态", description: "查看服务与登录状态"},
+				{topic: "system", commandName: "ping", command: "系统 检查", description: "检查 Life@USTC API 是否可用"},
+			},
+		},
+		{
+			title: "反馈",
+			rows: []helpRow{
+				{topic: "feedback", commandName: "feedback", command: "反馈 <你的建议>", description: "向管理员提交反馈"},
 			},
 		},
 	}
@@ -255,13 +278,13 @@ func (h Handler) help(args ...string) string {
 	if len(args) == 0 {
 		return helpOverviewText()
 	}
-	commandName := helpTopicCommand(args)
-	overview, ok := helpOverviewRow(commandName)
+	topic := helpTopicCommand(args)
+	title, ok := helpTopicTitle(topic)
 	if !ok {
 		return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
 	}
-	lines := []string{overview.command + " 帮助：", "命令\t说明"}
-	for _, row := range helpDetailRows(commandName) {
+	lines := []string{title + " 帮助：", "命令\t说明"}
+	for _, row := range helpDetailRows(topic) {
 		lines = append(lines, row.command+"\t"+row.description)
 	}
 	lines = append(lines, "", "发送“帮助”返回命令总览。")
@@ -271,6 +294,8 @@ func (h Handler) help(args ...string) string {
 func helpOverviewText() string {
 	lines := []string{
 		"Bot 帮助：",
+		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
+		"发送“帮助 快捷入口”查看全部快捷入口。",
 		"发送“帮助 课表”等命令查看具体用法。",
 	}
 	for _, section := range helpOverviewSections() {
@@ -286,18 +311,18 @@ func helpRichText(args ...string) string {
 	if len(args) == 0 {
 		return helpOverviewRichText()
 	}
-	commandName := helpTopicCommand(args)
-	overview, ok := helpOverviewRow(commandName)
+	topic := helpTopicCommand(args)
+	title, ok := helpTopicTitle(topic)
 	if !ok {
 		return ""
 	}
 	lines := []string{
-		"# " + overview.command + " 帮助",
+		"# " + title + " 帮助",
 		"",
 		markdownRichTableRow([]string{"命令", "说明"}),
 		markdownRichTableRow([]string{"---", "---"}),
 	}
-	for _, row := range helpDetailRows(commandName) {
+	for _, row := range helpDetailRows(topic) {
 		lines = append(lines, markdownRichTableRow([]string{row.command, row.description}))
 	}
 	lines = append(lines, "", "发送“帮助”返回命令总览。")
@@ -308,7 +333,9 @@ func helpOverviewRichText() string {
 	lines := []string{
 		"# Bot 帮助",
 		"",
-		"发送“帮助 课表”等命令查看具体用法。",
+		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
+		"",
+		"发送“帮助 快捷入口”查看全部快捷入口；发送“帮助 课表”等命令查看具体用法。",
 	}
 	for _, section := range helpOverviewSections() {
 		lines = append(lines,
@@ -324,25 +351,121 @@ func helpOverviewRichText() string {
 	return strings.Join(lines, "\n")
 }
 
+var helpTopicAliases = map[string]string{
+	"快捷入口":         "shortcuts",
+	"快捷":           "shortcuts",
+	"shortcuts":    "shortcuts",
+	"shortcut":     "shortcuts",
+	"日程":           "agenda",
+	"agenda":       "agenda",
+	"课表":           "schedule",
+	"schedule":     "schedule",
+	"待办":           "todo",
+	"todo":         "todo",
+	"作业":           "homework",
+	"homework":     "homework",
+	"考试":           "exam",
+	"exam":         "exam",
+	"课程":           "course",
+	"course":       "course",
+	"教学班":          "section",
+	"section":      "section",
+	"老师":           "teacher",
+	"教师":           "teacher",
+	"teacher":      "teacher",
+	"学期":           "semester",
+	"semester":     "semester",
+	"订阅":           "subscription",
+	"subscription": "subscription",
+	"校车":           "bus",
+	"bus":          "bus",
+	"账户":           "account",
+	"账号":           "account",
+	"account":      "account",
+	"设置":           "settings",
+	"settings":     "settings",
+	"系统":           "system",
+	"system":       "system",
+	"反馈":           "feedback",
+	"feedback":     "feedback",
+}
+
+var internalHelpTopics = map[string]string{
+	"overview":                     "agenda",
+	"dashboard":                    "agenda",
+	"upcoming_deadlines":           "agenda",
+	"schedule":                     "schedule",
+	"nextclass":                    "schedule",
+	"todo":                         "todo",
+	"homework":                     "homework",
+	"exam":                         "exam",
+	"course":                       "course",
+	"course_search":                "course",
+	"course_by_jw_id":              "course",
+	"section":                      "section",
+	"section_search":               "section",
+	"section_by_jw_id":             "section",
+	"section_schedules":            "section",
+	"section_exams":                "section",
+	"section_homeworks":            "section",
+	"teacher":                      "teacher",
+	"teacher_search":               "teacher",
+	"teacher_by_id":                "teacher",
+	"semester":                     "semester",
+	"list_semesters":               "semester",
+	"subscription":                 "subscription",
+	"my_subscribed_sections":       "subscription",
+	"unsubscribe_section_by_jw_id": "subscription",
+	"bus":                          "bus",
+	"bus_routes":                   "bus",
+	"login":                        "account",
+	"logout":                       "account",
+	"me":                           "account",
+	"notify":                       "settings",
+	"agent":                        "settings",
+	"status":                       "system",
+	"ping":                         "system",
+	"feedback":                     "feedback",
+}
+
 func helpTopicCommand(args []string) string {
 	if len(args) == 0 {
 		return ""
 	}
-	name, _, ok := normalizeJoinedCommand(args[0], args[1:])
-	if ok {
-		return name
+	key := commandToken(args[0])
+	if topic, ok := helpTopicAliases[key]; ok {
+		return topic
 	}
-	name, _ = normalizeCommand(args[0], args[1:])
-	if name == "help" {
-		return ""
+	if name, _, ok := normalizeJoinedCommand(args[0], args[1:]); ok {
+		return internalHelpTopics[name]
 	}
-	return name
+	name, _ := normalizeCommand(args[0], args[1:])
+	return internalHelpTopics[name]
 }
 
-func helpOverviewRow(commandName string) (helpRow, bool) {
+func helpTopicTitle(topic string) (string, bool) {
+	if topic == "shortcuts" {
+		return "快捷入口", true
+	}
 	for _, section := range helpOverviewSections() {
 		for _, row := range section.rows {
-			if row.commandName == commandName {
+			if row.topic != topic {
+				continue
+			}
+			title := row.command
+			if start := strings.Index(title, "（"); start >= 0 {
+				title = title[:start]
+			}
+			return title, true
+		}
+	}
+	return "", false
+}
+
+func helpOverviewRow(topic string) (helpRow, bool) {
+	for _, section := range helpOverviewSections() {
+		for _, row := range section.rows {
+			if row.topic == topic {
 				return row, true
 			}
 		}
@@ -350,11 +473,11 @@ func helpOverviewRow(commandName string) (helpRow, bool) {
 	return helpRow{}, false
 }
 
-func helpDetailRows(commandName string) []helpRow {
+func helpDetailRows(topic string) []helpRow {
 	rows := []helpRow{}
 	for _, section := range helpDetailSections() {
 		for _, row := range section.rows {
-			if row.commandName == commandName {
+			if row.topic == topic {
 				rows = append(rows, row)
 			}
 		}

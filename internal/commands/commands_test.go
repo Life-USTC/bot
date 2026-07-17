@@ -152,7 +152,8 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "发送“帮助 课表”等命令查看具体用法。") ||
+		if !strings.Contains(reply, "常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业") ||
+			!strings.Contains(reply, "发送“帮助 快捷入口”查看全部快捷入口。") ||
 			!strings.Contains(reply, "待办（td）\t查看和管理待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
@@ -163,17 +164,19 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
+		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
+		"发送“帮助 快捷入口”查看全部快捷入口。",
 		"发送“帮助 课表”等命令查看具体用法。",
-		"基础与账户：",
-		"课程与日程：",
+		"日程与课程：",
+		"教学资源：",
+		"账户与系统：",
 		"命令\t说明",
-		"今日（ddl）\t查看今日汇总",
-		"课表\t查看周课表或单日课表",
+		"日程\t今日安排、综合概览与近期截止",
+		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
-		"校车（xc）\t查询班次与设置偏好",
-		"教学班课表\t查看指定教学班课表",
-		"AI 工具\t设置工具调用展示",
+		"校车（xc）\t查询班次、路线与设置偏好",
+		"设置\t管理通知与工具调用展示",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -185,9 +188,9 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"└─",
 		"课表 下周",
 		"待办 完成 1",
-		"作业 semester_id",
+		"作业 列表 学期ID",
 		"校车 东区 西区",
-		"教学班搜索 teacher_code",
+		"教学班 搜索 老师代码",
 	} {
 		if strings.Contains(reply, unwanted) {
 			t.Fatalf("overview contains detailed usage %q: %q", unwanted, reply)
@@ -210,7 +213,7 @@ func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
 			"命令\t说明",
 			"课表 下周\t查看下周课表",
 			"课表 第3周\t查看指定教学周",
-			"今日课表（单日课表）\t只查看今天的课表",
+			"课表 单日 今天\t只查看今天的课表",
 			"发送“帮助”返回命令总览。",
 		} {
 			if !strings.Contains(reply, want) {
@@ -228,6 +231,37 @@ func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
 	}
 }
 
+func TestShortcutAndLegacyHelpResolveToCanonicalTopics(t *testing.T) {
+	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "帮助 快捷入口", Identity: testIdentity()})
+	if !ok || response.Image == nil {
+		t.Fatalf("shortcut help response = %#v, ok = %v", response, ok)
+	}
+	for _, want := range []string{
+		"快捷入口 帮助：",
+		"今日课表（单日课表）\t相当于“课表 单日 今天”",
+		"登录\t相当于“账户 登录”",
+		"下一节课\t相当于“课表 下一节”",
+	} {
+		if !strings.Contains(response.Text, want) {
+			t.Fatalf("shortcut help missing %q: %q", want, response.Text)
+		}
+	}
+	if response.Image.Title != "快捷入口 帮助" {
+		t.Fatalf("shortcut help image title = %q", response.Image.Title)
+	}
+	assertResponseImageRenders(t, response.Image)
+
+	for _, text := range []string{"帮助 课程搜索", "帮助 course_search", "课程 帮助"} {
+		reply, handled := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !handled || !strings.Contains(reply, "课程 帮助：") ||
+			!strings.Contains(reply, "课程 搜索 培养层次ID <ID>") ||
+			strings.Contains(reply, "education_level_id") {
+			t.Fatalf("%q canonical help reply = %q, handled = %v", text, reply, handled)
+		}
+	}
+}
+
 func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 	overviewCount := map[string]int{}
 	for _, section := range helpOverviewSections() {
@@ -238,14 +272,15 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 			if strings.TrimSpace(row.command) == "" || strings.TrimSpace(row.description) == "" {
 				t.Fatalf("invalid overview row in %q: %#v", section.title, row)
 			}
-			if row.commandName == "" {
-				t.Fatalf("overview row has no command name: %#v", row)
+			if row.topic == "" {
+				t.Fatalf("overview row has no topic: %#v", row)
 			}
-			overviewCount[row.commandName]++
+			overviewCount[row.topic]++
 		}
 	}
 
 	detailCovered := map[string]bool{}
+	topicDetails := map[string]bool{}
 	for _, section := range helpDetailSections() {
 		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
 			t.Fatalf("invalid detail section: %#v", section)
@@ -261,6 +296,7 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 				t.Fatalf("detail row has no command name: %#v", row)
 			}
 			detailCovered[row.commandName] = true
+			topicDetails[row.topic] = true
 			if strings.Contains(row.command, "<") {
 				continue
 			}
@@ -274,9 +310,26 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 			}
 		}
 	}
+	if len(overviewCount) != 15 {
+		t.Errorf("overview has %d canonical topics, want 15", len(overviewCount))
+	}
+	for topic, count := range overviewCount {
+		if count != 1 {
+			t.Errorf("topic %q appears %d times in overview, want once", topic, count)
+		}
+		if !topicDetails[topic] {
+			t.Errorf("topic %q is missing detail help", topic)
+		}
+	}
+	if !topicDetails["shortcuts"] {
+		t.Error("shortcut detail help is missing")
+	}
 	for _, spec := range CommandSpecs() {
-		if overviewCount[spec.Name] != 1 {
-			t.Errorf("command %q appears %d times in overview, want once", spec.Name, overviewCount[spec.Name])
+		topic, ok := internalHelpTopics[spec.Name]
+		if !ok {
+			t.Errorf("command %q is not assigned to a canonical topic", spec.Name)
+		} else if overviewCount[topic] != 1 {
+			t.Errorf("command %q maps to missing overview topic %q", spec.Name, topic)
 		}
 		if !detailCovered[spec.Name] {
 			t.Errorf("command %q is missing detail help", spec.Name)
@@ -421,6 +474,12 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			}
 			aliases[key] = spec.Name
 			name, _ := normalizeCommand(alias, nil)
+			if key == "日程" || key == "课程" || key == "教学班" || key == "班级" || key == "老师" || key == "教师" {
+				if name != "help" {
+					t.Fatalf("canonical root %q normalized to %q, want help", alias, name)
+				}
+				continue
+			}
 			if name != spec.Name {
 				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
 			}
@@ -475,7 +534,7 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "订阅 导入") {
+	if !ok || !strings.Contains(reply, "订阅 添加") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 
@@ -517,7 +576,7 @@ func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录 帮助：") {
+	if !ok || !strings.Contains(reply, "账户 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -538,7 +597,7 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录 帮助：") {
+	if !ok || !strings.Contains(reply, "账户 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -567,8 +626,8 @@ func TestHandleTodoHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办（td） 帮助：") ||
-			!strings.Contains(reply, "待办 新增 写报告") ||
+		if !strings.Contains(reply, "待办 帮助：") ||
+			!strings.Contains(reply, "待办 添加 写报告") ||
 			!strings.Contains(reply, "待办 完成 1") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
@@ -835,7 +894,7 @@ func TestHandleLoginHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "登录 帮助：") || !strings.Contains(reply, "登录 状态") {
+		if !strings.Contains(reply, "账户 帮助：") || !strings.Contains(reply, "账户 登录状态") {
 			t.Fatalf("%q reply = %q", text, reply)
 		}
 	}
@@ -873,14 +932,16 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
 	for _, want := range []string{
-		"发送“帮助 课表”等命令查看具体用法。",
-		"## 课程与日程",
+		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
+		"发送“帮助 快捷入口”查看全部快捷入口",
+		"## 日程与课程",
 		"| 命令 | 说明 |",
-		"| 今日（ddl） | 查看今日汇总 |",
-		"| 课表 | 查看周课表或单日课表 |",
+		"| 日程 | 今日安排、综合概览与近期截止 |",
+		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
-		"## 高级查询",
-		"| 教学班课表 | 查看指定教学班课表 |",
+		"## 教学资源",
+		"| 教学班 | 搜索教学班及查看相关信息 |",
+		"| 设置 | 管理通知与工具调用展示 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -2602,7 +2663,7 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "订阅 导入") {
+	if !strings.Contains(reply, "订阅 添加") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2957,10 +3018,10 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"td": "todo",
 		"校车": "bus",
 		"xc": "bus",
-		"日程": "schedule",
+		"日程": "help",
 		"rc": "schedule",
 		"kb": "schedule",
-		"老师": "teacher",
+		"老师": "help",
 		"js": "teacher",
 		"考试": "exam",
 		"ks": "exam",
@@ -2978,6 +3039,92 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		}
 		if cmd.Name != want {
 			t.Fatalf("%q parsed as %q, want %q", text, cmd.Name, want)
+		}
+	}
+}
+
+func TestCanonicalCommandHierarchy(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	tests := []struct {
+		text string
+		name string
+		args string
+	}{
+		{text: "日程", name: "help", args: "日程"},
+		{text: "日程 今日", name: "overview"},
+		{text: "日程 概览", name: "dashboard"},
+		{text: "日程 截止 14", name: "upcoming_deadlines", args: "14"},
+		{text: "课表 单日 今天", name: "schedule", args: "today"},
+		{text: "课表 单日 明天", name: "schedule", args: "tomorrow"},
+		{text: "课表 下一节", name: "nextclass"},
+		{text: "待办 添加 写报告", name: "todo", args: "add 写报告"},
+		{text: "待办 恢复 1", name: "todo", args: "undo 1"},
+		{text: "作业 列表 学期ID 42", name: "homework", args: "semester_id 42"},
+		{text: "作业 恢复 1", name: "homework", args: "undo 1"},
+		{text: "课程", name: "help", args: "课程"},
+		{text: "课程 搜索 关键词 数学分析 培养层次ID 1 类别ID 2 课堂类型ID 3 数量 10", name: "course_search", args: "keyword 数学分析 education_level_id 1 category_id 2 class_type_id 3 limit 10"},
+		{text: "课程 查看 123", name: "course_by_jw_id", args: "123"},
+		{text: "教学班", name: "help", args: "教学班"},
+		{text: "教学班 搜索 课程ID 11 老师代码 T001 数量 20", name: "section_search", args: "course_id 11 teacher_code T001 limit 20"},
+		{text: "教学班 查看 123", name: "section_by_jw_id", args: "123"},
+		{text: "教学班 课表 123 2026-07-01 2026-07-07", name: "section_schedules", args: "123 2026-07-01 2026-07-07"},
+		{text: "教学班 考试 123", name: "section_exams", args: "123"},
+		{text: "教学班 作业 123", name: "section_homeworks", args: "123"},
+		{text: "老师", name: "help", args: "老师"},
+		{text: "老师 搜索 院系ID 5 数量 8", name: "teacher_search", args: "department_id 5 limit 8"},
+		{text: "老师 查看 12", name: "teacher_by_id", args: "12"},
+		{text: "学期 当前", name: "semester"},
+		{text: "学期 列表 10", name: "list_semesters", args: "10"},
+		{text: "订阅 添加 CONT5103P.01 CONT6104P.01", name: "subscription", args: "import CONT5103P.01 CONT6104P.01"},
+		{text: "订阅 删除 999", name: "unsubscribe_section_by_jw_id", args: "999"},
+		{text: "订阅 列表", name: "my_subscribed_sections"},
+		{text: "订阅 链接", name: "subscription", args: "link"},
+		{text: "校车 查询 东区 西区", name: "bus", args: "东区 西区"},
+		{text: "校车 路线 从 东区 到 西区", name: "bus_routes", args: "从 东区 到 西区"},
+		{text: "校车 偏好 路线 东区 西区", name: "bus", args: "设置 东区 西区"},
+		{text: "校车 偏好 已发车 开", name: "bus", args: "已发车 开"},
+		{text: "账户", name: "help", args: "账户"},
+		{text: "账户 登录 状态", name: "login", args: "status"},
+		{text: "账户 信息", name: "me"},
+		{text: "账户 退出", name: "logout"},
+		{text: "设置 通知 课表 开", name: "notify", args: "classes on"},
+		{text: "设置 工具调用 开", name: "agent", args: "on"},
+		{text: "设置 AI 工具 关", name: "agent", args: "off"},
+		{text: "系统", name: "help", args: "系统"},
+		{text: "系统 状态", name: "status"},
+		{text: "系统 检查", name: "ping"},
+	}
+	for _, tt := range tests {
+		cmd, ok := handler.parse(tt.text)
+		if !ok || cmd.Name != tt.name || joinedArgs(cmd.Args) != tt.args {
+			t.Errorf("%q parsed as %#v, ok = %v; want name=%q args=%q", tt.text, cmd, ok, tt.name, tt.args)
+		}
+	}
+}
+
+func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	tests := []struct {
+		text string
+		name string
+	}{
+		{text: "课程搜索 keyword 数学分析", name: "course_search"},
+		{text: "课程编号 123", name: "course_by_jw_id"},
+		{text: "教学班搜索 keyword 高等数学", name: "section_search"},
+		{text: "教学班课表 123 2026-07-01 2026-07-07", name: "section_schedules"},
+		{text: "老师搜索 keyword 张", name: "teacher_search"},
+		{text: "学期列表 10", name: "list_semesters"},
+		{text: "我的订阅", name: "my_subscribed_sections"},
+		{text: "退订教学班 999", name: "unsubscribe_section_by_jw_id"},
+		{text: "校车路线 从 东区 到 西区", name: "bus_routes"},
+		{text: "通知 课表 开", name: "notify"},
+		{text: "AI 工具 开", name: "agent"},
+		{text: "待办 写报告", name: "todo"},
+	}
+	for _, tt := range tests {
+		cmd, ok := handler.parse(tt.text)
+		if !ok || cmd.Name != tt.name {
+			t.Errorf("%q parsed as %#v, ok = %v; want %q", tt.text, cmd, ok, tt.name)
 		}
 	}
 }
