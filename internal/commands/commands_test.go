@@ -158,16 +158,16 @@ func TestHandleHelpAliases(t *testing.T) {
 	}
 }
 
-func TestHelpReplyUsesNestedSections(t *testing.T) {
+func TestHelpReplyUsesScannableSections(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
 		"课程与日程：",
-		"• 课表",
-		"  ├─ 课表：本周",
-		"  └─ 下一节课",
+		"• 课表　查看本周",
+		"• 课表 05.06　查看日期所在周",
+		"• 今日课表 / 单日课表　只看今天",
 		"任务：",
-		"  ├─ td 写报告",
+		"• td 写报告　新建待办",
 		"账户与反馈：",
 	} {
 		if !strings.Contains(reply, want) {
@@ -766,7 +766,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
-	for _, want := range []string{"## 课程与日程", "• 课表", "  ├─ 课表：本周"} {
+	for _, want := range []string{"## 课程与日程", "• 课表　查看本周", "• 课表 05.06　查看日期所在周"} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
 		}
@@ -842,28 +842,27 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
-func TestScheduleImageUsesSeparateCampusAndRoomColumns(t *testing.T) {
+func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
-		"今天课表：",
+		"今天 07-17 课表：",
 		"西区 3A204\t09:50-11:25\t数据库系统",
 		"高新区 GT-B112\t14:00-15:35\tComputer Networks",
 	}, "\n")
 
 	img := handler.imageResponseFor(parsedCommand{Name: "schedule", Args: []string{"today"}}, text)
-	want := strings.Join([]string{
-		"# 今天课表",
-		"",
-		"| 节次 | 时间 | 安排 | 备注 |",
-		"| --- | --- | --- | --- |",
-		"| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |",
-		"| 第 6–7 小节 | 14:00-15:35 | Computer Networks | 高新区 · GT-B112 |",
-	}, "\n")
-	if img == nil || img.RichText != want {
-		t.Fatalf("rich text = %q, want %q", img.RichText, want)
+	if img == nil || img.Grid == nil {
+		t.Fatalf("image = %#v", img)
 	}
-	if img.Grid != nil {
-		t.Fatalf("daily schedule unexpectedly used weekly grid: %#v", img.Grid)
+	if len(img.Grid.Days) != 1 || img.Grid.Days[0].Date != "07-17" {
+		t.Fatalf("days = %#v", img.Grid.Days)
+	}
+	if len(img.Grid.Items) != 2 {
+		t.Fatalf("items = %#v", img.Grid.Items)
+	}
+	if first := img.Grid.Items[0]; first.Day != 0 || first.StartPeriod != 3 || first.EndPeriod != 4 ||
+		first.Course != "数据库系统" || first.Location != "西区 · 3A204" {
+		t.Fatalf("first item = %#v", first)
 	}
 	assertResponseImageRenders(t, img)
 }
@@ -2165,7 +2164,7 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
-func TestHandleCurriculumForSpecificDate(t *testing.T) {
+func TestHandleCurriculumDateShowsContainingWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	base := time.Date(2026, 6, 21, 12, 0, 0, 0, lifedata.ChinaLocation())
@@ -2176,7 +2175,10 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 		if r.URL.Path != "/api/me/subscriptions/schedules" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		if !strings.Contains(r.URL.Query().Get("dateFrom"), "2026-06-22T16:00:00Z") || !strings.Contains(r.URL.Query().Get("dateTo"), "2026-06-23T15:59:59Z") {
+		if got := r.URL.Query().Get("dateFrom"); got != "2026-06-20T16:00:00Z" {
+			t.Fatalf("dateFrom = %q", got)
+		}
+		if got := r.URL.Query().Get("dateTo"); got != "2026-06-27T15:59:59Z" {
 			t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 		}
 		_, _ = w.Write([]byte(`{"schedules":[{"date":"2026-06-23T00:00:00+08:00","startTime":"07:50","endTime":"09:25","section":{"course":{"namePrimary":"随机过程理论"}},"room":{"namePrimary":"GT-A405"}}]}`))
@@ -2184,8 +2186,8 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.curriculumAt(ctx, ident, []string{"date:6.23"}, base)
-	if !strings.Contains(reply, "𝟶𝟼-𝟸𝟹 课表：") || !strings.Contains(reply, "随机过程理论") {
+	reply := handler.curriculumAt(ctx, ident, []string{"week-date:6.23"}, base)
+	if !strings.Contains(reply, "06-21 至 06-27 课表：") || !strings.Contains(reply, "随机过程理论") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -3058,7 +3060,10 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"kb today":          {"today"},
 		"今天 课表":             {"today"},
 		"今天课标":              {"today"},
+		"今日课表":              {"today"},
 		"今日课标":              {"today"},
+		"单日课表":              {"today"},
+		"单日 课表":             {"today"},
 		"课表今天":              {"today"},
 		"kb今天":              {"today"},
 		"tomorrow schedule": {"tomorrow"},
@@ -3069,10 +3074,11 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"明日课标":              {"tomorrow"},
 		"课表明天":              {"tomorrow"},
 		"明日kb":              {"tomorrow"},
-		"课表 6.23":           {"date:6.23"},
-		"课表 2022.05.03":     {"date:2022.05.03"},
-		"6.23 课表":           {"date:6.23"},
-		"课表6月23日":           {"date:6月23日"},
+		"课表 6.23":           {"week-date:6.23"},
+		"课表 05.06":          {"week-date:05.06"},
+		"课表 2022.05.03":     {"week-date:2022.05.03"},
+		"6.23 课表":           {"week-date:6.23"},
+		"课表6月23日":           {"week-date:6月23日"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {

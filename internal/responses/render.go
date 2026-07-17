@@ -117,7 +117,7 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if strings.TrimSpace(img.RichText) == "" {
 		return nil, 0, 0, errors.New("response rich text is empty")
 	}
-	return r.renderRichPNG(img.RichText)
+	return r.renderRichPNG(img.Kind, img.RichText)
 }
 
 type busRenderTable struct {
@@ -900,9 +900,9 @@ func DefaultFontPathsForTest() []string {
 func cardTheme(kind string) responseCardTheme {
 	theme := responseCardTheme{
 		Label:      "Life @ USTC",
-		Background: color.RGBA{241, 245, 249, 255},
-		Header:     color.RGBA{248, 250, 252, 255},
-		Accent:     color.RGBA{37, 99, 235, 255},
+		Background: color.RGBA{248, 250, 252, 255},
+		Header:     color.RGBA{240, 253, 250, 255},
+		Accent:     color.RGBA{15, 118, 110, 255},
 		Border:     color.RGBA{203, 213, 225, 255},
 		Shadow:     color.RGBA{226, 232, 240, 255},
 		Title:      color.RGBA{15, 23, 42, 255},

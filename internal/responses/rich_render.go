@@ -157,6 +157,64 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 	}
 }
 
+func layoutRichTextForKind(kind string, doc richDocument, now time.Time) richLayout {
+	if strings.TrimSpace(kind) == "help" && len(doc.Blocks) >= 3 {
+		return layoutRichHelp(doc)
+	}
+	return layoutRichText(doc, now)
+}
+
+func layoutRichHelp(doc richDocument) richLayout {
+	m := defaultRichRenderMetrics()
+	m.BlockGap = 20
+	m.TableRowGap = 20
+	columnGap := 20
+	cardWidth := richTextWidth(doc.Title, 18)
+	for _, block := range doc.Blocks {
+		cardWidth = max(cardWidth, measureRichBlockWidth(block, m))
+	}
+
+	y := [2]int{m.ContentTop, m.ContentTop}
+	nodes := make([]richLayoutNode, 0, len(doc.Blocks))
+	for i, block := range doc.Blocks {
+		lines := make([]string, 0, len(block.Lines))
+		for _, line := range block.Lines {
+			if strings.TrimSpace(line) != "" {
+				lines = append(lines, line)
+			}
+		}
+		height := len(lines) * m.TextRowHeight
+		if block.Heading != "" {
+			height += m.TableHeaderHeight
+		}
+		column := i % 2
+		x := m.MarginX + column*(cardWidth+columnGap)
+		nodes = append(nodes, richLayoutNode{
+			Bounds:  image.Rect(x, y[column], x+cardWidth, y[column]+height),
+			Heading: block.Heading,
+			Lines:   lines,
+		})
+		y[column] += height + m.BlockGap
+	}
+
+	contentBottom := max(y[0], y[1])
+	if len(nodes) > 0 {
+		contentBottom -= m.BlockGap
+	}
+	footerY := contentBottom + m.FooterGap
+	return richLayout{
+		Space: imageRenderSpace{
+			Width:  2*m.MarginX + 2*cardWidth + columnGap,
+			Height: footerY + m.FooterLineGap + m.BottomMargin,
+			Scale:  m.Scale,
+		},
+		Metrics: m,
+		Title:   doc.Title,
+		Nodes:   nodes,
+		FooterY: footerY,
+	}
+}
+
 func richDocumentHasOnlyTables(doc richDocument) bool {
 	if len(doc.Blocks) == 0 {
 		return false
@@ -464,7 +522,7 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	}, nil
 }
 
-func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
+func (r Renderer) renderRichPNG(kind, text string) ([]byte, int, int, error) {
 	doc := parseRichText(text)
 	now := time.Now().In(time.FixedZone("CST", 8*60*60))
 	tables := []busRenderTable{}
@@ -483,35 +541,49 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 			}
 		}
 	}
-	layout := layoutRichText(doc, now)
+	layout := layoutRichTextForKind(kind, doc, now)
 	s := layout.Space.px
 	faces, err := r.richFaces(layout.Space.Scale)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	canvas := image.NewRGBA(layout.Space.bounds())
-	bg := color.RGBA{250, 250, 250, 255}
-	ink := color.RGBA{39, 39, 42, 255}
+	theme := cardTheme(kind)
+	bg := theme.Background
+	ink := theme.Title
 	muted := color.RGBA{113, 113, 122, 255}
-	line := color.RGBA{212, 212, 216, 255}
-	rowBg := bg
-	headBg := bg
-	highlightBg := color.RGBA{244, 244, 245, 255}
+	line := theme.Border
+	rowBg := color.RGBA{255, 255, 255, 255}
+	headBg := theme.Header
+	highlightBg := theme.Header
 	departed := muted
-	accent := color.RGBA{15, 118, 110, 255}
+	accent := theme.Accent
 	drawRect(canvas, canvas.Bounds(), bg)
-	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
+	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.08)
 	drawMixedText(canvas, faces.Title, faces.TitleMono, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
+	drawRect(canvas, image.Rect(
+		s(layout.Metrics.MarginX),
+		s(layout.Metrics.TitleBaseline+12),
+		s(layout.Metrics.MarginX+44),
+		s(layout.Metrics.TitleBaseline+16),
+	), accent)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
 		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
 		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline), layout.NextWait, accent)
+	} else {
+		drawRightMixedText(canvas, faces.Meta, faces.MetaMono, s(layout.Space.Width-layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), "Life @ USTC", muted)
 	}
 	for _, node := range layout.Nodes {
 		x, y := s(node.Bounds.Min.X), s(node.Bounds.Min.Y)
+		right, bottom := s(node.Bounds.Max.X), s(node.Bounds.Max.Y)
+		drawRect(canvas, image.Rect(x+s(2), y+s(3), right+s(2), bottom+s(3)), theme.Shadow)
+		drawRect(canvas, image.Rect(x, y, right, bottom), rowBg)
 		if node.Table != nil {
 			tableY := y
 			if node.Heading != "" {
+				drawRect(canvas, image.Rect(x, y, right, y+s(layout.Metrics.TableHeaderHeight)), headBg)
+				drawRect(canvas, image.Rect(x, y, x+s(4), y+s(layout.Metrics.TableHeaderHeight)), accent)
 				drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), node.Heading, ink)
 				tableY += s(layout.Metrics.TableHeaderHeight)
 				drawRect(canvas, image.Rect(x, tableY, s(node.Bounds.Max.X), tableY+layout.Space.Scale), line)
@@ -521,11 +593,13 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 				columnWidths[i] = s(width)
 			}
 			drawBusTable(canvas, node.Header, *node.Table, x, tableY, s(node.Bounds.Dx()), columnWidths, s(layout.Metrics.TableHeaderHeight), s(layout.Metrics.TableRowHeight), s(layout.Metrics.TableCellPaddingX), layout.Space.Scale, faces.Head, faces.HeadMono, faces.Bold, faces.BoldMono, faces.Body, faces.Mono, headBg, rowBg, highlightBg, line, ink, departed, ink)
+			drawScheduleGridBorder(canvas, node.Bounds, s, line)
 			continue
 		}
-		drawRect(canvas, image.Rect(x, y, s(node.Bounds.Max.X), s(node.Bounds.Max.Y)), rowBg)
 		rowY := y
 		if node.Heading != "" {
+			drawRect(canvas, image.Rect(x, y, right, y+s(layout.Metrics.TableHeaderHeight)), headBg)
+			drawRect(canvas, image.Rect(x, y, x+s(4), y+s(layout.Metrics.TableHeaderHeight)), accent)
 			drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), node.Heading, ink)
 			rowY += s(layout.Metrics.TableHeaderHeight)
 			if len(node.Lines) > 0 {
@@ -540,6 +614,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 				drawRect(canvas, image.Rect(x, separatorY, s(node.Bounds.Max.X), separatorY+layout.Space.Scale), line)
 			}
 		}
+		drawScheduleGridBorder(canvas, node.Bounds, s, line)
 	}
 	footerY := s(layout.FooterY)
 	right := s(layout.Space.Width - layout.Metrics.MarginX)

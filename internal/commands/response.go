@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -37,6 +39,11 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		title := imageTitle(plainText, "课表")
 		if grid := weeklyScheduleGrid(plainText); grid != nil {
 			return responses.NewScheduleGridImage("schedule", title, grid, imageText)
+		}
+		if firstArgIn(cmd.Args, "today", "tomorrow") {
+			if grid := dailyScheduleGrid(plainText); grid != nil {
+				return responses.NewScheduleGridImage("schedule", title, grid, imageText)
+			}
 		}
 		return responses.NewRichTextImage("schedule", scheduleRichText(title, plainText), imageText)
 	case "todo":
@@ -268,6 +275,49 @@ func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
 	}
 	return &responses.ScheduleGrid{
 		Days:    days,
+		Periods: weeklyScheduleGridPeriods(),
+		Items:   items,
+	}
+}
+
+func dailyScheduleGrid(text string) *responses.ScheduleGrid {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) < 2 {
+		return nil
+	}
+	now := chinaNow()
+	day := now
+	date := now.Format("01-02")
+	for _, field := range strings.Fields(lines[0]) {
+		candidate := strings.Trim(strings.TrimSpace(field), "：:")
+		if !scheduleGridDate(candidate) {
+			continue
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", strconv.Itoa(now.Year())+"-"+candidate, lifedata.ChinaLocation())
+		if err == nil {
+			day = parsed
+			date = candidate
+		}
+		break
+	}
+
+	items := []responses.ScheduleGridItem{}
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "没有课。" {
+			continue
+		}
+		item, ok := weeklyScheduleGridItem(line, 0)
+		if !ok {
+			return nil
+		}
+		items = mergeScheduleGridItem(items, item)
+	}
+	return &responses.ScheduleGrid{
+		Days: []responses.ScheduleGridDay{{
+			Label: weeklyScheduleDayLabels[day.Weekday()],
+			Date:  date,
+		}},
 		Periods: weeklyScheduleGridPeriods(),
 		Items:   items,
 	}

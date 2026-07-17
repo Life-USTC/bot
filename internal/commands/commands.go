@@ -651,7 +651,7 @@ func joinedScheduleDay(key string) (string, bool) {
 
 func normalizeScheduleDay(value string) (string, bool) {
 	switch value {
-	case "today", "今天", "今日":
+	case "today", "single-day", "singleday", "今天", "今日", "单日":
 		return "today", true
 	case "tomorrow", "明天", "明日":
 		return "tomorrow", true
@@ -668,7 +668,7 @@ func normalizeScheduleDateToken(value string) (string, bool) {
 	if _, ok := parseScheduleDateToken(value, chinaNow()); !ok {
 		return "", false
 	}
-	return "date:" + value, true
+	return "week-date:" + value, true
 }
 
 var scheduleWeekNumberPattern = regexp.MustCompile(`^第?([0-9]+)周$`)
@@ -1054,35 +1054,34 @@ func (h Handler) help() string {
 	return strings.Join([]string{
 		"Bot 帮助：",
 		"课程与日程：",
-		"• 今日 / ddl",
-		"• 课表",
-		"  ├─ 课表：本周",
-		"  ├─ 课表 下周 / 课表 第3周",
-		"  ├─ 今天课表 / 明天课表",
-		"  └─ 下一节课",
-		"• 订阅",
-		"  ├─ 订阅：查看课程",
-		"  └─ 订阅 链接：查看日历链接",
-		"• 考试 / ks",
-		"• 课程 数学分析 / 教学班 高等数学 / 老师 张",
+		"• 今日 / ddl　汇总今天的安排",
+		"• 课表　查看本周",
+		"• 课表 05.06　查看日期所在周",
+		"• 课表 下周 / 课表 第3周　切换周次",
+		"• 今日课表 / 单日课表　只看今天",
+		"• 下一节课　查看最近一节",
+		"• 订阅　查看课程",
+		"• 订阅 链接　查看日历链接",
+		"• 考试 / ks　查看考试",
+		"• 课程 数学分析 / 教学班 高等数学　搜索课程",
 		"",
 		"任务：",
-		"• 待办 / td",
-		"  ├─ td 写报告",
-		"  └─ td done 1",
-		"• 作业 / hw",
-		"  └─ 作业 done 1",
+		"• 待办 / td　查看待办",
+		"• td 写报告　新建待办",
+		"• td done 1　完成待办",
+		"• 作业 / hw　查看作业",
+		"• 作业 done 1　完成作业",
 		"",
 		"校车：",
-		"• 校车 / xc",
-		"  ├─ xc 东区 西区",
-		"  └─ 校车 偏好",
+		"• 校车 / xc　查看时刻表",
+		"• xc 东区 西区　查询路线",
+		"• 校车 偏好　设置常用校区",
 		"",
 		"账户与反馈：",
-		"• 登录 / 登录 状态",
-		"• 通知 / AI 工具",
-		"• 状态 / status / 我 / me",
-		"• 反馈 你的建议",
+		"• 登录 / 登录 状态　连接账户",
+		"• 通知 / AI 工具　管理功能",
+		"• 状态 / 我　查看账户概览",
+		"• 反馈 你的建议　联系管理员",
 	}, "\n")
 }
 
@@ -2536,14 +2535,11 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 		return strings.Join([]string{
 			"课表用法：",
 			"课表 / 课表 本周：查看本周（周日至周六）",
-			"课表 下周",
-			"课表 第3周",
-			"课表 7.20周",
-			"今天课表",
-			"明天课表",
-			"课表 6.23",
-			"课表 2022.05.03",
-			"下一节课",
+			"课表 05.06：查看 05.06 所在周",
+			"课表 下周 / 课表 第3周：切换周次",
+			"课表 7.20周：查看 7.20 所在周",
+			"今日课表 / 单日课表：只看今天",
+			"下一节课：查看最近一节",
 		}, "\n")
 	}
 	target := "this-week"
