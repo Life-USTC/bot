@@ -126,6 +126,25 @@ func TestSchedulePlaceLabelFallsBackFromBlankCustomPlace(t *testing.T) {
 	}
 }
 
+func TestSchedulePlaceLabelIncludesCampus(t *testing.T) {
+	schedule := map[string]any{
+		"room": map[string]any{
+			"namePrimary": "GT-B112",
+			"building": map[string]any{
+				"campus": map[string]any{"namePrimary": "高新区"},
+			},
+		},
+	}
+	if got := SchedulePlaceLabel(schedule); got != "高新区 GT-B112" {
+		t.Fatalf("SchedulePlaceLabel = %q", got)
+	}
+
+	schedule["room"].(map[string]any)["namePrimary"] = "高新区 GT-B112"
+	if got := SchedulePlaceLabel(schedule); got != "高新区 GT-B112" {
+		t.Fatalf("SchedulePlaceLabel duplicated campus: %q", got)
+	}
+}
+
 func TestScheduleTimeRange(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

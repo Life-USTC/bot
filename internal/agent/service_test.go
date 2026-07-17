@@ -535,6 +535,12 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
+	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, or service availability") {
+		t.Fatalf("instruction lacks grounding rule: %q", instruction)
+	}
+	if !strings.Contains(instruction, "Never ask whether to record feedback") {
+		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
+	}
 }
 
 func TestMessagesForIncludesRecentHistory(t *testing.T) {

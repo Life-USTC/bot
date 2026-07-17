@@ -129,10 +129,12 @@ var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "�
 var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"}
 
 const (
-	feedbackContextLimit     = 5
+	feedbackContextLimit     = 1
 	feedbackContextLookback  = 12
 	feedbackContextTextRunes = 220
 )
+
+var feedbackEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 
 func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
 	if groupCommandAlwaysAllowed(cmd.Name) {
@@ -607,6 +609,8 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 	switch key {
 	case "下一节课":
 		return "nextclass", nil, true
+	case "订阅链接", "日历订阅链接", "subscriptionlink", "calendarlink":
+		return "subscription", []string{"link"}, true
 	case "校车偏好", "校车默认", "车偏好", "车默认", "xc偏好", "xc默认", "buspref", "busprefs", "buspreference", "buspreferences":
 		return "bus", []string{"偏好"}, true
 	case "校车设置", "车设置", "xc设置", "busset":
@@ -623,6 +627,9 @@ func joinedScheduleDay(key string) (string, bool) {
 			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
 				return day, true
 			}
+			if week, ok := normalizeScheduleWeekTarget(key[len(scheduleToken):]); ok {
+				return week, true
+			}
 			if date, ok := normalizeScheduleDateToken(key[len(scheduleToken):]); ok {
 				return date, true
 			}
@@ -630,6 +637,9 @@ func joinedScheduleDay(key string) (string, bool) {
 		if strings.HasSuffix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[:len(key)-len(scheduleToken)]); ok {
 				return day, true
+			}
+			if week, ok := normalizeScheduleWeekTarget(key[:len(key)-len(scheduleToken)]); ok {
+				return week, true
 			}
 			if date, ok := normalizeScheduleDateToken(key[:len(key)-len(scheduleToken)]); ok {
 				return date, true
@@ -659,6 +669,32 @@ func normalizeScheduleDateToken(value string) (string, bool) {
 		return "", false
 	}
 	return "date:" + value, true
+}
+
+var scheduleWeekNumberPattern = regexp.MustCompile(`^第?([0-9]+)周$`)
+
+func normalizeScheduleWeekTarget(value string) (string, bool) {
+	value = normToken(value)
+	switch value {
+	case "thisweek", "本周", "这周", "本星期", "这个星期":
+		return "this-week", true
+	case "nextweek", "下周", "下星期", "下个星期":
+		return "next-week", true
+	}
+	plainValue := textutil.PlainDigits(value)
+	if matches := scheduleWeekNumberPattern.FindStringSubmatch(plainValue); len(matches) == 2 {
+		week, err := strconv.Atoi(matches[1])
+		if err == nil && week > 0 {
+			return "week-number:" + strconv.Itoa(week), true
+		}
+	}
+	if strings.HasSuffix(value, "周") {
+		dateValue := strings.TrimSpace(strings.TrimSuffix(value, "周"))
+		if _, ok := parseScheduleDateToken(dateValue, chinaNow()); ok {
+			return "week-date:" + dateValue, true
+		}
+	}
+	return "", false
 }
 
 func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
@@ -711,6 +747,8 @@ func normalizeSubscriptionArgs(args []string) []string {
 	switch normToken(args[0]) {
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
 		return withFirstArg(args, "import")
+	case "link", "url", "calendar", "ical", "链接", "日历", "订阅链接":
+		return withFirstArg(args, "link")
 	}
 	return args
 }
@@ -788,6 +826,9 @@ func normalizeScheduleArgs(args []string) []string {
 	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
 		return withFirstArg(args, day)
+	}
+	if week, ok := normalizeScheduleWeekTarget(args[0]); ok {
+		return withFirstArg(args, week)
 	}
 	if date, ok := normalizeScheduleDateToken(args[0]); ok {
 		return withFirstArg(args, date)
@@ -1126,8 +1167,11 @@ func (h Handler) feedbackContext(ctx context.Context, ident store.Identity) stri
 
 func formatFeedbackContext(interactions []store.Interaction) string {
 	lines := []string{}
-	for _, interaction := range interactions {
-		if strings.EqualFold(strings.TrimSpace(interaction.Command), "feedback") {
+	included := 0
+	for i := len(interactions) - 1; i >= 0; i-- {
+		interaction := interactions[i]
+		switch strings.ToLower(strings.TrimSpace(interaction.Command)) {
+		case "feedback", "login", "me", "status":
 			continue
 		}
 		raw := compactFeedbackContextText(interaction.RawText)
@@ -1138,7 +1182,10 @@ func formatFeedbackContext(interactions []store.Interaction) string {
 		if reply != "" {
 			lines = append(lines, "Bot："+reply)
 		}
-		if len(lines) >= feedbackContextLimit*2 {
+		if raw != "" || reply != "" {
+			included++
+		}
+		if included >= feedbackContextLimit {
 			break
 		}
 	}
@@ -1151,6 +1198,7 @@ func compactFeedbackContextText(text string) string {
 		return ""
 	}
 	text = strings.Join(strings.Fields(text), " ")
+	text = feedbackEmailPattern.ReplaceAllString(text, "[已隐藏邮箱]")
 	runes := []rune(text)
 	if len(runes) <= feedbackContextTextRunes {
 		return text
@@ -2126,8 +2174,13 @@ func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
 		{title: "已逾期"},
 		{title: "近期"},
 		{title: "未来"},
+		{title: "已完成"},
 	}
 	for _, homework := range homeworks {
+		if lifedata.HomeworkCompleted(homework) {
+			groups[3].items = append(groups[3].items, homework)
+			continue
+		}
 		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 		switch {
 		case ok && due.Before(now):
@@ -2169,6 +2222,8 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 		switch args[0] {
 		case "help":
 			return subscriptionHelp()
+		case "link":
+			return h.subscriptionCalendarLink(ctx, ident)
 		case "import":
 			return h.bulkSubscribeSections(ctx, ident, joinedArgs(args[1:]))
 		default:
@@ -2185,9 +2240,31 @@ func subscriptionHelp() string {
 	return strings.Join([]string{
 		"订阅用法：",
 		"订阅：查看当前日程订阅",
+		"订阅 链接：查看私有日历订阅链接",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 	}, "\n")
+}
+
+func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Identity) string {
+	if !store.IsPrivateConversation(ident) {
+		return "订阅链接只能在私聊里查看。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
+	if err != nil {
+		return commandError("订阅链接查不到：", err)
+	}
+	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
+	if calendarURL == "" {
+		return "当前订阅没有可用的日历链接。"
+	}
+	return "日历订阅链接：\n" + calendarURL + "\n请勿公开或转发此链接。"
 }
 
 func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {
@@ -2441,7 +2518,10 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"课表用法：",
-			"课表：查看今明两日",
+			"课表 / 课表 本周：查看本周（周日至周六）",
+			"课表 下周",
+			"课表 第3周",
+			"课表 7.20周",
 			"今天课表",
 			"明天课表",
 			"课表 6.23",
@@ -2449,18 +2529,37 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 			"下一节课",
 		}, "\n")
 	}
-	target := "two-day"
+	target := "this-week"
 	if hasArgs(args) {
 		target = args[0]
 	}
 	day = day.In(lifedata.ChinaLocation())
-	if target == "two-day" {
-		return h.curriculumTwoDays(ctx, ident, day)
+	switch {
+	case target == "this-week":
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day))
+	case target == "next-week":
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7))
+	case strings.HasPrefix(target, "week-date:"):
+		parsed, ok := parseScheduleDateToken(strings.TrimPrefix(target, "week-date:"), day)
+		if !ok {
+			return "日期格式不太对。可以发：课表 7.20周"
+		}
+		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed))
+	case strings.HasPrefix(target, "week-number:"):
+		week, err := strconv.Atoi(strings.TrimPrefix(target, "week-number:"))
+		if err != nil || week < 1 {
+			return "周次格式不太对。可以发：课表 第3周"
+		}
+		start, err := h.academicWeekStart(ctx, week)
+		if err != nil {
+			return commandError("学期周次查不到：", err)
+		}
+		return h.curriculumWeek(ctx, ident, start)
 	}
-	title := "今天课表："
+	title := "今天 " + textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	if target == "tomorrow" {
 		day = day.AddDate(0, 0, 1)
-		title = "明天课表："
+		title = "明天 " + textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	} else if strings.HasPrefix(target, "date:") {
 		parsed, ok := parseScheduleDateToken(target, day)
 		if !ok {
@@ -2506,6 +2605,49 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	return strings.Join(lines, "\n")
 }
 
+func weekStartSunday(day time.Time) time.Time {
+	day = day.In(lifedata.ChinaLocation())
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	return start.AddDate(0, 0, -int(start.Weekday()))
+}
+
+func (h Handler) academicWeekStart(ctx context.Context, week int) (time.Time, error) {
+	semester, err := h.Life.CurrentSemester(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	start, ok := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
+	if !ok {
+		return time.Time{}, errors.New("当前学期缺少开始日期")
+	}
+	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), nil
+}
+
+func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	start = weekStartSunday(start)
+	end := start.AddDate(0, 0, 6)
+	schedules, _, err := h.schedulesForRange(ctx, ident, token, start, end)
+	if err != nil {
+		return commandError("课表查不到：", err)
+	}
+	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
+	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+	for offset := 0; offset < 7; offset++ {
+		if offset > 0 {
+			lines = append(lines, "")
+		}
+		day := start.AddDate(0, 0, offset)
+		daySchedules := lifedata.FilterSchedulesForDay(schedules, day)
+		lifedata.SortSchedulesByStart(daySchedules)
+		lines = append(lines, formatScheduleDay(weekdays[day.Weekday()]+" "+day.Format("01-02"), daySchedules)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity, token string) (bool, error) {
 	subscription, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.CurrentSubscription(ctx, token)
@@ -2514,26 +2656,6 @@ func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity
 		return false, err
 	}
 	return len(lifedata.SubscriptionSectionIDs(subscription)) > 0, nil
-}
-
-func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, today time.Time) string {
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	todaySchedules, token, err := h.schedulesForDay(ctx, ident, token, today)
-	if err != nil {
-		return commandError("课表查不到：", err)
-	}
-	tomorrowSchedules, _, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
-	if err != nil {
-		return commandError("课表查不到：", err)
-	}
-	lines := []string{"今明两日课表："}
-	lines = append(lines, formatScheduleDay("今天", todaySchedules)...)
-	lines = append(lines, "")
-	lines = append(lines, formatScheduleDay("明天", tomorrowSchedules)...)
-	return strings.Join(lines, "\n")
 }
 
 func formatScheduleDay(title string, schedules []map[string]any) []string {
@@ -2606,6 +2728,32 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 func (h Handler) subscribedSchedulesForDay(ctx context.Context, token string, day time.Time) ([]map[string]any, error) {
 	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
 	return h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+}
+
+func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, token string, start, end time.Time) ([]map[string]any, string, error) {
+	dateFrom, _ := lifedata.DayRFC3339Range(start)
+	_, dateTo := lifedata.DayRFC3339Range(end)
+	all, err := h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		all, err = h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+	}
+	if err == nil {
+		return all, token, nil
+	}
+	if !subscribedSchedulesFallbackError(err) {
+		return nil, token, err
+	}
+	all = nil
+	for day := weekStartSunday(start); !day.After(end); day = day.AddDate(0, 0, 1) {
+		daySchedules, refreshed, fetchErr := h.schedulesForDayBySections(ctx, ident, token, day)
+		token = refreshed
+		if fetchErr != nil {
+			return nil, token, fetchErr
+		}
+		all = append(all, daySchedules...)
+	}
+	return all, token, nil
 }
 
 func subscribedSchedulesFallbackError(err error) bool {

@@ -783,7 +783,7 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 	if response.Image == nil {
 		t.Fatal("image = nil, want schedule image")
 	}
-	if response.Image.Kind != "schedule" || response.Image.Title != "今天课表" {
+	if response.Image.Kind != "schedule" || !strings.HasPrefix(response.Image.Title, "今天 ") || !strings.HasSuffix(response.Image.Title, " 课表") {
 		t.Fatalf("image = %#v", response.Image)
 	}
 	if !strings.Contains(response.Image.AltText, "数据库系统") {
@@ -1311,6 +1311,15 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "登录 student@example.com",
+		Command: "login",
+		Handled: true,
+		Reply:   "登录成功，student@example.com",
+		Status:  store.InteractionStatusHandled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: "xc 东区 高新区",
 		Command: "bus",
 		Handled: true,
@@ -1349,6 +1358,25 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 	}
 	if strings.Contains(message, "旧反馈") || strings.Contains(message, "反馈发送失败") {
 		t.Fatalf("message includes previous feedback: %q", message)
+	}
+	if strings.Contains(message, "登录") || strings.Contains(message, "student@example.com") {
+		t.Fatalf("message includes unrelated private context: %q", message)
+	}
+}
+
+func TestFormatFeedbackContextSkipsPrivateCommandsAndRedactsEmail(t *testing.T) {
+	contextText := formatFeedbackContext([]store.Interaction{
+		{Command: "login", RawText: "登录 student@example.com", Reply: "登录成功"},
+	})
+	if contextText != "" {
+		t.Fatalf("login context = %q", contextText)
+	}
+
+	contextText = formatFeedbackContext([]store.Interaction{
+		{Command: "agent", RawText: "联系 student@example.com", Reply: "已记录"},
+	})
+	if strings.Contains(contextText, "student@example.com") || !strings.Contains(contextText, "[已隐藏邮箱]") {
+		t.Fatalf("email was not redacted: %q", contextText)
 	}
 }
 
@@ -1886,6 +1914,24 @@ func TestFormatHomeworkListGroupsByDueTime(t *testing.T) {
 	}
 }
 
+func TestFormatHomeworkListSeparatesCompletedFromOverdue(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	reply := formatHomeworkListAt([]map[string]any{
+		{"id": "done", "title": "Finished", "submissionDueAt": "2026-06-07T10:00:00+08:00", "isCompleted": true},
+		{"id": "open", "title": "Pending", "submissionDueAt": "2026-06-07T11:00:00+08:00"},
+	}, now)
+	completedAt := strings.Index(reply, "已完成：")
+	overdueAt := strings.Index(reply, "已逾期：")
+	finishedAt := strings.Index(reply, "Finished")
+	pendingAt := strings.Index(reply, "Pending")
+	if completedAt < 0 || overdueAt < 0 || finishedAt < completedAt || pendingAt < overdueAt {
+		t.Fatalf("reply = %q", reply)
+	}
+	if finishedAt > overdueAt && finishedAt < pendingAt {
+		t.Fatalf("completed homework appears in overdue group: %q", reply)
+	}
+}
+
 func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -2154,7 +2200,7 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	}
 }
 
-func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
+func TestBareCurriculumReusesRefreshedTokenForWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
@@ -2178,11 +2224,10 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 			case "Bearer refreshed":
 				scheduleCalls++
-				if scheduleCalls == 1 {
-					_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`, today)))
-					return
-				}
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}]}`, tomorrow)))
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[
+					{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}},
+					{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}
+				]}`, today, tomorrow)))
 			default:
 				t.Fatalf("schedules authorization = %q", r.Header.Get("Authorization"))
 			}
@@ -2198,27 +2243,30 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if refreshRequests != 1 || scheduleOldTokenCalls != 1 || scheduleCalls != 2 {
+	if refreshRequests != 1 || scheduleOldTokenCalls != 1 || scheduleCalls != 1 {
 		t.Fatalf("refreshRequests = %d, scheduleOldTokenCalls = %d, scheduleCalls = %d", refreshRequests, scheduleOldTokenCalls, scheduleCalls)
 	}
 }
 
-func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
+func TestBareCurriculumShowsSundayToSaturdayWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	scheduleCalls := 0
-	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
-	today := day.Format("2006-01-02")
-	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
+	day := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/me/subscriptions/schedules":
 			scheduleCalls++
-			if scheduleCalls == 1 {
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
-				return
+			if got := r.URL.Query().Get("dateFrom"); got != "2026-07-11T16:00:00Z" {
+				t.Fatalf("dateFrom = %q", got)
 			}
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}]}`, tomorrow)))
+			if got := r.URL.Query().Get("dateTo"); got != "2026-07-18T15:59:59Z" {
+				t.Fatalf("dateTo = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"schedules":[
+				{"date":"2026-07-12T08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}},
+				{"date":"2026-07-18T08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}
+			]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2227,10 +2275,40 @@ func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.curriculumAt(ctx, ident, nil, day)
-	if !strings.Contains(reply, "今明两日课表：") || !strings.Contains(reply, "今天：") || !strings.Contains(reply, "明天：") {
-		t.Fatalf("reply = %q", reply)
+	for _, want := range []string{"07-12 至 07-18 课表：", "周日 07-12：", "周六 07-18：", "数据库系统", "编译原理"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
-	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
+	if scheduleCalls != 1 {
+		t.Fatalf("scheduleCalls = %d", scheduleCalls)
+	}
+}
+
+func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/semesters/current":
+			_, _ = w.Write([]byte(`{"startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
+		case "/api/me/subscriptions/schedules":
+			if got := r.URL.Query().Get("dateFrom"); got != "2026-03-07T16:00:00Z" {
+				t.Fatalf("dateFrom = %q", got)
+			}
+			if got := r.URL.Query().Get("dateTo"); got != "2026-03-14T15:59:59Z" {
+				t.Fatalf("dateTo = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"schedules":[]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, []string{"week-number:3"}, time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "03-08 至 03-14 课表：") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2297,6 +2375,27 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 		t.Fatal("command was not handled")
 	}
 	if !strings.Contains(reply, "订阅 导入") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestSubscriptionCalendarLink(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/calendar-subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"calendarUrl":"https://example.test/calendar/private-token.ics"}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅链接", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "https://example.test/calendar/private-token.ics") || !strings.Contains(reply, "请勿公开") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2704,6 +2803,33 @@ func TestAttachedPrefixCommandParses(t *testing.T) {
 		}
 		if cmd.Name != want.name || strings.Join(cmd.Args, " ") != strings.Join(want.args, " ") {
 			t.Fatalf("%q parsed as name=%q args=%#v, want name=%q args=%#v", text, cmd.Name, cmd.Args, want.name, want.args)
+		}
+	}
+}
+
+func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
+	tests := map[string]string{
+		"本周":    "this-week",
+		"这周":    "this-week",
+		"下周":    "next-week",
+		"第3周":   "week-number:3",
+		"7.20周": "week-date:7.20",
+	}
+	for input, want := range tests {
+		got := normalizeScheduleArgs([]string{input})
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("normalizeScheduleArgs(%q) = %#v, want %q", input, got, want)
+		}
+	}
+
+	handler := Handler{Prefix: "/life"}
+	for input, want := range map[string]string{
+		"课表本周":  "this-week",
+		"课表第3周": "week-number:3",
+	} {
+		cmd, ok := handler.parse(input)
+		if !ok || cmd.Name != "schedule" || len(cmd.Args) != 1 || cmd.Args[0] != want {
+			t.Fatalf("%q parsed as %#v, ok=%v", input, cmd, ok)
 		}
 	}
 }
