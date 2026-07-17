@@ -158,16 +158,18 @@ func TestHandleHelpAliases(t *testing.T) {
 	}
 }
 
-func TestHelpReplyUsesScannableSections(t *testing.T) {
+func TestHelpReplyUsesNestedSections(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
 		"课程与日程：",
-		"• 课表　查看本周",
-		"• 课表 05.06　查看日期所在周",
-		"• 今日课表 / 单日课表　只看今天",
+		"• 课表",
+		"  ├─ 课表：本周",
+		"  ├─ 课表 05.06：该日期所在周",
+		"  ├─ 今日课表 / 单日课表",
+		"  └─ 下一节课",
 		"任务：",
-		"• td 写报告　新建待办",
+		"  ├─ td 写报告",
 		"账户与反馈：",
 	} {
 		if !strings.Contains(reply, want) {
@@ -766,7 +768,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
-	for _, want := range []string{"## 课程与日程", "• 课表　查看本周", "• 课表 05.06　查看日期所在周"} {
+	for _, want := range []string{"## 课程与日程", "• 课表", "  ├─ 课表：本周", "  ├─ 今日课表 / 单日课表"} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
 		}

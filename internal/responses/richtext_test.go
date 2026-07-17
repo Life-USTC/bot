@@ -3,7 +3,6 @@ package responses
 import (
 	"image"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -116,44 +115,6 @@ func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	}
 	if got, want := wide.Space.Width, measureRichDocument(wideDoc, wide.Metrics)+2*wide.Metrics.MarginX; got != want {
 		t.Fatalf("wide width = %d, measured width = %d", got, want)
-	}
-}
-
-func TestLayoutRichHelpUsesTwoColumns(t *testing.T) {
-	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
-	doc := parseRichText(strings.Join([]string{
-		"# Bot 帮助",
-		"",
-		"## 课程与日程",
-		"课表",
-		"今日课表",
-		"",
-		"## 任务",
-		"待办",
-		"作业",
-		"",
-		"## 校车",
-		"校车",
-		"",
-		"## 账户与反馈",
-		"登录",
-		"反馈",
-	}, "\n"))
-	layout := layoutRichTextForKind("help", doc, now)
-	singleColumn := layoutRichText(doc, now)
-
-	if len(layout.Nodes) != 4 {
-		t.Fatalf("nodes = %d", len(layout.Nodes))
-	}
-	if layout.Nodes[0].Bounds.Min.X == layout.Nodes[1].Bounds.Min.X {
-		t.Fatalf("first row did not use two columns: %#v", layout.Nodes)
-	}
-	if layout.Nodes[0].Bounds.Min.X != layout.Nodes[2].Bounds.Min.X ||
-		layout.Nodes[1].Bounds.Min.X != layout.Nodes[3].Bounds.Min.X {
-		t.Fatalf("sections did not stay in their columns: %#v", layout.Nodes)
-	}
-	if layout.Space.Height >= singleColumn.Space.Height {
-		t.Fatalf("help height = %d, single column = %d", layout.Space.Height, singleColumn.Space.Height)
 	}
 }
 

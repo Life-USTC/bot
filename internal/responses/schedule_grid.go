@@ -134,12 +134,6 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		title = "课表"
 	}
 	drawMixedText(canvas, faces.Title, faces.TitleMono, s(metrics.MarginX), s(metrics.TitleBaseline), title, ink)
-	drawRect(canvas, image.Rect(
-		s(metrics.MarginX),
-		s(metrics.TitleBaseline+12),
-		s(metrics.MarginX+44),
-		s(metrics.TitleBaseline+16),
-	), accent)
 	summary := "周日–周六 · 第 1–" + strconv.Itoa(len(grid.Periods)) + " 节"
 	if len(grid.Days) == 1 {
 		summary = grid.Days[0].Label + " · 第 1–" + strconv.Itoa(len(grid.Periods)) + " 节"
