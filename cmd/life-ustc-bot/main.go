@@ -138,6 +138,7 @@ func main() {
 		Store:                  stateStore,
 		Prefix:                 cfg.CommandPrefix,
 		Logger:                 logger,
+		FeedbackPlatform:       cfg.FeedbackAdminPlatform,
 		FeedbackUsers:          cfg.FeedbackAdminUsers,
 		FeedbackGroups:         cfg.FeedbackAdminGroups,
 		FeedbackSend:           messageRouter.SendMessage,

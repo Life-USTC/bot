@@ -100,10 +100,14 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 }
 
 func TestFromEnvParsesFeedbackTargets(t *testing.T) {
+	t.Setenv("BOT_FEEDBACK_ADMIN_PLATFORM", " napcat ")
 	t.Setenv("BOT_FEEDBACK_ADMIN_USERS", " 42, 43;44 ")
 	t.Setenv("BOT_FEEDBACK_ADMIN_GROUPS", " 100 101 ")
 
 	cfg := FromEnv()
+	if cfg.FeedbackAdminPlatform != "napcat" {
+		t.Fatalf("FeedbackAdminPlatform = %q", cfg.FeedbackAdminPlatform)
+	}
 	if strings.Join(cfg.FeedbackAdminUsers, ",") != "42,43,44" {
 		t.Fatalf("FeedbackAdminUsers = %#v", cfg.FeedbackAdminUsers)
 	}

@@ -377,18 +377,23 @@ func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity
 	}
 	message := formatAgentFeedbackMessage(ident, id, input)
 	sent := 0
+	feedbackPlatform := strings.TrimSpace(s.handler.FeedbackPlatform)
+	if feedbackPlatform == "" {
+		feedbackPlatform = ident.Platform
+	}
 	for _, userID := range s.handler.FeedbackUsers {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
 		}
 		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			UserID:           userID,
 			ConversationType: "private",
 			ConversationID:   userID,
 		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d platform=%s target=private:%s error=%v", id, ident.Platform, userID, err)
+			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=private:%s error=%v",
+				id, ident.Platform, feedbackPlatform, userID, err)
 			continue
 		}
 		sent++
@@ -399,11 +404,12 @@ func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity
 			continue
 		}
 		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			ConversationType: "group",
 			ConversationID:   groupID,
 		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d platform=%s target=group:%s error=%v", id, ident.Platform, groupID, err)
+			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=group:%s error=%v",
+				id, ident.Platform, feedbackPlatform, groupID, err)
 			continue
 		}
 		sent++

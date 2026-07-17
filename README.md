@@ -77,6 +77,7 @@ BOT_MEDIA_ADDR=127.0.0.1:2281
 BOT_IMAGE_FONT_PATH=
 BOT_MEDIA_TTL_SECONDS=300
 BOT_ALLOW_GROUP_PERSONAL_INFO=false
+BOT_FEEDBACK_ADMIN_PLATFORM=
 BOT_FEEDBACK_ADMIN_USERS=
 BOT_FEEDBACK_ADMIN_GROUPS=
 
@@ -139,7 +140,9 @@ commands such as todo add/done/delete, homework done/undo, login/logout, and
 notification changes are still blocked in groups.
 
 Set `BOT_FEEDBACK_ADMIN_USERS` and/or `BOT_FEEDBACK_ADMIN_GROUPS` to comma-,
-semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`.
+semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`. Set
+`BOT_FEEDBACK_ADMIN_PLATFORM` when all admin notifications should use one
+adapter, such as `napcat`.
 
 ## Test
 

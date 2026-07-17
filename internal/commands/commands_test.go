@@ -1254,6 +1254,7 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	ident.Platform = "qqbot"
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1262,10 +1263,11 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	sent := []store.Identity{}
 	messages := []string{}
 	handler := Handler{
-		Store:          db,
-		Prefix:         "/life",
-		FeedbackUsers:  []string{"1001"},
-		FeedbackGroups: []string{"2001"},
+		Store:            db,
+		Prefix:           "/life",
+		FeedbackPlatform: "napcat",
+		FeedbackUsers:    []string{"1001"},
+		FeedbackGroups:   []string{"2001"},
 		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
 			sent = append(sent, target)
 			messages = append(messages, message)
@@ -1282,10 +1284,10 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	if len(sent) != 2 {
 		t.Fatalf("sent = %#v", sent)
 	}
-	if sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
+	if sent[0].Platform != "napcat" || sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
 		t.Fatalf("private target = %#v", sent[0])
 	}
-	if sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
+	if sent[1].Platform != "napcat" || sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
 		t.Fatalf("group target = %#v", sent[1])
 	}
 	if !strings.Contains(messages[0], "用户反馈") || !strings.Contains(messages[0], "用户：42") || !strings.Contains(messages[0], "校车显示有点乱") {

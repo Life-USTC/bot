@@ -409,9 +409,10 @@ func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
 	var targets []store.Identity
 	var messages []string
 	svc := &Service{handler: commands.Handler{
-		Store:          db,
-		FeedbackUsers:  []string{"admin-openid"},
-		FeedbackGroups: []string{"group-openid"},
+		Store:            db,
+		FeedbackPlatform: "napcat",
+		FeedbackUsers:    []string{"admin-openid"},
+		FeedbackGroups:   []string{"group-openid"},
 		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
 			targets = append(targets, target)
 			messages = append(messages, message)
@@ -433,10 +434,10 @@ func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
 	if len(targets) != 2 {
 		t.Fatalf("targets = %#v", targets)
 	}
-	if targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
+	if targets[0].Platform != "napcat" || targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
 		t.Fatalf("private target = %#v", targets[0])
 	}
-	if targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
+	if targets[1].Platform != "napcat" || targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
 		t.Fatalf("group target = %#v", targets[1])
 	}
 	if !strings.Contains(messages[0], "LLM 反馈") || !strings.Contains(messages[0], "需要按日期查询课表") || !strings.Contains(messages[0], "编号：#1") {

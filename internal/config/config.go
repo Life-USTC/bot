@@ -47,6 +47,7 @@ type Config struct {
 	LLMBaseURL             string
 	LLMModel               string
 	LLMTimeout             time.Duration
+	FeedbackAdminPlatform  string
 	FeedbackAdminUsers     []string
 	FeedbackAdminGroups    []string
 }
@@ -92,6 +93,7 @@ func FromEnv() Config {
 		LLMBaseURL:             envOptionalString("OPENAI_BASE_URL"),
 		LLMModel:               envString("BOT_LLM_MODEL", "gpt-4o-mini"),
 		LLMTimeout:             time.Duration(envPositiveInt("BOT_LLM_TIMEOUT_SECONDS", 60)) * time.Second,
+		FeedbackAdminPlatform:  envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
 		FeedbackAdminUsers:     envList("BOT_FEEDBACK_ADMIN_USERS"),
 		FeedbackAdminGroups:    envList("BOT_FEEDBACK_ADMIN_GROUPS"),
 	}
