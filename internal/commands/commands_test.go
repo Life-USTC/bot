@@ -152,28 +152,51 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办 / td") {
+		if !strings.Contains(reply, "待办（td）：查看待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
 }
 
-func TestHelpReplyUsesNestedSections(t *testing.T) {
+func TestHelpReplyUsesPrimaryCommandsAndCompleteExamples(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
 		"课程与日程：",
-		"• 课表",
-		"  ├─ 课表：本周",
-		"  ├─ 课表 05.06：该日期所在周",
-		"  ├─ 今日课表 / 单日课表",
-		"  └─ 下一节课",
+		"• 今日（ddl）：查看今天的汇总",
+		"• 课表：查看本周课表",
+		"  ├─ 课表 下周：查看下周课表",
+		"  ├─ 课表 第3周：查看第3周课表",
+		"  └─ 今日课表（单日课表）：只看今天",
+		"• 下一节课：查看最近一节课",
 		"任务：",
-		"  ├─ td 写报告",
+		"• 待办（td）：查看待办",
+		"  ├─ 待办 写报告：新增待办",
+		"  └─ 待办 完成 1：完成第1项",
+		"• 教学班 高等数学：搜索教学班",
+		"• 老师 张：搜索老师",
+		"• 校车（xc）：查看校车时刻",
+		"  ├─ 校车 东区 西区：查询路线",
 		"账户与反馈：",
+		"  └─ 登录 状态：查看登录进度",
+		"  └─ 通知 课表 开：开启课前提醒",
+		"• 状态（status）：查看服务与登录状态",
+		"• 我（me）：查看个人信息",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	for _, unwanted := range []string{
+		"今日 / ddl",
+		"课表 下周 / 课表 第3周",
+		"td 写报告",
+		"td done 1",
+		"xc 东区 西区",
+		"状态 / status / 我 / me",
+	} {
+		if strings.Contains(reply, unwanted) {
+			t.Fatalf("reply still contains mixed alias usage %q: %q", unwanted, reply)
 		}
 	}
 	if !strings.Contains(reply, "\n") || strings.ContainsAny(reply, "\r\x1b") {
@@ -768,7 +791,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
-	for _, want := range []string{"## 课程与日程", "• 课表", "  ├─ 课表：本周", "  ├─ 今日课表 / 单日课表"} {
+	for _, want := range []string{"## 课程与日程", "• 今日（ddl）：查看今天的汇总", "  ├─ 课表 下周：查看下周课表", "  └─ 今日课表（单日课表）：只看今天"} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
 		}
@@ -3203,7 +3226,7 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	ident := testIdentity()
 	handler := Handler{Store: s, Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if !ok || !strings.Contains(reply, "待办 / td") {
+	if !ok || !strings.Contains(reply, "待办（td）：查看待办") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
