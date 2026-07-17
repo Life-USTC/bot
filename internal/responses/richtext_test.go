@@ -98,6 +98,13 @@ func TestLayoutRichTextCompactsHelpIntroBelowTitle(t *testing.T) {
 	if gap := layout.Nodes[1].Bounds.Min.Y - intro.Bounds.Max.Y; gap != layout.Metrics.BlockGap {
 		t.Fatalf("intro-to-table gap = %d, want %d", gap, layout.Metrics.BlockGap)
 	}
+	if got, want := richTitleX(layout), intro.Bounds.Min.X+layout.Metrics.TextPaddingX; got != want {
+		t.Fatalf("title x = %d, content x = %d", got, want)
+	}
+	regular := layoutRichText(parseRichText("# 待办\n\n买咖啡"), time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if got := richTitleX(regular); got != regular.Metrics.MarginX {
+		t.Fatalf("regular title x = %d, want margin %d", got, regular.Metrics.MarginX)
+	}
 }
 
 func TestNewTextImageRemovesDuplicateHeadingFromRichText(t *testing.T) {

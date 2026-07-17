@@ -178,6 +178,14 @@ func richDocumentHasCompactHelpIntro(doc richDocument) bool {
 		len(doc.Blocks[0].Lines) == 2
 }
 
+func richTitleX(layout richLayout) int {
+	x := layout.Metrics.MarginX
+	if len(layout.Nodes) > 0 && layout.Nodes[0].Compact {
+		x += layout.Metrics.TextPaddingX
+	}
+	return x
+}
+
 func richDocumentHasOnlyTables(doc richDocument) bool {
 	if len(doc.Blocks) == 0 {
 		return false
@@ -522,7 +530,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
-	drawMixedText(canvas, faces.Title, faces.TitleMono, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
+	drawMixedText(canvas, faces.Title, faces.TitleMono, s(richTitleX(layout)), s(layout.Metrics.TitleBaseline), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
 		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
