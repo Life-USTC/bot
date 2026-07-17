@@ -29,7 +29,10 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		return nil
 	}
 	imageText := imageRenderText(text)
-	if cmd.Name == "help" || firstArgIs(cmd.Args, "help") {
+	if cmd.Name == "help" {
+		return responses.NewRichTextImage("help", helpRichText(), imageText)
+	}
+	if firstArgIs(cmd.Args, "help") {
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("help", imageTitle(plainText, "帮助"), plainText)
 	}
