@@ -88,8 +88,9 @@ func helpDetailSections() []helpSection {
 		{
 			title: "待办",
 			rows: []helpRow{
-				{topic: "todo", commandName: "todo", command: "待办", description: "查看未完成待办"},
-				{topic: "todo", commandName: "todo", command: "待办 列表 全部", description: "查看全部待办"},
+				{topic: "todo", commandName: "todo", command: "待办", description: "查看未完成待办，每页 30 条"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 第2页", description: "查看未完成待办的第 2 页"},
+				{topic: "todo", commandName: "todo", command: "待办 列表 全部", description: "查看全部待办，每页 30 条"},
 				{topic: "todo", commandName: "todo", command: "待办 列表 未完成", description: "只查看未完成待办"},
 				{topic: "todo", commandName: "todo", command: "待办 列表 已完成", description: "只查看已完成待办"},
 				{topic: "todo", commandName: "todo", command: "待办 列表 优先级 高", description: "按优先级筛选"},
@@ -114,9 +115,10 @@ func helpDetailSections() []helpSection {
 		{
 			title: "作业",
 			rows: []helpRow{
-				{topic: "homework", commandName: "homework", command: "作业", description: "查看未完成作业"},
+				{topic: "homework", commandName: "homework", command: "作业", description: "查看未完成作业，每页 30 条"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 第2页", description: "查看未完成作业的第 2 页"},
 				{topic: "homework", commandName: "homework", command: "作业 列表 未完成", description: "只查看未完成作业"},
-				{topic: "homework", commandName: "homework", command: "作业 列表 全部", description: "查看全部作业"},
+				{topic: "homework", commandName: "homework", command: "作业 列表 全部", description: "查看全部作业，每页 30 条"},
 				{topic: "homework", commandName: "homework", command: "作业 列表 学期ID <ID>", description: "按学期 ID 筛选"},
 				{topic: "homework", commandName: "homework", command: "作业 列表 学期JWID <JW ID>", description: "按学期 JW ID 筛选"},
 				{topic: "homework", commandName: "homework", command: "作业 完成 1", description: "完成第 1 条作业"},
@@ -128,7 +130,8 @@ func helpDetailSections() []helpSection {
 		{
 			title: "考试",
 			rows: []helpRow{
-				{topic: "exam", commandName: "exam", command: "考试", description: "查看已订阅课程的考试"},
+				{topic: "exam", commandName: "exam", command: "考试", description: "查看已订阅课程的考试，每页 30 条"},
+				{topic: "exam", commandName: "exam", command: "考试 第2页", description: "查看考试的第 2 页"},
 			},
 		},
 		{
@@ -161,8 +164,10 @@ func helpDetailSections() []helpSection {
 				{topic: "section", commandName: "section_search", command: "教学班 搜索 高等数学 数量 <数量>", description: "限制返回数量"},
 				{topic: "section", commandName: "section_by_jw_id", command: "教学班 查看 <JW ID>", description: "按 JW ID 查看详情"},
 				{topic: "section", commandName: "section_schedules", command: "教学班 课表 <JW ID> <开始日期> <结束日期>", description: "查看日期范围内的课表"},
-				{topic: "section", commandName: "section_exams", command: "教学班 考试 <JW ID>", description: "查看指定教学班考试"},
-				{topic: "section", commandName: "section_homeworks", command: "教学班 作业 <JW ID>", description: "查看指定教学班作业"},
+				{topic: "section", commandName: "section_exams", command: "教学班 考试 <JW ID>", description: "查看指定教学班考试，每页 30 条"},
+				{topic: "section", commandName: "section_exams", command: "教学班 考试 <JW ID> 第2页", description: "查看指定教学班考试的第 2 页"},
+				{topic: "section", commandName: "section_homeworks", command: "教学班 作业 <JW ID>", description: "查看指定教学班作业，每页 30 条"},
+				{topic: "section", commandName: "section_homeworks", command: "教学班 作业 <JW ID> 第2页", description: "查看指定教学班作业的第 2 页"},
 			},
 		},
 		{

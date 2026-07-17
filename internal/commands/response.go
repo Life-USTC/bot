@@ -533,7 +533,10 @@ func richImageTable(kind, section string, lines []string) ([]string, bool) {
 
 func richImageMoreRow(line string, width int) ([]string, bool) {
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "...and ") || !strings.HasSuffix(line, " more") {
+	isMore := strings.HasPrefix(line, "...and ") && strings.HasSuffix(line, " more")
+	isPagination := strings.HasPrefix(line, "第 ") && strings.Contains(line, " 页")
+	isListHint := strings.HasPrefix(line, "另有 ") && strings.Contains(line, "查看完整列表")
+	if !isMore && !isPagination && !isListHint {
 		return nil, false
 	}
 	row := make([]string, width)

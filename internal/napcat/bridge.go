@@ -387,7 +387,7 @@ func (b *Bridge) prepareImageURL(img *responses.Image) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return b.MediaStore.PutPNG(data)
+	return b.MediaStore.PutImagePNG(img, data)
 }
 
 func napcatImageMessage(url string) []map[string]any {

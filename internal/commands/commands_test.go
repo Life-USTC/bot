@@ -1240,6 +1240,19 @@ func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 	}
 }
 
+func TestTodoImageKeepsPaginationNoticeInTable(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	img := handler.imageResponseFor(
+		parsedCommand{Name: "todo", Args: []string{"list", "第2页"}},
+		"待办：\n31.\t\t写报告\n第 2/3 页 · 上一页：待办 列表 第1页 · 下一页：待办 列表 第3页",
+	)
+	if img == nil || !strings.Contains(img.RichText, "| 31 |  | 写报告 |") ||
+		!strings.Contains(img.RichText, "|  |  | 第 2/3 页") {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+	assertResponseImageRenders(t, img)
+}
+
 func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
@@ -1488,8 +1501,8 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "false" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-05-14T23:55:00+08:00"},{"id":"todo-2","title":"买咖啡"}]}`))
 		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
@@ -1552,8 +1565,8 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "false" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
 		case r.URL.Path == "/api/todos/batch" && r.Method == http.MethodPatch:
@@ -1883,11 +1896,14 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 		if r.URL.Path != "/api/todos" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		values := r.URL.Query()
-		if values.Get("completed") != "" || values.Get("priority") != "high" || values.Get("dueBefore") != "2026-06-10" {
-			t.Fatalf("query = %s", values.Encode())
+		if query := r.URL.Query().Encode(); query != "" {
+			t.Fatalf("query = %s", query)
 		}
-		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","priority":"high"}]}`))
+		_, _ = w.Write([]byte(`{"todos":[
+			{"id":"todo-1","title":"写报告","priority":"high","dueAt":"2026-06-09T18:00:00+08:00"},
+			{"id":"todo-2","title":"太晚","priority":"high","dueAt":"2026-06-11T18:00:00+08:00"},
+			{"id":"todo-3","title":"低优先级","priority":"low","dueAt":"2026-06-09T18:00:00+08:00"}
+		]}`))
 	}))
 	defer server.Close()
 
@@ -1898,6 +1914,125 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 	}
 	if !strings.Contains(reply, "写报告") {
 		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "太晚") || strings.Contains(reply, "低优先级") {
+		t.Fatalf("reply contains unfiltered todos: %q", reply)
+	}
+}
+
+func TestFilteredTodoIndexesMatchActions(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	patched := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("priority") == "high" {
+				_, _ = w.Write([]byte(`{"todos":[{"id":"high","title":"高优先级","priority":"high","completed":false}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"todos":[
+				{"id":"low","title":"低优先级","priority":"low","completed":false},
+				{"id":"high","title":"高优先级","priority":"high","completed":false}
+			]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/todos/") && r.Method == http.MethodPatch:
+			patched = strings.TrimPrefix(r.URL.Path, "/api/todos/")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 优先级 高", Identity: ident})
+	plain := textutil.PlainMonospace(reply)
+	if !ok || !strings.Contains(plain, "2. \t\t高优先级") || strings.Contains(plain, "低优先级") {
+		t.Fatalf("filtered reply = %q, ok = %v", plain, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "待办 完成 2", Identity: ident})
+	if !ok || patched != "high" || !strings.Contains(reply, "高优先级") {
+		t.Fatalf("patched=%q, reply=%q, ok=%v", patched, reply, ok)
+	}
+}
+
+func TestFilterNumberedTodosMatchesAPIDateOnlyUTC(t *testing.T) {
+	todos := []map[string]any{
+		{"id": "early", "dueAt": "2026-06-10T04:00:00+08:00"},
+		{"id": "late", "dueAt": "2026-06-10T09:00:00+08:00"},
+	}
+	filtered, err := filterNumberedTodos(todos, life.TodoListOptions{DueBefore: "2026-06-10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || lifedata.FirstString(filtered[0].todo, "id") != "early" {
+		t.Fatalf("filtered = %#v", filtered)
+	}
+}
+
+func TestHandleTodoListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	todos := make([]map[string]any, 65)
+	due := time.Date(2026, 7, 1, 8, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range todos {
+		todos[i] = map[string]any{
+			"id":    fmt.Sprintf("todo-%02d", i+1),
+			"title": fmt.Sprintf("Todo %02d", i+1),
+			"dueAt": due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+		}
+	}
+	patched31 := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"todos": todos})
+		case r.URL.Path == "/api/todos/todo-31" && r.Method == http.MethodPatch:
+			patched31 = true
+			_, _ = w.Write([]byte(`{"id":"todo-31","completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Todo 31", "60.\t", "Todo 60", "第 2/3 页", "待办 列表 未完成 第1页", "待办 列表 未完成 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Todo 30", "61.\t", "Todo 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "待办 完成 31", Identity: ident})
+	if !ok || !patched31 || !strings.Contains(textutil.PlainMonospace(reply), "Todo 31") {
+		t.Fatalf("page 2 action mismatch: patched31=%v, reply=%q, ok=%v", patched31, reply, ok)
+	}
+}
+
+func TestHandleTodoListRejectsPagePastEnd(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"Todo 1"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 第2页", Identity: ident})
+	if !ok || !strings.Contains(reply, "待办只有 1 页") || !strings.Contains(reply, "待办 列表 未完成 第1页") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -1936,8 +2071,8 @@ func TestHandleTodoUndoByIndex(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "true" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","completed":true}]}`))
 		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
@@ -2079,15 +2214,6 @@ func TestFormatNumberedLinePadsBeforeTab(t *testing.T) {
 	}
 }
 
-func TestMoreLineFormatting(t *testing.T) {
-	if got := moreLine(12, false); got != "...and 12 more" {
-		t.Fatalf("plain moreLine = %q", got)
-	}
-	if got := moreLine(12, true); got != "...and 𝟷𝟸 more" {
-		t.Fatalf("monospace moreLine = %q", got)
-	}
-}
-
 func TestChinaNowUsesChinaLocation(t *testing.T) {
 	now := chinaNow()
 	name, offset := now.Zone()
@@ -2138,17 +2264,60 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 }
 
+func TestHomeworkDisplayIndexesMatchActionsForUndatedItems(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	future := chinaNow().AddDate(0, 0, 30).Format(time.RFC3339)
+	completedID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": []any{
+				map[string]any{"id": "future", "title": "未来作业", "submissionDueAt": future, "completion": nil},
+				map[string]any{"id": "undated", "title": "未定日期作业", "completion": nil},
+			}})
+		case strings.HasPrefix(r.URL.Path, "/api/homeworks/") && r.Method == http.MethodPut:
+			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/homeworks/"), "/completion")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	if strings.Index(plain, "1. \t\t\t未定日期作业") < 0 || strings.Index(plain, "2. \t截止") < 0 {
+		t.Fatalf("unexpected display order: %q", plain)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 完成 1", Identity: ident})
+	if !ok || completedID != "undated" || !strings.Contains(reply, "未定日期作业") {
+		t.Fatalf("completedID=%q, reply=%q, ok=%v", completedID, reply, ok)
+	}
+}
+
 func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	completedID := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/me/subscriptions/homeworks" || r.Method != http.MethodGet {
+		switch {
+		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"homeworks":[
+				{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
+				{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
+			]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/homeworks/") && r.Method == http.MethodPut:
+			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/homeworks/"), "/completion")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"homeworks":[
-			{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
-			{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
-		]}`))
 	}))
 	defer server.Close()
 
@@ -2173,6 +2342,16 @@ func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	}
 	if strings.Contains(reply, "数据库系统") || strings.Contains(reply, "Summer HW") {
 		t.Fatalf("reply included summer homework for jw_id: %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 semester_id 3", Identity: ident})
+	plain := textutil.PlainMonospace(reply)
+	if !ok || !strings.Contains(plain, "2. \t") || !strings.Contains(plain, "Summer HW") || strings.Contains(plain, "Spring HW") {
+		t.Fatalf("filtered summer reply = %q, ok = %v", plain, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 完成 2", Identity: ident})
+	if !ok || completedID != "hw-summer" || !strings.Contains(reply, "Summer HW") {
+		t.Fatalf("completedID=%q, reply=%q, ok=%v", completedID, reply, ok)
 	}
 }
 
@@ -2290,6 +2469,45 @@ func TestFormatHomeworkListSeparatesCompletedFromOverdue(t *testing.T) {
 	}
 }
 
+func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	homeworks := make([]map[string]any, 65)
+	due := time.Date(2026, 7, 1, 8, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range homeworks {
+		homeworks[i] = map[string]any{
+			"id":              fmt.Sprintf("homework-%02d", i+1),
+			"title":           fmt.Sprintf("Homework %02d", i+1),
+			"submissionDueAt": due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+			"completion":      nil,
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/me/subscriptions/homeworks" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": homeworks})
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业 列表 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Homework 31", "60.\t", "Homework 60", "第 2/3 页", "作业 列表 未完成 第1页", "作业 列表 未完成 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Homework 30", "61.\t", "Homework 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
+	}
+}
+
 func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -2365,6 +2583,51 @@ func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
 	}
 	if strings.Index(reply, "计算机导论") > strings.Index(reply, "数学分析") {
 		t.Fatalf("reply not sorted by date: %q", reply)
+	}
+}
+
+func TestHandleExamListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	exams := make([]map[string]any, 65)
+	date := time.Date(2026, 1, 1, 0, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range exams {
+		exams[i] = map[string]any{
+			"id":        i + 1,
+			"examDate":  date.AddDate(0, 0, i).Format(time.RFC3339),
+			"startTime": 900,
+			"endTime":   1100,
+			"examMode":  fmt.Sprintf("Exam %02d", i+1),
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"subscription": map[string]any{
+				"sections": []any{map[string]any{
+					"code":   "TEST1001.01",
+					"course": map[string]any{"namePrimary": "测试课程"},
+					"exams":  exams,
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "考试 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Exam 31", "60.\t", "Exam 60", "第 2/3 页", "考试 第1页", "考试 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Exam 30", "61.\t", "Exam 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
 	}
 }
 
@@ -3131,8 +3394,11 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "课表 下一节", name: "nextclass"},
 		{text: "待办 添加 写报告", name: "todo", args: "add 写报告"},
 		{text: "待办 恢复 1", name: "todo", args: "undo 1"},
+		{text: "待办 列表 第2页", name: "todo", args: "list 第2页"},
 		{text: "作业 列表 学期ID 42", name: "homework", args: "semester_id 42"},
+		{text: "作业 列表 第2页", name: "homework", args: "第2页"},
 		{text: "作业 恢复 1", name: "homework", args: "undo 1"},
+		{text: "考试 第2页", name: "exam", args: "第2页"},
 		{text: "课程", name: "help", args: "课程"},
 		{text: "课程 搜索 关键词 数学分析 培养层次ID 1 类别ID 2 课堂类型ID 3 数量 10", name: "course_search", args: "keyword 数学分析 education_level_id 1 category_id 2 class_type_id 3 limit 10"},
 		{text: "课程 查看 123", name: "course_by_jw_id", args: "123"},
@@ -3141,7 +3407,9 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "教学班 查看 123", name: "section_by_jw_id", args: "123"},
 		{text: "教学班 课表 123 2026-07-01 2026-07-07", name: "section_schedules", args: "123 2026-07-01 2026-07-07"},
 		{text: "教学班 考试 123", name: "section_exams", args: "123"},
+		{text: "教学班 考试 123 第2页", name: "section_exams", args: "123 第2页"},
 		{text: "教学班 作业 123", name: "section_homeworks", args: "123"},
+		{text: "教学班 作业 123 第2页", name: "section_homeworks", args: "123 第2页"},
 		{text: "老师", name: "help", args: "老师"},
 		{text: "老师 搜索 院系ID 5 数量 8", name: "teacher_search", args: "department_id 5 limit 8"},
 		{text: "老师 查看 12", name: "teacher_by_id", args: "12"},
@@ -3151,6 +3419,8 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "订阅 删除 999", name: "unsubscribe_section_by_jw_id", args: "999"},
 		{text: "订阅 列表", name: "my_subscribed_sections"},
 		{text: "订阅 链接", name: "subscription", args: "link"},
+		{text: "课程订阅", name: "subscription"},
+		{text: "课程 订阅", name: "subscription"},
 		{text: "校车 查询 东区 西区", name: "bus", args: "东区 西区"},
 		{text: "校车 路线 从 东区 到 西区", name: "bus_routes", args: "从 东区 到 西区"},
 		{text: "校车 偏好 路线 东区 西区", name: "bus", args: "设置 东区 西区"},
@@ -3933,6 +4203,43 @@ func TestFormatDashboard(t *testing.T) {
 	}
 	if strings.Contains(reply, "今日课表 2") || strings.Contains(reply, "待交作业 3") || strings.Contains(reply, " · ") {
 		t.Fatalf("reply still contains the summary line: %q", reply)
+	}
+}
+
+func TestFormatDashboardUsesTotalsAndPointsToFullLists(t *testing.T) {
+	items := make([]any, summaryDisplayLimit)
+	for i := range items {
+		items[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
+	}
+	reply := formatDashboard(map[string]any{
+		"dueTodos": map[string]any{"total": 20, "items": items},
+	}, "我的概览")
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"待办 (20)：", "另有 12 条", "发送「待办」查看完整列表"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	image := (Handler{EnableImageResponses: true}).imageResponseFor(parsedCommand{Name: "dashboard"}, reply)
+	if image == nil || !strings.Contains(textutil.PlainMonospace(image.RichText), "|  |  | 另有 12 条") {
+		t.Fatalf("dashboard image = %#v", image)
+	}
+	assertResponseImageRenders(t, image)
+}
+
+func TestFormatOverviewPointsToCompleteList(t *testing.T) {
+	todos := make([]map[string]any, 4)
+	for i := range todos {
+		todos[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
+	}
+	reply := textutil.PlainMonospace(formatOverview(chinaNow(), nil, todos, nil, nil))
+	for _, want := range []string{"待办 (4)：", "Todo 3", "另有 1 条", "发送「待办」查看完整列表"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Contains(reply, "Todo 4") || strings.Contains(reply, "...and") {
+		t.Fatalf("reply contains inaccessible preview content: %q", reply)
 	}
 }
 

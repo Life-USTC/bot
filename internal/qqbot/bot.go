@@ -818,7 +818,7 @@ func (b *Bot) prepareImageURL(img *responses.Image) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return b.MediaStore.PutPNG(data)
+	return b.MediaStore.PutImagePNG(img, data)
 }
 
 func (b *Bot) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
