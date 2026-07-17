@@ -152,31 +152,28 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办（td）\t查看未完成待办") {
+		if !strings.Contains(reply, "发送“帮助 课表”等命令查看具体用法。") ||
+			!strings.Contains(reply, "待办（td）\t查看和管理待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
 }
 
-func TestHelpReplyUsesPrimaryCommandsAndCompleteExamples(t *testing.T) {
+func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
+		"发送“帮助 课表”等命令查看具体用法。",
 		"基础与账户：",
 		"课程与日程：",
 		"命令\t说明",
-		"今日（ddl）\t汇总今日课程、待办和作业",
-		"课表 第3周\t查看指定教学周",
-		"今日课表（单日课表）\t只查看今天的课表",
-		"待办 新增 写报告 内容 完成初稿 截止 2026-06-10 优先级 高\t新增带内容、截止日期和优先级的待办",
-		"待办 完成 1,2,3\t批量完成待办",
-		"待办 更新 1 截止 2026-06-12\t修改待办截止日期",
-		"作业 semester_jw_id <学期 JW ID>\t按学期 JW ID 筛选",
-		"订阅 导入 CONT5103P.01 CONT6104P.01\t批量订阅教学班",
-		"校车 东区 西区 之后 14:00\t查询指定时间后的班次",
-		"教学班搜索 teacher_code <代码>\t按老师代码筛选",
-		"教学班课表 <JW ID> <开始日期> <结束日期>\t查看教学班在日期范围内的课表",
-		"AI 工具 关\t隐藏 LLM 工具调用",
+		"今日（ddl）\t查看今日汇总",
+		"课表\t查看周课表或单日课表",
+		"待办（td）\t查看和管理待办",
+		"作业（hw）\t查看和管理作业",
+		"校车（xc）\t查询班次与设置偏好",
+		"教学班课表\t查看指定教学班课表",
+		"AI 工具\t设置工具调用展示",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -186,15 +183,14 @@ func TestHelpReplyUsesPrimaryCommandsAndCompleteExamples(t *testing.T) {
 		"• ",
 		"├─",
 		"└─",
-		"今日 / ddl",
-		"课表 下周 / 课表 第3周",
-		"td 写报告",
-		"td done 1",
-		"xc 东区 西区",
-		"状态 / status / 我 / me",
+		"课表 下周",
+		"待办 完成 1",
+		"作业 semester_id",
+		"校车 东区 西区",
+		"教学班搜索 teacher_code",
 	} {
 		if strings.Contains(reply, unwanted) {
-			t.Fatalf("reply still contains mixed alias usage %q: %q", unwanted, reply)
+			t.Fatalf("overview contains detailed usage %q: %q", unwanted, reply)
 		}
 	}
 	if !strings.Contains(reply, "\n") || strings.ContainsAny(reply, "\r\x1b") {
@@ -202,23 +198,70 @@ func TestHelpReplyUsesPrimaryCommandsAndCompleteExamples(t *testing.T) {
 	}
 }
 
-func TestHelpSectionsCoverEveryCommandSpec(t *testing.T) {
-	covered := map[string]bool{}
-	for _, section := range helpSections() {
+func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{"帮助 课表", "/help 课表", "/life help 课表", "课表 帮助", "帮助 kb"} {
+		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !ok {
+			t.Fatalf("%q was not handled", text)
+		}
+		for _, want := range []string{
+			"课表 帮助：",
+			"命令\t说明",
+			"课表 下周\t查看下周课表",
+			"课表 第3周\t查看指定教学周",
+			"今日课表（单日课表）\t只查看今天的课表",
+			"发送“帮助”返回命令总览。",
+		} {
+			if !strings.Contains(reply, want) {
+				t.Fatalf("%q reply missing %q: %q", text, want, reply)
+			}
+		}
+		if strings.Contains(reply, "待办 完成 1") {
+			t.Fatalf("%q reply contains another command's details: %q", text, reply)
+		}
+	}
+
+	reply, ok := handler.Handle(context.Background(), Input{Text: "帮助 不存在", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "没有找到一级命令“不存在”") {
+		t.Fatalf("unknown topic reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
+	overviewCount := map[string]int{}
+	for _, section := range helpOverviewSections() {
 		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
-			t.Fatalf("invalid help section: %#v", section)
+			t.Fatalf("invalid overview section: %#v", section)
 		}
 		for _, row := range section.rows {
 			if strings.TrimSpace(row.command) == "" || strings.TrimSpace(row.description) == "" {
-				t.Fatalf("invalid help row in %q: %#v", section.title, row)
+				t.Fatalf("invalid overview row in %q: %#v", section.title, row)
+			}
+			if row.commandName == "" {
+				t.Fatalf("overview row has no command name: %#v", row)
+			}
+			overviewCount[row.commandName]++
+		}
+	}
+
+	detailCovered := map[string]bool{}
+	for _, section := range helpDetailSections() {
+		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
+			t.Fatalf("invalid detail section: %#v", section)
+		}
+		for _, row := range section.rows {
+			if strings.TrimSpace(row.command) == "" || strings.TrimSpace(row.description) == "" {
+				t.Fatalf("invalid detail row in %q: %#v", section.title, row)
 			}
 			if strings.ContainsAny(row.command, "\t\r\n├└•") {
 				t.Fatalf("help command is not a flat table cell: %q", row.command)
 			}
-			if row.commandName != "" {
-				covered[row.commandName] = true
+			if row.commandName == "" {
+				t.Fatalf("detail row has no command name: %#v", row)
 			}
-			if row.commandName == "" || strings.Contains(row.command, "<") {
+			detailCovered[row.commandName] = true
+			if strings.Contains(row.command, "<") {
 				continue
 			}
 			example := row.command
@@ -232,8 +275,11 @@ func TestHelpSectionsCoverEveryCommandSpec(t *testing.T) {
 		}
 	}
 	for _, spec := range CommandSpecs() {
-		if !covered[spec.Name] {
-			t.Errorf("command %q is missing from the full help table", spec.Name)
+		if overviewCount[spec.Name] != 1 {
+			t.Errorf("command %q appears %d times in overview, want once", spec.Name, overviewCount[spec.Name])
+		}
+		if !detailCovered[spec.Name] {
+			t.Errorf("command %q is missing detail help", spec.Name)
 		}
 	}
 }
@@ -435,8 +481,7 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 
 	for _, text := range []string{"课程 help", "教学班 help", "校车 help", "状态 help"} {
 		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
-		if !ok || (text == "校车 help" && !strings.Contains(reply, "xc 东区 西区")) ||
-			(text != "校车 help" && !strings.Contains(reply, "Bot 帮助：")) {
+		if !ok || !strings.Contains(reply, " 帮助：") {
 			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
 		}
 	}
@@ -472,7 +517,7 @@ func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录用法：") {
+	if !ok || !strings.Contains(reply, "登录 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -493,7 +538,7 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录用法：") {
+	if !ok || !strings.Contains(reply, "登录 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -522,7 +567,9 @@ func TestHandleTodoHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办 add 写报告") {
+		if !strings.Contains(reply, "待办（td） 帮助：") ||
+			!strings.Contains(reply, "待办 新增 写报告") ||
+			!strings.Contains(reply, "待办 完成 1") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
@@ -788,7 +835,7 @@ func TestHandleLoginHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "登录用法：") || !strings.Contains(reply, "登录 状态") {
+		if !strings.Contains(reply, "登录 帮助：") || !strings.Contains(reply, "登录 状态") {
 			t.Fatalf("%q reply = %q", text, reply)
 		}
 	}
@@ -801,7 +848,7 @@ func TestHandleScheduleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "课表用法：") || strings.Contains(reply, "需要先登录") {
+		if !strings.Contains(reply, "课表 帮助：") || strings.Contains(reply, "需要先登录") {
 			t.Fatalf("%q reply = %q", text, reply)
 		}
 	}
@@ -826,23 +873,26 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
 	for _, want := range []string{
+		"发送“帮助 课表”等命令查看具体用法。",
 		"## 课程与日程",
 		"| 命令 | 说明 |",
-		"| 今日（ddl） | 汇总今日课程、待办和作业 |",
-		"| 课表 下周 | 查看下周课表 |",
-		"| 今日课表（单日课表） | 只查看今天的课表 |",
+		"| 今日（ddl） | 查看今日汇总 |",
+		"| 课表 | 查看周课表或单日课表 |",
+		"| 待办（td） | 查看和管理待办 |",
 		"## 高级查询",
-		"| 教学班课表 <JW ID> <开始日期> <结束日期> | 查看教学班在日期范围内的课表 |",
+		"| 教学班课表 | 查看指定教学班课表 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
 		}
 	}
-	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpSections()) {
-		t.Fatalf("help table count = %d, want %d", got, len(helpSections()))
+	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpOverviewSections()) {
+		t.Fatalf("help table count = %d, want %d", got, len(helpOverviewSections()))
 	}
-	if strings.ContainsAny(response.Image.RichText, "├└•") {
-		t.Fatalf("help rich text still contains nested-list markers: %q", response.Image.RichText)
+	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1"} {
+		if strings.Contains(response.Image.RichText, unwanted) {
+			t.Fatalf("help overview still contains %q: %q", unwanted, response.Image.RichText)
+		}
 	}
 	assertResponseImageRenders(t, response.Image)
 }
@@ -853,7 +903,9 @@ func TestSubcommandHelpUsesImage(t *testing.T) {
 	if !ok || response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
-	if response.Image.Title != "课表用法" || !strings.Contains(response.Image.AltText, "课表 第3周") {
+	if response.Image.Title != "课表 帮助" ||
+		!strings.Contains(response.Image.RichText, "| 课表 第3周 | 查看指定教学周 |") ||
+		!strings.Contains(response.Image.AltText, "课表 第3周") {
 		t.Fatalf("image = %#v", response.Image)
 	}
 	assertResponseImageRenders(t, response.Image)
@@ -1643,7 +1695,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 		Text:     "课表 help",
 		Identity: ident,
 	})
-	if !ok || !strings.Contains(reply, "课表用法") {
+	if !ok || !strings.Contains(reply, "课表 帮助") {
 		t.Fatalf("enabled group schedule reply = %q, ok = %v", reply, ok)
 	}
 
@@ -3274,7 +3326,7 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	ident := testIdentity()
 	handler := Handler{Store: s, Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if !ok || !strings.Contains(reply, "待办（td）\t查看未完成待办") {
+	if !ok || !strings.Contains(reply, "待办（td）\t查看和管理待办") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)

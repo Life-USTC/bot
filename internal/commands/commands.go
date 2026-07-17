@@ -95,18 +95,18 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 	}
 	var reply string
 	if cmd.Name == "help" {
-		reply = h.help()
+		reply = h.help(cmd.Args...)
 	} else {
 		spec, ok := commandSpec(cmd.Name)
 		if !ok || spec.Run == nil {
 			reply = h.help()
-		} else if firstArgIs(cmd.Args, "help") && !spec.HasHelp {
-			reply = h.help()
-		} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
+		} else if firstArgIsHelp(cmd.Args) {
+			reply = h.help(cmd.Name)
+		} else if spec.NeedsLife && h.Life == nil {
 			reply = "Life @ USTC API unavailable: not configured."
-		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
+		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) {
 			reply = "登录未配置。"
-		} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
+		} else if spec.NeedsStore && h.Store == nil {
 			reply = "存储未配置。"
 		} else {
 			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
@@ -539,7 +539,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	}
 
 	if isHelpToken(fields[0]) {
-		return helpCommand(raw), true
+		return helpCommand(raw, fields[1:]...), true
 	}
 
 	if len(fields) >= 2 {
@@ -556,8 +556,8 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	return commandResult(raw, name, args), true
 }
 
-func helpCommand(raw string) parsedCommand {
-	return parsedCommand{Name: "help", Raw: raw}
+func helpCommand(raw string, args ...string) parsedCommand {
+	return parsedCommand{Name: "help", Args: args, Raw: raw}
 }
 
 func commandResult(raw, name string, args []string) parsedCommand {
@@ -1032,6 +1032,10 @@ func hasArgs(args []string) bool {
 
 func firstArgIs(args []string, value string) bool {
 	return hasArgs(args) && args[0] == value
+}
+
+func firstArgIsHelp(args []string) bool {
+	return hasArgs(args) && isHelpToken(args[0])
 }
 
 func firstArgIn(args []string, values ...string) bool {

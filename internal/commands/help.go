@@ -13,12 +13,86 @@ type helpSection struct {
 	rows  []helpRow
 }
 
-func helpSections() []helpSection {
+func helpOverviewSections() []helpSection {
 	return []helpSection{
 		{
 			title: "基础与账户",
 			rows: []helpRow{
-				{command: "帮助", description: "查看完整命令表"},
+				{commandName: "login", command: "登录", description: "登录 Life@USTC"},
+				{commandName: "logout", command: "退出", description: "退出并清除登录状态"},
+				{commandName: "me", command: "我（me）", description: "查看当前登录用户"},
+				{commandName: "status", command: "状态（status）", description: "查看服务与登录状态"},
+				{commandName: "ping", command: "ping（p）", description: "检查 Life@USTC API"},
+				{commandName: "semester", command: "学期", description: "查看当前学期"},
+				{commandName: "list_semesters", command: "学期列表", description: "查看学期列表"},
+			},
+		},
+		{
+			title: "课程与日程",
+			rows: []helpRow{
+				{commandName: "overview", command: "今日（ddl）", description: "查看今日汇总"},
+				{commandName: "schedule", command: "课表", description: "查看周课表或单日课表"},
+				{commandName: "nextclass", command: "下一节课", description: "查看最近一节课"},
+				{commandName: "exam", command: "考试（ks）", description: "查看考试"},
+				{commandName: "course", command: "课程", description: "搜索课程"},
+				{commandName: "section", command: "教学班", description: "搜索教学班"},
+				{commandName: "teacher", command: "老师", description: "搜索老师"},
+				{commandName: "dashboard", command: "概览", description: "汇总待办、作业和考试"},
+				{commandName: "upcoming_deadlines", command: "近期截止", description: "查看近期截止事项"},
+			},
+		},
+		{
+			title: "任务",
+			rows: []helpRow{
+				{commandName: "todo", command: "待办（td）", description: "查看和管理待办"},
+				{commandName: "homework", command: "作业（hw）", description: "查看和管理作业"},
+			},
+		},
+		{
+			title: "订阅与通知",
+			rows: []helpRow{
+				{commandName: "subscription", command: "订阅", description: "管理教学班订阅"},
+				{commandName: "my_subscribed_sections", command: "我的订阅", description: "查看已订阅教学班"},
+				{commandName: "unsubscribe_section_by_jw_id", command: "退订教学班", description: "按 JW ID 退订"},
+				{commandName: "notify", command: "通知", description: "管理课表和作业提醒"},
+			},
+		},
+		{
+			title: "校车",
+			rows: []helpRow{
+				{commandName: "bus", command: "校车（xc）", description: "查询班次与设置偏好"},
+				{commandName: "bus_routes", command: "校车路线", description: "查询校车路线"},
+			},
+		},
+		{
+			title: "高级查询",
+			rows: []helpRow{
+				{commandName: "course_search", command: "课程搜索", description: "按字段搜索课程"},
+				{commandName: "section_search", command: "教学班搜索", description: "按字段搜索教学班"},
+				{commandName: "teacher_search", command: "老师搜索", description: "按字段搜索老师"},
+				{commandName: "course_by_jw_id", command: "课程编号", description: "按 JW ID 查看课程"},
+				{commandName: "section_by_jw_id", command: "教学班编号", description: "按 JW ID 查看教学班"},
+				{commandName: "teacher_by_id", command: "老师编号", description: "按 ID 查看老师"},
+				{commandName: "section_schedules", command: "教学班课表", description: "查看指定教学班课表"},
+				{commandName: "section_exams", command: "教学班考试", description: "查看指定教学班考试"},
+				{commandName: "section_homeworks", command: "教学班作业", description: "查看指定教学班作业"},
+			},
+		},
+		{
+			title: "AI 与反馈",
+			rows: []helpRow{
+				{commandName: "agent", command: "AI 工具", description: "设置工具调用展示"},
+				{commandName: "feedback", command: "反馈", description: "向管理员提交反馈"},
+			},
+		},
+	}
+}
+
+func helpDetailSections() []helpSection {
+	return []helpSection{
+		{
+			title: "基础与账户",
+			rows: []helpRow{
 				{commandName: "login", command: "登录", description: "开始 Life@USTC 登录"},
 				{commandName: "login", command: "登录 状态", description: "查询当前登录流程"},
 				{commandName: "logout", command: "退出", description: "退出并清除登录状态"},
@@ -177,9 +251,29 @@ func helpSections() []helpSection {
 	}
 }
 
-func (h Handler) help() string {
-	lines := []string{"Bot 帮助："}
-	for _, section := range helpSections() {
+func (h Handler) help(args ...string) string {
+	if len(args) == 0 {
+		return helpOverviewText()
+	}
+	commandName := helpTopicCommand(args)
+	overview, ok := helpOverviewRow(commandName)
+	if !ok {
+		return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
+	}
+	lines := []string{overview.command + " 帮助：", "命令\t说明"}
+	for _, row := range helpDetailRows(commandName) {
+		lines = append(lines, row.command+"\t"+row.description)
+	}
+	lines = append(lines, "", "发送“帮助”返回命令总览。")
+	return strings.Join(lines, "\n")
+}
+
+func helpOverviewText() string {
+	lines := []string{
+		"Bot 帮助：",
+		"发送“帮助 课表”等命令查看具体用法。",
+	}
+	for _, section := range helpOverviewSections() {
 		lines = append(lines, "", section.title+"：", "命令\t说明")
 		for _, row := range section.rows {
 			lines = append(lines, row.command+"\t"+row.description)
@@ -188,9 +282,35 @@ func (h Handler) help() string {
 	return strings.Join(lines, "\n")
 }
 
-func helpRichText() string {
-	lines := []string{"# Bot 帮助"}
-	for _, section := range helpSections() {
+func helpRichText(args ...string) string {
+	if len(args) == 0 {
+		return helpOverviewRichText()
+	}
+	commandName := helpTopicCommand(args)
+	overview, ok := helpOverviewRow(commandName)
+	if !ok {
+		return ""
+	}
+	lines := []string{
+		"# " + overview.command + " 帮助",
+		"",
+		markdownRichTableRow([]string{"命令", "说明"}),
+		markdownRichTableRow([]string{"---", "---"}),
+	}
+	for _, row := range helpDetailRows(commandName) {
+		lines = append(lines, markdownRichTableRow([]string{row.command, row.description}))
+	}
+	lines = append(lines, "", "发送“帮助”返回命令总览。")
+	return strings.Join(lines, "\n")
+}
+
+func helpOverviewRichText() string {
+	lines := []string{
+		"# Bot 帮助",
+		"",
+		"发送“帮助 课表”等命令查看具体用法。",
+	}
+	for _, section := range helpOverviewSections() {
 		lines = append(lines,
 			"",
 			"## "+section.title,
@@ -202,4 +322,42 @@ func helpRichText() string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func helpTopicCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	name, _, ok := normalizeJoinedCommand(args[0], args[1:])
+	if ok {
+		return name
+	}
+	name, _ = normalizeCommand(args[0], args[1:])
+	if name == "help" {
+		return ""
+	}
+	return name
+}
+
+func helpOverviewRow(commandName string) (helpRow, bool) {
+	for _, section := range helpOverviewSections() {
+		for _, row := range section.rows {
+			if row.commandName == commandName {
+				return row, true
+			}
+		}
+	}
+	return helpRow{}, false
+}
+
+func helpDetailRows(commandName string) []helpRow {
+	rows := []helpRow{}
+	for _, section := range helpDetailSections() {
+		for _, row := range section.rows {
+			if row.commandName == commandName {
+				rows = append(rows, row)
+			}
+		}
+	}
+	return rows
 }

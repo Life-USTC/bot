@@ -30,11 +30,10 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	}
 	imageText := imageRenderText(text)
 	if cmd.Name == "help" {
-		return responses.NewRichTextImage("help", helpRichText(), imageText)
+		return responses.NewRichTextImage("help", helpRichText(cmd.Args...), imageText)
 	}
-	if firstArgIs(cmd.Args, "help") {
-		plainText := textutil.PlainMonospace(text)
-		return richTextImage("help", imageTitle(plainText, "帮助"), plainText)
+	if firstArgIsHelp(cmd.Args) {
+		return responses.NewRichTextImage("help", helpRichText(cmd.Name), imageText)
 	}
 	switch cmd.Name {
 	case "schedule":
