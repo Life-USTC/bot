@@ -175,7 +175,7 @@ func richDocumentHasCompactHelpIntro(doc richDocument) bool {
 		len(doc.Blocks) > 1 &&
 		doc.Blocks[0].Heading == "" &&
 		doc.Blocks[0].Table == nil &&
-		len(doc.Blocks[0].Lines) == 2
+		len(doc.Blocks[0].Lines) == 1
 }
 
 func richTitleX(layout richLayout) int {

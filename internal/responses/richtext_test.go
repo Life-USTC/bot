@@ -76,10 +76,9 @@ func TestLayoutRichTextKeepsNodesInsideCanvasWithoutOverlap(t *testing.T) {
 
 func TestLayoutRichTextCompactsHelpIntroBelowTitle(t *testing.T) {
 	doc := parseRichText(`# Bot 帮助
-常用快捷入口：校车 · 今日课表
-发送“帮助 快捷入口”查看全部快捷入口。
+发送「帮助 课表」可以查看「课表」命令的具体用法。
 
-## 日程与课程
+## 常用
 | 命令 | 说明 |
 | --- | --- |
 | 日程 | 查看日程 |`)
@@ -88,10 +87,9 @@ func TestLayoutRichTextCompactsHelpIntroBelowTitle(t *testing.T) {
 		t.Fatalf("layout nodes = %#v", layout.Nodes)
 	}
 	intro := layout.Nodes[0]
-	if intro.Bounds.Min.Y != 58 || intro.Bounds.Dy() != 48 || intro.RowHeight != 24 || !intro.Compact ||
+	if intro.Bounds.Min.Y != 58 || intro.Bounds.Dy() != 24 || intro.RowHeight != 24 || !intro.Compact ||
 		!reflect.DeepEqual(intro.Lines, []string{
-			"常用快捷入口：校车 · 今日课表",
-			"发送“帮助 快捷入口”查看全部快捷入口。",
+			"发送「帮助 课表」可以查看「课表」命令的具体用法。",
 		}) {
 		t.Fatalf("intro node = %#v", intro)
 	}

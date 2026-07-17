@@ -152,8 +152,7 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业") ||
-			!strings.Contains(reply, "发送“帮助 快捷入口”查看全部快捷入口。") ||
+		if !strings.Contains(reply, "发送「帮助 课表」可以查看「课表」命令的具体用法。") ||
 			!strings.Contains(reply, "待办（td）\t查看和管理待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
@@ -164,11 +163,8 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	reply := Handler{}.help()
 	for _, want := range []string{
 		"Bot 帮助：",
-		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
-		"发送“帮助 快捷入口”查看全部快捷入口。",
-		"发送“帮助 课表”等命令查看具体用法。",
-		"日程与课程：",
-		"教学资源：",
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
+		"常用：",
 		"账户与系统：",
 		"命令\t说明",
 		"日程\t今日安排、综合概览与近期截止",
@@ -191,6 +187,8 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"作业 列表 学期ID",
 		"校车 东区 西区",
 		"教学班 搜索 老师代码",
+		"教学资源：",
+		"课程\t搜索或查看课程",
 	} {
 		if strings.Contains(reply, unwanted) {
 			t.Fatalf("overview contains detailed usage %q: %q", unwanted, reply)
@@ -310,10 +308,17 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 			}
 		}
 	}
-	if len(overviewCount) != 15 {
-		t.Errorf("overview has %d canonical topics, want 15", len(overviewCount))
+	visibleTopics := map[string]bool{
+		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
+		"bus": true, "account": true, "settings": true, "system": true, "feedback": true,
+	}
+	if len(overviewCount) != len(visibleTopics) {
+		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))
 	}
 	for topic, count := range overviewCount {
+		if !visibleTopics[topic] {
+			t.Errorf("hidden topic %q appears in overview", topic)
+		}
 		if count != 1 {
 			t.Errorf("topic %q appears %d times in overview, want once", topic, count)
 		}
@@ -324,12 +329,17 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 	if !topicDetails["shortcuts"] {
 		t.Error("shortcut detail help is missing")
 	}
+	for topic := range helpTopicTitles {
+		if topic != "shortcuts" && !topicDetails[topic] {
+			t.Errorf("topic %q is missing detail help", topic)
+		}
+	}
 	for _, spec := range CommandSpecs() {
 		topic, ok := internalHelpTopics[spec.Name]
 		if !ok {
 			t.Errorf("command %q is not assigned to a canonical topic", spec.Name)
-		} else if overviewCount[topic] != 1 {
-			t.Errorf("command %q maps to missing overview topic %q", spec.Name, topic)
+		} else if _, ok := helpTopicTitles[topic]; !ok {
+			t.Errorf("command %q maps to untitled topic %q", spec.Name, topic)
 		}
 		if !detailCovered[spec.Name] {
 			t.Errorf("command %q is missing detail help", spec.Name)
@@ -932,15 +942,13 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		t.Fatalf("help response image = %#v", response.Image)
 	}
 	for _, want := range []string{
-		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
-		"发送“帮助 快捷入口”查看全部快捷入口",
-		"## 日程与课程",
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
+		"## 常用",
 		"| 命令 | 说明 |",
 		"| 日程 | 今日安排、综合概览与近期截止 |",
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
-		"## 教学资源",
-		"| 教学班 | 搜索教学班及查看相关信息 |",
+		"| 校车（xc） | 查询班次、路线与设置偏好 |",
 		"| 设置 | 管理通知与工具调用展示 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
@@ -950,7 +958,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpOverviewSections()) {
 		t.Fatalf("help table count = %d, want %d", got, len(helpOverviewSections()))
 	}
-	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1"} {
+	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "## 教学资源", "| 教学班 |"} {
 		if strings.Contains(response.Image.RichText, unwanted) {
 			t.Fatalf("help overview still contains %q: %q", unwanted, response.Image.RichText)
 		}

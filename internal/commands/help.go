@@ -17,33 +17,13 @@ type helpSection struct {
 func helpOverviewSections() []helpSection {
 	return []helpSection{
 		{
-			title: "日程与课程",
+			title: "常用",
 			rows: []helpRow{
 				{topic: "agenda", command: "日程", description: "今日安排、综合概览与近期截止"},
 				{topic: "schedule", command: "课表", description: "周课表、单日课表与下一节课"},
 				{topic: "exam", command: "考试（ks）", description: "查看已订阅课程的考试"},
-			},
-		},
-		{
-			title: "任务",
-			rows: []helpRow{
 				{topic: "todo", command: "待办（td）", description: "查看和管理待办"},
 				{topic: "homework", command: "作业（hw）", description: "查看和管理作业"},
-			},
-		},
-		{
-			title: "教学资源",
-			rows: []helpRow{
-				{topic: "course", command: "课程", description: "搜索或查看课程"},
-				{topic: "section", command: "教学班", description: "搜索教学班及查看相关信息"},
-				{topic: "teacher", command: "老师", description: "搜索或查看老师"},
-				{topic: "semester", command: "学期", description: "查看当前学期或学期列表"},
-				{topic: "subscription", command: "订阅", description: "管理教学班与日历订阅"},
-			},
-		},
-		{
-			title: "校园服务",
-			rows: []helpRow{
 				{topic: "bus", command: "校车（xc）", description: "查询班次、路线与设置偏好"},
 			},
 		},
@@ -294,9 +274,7 @@ func (h Handler) help(args ...string) string {
 func helpOverviewText() string {
 	lines := []string{
 		"Bot 帮助：",
-		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
-		"发送“帮助 快捷入口”查看全部快捷入口。",
-		"发送“帮助 课表”等命令查看具体用法。",
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
 	}
 	for _, section := range helpOverviewSections() {
 		lines = append(lines, "", section.title+"：", "命令\t说明")
@@ -332,8 +310,7 @@ func helpRichText(args ...string) string {
 func helpOverviewRichText() string {
 	lines := []string{
 		"# Bot 帮助",
-		"常用快捷入口：校车 · 今日课表 · 登录 · 待办 · 作业",
-		"发送“帮助 快捷入口”查看全部快捷入口；发送“帮助 课表”等命令查看具体用法。",
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
 	}
 	for _, section := range helpOverviewSections() {
 		lines = append(lines,
@@ -441,23 +418,28 @@ func helpTopicCommand(args []string) string {
 	return internalHelpTopics[name]
 }
 
+var helpTopicTitles = map[string]string{
+	"shortcuts":    "快捷入口",
+	"agenda":       "日程",
+	"schedule":     "课表",
+	"todo":         "待办",
+	"homework":     "作业",
+	"exam":         "考试",
+	"course":       "课程",
+	"section":      "教学班",
+	"teacher":      "老师",
+	"semester":     "学期",
+	"subscription": "订阅",
+	"bus":          "校车",
+	"account":      "账户",
+	"settings":     "设置",
+	"system":       "系统",
+	"feedback":     "反馈",
+}
+
 func helpTopicTitle(topic string) (string, bool) {
-	if topic == "shortcuts" {
-		return "快捷入口", true
-	}
-	for _, section := range helpOverviewSections() {
-		for _, row := range section.rows {
-			if row.topic != topic {
-				continue
-			}
-			title := row.command
-			if start := strings.Index(title, "（"); start >= 0 {
-				title = title[:start]
-			}
-			return title, true
-		}
-	}
-	return "", false
+	title, ok := helpTopicTitles[topic]
+	return title, ok
 }
 
 func helpOverviewRow(topic string) (helpRow, bool) {
