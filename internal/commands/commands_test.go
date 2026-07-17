@@ -158,14 +158,24 @@ func TestHandleHelpAliases(t *testing.T) {
 	}
 }
 
-func TestHelpReplyIsCompact(t *testing.T) {
+func TestHelpReplyUsesNestedSections(t *testing.T) {
 	reply := Handler{}.help()
-	want := "可以直接发：待办 / td；td 写报告；td done 1；作业 / hw；作业 done 1；今日 / ddl；校车 / xc；xc 东区 西区；今天课表 / 明天课表；下一节课；订阅；通知；AI 工具；状态 / status；我 / me；反馈 你的建议；课程 数学分析；教学班 高等数学；老师 张；考试 / ks；登录 / 登录 状态"
-	if reply != want {
-		t.Fatalf("reply = %q, want %q", reply, want)
+	for _, want := range []string{
+		"Bot 帮助：",
+		"课程与日程：",
+		"• 课表",
+		"  ├─ 课表：本周",
+		"  └─ 下一节课",
+		"任务：",
+		"  ├─ td 写报告",
+		"账户与反馈：",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
-	if strings.ContainsAny(reply, "\n\r\x1b") {
-		t.Fatalf("reply contains control separator: %q", reply)
+	if !strings.Contains(reply, "\n") || strings.ContainsAny(reply, "\r\x1b") {
+		t.Fatalf("reply separators = %q", reply)
 	}
 }
 
@@ -366,7 +376,8 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 
 	for _, text := range []string{"课程 help", "教学班 help", "校车 help", "状态 help"} {
 		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
-		if !ok || !strings.Contains(reply, "可以直接发：") {
+		if !ok || (text == "校车 help" && !strings.Contains(reply, "xc 东区 西区")) ||
+			(text != "校车 help" && !strings.Contains(reply, "Bot 帮助：")) {
 			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
 		}
 	}
@@ -752,9 +763,27 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if response.Text != text {
 		t.Fatalf("HandleResponse text = %q, Handle text = %q", response.Text, text)
 	}
-	if response.Image != nil {
-		t.Fatalf("help response image = %#v, want nil", response.Image)
+	if response.Image == nil || response.Image.Kind != "help" {
+		t.Fatalf("help response image = %#v", response.Image)
 	}
+	for _, want := range []string{"## 课程与日程", "• 课表", "  ├─ 课表：本周"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
+		}
+	}
+	assertResponseImageRenders(t, response.Image)
+}
+
+func TestSubcommandHelpUsesImage(t *testing.T) {
+	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
+	if !ok || response.Image == nil || response.Image.Kind != "help" {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if response.Image.Title != "课表用法" || !strings.Contains(response.Image.AltText, "课表 第3周") {
+		t.Fatalf("image = %#v", response.Image)
+	}
+	assertResponseImageRenders(t, response.Image)
 }
 
 func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
@@ -825,14 +854,15 @@ func TestScheduleImageUsesSeparateCampusAndRoomColumns(t *testing.T) {
 	want := strings.Join([]string{
 		"# 今天课表",
 		"",
-		"| 校区 | 教室 | 时间 | 课程 |",
+		"| 节次 | 时间 | 安排 | 备注 |",
 		"| --- | --- | --- | --- |",
-		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
-		"| 高新区 | GT-B112 | 14:00-15:35 | Computer Networks |",
+		"| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |",
+		"| 第 6–7 小节 | 14:00-15:35 | Computer Networks | 高新区 · GT-B112 |",
 	}, "\n")
 	if img == nil || img.RichText != want {
 		t.Fatalf("rich text = %q, want %q", img.RichText, want)
 	}
+	assertResponseImageRenders(t, img)
 }
 
 func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
@@ -847,10 +877,26 @@ func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
 	}, "\n")
 
 	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
-	if img == nil || !strings.Contains(img.RichText, "## 今天\n| 校区 | 教室 | 时间 | 课程 |") ||
-		!strings.Contains(img.RichText, "## 明天\n| 校区 | 教室 | 时间 | 课程 |") ||
-		strings.Count(img.RichText, "| 校区 | 教室 | 时间 | 课程 |") != 2 {
+	if img == nil || !strings.Contains(img.RichText, "## 今天\n| 节次 | 时间 | 安排 | 备注 |") ||
+		!strings.Contains(img.RichText, "## 明天\n| 节次 | 时间 | 安排 | 备注 |") ||
+		strings.Count(img.RichText, "| 节次 | 时间 | 安排 | 备注 |") != 2 {
 		t.Fatalf("rich text = %q", img.RichText)
+	}
+}
+
+func TestSchedulePeriodLabelUsesUSTCLessonTimes(t *testing.T) {
+	tests := map[string]string{
+		"07:50-08:35": "第 1 小节",
+		"07:50-09:25": "第 1–2 小节",
+		"09:50-11:25": "第 3–4 小节",
+		"14:00-15:35": "第 6–7 小节",
+		"19:30-21:05": "第 11–12 小节",
+		"12:30-13:00": "—",
+	}
+	for timeRange, want := range tests {
+		if got := schedulePeriodLabel(timeRange); got != want {
+			t.Fatalf("schedulePeriodLabel(%q) = %q, want %q", timeRange, got, want)
+		}
 	}
 }
 
@@ -873,8 +919,8 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 		t.Fatal("image = nil")
 	}
 	for _, want := range []string{
-		"## 今日课表 (1)\n| 校区 | 教室 | 时间 | 课程 |",
-		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
+		"## 今日课表 (1)\n| 节次 | 时间 | 安排 | 备注 |",
+		"| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |",
 		"## 待办 (1)\n| # | 截止 | 待办 |",
 		"| 1 | 07-15 18:00 | 写报告 |",
 		"## 近期作业 (1)\n| # | 截止 | 课程 | 作业 |",
@@ -887,9 +933,6 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 		}
 	}
 	assertResponseImageRenders(t, img)
-	if strings.Contains(img.RichText, " · ") {
-		t.Fatalf("rich text still uses dot separators: %q", img.RichText)
-	}
 }
 
 func TestTodoImageUsesTable(t *testing.T) {
@@ -936,13 +979,16 @@ func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 	}
 
 	for _, cmd := range []parsedCommand{
-		{Name: "homework", Args: []string{"help"}},
 		{Name: "homework", Args: []string{"done", "1"}},
 		{Name: "homework", Args: []string{"undo", "1"}},
 	} {
 		if got := handler.imageResponseFor(cmd, text); got != nil {
 			t.Fatalf("non-list image = %#v, want nil", got)
 		}
+	}
+	helpImage := handler.imageResponseFor(parsedCommand{Name: "homework", Args: []string{"help"}}, "作业用法：\n作业：查看作业")
+	if helpImage == nil || helpImage.Kind != "help" {
+		t.Fatalf("help image = %#v", helpImage)
 	}
 	for _, reply := range []string{"没有未完成作业。", "作业查不到：server exploded"} {
 		if got := handler.imageResponseFor(parsedCommand{Name: "homework"}, reply); got != nil {
@@ -996,8 +1042,8 @@ func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
 	if img == nil || img.Kind != "nextclass" || img.Title != "下一节课" {
 		t.Fatalf("image = %#v", img)
 	}
-	if !strings.Contains(img.RichText, "| 校区 | 教室 | 时间 | 课程 |") ||
-		!strings.Contains(img.RichText, "| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |") {
+	if !strings.Contains(img.RichText, "| 节次 | 时间 | 安排 | 备注 |") ||
+		!strings.Contains(img.RichText, "| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |") {
 		t.Fatalf("rich text = %q", img.RichText)
 	}
 	assertResponseImageRenders(t, img)
@@ -1051,7 +1097,6 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		cmd  parsedCommand
 		text string
 	}{
-		"help":       {cmd: parsedCommand{Name: "bus", Args: []string{"help"}}, text: busHelp()},
 		"preference": {cmd: parsedCommand{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
 		"no service": {cmd: parsedCommand{Name: "bus"}, text: "今天后面没查到校车。"},
 		"error":      {cmd: parsedCommand{Name: "bus"}, text: "校车查不到：server exploded"},
@@ -1059,6 +1104,10 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
 			t.Fatalf("%s image = %#v, want nil", name, got)
 		}
+	}
+	helpImage := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"help"}}, busHelp())
+	if helpImage == nil || helpImage.Kind != "help" {
+		t.Fatalf("help image = %#v", helpImage)
 	}
 }
 
@@ -1377,6 +1426,28 @@ func TestFormatFeedbackContextSkipsPrivateCommandsAndRedactsEmail(t *testing.T) 
 	})
 	if strings.Contains(contextText, "student@example.com") || !strings.Contains(contextText, "[已隐藏邮箱]") {
 		t.Fatalf("email was not redacted: %q", contextText)
+	}
+}
+
+func TestFormatFeedbackContextKeepsThreeMostRecentRelevantInteractions(t *testing.T) {
+	contextText := formatFeedbackContext([]store.Interaction{
+		{Command: "agent", RawText: "最旧问题", Reply: "最旧回复"},
+		{Command: "login", RawText: "登录 student@example.com", Reply: "登录成功"},
+		{Command: "bus", RawText: "校车", Reply: "校车回复"},
+		{Command: "schedule", RawText: "课表", Reply: "课表回复"},
+		{Command: "help", RawText: "帮助", Reply: "帮助回复"},
+	})
+	for _, want := range []string{"校车回复", "课表回复", "帮助回复"} {
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("context missing %q: %q", want, contextText)
+		}
+	}
+	if strings.Contains(contextText, "最旧") || strings.Contains(contextText, "登录") || strings.Contains(contextText, "student@example.com") {
+		t.Fatalf("context includes excluded history: %q", contextText)
+	}
+	if strings.Index(contextText, "校车回复") > strings.Index(contextText, "课表回复") ||
+		strings.Index(contextText, "课表回复") > strings.Index(contextText, "帮助回复") {
+		t.Fatalf("context is not chronological: %q", contextText)
 	}
 }
 

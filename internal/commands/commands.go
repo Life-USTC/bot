@@ -129,7 +129,7 @@ var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "�
 var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"}
 
 const (
-	feedbackContextLimit     = 1
+	feedbackContextLimit     = 3
 	feedbackContextLookback  = 12
 	feedbackContextTextRunes = 220
 )
@@ -1051,29 +1051,39 @@ func joinedArgs(args []string) string {
 }
 
 func (h Handler) help() string {
-	return "可以直接发：" + strings.Join([]string{
-		"待办 / td",
-		"td 写报告",
-		"td done 1",
-		"作业 / hw",
-		"作业 done 1",
-		"今日 / ddl",
-		"校车 / xc",
-		"xc 东区 西区",
-		"今天课表 / 明天课表",
-		"下一节课",
-		"订阅",
-		"通知",
-		"AI 工具",
-		"状态 / status",
-		"我 / me",
-		"反馈 你的建议",
-		"课程 数学分析",
-		"教学班 高等数学",
-		"老师 张",
-		"考试 / ks",
-		"登录 / 登录 状态",
-	}, "；")
+	return strings.Join([]string{
+		"Bot 帮助：",
+		"课程与日程：",
+		"• 今日 / ddl",
+		"• 课表",
+		"  ├─ 课表：本周",
+		"  ├─ 课表 下周 / 课表 第3周",
+		"  ├─ 今天课表 / 明天课表",
+		"  └─ 下一节课",
+		"• 订阅",
+		"  ├─ 订阅：查看课程",
+		"  └─ 订阅 链接：查看日历链接",
+		"• 考试 / ks",
+		"• 课程 数学分析 / 教学班 高等数学 / 老师 张",
+		"",
+		"任务：",
+		"• 待办 / td",
+		"  ├─ td 写报告",
+		"  └─ td done 1",
+		"• 作业 / hw",
+		"  └─ 作业 done 1",
+		"",
+		"校车：",
+		"• 校车 / xc",
+		"  ├─ xc 东区 西区",
+		"  └─ 校车 偏好",
+		"",
+		"账户与反馈：",
+		"• 登录 / 登录 状态",
+		"• 通知 / AI 工具",
+		"• 状态 / status / 我 / me",
+		"• 反馈 你的建议",
+	}, "\n")
 }
 
 func (h Handler) feedback(ctx context.Context, ident store.Identity, args []string) string {
@@ -1166,8 +1176,11 @@ func (h Handler) feedbackContext(ctx context.Context, ident store.Identity) stri
 }
 
 func formatFeedbackContext(interactions []store.Interaction) string {
-	lines := []string{}
-	included := 0
+	type contextTurn struct {
+		raw   string
+		reply string
+	}
+	selected := make([]contextTurn, 0, feedbackContextLimit)
 	for i := len(interactions) - 1; i >= 0; i-- {
 		interaction := interactions[i]
 		switch strings.ToLower(strings.TrimSpace(interaction.Command)) {
@@ -1176,17 +1189,21 @@ func formatFeedbackContext(interactions []store.Interaction) string {
 		}
 		raw := compactFeedbackContextText(interaction.RawText)
 		reply := compactFeedbackContextText(interaction.Reply)
-		if raw != "" {
-			lines = append(lines, "用户："+raw)
+		if raw == "" && reply == "" {
+			continue
 		}
-		if reply != "" {
-			lines = append(lines, "Bot："+reply)
-		}
-		if raw != "" || reply != "" {
-			included++
-		}
-		if included >= feedbackContextLimit {
+		selected = append(selected, contextTurn{raw: raw, reply: reply})
+		if len(selected) >= feedbackContextLimit {
 			break
+		}
+	}
+	lines := make([]string, 0, len(selected)*2)
+	for i := len(selected) - 1; i >= 0; i-- {
+		if selected[i].raw != "" {
+			lines = append(lines, "用户："+selected[i].raw)
+		}
+		if selected[i].reply != "" {
+			lines = append(lines, "Bot："+selected[i].reply)
 		}
 	}
 	return strings.Join(lines, "\n")
