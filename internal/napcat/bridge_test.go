@@ -47,7 +47,7 @@ func TestSendGroupMessage(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":101}}`))
 	}))
 	defer server.Close()
 
@@ -72,6 +72,25 @@ func TestSendGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendPayloadReturnsPlatformAcceptance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":"message-123"}}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	receipt, err := bridge.sendPayload(context.Background(), messageEvent{
+		MessageType: "private",
+		UserID:      456,
+	}, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.PlatformMessageID != "message-123" || receipt.AcceptedAt.IsZero() {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
 func TestSendResponsePostsImageSegmentWhenAvailable(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +100,7 @@ func TestSendResponsePostsImageSegmentWhenAvailable(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":102}}`))
 	}))
 	defer server.Close()
 
@@ -124,7 +143,7 @@ func TestSendRichMessagePostsImageSegmentForIdentity(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":103}}`))
 	}))
 	defer server.Close()
 
@@ -162,7 +181,7 @@ func TestSendResponseFallsBackToTextWhenImagePostFails(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&fallbackBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":104}}`))
 	}))
 	defer server.Close()
 
@@ -198,7 +217,7 @@ func TestSendTrimsAccessToken(t *testing.T) {
 		if got := r.URL.Query().Get("access_token"); got != "token" {
 			t.Fatalf("access_token = %q", got)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":105}}`))
 	}))
 	defer server.Close()
 
@@ -226,7 +245,7 @@ func TestSendTrimsAPIURL(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":106}}`))
 	}))
 	defer server.Close()
 
@@ -352,7 +371,11 @@ func TestSendReverseReply(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	err = sendReverseReply(conn, nil, messageEvent{MessageType: "private", UserID: 42}, "pong")
+	err = writeReverseAction(conn, nil, map[string]any{
+		"action": "send_private_msg",
+		"params": map[string]any{"user_id": int64(42), "message": "pong"},
+		"echo":   "test-echo",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,6 +386,96 @@ func TestSendReverseReply(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if params["user_id"].(float64) != 42 || params["message"] != "pong" {
 		t.Fatalf("params = %#v", params)
+	}
+}
+
+func TestSendReverseReplyWaitsForMatchingAcceptance(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		var frame map[string]any
+		if err := conn.ReadJSON(&frame); err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.WriteJSON(map[string]any{
+			"status":  "ok",
+			"retcode": 0,
+			"data":    map[string]any{"message_id": 987654321},
+			"echo":    frame["echo"],
+		})
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[len("http"):], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	bridge := &Bridge{reverseTimeout: time.Second}
+	readDone := make(chan error, 1)
+	go func() {
+		var raw json.RawMessage
+		err := conn.ReadJSON(&raw)
+		if err == nil && !bridge.resolveReverseAction(raw) {
+			err = errors.New("action response was not resolved")
+		}
+		readDone <- err
+	}()
+
+	receipt, err := bridge.sendReverseReply(context.Background(), conn, nil, messageEvent{
+		MessageType: "private",
+		UserID:      42,
+	}, "pong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-readDone; err != nil {
+		t.Fatal(err)
+	}
+	if receipt.PlatformMessageID != "987654321" || receipt.AcceptedAt.IsZero() {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSendReverseReplyTimeoutIsUncertain(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	frameRead := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		var frame map[string]any
+		if err := conn.ReadJSON(&frame); err != nil {
+			t.Error(err)
+			return
+		}
+		close(frameRead)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[len("http"):], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &Bridge{reverseTimeout: 20 * time.Millisecond}
+	_, err = bridge.sendReverseReply(context.Background(), conn, nil, messageEvent{
+		MessageType: "private",
+		UserID:      42,
+	}, "pong")
+	_ = conn.Close()
+	<-frameRead
+	if err == nil || !isUncertainSendError(err) {
+		t.Fatalf("timeout error = %v", err)
 	}
 }
 
@@ -417,6 +530,11 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
+	}
+	if err := conn.WriteJSON(map[string]any{
+		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9001}, "echo": frame["echo"],
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -484,6 +602,11 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 	params := frame["params"].(map[string]any)
 	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
+	}
+	if err := conn1.WriteJSON(map[string]any{
+		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9002}, "echo": frame["echo"],
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -600,7 +723,7 @@ func TestSendLoginMessageUsesIdentity(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":107}}`))
 	}))
 	defer server.Close()
 
@@ -629,7 +752,7 @@ func TestSendMessageUsesPrivateConversationIDWhenUserIDMissing(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":108}}`))
 	}))
 	defer server.Close()
 
@@ -653,7 +776,7 @@ func TestSendMessageNormalizesGroupIdentity(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":109}}`))
 	}))
 	defer server.Close()
 
@@ -718,6 +841,14 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 		bridge := &Bridge{}
 		connID := bridge.setReverseConn(conn, &sync.Mutex{})
 		defer bridge.clearReverseConn(connID)
+		go func() {
+			var raw json.RawMessage
+			if err := conn.ReadJSON(&raw); err != nil {
+				t.Error(err)
+				return
+			}
+			bridge.resolveReverseAction(raw)
+		}()
 		if err := bridge.SendLoginMessage(context.Background(), store.Identity{
 			UserID:           "42",
 			ConversationType: "private",
@@ -738,6 +869,11 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 
 	var frame map[string]any
 	if err := conn.ReadJSON(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteJSON(map[string]any{
+		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9010}, "echo": frame["echo"],
+	}); err != nil {
 		t.Fatal(err)
 	}
 	<-ready

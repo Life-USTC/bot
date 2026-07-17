@@ -40,6 +40,44 @@ type Bridge struct {
 	reverseConn    *websocket.Conn
 	reverseWriteMu *sync.Mutex
 	reverseSeq     uint64
+	reversePending map[string]reversePendingAction
+	reverseTimeout time.Duration
+}
+
+const (
+	defaultReverseActionTimeout = 10 * time.Second
+	reverseEventQueueSize       = 32
+)
+
+type napcatActionResponse struct {
+	Status  string          `json:"status"`
+	RetCode int             `json:"retcode"`
+	Data    json.RawMessage `json:"data"`
+	Message string          `json:"message"`
+	Wording string          `json:"wording"`
+	Echo    json.RawMessage `json:"echo"`
+}
+
+type reverseActionResult struct {
+	response napcatActionResponse
+	err      error
+}
+
+type reversePendingAction struct {
+	conn   *websocket.Conn
+	result chan reverseActionResult
+}
+
+type uncertainSendError struct {
+	err error
+}
+
+func (e uncertainSendError) Error() string {
+	return e.err.Error()
+}
+
+func (e uncertainSendError) Unwrap() error {
+	return e.err
 }
 
 type messageEvent struct {
@@ -121,16 +159,45 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	writeMu := &sync.Mutex{}
 	connID := b.setReverseConn(conn, writeMu)
 	defer b.clearReverseConn(connID)
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer b.failReversePending(conn, errors.New("napcat reverse websocket closed"))
+	events := make(chan messageEvent, reverseEventQueueSize)
+	go b.handleReverseEvents(connCtx, conn, writeMu, events)
 	for {
-		var event messageEvent
-		if err := conn.ReadJSON(&event); err != nil {
+		var raw json.RawMessage
+		if err := conn.ReadJSON(&raw); err != nil {
 			if ctx.Err() == nil {
 				b.logf("reverse websocket read failed: %v", err)
 			}
 			return
 		}
+		if b.resolveReverseAction(raw) {
+			continue
+		}
+		var event messageEvent
+		if err := json.Unmarshal(raw, &event); err != nil {
+			b.logf("reverse websocket ignored invalid event: %v", err)
+			continue
+		}
 		if event.PostType != "message" {
 			continue
+		}
+		select {
+		case events <- event:
+		default:
+			b.logf("reverse websocket message queue full; dropping user_id=%d group_id=%d", event.UserID, event.GroupID)
+		}
+	}
+}
+
+func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, events <-chan messageEvent) {
+	for {
+		var event messageEvent
+		select {
+		case <-ctx.Done():
+			return
+		case event = <-events:
 		}
 		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
 			event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
@@ -195,18 +262,37 @@ func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
 	}, "ignored")
 }
 
-func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message, status string, err error) {
+func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message string, receipt store.MessageAcceptance, err error) {
 	errText := ""
+	status := store.InteractionStatusAccepted
 	if err != nil {
 		errText = err.Error()
+		status = store.InteractionStatusFailed
+		if isUncertainSendError(err) {
+			status = store.InteractionStatusUnknown
+		}
 	}
 	b.recordInteraction(ctx, event, store.Interaction{
-		Direction: store.InteractionDirectionOutbound,
-		RawText:   message,
-		Handled:   true,
-		Status:    status,
-		Error:     errText,
+		Direction:         store.InteractionDirectionOutbound,
+		RawText:           message,
+		Handled:           true,
+		Status:            status,
+		Error:             errText,
+		PlatformMessageID: receipt.PlatformMessageID,
+		AcceptedAt:        receipt.AcceptedAt,
 	}, "outbound")
+	if err != nil {
+		b.logf("napcat message %s: message_type=%q user_id=%d group_id=%d error=%v",
+			status, event.MessageType, event.UserID, event.GroupID, err)
+		return
+	}
+	b.logf("napcat message accepted: message_type=%q user_id=%d group_id=%d message_id=%q",
+		event.MessageType, event.UserID, event.GroupID, receipt.PlatformMessageID)
+}
+
+func isUncertainSendError(err error) bool {
+	var target uncertainSendError
+	return errors.As(err, &target)
 }
 
 func (b *Bridge) recordInteraction(ctx context.Context, event messageEvent, interaction store.Interaction, label string) {
@@ -238,28 +324,30 @@ func (e messageEvent) identity() store.Identity {
 }
 
 func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) error {
-	err := b.sendPayload(ctx, event, message)
-	if err != nil {
-		b.recordOutbound(ctx, event, message, store.InteractionStatusFailed, err)
-		return err
-	}
-	b.recordOutbound(ctx, event, message, store.InteractionStatusSent, nil)
-	return nil
+	receipt, err := b.sendPayload(ctx, event, message)
+	b.recordOutbound(ctx, event, message, receipt, err)
+	return err
 }
 
 func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response commands.Response) error {
 	if response.Image != nil && b.MediaStore != nil {
 		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
 			if conn, writeMu := b.activeReverseConn(); conn != nil {
-				if err := sendReversePayload(conn, writeMu, event, napcatImageMessage(imageURL)); err == nil {
-					b.recordOutbound(ctx, event, response.Text, store.InteractionStatusSent, nil)
+				if receipt, err := b.sendReversePayload(ctx, conn, writeMu, event, napcatImageMessage(imageURL)); err == nil {
+					b.recordOutbound(ctx, event, response.Text, receipt, nil)
 					return nil
+				} else if isUncertainSendError(err) {
+					b.recordOutbound(ctx, event, response.Text, store.MessageAcceptance{}, err)
+					return err
 				} else {
 					b.logf("reverse websocket image send failed: %v", err)
 				}
-			} else if err := b.sendPayload(ctx, event, napcatImageMessage(imageURL)); err == nil {
-				b.recordOutbound(ctx, event, response.Text, store.InteractionStatusSent, nil)
+			} else if receipt, err := b.sendPayload(ctx, event, napcatImageMessage(imageURL)); err == nil {
+				b.recordOutbound(ctx, event, response.Text, receipt, nil)
 				return nil
+			} else if isUncertainSendError(err) {
+				b.recordOutbound(ctx, event, response.Text, store.MessageAcceptance{}, err)
+				return err
 			} else {
 				b.logf("napcat image send failed: %v", err)
 			}
@@ -268,12 +356,9 @@ func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response 
 		}
 	}
 	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		if err := sendReverseReply(conn, writeMu, event, response.Text); err != nil {
-			b.recordOutbound(ctx, event, response.Text, store.InteractionStatusFailed, err)
-			return err
-		}
-		b.recordOutbound(ctx, event, response.Text, store.InteractionStatusSent, nil)
-		return nil
+		receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, response.Text)
+		b.recordOutbound(ctx, event, response.Text, receipt, err)
+		return err
 	}
 	return b.Send(ctx, event, response.Text)
 }
@@ -281,9 +366,12 @@ func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response 
 func (b *Bridge) sendReverseResponse(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, response commands.Response) error {
 	if response.Image != nil && b.MediaStore != nil {
 		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
-			if err := sendReversePayload(conn, writeMu, event, napcatImageMessage(imageURL)); err == nil {
-				b.recordOutbound(ctx, event, response.Text, store.InteractionStatusSent, nil)
+			if receipt, err := b.sendReversePayload(ctx, conn, writeMu, event, napcatImageMessage(imageURL)); err == nil {
+				b.recordOutbound(ctx, event, response.Text, receipt, nil)
 				return nil
+			} else if isUncertainSendError(err) {
+				b.recordOutbound(ctx, event, response.Text, store.MessageAcceptance{}, err)
+				return err
 			} else {
 				b.logf("reverse websocket image send failed: %v", err)
 			}
@@ -291,12 +379,9 @@ func (b *Bridge) sendReverseResponse(ctx context.Context, conn *websocket.Conn, 
 			b.logf("prepare napcat image failed: %v", err)
 		}
 	}
-	if err := sendReverseReply(conn, writeMu, event, response.Text); err != nil {
-		b.recordOutbound(ctx, event, response.Text, store.InteractionStatusFailed, err)
-		return err
-	}
-	b.recordOutbound(ctx, event, response.Text, store.InteractionStatusSent, nil)
-	return nil
+	receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, response.Text)
+	b.recordOutbound(ctx, event, response.Text, receipt, err)
+	return err
 }
 
 func (b *Bridge) prepareImageURL(img *responses.Image) (string, error) {
@@ -317,7 +402,7 @@ func napcatImageMessage(url string) []map[string]any {
 	}}
 }
 
-func (b *Bridge) sendPayload(ctx context.Context, event messageEvent, message any) error {
+func (b *Bridge) sendPayload(ctx context.Context, event messageEvent, message any) (store.MessageAcceptance, error) {
 	endpoint := "/send_private_msg"
 	payload := map[string]any{
 		"user_id": event.UserID,
@@ -349,11 +434,15 @@ func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message 
 		return err
 	}
 	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		if err := sendReverseReply(conn, writeMu, event, message); err == nil {
-			b.recordOutbound(ctx, event, message, store.InteractionStatusSent, nil)
+		if receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, message); err == nil {
+			b.recordOutbound(ctx, event, message, receipt, nil)
 			return nil
 		} else {
 			b.logf("reverse websocket login notification failed: %v", err)
+			if isUncertainSendError(err) {
+				b.recordOutbound(ctx, event, message, store.MessageAcceptance{}, err)
+				return err
+			}
 		}
 	}
 	return b.Send(ctx, event, message)
@@ -409,9 +498,75 @@ func (b *Bridge) activeReverseConn() (*websocket.Conn, *sync.Mutex) {
 	return b.reverseConn, b.reverseWriteMu
 }
 
+func (b *Bridge) addReversePending(echo string, conn *websocket.Conn, result chan reverseActionResult) {
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	if b.reversePending == nil {
+		b.reversePending = map[string]reversePendingAction{}
+	}
+	b.reversePending[echo] = reversePendingAction{conn: conn, result: result}
+}
+
+func (b *Bridge) removeReversePending(echo string, result chan reverseActionResult) {
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	pending, ok := b.reversePending[echo]
+	if ok && pending.result == result {
+		delete(b.reversePending, echo)
+	}
+}
+
+func (b *Bridge) resolveReverseAction(raw json.RawMessage) bool {
+	var response napcatActionResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return false
+	}
+	echo := napcatEcho(response.Echo)
+	if echo == "" {
+		return false
+	}
+	b.reverseMu.Lock()
+	pending, ok := b.reversePending[echo]
+	if ok {
+		delete(b.reversePending, echo)
+	}
+	b.reverseMu.Unlock()
+	if ok {
+		pending.result <- reverseActionResult{response: response}
+	}
+	return true
+}
+
+func (b *Bridge) failReversePending(conn *websocket.Conn, err error) {
+	b.reverseMu.Lock()
+	pending := make([]reversePendingAction, 0)
+	for echo, item := range b.reversePending {
+		if item.conn == conn {
+			pending = append(pending, item)
+			delete(b.reversePending, echo)
+		}
+	}
+	b.reverseMu.Unlock()
+	for _, item := range pending {
+		item.result <- reverseActionResult{err: err}
+	}
+}
+
+func napcatEcho(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 var echoCounter uint64
 
-func sendReversePayload(conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, message any) error {
+func (b *Bridge) sendReversePayload(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, message any) (store.MessageAcceptance, error) {
 	action := "send_private_msg"
 	params := map[string]any{
 		"user_id": event.UserID,
@@ -424,11 +579,39 @@ func sendReversePayload(conn *websocket.Conn, writeMu *sync.Mutex, event message
 			"message":  message,
 		}
 	}
+	echo := fmt.Sprintf("life-ustc-%d", atomic.AddUint64(&echoCounter, 1))
 	frame := map[string]any{
 		"action": action,
 		"params": params,
-		"echo":   fmt.Sprintf("life-ustc-%d", atomic.AddUint64(&echoCounter, 1)),
+		"echo":   echo,
 	}
+	result := make(chan reverseActionResult, 1)
+	b.addReversePending(echo, conn, result)
+	defer b.removeReversePending(echo, result)
+	if err := writeReverseAction(conn, writeMu, frame); err != nil {
+		return store.MessageAcceptance{}, uncertainSendError{err: fmt.Errorf("write napcat reverse action: %w", err)}
+	}
+
+	timeout := b.reverseTimeout
+	if timeout <= 0 {
+		timeout = defaultReverseActionTimeout
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return store.MessageAcceptance{}, uncertainSendError{err: fmt.Errorf("wait for napcat reverse action: %w", ctx.Err())}
+	case <-timer.C:
+		return store.MessageAcceptance{}, uncertainSendError{err: errors.New("napcat reverse action response timeout")}
+	case outcome := <-result:
+		if outcome.err != nil {
+			return store.MessageAcceptance{}, uncertainSendError{err: outcome.err}
+		}
+		return napcatAcceptance(outcome.response)
+	}
+}
+
+func writeReverseAction(conn *websocket.Conn, writeMu *sync.Mutex, frame any) error {
 	if writeMu != nil {
 		writeMu.Lock()
 		defer writeMu.Unlock()
@@ -436,23 +619,58 @@ func sendReversePayload(conn *websocket.Conn, writeMu *sync.Mutex, event message
 	return conn.WriteJSON(frame)
 }
 
-func sendReverseReply(conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, message string) error {
-	return sendReversePayload(conn, writeMu, event, message)
+func (b *Bridge) sendReverseReply(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, message string) (store.MessageAcceptance, error) {
+	return b.sendReversePayload(ctx, conn, writeMu, event, message)
+}
+
+func napcatAcceptance(response napcatActionResponse) (store.MessageAcceptance, error) {
+	if response.Status != "" && response.Status != "ok" {
+		return store.MessageAcceptance{}, fmt.Errorf("send failed: %s", napcatResultText(response.Message, response.Wording, response.Status))
+	}
+	if response.RetCode != 0 {
+		return store.MessageAcceptance{}, fmt.Errorf("send failed with retcode %d: %s", response.RetCode, napcatResultText(response.Message, response.Wording, response.Status))
+	}
+	messageID := napcatMessageID(response.Data)
+	if messageID == "" {
+		return store.MessageAcceptance{}, uncertainSendError{err: errors.New("napcat success response is missing message_id")}
+	}
+	return store.MessageAcceptance{
+		PlatformMessageID: messageID,
+		AcceptedAt:        time.Now().UTC(),
+	}, nil
+}
+
+func napcatMessageID(data json.RawMessage) string {
+	var payload struct {
+		MessageID json.RawMessage `json:"message_id"`
+	}
+	if len(bytes.TrimSpace(data)) == 0 || json.Unmarshal(data, &payload) != nil {
+		return ""
+	}
+	raw := bytes.TrimSpace(payload.MessageID)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func isGroupMessageType(messageType string) bool {
 	return textutil.TrimEqualFold(messageType, "group")
 }
 
-func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]any) error {
+func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]any) (store.MessageAcceptance, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	apiURL := textutil.TrimTrailingSlash(b.APIURL) + endpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	accessToken := b.accessToken()
@@ -467,43 +685,36 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, uncertainSendError{err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("napcat %s returned %d: read response body: %w", endpoint, resp.StatusCode, err)
+			return store.MessageAcceptance{}, fmt.Errorf("napcat %s returned %d: read response body: %w", endpoint, resp.StatusCode, err)
 		}
 		message := strings.TrimSpace(string(respBody))
 		if message != "" {
-			return fmt.Errorf("napcat %s returned %d: %s", endpoint, resp.StatusCode, message)
+			return store.MessageAcceptance{}, fmt.Errorf("napcat %s returned %d: %s", endpoint, resp.StatusCode, message)
 		}
-		return fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
+		return store.MessageAcceptance{}, fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, uncertainSendError{err: err}
 	}
 	if len(bytes.TrimSpace(respBody)) == 0 {
-		return nil
+		return store.MessageAcceptance{}, uncertainSendError{err: fmt.Errorf("napcat %s returned an empty success response", endpoint)}
 	}
-	var result struct {
-		Status  string `json:"status"`
-		RetCode int    `json:"retcode"`
-		Message string `json:"message"`
-		Wording string `json:"wording"`
-	}
+	var result napcatActionResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return fmt.Errorf("napcat %s returned invalid JSON: %w", endpoint, err)
+		return store.MessageAcceptance{}, uncertainSendError{err: fmt.Errorf("napcat %s returned invalid JSON: %w", endpoint, err)}
 	}
-	if result.Status != "" && result.Status != "ok" {
-		return fmt.Errorf("napcat %s failed: %s", endpoint, napcatResultText(result.Message, result.Wording, result.Status))
+	receipt, err := napcatAcceptance(result)
+	if err != nil {
+		return store.MessageAcceptance{}, fmt.Errorf("napcat %s: %w", endpoint, err)
 	}
-	if result.RetCode != 0 {
-		return fmt.Errorf("napcat %s failed with retcode %d: %s", endpoint, result.RetCode, napcatResultText(result.Message, result.Wording, result.Status))
-	}
-	return nil
+	return receipt, nil
 }
 
 func (b *Bridge) accessToken() string {

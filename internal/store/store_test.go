@@ -105,6 +105,44 @@ func TestEnsureUserRejectsIncompleteIdentity(t *testing.T) {
 	}
 }
 
+func TestRecordInteractionStoresPlatformAcceptanceReceipt(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}
+	acceptedAt := time.Date(2026, 7, 18, 1, 2, 3, 0, time.FixedZone("CST", 8*60*60))
+	if err := s.RecordInteraction(ctx, ident, Interaction{
+		Direction:         InteractionDirectionOutbound,
+		RawText:           "课程结果",
+		Handled:           true,
+		Status:            InteractionStatusAccepted,
+		PlatformMessageID: " message-123 ",
+		AcceptedAt:        acceptedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var row interactionRow
+	if err := s.db.WithContext(ctx).Where("platform_message_id = ?", "message-123").Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != InteractionStatusAccepted || row.AcceptedAt == nil {
+		t.Fatalf("receipt row = %#v", row)
+	}
+	if !row.AcceptedAt.Equal(acceptedAt.UTC()) {
+		t.Fatalf("accepted_at = %s, want %s", row.AcceptedAt, acceptedAt.UTC())
+	}
+}
+
 func TestEnsureUserTrimsIdentityKeys(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {

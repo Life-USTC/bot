@@ -162,6 +162,34 @@ type sendMessageRequest struct {
 	Media   *mediaInfo `json:"media,omitempty"`
 }
 
+type sendMessageResponse struct {
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+}
+
+type qqBotHTTPStatusError struct {
+	method string
+	path   string
+	status int
+	body   string
+}
+
+func (e qqBotHTTPStatusError) Error() string {
+	return fmt.Sprintf("qq bot %s %s returned %d: %s", e.method, e.path, e.status, e.body)
+}
+
+type uncertainSendError struct {
+	err error
+}
+
+func (e uncertainSendError) Error() string {
+	return e.err.Error()
+}
+
+func (e uncertainSendError) Unwrap() error {
+	return e.err
+}
+
 type mediaInfo struct {
 	FileInfo json.RawMessage `json:"file_info,omitempty"`
 }
@@ -475,7 +503,6 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			return
 		}
 		if err := b.SendResponse(ctx, message, reply); err != nil {
-			b.recordOutbound(ctx, message.Identity, reply.Text, store.InteractionStatusFailed, err)
 			b.logf("send QQ bot reply failed: %v", err)
 			return
 		}
@@ -509,7 +536,6 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 		return
 	}
 	if err := b.SendResponse(ctx, message, reply); err != nil {
-		b.recordOutbound(ctx, message.Identity, reply.Text, store.InteractionStatusFailed, err)
 		b.logf("send QQ bot interaction reply failed: %v", err)
 		return
 	}
@@ -750,12 +776,9 @@ func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) e
 		return errors.New("qq bot message is nil")
 	}
 	outgoing := qqBotOutgoingMessage(message.Identity, text)
-	err := b.sendTo(ctx, message.Identity, outgoing, message.ID, message.EventID, message.nextReplySeq())
-	if err != nil {
-		return err
-	}
-	b.recordOutbound(ctx, message.Identity, outgoing, store.InteractionStatusSent, nil)
-	return nil
+	receipt, err := b.sendTo(ctx, message.Identity, outgoing, message.ID, message.EventID, message.nextReplySeq())
+	b.recordOutbound(ctx, message.Identity, outgoing, receipt, err)
+	return err
 }
 
 func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
@@ -763,9 +786,12 @@ func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, respon
 		return errors.New("qq bot message is nil")
 	}
 	if response.Image != nil && b.MediaStore != nil {
-		if err := b.sendImageResponse(ctx, message, response); err == nil {
-			b.recordOutbound(ctx, message.Identity, response.Text, store.InteractionStatusSent, nil)
+		if receipt, err := b.sendImageResponse(ctx, message, response); err == nil {
+			b.recordOutbound(ctx, message.Identity, response.Text, receipt, nil)
 			return nil
+		} else if isUncertainSendError(err) {
+			b.recordOutbound(ctx, message.Identity, response.Text, store.MessageAcceptance{}, err)
+			return err
 		} else {
 			b.logf("QQ bot image response failed: %v", err)
 		}
@@ -773,14 +799,14 @@ func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, respon
 	return b.Send(ctx, message, response.Text)
 }
 
-func (b *Bot) sendImageResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
+func (b *Bot) sendImageResponse(ctx context.Context, message *incomingMessage, response commands.Response) (store.MessageAcceptance, error) {
 	imageURL, err := b.prepareImageURL(response.Image)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	fileInfo, err := b.uploadRichMedia(ctx, message.Identity, imageURL)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	return b.sendRichMediaTo(ctx, message.Identity, fileInfo, message.ID, message.EventID, message.nextReplySeq())
 }
@@ -807,12 +833,17 @@ func (b *Bot) SendRichMessage(ctx context.Context, ident store.Identity, message
 			var fileInfo json.RawMessage
 			fileInfo, err = b.uploadRichMedia(ctx, ident, imageURL)
 			if err == nil {
-				err = b.sendRichMediaTo(ctx, ident, fileInfo, "", "", 0)
+				var receipt store.MessageAcceptance
+				receipt, err = b.sendRichMediaTo(ctx, ident, fileInfo, "", "", 0)
+				if err == nil {
+					b.recordOutbound(ctx, ident, message, receipt, nil)
+					return nil
+				}
 			}
 		}
-		if err == nil {
-			b.recordOutbound(ctx, ident, message, store.InteractionStatusSent, nil)
-			return nil
+		if isUncertainSendError(err) {
+			b.recordOutbound(ctx, ident, message, store.MessageAcceptance{}, err)
+			return err
 		}
 		b.logf("QQ bot proactive image response failed: %v", err)
 	}
@@ -821,13 +852,9 @@ func (b *Bot) SendRichMessage(ctx context.Context, ident store.Identity, message
 
 func (b *Bot) SendMessage(ctx context.Context, ident store.Identity, message string) error {
 	outgoing := qqBotOutgoingMessage(ident, message)
-	err := b.sendTo(ctx, ident, outgoing, "", "", 0)
-	if err != nil {
-		b.recordOutbound(ctx, ident, outgoing, store.InteractionStatusFailed, err)
-		return err
-	}
-	b.recordOutbound(ctx, ident, outgoing, store.InteractionStatusSent, nil)
-	return nil
+	receipt, err := b.sendTo(ctx, ident, outgoing, "", "", 0)
+	b.recordOutbound(ctx, ident, outgoing, receipt, err)
+	return err
 }
 
 func (m *incomingMessage) nextReplySeq() int {
@@ -865,14 +892,14 @@ func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageUR
 	return out.FileInfo, nil
 }
 
-func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, msgID, eventID string, msgSeq int) error {
+func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	body := sendMessageRequest{
 		MsgType: 7,
@@ -885,7 +912,7 @@ func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInf
 	if strings.TrimSpace(eventID) != "" {
 		body.EventID = strings.TrimSpace(eventID)
 	}
-	return b.openAPI(ctx, http.MethodPost, path, token, body, nil)
+	return b.sendMessageOpenAPI(ctx, path, token, body)
 }
 
 func richMediaUploadPath(ident store.Identity) (string, error) {
@@ -907,17 +934,17 @@ func richMediaUploadPath(ident store.Identity) (string, error) {
 	}
 }
 
-func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, eventID string, msgSeq int) error {
+func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
 	if strings.TrimSpace(message) == "" {
-		return nil
+		return store.MessageAcceptance{}, nil
 	}
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return err
+		return store.MessageAcceptance{}, err
 	}
 	body := sendMessageRequest{
 		Content: message,
@@ -930,7 +957,29 @@ func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, 
 	if strings.TrimSpace(eventID) != "" {
 		body.EventID = strings.TrimSpace(eventID)
 	}
-	return b.openAPI(ctx, http.MethodPost, path, token, body, nil)
+	return b.sendMessageOpenAPI(ctx, path, token, body)
+}
+
+func (b *Bot) sendMessageOpenAPI(ctx context.Context, path, token string, body sendMessageRequest) (store.MessageAcceptance, error) {
+	var response sendMessageResponse
+	if err := b.openAPI(ctx, http.MethodPost, path, token, body, &response); err != nil {
+		var rejected qqBotHTTPStatusError
+		if errors.As(err, &rejected) {
+			return store.MessageAcceptance{}, err
+		}
+		return store.MessageAcceptance{}, uncertainSendError{err: err}
+	}
+	messageID := strings.TrimSpace(response.ID)
+	if messageID == "" {
+		return store.MessageAcceptance{}, uncertainSendError{err: errors.New("qq bot success response is missing message id")}
+	}
+	acceptedAt := time.Now().UTC()
+	if timestamp := strings.TrimSpace(response.Timestamp); timestamp != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
+			acceptedAt = parsed.UTC()
+		}
+	}
+	return store.MessageAcceptance{PlatformMessageID: messageID, AcceptedAt: acceptedAt}, nil
 }
 
 func (b *Bot) ackInteraction(ctx context.Context, interactionID string, code int) error {
@@ -1022,7 +1071,7 @@ func (b *Bot) openAPI(ctx context.Context, method, path, token string, body any,
 	if resp.StatusCode >= 400 {
 		responseText := readBodyText(resp.Body)
 		b.logf("QQ bot openapi response: method=%s path=%s status=%d body=%s", method, path, resp.StatusCode, responseText)
-		return fmt.Errorf("qq bot %s %s returned %d: %s", method, path, resp.StatusCode, responseText)
+		return qqBotHTTPStatusError{method: method, path: path, status: resp.StatusCode, body: responseText}
 	}
 	if out == nil {
 		responseText := readBodyText(resp.Body)
@@ -1175,18 +1224,37 @@ func (b *Bot) recordIgnored(ctx context.Context, message *incomingMessage) {
 	}, "ignored")
 }
 
-func (b *Bot) recordOutbound(ctx context.Context, ident store.Identity, message, status string, err error) {
+func (b *Bot) recordOutbound(ctx context.Context, ident store.Identity, message string, receipt store.MessageAcceptance, err error) {
 	errText := ""
+	status := store.InteractionStatusAccepted
 	if err != nil {
 		errText = err.Error()
+		status = store.InteractionStatusFailed
+		if isUncertainSendError(err) {
+			status = store.InteractionStatusUnknown
+		}
 	}
 	b.recordInteraction(ctx, ident, store.Interaction{
-		Direction: store.InteractionDirectionOutbound,
-		RawText:   message,
-		Handled:   true,
-		Status:    status,
-		Error:     errText,
+		Direction:         store.InteractionDirectionOutbound,
+		RawText:           message,
+		Handled:           true,
+		Status:            status,
+		Error:             errText,
+		PlatformMessageID: receipt.PlatformMessageID,
+		AcceptedAt:        receipt.AcceptedAt,
 	}, "outbound")
+	if err != nil {
+		b.logf("QQ bot message %s: conversation_type=%q conversation_id=%q error=%v",
+			status, ident.ConversationType, ident.ConversationID, err)
+		return
+	}
+	b.logf("QQ bot message accepted: conversation_type=%q conversation_id=%q message_id=%q",
+		ident.ConversationType, ident.ConversationID, receipt.PlatformMessageID)
+}
+
+func isUncertainSendError(err error) bool {
+	var target uncertainSendError
+	return errors.As(err, &target)
 }
 
 func (b *Bot) recordInteraction(ctx context.Context, ident store.Identity, interaction store.Interaction, label string) {

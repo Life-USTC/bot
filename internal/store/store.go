@@ -50,25 +50,35 @@ type LoginSession struct {
 }
 
 type Interaction struct {
-	Direction string
-	RawText   string
-	Command   string
-	Args      string
-	Handled   bool
-	Reply     string
-	Status    string
-	Error     string
-	CreatedAt time.Time
+	Direction         string
+	RawText           string
+	Command           string
+	Args              string
+	Handled           bool
+	Reply             string
+	Status            string
+	Error             string
+	PlatformMessageID string
+	AcceptedAt        time.Time
+	CreatedAt         time.Time
+}
+
+type MessageAcceptance struct {
+	PlatformMessageID string
+	AcceptedAt        time.Time
 }
 
 const (
 	InteractionDirectionInbound  = "inbound"
 	InteractionDirectionOutbound = "outbound"
 
-	InteractionStatusHandled = "handled"
-	InteractionStatusIgnored = "ignored"
-	InteractionStatusSent    = "sent"
-	InteractionStatusFailed  = "failed"
+	InteractionStatusHandled  = "handled"
+	InteractionStatusIgnored  = "ignored"
+	InteractionStatusAccepted = "accepted"
+	InteractionStatusUnknown  = "unknown"
+	// InteractionStatusSent is retained for existing records and callers.
+	InteractionStatusSent   = "sent"
+	InteractionStatusFailed = "failed"
 )
 
 type NotificationSettings struct {
@@ -223,20 +233,22 @@ func (conversationStateRow) TableName() string {
 }
 
 type interactionRow struct {
-	ID               int64  `gorm:"primaryKey"`
-	Platform         string `gorm:"not null;index:idx_interactions_conversation_created"`
-	ConversationType string `gorm:"not null;index:idx_interactions_conversation_created"`
-	ConversationID   string `gorm:"not null;index:idx_interactions_conversation_created"`
-	UserID           string `gorm:"not null"`
-	Direction        string `gorm:"not null;default:inbound"`
-	RawText          string `gorm:"not null"`
-	Command          string
-	Args             string
-	Handled          bool `gorm:"not null"`
-	Reply            string
-	Status           string
-	Error            string
-	CreatedAt        time.Time `gorm:"index:idx_interactions_conversation_created"`
+	ID                int64  `gorm:"primaryKey"`
+	Platform          string `gorm:"not null;index:idx_interactions_conversation_created"`
+	ConversationType  string `gorm:"not null;index:idx_interactions_conversation_created"`
+	ConversationID    string `gorm:"not null;index:idx_interactions_conversation_created"`
+	UserID            string `gorm:"not null"`
+	Direction         string `gorm:"not null;default:inbound"`
+	RawText           string `gorm:"not null"`
+	Command           string
+	Args              string
+	Handled           bool `gorm:"not null"`
+	Reply             string
+	Status            string
+	Error             string
+	PlatformMessageID string
+	AcceptedAt        *time.Time
+	CreatedAt         time.Time `gorm:"index:idx_interactions_conversation_created"`
 }
 
 func (interactionRow) TableName() string {
@@ -882,20 +894,27 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		return err
 	}
 	ident = normalizeIdentity(ident)
+	var acceptedAt *time.Time
+	if !interaction.AcceptedAt.IsZero() {
+		value := interaction.AcceptedAt.UTC()
+		acceptedAt = &value
+	}
 	row := interactionRow{
-		Platform:         ident.Platform,
-		ConversationType: ident.ConversationType,
-		ConversationID:   ident.ConversationID,
-		UserID:           ident.UserID,
-		Direction:        interactionDirection(interaction.Direction),
-		RawText:          interaction.RawText,
-		Command:          strings.TrimSpace(interaction.Command),
-		Args:             strings.TrimSpace(interaction.Args),
-		Handled:          interaction.Handled,
-		Reply:            interaction.Reply,
-		Status:           strings.TrimSpace(interaction.Status),
-		Error:            strings.TrimSpace(interaction.Error),
-		CreatedAt:        nowUTC(),
+		Platform:          ident.Platform,
+		ConversationType:  ident.ConversationType,
+		ConversationID:    ident.ConversationID,
+		UserID:            ident.UserID,
+		Direction:         interactionDirection(interaction.Direction),
+		RawText:           interaction.RawText,
+		Command:           strings.TrimSpace(interaction.Command),
+		Args:              strings.TrimSpace(interaction.Args),
+		Handled:           interaction.Handled,
+		Reply:             interaction.Reply,
+		Status:            strings.TrimSpace(interaction.Status),
+		Error:             strings.TrimSpace(interaction.Error),
+		PlatformMessageID: strings.TrimSpace(interaction.PlatformMessageID),
+		AcceptedAt:        acceptedAt,
+		CreatedAt:         nowUTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
 }
@@ -934,18 +953,27 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 	for i := len(rows) - 1; i >= 0; i-- {
 		row := rows[i]
 		out = append(out, Interaction{
-			Direction: row.Direction,
-			RawText:   row.RawText,
-			Command:   row.Command,
-			Args:      row.Args,
-			Handled:   row.Handled,
-			Reply:     row.Reply,
-			Status:    row.Status,
-			Error:     row.Error,
-			CreatedAt: row.CreatedAt,
+			Direction:         row.Direction,
+			RawText:           row.RawText,
+			Command:           row.Command,
+			Args:              row.Args,
+			Handled:           row.Handled,
+			Reply:             row.Reply,
+			Status:            row.Status,
+			Error:             row.Error,
+			PlatformMessageID: row.PlatformMessageID,
+			AcceptedAt:        dereferenceTime(row.AcceptedAt),
+			CreatedAt:         row.CreatedAt,
 		})
 	}
 	return out, nil
+}
+
+func dereferenceTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func (s *Store) InteractionCount(ctx context.Context) (int64, error) {

@@ -67,6 +67,68 @@ func TestSendMessageFetchesTokenAndSendsGroupMessage(t *testing.T) {
 	}
 }
 
+func TestSendToReturnsPlatformAcceptance(t *testing.T) {
+	acceptedAt := "2026-07-18T01:02:03.456+08:00"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":        "message-123",
+			"timestamp": acceptedAt,
+		})
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	receipt, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTime, err := time.Parse(time.RFC3339Nano, acceptedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.PlatformMessageID != "message-123" || !receipt.AcceptedAt.Equal(wantTime) {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSendToTreatsIncompleteSuccessAsUncertain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	_, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err == nil || !isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendToTreatsPlatformRejectionAsFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rejected", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	_, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err == nil || isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
 	var uploaded map[string]any
 	var sent map[string]any
