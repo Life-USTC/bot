@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,9 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	case "schedule":
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "课表")
+		if grid := weeklyScheduleGrid(plainText); grid != nil {
+			return responses.NewScheduleGridImage("schedule", title, grid, imageText)
+		}
 		return responses.NewRichTextImage("schedule", scheduleRichText(title, plainText), imageText)
 	case "todo":
 		if !todoImageArgs(cmd.Args) {
@@ -160,20 +164,28 @@ var ustcLessonPeriods = [...]lessonPeriod{
 }
 
 func schedulePeriodLabel(timeRange string) string {
-	normalized := strings.NewReplacer("～", "-", "~", "-", "–", "-", "—", "-").Replace(strings.TrimSpace(timeRange))
-	parts := strings.SplitN(normalized, "-", 2)
-	if len(parts) != 2 {
-		return "—"
-	}
-	start, startOK := closestLessonPeriod(parts[0], true)
-	end, endOK := closestLessonPeriod(parts[1], false)
-	if !startOK || !endOK || end < start {
+	start, end, ok := schedulePeriodRange(timeRange)
+	if !ok {
 		return "—"
 	}
 	if start == end {
 		return "第 " + strconv.Itoa(start) + " 小节"
 	}
 	return "第 " + strconv.Itoa(start) + "–" + strconv.Itoa(end) + " 小节"
+}
+
+func schedulePeriodRange(timeRange string) (int, int, bool) {
+	normalized := strings.NewReplacer("～", "-", "~", "-", "–", "-", "—", "-").Replace(strings.TrimSpace(timeRange))
+	parts := strings.SplitN(normalized, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	start, startOK := closestLessonPeriod(parts[0], true)
+	end, endOK := closestLessonPeriod(parts[1], false)
+	if !startOK || !endOK || end < start {
+		return 0, 0, false
+	}
+	return start, end, true
 }
 
 func closestLessonPeriod(value string, useStart bool) (int, bool) {
@@ -224,6 +236,121 @@ func scheduleLocationNote(campus, room string) string {
 	default:
 		return "—"
 	}
+}
+
+var weeklyScheduleDayLabels = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+
+func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
+	days := make([]responses.ScheduleGridDay, 0, len(weeklyScheduleDayLabels))
+	items := []responses.ScheduleGridItem{}
+	currentDay := -1
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if day, ok := weeklyScheduleGridDay(trimmed, len(days)); ok {
+			days = append(days, day)
+			currentDay = len(days) - 1
+			continue
+		}
+		if currentDay < 0 || trimmed == "没有课。" {
+			continue
+		}
+		item, ok := weeklyScheduleGridItem(line, currentDay)
+		if !ok {
+			return nil
+		}
+		items = mergeScheduleGridItem(items, item)
+	}
+	if len(days) != len(weeklyScheduleDayLabels) {
+		return nil
+	}
+	return &responses.ScheduleGrid{
+		Days:    days,
+		Periods: weeklyScheduleGridPeriods(),
+		Items:   items,
+	}
+}
+
+func weeklyScheduleGridDay(line string, expectedIndex int) (responses.ScheduleGridDay, bool) {
+	if expectedIndex < 0 || expectedIndex >= len(weeklyScheduleDayLabels) {
+		return responses.ScheduleGridDay{}, false
+	}
+	line = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(line), "："), ":")
+	fields := strings.Fields(line)
+	if len(fields) != 2 || fields[0] != weeklyScheduleDayLabels[expectedIndex] || !scheduleGridDate(fields[1]) {
+		return responses.ScheduleGridDay{}, false
+	}
+	return responses.ScheduleGridDay{Label: fields[0], Date: fields[1]}, true
+}
+
+func scheduleGridDate(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) != 2 {
+		return false
+	}
+	month, monthErr := strconv.Atoi(parts[0])
+	day, dayErr := strconv.Atoi(parts[1])
+	return monthErr == nil && dayErr == nil && month >= 1 && month <= 12 && day >= 1 && day <= 31
+}
+
+func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, bool) {
+	columns := strings.Split(line, "\t")
+	if len(columns) < 3 {
+		return responses.ScheduleGridItem{}, false
+	}
+	place := strings.TrimSpace(columns[0])
+	timeRange := strings.TrimSpace(columns[1])
+	course := strings.TrimSpace(strings.Join(columns[2:], " "))
+	start, end, ok := schedulePeriodRange(timeRange)
+	if !ok || course == "" {
+		return responses.ScheduleGridItem{}, false
+	}
+	campus, room := scheduleCampusAndRoom(place)
+	return responses.ScheduleGridItem{
+		Day:         day,
+		StartPeriod: start,
+		EndPeriod:   end,
+		Course:      course,
+		Location:    scheduleLocationNote(campus, room),
+	}, true
+}
+
+func mergeScheduleGridItem(items []responses.ScheduleGridItem, next responses.ScheduleGridItem) []responses.ScheduleGridItem {
+	for i := range items {
+		if items[i].Day != next.Day || items[i].StartPeriod != next.StartPeriod || items[i].EndPeriod != next.EndPeriod {
+			continue
+		}
+		items[i].Course = joinScheduleGridText(items[i].Course, next.Course)
+		items[i].Location = joinScheduleGridText(items[i].Location, next.Location)
+		return items
+	}
+	return append(items, next)
+}
+
+func joinScheduleGridText(left, right string) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	switch {
+	case left == "":
+		return right
+	case right == "" || left == right:
+		return left
+	default:
+		return left + " / " + right
+	}
+}
+
+func weeklyScheduleGridPeriods() []responses.ScheduleGridPeriod {
+	periods := make([]responses.ScheduleGridPeriod, len(ustcLessonPeriods))
+	for i, period := range ustcLessonPeriods {
+		periods[i] = responses.ScheduleGridPeriod{
+			Label: "第 " + strconv.Itoa(i+1) + " 节",
+			Time:  fmt.Sprintf("%02d:%02d–%02d:%02d", period.start/60, period.start%60, period.end/60, period.end%60),
+		}
+	}
+	return periods
 }
 
 func scheduleCampusAndRoom(place string) (string, string) {

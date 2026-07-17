@@ -862,26 +862,56 @@ func TestScheduleImageUsesSeparateCampusAndRoomColumns(t *testing.T) {
 	if img == nil || img.RichText != want {
 		t.Fatalf("rich text = %q, want %q", img.RichText, want)
 	}
+	if img.Grid != nil {
+		t.Fatalf("daily schedule unexpectedly used weekly grid: %#v", img.Grid)
+	}
 	assertResponseImageRenders(t, img)
 }
 
-func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
+func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
-		"今明两日课表：",
-		"今天：",
-		"西区 3A204\t09:50-11:25\t数据库系统",
+		"07-12 至 07-18 课表：",
+		"周日 07-12：",
+		"高新区 GT-B112\t09:50-11:25\t数据库系统",
 		"",
-		"明天：",
-		"先研院 1A201\t16:00-17:35\tMachine Learning",
+		"周一 07-13：",
+		"西区 3A204\t14:00-15:35\tComputer Networks",
+		"",
+		"周二 07-14：",
+		"没有课。",
+		"",
+		"周三 07-15：",
+		"没有课。",
+		"",
+		"周四 07-16：",
+		"没有课。",
+		"",
+		"周五 07-17：",
+		"没有课。",
+		"",
+		"周六 07-18：",
+		"先研院 1A201\t19:30-21:05\tMachine Learning",
 	}, "\n")
 
 	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
-	if img == nil || !strings.Contains(img.RichText, "## 今天\n| 节次 | 时间 | 安排 | 备注 |") ||
-		!strings.Contains(img.RichText, "## 明天\n| 节次 | 时间 | 安排 | 备注 |") ||
-		strings.Count(img.RichText, "| 节次 | 时间 | 安排 | 备注 |") != 2 {
-		t.Fatalf("rich text = %q", img.RichText)
+	if img == nil || img.Grid == nil {
+		t.Fatalf("image = %#v", img)
 	}
+	if len(img.Grid.Days) != 7 || img.Grid.Days[0].Label != "周日" || img.Grid.Days[6].Label != "周六" {
+		t.Fatalf("days = %#v", img.Grid.Days)
+	}
+	if len(img.Grid.Periods) != 13 {
+		t.Fatalf("periods = %#v", img.Grid.Periods)
+	}
+	if len(img.Grid.Items) != 3 {
+		t.Fatalf("items = %#v", img.Grid.Items)
+	}
+	first := img.Grid.Items[0]
+	if first.Day != 0 || first.StartPeriod != 3 || first.EndPeriod != 4 || first.Course != "数据库系统" || first.Location != "高新区 · GT-B112" {
+		t.Fatalf("first item = %#v", first)
+	}
+	assertResponseImageRenders(t, img)
 }
 
 func TestSchedulePeriodLabelUsesUSTCLessonTimes(t *testing.T) {

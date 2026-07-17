@@ -111,6 +111,9 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if img == nil || strings.TrimSpace(img.AltText) == "" {
 		return nil, 0, 0, errors.New("response image is empty")
 	}
+	if img.Grid != nil {
+		return r.renderScheduleGridPNG(img.Title, img.Grid)
+	}
 	if strings.TrimSpace(img.RichText) == "" {
 		return nil, 0, 0, errors.New("response rich text is empty")
 	}

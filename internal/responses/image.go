@@ -9,6 +9,31 @@ type Image struct {
 	RichText string
 	AltText  string
 	URL      string
+	Grid     *ScheduleGrid
+}
+
+type ScheduleGrid struct {
+	Days    []ScheduleGridDay
+	Periods []ScheduleGridPeriod
+	Items   []ScheduleGridItem
+}
+
+type ScheduleGridDay struct {
+	Label string
+	Date  string
+}
+
+type ScheduleGridPeriod struct {
+	Label string
+	Time  string
+}
+
+type ScheduleGridItem struct {
+	Day         int
+	StartPeriod int
+	EndPeriod   int
+	Course      string
+	Location    string
 }
 
 func NewRichTextImage(kind, text, altText string) *Image {
@@ -44,6 +69,22 @@ func NewTextImage(kind, title, text string) *Image {
 		Lines:    lines,
 		RichText: legacyRichText(kind, title, lines),
 		AltText:  text,
+	}
+}
+
+func NewScheduleGridImage(kind, title string, grid *ScheduleGrid, altText string) *Image {
+	title = strings.TrimSpace(title)
+	altText = strings.TrimSpace(altText)
+	if grid == nil || len(grid.Days) == 0 || len(grid.Periods) == 0 || altText == "" {
+		return nil
+	}
+	return &Image{
+		Kind:     strings.TrimSpace(kind),
+		Title:    title,
+		RichText: "# " + title,
+		AltText:  altText,
+		Lines:    strings.Split(altText, "\n"),
+		Grid:     grid,
 	}
 }
 
