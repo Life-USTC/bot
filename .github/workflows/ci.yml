@@ -38,10 +38,21 @@ jobs:
           touch .env
           docker compose config --quiet
 
+      - name: Resolve server OpenAPI ref
+        id: server-openapi-ref
+        run: |
+          candidate="${SERVER_OPENAPI_REF:-${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}}"
+          if git ls-remote --exit-code --heads https://github.com/Life-USTC/server.git "$candidate" >/dev/null 2>&1; then
+            echo "ref=$candidate" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout server OpenAPI source
         uses: actions/checkout@v6
         with:
           repository: Life-USTC/server
+          ref: ${{ steps.server-openapi-ref.outputs.ref }}
           path: .server
 
       - name: Check OpenAPI sync
