@@ -21,6 +21,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -56,6 +57,33 @@ func (b *Bridge) Run(ctx context.Context) error {
 	if b.WSURL == "" {
 		return errors.New("NAPCAT_WS_URL is empty")
 	}
+	return b.run(ctx, retry.Backoff{
+		Initial: 3 * time.Second,
+		Max:     5 * time.Minute,
+		Jitter:  0.2,
+	})
+}
+
+func (b *Bridge) run(ctx context.Context, backoff retry.Backoff) error {
+	failures := 0
+	for {
+		received, err := b.runOnce(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if received {
+			failures = 0
+		}
+		delay := backoff.Duration(failures)
+		b.logf("NapCat bridge stopped: %v; reconnecting in %s", err, delay)
+		if !retry.Wait(ctx, delay) {
+			return nil
+		}
+		failures++
+	}
+}
+
+func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 	dialer := websocket.DefaultDialer
 	header := http.Header{}
 	accessToken := b.accessToken()
@@ -64,15 +92,17 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	conn, _, err := dialer.DialContext(ctx, b.WSURL, header)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = conn.Close() }()
 
+	received := false
 	for {
 		var event messageEvent
 		if err := conn.ReadJSON(&event); err != nil {
-			return err
+			return received, err
 		}
+		received = true
 		if event.PostType != "message" {
 			continue
 		}

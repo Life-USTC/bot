@@ -175,7 +175,7 @@ func main() {
 		messageRouter.Add("napcat", napcatBridge)
 		go func() {
 			if err := napcatBridge.Run(ctx); err != nil && ctx.Err() == nil {
-				logger.Printf("NapCat bridge stopped: %v", err)
+				logger.Fatalf("NapCat bridge stopped: %v", err)
 			}
 		}()
 		logger.Printf("NapCat bridge connecting to %s", cfg.NapCatWSURL)
@@ -193,7 +193,7 @@ func main() {
 		messageRouter.Add("napcat", napcatBridge)
 		go func() {
 			if err := napcatBridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
-				logger.Printf("NapCat reverse bridge stopped: %v", err)
+				logger.Fatalf("NapCat reverse bridge stopped: %v", err)
 			}
 		}()
 		logger.Printf("NapCat reverse bridge listening on %s%s", cfg.NapCatReverseAddr, cfg.NapCatReversePath)
@@ -219,7 +219,7 @@ func main() {
 		if cfg.EnableQQBotWebhook {
 			go func() {
 				if err := qqBot.RunWebhook(ctx, cfg.QQBotWebhookAddr, cfg.QQBotWebhookPath); err != nil && ctx.Err() == nil {
-					logger.Printf("QQ official bot webhook stopped: %v", err)
+					logger.Fatalf("QQ official bot webhook stopped: %v", err)
 				}
 			}()
 			logger.Printf("QQ official bot webhook listening on %s%s", cfg.QQBotWebhookAddr, cfg.QQBotWebhookPath)
@@ -227,7 +227,7 @@ func main() {
 		if cfg.EnableQQBotGateway {
 			go func() {
 				if err := qqBot.Run(ctx); err != nil && ctx.Err() == nil {
-					logger.Printf("QQ official bot gateway stopped: %v", err)
+					logger.Fatalf("QQ official bot gateway stopped: %v", err)
 				}
 			}()
 			logger.Printf("QQ official bot gateway enabled")
