@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -498,11 +500,39 @@ func TestRunTrimsAccessToken(t *testing.T) {
 	defer server.Close()
 
 	bridge := &Bridge{WSURL: "ws" + server.URL[len("http"):], AccessToken: " token "}
-	if err := bridge.Run(context.Background()); err == nil {
-		t.Fatal("Run returned nil after websocket close")
+	if _, err := bridge.runOnce(context.Background()); err == nil {
+		t.Fatal("runOnce returned nil after websocket close")
 	}
 	if auth := <-authHeader; auth != "Bearer token" {
 		t.Fatalf("authorization = %q", auth)
+	}
+}
+
+func TestRunReconnectsAfterRepeatedDisconnects(t *testing.T) {
+	var connections atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if connections.Add(1) >= 3 {
+			cancel()
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{WSURL: "ws" + server.URL[len("http"):]}
+	err := bridge.run(ctx, retry.Backoff{Initial: time.Millisecond, Max: 2 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := connections.Load(); got < 3 {
+		t.Fatalf("connections = %d, want at least 3", got)
 	}
 }
 
