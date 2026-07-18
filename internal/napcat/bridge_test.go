@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -332,6 +331,7 @@ func TestSendReverseReply(t *testing.T) {
 }
 
 func TestReverseBridgeEndToEnd(t *testing.T) {
+	var logs bytes.Buffer
 	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/courses" {
 			t.Fatalf("unexpected Life API path %s", r.URL.Path)
@@ -345,15 +345,20 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 			Life:   life.NewClient(lifeServer.URL, lifeServer.Client()),
 			Prefix: "/life",
 		},
+		Logger: log.New(&logs, "", 0),
 	}
 	upgrader := websocket.Upgrader{}
+	handled := make(chan struct{})
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		go bridge.handleReverseConn(context.Background(), conn)
+		go func() {
+			defer close(handled)
+			bridge.handleReverseConn(context.Background(), conn)
+		}()
 	}))
 	defer wsServer.Close()
 
@@ -361,12 +366,12 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = conn.Close() }()
+	t.Cleanup(func() { _ = conn.Close() })
 
 	err = conn.WriteJSON(map[string]any{
 		"post_type":    "message",
 		"message_type": "private",
-		"raw_message":  "/life course calculus",
+		"raw_message":  "/life course calculus private-query",
 		"user_id":      456,
 	})
 	if err != nil {
@@ -382,6 +387,20 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-handled:
+	case <-time.After(time.Second):
+		t.Fatal("reverse websocket handler did not stop")
+	}
+	if strings.Contains(logs.String(), "private-query") {
+		t.Fatalf("logs contain private message text: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), `reverse websocket message: message_type="private" user_id=456 group_id=0`) {
+		t.Fatalf("logs missing message metadata: %q", logs.String())
 	}
 }
 
@@ -712,23 +731,5 @@ func TestSendLoginMessageUsesActiveReverseWebSocket(t *testing.T) {
 	params := frame["params"].(map[string]any)
 	if params["user_id"].(float64) != 42 || params["message"] != "登录完成。" {
 		t.Fatalf("params = %#v", params)
-	}
-}
-
-func TestTrimLogText(t *testing.T) {
-	if got := trimLogText("short"); got != "short" {
-		t.Fatalf("short text = %q", got)
-	}
-	longASCII := strings.Repeat("a", 161)
-	if got := trimLogText(longASCII); got != strings.Repeat("a", 160)+"..." {
-		t.Fatalf("ASCII trim = %q", got)
-	}
-	longChinese := strings.Repeat("校", 161)
-	got := trimLogText(longChinese)
-	if !utf8.ValidString(got) {
-		t.Fatalf("trimmed text is invalid UTF-8: %q", got)
-	}
-	if got != strings.Repeat("校", 160)+"..." {
-		t.Fatalf("Chinese trim = %q", got)
 	}
 }
