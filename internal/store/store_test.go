@@ -3,10 +3,82 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestOpenConfiguresBusyTimeout(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	var timeout int
+	if err := s.db.Raw("PRAGMA busy_timeout").Scan(&timeout).Error; err != nil {
+		t.Fatal(err)
+	}
+	if timeout != 5000 {
+		t.Fatalf("busy_timeout = %d, want 5000", timeout)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("database was not created at %q: %v", path, err)
+	}
+}
+
+func TestConcurrentStoreWaitsForWriter(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = second.Close() }()
+
+	tx := first.db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	if err := tx.Exec(
+		"INSERT INTO users (platform, external_user_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		"napcat", "locked-writer", time.Now(), time.Now(),
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	errCh := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		close(started)
+		_, err := second.EnsureUser(context.Background(), Identity{Platform: "napcat", UserID: "waiting-writer"})
+		errCh <- err
+	}()
+	<-started
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-errCh:
+		t.Fatalf("concurrent writer returned before lock release: %v", err)
+	default:
+	}
+	if err := tx.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if err := <-errCh; err != nil {
+		t.Fatalf("concurrent writer failed after lock release: %v", err)
+	}
+}
 
 func TestEnsureUserRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")

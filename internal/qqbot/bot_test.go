@@ -72,6 +72,72 @@ func TestSendMessageFetchesTokenAndSendsGroupMessage(t *testing.T) {
 	}
 }
 
+func TestOpenAPILogsMetadataWithoutPayloads(t *testing.T) {
+	var logs bytes.Buffer
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["content"] != "private-request" {
+			t.Fatalf("body = %#v", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "private-response"})
+	}))
+	defer server.Close()
+
+	var out map[string]string
+	bot := &Bot{
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
+	}
+	if err := bot.openAPI(
+		context.Background(),
+		http.MethodPost,
+		"/messages",
+		"token",
+		map[string]string{"content": "private-request"},
+		&out,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if out["id"] != "private-response" {
+		t.Fatalf("response = %#v", out)
+	}
+	if strings.Contains(logs.String(), "private-request") || strings.Contains(logs.String(), "private-response") {
+		t.Fatalf("logs contain request or response payload: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), "QQ bot openapi request: method=POST path=/messages") ||
+		!strings.Contains(logs.String(), "QQ bot openapi response: method=POST path=/messages status=200") {
+		t.Fatalf("logs missing request metadata: %q", logs.String())
+	}
+}
+
+func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
+	var logs bytes.Buffer
+	bot := &Bot{
+		Handler: commands.Handler{Prefix: "/life"},
+		Logger:  log.New(&logs, "", 0),
+	}
+	bot.handleDispatch(context.Background(), gatewayPayload{
+		Op: opDispatch,
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"content":"private-query",
+			"author":{"user_openid":"user-openid"}
+		}`),
+	})
+
+	if strings.Contains(logs.String(), "private-query") {
+		t.Fatalf("logs contain private message text: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), `QQ bot message: event=C2C_MESSAGE_CREATE conversation_type=private user_id="user-openid" conversation_id="user-openid"`) {
+		t.Fatalf("logs missing message metadata: %q", logs.String())
+	}
+}
+
 func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
 	var uploaded map[string]any
 	var sent map[string]any

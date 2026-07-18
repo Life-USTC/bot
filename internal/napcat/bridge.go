@@ -162,11 +162,11 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		if event.PostType != "message" {
 			continue
 		}
-		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
-			event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
+		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d",
+			event.MessageType, event.UserID, event.GroupID)
 		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
-			b.logf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
+			b.logf("reverse websocket ignored message from user_id=%d", event.UserID)
 			continue
 		}
 		if err := b.sendReverseResponse(ctx, conn, writeMu, event, reply); err != nil {
@@ -534,13 +534,4 @@ func (b *Bridge) accessToken() string {
 
 func napcatResultText(message, wording, status string) string {
 	return textutil.FirstNonEmpty(message, wording, status, "unknown")
-}
-
-func trimLogText(text string) string {
-	const max = 160
-	runes := []rune(text)
-	if len(runes) <= max {
-		return text
-	}
-	return string(runes[:max]) + "..."
 }
