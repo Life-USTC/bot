@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout bot
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Validate Compose definition
+        run: docker compose config --no-env-resolution --quiet
+
+      - name: Checkout server OpenAPI source
+        uses: actions/checkout@v6
+        with:
+          repository: Life-USTC/server
+          path: .server
+
+      - name: Check OpenAPI sync
+        run: make check-openapi-sync OPENAPI_SOURCE=.server/public/openapi.generated.json

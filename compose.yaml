@@ -1,0 +1,16 @@
+name: life-ustc-bot
+
+services:
+  bot:
+    build:
+      context: ./src
+    env_file:
+      - .env
+    restart: unless-stopped
+    stop_grace_period: 10s
+    volumes:
+      - ./data:/data
+    ports:
+      - "${BOT_BIND_IP:-127.0.0.1}:${NAPCAT_REVERSE_HOST_PORT:-2280}:2280"
+      - "${BOT_BIND_IP:-127.0.0.1}:${BOT_MEDIA_HOST_PORT:-2281}:2281"
+      - "${BOT_BIND_IP:-127.0.0.1}:${QQ_BOT_WEBHOOK_HOST_PORT:-2290}:2290"

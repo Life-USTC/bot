@@ -2362,6 +2362,7 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -2369,6 +2370,7 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2515,6 +2517,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -2522,6 +2525,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2644,6 +2648,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -2651,6 +2656,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2787,6 +2793,7 @@ type CalendarSubscriptionCreateResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -2794,6 +2801,7 @@ type CalendarSubscriptionCreateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2914,6 +2922,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -2921,6 +2930,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3035,6 +3045,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3042,6 +3053,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3157,6 +3169,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3164,6 +3177,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3286,6 +3300,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3293,6 +3308,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3434,6 +3450,7 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3441,6 +3458,7 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3576,6 +3594,7 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3583,6 +3602,7 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3959,6 +3979,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 				ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -3966,6 +3987,7 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
+				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4054,6 +4076,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 				ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -4061,6 +4084,7 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
+				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4188,6 +4212,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 				ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -4195,6 +4220,7 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
+				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4337,6 +4363,7 @@ type CourseDetailSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -4344,6 +4371,7 @@ type CourseDetailSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4469,6 +4497,7 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -4476,6 +4505,7 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4953,6 +4983,7 @@ type HomeworkCreateResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -4960,6 +4991,7 @@ type HomeworkCreateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5104,6 +5136,7 @@ type HomeworkUpdateResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -5111,6 +5144,7 @@ type HomeworkUpdateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5226,6 +5260,7 @@ type HomeworksListResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -5233,6 +5268,7 @@ type HomeworksListResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5387,6 +5423,7 @@ type MatchSectionCodesResponseSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -5394,6 +5431,7 @@ type MatchSectionCodesResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5754,6 +5792,7 @@ type PaginatedScheduleResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -5761,6 +5800,7 @@ type PaginatedScheduleResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6058,11 +6098,12 @@ type SectionDetailSchema struct {
 		NameCn    string  `json:"nameCn"`
 		NameEn    *string `json:"nameEn"`
 	} `json:"openDepartment"`
-	OpenDepartmentId *int     `json:"openDepartmentId"`
-	Period           *int     `json:"period"`
-	PeriodsPerWeek   *int     `json:"periodsPerWeek"`
-	PracticePeriods  *float32 `json:"practicePeriods"`
-	Remark           *string  `json:"remark"`
+	OpenDepartmentId *int       `json:"openDepartmentId"`
+	Period           *int       `json:"period"`
+	PeriodsPerWeek   *int       `json:"periodsPerWeek"`
+	PracticePeriods  *float32   `json:"practicePeriods"`
+	Remark           *string    `json:"remark"`
+	RetiredAt        *time.Time `json:"retiredAt,omitempty"`
 	RoomType         *struct {
 		Code   string  `json:"code"`
 		Id     int     `json:"id"`
@@ -6105,6 +6146,7 @@ type SectionDetailSchema struct {
 	SelectedStdCount        *int            `json:"selectedStdCount"`
 	Semester                *SemesterSchema `json:"semester"`
 	SemesterId              *int            `json:"semesterId"`
+	SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 	StdCount                *int            `json:"stdCount"`
 	SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 	SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6290,6 +6332,7 @@ type SubscribedHomeworksResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -6297,6 +6340,7 @@ type SubscribedHomeworksResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6439,6 +6483,7 @@ type SubscribedSchedulesResponseSchema struct {
 			PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 			ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -6446,6 +6491,7 @@ type SubscribedSchedulesResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
+			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6585,6 +6631,7 @@ type TeacherDetailSchema struct {
 		PeriodsPerWeek          *int            `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RetiredAt               *time.Time      `json:"retiredAt,omitempty"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
 		ScheduleRemark          *string         `json:"scheduleRemark"`
@@ -6592,6 +6639,7 @@ type TeacherDetailSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
+		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -10178,6 +10226,12 @@ type ClientInterface interface {
 	// OptionsWellKnownOauthProtectedResource request
 	OptionsWellKnownOauthProtectedResource(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWellKnownOauthProtectedResourceApiGraphql request
+	GetWellKnownOauthProtectedResourceApiGraphql(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OptionsWellKnownOauthProtectedResourceApiGraphql request
+	OptionsWellKnownOauthProtectedResourceApiGraphql(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWellKnownOauthProtectedResourceApiMcp request
 	GetWellKnownOauthProtectedResourceApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -10639,6 +10693,30 @@ func (c *Client) ListOauthProtectedResource(ctx context.Context, reqEditors ...R
 
 func (c *Client) OptionsWellKnownOauthProtectedResource(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewOptionsWellKnownOauthProtectedResourceRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWellKnownOauthProtectedResourceApiGraphql(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWellKnownOauthProtectedResourceApiGraphqlRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) OptionsWellKnownOauthProtectedResourceApiGraphql(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOptionsWellKnownOauthProtectedResourceApiGraphqlRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -12480,6 +12558,60 @@ func NewOptionsWellKnownOauthProtectedResourceRequest(server string) (*http.Requ
 	}
 
 	operationPath := fmt.Sprintf("/.well-known/oauth-protected-resource")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWellKnownOauthProtectedResourceApiGraphqlRequest generates requests for GetWellKnownOauthProtectedResourceApiGraphql
+func NewGetWellKnownOauthProtectedResourceApiGraphqlRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/oauth-protected-resource/api/graphql")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOptionsWellKnownOauthProtectedResourceApiGraphqlRequest generates requests for OptionsWellKnownOauthProtectedResourceApiGraphql
+func NewOptionsWellKnownOauthProtectedResourceApiGraphqlRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/oauth-protected-resource/api/graphql")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17759,6 +17891,12 @@ type ClientWithResponsesInterface interface {
 	// OptionsWellKnownOauthProtectedResourceWithResponse request
 	OptionsWellKnownOauthProtectedResourceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsWellKnownOauthProtectedResourceResponse, error)
 
+	// GetWellKnownOauthProtectedResourceApiGraphqlWithResponse request
+	GetWellKnownOauthProtectedResourceApiGraphqlWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthProtectedResourceApiGraphqlResponse, error)
+
+	// OptionsWellKnownOauthProtectedResourceApiGraphqlWithResponse request
+	OptionsWellKnownOauthProtectedResourceApiGraphqlWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsWellKnownOauthProtectedResourceApiGraphqlResponse, error)
+
 	// GetWellKnownOauthProtectedResourceApiMcpWithResponse request
 	GetWellKnownOauthProtectedResourceApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthProtectedResourceApiMcpResponse, error)
 
@@ -18360,6 +18498,64 @@ func (r OptionsWellKnownOauthProtectedResourceResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r OptionsWellKnownOauthProtectedResourceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWellKnownOauthProtectedResourceApiGraphqlResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWellKnownOauthProtectedResourceApiGraphqlResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWellKnownOauthProtectedResourceApiGraphqlResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWellKnownOauthProtectedResourceApiGraphqlResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OptionsWellKnownOauthProtectedResourceApiGraphqlResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r OptionsWellKnownOauthProtectedResourceApiGraphqlResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OptionsWellKnownOauthProtectedResourceApiGraphqlResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OptionsWellKnownOauthProtectedResourceApiGraphqlResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -21737,6 +21933,24 @@ func (c *ClientWithResponses) OptionsWellKnownOauthProtectedResourceWithResponse
 	return ParseOptionsWellKnownOauthProtectedResourceResponse(rsp)
 }
 
+// GetWellKnownOauthProtectedResourceApiGraphqlWithResponse request returning *GetWellKnownOauthProtectedResourceApiGraphqlResponse
+func (c *ClientWithResponses) GetWellKnownOauthProtectedResourceApiGraphqlWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthProtectedResourceApiGraphqlResponse, error) {
+	rsp, err := c.GetWellKnownOauthProtectedResourceApiGraphql(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWellKnownOauthProtectedResourceApiGraphqlResponse(rsp)
+}
+
+// OptionsWellKnownOauthProtectedResourceApiGraphqlWithResponse request returning *OptionsWellKnownOauthProtectedResourceApiGraphqlResponse
+func (c *ClientWithResponses) OptionsWellKnownOauthProtectedResourceApiGraphqlWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsWellKnownOauthProtectedResourceApiGraphqlResponse, error) {
+	rsp, err := c.OptionsWellKnownOauthProtectedResourceApiGraphql(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOptionsWellKnownOauthProtectedResourceApiGraphqlResponse(rsp)
+}
+
 // GetWellKnownOauthProtectedResourceApiMcpWithResponse request returning *GetWellKnownOauthProtectedResourceApiMcpResponse
 func (c *ClientWithResponses) GetWellKnownOauthProtectedResourceApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthProtectedResourceApiMcpResponse, error) {
 	rsp, err := c.GetWellKnownOauthProtectedResourceApiMcp(ctx, reqEditors...)
@@ -23048,6 +23262,38 @@ func ParseOptionsWellKnownOauthProtectedResourceResponse(rsp *http.Response) (*O
 	}
 
 	response := &OptionsWellKnownOauthProtectedResourceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetWellKnownOauthProtectedResourceApiGraphqlResponse parses an HTTP response from a GetWellKnownOauthProtectedResourceApiGraphqlWithResponse call
+func ParseGetWellKnownOauthProtectedResourceApiGraphqlResponse(rsp *http.Response) (*GetWellKnownOauthProtectedResourceApiGraphqlResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWellKnownOauthProtectedResourceApiGraphqlResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseOptionsWellKnownOauthProtectedResourceApiGraphqlResponse parses an HTTP response from a OptionsWellKnownOauthProtectedResourceApiGraphqlWithResponse call
+func ParseOptionsWellKnownOauthProtectedResourceApiGraphqlResponse(rsp *http.Response) (*OptionsWellKnownOauthProtectedResourceApiGraphqlResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OptionsWellKnownOauthProtectedResourceApiGraphqlResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
