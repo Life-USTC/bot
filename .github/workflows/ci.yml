@@ -34,7 +34,9 @@ jobs:
         run: go test -race ./...
 
       - name: Validate Compose definition
-        run: docker compose config --no-env-resolution --quiet
+        run: |
+          touch .env
+          docker compose config --quiet
 
       - name: Checkout server OpenAPI source
         uses: actions/checkout@v6
