@@ -1,7 +1,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +34,22 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 		method string
 		auth   string
 	}
+	var initializeRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var rpcRequest struct {
+			Method string `json:"method"`
+		}
+		if json.Unmarshal(body, &rpcRequest) == nil && rpcRequest.Method == "initialize" {
+			mu.Lock()
+			initializeRequests++
+			mu.Unlock()
+		}
 		mu.Lock()
 		requests = append(requests, struct {
 			method string
@@ -43,7 +61,16 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 	defer server.Close()
 
 	client := New(server.URL, server.Client())
-	tools, err := client.Tools(context.Background(), "test-token")
+	session, err := client.OpenSession(context.Background(), "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	tools, err := session.Tools(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +78,7 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 		t.Fatalf("tools = %#v", tools)
 	}
 
-	result, err := client.Call(context.Background(), "test-token", "test_tool", map[string]any{"input": "value"})
+	result, err := session.Call(context.Background(), "test_tool", map[string]any{"input": "value"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +90,9 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 	defer mu.Unlock()
 	if len(requests) == 0 {
 		t.Fatal("no MCP HTTP requests observed")
+	}
+	if initializeRequests != 1 {
+		t.Fatalf("initialize requests = %d, want 1", initializeRequests)
 	}
 	for _, req := range requests {
 		if req.method == http.MethodPost && req.auth != "Bearer test-token" {

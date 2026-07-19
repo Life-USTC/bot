@@ -199,21 +199,21 @@ func (c *Client) ListSemesters(ctx context.Context, page, limit int) ([]map[stri
 
 func (c *Client) GetCourseByJwID(ctx context.Context, jwId int64) (map[string]any, error) {
 	var out map[string]any
-	resp, err := c.Typed(ctx, "").GetCourse(ctx, jwId)
+	resp, err := c.Typed(ctx, "").GetCourse(ctx, jwId, nil)
 	err = typedJSON(resp, err, "course", &out)
 	return out, err
 }
 
 func (c *Client) GetSectionByJwID(ctx context.Context, jwId int64) (map[string]any, error) {
 	var out map[string]any
-	resp, err := c.Typed(ctx, "").GetSection(ctx, jwId)
+	resp, err := c.Typed(ctx, "").GetSection(ctx, jwId, nil)
 	err = typedJSON(resp, err, "section", &out)
 	return out, err
 }
 
 func (c *Client) GetTeacherByID(ctx context.Context, id int64) (map[string]any, error) {
 	var out map[string]any
-	resp, err := c.Typed(ctx, "").GetTeacher(ctx, id)
+	resp, err := c.Typed(ctx, "").GetTeacher(ctx, id, nil)
 	err = typedJSON(resp, err, "teacher", &out)
 	return out, err
 }

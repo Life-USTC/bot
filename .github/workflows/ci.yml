@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout bot
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Validate Compose definition
+        run: |
+          touch .env
+          docker compose config --quiet
+
+      - name: Resolve server OpenAPI ref
+        id: server-openapi-ref
+        run: |
+          candidate="${SERVER_OPENAPI_REF:-${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}}"
+          if git ls-remote --exit-code --heads https://github.com/Life-USTC/server.git "$candidate" >/dev/null 2>&1; then
+            echo "ref=$candidate" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout server OpenAPI source
+        uses: actions/checkout@v6
+        with:
+          repository: Life-USTC/server
+          ref: ${{ steps.server-openapi-ref.outputs.ref }}
+          path: .server
+
+      - name: Check OpenAPI sync
+        run: make check-openapi-sync OPENAPI_SOURCE=.server/public/openapi.generated.json

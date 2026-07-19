@@ -145,3 +145,30 @@ semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`.
 ```bash
 go test ./...
 ```
+
+## Deploy
+
+The versioned `compose.yaml` builds the archived source from `./src`, loads
+runtime configuration from `.env`, and persists SQLite data in the existing
+host `./data` directory. `scripts/deploy-cn.sh` uploads both `.env` and the
+Compose definition before validating and starting the service.
+
+Inside the container, listeners that are published through Compose must bind to
+all interfaces:
+
+```text
+NAPCAT_REVERSE_ADDR=0.0.0.0:2280
+BOT_MEDIA_ADDR=0.0.0.0:2281
+QQ_BOT_WEBHOOK_ADDR=0.0.0.0:2290
+```
+
+The host ports bind to `127.0.0.1` by default. Point the host reverse proxy at:
+
+```text
+/media/*  -> http://127.0.0.1:2281/media/*
+/qqbot    -> http://127.0.0.1:2290/qqbot
+```
+
+Set `BOT_BIND_IP` only when a listener must be reachable directly from another
+host. Host port overrides are `NAPCAT_REVERSE_HOST_PORT`,
+`BOT_MEDIA_HOST_PORT`, and `QQ_BOT_WEBHOOK_HOST_PORT`.

@@ -24,6 +24,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -43,6 +44,18 @@ const (
 )
 
 var errGatewayReconnect = errors.New("qq bot gateway requested reconnect")
+
+type permanentGatewayError struct {
+	err error
+}
+
+func (e *permanentGatewayError) Error() string {
+	return e.err.Error()
+}
+
+func (e *permanentGatewayError) Unwrap() error {
+	return e.err
+}
 
 type Bot struct {
 	AppID      string
@@ -177,19 +190,33 @@ type richMediaUploadResponse struct {
 }
 
 func (b *Bot) Run(ctx context.Context) error {
-	backoff := 3 * time.Second
+	return b.run(ctx, retry.Backoff{
+		Initial: 3 * time.Second,
+		Max:     5 * time.Minute,
+		Jitter:  0.2,
+	})
+}
+
+func (b *Bot) run(ctx context.Context, backoff retry.Backoff) error {
+	failures := 0
 	for {
-		if err := b.runOnce(ctx); err != nil && ctx.Err() == nil {
-			b.logf("QQ bot gateway stopped: %v; reconnecting in %s", err, backoff)
-		}
+		ready, err := b.runOnce(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(backoff):
+		var permanent *permanentGatewayError
+		if errors.As(err, &permanent) {
+			return permanent
 		}
+		if ready {
+			failures = 0
+		}
+		delay := backoff.Duration(failures)
+		b.logf("QQ bot gateway stopped: %v; reconnecting in %s", err, delay)
+		if !retry.Wait(ctx, delay) {
+			return nil
+		}
+		failures++
 	}
 }
 
@@ -310,14 +337,14 @@ func webhookPath(path string) string {
 	return "/" + path
 }
 
-func (b *Bot) runOnce(ctx context.Context) error {
+func (b *Bot) runOnce(ctx context.Context) (bool, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	gatewayURL, err := b.gatewayURL(ctx, token)
 	if err != nil {
-		return err
+		return false, err
 	}
 	b.logf("QQ bot connecting: app_id=%s configured_bot_id=%s intents=%d gateway=%s",
 		maskID(b.AppID),
@@ -336,7 +363,10 @@ func (b *Bot) runOnce(ctx context.Context) error {
 			status = resp.Status
 		}
 		b.logf("QQ bot websocket dial failed: gateway=%s status=%s error=%v", urlHost(gatewayURL), status, err)
-		return err
+		if resp != nil && isPermanentHTTPStatus(resp.StatusCode) {
+			return false, &permanentGatewayError{err: fmt.Errorf("QQ bot websocket rejected credentials with status %d", resp.StatusCode)}
+		}
+		return false, err
 	}
 	status := "<nil>"
 	if resp != nil {
@@ -348,14 +378,14 @@ func (b *Bot) runOnce(ctx context.Context) error {
 	var hello gatewayPayload
 	if err := conn.ReadJSON(&hello); err != nil {
 		b.logf("QQ bot websocket read hello failed: %v", err)
-		return err
+		return false, err
 	}
 	if hello.Op != opHello {
-		return fmt.Errorf("expected QQ bot hello opcode %d, got %d", opHello, hello.Op)
+		return false, fmt.Errorf("expected QQ bot hello opcode %d, got %d", opHello, hello.Op)
 	}
 	var helloBody helloData
 	if err := json.Unmarshal(hello.D, &helloBody); err != nil {
-		return fmt.Errorf("decode QQ bot hello: %w", err)
+		return false, fmt.Errorf("decode QQ bot hello: %w", err)
 	}
 	interval := time.Duration(helloBody.HeartbeatInterval) * time.Millisecond
 	if interval <= 0 {
@@ -384,32 +414,36 @@ func (b *Bot) runOnce(ctx context.Context) error {
 	}
 	if err := writeGatewayJSON(conn, &writeMu, identify); err != nil {
 		b.logf("QQ bot websocket identify failed: %v", err)
-		return err
+		return false, err
 	}
 
+	ready := false
 	for {
 		var payload gatewayPayload
 		if err := conn.ReadJSON(&payload); err != nil {
 			b.logf("QQ bot websocket read failed: %v", err)
-			return err
+			return ready, err
 		}
 		if payload.S != nil {
 			seq.Store(*payload.S)
 		}
 		switch payload.Op {
 		case opDispatch:
+			if payload.T == "READY" {
+				ready = true
+			}
 			b.handleDispatch(ctx, payload)
 		case opHeartbeat:
 			b.logf("QQ bot received heartbeat request: seq=%d", seq.Load())
 			if err := b.sendHeartbeat(conn, &writeMu, seq.Load()); err != nil {
-				return err
+				return ready, err
 			}
 		case opReconnect:
 			b.logf("QQ bot received reconnect opcode")
-			return errGatewayReconnect
+			return ready, errGatewayReconnect
 		case opInvalid:
 			b.logf("QQ bot received invalid session: data=%s", jsonPreview(payload.D))
-			return errors.New("qq bot gateway invalid session")
+			return ready, errors.New("qq bot gateway invalid session")
 		case opHeartbeatACK:
 		default:
 			b.logf("ignored QQ bot gateway opcode %d", payload.Op)
@@ -462,16 +496,15 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			b.logf("decode QQ bot message failed: %v", err)
 			return
 		}
-		b.logf("QQ bot message: event=%s conversation_type=%s user_id=%q conversation_id=%q text=%q",
+		b.logf("QQ bot message: event=%s conversation_type=%s user_id=%q conversation_id=%q",
 			payload.T,
 			message.Identity.ConversationType,
 			message.Identity.UserID,
 			message.Identity.ConversationID,
-			trimLogText(message.Text),
 		)
 		reply, ok := b.handleMessage(ctx, message)
 		if !ok {
-			b.logf("QQ bot ignored message: event=%s text=%q", payload.T, trimLogText(message.Text))
+			b.logf("QQ bot ignored message: event=%s", payload.T)
 			return
 		}
 		if err := b.SendResponse(ctx, message, reply); err != nil {
@@ -493,19 +526,18 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 		b.logf("decode QQ bot interaction failed: %v", err)
 		return
 	}
-	b.logf("QQ bot interaction: type=%s conversation_type=%s user_id=%q conversation_id=%q text=%q",
+	b.logf("QQ bot interaction: type=%s conversation_type=%s user_id=%q conversation_id=%q",
 		message.Type,
 		message.Identity.ConversationType,
 		message.Identity.UserID,
 		message.Identity.ConversationID,
-		trimLogText(message.Text),
 	)
 	if err := b.ackInteraction(ctx, message.EventID, 0); err != nil {
 		b.logf("ack QQ bot interaction failed: %v", err)
 	}
 	reply, ok := b.handleMessage(ctx, message)
 	if !ok {
-		b.logf("QQ bot ignored interaction: type=%s text=%q", message.Type, trimLogText(message.Text))
+		b.logf("QQ bot ignored interaction: type=%s", message.Type)
 		return
 	}
 	if err := b.SendResponse(ctx, message, reply); err != nil {
@@ -976,16 +1008,14 @@ func (b *Bot) gatewayURL(ctx context.Context, token string) (string, error) {
 
 func (b *Bot) openAPI(ctx context.Context, method, path, token string, body any, out any) error {
 	var reader io.Reader
-	bodyPreview := "<empty>"
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		bodyPreview = jsonPreview(data)
 		reader = bytes.NewReader(data)
 	}
-	b.logf("QQ bot openapi request: method=%s path=%s body=%s", method, path, bodyPreview)
+	b.logf("QQ bot openapi request: method=%s path=%s", method, path)
 	req, err := http.NewRequestWithContext(ctx, method, b.apiBaseURL()+path, reader)
 	if err != nil {
 		return err
@@ -1001,20 +1031,20 @@ func (b *Bot) openAPI(ctx context.Context, method, path, token string, body any,
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		responseText := readBodyText(resp.Body)
-		b.logf("QQ bot openapi response: method=%s path=%s status=%d body=%s", method, path, resp.StatusCode, responseText)
-		return fmt.Errorf("qq bot %s %s returned %d: %s", method, path, resp.StatusCode, responseText)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		b.logf("QQ bot openapi response: method=%s path=%s status=%d", method, path, resp.StatusCode)
+		return fmt.Errorf("qq bot %s %s returned %d", method, path, resp.StatusCode)
 	}
 	if out == nil {
-		responseText := readBodyText(resp.Body)
-		b.logf("QQ bot openapi response: method=%s path=%s status=%d body=%s", method, path, resp.StatusCode, responseText)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		b.logf("QQ bot openapi response: method=%s path=%s status=%d", method, path, resp.StatusCode)
 		return nil
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	b.logf("QQ bot openapi response: method=%s path=%s status=%d body=%s", method, path, resp.StatusCode, jsonPreview(respBody))
+	b.logf("QQ bot openapi response: method=%s path=%s status=%d", method, path, resp.StatusCode)
 	if err := json.Unmarshal(respBody, out); err != nil {
 		return fmt.Errorf("decode qq bot %s %s response: %w", method, path, err)
 	}
@@ -1025,7 +1055,7 @@ func (b *Bot) accessTokenForRequest(ctx context.Context) (string, error) {
 	if strings.TrimSpace(b.AppID) == "" || strings.TrimSpace(b.AppSecret) == "" {
 		token := strings.TrimSpace(b.BotToken)
 		if token == "" {
-			return "", errors.New("QQ bot credentials are not configured")
+			return "", &permanentGatewayError{err: errors.New("QQ bot credentials are not configured")}
 		}
 		b.logf("QQ bot token: using static token")
 		return token, nil
@@ -1068,9 +1098,13 @@ func (b *Bot) fetchAccessToken(ctx context.Context) (string, time.Duration, erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		responseText := readBodyText(resp.Body)
-		b.logf("QQ bot token response: status=%d body=%s", resp.StatusCode, responseText)
-		return "", 0, fmt.Errorf("qq bot token endpoint returned %d: %s", resp.StatusCode, responseText)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		b.logf("QQ bot token response: status=%d", resp.StatusCode)
+		err := fmt.Errorf("qq bot token endpoint returned %d", resp.StatusCode)
+		if isPermanentHTTPStatus(resp.StatusCode) {
+			return "", 0, &permanentGatewayError{err: err}
+		}
+		return "", 0, err
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -1093,6 +1127,18 @@ func (b *Bot) fetchAccessToken(ctx context.Context) (string, time.Duration, erro
 		expiresIn = 2 * time.Hour
 	}
 	return token, expiresIn, nil
+}
+
+func isPermanentHTTPStatus(status int) bool {
+	if status < 400 || status >= 500 {
+		return false
+	}
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
+		return false
+	default:
+		return true
+	}
 }
 
 func parseExpiresIn(raw json.RawMessage) time.Duration {
@@ -1183,18 +1229,6 @@ func (b *Bot) logf(format string, args ...any) {
 	if b.Logger != nil {
 		b.Logger.Printf(format, args...)
 	}
-}
-
-func readBodyText(body io.Reader) string {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return "read response body: " + err.Error()
-	}
-	text := strings.TrimSpace(string(data))
-	if text == "" {
-		return "empty response body"
-	}
-	return text
 }
 
 func jsonPreview(value any) string {
