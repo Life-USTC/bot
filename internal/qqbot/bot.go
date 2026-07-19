@@ -1110,7 +1110,7 @@ func (b *Bot) fetchAccessToken(ctx context.Context) (string, time.Duration, erro
 	if err != nil {
 		return "", 0, err
 	}
-	b.logf("QQ bot token response: status=%d body=%s", resp.StatusCode, redactTokenJSON(respBody))
+	b.logf("QQ bot token response: status=%d", resp.StatusCode)
 	var out struct {
 		AccessToken string          `json:"access_token"`
 		ExpiresIn   json.RawMessage `json:"expires_in"`
@@ -1254,33 +1254,6 @@ func jsonPreview(value any) string {
 		return "<empty>"
 	}
 	return trimLogText(string(data))
-}
-
-func redactTokenJSON(data []byte) string {
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return jsonPreview(data)
-	}
-	redactTokenFields(value)
-	return jsonPreview(value)
-}
-
-func redactTokenFields(value any) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, child := range typed {
-			lower := strings.ToLower(key)
-			if strings.Contains(lower, "token") || strings.Contains(lower, "secret") {
-				typed[key] = "<redacted>"
-				continue
-			}
-			redactTokenFields(child)
-		}
-	case []any:
-		for _, child := range typed {
-			redactTokenFields(child)
-		}
-	}
 }
 
 func seqText(seq *int64) string {

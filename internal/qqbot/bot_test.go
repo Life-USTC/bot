@@ -649,18 +649,21 @@ func TestAccessTokenUsesStaticTokenWithoutSecret(t *testing.T) {
 
 func TestRunStopsAfterPermanentTokenFailure(t *testing.T) {
 	requests := 0
-	const privateBody = `{"message":"revoked secret credential"}`
+	const privateValue = "revoked secret credential"
+	const privateBody = `{"message":"` + privateValue + `"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		http.Error(w, privateBody, http.StatusUnauthorized)
 	}))
 	defer server.Close()
 
+	var logs bytes.Buffer
 	bot := &Bot{
 		AppID:      "appid",
 		AppSecret:  "secret",
 		TokenURL:   server.URL,
 		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
 	}
 	err := bot.run(context.Background(), retry.Backoff{Initial: time.Millisecond, Max: time.Millisecond})
 	if err == nil || !strings.Contains(err.Error(), "401") {
@@ -668,6 +671,37 @@ func TestRunStopsAfterPermanentTokenFailure(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("token requests = %d, want 1", requests)
+	}
+	if strings.Contains(logs.String(), privateValue) || strings.Contains(err.Error(), privateValue) {
+		t.Fatalf("private token response leaked: error=%v logs=%s", err, logs.String())
+	}
+}
+
+func TestFetchAccessTokenDoesNotLogMalformedResponse(t *testing.T) {
+	const privateValue = "private-access-token"
+	const privateBody = `{"access_token":"` + privateValue + `"`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(privateBody))
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		TokenURL:   server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
+	}
+	_, _, err := bot.fetchAccessToken(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "decode qq bot token response") {
+		t.Fatalf("fetchAccessToken error = %v", err)
+	}
+	if strings.Contains(logs.String(), privateValue) || strings.Contains(err.Error(), privateValue) {
+		t.Fatalf("private malformed token response leaked: error=%v logs=%s", err, logs.String())
+	}
+	if !strings.Contains(logs.String(), "QQ bot token response: status=200") {
+		t.Fatalf("logs missing response status: %s", logs.String())
 	}
 }
 
