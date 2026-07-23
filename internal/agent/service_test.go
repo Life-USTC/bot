@@ -626,6 +626,27 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
+	for _, want := range []string{
+		"Image rendering protocol:",
+		"![](校车 东区 西区)",
+		"![](今天课表)",
+		"![](课表 第3周)",
+		"![](下一节课)",
+		"![](待办)",
+		"![](作业)",
+		"![](考试)",
+		"![](概览)",
+		"![](近期截止 14)",
+		"![](教学班作业 654)",
+		"![](教学班考试 321)",
+		"MUST include one supported directive",
+		"By default, proactively include one directive",
+		"Do not merely tell the user that an image is available; emit the directive.",
+	} {
+		if !strings.Contains(instruction, want) {
+			t.Fatalf("instruction lacks image rendering guidance %q: %q", want, instruction)
+		}
+	}
 }
 
 func TestMessagesForIncludesRecentHistory(t *testing.T) {

@@ -138,7 +138,7 @@ func imageDirectiveCommandAllowed(cmd parsedCommand) bool {
 		return false
 	}
 	switch cmd.Name {
-	case "schedule", "section_homeworks", "exam", "section_exams", "nextclass", "overview", "dashboard", "upcoming_deadlines":
+	case "schedule", "section_homeworks", "exam", "section_exams", "nextclass", "overview", "upcoming_deadlines":
 		return true
 	case "todo":
 		return todoImageArgs(cmd.Args)

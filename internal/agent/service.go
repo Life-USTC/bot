@@ -685,10 +685,36 @@ Tools that create, update, delete, complete, subscribe, or change notification s
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
-When a schedule, next-class, homework, todo, exam, overview, upcoming-deadline, dashboard, or shuttle-bus result is easier to read as an image, put a read-only Bot command on its own line using exactly this form: ![](校车 东区 西区). Text before it is sent before the image, and text after it is sent after the image. Use at most two such directives. Never put a URL, file path, explanation, login command, setting change, or other mutation inside the directive.
+%s
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`, now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"))
+When a tool returns login-required text, tell the user to log in with 登录.`,
+		now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"),
+		imageDirectiveInstruction(),
+	)
+}
+
+func imageDirectiveInstruction() string {
+	return `Image rendering protocol:
+The host replaces a standalone ![](command) directive with an image rendered by the existing read-only Bot command, at the same position in the reply. Text before the directive is sent before the image, and text after it is sent after the image.
+Supported directives and exact command shapes:
+- Shuttle bus overview or route: ![](校车) or ![](校车 东区 西区)
+- Curriculum: ![](课表), ![](今天课表), ![](明天课表), or ![](课表 第3周)
+- Next class: ![](下一节课)
+- Todo list: ![](待办)
+- Homework list: ![](作业)
+- Exam list: ![](考试)
+- Personal overview: ![](概览)
+- Upcoming deadlines: ![](近期截止) or ![](近期截止 14)
+- Section homework or exams when a JW ID is known: ![](教学班作业 654) or ![](教学班考试 321)
+Rendering policy:
+- MUST include one supported directive when the user explicitly asks for an image, card, chart, visual, 图片, 图表, 卡片, or 可视化 of supported data.
+- By default, proactively include one directive after a successful tool result for a curriculum, shuttle-bus timetable, personal overview, upcoming deadlines, or a multi-item todo, homework, or exam list, unless the user asks for text only.
+- Do not merely tell the user that an image is available; emit the directive.
+- Preserve the user's requested day, week, route, section, or deadline range in the command.
+- Do not emit a directive for an empty result, an error, a login-required response, or a single short fact that is clearer as text.
+- Put each directive on its own line. Use one by default and at most two only for two distinct datasets.
+- Never put a URL, file path, explanation, login command, setting change, or any create, update, delete, complete, subscribe, or notification mutation inside a directive.`
 }
 
 func currentTimeMessage() string {
