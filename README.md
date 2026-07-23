@@ -60,10 +60,13 @@ life_ustc.catalog_semester_current
 life_ustc.catalog_course_search       {"search":"calculus"}
 life_ustc.catalog_section_search      {"search":"calculus"}
 life_ustc.catalog_bus_timetable_get
+life_ustc.catalog_link_list
 life_ustc.account_login_begin         {"platform":"napcat","user_id":"123"}
 life_ustc.account_login_poll          {"platform":"napcat","user_id":"123"}
 life_ustc.account_profile_get         {"platform":"napcat","user_id":"123"}
 life_ustc.workspace_todo_list         {"platform":"napcat","user_id":"123"}
+life_ustc.workspace_link_pin_list     {"platform":"napcat","user_id":"123"}
+life_ustc.workspace_link_pin_set      {"platform":"napcat","user_id":"123","slug":"jw","action":"pin"}
 ```
 
 `/life login` starts an OAuth device-code login and replies with the
