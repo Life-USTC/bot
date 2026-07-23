@@ -1,8 +1,12 @@
 package commands
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -25,13 +29,24 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		return nil
 	}
 	imageText := imageRenderText(text)
+	if cmd.Name == "help" {
+		return responses.NewRichTextImage("help", helpRichText(cmd.Args...), imageText)
+	}
+	if firstArgIsHelp(cmd.Args) {
+		return responses.NewRichTextImage("help", helpRichText(cmd.Name), imageText)
+	}
 	switch cmd.Name {
 	case "schedule":
-		if firstArgIs(cmd.Args, "help") {
-			return nil
-		}
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "课表")
+		if grid := weeklyScheduleGrid(plainText); grid != nil {
+			return responses.NewScheduleGridImage("schedule", title, grid, imageText)
+		}
+		if firstArgIn(cmd.Args, "today", "tomorrow") {
+			if grid := dailyScheduleGrid(plainText); grid != nil {
+				return responses.NewScheduleGridImage("schedule", title, grid, imageText)
+			}
+		}
 		return responses.NewRichTextImage("schedule", scheduleRichText(title, plainText), imageText)
 	case "todo":
 		if !todoImageArgs(cmd.Args) {
@@ -39,17 +54,33 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		}
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("todo", imageTitle(plainText, "待办"), plainText)
+	case "homework":
+		if !homeworkImageArgs(cmd.Args) {
+			return nil
+		}
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("homework", imageTitle(plainText, "作业"), plainText)
+	case "section_homeworks":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("homework", imageTitle(plainText, "作业"), plainText)
+	case "exam", "section_exams":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("exam", imageTitle(plainText, "考试"), plainText)
+	case "nextclass":
+		plainText := textutil.PlainMonospace(text)
+		title := imageTitle(plainText, "下一节课")
+		return responses.NewRichTextImage("nextclass", scheduleRichText(title, plainText), imageText)
+	case "calendar":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("calendar", imageTitle(plainText, "今日安排"), plainText)
 	case "overview":
 		plainText := textutil.PlainMonospace(text)
-		return richTextImage("overview", imageTitle(plainText, "今日安排"), plainText)
-	case "dashboard":
-		plainText := textutil.PlainMonospace(text)
-		return richTextImage("dashboard", imageTitle(plainText, "我的概览"), plainText)
+		return richTextImage("overview", imageTitle(plainText, "我的概览"), plainText)
 	case "upcoming_deadlines":
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("deadlines", imageTitle(plainText, "近期截止"), plainText)
 	case "bus":
-		if firstArgIs(cmd.Args, "help") || busPreferenceArgs(cmd.Args) {
+		if busPreferenceArgs(cmd.Args) {
 			return nil
 		}
 		title := "校车"
@@ -90,7 +121,7 @@ func scheduleRichText(title, text string) string {
 		if cells, ok := scheduleRichTableCells(line); ok {
 			if !inTable {
 				out = append(out,
-					markdownRichTableRow([]string{"校区", "教室", "时间", "课程"}),
+					markdownRichTableRow([]string{"节次", "时间", "安排", "备注"}),
 					markdownRichTableRow([]string{"---", "---", "---", "---"}),
 				)
 			}
@@ -117,7 +148,261 @@ func scheduleRichTableCells(line string) ([]string, bool) {
 		return nil, false
 	}
 	campus, room := scheduleCampusAndRoom(place)
-	return []string{campus, room, timeRange, course}, true
+	return []string{schedulePeriodLabel(timeRange), timeRange, course, scheduleLocationNote(campus, room)}, true
+}
+
+type lessonPeriod struct {
+	start int
+	end   int
+}
+
+var ustcLessonPeriods = [...]lessonPeriod{
+	{start: 7*60 + 50, end: 8*60 + 35},
+	{start: 8*60 + 40, end: 9*60 + 25},
+	{start: 9*60 + 45, end: 10*60 + 30},
+	{start: 10*60 + 35, end: 11*60 + 20},
+	{start: 11*60 + 25, end: 12*60 + 10},
+	{start: 14 * 60, end: 14*60 + 45},
+	{start: 14*60 + 50, end: 15*60 + 35},
+	{start: 15*60 + 55, end: 16*60 + 40},
+	{start: 16*60 + 45, end: 17*60 + 30},
+	{start: 17*60 + 35, end: 18*60 + 20},
+	{start: 19*60 + 30, end: 20*60 + 15},
+	{start: 20*60 + 20, end: 21*60 + 5},
+	{start: 21*60 + 10, end: 21*60 + 55},
+}
+
+func schedulePeriodLabel(timeRange string) string {
+	start, end, ok := schedulePeriodRange(timeRange)
+	if !ok {
+		return "—"
+	}
+	if start == end {
+		return "第 " + strconv.Itoa(start) + " 小节"
+	}
+	return "第 " + strconv.Itoa(start) + "–" + strconv.Itoa(end) + " 小节"
+}
+
+func schedulePeriodRange(timeRange string) (int, int, bool) {
+	normalized := strings.NewReplacer("～", "-", "~", "-", "–", "-", "—", "-").Replace(strings.TrimSpace(timeRange))
+	parts := strings.SplitN(normalized, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	start, startOK := closestLessonPeriod(parts[0], true)
+	end, endOK := closestLessonPeriod(parts[1], false)
+	if !startOK || !endOK || end < start {
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
+func closestLessonPeriod(value string, useStart bool) (int, bool) {
+	minutes, ok := clockMinutes(value)
+	if !ok {
+		return 0, false
+	}
+	bestPeriod := 0
+	bestDifference := 11
+	for i, period := range ustcLessonPeriods {
+		target := period.end
+		if useStart {
+			target = period.start
+		}
+		difference := minutes - target
+		if difference < 0 {
+			difference = -difference
+		}
+		if difference < bestDifference {
+			bestPeriod = i + 1
+			bestDifference = difference
+		}
+	}
+	return bestPeriod, bestPeriod > 0 && bestDifference <= 10
+}
+
+func clockMinutes(value string) (int, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	hour, hourErr := strconv.Atoi(parts[0])
+	minute, minuteErr := strconv.Atoi(parts[1])
+	if hourErr != nil || minuteErr != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 0, false
+	}
+	return hour*60 + minute, true
+}
+
+func scheduleLocationNote(campus, room string) string {
+	switch {
+	case campus != "" && room != "":
+		return campus + " · " + room
+	case campus != "":
+		return campus
+	case room != "":
+		return room
+	default:
+		return "—"
+	}
+}
+
+var weeklyScheduleDayLabels = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+
+func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
+	days := make([]responses.ScheduleGridDay, 0, len(weeklyScheduleDayLabels))
+	items := []responses.ScheduleGridItem{}
+	currentDay := -1
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if day, ok := weeklyScheduleGridDay(trimmed, len(days)); ok {
+			days = append(days, day)
+			currentDay = len(days) - 1
+			continue
+		}
+		if currentDay < 0 || trimmed == "没有课。" {
+			continue
+		}
+		item, ok := weeklyScheduleGridItem(line, currentDay)
+		if !ok {
+			return nil
+		}
+		items = mergeScheduleGridItem(items, item)
+	}
+	if len(days) != len(weeklyScheduleDayLabels) {
+		return nil
+	}
+	return &responses.ScheduleGrid{
+		Days:    days,
+		Periods: weeklyScheduleGridPeriods(),
+		Items:   items,
+	}
+}
+
+func dailyScheduleGrid(text string) *responses.ScheduleGrid {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) < 2 {
+		return nil
+	}
+	now := chinaNow()
+	day := now
+	date := now.Format("01-02")
+	for _, field := range strings.Fields(lines[0]) {
+		candidate := strings.Trim(strings.TrimSpace(field), "：:")
+		if !scheduleGridDate(candidate) {
+			continue
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", strconv.Itoa(now.Year())+"-"+candidate, lifedata.ChinaLocation())
+		if err == nil {
+			day = parsed
+			date = candidate
+		}
+		break
+	}
+
+	items := []responses.ScheduleGridItem{}
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "没有课。" {
+			continue
+		}
+		item, ok := weeklyScheduleGridItem(line, 0)
+		if !ok {
+			return nil
+		}
+		items = mergeScheduleGridItem(items, item)
+	}
+	return &responses.ScheduleGrid{
+		Days: []responses.ScheduleGridDay{{
+			Label: weeklyScheduleDayLabels[day.Weekday()],
+			Date:  date,
+		}},
+		Periods: weeklyScheduleGridPeriods(),
+		Items:   items,
+	}
+}
+
+func weeklyScheduleGridDay(line string, expectedIndex int) (responses.ScheduleGridDay, bool) {
+	if expectedIndex < 0 || expectedIndex >= len(weeklyScheduleDayLabels) {
+		return responses.ScheduleGridDay{}, false
+	}
+	line = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(line), "："), ":")
+	fields := strings.Fields(line)
+	if len(fields) != 2 || fields[0] != weeklyScheduleDayLabels[expectedIndex] || !scheduleGridDate(fields[1]) {
+		return responses.ScheduleGridDay{}, false
+	}
+	return responses.ScheduleGridDay{Label: fields[0], Date: fields[1]}, true
+}
+
+func scheduleGridDate(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) != 2 {
+		return false
+	}
+	month, monthErr := strconv.Atoi(parts[0])
+	day, dayErr := strconv.Atoi(parts[1])
+	return monthErr == nil && dayErr == nil && month >= 1 && month <= 12 && day >= 1 && day <= 31
+}
+
+func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, bool) {
+	columns := strings.Split(line, "\t")
+	if len(columns) < 3 {
+		return responses.ScheduleGridItem{}, false
+	}
+	place := strings.TrimSpace(columns[0])
+	timeRange := strings.TrimSpace(columns[1])
+	course := strings.TrimSpace(strings.Join(columns[2:], " "))
+	start, end, ok := schedulePeriodRange(timeRange)
+	if !ok || course == "" {
+		return responses.ScheduleGridItem{}, false
+	}
+	campus, room := scheduleCampusAndRoom(place)
+	return responses.ScheduleGridItem{
+		Day:         day,
+		StartPeriod: start,
+		EndPeriod:   end,
+		Course:      course,
+		Location:    scheduleLocationNote(campus, room),
+	}, true
+}
+
+func mergeScheduleGridItem(items []responses.ScheduleGridItem, next responses.ScheduleGridItem) []responses.ScheduleGridItem {
+	for i := range items {
+		if items[i].Day != next.Day || items[i].StartPeriod != next.StartPeriod || items[i].EndPeriod != next.EndPeriod {
+			continue
+		}
+		items[i].Course = joinScheduleGridText(items[i].Course, next.Course)
+		items[i].Location = joinScheduleGridText(items[i].Location, next.Location)
+		return items
+	}
+	return append(items, next)
+}
+
+func joinScheduleGridText(left, right string) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	switch {
+	case left == "":
+		return right
+	case right == "" || left == right:
+		return left
+	default:
+		return left + " / " + right
+	}
+}
+
+func weeklyScheduleGridPeriods() []responses.ScheduleGridPeriod {
+	periods := make([]responses.ScheduleGridPeriod, len(ustcLessonPeriods))
+	for i, period := range ustcLessonPeriods {
+		periods[i] = responses.ScheduleGridPeriod{
+			Label: "第 " + strconv.Itoa(i+1) + " 节",
+			Time:  fmt.Sprintf("%02d:%02d–%02d:%02d", period.start/60, period.start%60, period.end/60, period.end%60),
+		}
+	}
+	return periods
 }
 
 func scheduleCampusAndRoom(place string) (string, string) {
@@ -165,7 +450,7 @@ func richTextTableSections(kind string, lines []string) []string {
 	}
 	block := []string{}
 	flush := func() {
-		if table, ok := richImageTable(section, block); ok {
+		if table, ok := richImageTable(kind, section, block); ok {
 			out = append(out, table...)
 		} else {
 			out = append(out, block...)
@@ -189,7 +474,7 @@ func richTextTableSections(kind string, lines []string) []string {
 	return out
 }
 
-func richImageTable(section string, lines []string) ([]string, bool) {
+func richImageTable(kind, section string, lines []string) ([]string, bool) {
 	data := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if strings.TrimSpace(line) != "" {
@@ -202,9 +487,13 @@ func richImageTable(section string, lines []string) ([]string, bool) {
 
 	var headers []string
 	var cellsFor func(string) ([]string, bool)
-	switch richImageSectionKind(section) {
+	sectionKind := richImageSectionKind(section)
+	if sectionKind == "" && (kind == "homework" || kind == "exam") {
+		sectionKind = kind
+	}
+	switch sectionKind {
 	case "schedule":
-		headers = []string{"校区", "教室", "时间", "课程"}
+		headers = []string{"节次", "时间", "安排", "备注"}
 		cellsFor = overviewScheduleRichTableCells
 	case "todo":
 		headers = []string{"#", "截止", "待办"}
@@ -244,7 +533,10 @@ func richImageTable(section string, lines []string) ([]string, bool) {
 
 func richImageMoreRow(line string, width int) ([]string, bool) {
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "...and ") || !strings.HasSuffix(line, " more") {
+	isMore := strings.HasPrefix(line, "...and ") && strings.HasSuffix(line, " more")
+	isPagination := strings.HasPrefix(line, "第 ") && strings.Contains(line, " 页")
+	isListHint := strings.HasPrefix(line, "另有 ") && strings.Contains(line, "查看完整列表")
+	if !isMore && !isPagination && !isListHint {
 		return nil, false
 	}
 	row := make([]string, width)
@@ -277,7 +569,8 @@ func overviewScheduleRichTableCells(line string) ([]string, bool) {
 		return nil, false
 	}
 	campus, room := scheduleCampusAndRoom(cells[1])
-	return []string{campus, room, cells[2], strings.Join(cells[3:], " ")}, true
+	timeRange := cells[2]
+	return []string{schedulePeriodLabel(timeRange), timeRange, strings.Join(cells[3:], " "), scheduleLocationNote(campus, room)}, true
 }
 
 func todoRichTableCells(line string) ([]string, bool) {
@@ -444,11 +737,22 @@ func successfulImageText(text string) bool {
 		"Life @ USTC API unavailable",
 		"课表查不到：",
 		"待办查不到：",
+		"作业查不到：",
+		"考试查不到：",
+		"下一节课查不到：",
+		"教学班查不到：",
 		"今日安排查不到：",
 		"概览查不到：",
 		"近期截止查不到：",
 		"校车查不到：",
 		"今天后面没查到校车。",
+		"没有作业。",
+		"没有未完成作业。",
+		"该教学班没有作业。",
+		"没有订阅课程考试。",
+		"该教学班没有考试。",
+		"接下来一周没查到课。",
+		"需要提供教学班 JW ID。",
 	}
 	for _, prefix := range rejectPrefixes {
 		if strings.HasPrefix(text, prefix) {
@@ -469,4 +773,8 @@ func todoImageArgs(args []string) bool {
 		_, ok := normalizeTodoPriority(args[0])
 		return ok
 	}
+}
+
+func homeworkImageArgs(args []string) bool {
+	return !firstArgIn(args, "help", "done", "undo")
 }

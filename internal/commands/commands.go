@@ -26,24 +26,27 @@ type Handler struct {
 	Store                  *store.Store
 	Prefix                 string
 	Logger                 *log.Logger
+	FeedbackPlatform       string
 	FeedbackUsers          []string
 	FeedbackGroups         []string
 	FeedbackSend           func(context.Context, store.Identity, string) error
 	AllowGroupPersonalInfo bool
 	EnableImageResponses   bool
+	PublicCache            *PublicCommandCache
 }
 
 var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
 
 type CommandSpec struct {
-	Name       string
-	Aliases    []string
-	HasHelp    bool
-	NeedsLife  bool
-	NeedsStore bool
-	NeedsAuth  bool
-	Normalize  func([]string) []string
-	Run        func(Handler, context.Context, store.Identity, []string) string
+	Name        string
+	Aliases     []string
+	HasHelp     bool
+	NeedsLife   bool
+	NeedsStore  bool
+	NeedsAuth   bool
+	PublicCache bool
+	Normalize   func([]string) []string
+	Run         func(Handler, context.Context, store.Identity, []string) string
 }
 
 func CommandSpecs() []CommandSpec {
@@ -94,19 +97,23 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 	}
 	var reply string
 	if cmd.Name == "help" {
-		reply = h.help()
+		reply = h.help(cmd.Args...)
 	} else {
 		spec, ok := commandSpec(cmd.Name)
 		if !ok || spec.Run == nil {
 			reply = h.help()
-		} else if firstArgIs(cmd.Args, "help") && !spec.HasHelp {
-			reply = h.help()
-		} else if spec.NeedsLife && h.Life == nil && !firstArgIs(cmd.Args, "help") {
+		} else if firstArgIsHelp(cmd.Args) {
+			reply = h.help(cmd.Name)
+		} else if spec.NeedsLife && h.Life == nil {
 			reply = "Life @ USTC API unavailable: not configured."
-		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) && !firstArgIs(cmd.Args, "help") {
+		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) {
 			reply = "登录未配置。"
-		} else if spec.NeedsStore && h.Store == nil && !firstArgIs(cmd.Args, "help") {
+		} else if spec.NeedsStore && h.Store == nil {
 			reply = "存储未配置。"
+		} else if spec.PublicCache && h.PublicCache != nil {
+			reply = h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
+				return spec.Run(h, ctx, input.Identity, cmd.Args)
+			})
 		} else {
 			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 		}
@@ -128,10 +135,12 @@ var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "�
 var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送"}
 
 const (
-	feedbackContextLimit     = 5
+	feedbackContextLimit     = 3
 	feedbackContextLookback  = 12
 	feedbackContextTextRunes = 220
 )
+
+var feedbackEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 
 func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
 	if groupCommandAlwaysAllowed(cmd.Name) {
@@ -179,12 +188,7 @@ func groupHomeworkReadOnlyArgs(args []string) bool {
 	if !hasArgs(args) {
 		return true
 	}
-	switch args[0] {
-	case "help", "pending", "all":
-		return true
-	default:
-		return false
-	}
+	return !firstArgIn(args, "done", "undo")
 }
 
 var commandSpecs = []CommandSpec{
@@ -248,7 +252,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "subscription",
-		Aliases:   []string{"订阅", "sub", "subs", "subscription"},
+		Aliases:   []string{"订阅", "课程订阅", "sub", "subs", "subscription"},
 		HasHelp:   true,
 		NeedsLife: true,
 		NeedsAuth: true,
@@ -313,33 +317,37 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "semester",
-		Aliases:   []string{"semester", "term", "学期", "xq"},
-		NeedsLife: true,
+		Name:        "semester",
+		Aliases:     []string{"semester", "term", "学期", "xq"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.currentSemester(ctx)
 		},
 	},
 	{
-		Name:      "course",
-		Aliases:   []string{"course", "kc", "课程"},
-		NeedsLife: true,
+		Name:        "course",
+		Aliases:     []string{"course", "kc", "课程"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "section",
-		Aliases:   []string{"section", "class", "bj", "教学班", "班级"},
-		NeedsLife: true,
+		Name:        "section",
+		Aliases:     []string{"section", "class", "bj", "教学班", "班级"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchSections(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "teacher",
-		Aliases:   []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
-		NeedsLife: true,
+		Name:        "teacher",
+		Aliases:     []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchTeachers(ctx, joinedArgs(args))
 		},
@@ -379,69 +387,77 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.exams(ctx, ident)
+			return h.exams(ctx, ident, args)
 		},
 	},
 	{
-		Name:      "list_semesters",
-		Aliases:   []string{"list_semesters", "学期列表"},
-		NeedsLife: true,
+		Name:        "list_semesters",
+		Aliases:     []string{"list_semesters", "学期列表"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.listSemesters(ctx, args)
 		},
 	},
 	{
-		Name:      "course_search",
-		Aliases:   []string{"course_search", "课程搜索"},
-		NeedsLife: true,
+		Name:        "course_search",
+		Aliases:     []string{"course_search", "课程搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchCoursesWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "section_search",
-		Aliases:   []string{"section_search", "教学班搜索"},
-		NeedsLife: true,
+		Name:        "section_search",
+		Aliases:     []string{"section_search", "教学班搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchSectionsWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "teacher_search",
-		Aliases:   []string{"teacher_search", "老师搜索"},
-		NeedsLife: true,
+		Name:        "teacher_search",
+		Aliases:     []string{"teacher_search", "老师搜索"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.searchTeachersWithFilters(ctx, args)
 		},
 	},
 	{
-		Name:      "course_by_jw_id",
-		Aliases:   []string{"course_by_jw_id", "课程编号"},
-		NeedsLife: true,
+		Name:        "course_by_jw_id",
+		Aliases:     []string{"course_by_jw_id", "课程编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getCourseByJwID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "section_by_jw_id",
-		Aliases:   []string{"section_by_jw_id", "教学班编号"},
-		NeedsLife: true,
+		Name:        "section_by_jw_id",
+		Aliases:     []string{"section_by_jw_id", "教学班编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getSectionByJwID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "teacher_by_id",
-		Aliases:   []string{"teacher_by_id", "老师编号"},
-		NeedsLife: true,
+		Name:        "teacher_by_id",
+		Aliases:     []string{"teacher_by_id", "老师编号"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.getTeacherByID(ctx, joinedArgs(args))
 		},
 	},
 	{
-		Name:      "bus_routes",
-		Aliases:   []string{"bus_routes", "校车路线"},
-		NeedsLife: true,
+		Name:        "bus_routes",
+		Aliases:     []string{"bus_routes", "校车路线"},
+		NeedsLife:   true,
+		PublicCache: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.busRoutes(ctx, args)
 		},
@@ -479,7 +495,7 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.sectionExams(ctx, ident, joinedArgs(args))
+			return h.sectionExams(ctx, ident, args)
 		},
 	},
 	{
@@ -488,7 +504,7 @@ var commandSpecs = []CommandSpec{
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.sectionHomeworks(ctx, ident, joinedArgs(args))
+			return h.sectionHomeworks(ctx, ident, args)
 		},
 	},
 	{
@@ -544,7 +560,11 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	}
 
 	if isHelpToken(fields[0]) {
-		return helpCommand(raw), true
+		return helpCommand(raw, fields[1:]...), true
+	}
+
+	if name, args, ok := normalizeHierarchicalCommand(commandToken(fields[0]), fields[1:]); ok {
+		return commandResult(raw, name, args), true
 	}
 
 	if len(fields) >= 2 {
@@ -561,8 +581,8 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	return commandResult(raw, name, args), true
 }
 
-func helpCommand(raw string) parsedCommand {
-	return parsedCommand{Name: "help", Raw: raw}
+func helpCommand(raw string, args ...string) parsedCommand {
+	return parsedCommand{Name: "help", Args: args, Raw: raw}
 }
 
 func commandResult(raw, name string, args []string) parsedCommand {
@@ -573,6 +593,9 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	key := commandToken(name)
 	if isHelpToken(key) {
 		return "help", args
+	}
+	if normalized, normalizedArgs, ok := normalizeHierarchicalCommand(key, args); ok {
+		return normalized, normalizedArgs
 	}
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
 		return normalized, normalizedArgs
@@ -597,6 +620,215 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	return "", args
 }
 
+func normalizeHierarchicalCommand(name string, args []string) (string, []string, bool) {
+	help := func(topic string) (string, []string, bool) {
+		return "help", []string{topic}, true
+	}
+	action := ""
+	rest := args
+	if len(args) > 0 {
+		action = commandToken(args[0])
+		rest = args[1:]
+	}
+	if isHelpToken(action) {
+		return help(name)
+	}
+
+	switch name {
+	case "日程":
+		switch action {
+		case "":
+			return help("日程")
+		case "今日", "今天":
+			return "calendar", rest, true
+		case "概览", "汇总":
+			return "overview", rest, true
+		case "截止", "近期截止":
+			return "upcoming_deadlines", rest, true
+		}
+	case "课表":
+		switch action {
+		case "":
+			return "schedule", nil, true
+		case "下一节", "下一节课", "下节课":
+			return "nextclass", rest, true
+		case "单日":
+			if len(rest) == 0 {
+				return "schedule", []string{"today"}, true
+			}
+			if day, ok := normalizeScheduleDay(commandToken(rest[0])); ok {
+				return "schedule", []string{day}, true
+			}
+		}
+		return "schedule", normalizeScheduleArgs(args), true
+	case "待办":
+		return "todo", normalizeTodoArgs(args), true
+	case "作业":
+		if action == "列表" || action == "查看" {
+			rest = translateCommandFields(rest, homeworkFieldAliases)
+			return "homework", normalizeHomeworkArgs(rest), true
+		}
+		return "homework", normalizeHomeworkArgs(translateCommandFields(args, homeworkFieldAliases)), true
+	case "考试":
+		if action == "" {
+			return "exam", nil, true
+		}
+	case "课程":
+		switch action {
+		case "":
+			return help("课程")
+		case "搜索", "查询":
+			return "course_search", translateCommandFields(rest, courseFieldAliases), true
+		case "查看", "详情", "编号":
+			return "course_by_jw_id", rest, true
+		}
+	case "教学班", "班级":
+		switch action {
+		case "":
+			return help("教学班")
+		case "搜索", "查询":
+			return "section_search", translateCommandFields(rest, sectionFieldAliases), true
+		case "查看", "详情", "编号":
+			return "section_by_jw_id", rest, true
+		case "课表":
+			return "section_schedules", rest, true
+		case "考试":
+			return "section_exams", rest, true
+		case "作业":
+			return "section_homeworks", rest, true
+		}
+	case "老师", "教师":
+		switch action {
+		case "":
+			return help("老师")
+		case "搜索", "查询":
+			return "teacher_search", translateCommandFields(rest, teacherFieldAliases), true
+		case "查看", "详情", "编号":
+			return "teacher_by_id", rest, true
+		}
+	case "学期":
+		switch action {
+		case "", "当前":
+			return "semester", rest, true
+		case "列表":
+			return "list_semesters", rest, true
+		}
+	case "订阅":
+		switch action {
+		case "":
+			return "subscription", nil, true
+		case "列表", "查看":
+			return "my_subscribed_sections", rest, true
+		case "添加", "新增", "导入":
+			return "subscription", append([]string{"import"}, rest...), true
+		case "删除", "移除", "退订":
+			return "unsubscribe_section_by_jw_id", rest, true
+		case "链接", "日历":
+			return "subscription", []string{"link"}, true
+		}
+	case "校车":
+		switch action {
+		case "":
+			return "bus", nil, true
+		case "查询":
+			return "bus", rest, true
+		case "路线":
+			return "bus_routes", rest, true
+		case "偏好":
+			if len(rest) == 0 {
+				return "bus", []string{"偏好"}, true
+			}
+			switch commandToken(rest[0]) {
+			case "路线":
+				return "bus", append([]string{"设置"}, rest[1:]...), true
+			case "已发车", "南区":
+				return "bus", rest, true
+			}
+		}
+	case "账户", "账号":
+		switch action {
+		case "":
+			return help("账户")
+		case "信息", "我":
+			return "account", rest, true
+		case "登录":
+			return "login", normalizeLoginArgs(rest), true
+		case "登录状态":
+			return "login", []string{"status"}, true
+		case "退出", "登出":
+			return "logout", rest, true
+		case "状态":
+			return "status", rest, true
+		}
+	case "设置":
+		switch action {
+		case "":
+			return "settings", nil, true
+		case "通知", "提醒":
+			return "notify", normalizeNotifyArgs(rest), true
+		case "工具调用", "ai工具", "ai":
+			return "agent", normalizeAgentArgs(rest), true
+		}
+	case "系统":
+		switch action {
+		case "":
+			return help("系统")
+		case "状态":
+			return "status", rest, true
+		case "检查", "连通性":
+			return "ping", rest, true
+		}
+	}
+	return "", args, false
+}
+
+var homeworkFieldAliases = map[string]string{
+	"学期id":   "semester_id",
+	"学期jwid": "semester_jw_id",
+}
+
+var courseFieldAliases = map[string]string{
+	"关键词":    "keyword",
+	"培养层次":   "education_level_id",
+	"培养层次id": "education_level_id",
+	"类别":     "category_id",
+	"课程类别":   "category_id",
+	"类别id":   "category_id",
+	"课堂类型":   "class_type_id",
+	"类型":     "class_type_id",
+	"课堂类型id": "class_type_id",
+	"数量":     "limit",
+}
+
+var sectionFieldAliases = map[string]string{
+	"关键词":    "keyword",
+	"课程id":   "course_id",
+	"课程jwid": "course_jw_id",
+	"学期id":   "semester_id",
+	"学期jwid": "semester_jw_id",
+	"校区id":   "campus_id",
+	"院系id":   "department_id",
+	"老师id":   "teacher_id",
+	"老师代码":   "teacher_code",
+	"数量":     "limit",
+}
+
+var teacherFieldAliases = map[string]string{
+	"关键词":  "keyword",
+	"院系id": "department_id",
+	"数量":   "limit",
+}
+
+func translateCommandFields(args []string, aliases map[string]string) []string {
+	out := copyArgs(args)
+	for i, arg := range out {
+		if translated, ok := aliases[commandToken(arg)]; ok {
+			out[i] = translated
+		}
+	}
+	return out
+}
+
 func commandSpec(name string) (CommandSpec, bool) {
 	for _, spec := range commandSpecs {
 		if spec.Name == name {
@@ -614,6 +846,10 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 	switch key {
 	case "下一节课":
 		return "nextclass", nil, true
+	case "课程订阅":
+		return "subscription", normalizeSubscriptionArgs(args), true
+	case "订阅链接", "日历订阅链接", "subscriptionlink", "calendarlink":
+		return "subscription", []string{"link"}, true
 	case "校车偏好", "校车默认", "车偏好", "车默认", "xc偏好", "xc默认", "buspref", "busprefs", "buspreference", "buspreferences":
 		return "bus", []string{"偏好"}, true
 	case "校车设置", "车设置", "xc设置", "busset":
@@ -630,6 +866,9 @@ func joinedScheduleDay(key string) (string, bool) {
 			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
 				return day, true
 			}
+			if week, ok := normalizeScheduleWeekTarget(key[len(scheduleToken):]); ok {
+				return week, true
+			}
 			if date, ok := normalizeScheduleDateToken(key[len(scheduleToken):]); ok {
 				return date, true
 			}
@@ -637,6 +876,9 @@ func joinedScheduleDay(key string) (string, bool) {
 		if strings.HasSuffix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[:len(key)-len(scheduleToken)]); ok {
 				return day, true
+			}
+			if week, ok := normalizeScheduleWeekTarget(key[:len(key)-len(scheduleToken)]); ok {
+				return week, true
 			}
 			if date, ok := normalizeScheduleDateToken(key[:len(key)-len(scheduleToken)]); ok {
 				return date, true
@@ -648,7 +890,7 @@ func joinedScheduleDay(key string) (string, bool) {
 
 func normalizeScheduleDay(value string) (string, bool) {
 	switch value {
-	case "today", "今天", "今日":
+	case "today", "single-day", "singleday", "今天", "今日", "单日":
 		return "today", true
 	case "tomorrow", "明天", "明日":
 		return "tomorrow", true
@@ -665,7 +907,33 @@ func normalizeScheduleDateToken(value string) (string, bool) {
 	if _, ok := parseScheduleDateToken(value, chinaNow()); !ok {
 		return "", false
 	}
-	return "date:" + value, true
+	return "week-date:" + value, true
+}
+
+var scheduleWeekNumberPattern = regexp.MustCompile(`^第?([0-9]+)周$`)
+
+func normalizeScheduleWeekTarget(value string) (string, bool) {
+	value = normToken(value)
+	switch value {
+	case "thisweek", "本周", "这周", "本星期", "这个星期":
+		return "this-week", true
+	case "nextweek", "下周", "下星期", "下个星期":
+		return "next-week", true
+	}
+	plainValue := textutil.PlainDigits(value)
+	if matches := scheduleWeekNumberPattern.FindStringSubmatch(plainValue); len(matches) == 2 {
+		week, err := strconv.Atoi(matches[1])
+		if err == nil && week > 0 {
+			return "week-number:" + strconv.Itoa(week), true
+		}
+	}
+	if strings.HasSuffix(value, "周") {
+		dateValue := strings.TrimSpace(strings.TrimSuffix(value, "周"))
+		if _, ok := parseScheduleDateToken(dateValue, chinaNow()); ok {
+			return "week-date:" + dateValue, true
+		}
+	}
+	return "", false
 }
 
 func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
@@ -718,6 +986,8 @@ func normalizeSubscriptionArgs(args []string) []string {
 	switch normToken(args[0]) {
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
 		return withFirstArg(args, "import")
+	case "link", "url", "calendar", "ical", "链接", "日历", "订阅链接":
+		return withFirstArg(args, "link")
 	}
 	return args
 }
@@ -748,7 +1018,7 @@ func normalizeTodoArgs(args []string) []string {
 		return withFirstArg(args, "add")
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
-	case "undo", "undone", "reopen", "reset", "取消", "撤销":
+	case "undo", "undone", "reopen", "reset", "取消", "撤销", "恢复":
 		return withFirstArg(args, "undo")
 	case "delete", "del", "remove", "rm", "删除":
 		return withFirstArg(args, "delete")
@@ -776,7 +1046,7 @@ func normalizeHomeworkArgs(args []string) []string {
 	switch normToken(args[0]) {
 	case "done", "finish", "complete", "ok", "x", "完成", "好了":
 		return withFirstArg(args, "done")
-	case "undo", "undone", "reset", "取消", "撤销":
+	case "undo", "undone", "reset", "取消", "撤销", "恢复":
 		return withFirstArg(args, "undo")
 	case "pending", "未完成":
 		return withFirstArg(args, "pending")
@@ -795,6 +1065,9 @@ func normalizeScheduleArgs(args []string) []string {
 	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
 		return withFirstArg(args, day)
+	}
+	if week, ok := normalizeScheduleWeekTarget(args[0]); ok {
+		return withFirstArg(args, week)
 	}
 	if date, ok := normalizeScheduleDateToken(args[0]); ok {
 		return withFirstArg(args, date)
@@ -1000,6 +1273,10 @@ func firstArgIs(args []string, value string) bool {
 	return hasArgs(args) && args[0] == value
 }
 
+func firstArgIsHelp(args []string) bool {
+	return hasArgs(args) && isHelpToken(args[0])
+}
+
 func firstArgIn(args []string, values ...string) bool {
 	if !hasArgs(args) {
 		return false
@@ -1014,29 +1291,6 @@ func firstArgIn(args []string, values ...string) bool {
 
 func joinedArgs(args []string) string {
 	return textutil.JoinNonEmpty(" ", args...)
-}
-
-func (h Handler) help() string {
-	return strings.Join([]string{
-		"Life @ USTC 命令：",
-		"",
-		"校园信息",
-		"学期；课程 数学分析；教学班 高等数学；老师 张；校车",
-		"",
-		"我的工作区",
-		"日程；课表；下一节课；待办；作业；考试；订阅",
-		"",
-		"社区",
-		"反馈 <你的建议>",
-		"",
-		"账户与设置",
-		"账户；登录；退出；设置；设置 通知；设置 AI 工具",
-		"",
-		"系统",
-		"状态；帮助",
-		"",
-		"快捷词仅作为别名，例如：td、hw、xc、kb、ddl、status。",
-	}, "\n")
 }
 
 func (h Handler) feedback(ctx context.Context, ident store.Identity, args []string) string {
@@ -1069,18 +1323,23 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	}
 	message := formatFeedbackMessage(ident, text, contextText, feedbackID)
 	sent := 0
+	feedbackPlatform := strings.TrimSpace(h.FeedbackPlatform)
+	if feedbackPlatform == "" {
+		feedbackPlatform = ident.Platform
+	}
 	for _, userID := range h.FeedbackUsers {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
 		}
 		if err := h.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			UserID:           userID,
 			ConversationType: "private",
 			ConversationID:   userID,
 		}, message); err != nil {
-			h.logf("send feedback failed: id=%d platform=%s target=private:%s error=%v", feedbackID, ident.Platform, userID, err)
+			h.logf("send feedback failed: id=%d source_platform=%s target_platform=%s target=private:%s error=%v",
+				feedbackID, ident.Platform, feedbackPlatform, userID, err)
 			continue
 		}
 		sent++
@@ -1091,11 +1350,12 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 			continue
 		}
 		if err := h.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			ConversationType: "group",
 			ConversationID:   groupID,
 		}, message); err != nil {
-			h.logf("send feedback failed: id=%d platform=%s target=group:%s error=%v", feedbackID, ident.Platform, groupID, err)
+			h.logf("send feedback failed: id=%d source_platform=%s target_platform=%s target=group:%s error=%v",
+				feedbackID, ident.Platform, feedbackPlatform, groupID, err)
 			continue
 		}
 		sent++
@@ -1123,21 +1383,34 @@ func (h Handler) feedbackContext(ctx context.Context, ident store.Identity) stri
 }
 
 func formatFeedbackContext(interactions []store.Interaction) string {
-	lines := []string{}
-	for _, interaction := range interactions {
-		if strings.EqualFold(strings.TrimSpace(interaction.Command), "feedback") {
+	type contextTurn struct {
+		raw   string
+		reply string
+	}
+	selected := make([]contextTurn, 0, feedbackContextLimit)
+	for i := len(interactions) - 1; i >= 0; i-- {
+		interaction := interactions[i]
+		switch strings.ToLower(strings.TrimSpace(interaction.Command)) {
+		case "account", "feedback", "login", "status":
 			continue
 		}
 		raw := compactFeedbackContextText(interaction.RawText)
 		reply := compactFeedbackContextText(interaction.Reply)
-		if raw != "" {
-			lines = append(lines, "用户："+raw)
+		if raw == "" && reply == "" {
+			continue
 		}
-		if reply != "" {
-			lines = append(lines, "Bot："+reply)
-		}
-		if len(lines) >= feedbackContextLimit*2 {
+		selected = append(selected, contextTurn{raw: raw, reply: reply})
+		if len(selected) >= feedbackContextLimit {
 			break
+		}
+	}
+	lines := make([]string, 0, len(selected)*2)
+	for i := len(selected) - 1; i >= 0; i-- {
+		if selected[i].raw != "" {
+			lines = append(lines, "用户："+selected[i].raw)
+		}
+		if selected[i].reply != "" {
+			lines = append(lines, "Bot："+selected[i].reply)
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -1149,6 +1422,7 @@ func compactFeedbackContextText(text string) string {
 		return ""
 	}
 	text = strings.Join(strings.Fields(text), " ")
+	text = feedbackEmailPattern.ReplaceAllString(text, "[已隐藏邮箱]")
 	runes := []rune(text)
 	if len(runes) <= feedbackContextTextRunes {
 		return text
@@ -1249,6 +1523,7 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 			"待办用法：",
 			"待办",
 			"td",
+			"待办 列表 第2页",
 			"待办 add 写报告",
 			"td 写报告",
 			"td + 买咖啡",
@@ -1298,16 +1573,16 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 		}
 		return h.updateTodo(ctx, ident, token, args[1], args[2:])
 	}
-	if opts, ok, err := todoListOptionsFromArgs(args); ok {
+	if opts, page, ok, err := todoListQueryFromArgs(args); ok {
 		if err != nil {
 			return err.Error()
 		}
-		return h.listTodos(ctx, ident, token, opts)
+		return h.listTodos(ctx, ident, token, opts, page)
 	}
 	if hasArgs(args) {
 		return h.createTodo(ctx, ident, token, parseTodoCreateArgs(args))
 	}
-	return h.listTodos(ctx, ident, token, life.TodoListOptions{Completed: "false"})
+	return h.listTodos(ctx, ident, token, life.TodoListOptions{Completed: "false"}, 1)
 }
 
 func todoCompletionReply(title string) string {
@@ -1340,32 +1615,33 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token str
 	return "已加待办：" + opts.Title
 }
 
-func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions) string {
-	todos, err := h.todos(ctx, ident, token, opts)
+func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions, requestedPage int) string {
+	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return commandError("待办查不到：", err)
 	}
-	if len(todos) == 0 {
+	numbered, err := filterNumberedTodos(todos, opts)
+	if err != nil {
+		return err.Error()
+	}
+	if len(numbered) == 0 {
 		return "没有待办。"
 	}
-	lines := []string{"待办："}
-	for i, todo := range todos {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(todos)-i, false))
-			break
-		}
-		lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
+	command := func(page int) string {
+		return todoListPageCommand(opts, page)
 	}
-	return strings.Join(lines, "\n")
+	reply, ok := formatListPage("待办：", len(numbered), requestedPage, command, func(i int) string {
+		return formatNumberedLine(numbered[i].number, formatTodo(numbered[i].todo))
+	})
+	if !ok {
+		return listPageOutOfRange("待办", len(numbered), command)
+	}
+	return reply
 }
 
 func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, token, target string, completed bool) string {
-	completedFilter := "false"
-	if !completed {
-		completedFilter = "true"
-	}
 	targets := splitTodoTargets(target)
-	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{Completed: completedFilter})
+	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return commandError("待办查不到：", err)
 	}
@@ -1593,6 +1869,73 @@ func formatTodo(todo map[string]any) string {
 	return strings.TrimRight(strings.Join([]string{due, title}, "\t"), "\t")
 }
 
+type numberedTodo struct {
+	number int
+	todo   map[string]any
+}
+
+func filterNumberedTodos(todos []map[string]any, opts life.TodoListOptions) ([]numberedTodo, error) {
+	var dueBefore, dueAfter time.Time
+	var beforeSet, afterSet bool
+	if opts.DueBefore != "" {
+		dueBefore, beforeSet = parseTodoFilterTime(opts.DueBefore)
+		if !beforeSet {
+			return nil, errors.New("截止前日期格式不正确。例：2026-06-10")
+		}
+	}
+	if opts.DueAfter != "" {
+		dueAfter, afterSet = parseTodoFilterTime(opts.DueAfter)
+		if !afterSet {
+			return nil, errors.New("截止后日期格式不正确。例：2026-06-10")
+		}
+	}
+	out := make([]numberedTodo, 0, len(todos))
+	for i, todo := range todos {
+		completed, _ := todo["completed"].(bool)
+		switch opts.Completed {
+		case "false":
+			if completed {
+				continue
+			}
+		case "true":
+			if !completed {
+				continue
+			}
+		}
+		if opts.Priority != "" && lifedata.FirstString(todo, "priority") != opts.Priority {
+			continue
+		}
+		if beforeSet || afterSet {
+			due, ok := lifedata.ParseAPITime(lifedata.FirstString(todo, "dueAt"))
+			if !ok || beforeSet && !due.Before(dueBefore) || afterSet && due.Before(dueAfter) {
+				continue
+			}
+		}
+		out = append(out, numberedTodo{number: i + 1, todo: todo})
+	}
+	return out, nil
+}
+
+func parseTodoFilterTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		return parsed, true
+	}
+	return lifedata.ParseAPITime(value)
+}
+
+func todoListQueryFromArgs(args []string) (life.TodoListOptions, int, bool, error) {
+	if _, ok, err := todoListOptionsFromArgs(args); !ok || err != nil {
+		return life.TodoListOptions{}, 1, ok, err
+	}
+	listArgs, page, err := extractListPage(args)
+	if err != nil {
+		return life.TodoListOptions{}, page, true, err
+	}
+	opts, _, err := todoListOptionsFromArgs(listArgs)
+	return opts, page, true, err
+}
+
 func todoListOptionsFromArgs(args []string) (life.TodoListOptions, bool, error) {
 	if len(args) == 0 {
 		return life.TodoListOptions{}, false, nil
@@ -1655,6 +1998,32 @@ func todoListOptionsFromArgs(args []string) (life.TodoListOptions, bool, error) 
 		}
 	}
 	return opts, true, nil
+}
+
+func todoListPageCommand(opts life.TodoListOptions, page int) string {
+	parts := []string{"待办", "列表"}
+	switch opts.Completed {
+	case "":
+		parts = append(parts, "全部")
+	case "true":
+		parts = append(parts, "已完成")
+	default:
+		parts = append(parts, "未完成")
+	}
+	if opts.Priority != "" {
+		priority := map[string]string{"low": "低", "medium": "中", "high": "高"}[opts.Priority]
+		if priority == "" {
+			priority = opts.Priority
+		}
+		parts = append(parts, "优先级", priority)
+	}
+	if opts.DueBefore != "" {
+		parts = append(parts, "截止前", opts.DueBefore)
+	}
+	if opts.DueAfter != "" {
+		parts = append(parts, "截止后", opts.DueAfter)
+	}
+	return strings.Join(append(parts, fmt.Sprintf("第%d页", page)), " ")
 }
 
 func parseTodoCreateArgs(args []string) life.TodoCreateOptions {
@@ -1801,17 +2170,17 @@ func (h Handler) overview(ctx context.Context, ident store.Identity) string {
 
 func formatOverview(now time.Time, schedules []map[string]any, todos []map[string]any, homeworks []map[string]any, exams []subscriptionExam) string {
 	lines := []string{textutil.MonospaceDigits(now.In(lifedata.ChinaLocation()).Format("01-02")) + " 安排："}
-	lines = appendOverviewSection(lines, "今日课表", schedules, formatSchedule)
-	lines = appendOverviewSection(lines, "待办", todos, formatTodo)
-	lines = appendOverviewSection(lines, "近期作业", homeworks, formatHomework)
-	lines = appendOverviewSection(lines, "考试", exams, formatExam)
+	lines = appendOverviewSection(lines, "今日课表", schedules, formatSchedule, "课表 单日 今天")
+	lines = appendOverviewSection(lines, "待办", todos, formatTodo, "待办")
+	lines = appendOverviewSection(lines, "近期作业", homeworks, formatHomework, "作业")
+	lines = appendOverviewSection(lines, "考试", exams, formatExam, "考试")
 	if len(lines) == 1 {
 		return lines[0] + "\n暂无安排。"
 	}
 	return strings.Join(lines, "\n")
 }
 
-func appendOverviewSection[T any](lines []string, title string, items []T, format func(T) string) []string {
+func appendOverviewSection[T any](lines []string, title string, items []T, format func(T) string, command string) []string {
 	if len(items) == 0 {
 		return lines
 	}
@@ -1819,14 +2188,11 @@ func appendOverviewSection[T any](lines []string, title string, items []T, forma
 		lines = append(lines, "")
 	}
 	lines = append(lines, fmt.Sprintf("%s (%d)：", title, len(items)))
-	for i, item := range items {
-		if i >= 3 {
-			lines = append(lines, moreLine(len(items)-i, true))
-			break
-		}
+	shown := min(len(items), 3)
+	for i, item := range items[:shown] {
 		lines = append(lines, formatNumberedLine(i+1, format(item)))
 	}
-	return lines
+	return appendListOverflow(lines, len(items), shown, command)
 }
 
 func dueSoonHomeworks(homeworks []map[string]any, now time.Time) []map[string]any {
@@ -1849,6 +2215,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		return strings.Join([]string{
 			"作业用法：",
 			"作业",
+			"作业 列表 第2页",
 			"作业 all",
 			"作业 pending",
 			"作业 semester_id <学期ID>",
@@ -1885,32 +2252,49 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		return h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
 	}
-	listArgs := parseHomeworkListArgs(args)
+	listArgs, err := parseHomeworkListArgs(args)
+	if err != nil {
+		return err.Error()
+	}
 	homeworks, err := h.homeworks(ctx, ident, token)
 	if err != nil {
 		return commandError("作业查不到：", err)
 	}
-	if listArgs.semesterID > 0 || listArgs.semesterJwID > 0 {
-		homeworks = filterHomeworksBySemester(homeworks, listArgs.semesterID, listArgs.semesterJwID)
-	}
-	homeworks = filterHomeworks(homeworks, !listArgs.all)
-	if len(homeworks) == 0 {
+	numbered := filterNumberedHomeworks(homeworks, listArgs)
+	if len(numbered) == 0 {
 		if listArgs.all {
 			return "没有作业。"
 		}
 		return "没有未完成作业。"
 	}
-	return formatHomeworkList(homeworks)
+	command := func(page int) string {
+		return homeworkListPageCommand(listArgs, page)
+	}
+	page, ok := listPageFor(len(numbered), listArgs.page)
+	if !ok {
+		return listPageOutOfRange("作业", len(numbered), command)
+	}
+	return formatNumberedHomeworkListAt(
+		numbered[page.start:page.end],
+		chinaNow(),
+		pageNavigationLine(page, command),
+	)
 }
 
 type homeworkListArgs struct {
 	all          bool
 	semesterID   int64
 	semesterJwID int64
+	page         int
 }
 
-func parseHomeworkListArgs(args []string) homeworkListArgs {
-	var out homeworkListArgs
+func parseHomeworkListArgs(args []string) (homeworkListArgs, error) {
+	listArgs, page, err := extractListPage(args)
+	if err != nil {
+		return homeworkListArgs{}, err
+	}
+	args = listArgs
+	out := homeworkListArgs{page: page}
 	i := 0
 	if i < len(args) {
 		switch normToken(args[i]) {
@@ -1943,7 +2327,23 @@ func parseHomeworkListArgs(args []string) homeworkListArgs {
 		}
 		i++
 	}
-	return out
+	return out, nil
+}
+
+func homeworkListPageCommand(args homeworkListArgs, page int) string {
+	parts := []string{"作业", "列表"}
+	if args.all {
+		parts = append(parts, "全部")
+	} else {
+		parts = append(parts, "未完成")
+	}
+	if args.semesterID > 0 {
+		parts = append(parts, "学期ID", strconv.FormatInt(args.semesterID, 10))
+	}
+	if args.semesterJwID > 0 {
+		parts = append(parts, "学期JWID", strconv.FormatInt(args.semesterJwID, 10))
+	}
+	return strings.Join(append(parts, fmt.Sprintf("第%d页", page)), " ")
 }
 
 func homeworkSemesterIDs(homework map[string]any) (id, jwID int64) {
@@ -1958,18 +2358,25 @@ func homeworkSemesterIDs(homework map[string]any) (id, jwID int64) {
 	return int64(lifedata.FirstInt(semester, "id")), int64(lifedata.FirstInt(semester, "jwId"))
 }
 
-func filterHomeworksBySemester(homeworks []map[string]any, semesterID, semesterJwID int64) []map[string]any {
-	out := make([]map[string]any, 0, len(homeworks))
-	for _, homework := range homeworks {
-		id, jwID := homeworkSemesterIDs(homework)
-		if semesterID > 0 && id == semesterID {
-			out = append(out, homework)
+type numberedHomework struct {
+	number   int
+	homework map[string]any
+}
+
+func filterNumberedHomeworks(homeworks []map[string]any, args homeworkListArgs) []numberedHomework {
+	out := make([]numberedHomework, 0, len(homeworks))
+	for i, homework := range homeworks {
+		if !args.all && lifedata.HomeworkCompleted(homework) {
 			continue
 		}
-		if semesterJwID > 0 && jwID == semesterJwID {
-			out = append(out, homework)
-			continue
+		if args.semesterID > 0 || args.semesterJwID > 0 {
+			id, jwID := homeworkSemesterIDs(homework)
+			if args.semesterID > 0 && id != args.semesterID ||
+				args.semesterJwID > 0 && jwID != args.semesterJwID {
+				continue
+			}
 		}
+		out = append(out, numberedHomework{number: i + 1, homework: homework})
 	}
 	return out
 }
@@ -2051,7 +2458,7 @@ func (h Handler) homeworks(ctx context.Context, ident store.Identity, token stri
 	homeworks, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.SubscribedHomeworks(ctx, token)
 	})
-	lifedata.SortHomeworksByDue(homeworks)
+	sortHomeworksForDisplay(homeworks, chinaNow())
 	return homeworks, err
 }
 
@@ -2116,29 +2523,31 @@ func formatHomeworkList(homeworks []map[string]any) string {
 }
 
 func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
+	ordered := append([]map[string]any(nil), homeworks...)
+	sortHomeworksForDisplay(ordered, now)
+	numbered := make([]numberedHomework, len(ordered))
+	for i, homework := range ordered {
+		numbered[i] = numberedHomework{number: i + 1, homework: homework}
+	}
+	return formatNumberedHomeworkListAt(numbered, now, "")
+}
+
+func formatNumberedHomeworkListAt(homeworks []numberedHomework, now time.Time, pageLine string) string {
 	now = now.In(lifedata.ChinaLocation())
 	groups := []struct {
 		title string
-		items []map[string]any
+		items []numberedHomework
 	}{
 		{title: "已逾期"},
 		{title: "近期"},
 		{title: "未来"},
+		{title: "已完成"},
 	}
 	for _, homework := range homeworks {
-		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-		switch {
-		case ok && due.Before(now):
-			groups[0].items = append(groups[0].items, homework)
-		case !ok || !due.After(now.Add(7*24*time.Hour)):
-			groups[1].items = append(groups[1].items, homework)
-		default:
-			groups[2].items = append(groups[2].items, homework)
-		}
+		bucket := homeworkDisplayBucket(homework.homework, now)
+		groups[bucket].items = append(groups[bucket].items, homework)
 	}
 	lines := []string{"作业："}
-	index := 1
-	shown := 0
 	for _, group := range groups {
 		if len(group.items) == 0 {
 			continue
@@ -2148,16 +2557,35 @@ func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
 		}
 		lines = append(lines, group.title+"：")
 		for _, homework := range group.items {
-			if shown >= listDisplayLimit {
-				lines = append(lines, moreLine(len(homeworks)-shown, true))
-				return strings.Join(lines, "\n")
-			}
-			lines = append(lines, formatNumberedLine(index, formatHomework(homework)))
-			index++
-			shown++
+			lines = append(lines, formatNumberedLine(homework.number, formatHomework(homework.homework)))
 		}
 	}
+	if pageLine != "" {
+		lines = append(lines, pageLine)
+	}
 	return strings.Join(lines, "\n")
+}
+
+func sortHomeworksForDisplay(homeworks []map[string]any, now time.Time) {
+	lifedata.SortHomeworksByDue(homeworks)
+	sort.SliceStable(homeworks, func(i, j int) bool {
+		return homeworkDisplayBucket(homeworks[i], now) < homeworkDisplayBucket(homeworks[j], now)
+	})
+}
+
+func homeworkDisplayBucket(homework map[string]any, now time.Time) int {
+	if lifedata.HomeworkCompleted(homework) {
+		return 3
+	}
+	due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
+	switch {
+	case ok && due.Before(now):
+		return 0
+	case !ok || !due.After(now.Add(7*24*time.Hour)):
+		return 1
+	default:
+		return 2
+	}
 }
 
 var sectionCodePattern = regexp.MustCompile(`[A-Za-z0-9_.-]+\.[A-Za-z0-9]{2}`)
@@ -2167,6 +2595,8 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 		switch args[0] {
 		case "help":
 			return subscriptionHelp()
+		case "link":
+			return h.subscriptionCalendarLink(ctx, ident)
 		case "import":
 			return h.bulkSubscribeSections(ctx, ident, joinedArgs(args[1:]))
 		default:
@@ -2183,9 +2613,31 @@ func subscriptionHelp() string {
 	return strings.Join([]string{
 		"订阅用法：",
 		"订阅：查看当前教学班订阅",
+		"订阅 链接：查看私有日历订阅链接",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 	}, "\n")
+}
+
+func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Identity) string {
+	if !store.IsPrivateConversation(ident) {
+		return "订阅链接只能在私聊里查看。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.CurrentSubscription(ctx, token)
+	})
+	if err != nil {
+		return commandError("订阅链接查不到：", err)
+	}
+	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
+	if calendarURL == "" {
+		return "当前订阅没有可用的日历链接。"
+	}
+	return "日历订阅链接：\n" + calendarURL + "\n请勿公开或转发此链接。"
 }
 
 func (h Handler) settings(ctx context.Context, ident store.Identity, args []string) string {
@@ -2464,26 +2916,47 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if firstArgIs(args, "help") {
 		return strings.Join([]string{
 			"课表用法：",
-			"课表：查看今明两日",
-			"今天课表",
-			"明天课表",
-			"课表 6.23",
-			"课表 2022.05.03",
+			"课表 / 课表 本周：查看本周（周日至周六）",
+			"课表 下周",
+			"课表 第3周",
+			"课表 7.20周",
+			"课表 6.23：查看该日期所在周",
+			"课表 2022.05.03：查看该日期所在周",
+			"今日课表 / 单日课表：只看今天",
 			"下一节课",
 		}, "\n")
 	}
-	target := "two-day"
+	target := "this-week"
 	if hasArgs(args) {
 		target = args[0]
 	}
 	day = day.In(lifedata.ChinaLocation())
-	if target == "two-day" {
-		return h.curriculumTwoDays(ctx, ident, day)
+	switch {
+	case target == "this-week":
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day))
+	case target == "next-week":
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7))
+	case strings.HasPrefix(target, "week-date:"):
+		parsed, ok := parseScheduleDateToken(strings.TrimPrefix(target, "week-date:"), day)
+		if !ok {
+			return "日期格式不太对。可以发：课表 7.20周"
+		}
+		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed))
+	case strings.HasPrefix(target, "week-number:"):
+		week, err := strconv.Atoi(strings.TrimPrefix(target, "week-number:"))
+		if err != nil || week < 1 {
+			return "周次格式不太对。可以发：课表 第3周"
+		}
+		start, err := h.academicWeekStart(ctx, week)
+		if err != nil {
+			return commandError("学期周次查不到：", err)
+		}
+		return h.curriculumWeek(ctx, ident, start)
 	}
-	title := "今天课表："
+	title := "今天 " + textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	if target == "tomorrow" {
 		day = day.AddDate(0, 0, 1)
-		title = "明天课表："
+		title = "明天 " + textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	} else if strings.HasPrefix(target, "date:") {
 		parsed, ok := parseScheduleDateToken(target, day)
 		if !ok {
@@ -2519,12 +2992,51 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 		return "今天没有课。"
 	}
 	lines := []string{title}
-	for i, schedule := range schedules {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(schedules)-i, true))
-			break
-		}
+	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func weekStartSunday(day time.Time) time.Time {
+	day = day.In(lifedata.ChinaLocation())
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	return start.AddDate(0, 0, -int(start.Weekday()))
+}
+
+func (h Handler) academicWeekStart(ctx context.Context, week int) (time.Time, error) {
+	semester, err := h.Life.CurrentSemester(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	start, ok := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
+	if !ok {
+		return time.Time{}, errors.New("当前学期缺少开始日期")
+	}
+	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), nil
+}
+
+func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time) string {
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	start = weekStartSunday(start)
+	end := start.AddDate(0, 0, 6)
+	schedules, _, err := h.schedulesForRange(ctx, ident, token, start, end)
+	if err != nil {
+		return commandError("课表查不到：", err)
+	}
+	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
+	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+	for offset := 0; offset < 7; offset++ {
+		if offset > 0 {
+			lines = append(lines, "")
+		}
+		day := start.AddDate(0, 0, offset)
+		daySchedules := lifedata.FilterSchedulesForDay(schedules, day)
+		lifedata.SortSchedulesByStart(daySchedules)
+		lines = append(lines, formatScheduleDay(weekdays[day.Weekday()]+" "+day.Format("01-02"), daySchedules)...)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -2539,36 +3051,12 @@ func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity
 	return len(lifedata.SubscriptionSectionIDs(subscription)) > 0, nil
 }
 
-func (h Handler) curriculumTwoDays(ctx context.Context, ident store.Identity, today time.Time) string {
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	todaySchedules, token, err := h.schedulesForDay(ctx, ident, token, today)
-	if err != nil {
-		return commandError("课表查不到：", err)
-	}
-	tomorrowSchedules, _, err := h.schedulesForDay(ctx, ident, token, today.AddDate(0, 0, 1))
-	if err != nil {
-		return commandError("课表查不到：", err)
-	}
-	lines := []string{"今明两日课表："}
-	lines = append(lines, formatScheduleDay("今天", todaySchedules)...)
-	lines = append(lines, "")
-	lines = append(lines, formatScheduleDay("明天", tomorrowSchedules)...)
-	return strings.Join(lines, "\n")
-}
-
 func formatScheduleDay(title string, schedules []map[string]any) []string {
 	lines := []string{title + "："}
 	if len(schedules) == 0 {
 		return append(lines, "没有课。")
 	}
-	for i, schedule := range schedules {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(schedules)-i, true))
-			break
-		}
+	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
 	}
 	return lines
@@ -2629,6 +3117,32 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 func (h Handler) subscribedSchedulesForDay(ctx context.Context, token string, day time.Time) ([]map[string]any, error) {
 	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
 	return h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+}
+
+func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, token string, start, end time.Time) ([]map[string]any, string, error) {
+	dateFrom, _ := lifedata.DayRFC3339Range(start)
+	_, dateTo := lifedata.DayRFC3339Range(end)
+	all, err := h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		all, err = h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+	}
+	if err == nil {
+		return all, token, nil
+	}
+	if !subscribedSchedulesFallbackError(err) {
+		return nil, token, err
+	}
+	all = nil
+	for day := weekStartSunday(start); !day.After(end); day = day.AddDate(0, 0, 1) {
+		daySchedules, refreshed, fetchErr := h.schedulesForDayBySections(ctx, ident, token, day)
+		token = refreshed
+		if fetchErr != nil {
+			return nil, token, fetchErr
+		}
+		all = append(all, daySchedules...)
+	}
+	return all, token, nil
 }
 
 func subscribedSchedulesFallbackError(err error) bool {
@@ -3212,8 +3726,12 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) sectionExams(ctx context.Context, ident store.Identity, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []string) string {
+	listArgs, requestedPage, err := extractListPage(args)
+	if err != nil {
+		return err.Error()
+	}
+	jwId, ok := parseIntArg(joinedArgs(listArgs))
 	if !ok {
 		return "需要提供教学班 JW ID。"
 	}
@@ -3239,19 +3757,24 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, raw str
 		wrapped[i] = subscriptionExam{exam: exam, section: section}
 	}
 	sortSubscriptionExams(wrapped)
-	lines := []string{"考试："}
-	for i, item := range wrapped {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(wrapped)-i, true))
-			break
-		}
-		lines = append(lines, formatNumberedLine(i+1, formatExam(item)))
+	command := func(page int) string {
+		return fmt.Sprintf("教学班 考试 %d 第%d页", jwId, page)
 	}
-	return strings.Join(lines, "\n")
+	reply, ok := formatListPage("考试：", len(wrapped), requestedPage, command, func(i int) string {
+		return formatNumberedLine(i+1, formatExam(wrapped[i]))
+	})
+	if !ok {
+		return listPageOutOfRange("考试", len(wrapped), command)
+	}
+	return reply
 }
 
-func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, args []string) string {
+	listArgs, requestedPage, err := extractListPage(args)
+	if err != nil {
+		return err.Error()
+	}
+	jwId, ok := parseIntArg(joinedArgs(listArgs))
 	if !ok {
 		return "需要提供教学班 JW ID。"
 	}
@@ -3269,20 +3792,30 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, raw
 	if len(homeworks) == 0 {
 		return "该教学班没有作业。"
 	}
-	lines := []string{"作业："}
-	for i, homework := range homeworks {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(homeworks)-i, true))
-			break
-		}
-		lines = append(lines, formatNumberedLine(i+1, formatHomework(homework)))
+	command := func(page int) string {
+		return fmt.Sprintf("教学班 作业 %d 第%d页", jwId, page)
 	}
-	return strings.Join(lines, "\n")
+	reply, ok := formatListPage("作业：", len(homeworks), requestedPage, command, func(i int) string {
+		return formatNumberedLine(i+1, formatHomework(homeworks[i]))
+	})
+	if !ok {
+		return listPageOutOfRange("作业", len(homeworks), command)
+	}
+	return reply
 }
 
 func dashboardItemSlice(data map[string]any, key string) []map[string]any {
 	container, _ := data[key].(map[string]any)
 	return lifedata.MapSlice(container["items"])
+}
+
+func dashboardItemTotal(data map[string]any, key string, itemCount int) int {
+	container, _ := data[key].(map[string]any)
+	total := lifedata.FirstInt(container, "total")
+	if total < itemCount {
+		return itemCount
+	}
+	return total
 }
 
 func (h Handler) myDashboard(ctx context.Context, ident store.Identity) string {
@@ -3322,43 +3855,45 @@ func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, ar
 func formatDashboard(data map[string]any, title string) string {
 	lines := []string{title + "："}
 	dueTodos := dashboardItemSlice(data, "dueTodos")
-	if len(dueTodos) > 0 {
-		lines = append(lines, "", fmt.Sprintf("待办 (%d)：", len(dueTodos)))
-		for i, todo := range dueTodos {
-			if i >= listDisplayLimit {
-				lines = append(lines, moreLine(len(dueTodos)-i, true))
-				break
-			}
+	dueTodoTotal := dashboardItemTotal(data, "dueTodos", len(dueTodos))
+	if dueTodoTotal > 0 {
+		lines = append(lines, "", fmt.Sprintf("待办 (%d)：", dueTodoTotal))
+		for i, todo := range dueTodos[:min(len(dueTodos), summaryDisplayLimit)] {
 			lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
 		}
+		lines = appendListOverflow(lines, dueTodoTotal, min(len(dueTodos), summaryDisplayLimit), "待办")
 	}
 	homeworks := dashboardItemSlice(data, "homeworks")
-	if len(homeworks) > 0 {
-		lines = append(lines, "", fmt.Sprintf("作业 (%d)：", len(homeworks)))
-		for i, homework := range homeworks {
-			if i >= listDisplayLimit {
-				lines = append(lines, moreLine(len(homeworks)-i, true))
-				break
-			}
+	homeworkTotal := dashboardItemTotal(data, "homeworks", len(homeworks))
+	if homeworkTotal > 0 {
+		lines = append(lines, "", fmt.Sprintf("作业 (%d)：", homeworkTotal))
+		for i, homework := range homeworks[:min(len(homeworks), summaryDisplayLimit)] {
 			lines = append(lines, formatNumberedLine(i+1, formatHomework(homework)))
 		}
+		lines = appendListOverflow(lines, homeworkTotal, min(len(homeworks), summaryDisplayLimit), "作业")
 	}
 	exams := dashboardItemSlice(data, "exams")
-	if len(exams) > 0 {
-		lines = append(lines, "", fmt.Sprintf("考试 (%d)：", len(exams)))
-		for i, exam := range exams {
-			if i >= listDisplayLimit {
-				lines = append(lines, moreLine(len(exams)-i, true))
-				break
-			}
+	examTotal := dashboardItemTotal(data, "exams", len(exams))
+	if examTotal > 0 {
+		lines = append(lines, "", fmt.Sprintf("考试 (%d)：", examTotal))
+		for i, exam := range exams[:min(len(exams), summaryDisplayLimit)] {
 			sectionMap, _ := exam["section"].(map[string]any)
 			lines = append(lines, formatNumberedLine(i+1, formatExam(subscriptionExam{exam: exam, section: sectionMap})))
 		}
+		lines = appendListOverflow(lines, examTotal, min(len(exams), summaryDisplayLimit), "考试")
 	}
 	if len(lines) == 1 {
 		return title + "\n暂无近期截止。"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func appendListOverflow(lines []string, total, shown int, command string) []string {
+	if total <= shown {
+		return lines
+	}
+	line := fmt.Sprintf("另有 %d 条，发送「%s」查看完整列表。", total-shown, command)
+	return append(lines, textutil.MonospaceDigits(line))
 }
 
 func (h Handler) currentSemester(ctx context.Context) string {
@@ -3433,7 +3968,14 @@ func (h Handler) searchTeachers(ctx context.Context, keyword string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) exams(ctx context.Context, ident store.Identity) string {
+func (h Handler) exams(ctx context.Context, ident store.Identity, args []string) string {
+	listArgs, requestedPage, pageErr := extractListPage(args)
+	if pageErr != nil {
+		return pageErr.Error()
+	}
+	if len(listArgs) > 0 {
+		return "考试分页用法：考试 第2页"
+	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -3449,15 +3991,16 @@ func (h Handler) exams(ctx context.Context, ident store.Identity) string {
 		return "没有订阅课程考试。"
 	}
 	sortSubscriptionExams(exams)
-	lines := []string{"考试："}
-	for i, exam := range exams {
-		if i >= listDisplayLimit {
-			lines = append(lines, moreLine(len(exams)-i, true))
-			break
-		}
-		lines = append(lines, formatNumberedLine(i+1, formatExam(exam)))
+	command := func(page int) string {
+		return fmt.Sprintf("考试 第%d页", page)
 	}
-	return strings.Join(lines, "\n")
+	reply, ok := formatListPage("考试：", len(exams), requestedPage, command, func(i int) string {
+		return formatNumberedLine(i+1, formatExam(exams[i]))
+	})
+	if !ok {
+		return listPageOutOfRange("考试", len(exams), command)
+	}
+	return reply
 }
 
 func (h Handler) status(ctx context.Context, ident store.Identity) string {
@@ -3639,14 +4182,96 @@ func paddedCourseCode(code string) string {
 
 const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
-const listDisplayLimit = 8
+const fullListPageSize = 30
+const summaryDisplayLimit = 8
 
-func moreLine(count int, monospace bool) string {
-	line := fmt.Sprintf("...and %d more", count)
-	if monospace {
-		return textutil.MonospaceDigits(line)
+type listPage struct {
+	number int
+	total  int
+	start  int
+	end    int
+}
+
+func extractListPage(args []string) ([]string, int, error) {
+	remaining := make([]string, 0, len(args))
+	page := 1
+	found := false
+	for i := 0; i < len(args); i++ {
+		token := normToken(args[i])
+		rawPage := ""
+		switch {
+		case token == "page" || token == "页":
+			if i+1 >= len(args) {
+				return nil, page, errors.New("缺少页码。例如：第2页")
+			}
+			i++
+			rawPage = args[i]
+		case strings.HasPrefix(token, "第") && strings.HasSuffix(token, "页"):
+			rawPage = strings.TrimSuffix(strings.TrimPrefix(token, "第"), "页")
+		case strings.HasSuffix(token, "页"):
+			rawPage = strings.TrimSuffix(token, "页")
+		default:
+			remaining = append(remaining, args[i])
+			continue
+		}
+		if found {
+			return nil, page, errors.New("一次只能指定一个页码。")
+		}
+		parsed, err := strconv.Atoi(textutil.PlainDigits(strings.TrimSpace(rawPage)))
+		if err != nil || parsed < 1 {
+			return nil, page, errors.New("页码必须是大于 0 的整数。例如：第2页")
+		}
+		page = parsed
+		found = true
 	}
-	return line
+	return remaining, page, nil
+}
+
+func listPageFor(itemCount, requestedPage int) (listPage, bool) {
+	total := (itemCount + fullListPageSize - 1) / fullListPageSize
+	if total < 1 {
+		total = 1
+	}
+	if requestedPage < 1 || requestedPage > total {
+		return listPage{number: requestedPage, total: total}, false
+	}
+	start := (requestedPage - 1) * fullListPageSize
+	end := min(start+fullListPageSize, itemCount)
+	return listPage{number: requestedPage, total: total, start: start, end: end}, true
+}
+
+func formatListPage(title string, itemCount, requestedPage int, command func(int) string, line func(int) string) (string, bool) {
+	page, ok := listPageFor(itemCount, requestedPage)
+	if !ok {
+		return "", false
+	}
+	lines := []string{title}
+	for i := page.start; i < page.end; i++ {
+		lines = append(lines, line(i))
+	}
+	if navigation := pageNavigationLine(page, command); navigation != "" {
+		lines = append(lines, navigation)
+	}
+	return strings.Join(lines, "\n"), true
+}
+
+func pageNavigationLine(page listPage, command func(int) string) string {
+	if page.total <= 1 {
+		return ""
+	}
+	parts := []string{fmt.Sprintf("第 %d/%d 页", page.number, page.total)}
+	if page.number > 1 {
+		parts = append(parts, "上一页：发送「"+command(page.number-1)+"」")
+	}
+	if page.number < page.total {
+		parts = append(parts, "下一页：发送「"+command(page.number+1)+"」")
+	}
+	return textutil.MonospaceDigits(strings.Join(parts, " · "))
+}
+
+func listPageOutOfRange(label string, itemCount int, command func(int) string) string {
+	page, _ := listPageFor(itemCount, 1)
+	return fmt.Sprintf("%s只有 %d 页。发送「%s」查看最后一页。", label, page.total, command(page.total))
 }
 
 func chinaNow() time.Time {

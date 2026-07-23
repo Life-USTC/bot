@@ -94,7 +94,15 @@ func SchedulePlaceLabel(schedule map[string]any) string {
 	if place != "" {
 		return place
 	}
-	return NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+	room := NestedString(schedule, "room", "namePrimary", "nameCn", "name", "code")
+	campus := NestedPathString(schedule, []string{"room", "building", "campus"}, "namePrimary", "nameCn", "name", "code")
+	if campus == "" {
+		campus = NestedPathString(schedule, []string{"section", "campus"}, "namePrimary", "nameCn", "name", "code")
+	}
+	if campus == "" || strings.HasPrefix(room, campus) {
+		return room
+	}
+	return strings.TrimSpace(campus + " " + room)
 }
 
 func ScheduleTimeRange(schedule map[string]any) string {

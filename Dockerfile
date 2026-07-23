@@ -1,7 +1,7 @@
 FROM golang:1.25-bookworm AS build
 
 WORKDIR /src
-ENV GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=https://mirrors.aliyun.com/goproxy/,direct
 COPY go.mod go.sum ./
 RUN go mod download
 

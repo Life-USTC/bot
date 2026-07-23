@@ -12,11 +12,13 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
 type fakeSender struct {
 	messages  []string
+	images    []*responses.Image
 	failCount int
 }
 
@@ -26,6 +28,16 @@ func (s *fakeSender) SendMessage(ctx context.Context, ident store.Identity, mess
 		return fmt.Errorf("send failed")
 	}
 	s.messages = append(s.messages, message)
+	return nil
+}
+
+func (s *fakeSender) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
+	if s.failCount > 0 {
+		s.failCount--
+		return fmt.Errorf("send failed")
+	}
+	s.messages = append(s.messages, message)
+	s.images = append(s.images, image)
 	return nil
 }
 
@@ -105,11 +117,12 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	}
 	sender := &fakeSender{}
 	poller := &Poller{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
-		Store:  db,
-		Sender: sender,
-		Now:    func() time.Time { return now },
+		Life:                 life.NewClient(server.URL, server.Client()),
+		Auth:                 &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store:                db,
+		Sender:               sender,
+		Now:                  func() time.Time { return now },
+		EnableImageResponses: true,
 	}
 	poller.tick(ctx)
 	poller.tick(ctx)
@@ -121,6 +134,21 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	for _, want := range []string{"课前提醒：", "作业提醒：", "数据库系统", "Problem Set 𝟷"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("messages missing %q: %#v", want, sender.messages)
+		}
+	}
+	if len(sender.images) != 2 || sender.images[0] == nil || sender.images[0].Kind != "class_reminder" || sender.images[1] == nil || sender.images[1].Kind != "homework_reminder" {
+		t.Fatalf("images = %#v", sender.images)
+	}
+	if !strings.Contains(sender.images[0].RichText, "| 地点 | 时间 | 课程 |") || !strings.Contains(sender.images[0].RichText, "| 西区 3A204 | 14:20-15:55 | 数据库系统 |") {
+		t.Fatalf("class reminder rich text = %q", sender.images[0].RichText)
+	}
+	if !strings.Contains(sender.images[1].RichText, "| 截止 | 课程 | 作业 |") || !strings.Contains(sender.images[1].RichText, "| 06-08 10:00 | 数据库系统 | Problem Set 1 |") {
+		t.Fatalf("homework reminder rich text = %q", sender.images[1].RichText)
+	}
+	renderer := responses.Renderer{}
+	for _, image := range sender.images {
+		if _, _, _, err := renderer.RenderPNG(image); err != nil {
+			t.Fatalf("render %s notification: %v", image.Kind, err)
 		}
 	}
 }
@@ -174,6 +202,9 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	poller.tick(ctx)
 	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "作业提醒：") {
 		t.Fatalf("messages after retry = %#v", sender.messages)
+	}
+	if len(sender.images) != 1 || sender.images[0] != nil {
+		t.Fatalf("disabled image responses = %#v, want one nil image", sender.images)
 	}
 	poller.tick(ctx)
 	if len(sender.messages) != 1 {

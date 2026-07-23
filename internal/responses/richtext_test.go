@@ -74,6 +74,37 @@ func TestLayoutRichTextKeepsNodesInsideCanvasWithoutOverlap(t *testing.T) {
 	}
 }
 
+func TestLayoutRichTextCompactsHelpIntroBelowTitle(t *testing.T) {
+	doc := parseRichText(`# Bot 帮助
+发送「帮助 课表」可以查看「课表」命令的具体用法。
+
+## 常用
+| 命令 | 说明 |
+| --- | --- |
+| 日程 | 查看日程 |`)
+	layout := layoutRichText(doc, time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if len(layout.Nodes) < 2 {
+		t.Fatalf("layout nodes = %#v", layout.Nodes)
+	}
+	intro := layout.Nodes[0]
+	if intro.Bounds.Min.Y != 58 || intro.Bounds.Dy() != 24 || intro.RowHeight != 24 || !intro.Compact ||
+		!reflect.DeepEqual(intro.Lines, []string{
+			"发送「帮助 课表」可以查看「课表」命令的具体用法。",
+		}) {
+		t.Fatalf("intro node = %#v", intro)
+	}
+	if gap := layout.Nodes[1].Bounds.Min.Y - intro.Bounds.Max.Y; gap != layout.Metrics.BlockGap {
+		t.Fatalf("intro-to-table gap = %d, want %d", gap, layout.Metrics.BlockGap)
+	}
+	if got, want := richTitleX(layout), intro.Bounds.Min.X+layout.Metrics.TextPaddingX; got != want {
+		t.Fatalf("title x = %d, content x = %d", got, want)
+	}
+	regular := layoutRichText(parseRichText("# 待办\n\n买咖啡"), time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if got := richTitleX(regular); got != regular.Metrics.MarginX {
+		t.Fatalf("regular title x = %d, want margin %d", got, regular.Metrics.MarginX)
+	}
+}
+
 func TestNewTextImageRemovesDuplicateHeadingFromRichText(t *testing.T) {
 	img := NewTextImage("schedule", "今天课表", "今天课表：\n09:50 数据库系统")
 	if img.RichText != "# 今天课表\n\n09:50 数据库系统" {

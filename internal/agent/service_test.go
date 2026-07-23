@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,6 +131,56 @@ func TestNewUsesConfiguredTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("configured timeout was not used, elapsed = %s", elapsed)
+	}
+}
+
+func TestNewRetriesTransientChatCompletionTransportError(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if attempts.Add(1) == 1 {
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("response writer does not support hijacking")
+			}
+			conn, _, err := hijacker.Hijack()
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = conn.Close()
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-test",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	svc, err := New(context.Background(), Config{
+		Enabled: true,
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Model:   "test-model",
+		Timeout: time.Second,
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.Content != "ok" {
+		t.Fatalf("reply = %q", reply.Content)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d", attempts.Load())
 	}
 }
 
@@ -361,9 +412,10 @@ func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
 	var targets []store.Identity
 	var messages []string
 	svc := &Service{handler: commands.Handler{
-		Store:          db,
-		FeedbackUsers:  []string{"admin-openid"},
-		FeedbackGroups: []string{"group-openid"},
+		Store:            db,
+		FeedbackPlatform: "napcat",
+		FeedbackUsers:    []string{"admin-openid"},
+		FeedbackGroups:   []string{"group-openid"},
 		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
 			targets = append(targets, target)
 			messages = append(messages, message)
@@ -385,10 +437,10 @@ func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
 	if len(targets) != 2 {
 		t.Fatalf("targets = %#v", targets)
 	}
-	if targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
+	if targets[0].Platform != "napcat" || targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
 		t.Fatalf("private target = %#v", targets[0])
 	}
-	if targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
+	if targets[1].Platform != "napcat" || targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
 		t.Fatalf("group target = %#v", targets[1])
 	}
 	if !strings.Contains(messages[0], "LLM 反馈") || !strings.Contains(messages[0], "需要按日期查询课表") || !strings.Contains(messages[0], "编号：#1") {
@@ -485,6 +537,12 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
+	}
+	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, or service availability") {
+		t.Fatalf("instruction lacks grounding rule: %q", instruction)
+	}
+	if !strings.Contains(instruction, "Never ask whether to record feedback") {
+		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
 }
 

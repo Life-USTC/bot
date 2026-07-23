@@ -78,12 +78,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		modelName = "gpt-4o-mini"
 	}
 	baseURL := textutil.TrimTrailingSlash(cfg.BaseURL)
-	agentHTTPClient := httpClient
-	if httpClient != nil {
-		clone := *httpClient
-		clone.Timeout = timeout
-		agentHTTPClient = &clone
-	}
+	agentHTTPClient := newAgentHTTPClient(httpClient, timeout, cfg.Logger)
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
 		APIKey:     apiKey,
 		BaseURL:    baseURL,
@@ -391,18 +386,23 @@ func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity
 	}
 	message := formatAgentFeedbackMessage(ident, id, input)
 	sent := 0
+	feedbackPlatform := strings.TrimSpace(s.handler.FeedbackPlatform)
+	if feedbackPlatform == "" {
+		feedbackPlatform = ident.Platform
+	}
 	for _, userID := range s.handler.FeedbackUsers {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
 		}
 		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			UserID:           userID,
 			ConversationType: "private",
 			ConversationID:   userID,
 		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d platform=%s target=private:%s error=%v", id, ident.Platform, userID, err)
+			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=private:%s error=%v",
+				id, ident.Platform, feedbackPlatform, userID, err)
 			continue
 		}
 		sent++
@@ -413,11 +413,12 @@ func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity
 			continue
 		}
 		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         ident.Platform,
+			Platform:         feedbackPlatform,
 			ConversationType: "group",
 			ConversationID:   groupID,
 		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d platform=%s target=group:%s error=%v", id, ident.Platform, groupID, err)
+			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=group:%s error=%v",
+				id, ident.Platform, feedbackPlatform, groupID, err)
 			continue
 		}
 		sent++
@@ -600,12 +601,13 @@ Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown tables well. Do not use Markdown tables, horizontal rules, blockquotes, or heading markers. Use short plain-text lines and compact numbered lists.
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
+Never invent prices, menus, locations, schedules, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
 Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run.
 For bus planning after a class or event, pass the class/event end time to get_next_bus.after so the bus result is after that time.
 Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
-If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context.
+If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.

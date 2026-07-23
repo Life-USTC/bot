@@ -111,6 +111,9 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if img == nil || strings.TrimSpace(img.AltText) == "" {
 		return nil, 0, 0, errors.New("response image is empty")
 	}
+	if img.Grid != nil {
+		return r.renderScheduleGridPNG(img.Title, img.Grid)
+	}
 	if strings.TrimSpace(img.RichText) == "" {
 		return nil, 0, 0, errors.New("response rich text is empty")
 	}
@@ -933,6 +936,16 @@ func cardTheme(kind string) responseCardTheme {
 		theme.Accent = color.RGBA{234, 88, 12, 255}
 	case "schedule":
 		theme.Label = "课表"
+	case "homework":
+		theme.Label = "作业"
+	case "exam":
+		theme.Label = "考试"
+	case "nextclass":
+		theme.Label = "下一节"
+	case "class_reminder":
+		theme.Label = "课前提醒"
+	case "homework_reminder":
+		theme.Label = "作业提醒"
 	}
 	return theme
 }

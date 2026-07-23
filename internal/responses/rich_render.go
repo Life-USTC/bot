@@ -63,6 +63,8 @@ type richLayoutNode struct {
 	Header       []busStopHeader
 	Label        string
 	ColumnWidths []int
+	RowHeight    int
+	Compact      bool
 }
 
 type richLayout struct {
@@ -77,6 +79,9 @@ type richLayout struct {
 
 func layoutRichText(doc richDocument, now time.Time) richLayout {
 	m := defaultRichRenderMetrics()
+	if richDocumentHasCompactHelpIntro(doc) {
+		m.ContentTop = 58
+	}
 	isBus := richDocumentIsBus(doc)
 	tables := []busRenderTable{}
 	if isBus {
@@ -99,7 +104,8 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 	y := m.ContentTop
 	nodes := []richLayoutNode{}
 	lastGap := 0
-	for _, block := range doc.Blocks {
+	compactHelpIntro := richDocumentHasCompactHelpIntro(doc)
+	for blockIndex, block := range doc.Blocks {
 		if block.Table == nil {
 			lines := make([]string, 0, len(block.Lines))
 			for _, line := range block.Lines {
@@ -110,14 +116,21 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 			if block.Heading == "" && len(lines) == 0 {
 				continue
 			}
-			height := len(lines) * m.TextRowHeight
+			rowHeight := m.TextRowHeight
+			compact := compactHelpIntro && blockIndex == 0
+			if compact {
+				rowHeight = 24
+			}
+			height := len(lines) * rowHeight
 			if block.Heading != "" {
 				height += m.TableHeaderHeight
 			}
 			nodes = append(nodes, richLayoutNode{
-				Bounds:  image.Rect(m.MarginX, y, m.MarginX+measureRichBlockWidth(block, m), y+height),
-				Heading: block.Heading,
-				Lines:   lines,
+				Bounds:    image.Rect(m.MarginX, y, m.MarginX+measureRichBlockWidth(block, m), y+height),
+				Heading:   block.Heading,
+				Lines:     lines,
+				RowHeight: rowHeight,
+				Compact:   compact,
 			})
 			y += height + m.BlockGap
 			lastGap = m.BlockGap
@@ -155,6 +168,22 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		NextWait: nextWait,
 		FooterY:  footerY,
 	}
+}
+
+func richDocumentHasCompactHelpIntro(doc richDocument) bool {
+	return doc.Title == "Bot 帮助" &&
+		len(doc.Blocks) > 1 &&
+		doc.Blocks[0].Heading == "" &&
+		doc.Blocks[0].Table == nil &&
+		len(doc.Blocks[0].Lines) == 1
+}
+
+func richTitleX(layout richLayout) int {
+	x := layout.Metrics.MarginX
+	if len(layout.Nodes) > 0 && layout.Nodes[0].Compact {
+		x += layout.Metrics.TextPaddingX
+	}
+	return x
 }
 
 func richDocumentHasOnlyTables(doc richDocument) bool {
@@ -501,7 +530,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	accent := color.RGBA{15, 118, 110, 255}
 	drawRect(canvas, canvas.Bounds(), bg)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.15)
-	drawMixedText(canvas, faces.Title, faces.TitleMono, s(layout.Metrics.MarginX), s(layout.Metrics.TitleBaseline), layout.Title, ink)
+	drawMixedText(canvas, faces.Title, faces.TitleMono, s(richTitleX(layout)), s(layout.Metrics.TitleBaseline), layout.Title, ink)
 	if layout.NextTime != "" {
 		right := s(layout.Space.Width - layout.Metrics.MarginX)
 		drawRightMixedText(canvas, faces.Next, faces.NextMono, right, s(layout.Metrics.TitleBaseline-18), "下一班 "+layout.NextTime, muted)
@@ -533,10 +562,14 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 			}
 		}
 		for i, text := range node.Lines {
-			lineY := rowY + i*s(layout.Metrics.TextRowHeight)
-			drawMixedText(canvas, faces.Body, faces.BodyMono, x+s(layout.Metrics.TextPaddingX), lineY+s(layout.Metrics.TextRowHeight/2+5), text, ink)
-			if i < len(node.Lines)-1 {
-				separatorY := lineY + s(layout.Metrics.TextRowHeight)
+			rowHeight := node.RowHeight
+			if rowHeight <= 0 {
+				rowHeight = layout.Metrics.TextRowHeight
+			}
+			lineY := rowY + i*s(rowHeight)
+			drawMixedText(canvas, faces.Body, faces.BodyMono, x+s(layout.Metrics.TextPaddingX), lineY+s(rowHeight/2+5), text, ink)
+			if i < len(node.Lines)-1 && !node.Compact {
+				separatorY := lineY + s(rowHeight)
 				drawRect(canvas, image.Rect(x, separatorY, s(node.Bounds.Max.X), separatorY+layout.Space.Scale), line)
 			}
 		}

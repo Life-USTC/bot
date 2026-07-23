@@ -51,25 +51,43 @@ type LoginSession struct {
 }
 
 type Interaction struct {
-	Direction string
-	RawText   string
-	Command   string
-	Args      string
-	Handled   bool
-	Reply     string
-	Status    string
-	Error     string
-	CreatedAt time.Time
+	Direction         string
+	RawText           string
+	Command           string
+	Args              string
+	Handled           bool
+	Reply             string
+	Status            string
+	Error             string
+	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
+	AcceptedAt        time.Time
+	CreatedAt         time.Time
+}
+
+type MessageAcceptance struct {
+	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
+	AcceptedAt        time.Time
 }
 
 const (
 	InteractionDirectionInbound  = "inbound"
 	InteractionDirectionOutbound = "outbound"
 
-	InteractionStatusHandled = "handled"
-	InteractionStatusIgnored = "ignored"
-	InteractionStatusSent    = "sent"
-	InteractionStatusFailed  = "failed"
+	InteractionStatusHandled  = "handled"
+	InteractionStatusIgnored  = "ignored"
+	InteractionStatusAccepted = "accepted"
+	InteractionStatusUnknown  = "unknown"
+	// InteractionStatusSent is retained for existing records and callers.
+	InteractionStatusSent   = "sent"
+	InteractionStatusFailed = "failed"
+
+	DeliveryMethodMediaUpload = "media_upload"
+	DeliveryMethodMediaCache  = "media_cache"
+	DeliveryMethodForward     = "forward"
 )
 
 type NotificationSettings struct {
@@ -121,6 +139,16 @@ type PendingConfirmation struct {
 	Command   string
 	Source    string
 	Status    string
+	ExpiresAt time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type PublicCommandCacheEntry struct {
+	Version   string
+	Command   string
+	Args      string
+	Response  string
 	ExpiresAt time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -214,20 +242,24 @@ func (conversationStateRow) TableName() string {
 }
 
 type interactionRow struct {
-	ID               int64  `gorm:"primaryKey"`
-	Platform         string `gorm:"not null;index:idx_interactions_conversation_created"`
-	ConversationType string `gorm:"not null;index:idx_interactions_conversation_created"`
-	ConversationID   string `gorm:"not null;index:idx_interactions_conversation_created"`
-	UserID           string `gorm:"not null"`
-	Direction        string `gorm:"not null;default:inbound"`
-	RawText          string `gorm:"not null"`
-	Command          string
-	Args             string
-	Handled          bool `gorm:"not null"`
-	Reply            string
-	Status           string
-	Error            string
-	CreatedAt        time.Time `gorm:"index:idx_interactions_conversation_created"`
+	ID                int64  `gorm:"primaryKey"`
+	Platform          string `gorm:"not null;index:idx_interactions_conversation_created"`
+	ConversationType  string `gorm:"not null;index:idx_interactions_conversation_created"`
+	ConversationID    string `gorm:"not null;index:idx_interactions_conversation_created"`
+	UserID            string `gorm:"not null"`
+	Direction         string `gorm:"not null;default:inbound"`
+	RawText           string `gorm:"not null"`
+	Command           string
+	Args              string
+	Handled           bool `gorm:"not null"`
+	Reply             string
+	Status            string
+	Error             string
+	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
+	AcceptedAt        *time.Time
+	CreatedAt         time.Time `gorm:"index:idx_interactions_conversation_created"`
 }
 
 func (interactionRow) TableName() string {
@@ -349,6 +381,21 @@ func (pendingConfirmationRow) TableName() string {
 	return "pending_confirmations"
 }
 
+type publicCommandCacheRow struct {
+	ID        int64     `gorm:"primaryKey"`
+	Version   string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:1"`
+	Command   string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:2"`
+	Args      string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:3"`
+	Response  string    `gorm:"not null"`
+	ExpiresAt time.Time `gorm:"not null;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (publicCommandCacheRow) TableName() string {
+	return "public_command_cache"
+}
+
 func Open(path string) (*Store, error) {
 	if path == "" {
 		path = filepath.Join(".run", "life-ustc-bot.db")
@@ -400,7 +447,78 @@ func (s *Store) migrate() error {
 		&agentRunRow{},
 		&feedbackRecordRow{},
 		&pendingConfirmationRow{},
+		&publicCommandCacheRow{},
 	)
+}
+
+func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
+	version = strings.TrimSpace(version)
+	command = strings.TrimSpace(command)
+	if version == "" || command == "" {
+		return PublicCommandCacheEntry{}, false, errors.New("public command cache version and command are required")
+	}
+	if now.IsZero() {
+		now = nowUTC()
+	}
+	var row publicCommandCacheRow
+	err := s.db.WithContext(ctx).
+		Where("version = ? AND command = ? AND args = ? AND expires_at > ?", version, command, strings.TrimSpace(args), now.UTC()).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return PublicCommandCacheEntry{}, false, nil
+	}
+	if err != nil {
+		return PublicCommandCacheEntry{}, false, err
+	}
+	return PublicCommandCacheEntry{
+		Version:   row.Version,
+		Command:   row.Command,
+		Args:      row.Args,
+		Response:  row.Response,
+		ExpiresAt: row.ExpiresAt,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, true, nil
+}
+
+func (s *Store) SavePublicCommandCache(ctx context.Context, entry PublicCommandCacheEntry) error {
+	entry.Version = strings.TrimSpace(entry.Version)
+	entry.Command = strings.TrimSpace(entry.Command)
+	entry.Args = strings.TrimSpace(entry.Args)
+	if entry.Version == "" || entry.Command == "" || strings.TrimSpace(entry.Response) == "" || entry.ExpiresAt.IsZero() {
+		return errors.New("public command cache entry is incomplete")
+	}
+	now := nowUTC()
+	row := publicCommandCacheRow{
+		Version:   entry.Version,
+		Command:   entry.Command,
+		Args:      entry.Args,
+		Response:  entry.Response,
+		ExpiresAt: entry.ExpiresAt.UTC(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "version"}, {Name: "command"}, {Name: "args"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"response":   row.Response,
+			"expires_at": row.ExpiresAt,
+			"updated_at": row.UpdatedAt,
+		}),
+	}).Create(&row).Error
+}
+
+func (s *Store) PurgePublicCommandCache(ctx context.Context, version string, now time.Time) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return errors.New("public command cache version is required")
+	}
+	if now.IsZero() {
+		now = nowUTC()
+	}
+	return s.db.WithContext(ctx).
+		Where("version <> ? OR expires_at <= ?", version, now.UTC()).
+		Delete(&publicCommandCacheRow{}).Error
 }
 
 func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
@@ -792,20 +910,29 @@ func (s *Store) RecordInteraction(ctx context.Context, ident Identity, interacti
 		return err
 	}
 	ident = normalizeIdentity(ident)
+	var acceptedAt *time.Time
+	if !interaction.AcceptedAt.IsZero() {
+		value := interaction.AcceptedAt.UTC()
+		acceptedAt = &value
+	}
 	row := interactionRow{
-		Platform:         ident.Platform,
-		ConversationType: ident.ConversationType,
-		ConversationID:   ident.ConversationID,
-		UserID:           ident.UserID,
-		Direction:        interactionDirection(interaction.Direction),
-		RawText:          interaction.RawText,
-		Command:          strings.TrimSpace(interaction.Command),
-		Args:             strings.TrimSpace(interaction.Args),
-		Handled:          interaction.Handled,
-		Reply:            interaction.Reply,
-		Status:           strings.TrimSpace(interaction.Status),
-		Error:            strings.TrimSpace(interaction.Error),
-		CreatedAt:        nowUTC(),
+		Platform:          ident.Platform,
+		ConversationType:  ident.ConversationType,
+		ConversationID:    ident.ConversationID,
+		UserID:            ident.UserID,
+		Direction:         interactionDirection(interaction.Direction),
+		RawText:           interaction.RawText,
+		Command:           strings.TrimSpace(interaction.Command),
+		Args:              strings.TrimSpace(interaction.Args),
+		Handled:           interaction.Handled,
+		Reply:             interaction.Reply,
+		Status:            strings.TrimSpace(interaction.Status),
+		Error:             strings.TrimSpace(interaction.Error),
+		PlatformMessageID: strings.TrimSpace(interaction.PlatformMessageID),
+		DeliveryMethod:    textutil.LowerTrim(interaction.DeliveryMethod),
+		SourceMessageID:   strings.TrimSpace(interaction.SourceMessageID),
+		AcceptedAt:        acceptedAt,
+		CreatedAt:         nowUTC(),
 	}
 	return s.db.WithContext(ctx).Create(&row).Error
 }
@@ -844,18 +971,29 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 	for i := len(rows) - 1; i >= 0; i-- {
 		row := rows[i]
 		out = append(out, Interaction{
-			Direction: row.Direction,
-			RawText:   row.RawText,
-			Command:   row.Command,
-			Args:      row.Args,
-			Handled:   row.Handled,
-			Reply:     row.Reply,
-			Status:    row.Status,
-			Error:     row.Error,
-			CreatedAt: row.CreatedAt,
+			Direction:         row.Direction,
+			RawText:           row.RawText,
+			Command:           row.Command,
+			Args:              row.Args,
+			Handled:           row.Handled,
+			Reply:             row.Reply,
+			Status:            row.Status,
+			Error:             row.Error,
+			PlatformMessageID: row.PlatformMessageID,
+			DeliveryMethod:    row.DeliveryMethod,
+			SourceMessageID:   row.SourceMessageID,
+			AcceptedAt:        dereferenceTime(row.AcceptedAt),
+			CreatedAt:         row.CreatedAt,
 		})
 	}
 	return out, nil
+}
+
+func dereferenceTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func (s *Store) InteractionCount(ctx context.Context) (int64, error) {

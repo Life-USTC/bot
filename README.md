@@ -94,6 +94,8 @@ BOT_ONEBOT_HTTP_PORT=6700
 BOT_ONEBOT_ACCESS_TOKEN=
 BOT_COMMAND_PREFIX=/life
 BOT_DB_PATH=.run/life-ustc-bot.db
+BOT_BUILD_VERSION=dev
+BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS=300
 BOT_ENABLE_AGENT=false
 BOT_LLM_MODEL=gpt-4o-mini
 BOT_LLM_TIMEOUT_SECONDS=60
@@ -105,6 +107,7 @@ BOT_MEDIA_ADDR=127.0.0.1:2281
 BOT_IMAGE_FONT_PATH=
 BOT_MEDIA_TTL_SECONDS=300
 BOT_ALLOW_GROUP_PERSONAL_INFO=false
+BOT_FEEDBACK_ADMIN_PLATFORM=
 BOT_FEEDBACK_ADMIN_USERS=
 BOT_FEEDBACK_ADMIN_GROUPS=
 
@@ -130,6 +133,11 @@ QQ_BOT_WEBHOOK_ADDR=0.0.0.0:2290
 QQ_BOT_WEBHOOK_PATH=/qqbot
 ```
 
+Public, user-independent read commands are cached in SQLite for the configured
+TTL. `BOT_BUILD_VERSION` is part of every cache key, and `scripts/deploy-cn.sh`
+sets it to the deployed Git revision so a new deployment cannot reuse results
+from an older version.
+
 If a NapCat WebSocket server is configured instead, set `NAPCAT_WS_URL` and the
 bot will dial it. Otherwise it listens for NapCat reverse WebSocket connections.
 
@@ -147,9 +155,10 @@ sure the callback can reach `QQ_BOT_WEBHOOK_ADDR`. The websocket gateway can
 remain enabled for diagnostics, but it is not the primary receive path.
 
 Set `BOT_ENABLE_IMAGE_RESPONSES=true` plus `BOT_PUBLIC_BASE_URL=https://<public-host>`
-to let schedule, todo list, overview, dashboard, and upcoming-deadline replies
-send a short-lived PNG image before falling back to text. Route `/media/*` from
-the public host to `BOT_MEDIA_ADDR`. The runtime image installs
+to let schedule, next-class, todo list, homework list, exam list, overview,
+dashboard, upcoming-deadline, bus timetable, and reminder replies send a
+short-lived PNG image before falling back to text. Route `/media/*` from the
+public host to `BOT_MEDIA_ADDR`. The runtime image installs
 `fonts-noto-cjk` and `fonts-firacode`; set `BOT_IMAGE_FONT_PATH` only when
 overriding the default Chinese font.
 
@@ -166,7 +175,9 @@ commands such as todo add/done/delete, homework done/undo, login/logout, and
 notification changes are still blocked in groups.
 
 Set `BOT_FEEDBACK_ADMIN_USERS` and/or `BOT_FEEDBACK_ADMIN_GROUPS` to comma-,
-semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`.
+semicolon-, or space-separated QQ IDs to enable `反馈 ...` / `fb ...`. Set
+`BOT_FEEDBACK_ADMIN_PLATFORM` when all admin notifications should use one
+adapter, such as `napcat`.
 
 ## Test
 

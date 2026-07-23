@@ -1,6 +1,13 @@
 package responses
 
-import "strings"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+	"time"
+)
 
 type Image struct {
 	Kind     string
@@ -9,6 +16,60 @@ type Image struct {
 	RichText string
 	AltText  string
 	URL      string
+	Grid     *ScheduleGrid
+}
+
+type ScheduleGrid struct {
+	Days    []ScheduleGridDay
+	Periods []ScheduleGridPeriod
+	Items   []ScheduleGridItem
+}
+
+type ScheduleGridDay struct {
+	Label string
+	Date  string
+}
+
+type ScheduleGridPeriod struct {
+	Label string
+	Time  string
+}
+
+type ScheduleGridItem struct {
+	Day         int
+	StartPeriod int
+	EndPeriod   int
+	Course      string
+	Location    string
+}
+
+func (img *Image) cacheKey(now time.Time) (string, error) {
+	if img == nil {
+		return "", errors.New("response image is nil")
+	}
+	content := struct {
+		Date     string
+		Kind     string
+		Title    string
+		Lines    []string
+		RichText string
+		AltText  string
+		Grid     *ScheduleGrid
+	}{
+		Date:     now.In(time.FixedZone("CST", 8*60*60)).Format("2006-01-02"),
+		Kind:     img.Kind,
+		Title:    img.Title,
+		Lines:    img.Lines,
+		RichText: img.RichText,
+		AltText:  img.AltText,
+		Grid:     img.Grid,
+	}
+	data, err := json.Marshal(content)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func NewRichTextImage(kind, text, altText string) *Image {
@@ -44,6 +105,22 @@ func NewTextImage(kind, title, text string) *Image {
 		Lines:    lines,
 		RichText: legacyRichText(kind, title, lines),
 		AltText:  text,
+	}
+}
+
+func NewScheduleGridImage(kind, title string, grid *ScheduleGrid, altText string) *Image {
+	title = strings.TrimSpace(title)
+	altText = strings.TrimSpace(altText)
+	if grid == nil || len(grid.Days) == 0 || len(grid.Periods) == 0 || altText == "" {
+		return nil
+	}
+	return &Image{
+		Kind:     strings.TrimSpace(kind),
+		Title:    title,
+		RichText: "# " + title,
+		AltText:  altText,
+		Lines:    strings.Split(altText, "\n"),
+		Grid:     grid,
 	}
 }
 

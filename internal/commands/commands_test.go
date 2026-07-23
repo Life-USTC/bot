@@ -19,6 +19,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -36,6 +37,53 @@ func TestHandleCourseSearch(t *testing.T) {
 	}
 	if !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("unexpected reply %q", reply)
+	}
+}
+
+func TestHandlePublicCommandSharesCacheAcrossUsersAndAliases(t *testing.T) {
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
+	}))
+	defer server.Close()
+
+	stateStore, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stateStore.Close() }()
+	handler := Handler{
+		Life:        life.NewClient(server.URL, server.Client()),
+		Prefix:      "/life",
+		PublicCache: NewPublicCommandCache(stateStore, "version-a", time.Minute, nil),
+	}
+
+	first, ok := handler.Handle(context.Background(), Input{
+		Text: "/life course calculus",
+		Identity: store.Identity{
+			Platform: "napcat", UserID: "1", ConversationType: "private", ConversationID: "1",
+		},
+		SuppressLog: true,
+	})
+	if !ok {
+		t.Fatal("first command was not handled")
+	}
+	second, ok := handler.Handle(context.Background(), Input{
+		Text: "课程 calculus",
+		Identity: store.Identity{
+			Platform: "qqbot", UserID: "2", ConversationType: "private", ConversationID: "2",
+		},
+		SuppressLog: true,
+	})
+	if !ok {
+		t.Fatal("second command was not handled")
+	}
+	if first != second {
+		t.Fatalf("cached reply changed: first = %q, second = %q", first, second)
+	}
+	if got := atomic.LoadInt32(&requests); got != 1 {
+		t.Fatalf("upstream requests = %d, want 1", got)
 	}
 }
 
@@ -151,17 +199,197 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "我的工作区") || !strings.Contains(reply, "待办") {
+		if !strings.Contains(reply, "发送「帮助 课表」可以查看「课表」命令的具体用法。") ||
+			!strings.Contains(reply, "待办（td）\t查看和管理待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
 }
 
-func TestHelpReplyUsesDomainGroups(t *testing.T) {
+func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	reply := Handler{}.help()
-	for _, want := range []string{"校园信息", "我的工作区", "社区", "账户与设置", "系统", "快捷词仅作为别名"} {
+	for _, want := range []string{
+		"Bot 帮助：",
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
+		"常用：",
+		"账户与系统：",
+		"命令\t说明",
+		"日程\t今日安排、综合概览与近期截止",
+		"课表\t周课表、单日课表与下一节课",
+		"待办（td）\t查看和管理待办",
+		"作业（hw）\t查看和管理作业",
+		"校车（xc）\t查询班次、路线与设置偏好",
+		"设置\t管理通知与工具调用展示",
+	} {
 		if !strings.Contains(reply, want) {
-			t.Fatalf("reply = %q, missing %q", reply, want)
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	for _, unwanted := range []string{
+		"• ",
+		"├─",
+		"└─",
+		"课表 下周",
+		"待办 完成 1",
+		"作业 列表 学期ID",
+		"校车 东区 西区",
+		"教学班 搜索 老师代码",
+		"教学资源：",
+		"课程\t搜索或查看课程",
+	} {
+		if strings.Contains(reply, unwanted) {
+			t.Fatalf("overview contains detailed usage %q: %q", unwanted, reply)
+		}
+	}
+	if !strings.Contains(reply, "\n") || strings.ContainsAny(reply, "\r\x1b") {
+		t.Fatalf("reply separators = %q", reply)
+	}
+}
+
+func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	for _, text := range []string{"帮助 课表", "/help 课表", "/life help 课表", "课表 帮助", "帮助 kb"} {
+		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !ok {
+			t.Fatalf("%q was not handled", text)
+		}
+		for _, want := range []string{
+			"课表 帮助：",
+			"命令\t说明",
+			"课表 下周\t查看下周课表",
+			"课表 第3周\t查看指定教学周",
+			"课表 单日 今天\t只查看今天的课表",
+			"发送“帮助”返回命令总览。",
+		} {
+			if !strings.Contains(reply, want) {
+				t.Fatalf("%q reply missing %q: %q", text, want, reply)
+			}
+		}
+		if strings.Contains(reply, "待办 完成 1") {
+			t.Fatalf("%q reply contains another command's details: %q", text, reply)
+		}
+	}
+
+	reply, ok := handler.Handle(context.Background(), Input{Text: "帮助 不存在", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "没有找到一级命令“不存在”") {
+		t.Fatalf("unknown topic reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestShortcutAndLegacyHelpResolveToCanonicalTopics(t *testing.T) {
+	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "帮助 快捷入口", Identity: testIdentity()})
+	if !ok || response.Image == nil {
+		t.Fatalf("shortcut help response = %#v, ok = %v", response, ok)
+	}
+	for _, want := range []string{
+		"快捷入口 帮助：",
+		"今日课表（单日课表）\t相当于“课表 单日 今天”",
+		"登录\t相当于“账户 登录”",
+		"下一节课\t相当于“课表 下一节”",
+	} {
+		if !strings.Contains(response.Text, want) {
+			t.Fatalf("shortcut help missing %q: %q", want, response.Text)
+		}
+	}
+	if response.Image.Title != "快捷入口 帮助" {
+		t.Fatalf("shortcut help image title = %q", response.Image.Title)
+	}
+	assertResponseImageRenders(t, response.Image)
+
+	for _, text := range []string{"帮助 课程搜索", "帮助 course_search", "课程 帮助"} {
+		reply, handled := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+		if !handled || !strings.Contains(reply, "课程 帮助：") ||
+			!strings.Contains(reply, "课程 搜索 培养层次ID <ID>") ||
+			strings.Contains(reply, "education_level_id") {
+			t.Fatalf("%q canonical help reply = %q, handled = %v", text, reply, handled)
+		}
+	}
+}
+
+func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
+	overviewCount := map[string]int{}
+	for _, section := range helpOverviewSections() {
+		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
+			t.Fatalf("invalid overview section: %#v", section)
+		}
+		for _, row := range section.rows {
+			if strings.TrimSpace(row.command) == "" || strings.TrimSpace(row.description) == "" {
+				t.Fatalf("invalid overview row in %q: %#v", section.title, row)
+			}
+			if row.topic == "" {
+				t.Fatalf("overview row has no topic: %#v", row)
+			}
+			overviewCount[row.topic]++
+		}
+	}
+
+	detailCovered := map[string]bool{}
+	topicDetails := map[string]bool{}
+	for _, section := range helpDetailSections() {
+		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
+			t.Fatalf("invalid detail section: %#v", section)
+		}
+		for _, row := range section.rows {
+			if strings.TrimSpace(row.command) == "" || strings.TrimSpace(row.description) == "" {
+				t.Fatalf("invalid detail row in %q: %#v", section.title, row)
+			}
+			if strings.ContainsAny(row.command, "\t\r\n├└•") {
+				t.Fatalf("help command is not a flat table cell: %q", row.command)
+			}
+			if row.commandName == "" {
+				t.Fatalf("detail row has no command name: %#v", row)
+			}
+			detailCovered[row.commandName] = true
+			topicDetails[row.topic] = true
+			if strings.Contains(row.command, "<") {
+				continue
+			}
+			example := row.command
+			if start := strings.Index(example, "（"); start >= 0 && strings.HasSuffix(example, "）") {
+				example = strings.TrimSpace(example[:start])
+			}
+			cmd, ok := (Handler{}).parse(example)
+			if !ok || cmd.Name != row.commandName {
+				t.Errorf("help example %q parsed as %#v, want %q", row.command, cmd, row.commandName)
+			}
+		}
+	}
+	visibleTopics := map[string]bool{
+		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
+		"bus": true, "account": true, "settings": true, "system": true, "feedback": true,
+	}
+	if len(overviewCount) != len(visibleTopics) {
+		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))
+	}
+	for topic, count := range overviewCount {
+		if !visibleTopics[topic] {
+			t.Errorf("hidden topic %q appears in overview", topic)
+		}
+		if count != 1 {
+			t.Errorf("topic %q appears %d times in overview, want once", topic, count)
+		}
+		if !topicDetails[topic] {
+			t.Errorf("topic %q is missing detail help", topic)
+		}
+	}
+	if !topicDetails["shortcuts"] {
+		t.Error("shortcut detail help is missing")
+	}
+	for topic := range helpTopicTitles {
+		if topic != "shortcuts" && !topicDetails[topic] {
+			t.Errorf("topic %q is missing detail help", topic)
+		}
+	}
+	for _, spec := range CommandSpecs() {
+		topic, ok := internalHelpTopics[spec.Name]
+		if !ok {
+			t.Errorf("command %q is not assigned to a canonical topic", spec.Name)
+		} else if _, ok := helpTopicTitles[topic]; !ok {
+			t.Errorf("command %q maps to untitled topic %q", spec.Name, topic)
+		}
+		if !detailCovered[spec.Name] {
+			t.Errorf("command %q is missing detail help", spec.Name)
 		}
 	}
 }
@@ -271,6 +499,20 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"schedule":     true,
 		"feedback":     true,
 	}
+	publicCacheCommands := map[string]bool{
+		"semester":         true,
+		"course":           true,
+		"section":          true,
+		"teacher":          true,
+		"list_semesters":   true,
+		"course_search":    true,
+		"section_search":   true,
+		"teacher_search":   true,
+		"course_by_jw_id":  true,
+		"section_by_jw_id": true,
+		"teacher_by_id":    true,
+		"bus_routes":       true,
+	}
 	for _, spec := range CommandSpecs() {
 		if spec.Name == "" {
 			t.Fatal("command spec has empty name")
@@ -296,6 +538,9 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		if spec.HasHelp != helpCommands[spec.Name] {
 			t.Fatalf("command %q HasHelp = %v", spec.Name, spec.HasHelp)
 		}
+		if spec.PublicCache != publicCacheCommands[spec.Name] {
+			t.Fatalf("command %q PublicCache = %v", spec.Name, spec.PublicCache)
+		}
 		seen[spec.Name] = true
 		for _, alias := range spec.Aliases {
 			key := normToken(alias)
@@ -304,6 +549,12 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 			}
 			aliases[key] = spec.Name
 			name, _ := normalizeCommand(alias, nil)
+			if key == "日程" || key == "账户" || key == "课程" || key == "教学班" || key == "班级" || key == "老师" || key == "教师" {
+				if name != "help" {
+					t.Fatalf("canonical root %q normalized to %q, want help", alias, name)
+				}
+				continue
+			}
 			if name != spec.Name {
 				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
 			}
@@ -358,18 +609,18 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "订阅 导入") {
+	if !ok || !strings.Contains(reply, "订阅 添加") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 
 	for _, text := range []string{"课程 help", "教学班 help", "状态 help"} {
 		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
-		if !ok || !strings.Contains(reply, "Life @ USTC 命令：") {
+		if !ok || !strings.Contains(reply, " 帮助：") {
 			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
 		}
 	}
 	reply, ok = handler.Handle(context.Background(), Input{Text: "校车 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "校车 设置") {
+	if !ok || !strings.Contains(reply, "校车 偏好") {
 		t.Fatalf("bus help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -404,7 +655,7 @@ func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录用法：") {
+	if !ok || !strings.Contains(reply, "账户 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -425,7 +676,7 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 	}
 
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录用法：") {
+	if !ok || !strings.Contains(reply, "账户 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -454,7 +705,9 @@ func TestHandleTodoHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办 add 写报告") {
+		if !strings.Contains(reply, "待办 帮助：") ||
+			!strings.Contains(reply, "待办 添加 写报告") ||
+			!strings.Contains(reply, "待办 完成 1") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
@@ -720,7 +973,7 @@ func TestHandleLoginHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "登录用法：") || !strings.Contains(reply, "登录 状态") {
+		if !strings.Contains(reply, "账户 帮助：") || !strings.Contains(reply, "账户 登录状态") {
 			t.Fatalf("%q reply = %q", text, reply)
 		}
 	}
@@ -733,7 +986,7 @@ func TestHandleScheduleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "课表用法：") || strings.Contains(reply, "需要先登录") {
+		if !strings.Contains(reply, "课表 帮助：") || strings.Contains(reply, "需要先登录") {
 			t.Fatalf("%q reply = %q", text, reply)
 		}
 	}
@@ -754,9 +1007,46 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if response.Text != text {
 		t.Fatalf("HandleResponse text = %q, Handle text = %q", response.Text, text)
 	}
-	if response.Image != nil {
-		t.Fatalf("help response image = %#v, want nil", response.Image)
+	if response.Image == nil || response.Image.Kind != "help" {
+		t.Fatalf("help response image = %#v", response.Image)
 	}
+	for _, want := range []string{
+		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
+		"## 常用",
+		"| 命令 | 说明 |",
+		"| 日程 | 今日安排、综合概览与近期截止 |",
+		"| 课表 | 周课表、单日课表与下一节课 |",
+		"| 待办（td） | 查看和管理待办 |",
+		"| 校车（xc） | 查询班次、路线与设置偏好 |",
+		"| 设置 | 管理通知与工具调用展示 |",
+	} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
+		}
+	}
+	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpOverviewSections()) {
+		t.Fatalf("help table count = %d, want %d", got, len(helpOverviewSections()))
+	}
+	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "## 教学资源", "| 教学班 |"} {
+		if strings.Contains(response.Image.RichText, unwanted) {
+			t.Fatalf("help overview still contains %q: %q", unwanted, response.Image.RichText)
+		}
+	}
+	assertResponseImageRenders(t, response.Image)
+}
+
+func TestSubcommandHelpUsesImage(t *testing.T) {
+	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
+	if !ok || response.Image == nil || response.Image.Kind != "help" {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if response.Image.Title != "课表 帮助" ||
+		!strings.Contains(response.Image.RichText, "| 课表 第3周 | 查看指定教学周 |") ||
+		!strings.Contains(response.Image.AltText, "课表 第3周") {
+		t.Fatalf("image = %#v", response.Image)
+	}
+	assertResponseImageRenders(t, response.Image)
 }
 
 func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
@@ -785,7 +1075,7 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 	if response.Image == nil {
 		t.Fatal("image = nil, want schedule image")
 	}
-	if response.Image.Kind != "schedule" || response.Image.Title != "今天课表" {
+	if response.Image.Kind != "schedule" || !strings.HasPrefix(response.Image.Title, "今天 ") || !strings.HasSuffix(response.Image.Title, " 课表") {
 		t.Fatalf("image = %#v", response.Image)
 	}
 	if !strings.Contains(response.Image.AltText, "数据库系统") {
@@ -815,44 +1105,90 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
-func TestScheduleImageUsesSeparateCampusAndRoomColumns(t *testing.T) {
+func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
-		"今天课表：",
+		"今天 07-17 课表：",
 		"西区 3A204\t09:50-11:25\t数据库系统",
 		"高新区 GT-B112\t14:00-15:35\tComputer Networks",
 	}, "\n")
 
 	img := handler.imageResponseFor(parsedCommand{Name: "schedule", Args: []string{"today"}}, text)
-	want := strings.Join([]string{
-		"# 今天课表",
-		"",
-		"| 校区 | 教室 | 时间 | 课程 |",
-		"| --- | --- | --- | --- |",
-		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
-		"| 高新区 | GT-B112 | 14:00-15:35 | Computer Networks |",
-	}, "\n")
-	if img == nil || img.RichText != want {
-		t.Fatalf("rich text = %q, want %q", img.RichText, want)
+	if img == nil || img.Grid == nil {
+		t.Fatalf("image = %#v", img)
 	}
+	if len(img.Grid.Days) != 1 || img.Grid.Days[0].Date != "07-17" {
+		t.Fatalf("days = %#v", img.Grid.Days)
+	}
+	if len(img.Grid.Items) != 2 {
+		t.Fatalf("items = %#v", img.Grid.Items)
+	}
+	if first := img.Grid.Items[0]; first.Day != 0 || first.StartPeriod != 3 || first.EndPeriod != 4 ||
+		first.Course != "数据库系统" || first.Location != "西区 · 3A204" {
+		t.Fatalf("first item = %#v", first)
+	}
+	assertResponseImageRenders(t, img)
 }
 
-func TestScheduleImageUsesOneTablePerDaySection(t *testing.T) {
+func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
-		"今明两日课表：",
-		"今天：",
-		"西区 3A204\t09:50-11:25\t数据库系统",
+		"07-12 至 07-18 课表：",
+		"周日 07-12：",
+		"高新区 GT-B112\t09:50-11:25\t数据库系统",
 		"",
-		"明天：",
-		"先研院 1A201\t16:00-17:35\tMachine Learning",
+		"周一 07-13：",
+		"西区 3A204\t14:00-15:35\tComputer Networks",
+		"",
+		"周二 07-14：",
+		"没有课。",
+		"",
+		"周三 07-15：",
+		"没有课。",
+		"",
+		"周四 07-16：",
+		"没有课。",
+		"",
+		"周五 07-17：",
+		"没有课。",
+		"",
+		"周六 07-18：",
+		"先研院 1A201\t19:30-21:05\tMachine Learning",
 	}, "\n")
 
 	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
-	if img == nil || !strings.Contains(img.RichText, "## 今天\n| 校区 | 教室 | 时间 | 课程 |") ||
-		!strings.Contains(img.RichText, "## 明天\n| 校区 | 教室 | 时间 | 课程 |") ||
-		strings.Count(img.RichText, "| 校区 | 教室 | 时间 | 课程 |") != 2 {
-		t.Fatalf("rich text = %q", img.RichText)
+	if img == nil || img.Grid == nil {
+		t.Fatalf("image = %#v", img)
+	}
+	if len(img.Grid.Days) != 7 || img.Grid.Days[0].Label != "周日" || img.Grid.Days[6].Label != "周六" {
+		t.Fatalf("days = %#v", img.Grid.Days)
+	}
+	if len(img.Grid.Periods) != 13 {
+		t.Fatalf("periods = %#v", img.Grid.Periods)
+	}
+	if len(img.Grid.Items) != 3 {
+		t.Fatalf("items = %#v", img.Grid.Items)
+	}
+	first := img.Grid.Items[0]
+	if first.Day != 0 || first.StartPeriod != 3 || first.EndPeriod != 4 || first.Course != "数据库系统" || first.Location != "高新区 · GT-B112" {
+		t.Fatalf("first item = %#v", first)
+	}
+	assertResponseImageRenders(t, img)
+}
+
+func TestSchedulePeriodLabelUsesUSTCLessonTimes(t *testing.T) {
+	tests := map[string]string{
+		"07:50-08:35": "第 1 小节",
+		"07:50-09:25": "第 1–2 小节",
+		"09:50-11:25": "第 3–4 小节",
+		"14:00-15:35": "第 6–7 小节",
+		"19:30-21:05": "第 11–12 小节",
+		"12:30-13:00": "—",
+	}
+	for timeRange, want := range tests {
+		if got := schedulePeriodLabel(timeRange); got != want {
+			t.Fatalf("schedulePeriodLabel(%q) = %q, want %q", timeRange, got, want)
+		}
 	}
 }
 
@@ -875,8 +1211,8 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 		t.Fatal("image = nil")
 	}
 	for _, want := range []string{
-		"## 今日课表 (1)\n| 校区 | 教室 | 时间 | 课程 |",
-		"| 西区 | 3A204 | 09:50-11:25 | 数据库系统 |",
+		"## 今日课表 (1)\n| 节次 | 时间 | 安排 | 备注 |",
+		"| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |",
 		"## 待办 (1)\n| # | 截止 | 待办 |",
 		"| 1 | 07-15 18:00 | 写报告 |",
 		"## 近期作业 (1)\n| # | 截止 | 课程 | 作业 |",
@@ -888,9 +1224,7 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 			t.Fatalf("rich text missing %q: %q", want, img.RichText)
 		}
 	}
-	if strings.Contains(img.RichText, " · ") {
-		t.Fatalf("rich text still uses dot separators: %q", img.RichText)
-	}
+	assertResponseImageRenders(t, img)
 }
 
 func TestTodoImageUsesTable(t *testing.T) {
@@ -908,6 +1242,132 @@ func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
 	if img == nil || !strings.Contains(img.RichText, "|  |  | ...and 4 more |") {
 		t.Fatalf("rich text = %q", img.RichText)
+	}
+}
+
+func TestTodoImageKeepsPaginationNoticeInTable(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	img := handler.imageResponseFor(
+		parsedCommand{Name: "todo", Args: []string{"list", "第2页"}},
+		"待办：\n31.\t\t写报告\n第 2/3 页 · 上一页：待办 列表 第1页 · 下一页：待办 列表 第3页",
+	)
+	if img == nil || !strings.Contains(img.RichText, "| 31 |  | 写报告 |") ||
+		!strings.Contains(img.RichText, "|  |  | 第 2/3 页") {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+	assertResponseImageRenders(t, img)
+}
+
+func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := strings.Join([]string{
+		"作业：",
+		"已逾期：",
+		"1.\t截止 07-15 23:59\t数据库系统\tProblem Set 1",
+		"",
+		"近期：",
+		"2.\t截止 07-18 23:59\t数学分析\t习题课作业",
+	}, "\n")
+
+	img := handler.imageResponseFor(parsedCommand{Name: "homework"}, text)
+	if img == nil || img.Kind != "homework" || img.Title != "作业" {
+		t.Fatalf("image = %#v", img)
+	}
+	for _, want := range []string{
+		"## 已逾期\n| # | 截止 | 课程 | 作业 |",
+		"| 1 | 07-15 23:59 | 数据库系统 | Problem Set 1 |",
+		"## 近期\n| # | 截止 | 课程 | 作业 |",
+	} {
+		if !strings.Contains(img.RichText, want) {
+			t.Fatalf("rich text missing %q: %q", want, img.RichText)
+		}
+	}
+
+	for _, cmd := range []parsedCommand{
+		{Name: "homework", Args: []string{"done", "1"}},
+		{Name: "homework", Args: []string{"undo", "1"}},
+	} {
+		if got := handler.imageResponseFor(cmd, text); got != nil {
+			t.Fatalf("non-list image = %#v, want nil", got)
+		}
+	}
+	helpImage := handler.imageResponseFor(parsedCommand{Name: "homework", Args: []string{"help"}}, "作业用法：\n作业：查看作业")
+	if helpImage == nil || helpImage.Kind != "help" {
+		t.Fatalf("help image = %#v", helpImage)
+	}
+	for _, reply := range []string{"没有未完成作业。", "作业查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "homework"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+	sectionImage := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, "作业：\n1.\t截止 07-18 23:59\t\tProblem Set 1")
+	if sectionImage == nil || !strings.Contains(sectionImage.RichText, "| 1 | 07-18 23:59 |  | Problem Set 1 |") {
+		t.Fatalf("section homework image = %#v", sectionImage)
+	}
+	for _, reply := range []string{"需要提供教学班 JW ID。", "该教学班没有作业。"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, reply); got != nil {
+			t.Fatalf("section empty/error image = %#v, want nil", got)
+		}
+	}
+}
+
+func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "考试：\n1.\t07-20\t14:30-16:30\t数学分析\tMATH1001.01\t闭卷\t3A101"
+
+	for _, name := range []string{"exam", "section_exams"} {
+		img := handler.imageResponseFor(parsedCommand{Name: name}, text)
+		if img == nil || img.Kind != "exam" || img.Title != "考试" {
+			t.Fatalf("%s image = %#v", name, img)
+		}
+		if !strings.Contains(img.RichText, "| # | 日期 | 时间 | 课程 | 教学班 | 方式 | 教室 |") ||
+			!strings.Contains(img.RichText, "| 1 | 07-20 | 14:30-16:30 | 数学分析 | MATH1001.01 | 闭卷 | 3A101 |") {
+			t.Fatalf("%s rich text = %q", name, img.RichText)
+		}
+		assertResponseImageRenders(t, img)
+	}
+
+	for _, reply := range []string{"没有订阅课程考试。", "该教学班没有考试。", "考试查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "exam"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+	for _, reply := range []string{"需要提供教学班 JW ID。", "教学班查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "section_exams"}, reply); got != nil {
+			t.Fatalf("section error image = %#v, want nil", got)
+		}
+	}
+}
+
+func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	text := "下一节课：\n西区 3A204\t09:50-11:25\t数据库系统"
+
+	img := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, text)
+	if img == nil || img.Kind != "nextclass" || img.Title != "下一节课" {
+		t.Fatalf("image = %#v", img)
+	}
+	if !strings.Contains(img.RichText, "| 节次 | 时间 | 安排 | 备注 |") ||
+		!strings.Contains(img.RichText, "| 第 3–4 小节 | 09:50-11:25 | 数据库系统 | 西区 · 3A204 |") {
+		t.Fatalf("rich text = %q", img.RichText)
+	}
+	assertResponseImageRenders(t, img)
+
+	for _, reply := range []string{"接下来一周没查到课。", "下一节课查不到：server exploded"} {
+		if got := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, reply); got != nil {
+			t.Fatalf("empty/error image = %#v, want nil", got)
+		}
+	}
+}
+
+func assertResponseImageRenders(t *testing.T, image *responses.Image) {
+	t.Helper()
+	data, width, height, err := (responses.Renderer{}).RenderPNG(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || width <= 0 || height <= 0 {
+		t.Fatalf("rendered image len=%d size=%dx%d", len(data), width, height)
 	}
 }
 
@@ -942,7 +1402,6 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		cmd  parsedCommand
 		text string
 	}{
-		"help":       {cmd: parsedCommand{Name: "bus", Args: []string{"help"}}, text: busHelp()},
 		"preference": {cmd: parsedCommand{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
 		"no service": {cmd: parsedCommand{Name: "bus"}, text: "今天后面没查到校车。"},
 		"error":      {cmd: parsedCommand{Name: "bus"}, text: "校车查不到：server exploded"},
@@ -950,6 +1409,10 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
 			t.Fatalf("%s image = %#v, want nil", name, got)
 		}
+	}
+	helpImage := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"help"}}, busHelp())
+	if helpImage == nil || helpImage.Kind != "help" {
+		t.Fatalf("help image = %#v", helpImage)
 	}
 }
 
@@ -1043,8 +1506,8 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "false" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-05-14T23:55:00+08:00"},{"id":"todo-2","title":"买咖啡"}]}`))
 		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodPatch:
@@ -1107,8 +1570,8 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "false" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
 		case r.URL.Path == "/api/workspace/todos/batch" && r.Method == http.MethodPatch:
@@ -1145,6 +1608,7 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	ident.Platform = "qqbot"
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1153,10 +1617,11 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	sent := []store.Identity{}
 	messages := []string{}
 	handler := Handler{
-		Store:          db,
-		Prefix:         "/life",
-		FeedbackUsers:  []string{"1001"},
-		FeedbackGroups: []string{"2001"},
+		Store:            db,
+		Prefix:           "/life",
+		FeedbackPlatform: "napcat",
+		FeedbackUsers:    []string{"1001"},
+		FeedbackGroups:   []string{"2001"},
 		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
 			sent = append(sent, target)
 			messages = append(messages, message)
@@ -1173,10 +1638,10 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	if len(sent) != 2 {
 		t.Fatalf("sent = %#v", sent)
 	}
-	if sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
+	if sent[0].Platform != "napcat" || sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
 		t.Fatalf("private target = %#v", sent[0])
 	}
-	if sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
+	if sent[1].Platform != "napcat" || sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
 		t.Fatalf("group target = %#v", sent[1])
 	}
 	if !strings.Contains(messages[0], "用户反馈") || !strings.Contains(messages[0], "用户：42") || !strings.Contains(messages[0], "校车显示有点乱") {
@@ -1199,6 +1664,15 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
+	if err := db.RecordInteraction(ctx, ident, store.Interaction{
+		RawText: "登录 student@example.com",
+		Command: "login",
+		Handled: true,
+		Reply:   "登录成功，student@example.com",
+		Status:  store.InteractionStatusHandled,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: "xc 东区 高新区",
 		Command: "bus",
@@ -1238,6 +1712,47 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 	}
 	if strings.Contains(message, "旧反馈") || strings.Contains(message, "反馈发送失败") {
 		t.Fatalf("message includes previous feedback: %q", message)
+	}
+	if strings.Contains(message, "登录") || strings.Contains(message, "student@example.com") {
+		t.Fatalf("message includes unrelated private context: %q", message)
+	}
+}
+
+func TestFormatFeedbackContextSkipsPrivateCommandsAndRedactsEmail(t *testing.T) {
+	contextText := formatFeedbackContext([]store.Interaction{
+		{Command: "login", RawText: "登录 student@example.com", Reply: "登录成功"},
+	})
+	if contextText != "" {
+		t.Fatalf("login context = %q", contextText)
+	}
+
+	contextText = formatFeedbackContext([]store.Interaction{
+		{Command: "agent", RawText: "联系 student@example.com", Reply: "已记录"},
+	})
+	if strings.Contains(contextText, "student@example.com") || !strings.Contains(contextText, "[已隐藏邮箱]") {
+		t.Fatalf("email was not redacted: %q", contextText)
+	}
+}
+
+func TestFormatFeedbackContextKeepsThreeMostRecentRelevantInteractions(t *testing.T) {
+	contextText := formatFeedbackContext([]store.Interaction{
+		{Command: "agent", RawText: "最旧问题", Reply: "最旧回复"},
+		{Command: "login", RawText: "登录 student@example.com", Reply: "登录成功"},
+		{Command: "bus", RawText: "校车", Reply: "校车回复"},
+		{Command: "schedule", RawText: "课表", Reply: "课表回复"},
+		{Command: "help", RawText: "帮助", Reply: "帮助回复"},
+	})
+	for _, want := range []string{"校车回复", "课表回复", "帮助回复"} {
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("context missing %q: %q", want, contextText)
+		}
+	}
+	if strings.Contains(contextText, "最旧") || strings.Contains(contextText, "登录") || strings.Contains(contextText, "student@example.com") {
+		t.Fatalf("context includes excluded history: %q", contextText)
+	}
+	if strings.Index(contextText, "校车回复") > strings.Index(contextText, "课表回复") ||
+		strings.Index(contextText, "课表回复") > strings.Index(contextText, "帮助回复") {
+		t.Fatalf("context is not chronological: %q", contextText)
 	}
 }
 
@@ -1331,7 +1846,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 		Text:     "课表 help",
 		Identity: ident,
 	})
-	if !ok || !strings.Contains(reply, "课表用法") {
+	if !ok || !strings.Contains(reply, "课表 帮助") {
 		t.Fatalf("enabled group schedule reply = %q, ok = %v", reply, ok)
 	}
 
@@ -1386,11 +1901,14 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		values := r.URL.Query()
-		if values.Get("completed") != "" || values.Get("priority") != "high" || values.Get("dueBefore") != "2026-06-10" {
-			t.Fatalf("query = %s", values.Encode())
+		if query := r.URL.Query().Encode(); query != "" {
+			t.Fatalf("query = %s", query)
 		}
-		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","priority":"high"}]}`))
+		_, _ = w.Write([]byte(`{"todos":[
+			{"id":"todo-1","title":"写报告","priority":"high","dueAt":"2026-06-09T18:00:00+08:00"},
+			{"id":"todo-2","title":"太晚","priority":"high","dueAt":"2026-06-11T18:00:00+08:00"},
+			{"id":"todo-3","title":"低优先级","priority":"low","dueAt":"2026-06-09T18:00:00+08:00"}
+		]}`))
 	}))
 	defer server.Close()
 
@@ -1401,6 +1919,125 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 	}
 	if !strings.Contains(reply, "写报告") {
 		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "太晚") || strings.Contains(reply, "低优先级") {
+		t.Fatalf("reply contains unfiltered todos: %q", reply)
+	}
+}
+
+func TestFilteredTodoIndexesMatchActions(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	patched := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("priority") == "high" {
+				_, _ = w.Write([]byte(`{"todos":[{"id":"high","title":"高优先级","priority":"high","completed":false}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"todos":[
+				{"id":"low","title":"低优先级","priority":"low","completed":false},
+				{"id":"high","title":"高优先级","priority":"high","completed":false}
+			]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/workspace/todos/") && r.Method == http.MethodPatch:
+			patched = strings.TrimPrefix(r.URL.Path, "/api/workspace/todos/")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 优先级 高", Identity: ident})
+	plain := textutil.PlainMonospace(reply)
+	if !ok || !strings.Contains(plain, "2. \t\t高优先级") || strings.Contains(plain, "低优先级") {
+		t.Fatalf("filtered reply = %q, ok = %v", plain, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "待办 完成 2", Identity: ident})
+	if !ok || patched != "high" || !strings.Contains(reply, "高优先级") {
+		t.Fatalf("patched=%q, reply=%q, ok=%v", patched, reply, ok)
+	}
+}
+
+func TestFilterNumberedTodosMatchesAPIDateOnlyUTC(t *testing.T) {
+	todos := []map[string]any{
+		{"id": "early", "dueAt": "2026-06-10T04:00:00+08:00"},
+		{"id": "late", "dueAt": "2026-06-10T09:00:00+08:00"},
+	}
+	filtered, err := filterNumberedTodos(todos, life.TodoListOptions{DueBefore: "2026-06-10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || lifedata.FirstString(filtered[0].todo, "id") != "early" {
+		t.Fatalf("filtered = %#v", filtered)
+	}
+}
+
+func TestHandleTodoListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	todos := make([]map[string]any, 65)
+	due := time.Date(2026, 7, 1, 8, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range todos {
+		todos[i] = map[string]any{
+			"id":    fmt.Sprintf("todo-%02d", i+1),
+			"title": fmt.Sprintf("Todo %02d", i+1),
+			"dueAt": due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+		}
+	}
+	patched31 := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"todos": todos})
+		case r.URL.Path == "/api/workspace/todos/todo-31" && r.Method == http.MethodPatch:
+			patched31 = true
+			_, _ = w.Write([]byte(`{"id":"todo-31","completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Todo 31", "60.\t", "Todo 60", "第 2/3 页", "待办 列表 未完成 第1页", "待办 列表 未完成 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Todo 30", "61.\t", "Todo 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "待办 完成 31", Identity: ident})
+	if !ok || !patched31 || !strings.Contains(textutil.PlainMonospace(reply), "Todo 31") {
+		t.Fatalf("page 2 action mismatch: patched31=%v, reply=%q, ok=%v", patched31, reply, ok)
+	}
+}
+
+func TestHandleTodoListRejectsPagePastEnd(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"Todo 1"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 列表 第2页", Identity: ident})
+	if !ok || !strings.Contains(reply, "待办只有 1 页") || !strings.Contains(reply, "待办 列表 未完成 第1页") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -1439,8 +2076,8 @@ func TestHandleTodoUndoByIndex(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if r.URL.Query().Get("completed") != "true" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
+			if query := r.URL.Query().Encode(); query != "" {
+				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","completed":true}]}`))
 		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodPatch:
@@ -1582,15 +2219,6 @@ func TestFormatNumberedLinePadsBeforeTab(t *testing.T) {
 	}
 }
 
-func TestMoreLineFormatting(t *testing.T) {
-	if got := moreLine(12, false); got != "...and 12 more" {
-		t.Fatalf("plain moreLine = %q", got)
-	}
-	if got := moreLine(12, true); got != "...and 𝟷𝟸 more" {
-		t.Fatalf("monospace moreLine = %q", got)
-	}
-}
-
 func TestChinaNowUsesChinaLocation(t *testing.T) {
 	now := chinaNow()
 	name, offset := now.Zone()
@@ -1641,17 +2269,60 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 	}
 }
 
+func TestHomeworkDisplayIndexesMatchActionsForUndatedItems(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	future := chinaNow().AddDate(0, 0, 30).Format(time.RFC3339)
+	completedID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": []any{
+				map[string]any{"id": "future", "title": "未来作业", "submissionDueAt": future, "completion": nil},
+				map[string]any{"id": "undated", "title": "未定日期作业", "completion": nil},
+			}})
+		case strings.HasPrefix(r.URL.Path, "/api/workspace/homeworks/") && r.Method == http.MethodPut:
+			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspace/homeworks/"), "/completion")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	if strings.Index(plain, "1. \t\t\t未定日期作业") < 0 || strings.Index(plain, "2. \t截止") < 0 {
+		t.Fatalf("unexpected display order: %q", plain)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 完成 1", Identity: ident})
+	if !ok || completedID != "undated" || !strings.Contains(reply, "未定日期作业") {
+		t.Fatalf("completedID=%q, reply=%q, ok=%v", completedID, reply, ok)
+	}
+}
+
 func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
+	completedID := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/homeworks" || r.Method != http.MethodGet {
+		switch {
+		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"homeworks":[
+				{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
+				{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
+			]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/workspace/homeworks/") && r.Method == http.MethodPut:
+			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspace/homeworks/"), "/completion")
+			_, _ = w.Write([]byte(`{"completed":true}`))
+		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"homeworks":[
-			{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
-			{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
-		]}`))
 	}))
 	defer server.Close()
 
@@ -1676,6 +2347,16 @@ func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	}
 	if strings.Contains(reply, "数据库系统") || strings.Contains(reply, "Summer HW") {
 		t.Fatalf("reply included summer homework for jw_id: %q", reply)
+	}
+
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 semester_id 3", Identity: ident})
+	plain := textutil.PlainMonospace(reply)
+	if !ok || !strings.Contains(plain, "2. \t") || !strings.Contains(plain, "Summer HW") || strings.Contains(plain, "Spring HW") {
+		t.Fatalf("filtered summer reply = %q, ok = %v", plain, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "作业 完成 2", Identity: ident})
+	if !ok || completedID != "hw-summer" || !strings.Contains(reply, "Summer HW") {
+		t.Fatalf("completedID=%q, reply=%q, ok=%v", completedID, reply, ok)
 	}
 }
 
@@ -1775,6 +2456,63 @@ func TestFormatHomeworkListGroupsByDueTime(t *testing.T) {
 	}
 }
 
+func TestFormatHomeworkListSeparatesCompletedFromOverdue(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	reply := formatHomeworkListAt([]map[string]any{
+		{"id": "done", "title": "Finished", "submissionDueAt": "2026-06-07T10:00:00+08:00", "isCompleted": true},
+		{"id": "open", "title": "Pending", "submissionDueAt": "2026-06-07T11:00:00+08:00"},
+	}, now)
+	completedAt := strings.Index(reply, "已完成：")
+	overdueAt := strings.Index(reply, "已逾期：")
+	finishedAt := strings.Index(reply, "Finished")
+	pendingAt := strings.Index(reply, "Pending")
+	if completedAt < 0 || overdueAt < 0 || finishedAt < completedAt || pendingAt < overdueAt {
+		t.Fatalf("reply = %q", reply)
+	}
+	if finishedAt > overdueAt && finishedAt < pendingAt {
+		t.Fatalf("completed homework appears in overdue group: %q", reply)
+	}
+}
+
+func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	homeworks := make([]map[string]any, 65)
+	due := time.Date(2026, 7, 1, 8, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range homeworks {
+		homeworks[i] = map[string]any{
+			"id":              fmt.Sprintf("homework-%02d", i+1),
+			"title":           fmt.Sprintf("Homework %02d", i+1),
+			"submissionDueAt": due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+			"completion":      nil,
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/homeworks" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": homeworks})
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业 列表 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Homework 31", "60.\t", "Homework 60", "第 2/3 页", "作业 列表 未完成 第1页", "作业 列表 未完成 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Homework 30", "61.\t", "Homework 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
+	}
+}
+
 func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -1853,6 +2591,51 @@ func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
 	}
 }
 
+func TestHandleExamListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	exams := make([]map[string]any, 65)
+	date := time.Date(2026, 1, 1, 0, 0, 0, 0, lifedata.ChinaLocation())
+	for i := range exams {
+		exams[i] = map[string]any{
+			"id":        i + 1,
+			"examDate":  date.AddDate(0, 0, i).Format(time.RFC3339),
+			"startTime": 900,
+			"endTime":   1100,
+			"examMode":  fmt.Sprintf("Exam %02d", i+1),
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"subscription": map[string]any{
+				"sections": []any{map[string]any{
+					"code":   "TEST1001.01",
+					"course": map[string]any{"namePrimary": "测试课程"},
+					"exams":  exams,
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "考试 第2页", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"31.\t", "Exam 31", "60.\t", "Exam 60", "第 2/3 页", "考试 第1页", "考试 第3页"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"30.\t", "Exam 30", "61.\t", "Exam 61"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
+		}
+	}
+}
+
 func TestHandleExamListEmpty(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -1907,7 +2690,7 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 }
 
-func TestHandleCurriculumForSpecificDate(t *testing.T) {
+func TestHandleCurriculumDateShowsContainingWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	base := time.Date(2026, 6, 21, 12, 0, 0, 0, lifedata.ChinaLocation())
@@ -1918,7 +2701,10 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 		if r.URL.Path != "/api/workspace/schedules" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		if !strings.Contains(r.URL.Query().Get("dateFrom"), "2026-06-22T16:00:00Z") || !strings.Contains(r.URL.Query().Get("dateTo"), "2026-06-23T15:59:59Z") {
+		if got := r.URL.Query().Get("dateFrom"); got != "2026-06-20T16:00:00Z" {
+			t.Fatalf("dateFrom = %q", got)
+		}
+		if got := r.URL.Query().Get("dateTo"); got != "2026-06-27T15:59:59Z" {
 			t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 		}
 		_, _ = w.Write([]byte(`{"schedules":[{"date":"2026-06-23T00:00:00+08:00","startTime":"07:50","endTime":"09:25","section":{"course":{"namePrimary":"随机过程理论"}},"room":{"namePrimary":"GT-A405"}}]}`))
@@ -1926,8 +2712,8 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.curriculumAt(ctx, ident, []string{"date:6.23"}, base)
-	if !strings.Contains(reply, "𝟶𝟼-𝟸𝟹 课表：") || !strings.Contains(reply, "随机过程理论") {
+	reply := handler.curriculumAt(ctx, ident, []string{"week-date:6.23"}, base)
+	if !strings.Contains(reply, "06-21 至 06-27 课表：") || !strings.Contains(reply, "随机过程理论") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2043,7 +2829,7 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 	}
 }
 
-func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
+func TestBareCurriculumReusesRefreshedTokenForWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
@@ -2067,11 +2853,10 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 			case "Bearer refreshed":
 				scheduleCalls++
-				if scheduleCalls == 1 {
-					_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}}]}`, today)))
-					return
-				}
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}]}`, tomorrow)))
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[
+					{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}},
+					{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}
+				]}`, today, tomorrow)))
 			default:
 				t.Fatalf("schedules authorization = %q", r.Header.Get("Authorization"))
 			}
@@ -2087,27 +2872,30 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if refreshRequests != 1 || scheduleOldTokenCalls != 1 || scheduleCalls != 2 {
+	if refreshRequests != 1 || scheduleOldTokenCalls != 1 || scheduleCalls != 1 {
 		t.Fatalf("refreshRequests = %d, scheduleOldTokenCalls = %d, scheduleCalls = %d", refreshRequests, scheduleOldTokenCalls, scheduleCalls)
 	}
 }
 
-func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
+func TestBareCurriculumShowsSundayToSaturdayWeek(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	scheduleCalls := 0
-	day := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
-	today := day.Format("2006-01-02")
-	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
+	day := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/schedules":
 			scheduleCalls++
-			if scheduleCalls == 1 {
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
-				return
+			if got := r.URL.Query().Get("dateFrom"); got != "2026-07-11T16:00:00Z" {
+				t.Fatalf("dateFrom = %q", got)
 			}
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}]}`, tomorrow)))
+			if got := r.URL.Query().Get("dateTo"); got != "2026-07-18T15:59:59Z" {
+				t.Fatalf("dateTo = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"schedules":[
+				{"date":"2026-07-12T08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}},
+				{"date":"2026-07-18T08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}},"room":{"namePrimary":"GT-B112"}}
+			]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2116,10 +2904,40 @@ func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 
 	handler := testAuthedHandler(t, server, ident)
 	reply := handler.curriculumAt(ctx, ident, nil, day)
-	if !strings.Contains(reply, "今明两日课表：") || !strings.Contains(reply, "今天：") || !strings.Contains(reply, "明天：") {
-		t.Fatalf("reply = %q", reply)
+	for _, want := range []string{"07-12 至 07-18 课表：", "周日 07-12：", "周六 07-18：", "数据库系统", "编译原理"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
-	if !strings.Contains(reply, "数据库系统") || !strings.Contains(reply, "编译原理") {
+	if scheduleCalls != 1 {
+		t.Fatalf("scheduleCalls = %d", scheduleCalls)
+	}
+}
+
+func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
+		case "/api/workspace/schedules":
+			if got := r.URL.Query().Get("dateFrom"); got != "2026-03-07T16:00:00Z" {
+				t.Fatalf("dateFrom = %q", got)
+			}
+			if got := r.URL.Query().Get("dateTo"); got != "2026-03-14T15:59:59Z" {
+				t.Fatalf("dateTo = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"schedules":[]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply := handler.curriculumAt(ctx, ident, []string{"week-number:3"}, time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "03-08 至 03-14 课表：") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2185,7 +3003,28 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "订阅 导入") {
+	if !strings.Contains(reply, "订阅 添加") {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestSubscriptionCalendarLink(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"calendarUrl":"https://example.test/calendar/private-token.ics"}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅链接", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "https://example.test/calendar/private-token.ics") || !strings.Contains(reply, "请勿公开") {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -2523,10 +3362,10 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"td": "todo",
 		"校车": "bus",
 		"xc": "bus",
-		"日程": "calendar",
+		"日程": "help",
 		"rc": "calendar",
 		"kb": "schedule",
-		"老师": "teacher",
+		"老师": "help",
 		"js": "teacher",
 		"考试": "exam",
 		"ks": "exam",
@@ -2544,6 +3383,99 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		}
 		if cmd.Name != want {
 			t.Fatalf("%q parsed as %q, want %q", text, cmd.Name, want)
+		}
+	}
+}
+
+func TestCanonicalCommandHierarchy(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	tests := []struct {
+		text string
+		name string
+		args string
+	}{
+		{text: "日程", name: "help", args: "日程"},
+		{text: "日程 今日", name: "calendar"},
+		{text: "日程 概览", name: "overview"},
+		{text: "日程 截止 14", name: "upcoming_deadlines", args: "14"},
+		{text: "课表 单日 今天", name: "schedule", args: "today"},
+		{text: "课表 单日 明天", name: "schedule", args: "tomorrow"},
+		{text: "课表 下一节", name: "nextclass"},
+		{text: "待办 添加 写报告", name: "todo", args: "add 写报告"},
+		{text: "待办 恢复 1", name: "todo", args: "undo 1"},
+		{text: "待办 列表 第2页", name: "todo", args: "list 第2页"},
+		{text: "作业 列表 学期ID 42", name: "homework", args: "semester_id 42"},
+		{text: "作业 列表 第2页", name: "homework", args: "第2页"},
+		{text: "作业 恢复 1", name: "homework", args: "undo 1"},
+		{text: "考试 第2页", name: "exam", args: "第2页"},
+		{text: "课程", name: "help", args: "课程"},
+		{text: "课程 搜索 关键词 数学分析 培养层次ID 1 类别ID 2 课堂类型ID 3 数量 10", name: "course_search", args: "keyword 数学分析 education_level_id 1 category_id 2 class_type_id 3 limit 10"},
+		{text: "课程 查看 123", name: "course_by_jw_id", args: "123"},
+		{text: "教学班", name: "help", args: "教学班"},
+		{text: "教学班 搜索 课程ID 11 老师代码 T001 数量 20", name: "section_search", args: "course_id 11 teacher_code T001 limit 20"},
+		{text: "教学班 查看 123", name: "section_by_jw_id", args: "123"},
+		{text: "教学班 课表 123 2026-07-01 2026-07-07", name: "section_schedules", args: "123 2026-07-01 2026-07-07"},
+		{text: "教学班 考试 123", name: "section_exams", args: "123"},
+		{text: "教学班 考试 123 第2页", name: "section_exams", args: "123 第2页"},
+		{text: "教学班 作业 123", name: "section_homeworks", args: "123"},
+		{text: "教学班 作业 123 第2页", name: "section_homeworks", args: "123 第2页"},
+		{text: "老师", name: "help", args: "老师"},
+		{text: "老师 搜索 院系ID 5 数量 8", name: "teacher_search", args: "department_id 5 limit 8"},
+		{text: "老师 查看 12", name: "teacher_by_id", args: "12"},
+		{text: "学期 当前", name: "semester"},
+		{text: "学期 列表 10", name: "list_semesters", args: "10"},
+		{text: "订阅 添加 CONT5103P.01 CONT6104P.01", name: "subscription", args: "import CONT5103P.01 CONT6104P.01"},
+		{text: "订阅 删除 999", name: "unsubscribe_section_by_jw_id", args: "999"},
+		{text: "订阅 列表", name: "my_subscribed_sections"},
+		{text: "订阅 链接", name: "subscription", args: "link"},
+		{text: "课程订阅", name: "subscription"},
+		{text: "课程 订阅", name: "subscription"},
+		{text: "校车 查询 东区 西区", name: "bus", args: "东区 西区"},
+		{text: "校车 路线 从 东区 到 西区", name: "bus_routes", args: "从 东区 到 西区"},
+		{text: "校车 偏好 路线 东区 西区", name: "bus", args: "设置 东区 西区"},
+		{text: "校车 偏好 已发车 开", name: "bus", args: "已发车 开"},
+		{text: "账户", name: "help", args: "账户"},
+		{text: "账户 登录 状态", name: "login", args: "status"},
+		{text: "账户 信息", name: "account"},
+		{text: "账户 退出", name: "logout"},
+		{text: "设置 通知 课表 开", name: "notify", args: "classes on"},
+		{text: "设置 工具调用 开", name: "agent", args: "on"},
+		{text: "设置 AI 工具 关", name: "agent", args: "off"},
+		{text: "系统", name: "help", args: "系统"},
+		{text: "系统 状态", name: "status"},
+		{text: "系统 检查", name: "ping"},
+	}
+	for _, tt := range tests {
+		cmd, ok := handler.parse(tt.text)
+		if !ok || cmd.Name != tt.name || joinedArgs(cmd.Args) != tt.args {
+			t.Errorf("%q parsed as %#v, ok = %v; want name=%q args=%q", tt.text, cmd, ok, tt.name, tt.args)
+		}
+	}
+}
+
+func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
+	tests := []struct {
+		text string
+		name string
+	}{
+		{text: "课程搜索 keyword 数学分析", name: "course_search"},
+		{text: "课程编号 123", name: "course_by_jw_id"},
+		{text: "教学班搜索 keyword 高等数学", name: "section_search"},
+		{text: "教学班课表 123 2026-07-01 2026-07-07", name: "section_schedules"},
+		{text: "老师搜索 keyword 张", name: "teacher_search"},
+		{text: "学期列表 10", name: "list_semesters"},
+		{text: "我的订阅", name: "my_subscribed_sections"},
+		{text: "退订教学班 999", name: "unsubscribe_section_by_jw_id"},
+		{text: "校车路线 从 东区 到 西区", name: "bus_routes"},
+		{text: "通知 课表 开", name: "notify"},
+		{text: "AI 工具 开", name: "agent"},
+		{text: "待办 写报告", name: "todo"},
+	}
+	for _, tt := range tests {
+		cmd, ok := handler.parse(tt.text)
+		if !ok || cmd.Name != tt.name {
+			t.Errorf("%q parsed as %#v, ok = %v; want %q", tt.text, cmd, ok, tt.name)
 		}
 	}
 }
@@ -2596,6 +3528,33 @@ func TestAttachedPrefixCommandParses(t *testing.T) {
 		}
 		if cmd.Name != want.name || strings.Join(cmd.Args, " ") != strings.Join(want.args, " ") {
 			t.Fatalf("%q parsed as name=%q args=%#v, want name=%q args=%#v", text, cmd.Name, cmd.Args, want.name, want.args)
+		}
+	}
+}
+
+func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
+	tests := map[string]string{
+		"本周":    "this-week",
+		"这周":    "this-week",
+		"下周":    "next-week",
+		"第3周":   "week-number:3",
+		"7.20周": "week-date:7.20",
+	}
+	for input, want := range tests {
+		got := normalizeScheduleArgs([]string{input})
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("normalizeScheduleArgs(%q) = %#v, want %q", input, got, want)
+		}
+	}
+
+	handler := Handler{Prefix: "/life"}
+	for input, want := range map[string]string{
+		"课表本周":  "this-week",
+		"课表第3周": "week-number:3",
+	} {
+		cmd, ok := handler.parse(input)
+		if !ok || cmd.Name != "schedule" || len(cmd.Args) != 1 || cmd.Args[0] != want {
+			t.Fatalf("%q parsed as %#v, ok=%v", input, cmd, ok)
 		}
 	}
 }
@@ -2723,7 +3682,10 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"kb today":          {"today"},
 		"今天 课表":             {"today"},
 		"今天课标":              {"today"},
+		"今日课表":              {"today"},
 		"今日课标":              {"today"},
+		"单日课表":              {"today"},
+		"单日 课表":             {"today"},
 		"课表今天":              {"today"},
 		"kb今天":              {"today"},
 		"tomorrow schedule": {"tomorrow"},
@@ -2734,10 +3696,11 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"明日课标":              {"tomorrow"},
 		"课表明天":              {"tomorrow"},
 		"明日kb":              {"tomorrow"},
-		"课表 6.23":           {"date:6.23"},
-		"课表 2022.05.03":     {"date:2022.05.03"},
-		"6.23 课表":           {"date:6.23"},
-		"课表6月23日":           {"date:6月23日"},
+		"课表 6.23":           {"week-date:6.23"},
+		"课表 05.06":          {"week-date:05.06"},
+		"课表 2022.05.03":     {"week-date:2022.05.03"},
+		"6.23 课表":           {"week-date:6.23"},
+		"课表6月23日":           {"week-date:6月23日"},
 	}
 	handler := Handler{Prefix: "/life"}
 	for text, wantArgs := range tests {
@@ -2860,7 +3823,7 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	ident := testIdentity()
 	handler := Handler{Store: s, Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if !ok || !strings.Contains(reply, "我的工作区") {
+	if !ok || !strings.Contains(reply, "待办（td）\t查看和管理待办") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
@@ -3248,6 +4211,43 @@ func TestFormatDashboard(t *testing.T) {
 	}
 	if strings.Contains(reply, "今日课表 2") || strings.Contains(reply, "待交作业 3") || strings.Contains(reply, " · ") {
 		t.Fatalf("reply still contains the summary line: %q", reply)
+	}
+}
+
+func TestFormatDashboardUsesTotalsAndPointsToFullLists(t *testing.T) {
+	items := make([]any, summaryDisplayLimit)
+	for i := range items {
+		items[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
+	}
+	reply := formatDashboard(map[string]any{
+		"dueTodos": map[string]any{"total": 20, "items": items},
+	}, "我的概览")
+	plain := textutil.PlainMonospace(reply)
+	for _, want := range []string{"待办 (20)：", "另有 12 条", "发送「待办」查看完整列表"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("reply missing %q: %q", want, plain)
+		}
+	}
+	image := (Handler{EnableImageResponses: true}).imageResponseFor(parsedCommand{Name: "overview"}, reply)
+	if image == nil || !strings.Contains(textutil.PlainMonospace(image.RichText), "|  |  | 另有 12 条") {
+		t.Fatalf("overview image = %#v", image)
+	}
+	assertResponseImageRenders(t, image)
+}
+
+func TestFormatOverviewPointsToCompleteList(t *testing.T) {
+	todos := make([]map[string]any, 4)
+	for i := range todos {
+		todos[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
+	}
+	reply := textutil.PlainMonospace(formatOverview(chinaNow(), nil, todos, nil, nil))
+	for _, want := range []string{"待办 (4)：", "Todo 3", "另有 1 条", "发送「待办」查看完整列表"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Contains(reply, "Todo 4") || strings.Contains(reply, "...and") {
+		t.Fatalf("reply contains inaccessible preview content: %q", reply)
 	}
 }
 

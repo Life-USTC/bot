@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,6 +71,68 @@ func TestSendMessageFetchesTokenAndSendsGroupMessage(t *testing.T) {
 	}
 	if gotBody.Content != "\n\nhello" || gotBody.MsgType != 0 || gotBody.MsgID != "" || gotBody.MsgSeq != 0 {
 		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestSendToReturnsPlatformAcceptance(t *testing.T) {
+	acceptedAt := "2026-07-18T01:02:03.456+08:00"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":        "message-123",
+			"timestamp": acceptedAt,
+		})
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	receipt, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTime, err := time.Parse(time.RFC3339Nano, acceptedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.PlatformMessageID != "message-123" || !receipt.AcceptedAt.Equal(wantTime) {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSendToTreatsIncompleteSuccessAsUncertain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	_, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err == nil || !isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestSendToTreatsPlatformRejectionAsFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rejected", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	_, err := bot.sendTo(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, "hello", "", "", 0)
+	if err == nil || isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -208,6 +272,95 @@ func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
 	}
 }
 
+func TestSendRichMessageUploadsAndSendsProactiveC2CImage(t *testing.T) {
+	var sent map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token"})
+		case "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	image := responses.NewTextImage("homework_reminder", "作业提醒", "作业提醒：\nProblem Set 1")
+	err := bot.SendRichMessage(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, image.AltText, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent["msg_type"].(float64) != 7 {
+		t.Fatalf("sent body = %#v", sent)
+	}
+	if _, ok := sent["msg_id"]; ok {
+		t.Fatalf("proactive message should not contain msg_id: %#v", sent)
+	}
+}
+
+func TestSendRichMessageFallsBackToProactiveText(t *testing.T) {
+	var sent sendMessageRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			http.Error(w, "upload rejected", http.StatusBadRequest)
+		case "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	image := responses.NewTextImage("homework_reminder", "作业提醒", "作业提醒：\nProblem Set 1")
+	err := bot.SendRichMessage(context.Background(), store.Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}, image.AltText, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.MsgType != 0 || sent.Content != image.AltText || sent.MsgID != "" || sent.MsgSeq != 0 {
+		t.Fatalf("fallback body = %#v", sent)
+	}
+}
+
 func TestSendResponseFallsBackToTextWhenQQImageUploadFails(t *testing.T) {
 	var textBody sendMessageRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +411,274 @@ func TestSendResponseFallsBackToTextWhenQQImageUploadFails(t *testing.T) {
 	}
 	if textBody.MsgType != 0 || textBody.Content != "\n\n"+response.Text {
 		t.Fatalf("text fallback body = %#v", textBody)
+	}
+}
+
+func TestSendResponseReusesCachedQQFileInfo(t *testing.T) {
+	uploads := 0
+	sends := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-openid/files":
+			uploads++
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 300})
+		case "/v2/users/user-openid/messages":
+			sends++
+			var body sendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Media == nil || string(body.Media.FileInfo) != `"file-token"` {
+				t.Fatalf("media = %#v", body.Media)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "token",
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	message := &incomingMessage{
+		ID: "incoming",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 1 || sends != 2 {
+		t.Fatalf("uploads = %d sends = %d, want 1 and 2", uploads, sends)
+	}
+}
+
+func TestSendResponseReuploadsExpiredQQFileInfo(t *testing.T) {
+	now := time.Date(2026, 7, 18, 1, 0, 0, 0, time.UTC)
+	uploads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-openid/files":
+			uploads++
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 10})
+		case "/v2/users/user-openid/messages":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "token",
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+		now:        func() time.Time { return now },
+	}
+	message := &incomingMessage{
+		ID: "incoming",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Second)
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Fatalf("uploads = %d, want 2", uploads)
+	}
+}
+
+func TestSendResponseReuploadsRejectedCachedQQFileInfo(t *testing.T) {
+	uploads := 0
+	sends := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-openid/files":
+			uploads++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_info": "file-token-" + strconv.Itoa(uploads),
+				"ttl":       300,
+			})
+		case "/v2/users/user-openid/messages":
+			sends++
+			if sends == 2 {
+				http.Error(w, "cached media expired", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "token",
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	message := &incomingMessage{
+		ID: "incoming",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 || sends != 3 {
+		t.Fatalf("uploads = %d sends = %d, want 2 and 3", uploads, sends)
+	}
+}
+
+func TestQQMediaCacheCoalescesConcurrentUploads(t *testing.T) {
+	var uploads atomic.Int32
+	uploadStarted := make(chan struct{})
+	releaseUpload := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/users/user-openid/files" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if uploads.Add(1) == 1 {
+			close(uploadStarted)
+		}
+		<-releaseUpload
+		_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 300})
+	}))
+	defer server.Close()
+
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	ident := store.Identity{
+		Platform:         "qqbot",
+		UserID:           "user-openid",
+		ConversationType: "private",
+		ConversationID:   "user-openid",
+	}
+	key, err := qqMediaCacheKey(ident, server.URL+"/same.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, server.URL+"/same.png")
+		errs <- err
+	}()
+	<-uploadStarted
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, server.URL+"/same.png")
+		errs <- err
+	}()
+	time.Sleep(10 * time.Millisecond)
+	close(releaseUpload)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if uploads.Load() != 1 {
+		t.Fatalf("uploads = %d, want 1", uploads.Load())
+	}
+}
+
+func TestSendResponseDoesNotRetryUncertainCachedQQSend(t *testing.T) {
+	uploads := 0
+	sends := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-openid/files":
+			uploads++
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 300})
+		case "/v2/users/user-openid/messages":
+			sends++
+			if sends == 2 {
+				_, _ = w.Write([]byte(`{`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "token",
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	message := &incomingMessage{
+		ID: "incoming",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{
+		Text:  "今天课表",
+		Image: responses.NewTextImage("schedule", "今天课表", "今天课表").WithURL(server.URL + "/same.png"),
+	}
+
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	err := bot.SendResponse(context.Background(), message, response)
+	if err == nil || !isUncertainSendError(err) {
+		t.Fatalf("error = %v", err)
+	}
+	if uploads != 1 || sends != 2 {
+		t.Fatalf("uploads = %d sends = %d, want 1 and 2", uploads, sends)
 	}
 }
 
@@ -337,7 +758,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
+	if !strings.Contains(gotBody.Content, "校车（xc）\t查询班次、路线与设置偏好") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 	waitInteractionCount(t, db, 2)
@@ -431,7 +852,7 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
+	if !strings.Contains(gotBody.Content, "校车（xc）\t查询班次、路线与设置偏好") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 	waitInteractionCount(t, db, 2)
@@ -507,7 +928,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 	if gotBody.EventID != "interaction-id" || gotBody.MsgID != "" || gotBody.MsgSeq != 0 {
 		t.Fatalf("reply fields = %#v", gotBody)
 	}
-	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
+	if !strings.Contains(gotBody.Content, "校车（xc）\t查询班次、路线与设置偏好") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 }
