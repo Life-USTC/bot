@@ -697,20 +697,24 @@ When a tool returns login-required text, tell the user to log in with 登录.`,
 func imageDirectiveInstruction() string {
 	return `Image rendering protocol:
 The host replaces a standalone ![](command) directive with an image rendered by the existing read-only Bot command, at the same position in the reply. Text before the directive is sent before the image, and text after it is sent after the image.
-Supported directives and exact command shapes:
-- Shuttle bus overview or route: ![](校车) or ![](校车 东区 西区)
-- Curriculum: ![](课表), ![](今天课表), ![](明天课表), or ![](课表 第3周)
-- Next class: ![](下一节课)
-- Todo list: ![](待办)
-- Homework list: ![](作业)
-- Exam list: ![](考试)
-- Personal overview: ![](概览)
-- Upcoming deadlines: ![](近期截止) or ![](近期截止 14)
-- Section homework or exams when a JW ID is known: ![](教学班作业 654) or ![](教学班考试 321)
+Complete supported command shapes (use these canonical Chinese forms):
+- Shuttle bus: ![](校车); ![](校车 查询 全部); ![](校车 查询 我的路线); ![](校车 查询 东区 西区); optionally append 之后 HH:MM and/or 已发车, for example ![](校车 查询 东区 西区 之后 14:00 已发车). Do not use route-list or preference-setting commands.
+- Weekly curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), or a week containing an absolute date such as ![](课表 05.06), ![](课表 7.20周), ![](课表 2026-05-06), ![](课表 2026/5/6), ![](课表 2026.05.06), or ![](课表 2026年5月6日).
+- Single-day curriculum is available for today and tomorrow only: ![](课表 单日 今天), ![](课表 单日 明天), ![](今日课表), ![](明日课表), ![](今天课表), or ![](明天课表).
+- Next class: ![](课表 下一节) or ![](下一节课).
+- Todo list: ![](待办), or ![](待办 列表 [全部|未完成|已完成] [优先级 低|中|高] [截止前 YYYY-MM-DD] [截止后 YYYY-MM-DD] [第N页]). The filters may be combined; for example ![](待办 列表 未完成 优先级 高 截止前 2026-06-10 第2页).
+- Homework list: ![](作业), or ![](作业 列表 [未完成|全部] [学期ID ID] [学期JWID JW_ID] [第N页]). The filters may be combined; for example ![](作业 列表 全部 学期JWID 123 第2页).
+- Exams: ![](考试) or ![](考试 第N页), for example ![](考试 第2页).
+- Personal overview: ![](概览) or ![](日程 概览).
+- Upcoming deadlines: ![](近期截止), ![](近期截止 N), ![](日程 截止), or ![](日程 截止 N), where N is the number of days; for example ![](近期截止 14).
+- Section data when a numeric JW ID is known: ![](教学班 作业 JW_ID [第N页]) or ![](教学班 考试 JW_ID [第N页]); compact forms such as ![](教学班作业 654) and ![](教学班考试 321 第2页) also work.
+Curriculum date rule:
+- 第N周 uses the current semester only. For a requested week in another semester, use the semester data/tool result to convert that week to an absolute calendar date, then emit 课表 with that date (for example ![](课表 2026-09-04)). Never use 第N周 for a non-current semester.
 Rendering policy:
 - MUST include one supported directive when the user explicitly asks for an image, card, chart, visual, 图片, 图表, 卡片, or 可视化 of supported data.
 - By default, proactively include one directive after a successful tool result for a curriculum, shuttle-bus timetable, personal overview, upcoming deadlines, or a multi-item todo, homework, or exam list, unless the user asks for text only.
 - Do not merely tell the user that an image is available; emit the directive.
+- [已发送图片：command] is a host-generated history annotation, not a directive. NEVER output or imitate it; output ![](command) instead.
 - Preserve the user's requested day, week, route, section, or deadline range in the command.
 - Do not emit a directive for an empty result, an error, a login-required response, or a single short fact that is clearer as text.
 - Put each directive on its own line. Use one by default and at most two only for two distinct datasets.
