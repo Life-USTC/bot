@@ -85,13 +85,18 @@ func TestResponseForExpandsImageDirectivesInOrder(t *testing.T) {
 	if response.Parts[2].Text != "建议提前到站。" {
 		t.Fatalf("last part = %#v", response.Parts[2])
 	}
-	if !strings.Contains(response.Text, "[已发送图片：校车 东区 西区]") {
+	if !strings.Contains(response.Text, "![](校车 东区 西区)") {
 		t.Fatalf("history text = %q", response.Text)
 	}
 }
 
 func TestResponseForRejectsMutationAndLimitsImageDirectives(t *testing.T) {
 	svc := newImageDirectiveTestService(t)
+	lines := []string{"开始", "![](待办 添加 不应执行)"}
+	for i := 0; i < maxImageDirectives+1; i++ {
+		lines = append(lines, "![](校车 东区 西区)")
+	}
+	lines = append(lines, "结束")
 	response := svc.responseFor(context.Background(), Input{
 		Identity: store.Identity{
 			Platform:         "napcat",
@@ -99,16 +104,9 @@ func TestResponseForRejectsMutationAndLimitsImageDirectives(t *testing.T) {
 			ConversationType: "private",
 			ConversationID:   "42",
 		},
-	}, strings.Join([]string{
-		"开始",
-		"![](待办 添加 不应执行)",
-		"![](校车 东区 西区)",
-		"![](校车 西区 东区)",
-		"![](校车 东区 西区)",
-		"结束",
-	}, "\n"))
+	}, strings.Join(lines, "\n"))
 
-	if len(response.Parts) != 4 {
+	if len(response.Parts) != maxImageDirectives+2 {
 		t.Fatalf("parts = %#v", response.Parts)
 	}
 	imageCount := 0
@@ -120,8 +118,30 @@ func TestResponseForRejectsMutationAndLimitsImageDirectives(t *testing.T) {
 			t.Fatalf("unsafe directive leaked into part %#v", part)
 		}
 	}
-	if imageCount != 2 {
+	if imageCount != maxImageDirectives {
 		t.Fatalf("image count = %d, parts = %#v", imageCount, response.Parts)
+	}
+	if got := strings.Count(response.Text, "![](校车 东区 西区)"); got != maxImageDirectives {
+		t.Fatalf("history directive count = %d, want %d: %q", got, maxImageDirectives, response.Text)
+	}
+}
+
+func TestResponseForAcceptsLegacyImageAnnotation(t *testing.T) {
+	svc := newImageDirectiveTestService(t)
+	response := svc.responseFor(context.Background(), Input{
+		Identity: store.Identity{
+			Platform:         "napcat",
+			UserID:           "42",
+			ConversationType: "private",
+			ConversationID:   "42",
+		},
+	}, "[已发送图片：校车 东区 西区]")
+
+	if len(response.Parts) != 1 || response.Parts[0].Image == nil {
+		t.Fatalf("parts = %#v", response.Parts)
+	}
+	if response.Text != "![](校车 东区 西区)" {
+		t.Fatalf("history text = %q", response.Text)
 	}
 }
 
@@ -645,7 +665,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 		"![](近期截止 14)",
 		"![](教学班作业 654)",
 		"![](教学班考试 321 第2页)",
-		"[已发送图片：command] is a host-generated history annotation",
+		"The only valid image output is a standalone ![](command) directive.",
 		"MUST include one supported directive",
 		"By default, proactively include one directive",
 		"Do not merely tell the user that an image is available; emit the directive.",
@@ -676,7 +696,7 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 		RawText: "  你好  ",
 		Command: "agent",
 		Handled: true,
-		Reply:   "  你好！有什么可以帮你的吗？  ",
+		Reply:   "  你好！\n[已发送图片：课表 2026-09-04]\n有什么可以帮你的吗？  ",
 		Status:  "handled",
 	}); err != nil {
 		t.Fatal(err)
@@ -689,7 +709,9 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	if len(messages) != 3 {
 		t.Fatalf("message count = %d", len(messages))
 	}
-	if messages[0].Content != "你好" || messages[1].Content != "你好！有什么可以帮你的吗？" || messages[2].Content != "我上面说了什么？" {
+	if messages[0].Content != "你好" ||
+		messages[1].Content != "你好！\n![](课表 2026-09-04)\n有什么可以帮你的吗？" ||
+		messages[2].Content != "我上面说了什么？" {
 		t.Fatalf("messages = %#v", messages)
 	}
 }

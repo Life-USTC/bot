@@ -236,7 +236,7 @@ func (s *Service) responseFor(ctx context.Context, input Input, reply string) co
 		flushText()
 		directiveCount++
 		if response.Image != nil {
-			history = append(history, "[已发送图片："+command+"]")
+			history = append(history, imageDirective(command))
 		} else if fallback := strings.TrimSpace(response.Text); fallback != "" {
 			history = append(history, fallback)
 		}
@@ -255,10 +255,29 @@ func (s *Service) responseFor(ctx context.Context, input Input, reply string) co
 
 func parseImageDirective(line string) (string, bool) {
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "![](") || !strings.HasSuffix(line, ")") {
-		return "", false
+	if strings.HasPrefix(line, "![](") && strings.HasSuffix(line, ")") {
+		return strings.TrimSpace(line[len("![](") : len(line)-1]), true
 	}
-	return strings.TrimSpace(line[len("![](") : len(line)-1]), true
+	const legacyPrefix = "[已发送图片："
+	if strings.HasPrefix(line, legacyPrefix) && strings.HasSuffix(line, "]") {
+		return strings.TrimSpace(line[len(legacyPrefix) : len(line)-1]), true
+	}
+	return "", false
+}
+
+func imageDirective(command string) string {
+	return "![](" + strings.TrimSpace(command) + ")"
+}
+
+func normalizeAgentHistoryReply(reply string) string {
+	lines := strings.Split(reply, "\n")
+	for i, line := range lines {
+		command, matched := parseImageDirective(line)
+		if matched && command != "" && len([]rune(command)) <= maxImageDirectiveCommandRunes {
+			lines[i] = imageDirective(command)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -274,7 +293,7 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 				continue
 			}
 			messages = append(messages, schema.UserMessage(rawText))
-			if reply := compactHistoryText(turn.Reply); reply != "" {
+			if reply := compactHistoryText(normalizeAgentHistoryReply(turn.Reply)); reply != "" {
 				messages = append(messages, schema.AssistantMessage(reply, nil))
 			}
 		}
@@ -662,7 +681,7 @@ const historyTurnLimit = 20
 const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
 const maxHistoryTextRunes = 1200
-const maxImageDirectives = 2
+const maxImageDirectives = 10
 const maxImageDirectiveCommandRunes = 200
 
 var shanghaiLocation = lifedata.ChinaLocation()
@@ -714,10 +733,10 @@ Rendering policy:
 - MUST include one supported directive when the user explicitly asks for an image, card, chart, visual, 图片, 图表, 卡片, or 可视化 of supported data.
 - By default, proactively include one directive after a successful tool result for a curriculum, shuttle-bus timetable, personal overview, upcoming deadlines, or a multi-item todo, homework, or exam list, unless the user asks for text only.
 - Do not merely tell the user that an image is available; emit the directive.
-- [已发送图片：command] is a host-generated history annotation, not a directive. NEVER output or imitate it; output ![](command) instead.
+- Never output or imitate host-generated prose claiming that an image was sent. The only valid image output is a standalone ![](command) directive.
 - Preserve the user's requested day, week, route, section, or deadline range in the command.
 - Do not emit a directive for an empty result, an error, a login-required response, or a single short fact that is clearer as text.
-- Put each directive on its own line. Use one by default and at most two only for two distinct datasets.
+- Put each directive on its own line. Use one by default and at most ten when the user explicitly requests multiple distinct images.
 - Never put a URL, file path, explanation, login command, setting change, or any create, update, delete, complete, subscribe, or notification mutation inside a directive.`
 }
 
