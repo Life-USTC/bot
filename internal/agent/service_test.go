@@ -261,11 +261,14 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
+	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if session != nil {
+		defer func() { _ = session.Close() }()
 	}
 	names := map[string]bool{}
 	for _, tool := range tools {

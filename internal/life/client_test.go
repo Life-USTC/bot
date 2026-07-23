@@ -27,7 +27,7 @@ func (errReader) Read([]byte) (int, error) {
 
 func TestSearchCourses(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/courses" {
+		if r.URL.Path != "/api/catalog/courses" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("search"); got != "math" {
@@ -52,7 +52,7 @@ func TestSearchCourses(t *testing.T) {
 
 func TestSearchTeachers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/teachers" {
+		if r.URL.Path != "/api/catalog/teachers" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("search"); got != "张" {
@@ -77,7 +77,7 @@ func TestSearchTeachers(t *testing.T) {
 
 func TestNewClientTrimsServerURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/metadata" {
+		if r.URL.Path != "/api/catalog/metadata" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{}`))
@@ -126,14 +126,14 @@ func TestSearchTrimsQuery(t *testing.T) {
 	if _, err := client.SearchTeachers(context.Background(), " math ", 5); err != nil {
 		t.Fatal(err)
 	}
-	if !seen["/api/courses"] || !seen["/api/sections"] || !seen["/api/teachers"] {
+	if !seen["/api/catalog/courses"] || !seen["/api/catalog/sections"] || !seen["/api/catalog/teachers"] {
 		t.Fatalf("seen paths = %#v", seen)
 	}
 }
 
 func TestSchedulesUsesDataList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/schedules" {
+		if r.URL.Path != "/api/catalog/schedules" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
@@ -164,9 +164,9 @@ func TestBusPreferencesUsesAuthEndpoints(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":1,"preferredDestinationCampusId":4,"showDepartedTrips":true}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/bus-preferences":
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
@@ -258,7 +258,7 @@ func TestTodosWithOptionsSendsFilters(t *testing.T) {
 func TestCreateTodoTrimsTitle(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -296,7 +296,7 @@ func TestCreateTodoRejectsBlankTitle(t *testing.T) {
 func TestCreateTodoWithOptionsSendsOptionalFields(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -323,7 +323,7 @@ func TestCreateTodoWithOptionsSendsOptionalFields(t *testing.T) {
 
 func TestCompleteTodoTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
+		if r.URL.Path != "/api/workspace/todos/todo-1" || r.Method != http.MethodPatch {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{}`))
@@ -352,7 +352,7 @@ func TestCompleteTodoRejectsBlankID(t *testing.T) {
 func TestUpdateTodoSendsChanges(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodPatch {
+		if r.URL.Path != "/api/workspace/todos/todo-1" || r.Method != http.MethodPatch {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -394,7 +394,7 @@ func TestUpdateTodoRejectsEmptyChanges(t *testing.T) {
 
 func TestDeleteTodoTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos/todo-1" || r.Method != http.MethodDelete {
+		if r.URL.Path != "/api/workspace/todos/todo-1" || r.Method != http.MethodDelete {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{}`))
@@ -409,7 +409,7 @@ func TestDeleteTodoTrimsID(t *testing.T) {
 
 func TestSetHomeworkCompletionTrimsID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/homeworks/homework-1/completion" || r.Method != http.MethodPut {
+		if r.URL.Path != "/api/workspace/homeworks/homework-1/completion" || r.Method != http.MethodPut {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{}`))
@@ -438,7 +438,7 @@ func TestSetHomeworkCompletionRejectsBlankID(t *testing.T) {
 func TestSetTodoCompletionsSendsBatch(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos/batch" || r.Method != http.MethodPatch {
+		if r.URL.Path != "/api/workspace/todos/batch" || r.Method != http.MethodPatch {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
@@ -493,7 +493,7 @@ func TestSetTodoCompletionsReturnsHTTPError(t *testing.T) {
 func TestSetHomeworkCompletionsSendsBatch(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/homeworks/completions" || r.Method != http.MethodPut {
+		if r.URL.Path != "/api/workspace/homeworks/completions" || r.Method != http.MethodPut {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -523,7 +523,7 @@ func TestSetHomeworkCompletionsSendsBatch(t *testing.T) {
 func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/calendar-subscriptions/batch" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/subscriptions/batch" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -585,7 +585,7 @@ func TestAuthHeaderTrimsToken(t *testing.T) {
 func TestMatchSectionCodesTrimsSemesterID(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections/match-codes" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/catalog/sections/match-codes" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
@@ -610,7 +610,7 @@ func TestMatchSectionCodesTrimsSemesterID(t *testing.T) {
 func TestMatchSectionCodesTrimsCodes(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections/match-codes" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/catalog/sections/match-codes" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -661,7 +661,7 @@ func TestGetReturnsHTTPError(t *testing.T) {
 	if !errors.As(err, &httpErr) {
 		t.Fatalf("error type = %T", err)
 	}
-	if httpErr.StatusCode != http.StatusServiceUnavailable || httpErr.Method != http.MethodGet || httpErr.Path != "/api/metadata" {
+	if httpErr.StatusCode != http.StatusServiceUnavailable || httpErr.Method != http.MethodGet || httpErr.Path != "/api/catalog/metadata" {
 		t.Fatalf("http error = %#v", httpErr)
 	}
 }
@@ -686,7 +686,7 @@ func TestGetReturnsHTTPErrorForErrorBodyReadFailure(t *testing.T) {
 
 func TestGetTreatsWhitespaceBodyAsEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/metadata" {
+		if r.URL.Path != "/api/catalog/metadata" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(" \n\t "))
@@ -702,17 +702,17 @@ func TestGetTreatsWhitespaceBodyAsEmpty(t *testing.T) {
 func TestHTTPErrorString(t *testing.T) {
 	if got := (HTTPError{
 		Method:     http.MethodGet,
-		Path:       "/api/metadata",
+		Path:       "/api/catalog/metadata",
 		StatusCode: http.StatusServiceUnavailable,
 		Body:       "not ready",
-	}).Error(); got != "GET /api/metadata returned 503: not ready" {
+	}).Error(); got != "GET /api/catalog/metadata returned 503: not ready" {
 		t.Fatalf("HTTPError with body = %q", got)
 	}
 	if got := (HTTPError{
 		Method:     http.MethodGet,
-		Path:       "/api/metadata",
+		Path:       "/api/catalog/metadata",
 		StatusCode: http.StatusServiceUnavailable,
-	}).Error(); got != "GET /api/metadata returned 503" {
+	}).Error(); got != "GET /api/catalog/metadata returned 503" {
 		t.Fatalf("HTTPError without body = %q", got)
 	}
 }
@@ -736,7 +736,7 @@ func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch r.URL.Path {
-		case "/api/me":
+		case "/api/account/profile":
 			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 		case "/api/auth/oauth2/userinfo":
 			_, _ = w.Write([]byte(`{"sub":"user-1","preferred_username":"tiankai"}`))
@@ -760,19 +760,19 @@ func TestIsUnauthorized(t *testing.T) {
 	if IsUnauthorized(nil) {
 		t.Fatal("nil error reported unauthorized")
 	}
-	if !IsUnauthorized(errors.New(`GET /api/me returned 401: {"error":"Unauthorized"}`)) {
+	if !IsUnauthorized(errors.New(`GET /api/account/profile returned 401: {"error":"Unauthorized"}`)) {
 		t.Fatal("401 error was not recognized")
 	}
-	if !IsUnauthorized(errors.New("GET /api/me returned 401")) {
+	if !IsUnauthorized(errors.New("GET /api/account/profile returned 401")) {
 		t.Fatal("bodyless 401 error was not recognized")
 	}
-	if !IsUnauthorized(errors.New("GET /api/me RETURNED 401: Unauthorized")) {
+	if !IsUnauthorized(errors.New("GET /api/account/profile RETURNED 401: Unauthorized")) {
 		t.Fatal("case-insensitive 401 error was not recognized")
 	}
 	if !IsUnauthorized(HTTPError{StatusCode: http.StatusUnauthorized}) {
 		t.Fatal("typed 401 error was not recognized")
 	}
-	if IsUnauthorized(errors.New("GET /api/me returned 500: nope")) {
+	if IsUnauthorized(errors.New("GET /api/account/profile returned 500: nope")) {
 		t.Fatal("non-401 error was recognized")
 	}
 	if IsUnauthorized(HTTPError{StatusCode: http.StatusInternalServerError}) {

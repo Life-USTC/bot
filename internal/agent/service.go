@@ -112,7 +112,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
-	tools, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
+	tools, mcpSession, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
 	if err != nil {
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := "需要先登录。发送：登录"
@@ -122,6 +122,9 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		reply := "AI 工具初始化失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
 		return reply, true
+	}
+	if mcpSession != nil {
+		defer func() { _ = mcpSession.Close() }()
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
@@ -256,37 +259,34 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
-func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, error) {
+func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
+	var mcpSession *botmcp.Session
 	if s.mcpClient != nil && s.auth != nil {
 		token, err := s.auth.AccessToken(ctx, ident)
 		if err != nil {
-			return nil, fmt.Errorf("get MCP access token: %w", err)
+			return nil, nil, fmt.Errorf("get MCP access token: %w", err)
 		}
-		mcpTools, err := s.mcpClient.Tools(ctx, token)
+		mcpSession, err = s.mcpClient.OpenSession(ctx, token)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		mcpTools, err := mcpSession.Tools(ctx)
+		if err != nil {
+			_ = mcpSession.Close()
+			return nil, nil, err
 		}
 		einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
-			token, err := s.auth.AccessToken(ctx, ident)
-			if err != nil {
-				if trace != nil {
-					trace.Notify(ctx, name, args, "", err)
-				}
-				if errors.Is(err, auth.ErrNotLoggedIn) {
-					return "需要先登录。发送：登录", nil
-				}
-				return "", err
-			}
-			result, err := s.mcpClient.Call(ctx, token, name, args)
+			result, err := mcpSession.Call(ctx, name, args)
 			if trace != nil {
 				trace.Notify(ctx, name, args, result, err)
 			}
 			return result, err
 		})
 		if err != nil {
-			return nil, err
+			_ = mcpSession.Close()
+			return nil, nil, err
 		}
 		tools = append(tools, einoTools...)
 	}
@@ -296,7 +296,10 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 			return s.recordBotFeedback(ctx, ident, input)
 		})
 		if err != nil {
-			return nil, err
+			if mcpSession != nil {
+				_ = mcpSession.Close()
+			}
+			return nil, nil, err
 		}
 	}
 	if sendUpdate != nil {
@@ -304,16 +307,22 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 			return sendMessagePart(ctx, ident, sendUpdate, input)
 		})
 		if err != nil {
-			return nil, err
+			if mcpSession != nil {
+				_ = mcpSession.Close()
+			}
+			return nil, nil, err
 		}
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", trace, func(_ context.Context, _ emptyInput) (string, error) {
 		return currentTimeMessage(), nil
 	})
 	if err != nil {
-		return nil, err
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		return nil, nil, err
 	}
-	return tools, nil
+	return tools, mcpSession, nil
 }
 
 func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {

@@ -79,14 +79,14 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: " PRIVATE ", ConversationID: "42"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/calendar-subscriptions/current":
+		case "/api/workspace/subscriptions/current":
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101}]}}`))
-		case "/api/schedules":
+		case "/api/catalog/schedules":
 			if r.URL.Query().Get("sectionId") != "101" {
 				t.Fatalf("sectionId = %q", r.URL.Query().Get("sectionId"))
 			}
 			_, _ = w.Write([]byte(`{"data":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
-		case "/api/me/subscriptions/homeworks":
+		case "/api/workspace/homeworks":
 			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
 		default:
 			t.Fatalf("unexpected request %s", r.URL.Path)
@@ -159,7 +159,7 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/me/subscriptions/homeworks":
+		case "/api/workspace/homeworks":
 			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
 		default:
 			t.Fatalf("unexpected request %s", r.URL.Path)
@@ -229,7 +229,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
 	})
-	mux.HandleFunc("/api/calendar-subscriptions/current", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/workspace/subscriptions/current", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -239,7 +239,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 	})
-	mux.HandleFunc("/api/schedules", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/catalog/schedules", func(w http.ResponseWriter, r *http.Request) {
 		scheduleRequests++
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":
@@ -250,7 +250,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 	})
-	mux.HandleFunc("/api/me/subscriptions/homeworks", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/workspace/homeworks", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":
 			t.Fatal("homework request used stale token")
@@ -321,7 +321,7 @@ func TestPollerUsesRefreshedTokenForHomeworks(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"refresh","expires_in":3600}`))
 	})
-	mux.HandleFunc("/api/me/subscriptions/homeworks", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/workspace/homeworks", func(w http.ResponseWriter, r *http.Request) {
 		homeworkRequests++
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":

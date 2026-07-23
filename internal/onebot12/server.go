@@ -77,14 +77,17 @@ func (s *Server) mux() *libob.ActionMux {
 		err := s.life.Health(ctx)
 		w.WriteData(map[string]any{"good": err == nil, "online": err == nil})
 	})
-	mux.HandleFunc(actionPrefix+".get_current_semester", s.currentSemester)
-	mux.HandleFunc(actionPrefix+".search_courses", s.searchCourses)
-	mux.HandleFunc(actionPrefix+".search_sections", s.searchSections)
-	mux.HandleFunc(actionPrefix+".get_bus", s.bus)
-	mux.HandleFunc(actionPrefix+".begin_login", s.beginLogin)
-	mux.HandleFunc(actionPrefix+".poll_login", s.pollLogin)
-	mux.HandleFunc(actionPrefix+".get_me", s.me)
-	mux.HandleFunc(actionPrefix+".list_todos", s.todos)
+	mux.HandleFunc(actionPrefix+".catalog_semester_current", s.currentSemester)
+	mux.HandleFunc(actionPrefix+".catalog_course_search", s.searchCourses)
+	mux.HandleFunc(actionPrefix+".catalog_section_search", s.searchSections)
+	mux.HandleFunc(actionPrefix+".catalog_bus_timetable_get", s.bus)
+	mux.HandleFunc(actionPrefix+".catalog_link_list", s.catalogLinks)
+	mux.HandleFunc(actionPrefix+".account_login_begin", s.beginLogin)
+	mux.HandleFunc(actionPrefix+".account_login_poll", s.pollLogin)
+	mux.HandleFunc(actionPrefix+".account_profile_get", s.me)
+	mux.HandleFunc(actionPrefix+".workspace_todo_list", s.todos)
+	mux.HandleFunc(actionPrefix+".workspace_link_pin_list", s.linkPins)
+	mux.HandleFunc(actionPrefix+".workspace_link_pin_set", s.setLinkPin)
 	return mux
 }
 
@@ -139,6 +142,17 @@ func (s *Server) bus(w libob.ResponseWriter, r *libob.Request) {
 	ctx, cancel := ContextWithTimeout()
 	defer cancel()
 	data, err := lifeClient.Bus(ctx)
+	write(w, data, err)
+}
+
+func (s *Server) catalogLinks(w libob.ResponseWriter, _ *libob.Request) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	data, err := lifeClient.CatalogLinks(ctx)
 	write(w, data, err)
 }
 
@@ -203,6 +217,69 @@ func (s *Server) todos(w libob.ResponseWriter, r *libob.Request) {
 	data, err := auth.WithRefresh(ctx, s.auth, ident, token, func(token string) ([]map[string]any, error) {
 		return lifeClient.Todos(ctx, token, "false")
 	})
+	write(w, data, err)
+}
+
+func (s *Server) linkPins(w libob.ResponseWriter, r *libob.Request) {
+	s.withAccessToken(w, r, func(
+		ctx context.Context,
+		client *life.Client,
+		token string,
+	) (map[string]any, error) {
+		return client.LinkPins(ctx, token)
+	})
+}
+
+func (s *Server) setLinkPin(w libob.ResponseWriter, r *libob.Request) {
+	params := libob.NewParamGetter(w, r)
+	slug, ok := params.GetString("slug")
+	if !ok {
+		return
+	}
+	action, ok := params.GetString("action")
+	if !ok {
+		return
+	}
+	if action != "pin" && action != "unpin" {
+		w.WriteFailed(
+			libob.RetCodeBadParam,
+			fmt.Errorf("action must be pin or unpin"),
+		)
+		return
+	}
+	s.withAccessToken(w, r, func(
+		ctx context.Context,
+		client *life.Client,
+		token string,
+	) (map[string]any, error) {
+		return client.SetLinkPin(ctx, token, slug, action)
+	})
+}
+
+func (s *Server) withAccessToken(
+	w libob.ResponseWriter,
+	r *libob.Request,
+	fetch func(context.Context, *life.Client, string) (map[string]any, error),
+) {
+	lifeClient, ok := s.lifeClientForAction(w)
+	if !ok {
+		return
+	}
+	ctx, cancel := ContextWithTimeout()
+	defer cancel()
+	ident, token, ok := s.accessTokenForAction(ctx, w, r)
+	if !ok {
+		return
+	}
+	data, err := auth.WithRefresh(
+		ctx,
+		s.auth,
+		ident,
+		token,
+		func(token string) (map[string]any, error) {
+			return fetch(ctx, lifeClient, token)
+		},
+	)
 	write(w, data, err)
 }
 

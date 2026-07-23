@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -404,7 +405,12 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	query := url.Values{
+		"_busy_timeout": {"5000"},
+		"_journal_mode": {"WAL"},
+	}
+	dsn := (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		return nil, err
 	}

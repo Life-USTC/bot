@@ -21,6 +21,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -96,6 +97,33 @@ func (b *Bridge) Run(ctx context.Context) error {
 	if b.WSURL == "" {
 		return errors.New("NAPCAT_WS_URL is empty")
 	}
+	return b.run(ctx, retry.Backoff{
+		Initial: 3 * time.Second,
+		Max:     5 * time.Minute,
+		Jitter:  0.2,
+	})
+}
+
+func (b *Bridge) run(ctx context.Context, backoff retry.Backoff) error {
+	failures := 0
+	for {
+		received, err := b.runOnce(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if received {
+			failures = 0
+		}
+		delay := backoff.Duration(failures)
+		b.logf("NapCat bridge stopped: %v; reconnecting in %s", err, delay)
+		if !retry.Wait(ctx, delay) {
+			return nil
+		}
+		failures++
+	}
+}
+
+func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 	dialer := websocket.DefaultDialer
 	header := http.Header{}
 	accessToken := b.accessToken()
@@ -104,15 +132,17 @@ func (b *Bridge) Run(ctx context.Context) error {
 	}
 	conn, _, err := dialer.DialContext(ctx, b.WSURL, header)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = conn.Close() }()
 
+	received := false
 	for {
 		var event messageEvent
 		if err := conn.ReadJSON(&event); err != nil {
-			return err
+			return received, err
 		}
+		received = true
 		if event.PostType != "message" {
 			continue
 		}
@@ -201,11 +231,11 @@ func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, 
 			return
 		case event = <-events:
 		}
-		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d raw=%q",
-			event.MessageType, event.UserID, event.GroupID, trimLogText(event.RawMessage))
+		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d",
+			event.MessageType, event.UserID, event.GroupID)
 		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
-			b.logf("reverse websocket ignored message from user_id=%d: raw=%q", event.UserID, trimLogText(event.RawMessage))
+			b.logf("reverse websocket ignored message from user_id=%d", event.UserID)
 			continue
 		}
 		if err := b.sendReverseResponse(ctx, conn, writeMu, event, reply); err != nil {
@@ -747,13 +777,4 @@ func (b *Bridge) accessToken() string {
 
 func napcatResultText(message, wording, status string) string {
 	return textutil.FirstNonEmpty(message, wording, status, "unknown")
-}
-
-func trimLogText(text string) string {
-	const max = 160
-	runes := []rune(text)
-	if len(runes) <= max {
-		return text
-	}
-	return string(runes[:max]) + "..."
 }

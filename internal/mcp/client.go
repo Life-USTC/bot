@@ -12,11 +12,15 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 )
 
-// Client creates short-lived authenticated MCP sessions. Tokens are per-user,
-// so each public method accepts a token instead of storing one on the client.
+// Client creates authenticated MCP sessions. Tokens are per-user, so callers
+// open one session for each agent run and close it when the run finishes.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+}
+
+type Session struct {
+	client *mcpclient.Client
 }
 
 func New(baseURL string, httpClient *http.Client) *Client {
@@ -38,7 +42,7 @@ func (c *Client) newSession(token string) (*mcpclient.Client, error) {
 	)
 }
 
-func (c *Client) initialize(ctx context.Context, token string) (*mcpclient.Client, error) {
+func (c *Client) OpenSession(ctx context.Context, token string) (*Session, error) {
 	session, err := c.newSession(token)
 	if err != nil {
 		return nil, fmt.Errorf("create mcp client: %w", err)
@@ -57,34 +61,29 @@ func (c *Client) initialize(ctx context.Context, token string) (*mcpclient.Clien
 		_ = session.Close()
 		return nil, fmt.Errorf("initialize mcp client: %w", err)
 	}
-	return session, nil
+	return &Session{client: session}, nil
 }
 
-func (c *Client) Tools(ctx context.Context, token string) ([]mcpgo.Tool, error) {
-	session, err := c.initialize(ctx, token)
-	if err != nil {
-		return nil, err
+func (s *Session) Close() error {
+	if s == nil || s.client == nil {
+		return nil
 	}
-	defer func() { _ = session.Close() }()
+	return s.client.Close()
+}
 
-	result, err := session.ListTools(ctx, mcpgo.ListToolsRequest{})
+func (s *Session) Tools(ctx context.Context) ([]mcpgo.Tool, error) {
+	result, err := s.client.ListTools(ctx, mcpgo.ListToolsRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("list mcp tools: %w", err)
 	}
 	return result.Tools, nil
 }
 
-func (c *Client) Call(ctx context.Context, token, name string, arguments map[string]any) (string, error) {
-	session, err := c.initialize(ctx, token)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = session.Close() }()
-
+func (s *Session) Call(ctx context.Context, name string, arguments map[string]any) (string, error) {
 	req := mcpgo.CallToolRequest{}
 	req.Params.Name = name
 	req.Params.Arguments = arguments
-	result, err := session.CallTool(ctx, req)
+	result, err := s.client.CallTool(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("call mcp tool %s: %w", name, err)
 	}

@@ -9,37 +9,64 @@ official bot platform gateway.
 
 ## Commands
 
-Message commands use `/life` by default:
+Message commands use `/life` by default. Their primary Chinese names follow the
+same domain groups as the other Life @ USTC interfaces:
 
 ```text
-/life ping
-/life login
-/life login status
-/life logout
-/life me
-/life todo
-/life todo add <title>
-/life sub
-/life notify
-/life notify schedule on
-/life notify homework on
-/life semester
-/life course <keyword>
-/life section <keyword>
-/life bus
+校园信息
+  /life 学期
+  /life 课程 <关键词>
+  /life 教学班 <关键词>
+  /life 老师 <关键词>
+  /life 校车
+
+我的工作区
+  /life 日程
+  /life 课表
+  /life 下一节课
+  /life 待办
+  /life 待办 添加 <标题>
+  /life 作业
+  /life 考试
+  /life 订阅
+
+社区
+  /life 反馈 <建议>
+
+账户与设置
+  /life 账户
+  /life 登录
+  /life 登录 状态
+  /life 退出
+  /life 设置
+  /life 设置 通知
+  /life 设置 通知 课表 开
+  /life 设置 通知 作业 开
+  /life 设置 AI 工具
+
+系统
+  /life 状态
+  /life 帮助
 ```
+
+Short forms such as `td`, `hw`, `xc`, `kb`, `ddl`, and `status` are aliases,
+not separate command domains. `日程` is the aggregate view of classes,
+homework, exams, and todos; `课表` only shows class schedules.
 
 OneBot 12 extension actions:
 
 ```text
-life_ustc.get_current_semester
-life_ustc.search_courses      {"search":"calculus"}
-life_ustc.search_sections     {"search":"calculus"}
-life_ustc.get_bus
-life_ustc.begin_login         {"platform":"napcat","user_id":"123"}
-life_ustc.poll_login          {"platform":"napcat","user_id":"123"}
-life_ustc.get_me              {"platform":"napcat","user_id":"123"}
-life_ustc.list_todos          {"platform":"napcat","user_id":"123"}
+life_ustc.catalog_semester_current
+life_ustc.catalog_course_search       {"search":"calculus"}
+life_ustc.catalog_section_search      {"search":"calculus"}
+life_ustc.catalog_bus_timetable_get
+life_ustc.catalog_link_list
+life_ustc.account_login_begin         {"platform":"napcat","user_id":"123"}
+life_ustc.account_login_poll          {"platform":"napcat","user_id":"123"}
+life_ustc.account_profile_get         {"platform":"napcat","user_id":"123"}
+life_ustc.workspace_todo_list         {"platform":"napcat","user_id":"123"}
+life_ustc.workspace_link_pin_list     {"platform":"napcat","user_id":"123"}
+life_ustc.workspace_link_pin_set      {"platform":"napcat","user_id":"123","slug":"jw","action":"pin"}
 ```
 
 `/life login` starts an OAuth device-code login and replies with the
@@ -47,9 +74,10 @@ verification link and user code. After approving in the browser, send
 `/life login status`; the bot persists the token for that chat user in SQLite.
 Authenticated commands refresh tokens automatically when possible.
 
-`/life notify` manages private-chat active pushes. Class reminders and homework
-reminders can be enabled independently, and sent reminders are recorded in SQLite
-so the same item is not pushed repeatedly.
+`/life 设置 通知` manages private-chat active pushes. The shorter
+`/life 通知` form remains an alias. Class reminders and homework reminders can
+be enabled independently, and sent reminders are recorded in SQLite so the same
+item is not pushed repeatedly.
 
 ## Run
 
@@ -156,3 +184,30 @@ adapter, such as `napcat`.
 ```bash
 go test ./...
 ```
+
+## Deploy
+
+The versioned `compose.yaml` builds the archived source from `./src`, loads
+runtime configuration from `.env`, and persists SQLite data in the existing
+host `./data` directory. `scripts/deploy-cn.sh` uploads both `.env` and the
+Compose definition before validating and starting the service.
+
+Inside the container, listeners that are published through Compose must bind to
+all interfaces:
+
+```text
+NAPCAT_REVERSE_ADDR=0.0.0.0:2280
+BOT_MEDIA_ADDR=0.0.0.0:2281
+QQ_BOT_WEBHOOK_ADDR=0.0.0.0:2290
+```
+
+The host ports bind to `127.0.0.1` by default. Point the host reverse proxy at:
+
+```text
+/media/*  -> http://127.0.0.1:2281/media/*
+/qqbot    -> http://127.0.0.1:2290/qqbot
+```
+
+Set `BOT_BIND_IP` only when a listener must be reachable directly from another
+host. Host port overrides are `NAPCAT_REVERSE_HOST_PORT`,
+`BOT_MEDIA_HOST_PORT`, and `QQ_BOT_WEBHOOK_HOST_PORT`.

@@ -130,9 +130,9 @@ type parsedCommand struct {
 	Raw  string
 }
 
-var scheduleAliases = []string{"schedule", "sched", "rc", "kb", "日程", "课表", "课标"}
+var scheduleAliases = []string{"schedule", "sched", "kb", "课表", "课标"}
 var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"}
-var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"}
+var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送"}
 
 const (
 	feedbackContextLimit     = 3
@@ -158,7 +158,7 @@ func groupCommandAlwaysAllowed(name string) bool {
 
 func groupReadOnlyCommandAllowed(cmd parsedCommand) bool {
 	switch cmd.Name {
-	case "help", "me", "overview", "status", "semester", "course", "section", "teacher", "schedule", "nextclass", "exam":
+	case "help", "settings", "account", "calendar", "overview", "status", "semester", "course", "section", "teacher", "schedule", "nextclass", "exam":
 		return true
 	case "todo":
 		return groupTodoReadOnlyArgs(cmd.Args)
@@ -211,8 +211,8 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "me",
-		Aliases:   []string{"me", "我", "我的", "profile", "个人"},
+		Name:      "account",
+		Aliases:   []string{"account", "账户", "我", "我的", "profile", "个人"},
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -242,8 +242,8 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "overview",
-		Aliases:   []string{"overview", "today", "jr", "ddl", "deadline", "deadlines", "今日", "今天", "安排", "日程安排"},
+		Name:      "calendar",
+		Aliases:   []string{"calendar", "today", "rc", "jr", "ddl", "deadline", "deadlines", "日程", "今日", "今天", "安排", "日程安排"},
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -263,12 +263,20 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:       "notify",
-		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送", "设置"},
+		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送"},
 		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeNotifyArgs,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
+		},
+	},
+	{
+		Name:    "settings",
+		Aliases: []string{"settings", "setting", "设置"},
+		HasHelp: true,
+		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.settings(ctx, ident, args)
 		},
 	},
 	{
@@ -500,8 +508,8 @@ var commandSpecs = []CommandSpec{
 		},
 	},
 	{
-		Name:      "dashboard",
-		Aliases:   []string{"dashboard", "概览"},
+		Name:      "overview",
+		Aliases:   []string{"overview", "概览"},
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -632,9 +640,9 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "":
 			return help("日程")
 		case "今日", "今天":
-			return "overview", rest, true
+			return "calendar", rest, true
 		case "概览", "汇总":
-			return "dashboard", rest, true
+			return "overview", rest, true
 		case "截止", "近期截止":
 			return "upcoming_deadlines", rest, true
 		}
@@ -742,7 +750,7 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "":
 			return help("账户")
 		case "信息", "我":
-			return "me", rest, true
+			return "account", rest, true
 		case "登录":
 			return "login", normalizeLoginArgs(rest), true
 		case "登录状态":
@@ -755,7 +763,7 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 	case "设置":
 		switch action {
 		case "":
-			return "notify", nil, true
+			return "settings", nil, true
 		case "通知", "提醒":
 			return "notify", normalizeNotifyArgs(rest), true
 		case "工具调用", "ai工具", "ai":
@@ -1383,7 +1391,7 @@ func formatFeedbackContext(interactions []store.Interaction) string {
 	for i := len(interactions) - 1; i >= 0; i-- {
 		interaction := interactions[i]
 		switch strings.ToLower(strings.TrimSpace(interaction.Command)) {
-		case "feedback", "login", "me", "status":
+		case "account", "feedback", "login", "status":
 			continue
 		}
 		raw := compactFeedbackContextText(interaction.RawText)
@@ -2604,7 +2612,7 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 func subscriptionHelp() string {
 	return strings.Join([]string{
 		"订阅用法：",
-		"订阅：查看当前日程订阅",
+		"订阅：查看当前教学班订阅",
 		"订阅 链接：查看私有日历订阅链接",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
@@ -2630,6 +2638,31 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 		return "当前订阅没有可用的日历链接。"
 	}
 	return "日历订阅链接：\n" + calendarURL + "\n请勿公开或转发此链接。"
+}
+
+func (h Handler) settings(ctx context.Context, ident store.Identity, args []string) string {
+	if !hasArgs(args) || firstArgIs(args, "help") {
+		return strings.Join([]string{
+			"设置用法：",
+			"设置 通知：查看课前与作业提醒",
+			"设置 通知 课表 开 / 关",
+			"设置 通知 作业 开 / 关",
+			"设置 AI 工具：查看 AI 工具调用显示设置",
+			"设置 AI 工具 开 / 关",
+		}, "\n")
+	}
+	switch normToken(args[0]) {
+	case "notify", "notice", "提醒", "通知", "推送":
+		return h.notify(ctx, ident, normalizeNotifyArgs(args[1:]))
+	case "agent", "ai", "llm", "tool", "tools", "工具", "调试":
+		rest := args[1:]
+		if len(rest) > 0 && firstArgIn(rest, "tool", "tools", "工具") {
+			rest = rest[1:]
+		}
+		return h.agentSettings(ctx, ident, normalizeAgentArgs(rest))
+	default:
+		return "未知设置项。\n" + h.settings(ctx, ident, []string{"help"})
+	}
 }
 
 func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {
@@ -4240,7 +4273,6 @@ func listPageOutOfRange(label string, itemCount int, command func(int) string) s
 	page, _ := listPageFor(itemCount, 1)
 	return fmt.Sprintf("%s只有 %d 页。发送「%s」查看最后一页。", label, page.total, command(page.total))
 }
-
 
 func chinaNow() time.Time {
 	return time.Now().In(lifedata.ChinaLocation())

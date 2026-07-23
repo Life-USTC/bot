@@ -49,12 +49,12 @@ func helpDetailSections() []helpSection {
 				{topic: "shortcuts", commandName: "login", command: "登录", description: "相当于“账户 登录”"},
 				{topic: "shortcuts", commandName: "todo", command: "待办（td）", description: "直接查看未完成待办"},
 				{topic: "shortcuts", commandName: "homework", command: "作业（hw）", description: "直接查看未完成作业"},
-				{topic: "shortcuts", commandName: "overview", command: "今日（ddl）", description: "相当于“日程 今日”"},
-				{topic: "shortcuts", commandName: "dashboard", command: "概览", description: "相当于“日程 概览”"},
+				{topic: "shortcuts", commandName: "calendar", command: "今日（ddl）", description: "相当于“日程 今日”"},
+				{topic: "shortcuts", commandName: "overview", command: "概览", description: "相当于“日程 概览”"},
 				{topic: "shortcuts", commandName: "upcoming_deadlines", command: "近期截止 14", description: "相当于“日程 截止 14”"},
 				{topic: "shortcuts", commandName: "schedule", command: "明日课表", description: "相当于“课表 单日 明天”"},
 				{topic: "shortcuts", commandName: "nextclass", command: "下一节课", description: "相当于“课表 下一节”"},
-				{topic: "shortcuts", commandName: "me", command: "我（me）", description: "相当于“账户 信息”"},
+				{topic: "shortcuts", commandName: "account", command: "我（me）", description: "相当于“账户 信息”"},
 				{topic: "shortcuts", commandName: "logout", command: "退出", description: "相当于“账户 退出”"},
 				{topic: "shortcuts", commandName: "status", command: "状态（status）", description: "相当于“系统 状态”"},
 				{topic: "shortcuts", commandName: "notify", command: "通知", description: "相当于“设置 通知”"},
@@ -64,8 +64,8 @@ func helpDetailSections() []helpSection {
 		{
 			title: "日程",
 			rows: []helpRow{
-				{topic: "agenda", commandName: "overview", command: "日程 今日", description: "汇总今日课程、待办和作业"},
-				{topic: "agenda", commandName: "dashboard", command: "日程 概览", description: "汇总待办、作业和考试"},
+				{topic: "agenda", commandName: "calendar", command: "日程 今日", description: "汇总今日课程、待办和作业"},
+				{topic: "agenda", commandName: "overview", command: "日程 概览", description: "汇总待办、作业和考试"},
 				{topic: "agenda", commandName: "upcoming_deadlines", command: "日程 截止", description: "查看未来 7 天的截止事项"},
 				{topic: "agenda", commandName: "upcoming_deadlines", command: "日程 截止 14", description: "指定未来天数"},
 			},
@@ -225,7 +225,7 @@ func helpDetailSections() []helpSection {
 			rows: []helpRow{
 				{topic: "account", commandName: "login", command: "账户 登录", description: "开始 Life@USTC 登录"},
 				{topic: "account", commandName: "login", command: "账户 登录状态", description: "查询当前登录流程"},
-				{topic: "account", commandName: "me", command: "账户 信息", description: "查看当前登录用户"},
+				{topic: "account", commandName: "account", command: "账户 信息", description: "查看当前登录用户"},
 				{topic: "account", commandName: "status", command: "账户 状态", description: "查看服务与登录状态"},
 				{topic: "account", commandName: "logout", command: "账户 退出", description: "退出并清除登录状态"},
 			},
@@ -233,6 +233,7 @@ func helpDetailSections() []helpSection {
 		{
 			title: "设置",
 			rows: []helpRow{
+				{topic: "settings", commandName: "settings", command: "设置", description: "查看设置命令"},
 				{topic: "settings", commandName: "notify", command: "设置 通知", description: "查看通知设置"},
 				{topic: "settings", commandName: "notify", command: "设置 通知 课表 开", description: "开启课前提醒"},
 				{topic: "settings", commandName: "notify", command: "设置 通知 课表 关", description: "关闭课前提醒"},
@@ -371,8 +372,8 @@ var helpTopicAliases = map[string]string{
 }
 
 var internalHelpTopics = map[string]string{
+	"calendar":                     "agenda",
 	"overview":                     "agenda",
-	"dashboard":                    "agenda",
 	"upcoming_deadlines":           "agenda",
 	"schedule":                     "schedule",
 	"nextclass":                    "schedule",
@@ -400,7 +401,8 @@ var internalHelpTopics = map[string]string{
 	"bus_routes":                   "bus",
 	"login":                        "account",
 	"logout":                       "account",
-	"me":                           "account",
+	"account":                      "account",
+	"settings":                     "settings",
 	"notify":                       "settings",
 	"agent":                        "settings",
 	"status":                       "system",

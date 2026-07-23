@@ -27,6 +27,7 @@ git -C "$ROOT" archive --format=tar.gz --prefix=src/ "$REVISION" \
 	| ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && rm -rf src && tar -xzf - && printf '%s\n' '$REVISION' > .deploy-revision"
 
 scp -q "$ROOT/$ENV_FILE" "$REMOTE_HOST:$REMOTE_DIR/.env"
+scp -q "$ROOT/compose.yaml" "$REMOTE_HOST:$REMOTE_DIR/compose.yaml"
 ssh "$REMOTE_HOST" "sed -i '/^BOT_BUILD_VERSION=/d' '$REMOTE_DIR/.env' && printf '%s\n' 'BOT_BUILD_VERSION=$REVISION' >> '$REMOTE_DIR/.env' && chmod 600 '$REMOTE_DIR/.env'"
 
-ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && docker compose up -d --build '$SERVICE' && docker compose ps '$SERVICE'"
+ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && docker compose -f compose.yaml config --quiet && docker compose -f compose.yaml up -d --build '$SERVICE' && docker compose -f compose.yaml ps '$SERVICE'"

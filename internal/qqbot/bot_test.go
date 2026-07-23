@@ -1,8 +1,10 @@
 package qqbot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,10 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/tencent-connect/botgo/interaction/signature"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -129,6 +133,72 @@ func TestSendToTreatsPlatformRejectionAsFailed(t *testing.T) {
 	}, "hello", "", "", 0)
 	if err == nil || isUncertainSendError(err) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestOpenAPILogsMetadataWithoutPayloads(t *testing.T) {
+	var logs bytes.Buffer
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["content"] != "private-request" {
+			t.Fatalf("body = %#v", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "private-response"})
+	}))
+	defer server.Close()
+
+	var out map[string]string
+	bot := &Bot{
+		APIBaseURL: server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
+	}
+	if err := bot.openAPI(
+		context.Background(),
+		http.MethodPost,
+		"/messages",
+		"token",
+		map[string]string{"content": "private-request"},
+		&out,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if out["id"] != "private-response" {
+		t.Fatalf("response = %#v", out)
+	}
+	if strings.Contains(logs.String(), "private-request") || strings.Contains(logs.String(), "private-response") {
+		t.Fatalf("logs contain request or response payload: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), "QQ bot openapi request: method=POST path=/messages") ||
+		!strings.Contains(logs.String(), "QQ bot openapi response: method=POST path=/messages status=200") {
+		t.Fatalf("logs missing request metadata: %q", logs.String())
+	}
+}
+
+func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
+	var logs bytes.Buffer
+	bot := &Bot{
+		Handler: commands.Handler{Prefix: "/life"},
+		Logger:  log.New(&logs, "", 0),
+	}
+	bot.handleDispatch(context.Background(), gatewayPayload{
+		Op: opDispatch,
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"content":"private-query",
+			"author":{"user_openid":"user-openid"}
+		}`),
+	})
+
+	if strings.Contains(logs.String(), "private-query") {
+		t.Fatalf("logs contain private message text: %q", logs.String())
+	}
+	if !strings.Contains(logs.String(), `QQ bot message: event=C2C_MESSAGE_CREATE conversation_type=private user_id="user-openid" conversation_id="user-openid"`) {
+		t.Fatalf("logs missing message metadata: %q", logs.String())
 	}
 }
 
@@ -995,6 +1065,161 @@ func TestAccessTokenUsesStaticTokenWithoutSecret(t *testing.T) {
 	}
 	if token != "static-token" {
 		t.Fatalf("token = %q", token)
+	}
+}
+
+func TestRunStopsAfterPermanentTokenFailure(t *testing.T) {
+	requests := 0
+	const privateValue = "revoked secret credential"
+	const privateBody = `{"message":"` + privateValue + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, privateBody, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		TokenURL:   server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
+	}
+	err := bot.run(context.Background(), retry.Backoff{Initial: time.Millisecond, Max: time.Millisecond})
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("Run error = %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("token requests = %d, want 1", requests)
+	}
+	if strings.Contains(logs.String(), privateValue) || strings.Contains(err.Error(), privateValue) {
+		t.Fatalf("private token response leaked: error=%v logs=%s", err, logs.String())
+	}
+}
+
+func TestFetchAccessTokenDoesNotLogMalformedResponse(t *testing.T) {
+	const privateValue = "private-access-token"
+	const privateBody = `{"access_token":"` + privateValue + `"`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(privateBody))
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		TokenURL:   server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
+	}
+	_, _, err := bot.fetchAccessToken(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "decode qq bot token response") {
+		t.Fatalf("fetchAccessToken error = %v", err)
+	}
+	if strings.Contains(logs.String(), privateValue) || strings.Contains(err.Error(), privateValue) {
+		t.Fatalf("private malformed token response leaked: error=%v logs=%s", err, logs.String())
+	}
+	if !strings.Contains(logs.String(), "QQ bot token response: status=200") {
+		t.Fatalf("logs missing response status: %s", logs.String())
+	}
+}
+
+func TestRunRetriesTransientTokenFailures(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests >= 3 {
+			cancel()
+		}
+		http.Error(w, "temporary", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	bot := &Bot{AppID: "appid", AppSecret: "secret", TokenURL: server.URL, HTTPClient: server.Client()}
+	if err := bot.run(ctx, retry.Backoff{Initial: time.Millisecond, Max: 2 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if requests < 3 {
+		t.Fatalf("token requests = %d, want at least 3", requests)
+	}
+}
+
+func TestRunResetsBackoffAfterReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var connections atomic.Int32
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		attempt := connections.Add(1)
+		if err := conn.WriteJSON(gatewayPayload{
+			Op: opHello,
+			D:  json.RawMessage(`{"heartbeat_interval":3600000}`),
+		}); err != nil {
+			t.Error(err)
+			return
+		}
+		var identify gatewaySendPayload
+		if err := conn.ReadJSON(&identify); err != nil {
+			t.Error(err)
+			return
+		}
+		if identify.Op != opIdentify {
+			t.Errorf("identify opcode = %d", identify.Op)
+			return
+		}
+		if attempt == 3 {
+			if err := conn.WriteJSON(gatewayPayload{
+				Op: opDispatch,
+				T:  "READY",
+				D:  json.RawMessage(`{}`),
+			}); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+		if attempt == 4 {
+			cancel()
+		}
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	bot := &Bot{
+		BotToken:   "static-token",
+		GatewayURL: "ws" + server.URL[len("http"):],
+		Logger:     log.New(&logs, "", 0),
+	}
+	if err := bot.run(ctx, retry.Backoff{Initial: 5 * time.Millisecond, Max: 20 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if got := connections.Load(); got != 4 {
+		t.Fatalf("connections = %d, want 4", got)
+	}
+	if got := strings.Count(logs.String(), "reconnecting in 5ms"); got != 2 {
+		t.Fatalf("initial-delay logs = %d, want 2:\n%s", got, logs.String())
+	}
+	if got := strings.Count(logs.String(), "reconnecting in 10ms"); got != 1 {
+		t.Fatalf("grown-delay logs = %d, want 1:\n%s", got, logs.String())
+	}
+}
+
+func TestRateLimitedTokenFailureRemainsRetryable(t *testing.T) {
+	if isPermanentHTTPStatus(http.StatusTooManyRequests) {
+		t.Fatal("429 classified as permanent")
+	}
+	if !isPermanentHTTPStatus(http.StatusUnauthorized) {
+		t.Fatal("401 classified as retryable")
 	}
 }
 

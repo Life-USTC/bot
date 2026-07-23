@@ -70,12 +70,12 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "下一节课")
 		return responses.NewRichTextImage("nextclass", scheduleRichText(title, plainText), imageText)
+	case "calendar":
+		plainText := textutil.PlainMonospace(text)
+		return richTextImage("calendar", imageTitle(plainText, "今日安排"), plainText)
 	case "overview":
 		plainText := textutil.PlainMonospace(text)
-		return richTextImage("overview", imageTitle(plainText, "今日安排"), plainText)
-	case "dashboard":
-		plainText := textutil.PlainMonospace(text)
-		return richTextImage("dashboard", imageTitle(plainText, "我的概览"), plainText)
+		return richTextImage("overview", imageTitle(plainText, "我的概览"), plainText)
 	case "upcoming_deadlines":
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("deadlines", imageTitle(plainText, "近期截止"), plainText)
