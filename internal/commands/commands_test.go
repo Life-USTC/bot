@@ -3196,7 +3196,7 @@ func TestHandleSectionHomeworks(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/community/homeworks" {
+		if r.URL.Path != "/api/community/section-homeworks" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()

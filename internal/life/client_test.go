@@ -736,7 +736,7 @@ func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch r.URL.Path {
-		case "/api/account":
+		case "/api/account/profile":
 			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 		case "/api/auth/oauth2/userinfo":
 			_, _ = w.Write([]byte(`{"sub":"user-1","preferred_username":"tiankai"}`))
@@ -760,19 +760,19 @@ func TestIsUnauthorized(t *testing.T) {
 	if IsUnauthorized(nil) {
 		t.Fatal("nil error reported unauthorized")
 	}
-	if !IsUnauthorized(errors.New(`GET /api/account returned 401: {"error":"Unauthorized"}`)) {
+	if !IsUnauthorized(errors.New(`GET /api/account/profile returned 401: {"error":"Unauthorized"}`)) {
 		t.Fatal("401 error was not recognized")
 	}
-	if !IsUnauthorized(errors.New("GET /api/account returned 401")) {
+	if !IsUnauthorized(errors.New("GET /api/account/profile returned 401")) {
 		t.Fatal("bodyless 401 error was not recognized")
 	}
-	if !IsUnauthorized(errors.New("GET /api/account RETURNED 401: Unauthorized")) {
+	if !IsUnauthorized(errors.New("GET /api/account/profile RETURNED 401: Unauthorized")) {
 		t.Fatal("case-insensitive 401 error was not recognized")
 	}
 	if !IsUnauthorized(HTTPError{StatusCode: http.StatusUnauthorized}) {
 		t.Fatal("typed 401 error was not recognized")
 	}
-	if IsUnauthorized(errors.New("GET /api/account returned 500: nope")) {
+	if IsUnauthorized(errors.New("GET /api/account/profile returned 500: nope")) {
 		t.Fatal("non-401 error was recognized")
 	}
 	if IsUnauthorized(HTTPError{StatusCode: http.StatusInternalServerError}) {

@@ -79,6 +79,45 @@ func (c *Client) CurrentSemester(ctx context.Context) (map[string]any, error) {
 	return out, err
 }
 
+func (c *Client) CatalogLinks(ctx context.Context) ([]map[string]any, error) {
+	var out struct {
+		Links []map[string]any `json:"links"`
+	}
+	resp, err := c.Typed(ctx, "").CatalogLinkList(ctx)
+	if err := typedJSON(resp, err, "catalog links", &out); err != nil {
+		return nil, err
+	}
+	return out.Links, nil
+}
+
+func (c *Client) LinkPins(ctx context.Context, token string) (map[string]any, error) {
+	var out map[string]any
+	resp, err := c.Typed(ctx, token).WorkspaceLinkPinList(ctx)
+	err = typedJSON(resp, err, "link pins", &out)
+	return out, err
+}
+
+func (c *Client) SetLinkPin(
+	ctx context.Context,
+	token, slug, action string,
+) (map[string]any, error) {
+	value := openapi.WorkspaceLinkPinRequestSchemaAction(action)
+	var out map[string]any
+	resp, err := c.Typed(ctx, token).WorkspaceLinkPinSetWithFormdataBody(
+		ctx,
+		openapi.WorkspaceLinkPinSetFormdataRequestBody{
+			Action: &value,
+			Slug:   strings.TrimSpace(slug),
+		},
+		func(_ context.Context, request *http.Request) error {
+			request.Header.Set("Accept", "application/json")
+			return nil
+		},
+	)
+	err = typedJSON(resp, err, "set link pin", &out)
+	return out, err
+}
+
 func (c *Client) SearchCourses(ctx context.Context, search string, limit int) ([]map[string]any, error) {
 	params := openapi.ListCoursesParams{}
 	setSearchLimit(&params.Search, &params.Limit, search, limit)
@@ -219,7 +258,7 @@ func (c *Client) GetTeacherByID(ctx context.Context, id int64) (map[string]any, 
 }
 
 func (c *Client) ListBusRoutes(ctx context.Context, originCampusID, destinationCampusID int64) (map[string]any, error) {
-	params := openapi.GetApiBusRoutesParams{}
+	params := openapi.CatalogBusRouteSearchParams{}
 	if originCampusID > 0 {
 		params.OriginCampusId = &originCampusID
 	}
@@ -227,7 +266,7 @@ func (c *Client) ListBusRoutes(ctx context.Context, originCampusID, destinationC
 		params.DestinationCampusId = &destinationCampusID
 	}
 	var out map[string]any
-	resp, err := c.Typed(ctx, "").GetApiBusRoutes(ctx, &params)
+	resp, err := c.Typed(ctx, "").CatalogBusRouteSearch(ctx, &params)
 	err = typedJSON(resp, err, "bus routes", &out)
 	return out, err
 }
@@ -289,11 +328,13 @@ func (c *Client) ListExamsBySection(ctx context.Context, token string, sectionJw
 }
 
 func (c *Client) ListHomeworksBySection(ctx context.Context, token string, sectionJwId int64) ([]map[string]any, error) {
-	params := openapi.ListHomeworksParams{SectionJwId: &sectionJwId}
+	params := openapi.CommunitySectionHomeworkListParams{
+		SectionJwId: &sectionJwId,
+	}
 	var out struct {
 		Homeworks []map[string]any `json:"homeworks"`
 	}
-	resp, err := c.Typed(ctx, token).ListHomeworks(ctx, &params)
+	resp, err := c.Typed(ctx, token).CommunitySectionHomeworkList(ctx, &params)
 	if err := typedJSON(resp, err, "section homeworks", &out); err != nil {
 		return nil, err
 	}
@@ -301,21 +342,21 @@ func (c *Client) ListHomeworksBySection(ctx context.Context, token string, secti
 }
 
 func (c *Client) GetMyDashboard(ctx context.Context, token string) (map[string]any, error) {
-	params := openapi.GetApiMeOverviewParams{}
+	params := openapi.WorkspaceOverviewGetParams{}
 	var out map[string]any
-	resp, err := c.Typed(ctx, token).GetApiMeOverview(ctx, &params)
+	resp, err := c.Typed(ctx, token).WorkspaceOverviewGet(ctx, &params)
 	err = typedJSON(resp, err, "dashboard", &out)
 	return out, err
 }
 
 func (c *Client) GetUpcomingDeadlines(ctx context.Context, token string, dayLimit int) (map[string]any, error) {
-	params := openapi.GetApiMeOverviewParams{}
+	params := openapi.WorkspaceOverviewGetParams{}
 	if dayLimit > 0 {
 		params.HomeworkWindowDays = int64Ptr(int64(dayLimit))
 	}
 	params.Limit = int64Ptr(int64(50))
 	var out map[string]any
-	resp, err := c.Typed(ctx, token).GetApiMeOverview(ctx, &params)
+	resp, err := c.Typed(ctx, token).WorkspaceOverviewGet(ctx, &params)
 	err = typedJSON(resp, err, "upcoming deadlines", &out)
 	return out, err
 }
@@ -326,7 +367,10 @@ func int64Ptr(v int64) *int64 {
 
 func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
-	resp, err := c.Typed(ctx, "").QueryBus(ctx, &openapi.QueryBusParams{})
+	resp, err := c.Typed(ctx, "").CatalogBusTimetableGet(
+		ctx,
+		&openapi.CatalogBusTimetableGetParams{},
+	)
 	err = typedJSON(resp, err, "bus", &out)
 	return out, err
 }
@@ -341,7 +385,7 @@ func (c *Client) BusPreferences(ctx context.Context, token string) (BusPreferenc
 	var out struct {
 		Preference BusPreferences `json:"preference"`
 	}
-	resp, err := c.Typed(ctx, token).GetBusPreferences(ctx)
+	resp, err := c.Typed(ctx, token).WorkspaceBusPreferencesGet(ctx)
 	err = typedJSON(resp, err, "bus preferences", &out)
 	return out.Preference, err
 }
@@ -350,19 +394,19 @@ func (c *Client) SetBusPreferences(ctx context.Context, token string, preference
 	var out struct {
 		Preference BusPreferences `json:"preference"`
 	}
-	body := openapi.SetBusPreferencesJSONRequestBody{
+	body := openapi.WorkspaceBusPreferencesSetJSONRequestBody{
 		PreferredDestinationCampusId: preferences.PreferredDestinationCampusID,
 		PreferredOriginCampusId:      preferences.PreferredOriginCampusID,
 		ShowDepartedTrips:            preferences.ShowDepartedTrips,
 	}
-	resp, err := c.Typed(ctx, token).SetBusPreferences(ctx, body)
+	resp, err := c.Typed(ctx, token).WorkspaceBusPreferencesSet(ctx, body)
 	err = typedJSON(resp, err, "set bus preferences", &out)
 	return out.Preference, err
 }
 
 func (c *Client) Me(ctx context.Context, token string) (map[string]any, error) {
 	var out map[string]any
-	resp, err := c.Typed(ctx, token).GetMe(ctx)
+	resp, err := c.Typed(ctx, token).AccountProfileGet(ctx)
 	err = typedJSON(resp, err, "me", &out)
 	if IsUnauthorized(err) {
 		err = c.getAuth(ctx, "/api/auth/oauth2/userinfo", nil, token, &out)
@@ -638,7 +682,10 @@ func (c *Client) SubscribedSchedules(ctx context.Context, token string, values u
 	var out struct {
 		Schedules []map[string]any `json:"schedules"`
 	}
-	resp, err := c.Typed(ctx, token).GetApiMeSubscriptionsSchedules(ctx, subscribedSchedulesParams(values))
+	resp, err := c.Typed(ctx, token).WorkspaceScheduleList(
+		ctx,
+		subscribedSchedulesParams(values),
+	)
 	if err := typedJSON(resp, err, "subscribed schedules", &out); err != nil {
 		return nil, err
 	}
@@ -837,8 +884,8 @@ func listSchedulesParams(values url.Values) *openapi.ListSchedulesParams {
 	return params
 }
 
-func subscribedSchedulesParams(values url.Values) *openapi.GetApiMeSubscriptionsSchedulesParams {
-	params := &openapi.GetApiMeSubscriptionsSchedulesParams{}
+func subscribedSchedulesParams(values url.Values) *openapi.WorkspaceScheduleListParams {
+	params := &openapi.WorkspaceScheduleListParams{}
 	if value := strings.TrimSpace(values.Get("dateFrom")); value != "" {
 		params.DateFrom = &value
 	}
