@@ -106,7 +106,7 @@ func TestSearchSectionsTrimsKeyword(t *testing.T) {
 
 func TestHandleTeacherSearch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/teachers" {
+		if r.URL.Path != "/api/catalog/teachers" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		if r.URL.Query().Get("search") != "张" {
@@ -151,20 +151,18 @@ func TestHandleHelpAliases(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not handled", text)
 		}
-		if !strings.Contains(reply, "待办 / td") {
+		if !strings.Contains(reply, "我的工作区") || !strings.Contains(reply, "待办") {
 			t.Fatalf("unexpected reply for %q: %q", text, reply)
 		}
 	}
 }
 
-func TestHelpReplyIsCompact(t *testing.T) {
+func TestHelpReplyUsesDomainGroups(t *testing.T) {
 	reply := Handler{}.help()
-	want := "可以直接发：待办 / td；td 写报告；td done 1；作业 / hw；作业 done 1；今日 / ddl；校车 / xc；xc 东区 西区；今天课表 / 明天课表；下一节课；订阅；通知；AI 工具；状态 / status；我 / me；反馈 你的建议；课程 数学分析；教学班 高等数学；老师 张；考试 / ks；登录 / 登录 状态"
-	if reply != want {
-		t.Fatalf("reply = %q, want %q", reply, want)
-	}
-	if strings.ContainsAny(reply, "\n\r\x1b") {
-		t.Fatalf("reply contains control separator: %q", reply)
+	for _, want := range []string{"校园信息", "我的工作区", "社区", "账户与设置", "系统", "快捷词仅作为别名"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply = %q, missing %q", reply, want)
+		}
 	}
 }
 
@@ -207,10 +205,10 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	aliases := map[string]string{}
 	handler := Handler{Prefix: "/life"}
 	lifeCommands := map[string]bool{
-		"me":                           true,
+		"account":                      true,
 		"todo":                         true,
 		"homework":                     true,
-		"overview":                     true,
+		"calendar":                     true,
 		"subscription":                 true,
 		"ping":                         true,
 		"status":                       true,
@@ -235,7 +233,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"section_schedules":            true,
 		"section_exams":                true,
 		"section_homeworks":            true,
-		"dashboard":                    true,
+		"overview":                     true,
 		"upcoming_deadlines":           true,
 	}
 	storeCommands := map[string]bool{
@@ -245,10 +243,10 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 	authCommands := map[string]bool{
 		"login":                        true,
 		"logout":                       true,
-		"me":                           true,
+		"account":                      true,
 		"todo":                         true,
 		"homework":                     true,
-		"overview":                     true,
+		"calendar":                     true,
 		"subscription":                 true,
 		"schedule":                     true,
 		"nextclass":                    true,
@@ -258,7 +256,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"section_schedules":            true,
 		"section_exams":                true,
 		"section_homeworks":            true,
-		"dashboard":                    true,
+		"overview":                     true,
 		"upcoming_deadlines":           true,
 	}
 	helpCommands := map[string]bool{
@@ -267,6 +265,7 @@ func TestCommandSpecsAreUsable(t *testing.T) {
 		"homework":     true,
 		"subscription": true,
 		"notify":       true,
+		"settings":     true,
 		"agent":        true,
 		"bus":          true,
 		"schedule":     true,
@@ -363,11 +362,15 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 
-	for _, text := range []string{"课程 help", "教学班 help", "校车 help", "状态 help"} {
+	for _, text := range []string{"课程 help", "教学班 help", "状态 help"} {
 		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
-		if !ok || !strings.Contains(reply, "可以直接发：") {
+		if !ok || !strings.Contains(reply, "Life @ USTC 命令：") {
 			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
 		}
+	}
+	reply, ok = handler.Handle(context.Background(), Input{Text: "校车 help", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "校车 设置") {
+		t.Fatalf("bus help reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -533,7 +536,7 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	ident := testIdentity()
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
@@ -561,7 +564,7 @@ func TestHandleOKConfirmsPendingCommand(t *testing.T) {
 	ident := testIdentity()
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -606,7 +609,7 @@ func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 			refreshRequests++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/todos":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/todos":
 			todoRequests++
 			if todoRequests == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
@@ -763,7 +766,7 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
-		if r.URL.Path != "/api/me/subscriptions/schedules" {
+		if r.URL.Path != "/api/workspace/schedules" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
@@ -985,7 +988,7 @@ func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" {
+		if r.URL.Path != "/api/workspace/todos" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","priority":"high"}]}`))
@@ -1009,7 +1012,7 @@ func TestHandleResponseLeavesTodoMutationTextOnly(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"id":"todo-1","title":"写报告"}`))
@@ -1039,12 +1042,12 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-05-14T23:55:00+08:00"},{"id":"todo-2","title":"买咖啡"}]}`))
-		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodPatch:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
@@ -1076,9 +1079,9 @@ func TestHandleTodoDoneUsesNumericID(t *testing.T) {
 	patched := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"todos":[{"id":123,"title":"写报告"}]}`))
-		case r.URL.Path == "/api/todos/123" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/workspace/todos/123" && r.Method == http.MethodPatch:
 			patched = true
 			_, _ = w.Write([]byte(`{"id":123,"completed":true}`))
 		default:
@@ -1103,12 +1106,12 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
-		case r.URL.Path == "/api/todos/batch" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/workspace/todos/batch" && r.Method == http.MethodPatch:
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
@@ -1380,7 +1383,7 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodGet {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		values := r.URL.Query()
@@ -1406,7 +1409,7 @@ func TestHandleTodoAddWithOptionalFields(t *testing.T) {
 	ident := testIdentity()
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/todos" || r.Method != http.MethodPost {
+		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -1435,12 +1438,12 @@ func TestHandleTodoUndoByIndex(t *testing.T) {
 	patched := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			if r.URL.Query().Get("completed") != "true" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","completed":true}]}`))
-		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodPatch:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
@@ -1472,9 +1475,9 @@ func TestHandleTodoUpdateByIndex(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"旧标题"}]}`))
-		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodPatch:
+		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodPatch:
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
@@ -1511,9 +1514,9 @@ func TestHandleTodoDeleteByIndex(t *testing.T) {
 	deleted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/todos" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告"}]}`))
-		case r.URL.Path == "/api/todos/todo-1" && r.Method == http.MethodDelete:
+		case r.URL.Path == "/api/workspace/todos/todo-1" && r.Method == http.MethodDelete:
 			deleted = true
 			_, _ = w.Write([]byte(`{"success":true}`))
 		default:
@@ -1605,9 +1608,9 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completion":null}]}`))
-		case r.URL.Path == "/api/homeworks/hw-1/completion" && r.Method == http.MethodPut:
+		case r.URL.Path == "/api/workspace/homeworks/hw-1/completion" && r.Method == http.MethodPut:
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatal(err)
@@ -1642,7 +1645,7 @@ func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/me/subscriptions/homeworks" || r.Method != http.MethodGet {
+		if r.URL.Path != "/api/workspace/homeworks" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"homeworks":[
@@ -1682,9 +1685,9 @@ func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/me/subscriptions/homeworks" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
-		case r.URL.Path == "/api/homeworks/completions" && r.Method == http.MethodPut:
+		case r.URL.Path == "/api/workspace/homeworks/completions" && r.Method == http.MethodPut:
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
@@ -1783,18 +1786,18 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch r.URL.Path {
-		case "/api/calendar-subscriptions/current":
+		case "/api/workspace/subscriptions/current":
 			_, _ = fmt.Fprintf(w, `{"subscription":{"sections":[
 				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":%q,"startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
 			]}}`, today+"T00:00:00+08:00")
-		case "/api/me/subscriptions/schedules":
+		case "/api/workspace/schedules":
 			_, _ = fmt.Fprintf(w, `{"schedules":[{"id":1,"date":%q,"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`, today+"T00:00:00+08:00")
-		case "/api/todos":
+		case "/api/workspace/todos":
 			if r.URL.Query().Get("completed") != "false" {
 				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
 			}
 			_, _ = fmt.Fprintf(w, `{"todos":[{"id":"todo-1","title":"写报告","dueAt":%q}]}`, today+"T18:00:00+08:00")
-		case "/api/me/subscriptions/homeworks":
+		case "/api/workspace/homeworks":
 			_, _ = fmt.Fprintf(w, `{"homeworks":[{"id":"hw-1","title":"作业一","submissionDueAt":%q,"section":{"course":{"namePrimary":"数学分析"}}}]}`, today+"T23:59:00+08:00")
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1821,7 +1824,7 @@ func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
-		if r.URL.Path != "/api/calendar-subscriptions/current" {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"subscription":{"sections":[
@@ -1883,7 +1886,7 @@ func TestHandleTodayCurriculum(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.URL.Path == "/api/me/subscriptions/schedules":
+		case r.URL.Path == "/api/workspace/schedules":
 			if !strings.HasSuffix(r.URL.Query().Get("dateFrom"), "Z") || !strings.HasSuffix(r.URL.Query().Get("dateTo"), "Z") {
 				t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 			}
@@ -1912,7 +1915,7 @@ func TestHandleCurriculumForSpecificDate(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
-		if r.URL.Path != "/api/me/subscriptions/schedules" {
+		if r.URL.Path != "/api/workspace/schedules" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		if !strings.Contains(r.URL.Query().Get("dateFrom"), "2026-06-22T16:00:00Z") || !strings.Contains(r.URL.Query().Get("dateTo"), "2026-06-23T15:59:59Z") {
@@ -1935,9 +1938,9 @@ func TestHandleCurriculumDoesNotClaimNoClassWithoutSubscriptions(t *testing.T) {
 	base := time.Date(2026, 5, 4, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/me/subscriptions/schedules":
+		case "/api/workspace/schedules":
 			_, _ = w.Write([]byte(`{"schedules":[]}`))
-		case "/api/calendar-subscriptions/current":
+		case "/api/workspace/subscriptions/current":
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[]}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -1958,9 +1961,9 @@ func TestHandleCurriculumConfirmsNoClassWhenSubscriptionsExist(t *testing.T) {
 	base := time.Date(2026, 5, 4, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/me/subscriptions/schedules":
+		case "/api/workspace/schedules":
 			_, _ = w.Write([]byte(`{"schedules":[]}`))
-		case "/api/calendar-subscriptions/current":
+		case "/api/workspace/subscriptions/current":
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":71}]}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -2010,7 +2013,7 @@ func TestCurriculumUsesRefreshedTokenForSchedules(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/schedules":
 			scheduleCalls++
 			if scheduleCalls == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
@@ -2057,7 +2060,7 @@ func TestBareCurriculumReusesRefreshedTokenAcrossDays(t *testing.T) {
 			refreshRequests++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/me/subscriptions/schedules":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/schedules":
 			switch r.Header.Get("Authorization") {
 			case "Bearer access":
 				scheduleOldTokenCalls++
@@ -2098,7 +2101,7 @@ func TestBareCurriculumShowsTodayAndTomorrowAtFixedDate(t *testing.T) {
 	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/me/subscriptions/schedules":
+		case r.URL.Path == "/api/workspace/schedules":
 			scheduleCalls++
 			if scheduleCalls == 1 {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`, today)))
@@ -2126,7 +2129,7 @@ func TestNextClassSkipsPastClassAtFixedTime(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/me/subscriptions/schedules":
+		case r.URL.Path == "/api/workspace/schedules":
 			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:00","endTime":"09:45","section":{"course":{"namePrimary":"已过去"}}},{"startTime":"11:00","endTime":"11:45","section":{"course":{"namePrimary":"下一节"}}}]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -2146,7 +2149,7 @@ func TestFetchSchedulesForSectionsLimitsConcurrency(t *testing.T) {
 	var current int32
 	var maxSeen int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/schedules" {
+		if r.URL.Path != "/api/catalog/schedules" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		now := atomic.AddInt32(&current, 1)
@@ -2202,12 +2205,16 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "设置", Identity: ident})
-	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
-		t.Fatalf("settings alias reply = %q, ok = %v", reply, ok)
+	if !ok || !strings.Contains(reply, "设置用法：") || !strings.Contains(reply, "设置 通知") || !strings.Contains(reply, "设置 AI 工具") {
+		t.Fatalf("settings help reply = %q, ok = %v", reply, ok)
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
+	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
+		t.Fatalf("nested notification settings reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知 课表 开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+		t.Fatalf("nested notification update reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业呃开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
@@ -2287,7 +2294,7 @@ func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/calendar-subscriptions/current" {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"subscription":{"sections":[
@@ -2340,7 +2347,7 @@ func TestBulkSubscribeSectionsAddsMatchedSections(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/subscriptions/batch":
 			var req struct {
 				Action string   `json:"action"`
 				Codes  []string `json:"codes"`
@@ -2394,7 +2401,7 @@ func TestBulkSubscribeSectionsUsesRefreshedToken(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"refreshed","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/calendar-subscriptions/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/subscriptions/batch":
 			importCalls++
 			if importCalls == 1 {
 				if got := r.Header.Get("Authorization"); got != "Bearer access" {
@@ -2516,8 +2523,8 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"td": "todo",
 		"校车": "bus",
 		"xc": "bus",
-		"日程": "schedule",
-		"rc": "schedule",
+		"日程": "calendar",
+		"rc": "calendar",
 		"kb": "schedule",
 		"老师": "teacher",
 		"js": "teacher",
@@ -2525,7 +2532,7 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"ks": "exam",
 		"状态": "status",
 		"zt": "status",
-		"设置": "notify",
+		"设置": "settings",
 		"反馈": "feedback",
 		"fb": "feedback",
 	}
@@ -2554,9 +2561,8 @@ func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 		t.Fatalf("notify parsed as %#v, ok=%v", cmd, ok)
 	}
 
-	cmd, ok = handler.parse("设置作业呃开")
-	if !ok || cmd.Name != "notify" || strings.Join(cmd.Args, " ") != "homework on" {
-		t.Fatalf("settings parsed as %#v, ok=%v", cmd, ok)
+	if _, ok = handler.parse("设置作业呃开"); ok {
+		t.Fatal("compact settings text unexpectedly parsed as a notification command")
 	}
 }
 
@@ -2854,7 +2860,7 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	ident := testIdentity()
 	handler := Handler{Store: s, Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if !ok || !strings.Contains(reply, "待办 / td") {
+	if !ok || !strings.Contains(reply, "我的工作区") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
@@ -2981,7 +2987,7 @@ func TestParseSearchTeachersArgsWithFilters(t *testing.T) {
 
 func TestHandleCourseSearchWithFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/courses" {
+		if r.URL.Path != "/api/catalog/courses" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3001,7 +3007,7 @@ func TestHandleCourseSearchWithFilters(t *testing.T) {
 
 func TestHandleSectionSearchWithFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections" {
+		if r.URL.Path != "/api/catalog/sections" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3021,7 +3027,7 @@ func TestHandleSectionSearchWithFilters(t *testing.T) {
 
 func TestHandleTeacherSearchWithFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/teachers" {
+		if r.URL.Path != "/api/catalog/teachers" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3041,7 +3047,7 @@ func TestHandleTeacherSearchWithFilters(t *testing.T) {
 
 func TestHandleCourseByJwID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/courses/123" {
+		if r.URL.Path != "/api/catalog/courses/123" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"code":"CS1001","namePrimary":"计算机导论"}`))
@@ -3057,7 +3063,7 @@ func TestHandleCourseByJwID(t *testing.T) {
 
 func TestHandleSectionByJwID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections/456" {
+		if r.URL.Path != "/api/catalog/sections/456" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"name":"2026春季"}}`))
@@ -3073,7 +3079,7 @@ func TestHandleSectionByJwID(t *testing.T) {
 
 func TestHandleTeacherByID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/teachers/12" {
+		if r.URL.Path != "/api/catalog/teachers/12" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"id":12,"code":"T001","namePrimary":"张三","department":{"namePrimary":"数学科学学院"},"teacherTitle":{"namePrimary":"教授"}}`))
@@ -3089,7 +3095,7 @@ func TestHandleTeacherByID(t *testing.T) {
 
 func TestHandleListSemesters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/semesters" {
+		if r.URL.Path != "/api/catalog/semesters" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if r.URL.Query().Get("limit") != "20" {
@@ -3129,9 +3135,9 @@ func TestFormatBusRoutes(t *testing.T) {
 func TestHandleBusRoutes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/bus/routes":
+		case "/api/catalog/bus/routes":
 			_, _ = w.Write([]byte(`{"routes":[{"nameCn":"东高新线","originCampus":{"namePrimary":"东区"},"destinationCampus":{"namePrimary":"高新区"},"stops":[]}],"campuses":[{"id":1,"namePrimary":"东区"},{"id":2,"namePrimary":"高新区"}]}`))
-		case "/api/bus":
+		case "/api/catalog/bus":
 			_, _ = w.Write([]byte(`{"campuses":[{"id":1,"namePrimary":"东区"},{"id":2,"namePrimary":"高新区"}]}`))
 		default:
 			t.Fatalf("path = %s", r.URL.Path)
@@ -3150,7 +3156,7 @@ func TestHandleSectionSchedules(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections/789/schedules" {
+		if r.URL.Path != "/api/catalog/sections/789/schedules" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3172,7 +3178,7 @@ func TestHandleSectionExams(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sections/321" {
+		if r.URL.Path != "/api/catalog/sections/321" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"code":"MATH1001.01","course":{"namePrimary":"数学分析"},"exams":[{"id":1,"examDate":"2026-06-20T00:00:00+08:00","startTime":1430,"endTime":1630,"examMode":"闭卷","examRooms":[{"room":"3A101"}]}]}`))
@@ -3190,7 +3196,7 @@ func TestHandleSectionHomeworks(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/homeworks" {
+		if r.URL.Path != "/api/community/homeworks" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3249,7 +3255,7 @@ func TestHandleDashboard(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/me/overview" {
+		if r.URL.Path != "/api/workspace/overview" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"counts":{"todaySchedules":1,"pendingHomeworks":1},"dueTodos":{"items":[{"title":"写报告"}]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
@@ -3267,7 +3273,7 @@ func TestHandleUpcomingDeadlines(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/me/overview" {
+		if r.URL.Path != "/api/workspace/overview" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -3290,9 +3296,9 @@ func TestHandleUnsubscribeSectionByJwID(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/calendar-subscriptions/current" && r.Method == http.MethodGet:
+		case r.URL.Path == "/api/workspace/subscriptions/current" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"jwId":999,"code":"CS1001.01","course":{"namePrimary":"计算机导论"}}]}}`))
-		case r.URL.Path == "/api/calendar-subscriptions/batch" && r.Method == http.MethodPost:
+		case r.URL.Path == "/api/workspace/subscriptions/batch" && r.Method == http.MethodPost:
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatal(err)

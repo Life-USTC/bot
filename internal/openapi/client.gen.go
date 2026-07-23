@@ -1242,15 +1242,15 @@ func (e ListAdminHomeworksParamsStatus) Valid() bool {
 	}
 }
 
-// Defines values for GetApiBusNextParamsDayType.
+// Defines values for GetApiCatalogBusNextParamsDayType.
 const (
-	Auto    GetApiBusNextParamsDayType = "auto"
-	Weekday GetApiBusNextParamsDayType = "weekday"
-	Weekend GetApiBusNextParamsDayType = "weekend"
+	Auto    GetApiCatalogBusNextParamsDayType = "auto"
+	Weekday GetApiCatalogBusNextParamsDayType = "weekday"
+	Weekend GetApiCatalogBusNextParamsDayType = "weekend"
 )
 
-// Valid indicates whether the value is a known member of the GetApiBusNextParamsDayType enum.
-func (e GetApiBusNextParamsDayType) Valid() bool {
+// Valid indicates whether the value is a known member of the GetApiCatalogBusNextParamsDayType enum.
+func (e GetApiCatalogBusNextParamsDayType) Valid() bool {
 	switch e {
 	case Auto:
 		return true
@@ -1263,36 +1263,36 @@ func (e GetApiBusNextParamsDayType) Valid() bool {
 	}
 }
 
-// Defines values for GetApiBusNextParamsIncludeDeparted.
+// Defines values for GetApiCatalogBusNextParamsIncludeDeparted.
 const (
-	GetApiBusNextParamsIncludeDepartedFalse GetApiBusNextParamsIncludeDeparted = "false"
-	GetApiBusNextParamsIncludeDepartedTrue  GetApiBusNextParamsIncludeDeparted = "true"
+	GetApiCatalogBusNextParamsIncludeDepartedFalse GetApiCatalogBusNextParamsIncludeDeparted = "false"
+	GetApiCatalogBusNextParamsIncludeDepartedTrue  GetApiCatalogBusNextParamsIncludeDeparted = "true"
 )
 
-// Valid indicates whether the value is a known member of the GetApiBusNextParamsIncludeDeparted enum.
-func (e GetApiBusNextParamsIncludeDeparted) Valid() bool {
+// Valid indicates whether the value is a known member of the GetApiCatalogBusNextParamsIncludeDeparted enum.
+func (e GetApiCatalogBusNextParamsIncludeDeparted) Valid() bool {
 	switch e {
-	case GetApiBusNextParamsIncludeDepartedFalse:
+	case GetApiCatalogBusNextParamsIncludeDepartedFalse:
 		return true
-	case GetApiBusNextParamsIncludeDepartedTrue:
+	case GetApiCatalogBusNextParamsIncludeDepartedTrue:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for GetApiBusNextParamsLocale.
+// Defines values for GetApiCatalogBusNextParamsLocale.
 const (
-	GetApiBusNextParamsLocaleEnUs GetApiBusNextParamsLocale = "en-us"
-	GetApiBusNextParamsLocaleZhCn GetApiBusNextParamsLocale = "zh-cn"
+	GetApiCatalogBusNextParamsLocaleEnUs GetApiCatalogBusNextParamsLocale = "en-us"
+	GetApiCatalogBusNextParamsLocaleZhCn GetApiCatalogBusNextParamsLocale = "zh-cn"
 )
 
-// Valid indicates whether the value is a known member of the GetApiBusNextParamsLocale enum.
-func (e GetApiBusNextParamsLocale) Valid() bool {
+// Valid indicates whether the value is a known member of the GetApiCatalogBusNextParamsLocale enum.
+func (e GetApiCatalogBusNextParamsLocale) Valid() bool {
 	switch e {
-	case GetApiBusNextParamsLocaleEnUs:
+	case GetApiCatalogBusNextParamsLocaleEnUs:
 		return true
-	case GetApiBusNextParamsLocaleZhCn:
+	case GetApiCatalogBusNextParamsLocaleZhCn:
 		return true
 	default:
 		return false
@@ -1311,69 +1311,6 @@ func (e GetApiBusRoutesParamsLocale) Valid() bool {
 	case GetApiBusRoutesParamsLocaleEnUs:
 		return true
 	case GetApiBusRoutesParamsLocaleZhCn:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListCommentsParamsTargetType.
-const (
-	ListCommentsParamsTargetTypeCourse         ListCommentsParamsTargetType = "course"
-	ListCommentsParamsTargetTypeHomework       ListCommentsParamsTargetType = "homework"
-	ListCommentsParamsTargetTypeSection        ListCommentsParamsTargetType = "section"
-	ListCommentsParamsTargetTypeSectionTeacher ListCommentsParamsTargetType = "section-teacher"
-	ListCommentsParamsTargetTypeTeacher        ListCommentsParamsTargetType = "teacher"
-)
-
-// Valid indicates whether the value is a known member of the ListCommentsParamsTargetType enum.
-func (e ListCommentsParamsTargetType) Valid() bool {
-	switch e {
-	case ListCommentsParamsTargetTypeCourse:
-		return true
-	case ListCommentsParamsTargetTypeHomework:
-		return true
-	case ListCommentsParamsTargetTypeSection:
-		return true
-	case ListCommentsParamsTargetTypeSectionTeacher:
-		return true
-	case ListCommentsParamsTargetTypeTeacher:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for RemoveCommentReactionParamsType.
-const (
-	RemoveCommentReactionParamsTypeConfused RemoveCommentReactionParamsType = "confused"
-	RemoveCommentReactionParamsTypeDownvote RemoveCommentReactionParamsType = "downvote"
-	RemoveCommentReactionParamsTypeEyes     RemoveCommentReactionParamsType = "eyes"
-	RemoveCommentReactionParamsTypeHeart    RemoveCommentReactionParamsType = "heart"
-	RemoveCommentReactionParamsTypeHooray   RemoveCommentReactionParamsType = "hooray"
-	RemoveCommentReactionParamsTypeLaugh    RemoveCommentReactionParamsType = "laugh"
-	RemoveCommentReactionParamsTypeRocket   RemoveCommentReactionParamsType = "rocket"
-	RemoveCommentReactionParamsTypeUpvote   RemoveCommentReactionParamsType = "upvote"
-)
-
-// Valid indicates whether the value is a known member of the RemoveCommentReactionParamsType enum.
-func (e RemoveCommentReactionParamsType) Valid() bool {
-	switch e {
-	case RemoveCommentReactionParamsTypeConfused:
-		return true
-	case RemoveCommentReactionParamsTypeDownvote:
-		return true
-	case RemoveCommentReactionParamsTypeEyes:
-		return true
-	case RemoveCommentReactionParamsTypeHeart:
-		return true
-	case RemoveCommentReactionParamsTypeHooray:
-		return true
-	case RemoveCommentReactionParamsTypeLaugh:
-		return true
-	case RemoveCommentReactionParamsTypeRocket:
-		return true
-	case RemoveCommentReactionParamsTypeUpvote:
 		return true
 	default:
 		return false
@@ -1410,84 +1347,6 @@ func (e GetCourseParamsLocale) Valid() bool {
 	case GetCourseParamsLocaleEnUs:
 		return true
 	case GetCourseParamsLocaleZhCn:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for GetDescriptionParamsTargetType.
-const (
-	GetDescriptionParamsTargetTypeCourse   GetDescriptionParamsTargetType = "course"
-	GetDescriptionParamsTargetTypeHomework GetDescriptionParamsTargetType = "homework"
-	GetDescriptionParamsTargetTypeSection  GetDescriptionParamsTargetType = "section"
-	GetDescriptionParamsTargetTypeTeacher  GetDescriptionParamsTargetType = "teacher"
-)
-
-// Valid indicates whether the value is a known member of the GetDescriptionParamsTargetType enum.
-func (e GetDescriptionParamsTargetType) Valid() bool {
-	switch e {
-	case GetDescriptionParamsTargetTypeCourse:
-		return true
-	case GetDescriptionParamsTargetTypeHomework:
-		return true
-	case GetDescriptionParamsTargetTypeSection:
-		return true
-	case GetDescriptionParamsTargetTypeTeacher:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListHomeworksParamsIncludeDeleted.
-const (
-	ListHomeworksParamsIncludeDeletedFalse ListHomeworksParamsIncludeDeleted = "false"
-	ListHomeworksParamsIncludeDeletedTrue  ListHomeworksParamsIncludeDeleted = "true"
-)
-
-// Valid indicates whether the value is a known member of the ListHomeworksParamsIncludeDeleted enum.
-func (e ListHomeworksParamsIncludeDeleted) Valid() bool {
-	switch e {
-	case ListHomeworksParamsIncludeDeletedFalse:
-		return true
-	case ListHomeworksParamsIncludeDeletedTrue:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for GetApiMeOverviewParamsLocale.
-const (
-	GetApiMeOverviewParamsLocaleEnUs GetApiMeOverviewParamsLocale = "en-us"
-	GetApiMeOverviewParamsLocaleZhCn GetApiMeOverviewParamsLocale = "zh-cn"
-)
-
-// Valid indicates whether the value is a known member of the GetApiMeOverviewParamsLocale enum.
-func (e GetApiMeOverviewParamsLocale) Valid() bool {
-	switch e {
-	case GetApiMeOverviewParamsLocaleEnUs:
-		return true
-	case GetApiMeOverviewParamsLocaleZhCn:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for GetApiMeSubscriptionsSchedulesParamsLocale.
-const (
-	GetApiMeSubscriptionsSchedulesParamsLocaleEnUs GetApiMeSubscriptionsSchedulesParamsLocale = "en-us"
-	GetApiMeSubscriptionsSchedulesParamsLocaleZhCn GetApiMeSubscriptionsSchedulesParamsLocale = "zh-cn"
-)
-
-// Valid indicates whether the value is a known member of the GetApiMeSubscriptionsSchedulesParamsLocale enum.
-func (e GetApiMeSubscriptionsSchedulesParamsLocale) Valid() bool {
-	switch e {
-	case GetApiMeSubscriptionsSchedulesParamsLocaleEnUs:
-		return true
-	case GetApiMeSubscriptionsSchedulesParamsLocaleZhCn:
 		return true
 	default:
 		return false
@@ -1604,12 +1463,153 @@ func (e ListTeachersParamsLocale) Valid() bool {
 
 // Defines values for GetTeacherParamsLocale.
 const (
-	EnUs GetTeacherParamsLocale = "en-us"
-	ZhCn GetTeacherParamsLocale = "zh-cn"
+	GetTeacherParamsLocaleEnUs GetTeacherParamsLocale = "en-us"
+	GetTeacherParamsLocaleZhCn GetTeacherParamsLocale = "zh-cn"
 )
 
 // Valid indicates whether the value is a known member of the GetTeacherParamsLocale enum.
 func (e GetTeacherParamsLocale) Valid() bool {
+	switch e {
+	case GetTeacherParamsLocaleEnUs:
+		return true
+	case GetTeacherParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCommentsParamsTargetType.
+const (
+	ListCommentsParamsTargetTypeCourse         ListCommentsParamsTargetType = "course"
+	ListCommentsParamsTargetTypeHomework       ListCommentsParamsTargetType = "homework"
+	ListCommentsParamsTargetTypeSection        ListCommentsParamsTargetType = "section"
+	ListCommentsParamsTargetTypeSectionTeacher ListCommentsParamsTargetType = "section-teacher"
+	ListCommentsParamsTargetTypeTeacher        ListCommentsParamsTargetType = "teacher"
+)
+
+// Valid indicates whether the value is a known member of the ListCommentsParamsTargetType enum.
+func (e ListCommentsParamsTargetType) Valid() bool {
+	switch e {
+	case ListCommentsParamsTargetTypeCourse:
+		return true
+	case ListCommentsParamsTargetTypeHomework:
+		return true
+	case ListCommentsParamsTargetTypeSection:
+		return true
+	case ListCommentsParamsTargetTypeSectionTeacher:
+		return true
+	case ListCommentsParamsTargetTypeTeacher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoveCommentReactionParamsType.
+const (
+	RemoveCommentReactionParamsTypeConfused RemoveCommentReactionParamsType = "confused"
+	RemoveCommentReactionParamsTypeDownvote RemoveCommentReactionParamsType = "downvote"
+	RemoveCommentReactionParamsTypeEyes     RemoveCommentReactionParamsType = "eyes"
+	RemoveCommentReactionParamsTypeHeart    RemoveCommentReactionParamsType = "heart"
+	RemoveCommentReactionParamsTypeHooray   RemoveCommentReactionParamsType = "hooray"
+	RemoveCommentReactionParamsTypeLaugh    RemoveCommentReactionParamsType = "laugh"
+	RemoveCommentReactionParamsTypeRocket   RemoveCommentReactionParamsType = "rocket"
+	RemoveCommentReactionParamsTypeUpvote   RemoveCommentReactionParamsType = "upvote"
+)
+
+// Valid indicates whether the value is a known member of the RemoveCommentReactionParamsType enum.
+func (e RemoveCommentReactionParamsType) Valid() bool {
+	switch e {
+	case RemoveCommentReactionParamsTypeConfused:
+		return true
+	case RemoveCommentReactionParamsTypeDownvote:
+		return true
+	case RemoveCommentReactionParamsTypeEyes:
+		return true
+	case RemoveCommentReactionParamsTypeHeart:
+		return true
+	case RemoveCommentReactionParamsTypeHooray:
+		return true
+	case RemoveCommentReactionParamsTypeLaugh:
+		return true
+	case RemoveCommentReactionParamsTypeRocket:
+		return true
+	case RemoveCommentReactionParamsTypeUpvote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetDescriptionParamsTargetType.
+const (
+	GetDescriptionParamsTargetTypeCourse   GetDescriptionParamsTargetType = "course"
+	GetDescriptionParamsTargetTypeHomework GetDescriptionParamsTargetType = "homework"
+	GetDescriptionParamsTargetTypeSection  GetDescriptionParamsTargetType = "section"
+	GetDescriptionParamsTargetTypeTeacher  GetDescriptionParamsTargetType = "teacher"
+)
+
+// Valid indicates whether the value is a known member of the GetDescriptionParamsTargetType enum.
+func (e GetDescriptionParamsTargetType) Valid() bool {
+	switch e {
+	case GetDescriptionParamsTargetTypeCourse:
+		return true
+	case GetDescriptionParamsTargetTypeHomework:
+		return true
+	case GetDescriptionParamsTargetTypeSection:
+		return true
+	case GetDescriptionParamsTargetTypeTeacher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListHomeworksParamsIncludeDeleted.
+const (
+	ListHomeworksParamsIncludeDeletedFalse ListHomeworksParamsIncludeDeleted = "false"
+	ListHomeworksParamsIncludeDeletedTrue  ListHomeworksParamsIncludeDeleted = "true"
+)
+
+// Valid indicates whether the value is a known member of the ListHomeworksParamsIncludeDeleted enum.
+func (e ListHomeworksParamsIncludeDeleted) Valid() bool {
+	switch e {
+	case ListHomeworksParamsIncludeDeletedFalse:
+		return true
+	case ListHomeworksParamsIncludeDeletedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiMeOverviewParamsLocale.
+const (
+	GetApiMeOverviewParamsLocaleEnUs GetApiMeOverviewParamsLocale = "en-us"
+	GetApiMeOverviewParamsLocaleZhCn GetApiMeOverviewParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the GetApiMeOverviewParamsLocale enum.
+func (e GetApiMeOverviewParamsLocale) Valid() bool {
+	switch e {
+	case GetApiMeOverviewParamsLocaleEnUs:
+		return true
+	case GetApiMeOverviewParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiMeSubscriptionsSchedulesParamsLocale.
+const (
+	EnUs GetApiMeSubscriptionsSchedulesParamsLocale = "en-us"
+	ZhCn GetApiMeSubscriptionsSchedulesParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the GetApiMeSubscriptionsSchedulesParamsLocale enum.
+func (e GetApiMeSubscriptionsSchedulesParamsLocale) Valid() bool {
 	switch e {
 	case EnUs:
 		return true
@@ -7113,6 +7113,12 @@ type mcpBearerAuthContextKey string
 // sessionCookieContextKey is the context key for sessionCookie security scheme
 type sessionCookieContextKey string
 
+// GetApiAccountProfileParams defines parameters for GetApiAccountProfile.
+type GetApiAccountProfileParams struct {
+	Username *string `form:"username,omitempty" json:"username,omitempty"`
+	UserId   *string `form:"userId,omitempty" json:"userId,omitempty"`
+}
+
 // ListAdminCommentsParams defines parameters for ListAdminComments.
 type ListAdminCommentsParams struct {
 	Status *ListAdminCommentsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
@@ -7181,26 +7187,26 @@ type QueryBusParams struct {
 	VersionKey *string `form:"versionKey,omitempty" json:"versionKey,omitempty"`
 }
 
-// GetApiBusNextParams defines parameters for GetApiBusNext.
-type GetApiBusNextParams struct {
-	OriginCampusId      int64                               `form:"originCampusId" json:"originCampusId"`
-	DestinationCampusId int64                               `form:"destinationCampusId" json:"destinationCampusId"`
-	AtTime              *string                             `form:"atTime,omitempty" json:"atTime,omitempty"`
-	DayType             *GetApiBusNextParamsDayType         `form:"dayType,omitempty" json:"dayType,omitempty"`
-	IncludeDeparted     *GetApiBusNextParamsIncludeDeparted `form:"includeDeparted,omitempty" json:"includeDeparted,omitempty"`
-	Limit               *int64                              `form:"limit,omitempty" json:"limit,omitempty"`
-	VersionKey          *string                             `form:"versionKey,omitempty" json:"versionKey,omitempty"`
-	Locale              *GetApiBusNextParamsLocale          `form:"locale,omitempty" json:"locale,omitempty"`
+// GetApiCatalogBusNextParams defines parameters for GetApiCatalogBusNext.
+type GetApiCatalogBusNextParams struct {
+	OriginCampusId      int64                                      `form:"originCampusId" json:"originCampusId"`
+	DestinationCampusId int64                                      `form:"destinationCampusId" json:"destinationCampusId"`
+	AtTime              *string                                    `form:"atTime,omitempty" json:"atTime,omitempty"`
+	DayType             *GetApiCatalogBusNextParamsDayType         `form:"dayType,omitempty" json:"dayType,omitempty"`
+	IncludeDeparted     *GetApiCatalogBusNextParamsIncludeDeparted `form:"includeDeparted,omitempty" json:"includeDeparted,omitempty"`
+	Limit               *int64                                     `form:"limit,omitempty" json:"limit,omitempty"`
+	VersionKey          *string                                    `form:"versionKey,omitempty" json:"versionKey,omitempty"`
+	Locale              *GetApiCatalogBusNextParamsLocale          `form:"locale,omitempty" json:"locale,omitempty"`
 }
 
-// GetApiBusNextParamsDayType defines parameters for GetApiBusNext.
-type GetApiBusNextParamsDayType string
+// GetApiCatalogBusNextParamsDayType defines parameters for GetApiCatalogBusNext.
+type GetApiCatalogBusNextParamsDayType string
 
-// GetApiBusNextParamsIncludeDeparted defines parameters for GetApiBusNext.
-type GetApiBusNextParamsIncludeDeparted string
+// GetApiCatalogBusNextParamsIncludeDeparted defines parameters for GetApiCatalogBusNext.
+type GetApiCatalogBusNextParamsIncludeDeparted string
 
-// GetApiBusNextParamsLocale defines parameters for GetApiBusNext.
-type GetApiBusNextParamsLocale string
+// GetApiCatalogBusNextParamsLocale defines parameters for GetApiCatalogBusNext.
+type GetApiCatalogBusNextParamsLocale string
 
 // GetApiBusRoutesParams defines parameters for GetApiBusRoutes.
 type GetApiBusRoutesParams struct {
@@ -7212,36 +7218,6 @@ type GetApiBusRoutesParams struct {
 
 // GetApiBusRoutesParamsLocale defines parameters for GetApiBusRoutes.
 type GetApiBusRoutesParamsLocale string
-
-// ListCommentsParams defines parameters for ListComments.
-type ListCommentsParams struct {
-	TargetType       ListCommentsParamsTargetType `form:"targetType" json:"targetType"`
-	TargetId         *string                      `form:"targetId,omitempty" json:"targetId,omitempty"`
-	SectionId        *int64                       `form:"sectionId,omitempty" json:"sectionId,omitempty"`
-	SectionJwId      *int64                       `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
-	CourseJwId       *int64                       `form:"courseJwId,omitempty" json:"courseJwId,omitempty"`
-	TeacherId        *int64                       `form:"teacherId,omitempty" json:"teacherId,omitempty"`
-	HomeworkId       *string                      `form:"homeworkId,omitempty" json:"homeworkId,omitempty"`
-	SectionTeacherId *int64                       `form:"sectionTeacherId,omitempty" json:"sectionTeacherId,omitempty"`
-	Page             *int64                       `form:"page,omitempty" json:"page,omitempty"`
-
-	// PageSize Number of items per page.
-	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
-
-	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
-	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// ListCommentsParamsTargetType defines parameters for ListComments.
-type ListCommentsParamsTargetType string
-
-// RemoveCommentReactionParams defines parameters for RemoveCommentReaction.
-type RemoveCommentReactionParams struct {
-	Type RemoveCommentReactionParamsType `form:"type" json:"type"`
-}
-
-// RemoveCommentReactionParamsType defines parameters for RemoveCommentReaction.
-type RemoveCommentReactionParamsType string
 
 // ListCoursesParams defines parameters for ListCourses.
 type ListCoursesParams struct {
@@ -7269,58 +7245,6 @@ type GetCourseParams struct {
 
 // GetCourseParamsLocale defines parameters for GetCourse.
 type GetCourseParamsLocale string
-
-// VisitDashboardLinkParams defines parameters for VisitDashboardLink.
-type VisitDashboardLinkParams struct {
-	Slug string `form:"slug" json:"slug"`
-}
-
-// GetDescriptionParams defines parameters for GetDescription.
-type GetDescriptionParams struct {
-	TargetType  GetDescriptionParamsTargetType `form:"targetType" json:"targetType"`
-	TargetId    *string                        `form:"targetId,omitempty" json:"targetId,omitempty"`
-	SectionJwId *int64                         `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
-	CourseJwId  *int64                         `form:"courseJwId,omitempty" json:"courseJwId,omitempty"`
-	TeacherId   *int64                         `form:"teacherId,omitempty" json:"teacherId,omitempty"`
-	HomeworkId  *string                        `form:"homeworkId,omitempty" json:"homeworkId,omitempty"`
-}
-
-// GetDescriptionParamsTargetType defines parameters for GetDescription.
-type GetDescriptionParamsTargetType string
-
-// ListHomeworksParams defines parameters for ListHomeworks.
-type ListHomeworksParams struct {
-	SectionId      *int64                             `form:"sectionId,omitempty" json:"sectionId,omitempty"`
-	SectionIds     *string                            `form:"sectionIds,omitempty" json:"sectionIds,omitempty"`
-	SectionJwId    *int64                             `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
-	IncludeDeleted *ListHomeworksParamsIncludeDeleted `form:"includeDeleted,omitempty" json:"includeDeleted,omitempty"`
-}
-
-// ListHomeworksParamsIncludeDeleted defines parameters for ListHomeworks.
-type ListHomeworksParamsIncludeDeleted string
-
-// GetApiMeOverviewParams defines parameters for GetApiMeOverview.
-type GetApiMeOverviewParams struct {
-	AtTime             *string                       `form:"atTime,omitempty" json:"atTime,omitempty"`
-	HomeworkWindowDays *int64                        `form:"homeworkWindowDays,omitempty" json:"homeworkWindowDays,omitempty"`
-	Limit              *int64                        `form:"limit,omitempty" json:"limit,omitempty"`
-	Locale             *GetApiMeOverviewParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
-}
-
-// GetApiMeOverviewParamsLocale defines parameters for GetApiMeOverview.
-type GetApiMeOverviewParamsLocale string
-
-// GetApiMeSubscriptionsSchedulesParams defines parameters for GetApiMeSubscriptionsSchedules.
-type GetApiMeSubscriptionsSchedulesParams struct {
-	DateFrom *string                                     `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
-	DateTo   *string                                     `form:"dateTo,omitempty" json:"dateTo,omitempty"`
-	Weekday  *int64                                      `form:"weekday,omitempty" json:"weekday,omitempty"`
-	Limit    *int64                                      `form:"limit,omitempty" json:"limit,omitempty"`
-	Locale   *GetApiMeSubscriptionsSchedulesParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
-}
-
-// GetApiMeSubscriptionsSchedulesParamsLocale defines parameters for GetApiMeSubscriptionsSchedules.
-type GetApiMeSubscriptionsSchedulesParamsLocale string
 
 // ListSchedulesParams defines parameters for ListSchedules.
 type ListSchedulesParams struct {
@@ -7441,6 +7365,94 @@ type GetTeacherParams struct {
 // GetTeacherParamsLocale defines parameters for GetTeacher.
 type GetTeacherParamsLocale string
 
+// ListCommentsParams defines parameters for ListComments.
+type ListCommentsParams struct {
+	TargetType       ListCommentsParamsTargetType `form:"targetType" json:"targetType"`
+	TargetId         *string                      `form:"targetId,omitempty" json:"targetId,omitempty"`
+	SectionId        *int64                       `form:"sectionId,omitempty" json:"sectionId,omitempty"`
+	SectionJwId      *int64                       `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
+	CourseJwId       *int64                       `form:"courseJwId,omitempty" json:"courseJwId,omitempty"`
+	TeacherId        *int64                       `form:"teacherId,omitempty" json:"teacherId,omitempty"`
+	HomeworkId       *string                      `form:"homeworkId,omitempty" json:"homeworkId,omitempty"`
+	SectionTeacherId *int64                       `form:"sectionTeacherId,omitempty" json:"sectionTeacherId,omitempty"`
+	Page             *int64                       `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListCommentsParamsTargetType defines parameters for ListComments.
+type ListCommentsParamsTargetType string
+
+// RemoveCommentReactionParams defines parameters for RemoveCommentReaction.
+type RemoveCommentReactionParams struct {
+	Type RemoveCommentReactionParamsType `form:"type" json:"type"`
+}
+
+// RemoveCommentReactionParamsType defines parameters for RemoveCommentReaction.
+type RemoveCommentReactionParamsType string
+
+// GetDescriptionParams defines parameters for GetDescription.
+type GetDescriptionParams struct {
+	TargetType  GetDescriptionParamsTargetType `form:"targetType" json:"targetType"`
+	TargetId    *string                        `form:"targetId,omitempty" json:"targetId,omitempty"`
+	SectionJwId *int64                         `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
+	CourseJwId  *int64                         `form:"courseJwId,omitempty" json:"courseJwId,omitempty"`
+	TeacherId   *int64                         `form:"teacherId,omitempty" json:"teacherId,omitempty"`
+	HomeworkId  *string                        `form:"homeworkId,omitempty" json:"homeworkId,omitempty"`
+}
+
+// GetDescriptionParamsTargetType defines parameters for GetDescription.
+type GetDescriptionParamsTargetType string
+
+// ListHomeworksParams defines parameters for ListHomeworks.
+type ListHomeworksParams struct {
+	SectionId      *int64                             `form:"sectionId,omitempty" json:"sectionId,omitempty"`
+	SectionIds     *string                            `form:"sectionIds,omitempty" json:"sectionIds,omitempty"`
+	SectionJwId    *int64                             `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
+	IncludeDeleted *ListHomeworksParamsIncludeDeleted `form:"includeDeleted,omitempty" json:"includeDeleted,omitempty"`
+}
+
+// ListHomeworksParamsIncludeDeleted defines parameters for ListHomeworks.
+type ListHomeworksParamsIncludeDeleted string
+
+// GetUserCalendarParams defines parameters for GetUserCalendar.
+type GetUserCalendarParams struct {
+	// Token Calendar feed token for anonymous personal iCal access.
+	Token *string `form:"token,omitempty" json:"token,omitempty"`
+}
+
+// VisitDashboardLinkParams defines parameters for VisitDashboardLink.
+type VisitDashboardLinkParams struct {
+	Slug string `form:"slug" json:"slug"`
+}
+
+// GetApiMeOverviewParams defines parameters for GetApiMeOverview.
+type GetApiMeOverviewParams struct {
+	AtTime             *string                       `form:"atTime,omitempty" json:"atTime,omitempty"`
+	HomeworkWindowDays *int64                        `form:"homeworkWindowDays,omitempty" json:"homeworkWindowDays,omitempty"`
+	Limit              *int64                        `form:"limit,omitempty" json:"limit,omitempty"`
+	Locale             *GetApiMeOverviewParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+}
+
+// GetApiMeOverviewParamsLocale defines parameters for GetApiMeOverview.
+type GetApiMeOverviewParamsLocale string
+
+// GetApiMeSubscriptionsSchedulesParams defines parameters for GetApiMeSubscriptionsSchedules.
+type GetApiMeSubscriptionsSchedulesParams struct {
+	DateFrom *string                                     `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
+	DateTo   *string                                     `form:"dateTo,omitempty" json:"dateTo,omitempty"`
+	Weekday  *int64                                      `form:"weekday,omitempty" json:"weekday,omitempty"`
+	Limit    *int64                                      `form:"limit,omitempty" json:"limit,omitempty"`
+	Locale   *GetApiMeSubscriptionsSchedulesParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+}
+
+// GetApiMeSubscriptionsSchedulesParamsLocale defines parameters for GetApiMeSubscriptionsSchedules.
+type GetApiMeSubscriptionsSchedulesParamsLocale string
+
 // ListTodosParams defines parameters for ListTodos.
 type ListTodosParams struct {
 	Completed *ListTodosParamsCompleted `form:"completed,omitempty" json:"completed,omitempty"`
@@ -7472,17 +7484,8 @@ type PutApiUploadsObjectParams struct {
 	Key string `form:"key" json:"key"`
 }
 
-// GetApiUsersProfileParams defines parameters for GetApiUsersProfile.
-type GetApiUsersProfileParams struct {
-	Username *string `form:"username,omitempty" json:"username,omitempty"`
-	UserId   *string `form:"userId,omitempty" json:"userId,omitempty"`
-}
-
-// GetUserCalendarParams defines parameters for GetUserCalendar.
-type GetUserCalendarParams struct {
-	// Token Calendar feed token for anonymous personal iCal access.
-	Token *string `form:"token,omitempty" json:"token,omitempty"`
-}
+// SetLocaleJSONRequestBody defines body for SetLocale for application/json ContentType.
+type SetLocaleJSONRequestBody = LocaleUpdateRequestSchema
 
 // ModerateAdminCommentJSONRequestBody defines body for ModerateAdminComment for application/json ContentType.
 type ModerateAdminCommentJSONRequestBody = AdminModerateCommentRequestSchema
@@ -7502,26 +7505,8 @@ type PostApiAuthOauth2DeviceAuthorizationFormdataRequestBody = OauthDeviceAuthor
 // PostApiAuthOauth2TokenFormdataRequestBody defines body for PostApiAuthOauth2Token for application/x-www-form-urlencoded ContentType.
 type PostApiAuthOauth2TokenFormdataRequestBody = OauthTokenRequestSchema
 
-// SetBusPreferencesJSONRequestBody defines body for SetBusPreferences for application/json ContentType.
-type SetBusPreferencesJSONRequestBody = BusPreferenceRequestSchema
-
-// DeleteApiCalendarSubscriptionsJSONRequestBody defines body for DeleteApiCalendarSubscriptions for application/json ContentType.
-type DeleteApiCalendarSubscriptionsJSONRequestBody = CalendarSubscriptionRemoveRequestSchema
-
-// AppendCalendarSubscriptionSectionsJSONRequestBody defines body for AppendCalendarSubscriptionSections for application/json ContentType.
-type AppendCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionAppendRequestSchema
-
-// SetCalendarSubscriptionJSONRequestBody defines body for SetCalendarSubscription for application/json ContentType.
-type SetCalendarSubscriptionJSONRequestBody = CalendarSubscriptionCreateRequestSchema
-
-// BatchUpdateCalendarSubscriptionJSONRequestBody defines body for BatchUpdateCalendarSubscription for application/json ContentType.
-type BatchUpdateCalendarSubscriptionJSONRequestBody = CalendarSubscriptionBatchRequestSchema
-
-// PostApiCalendarSubscriptionsImportCodesJSONRequestBody defines body for PostApiCalendarSubscriptionsImportCodes for application/json ContentType.
-type PostApiCalendarSubscriptionsImportCodesJSONRequestBody = MatchSectionCodesRequestSchema
-
-// QueryCalendarSubscriptionSectionsJSONRequestBody defines body for QueryCalendarSubscriptionSections for application/json ContentType.
-type QueryCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionQueryRequestSchema
+// MatchSectionCodesJSONRequestBody defines body for MatchSectionCodes for application/json ContentType.
+type MatchSectionCodesJSONRequestBody = MatchSectionCodesRequestSchema
 
 // CreateCommentJSONRequestBody defines body for CreateComment for application/json ContentType.
 type CreateCommentJSONRequestBody = CommentCreateRequestSchema
@@ -7535,35 +7520,50 @@ type UpdateCommentJSONRequestBody = CommentUpdateRequestSchema
 // AddCommentReactionJSONRequestBody defines body for AddCommentReaction for application/json ContentType.
 type AddCommentReactionJSONRequestBody = CommentReactionRequestSchema
 
-// PinDashboardLinkFormdataRequestBody defines body for PinDashboardLink for application/x-www-form-urlencoded ContentType.
-type PinDashboardLinkFormdataRequestBody = DashboardLinkPinRequestSchema
-
-// PostApiDashboardLinksPinBatchJSONRequestBody defines body for PostApiDashboardLinksPinBatch for application/json ContentType.
-type PostApiDashboardLinksPinBatchJSONRequestBody = DashboardLinkPinBatchRequestSchema
-
-// RecordDashboardLinkVisitFormdataRequestBody defines body for RecordDashboardLinkVisit for application/x-www-form-urlencoded ContentType.
-type RecordDashboardLinkVisitFormdataRequestBody = DashboardLinkVisitRequestSchema
-
 // UpsertDescriptionJSONRequestBody defines body for UpsertDescription for application/json ContentType.
 type UpsertDescriptionJSONRequestBody = DescriptionUpsertRequestSchema
 
 // CreateHomeworkJSONRequestBody defines body for CreateHomework for application/json ContentType.
 type CreateHomeworkJSONRequestBody = HomeworkCreateRequestSchema
 
-// PutApiHomeworksCompletionsJSONRequestBody defines body for PutApiHomeworksCompletions for application/json ContentType.
-type PutApiHomeworksCompletionsJSONRequestBody = HomeworkCompletionBatchRequestSchema
-
 // UpdateHomeworkJSONRequestBody defines body for UpdateHomework for application/json ContentType.
 type UpdateHomeworkJSONRequestBody = HomeworkUpdateRequestSchema
+
+// SetBusPreferencesJSONRequestBody defines body for SetBusPreferences for application/json ContentType.
+type SetBusPreferencesJSONRequestBody = BusPreferenceRequestSchema
+
+// PutApiHomeworksCompletionsJSONRequestBody defines body for PutApiHomeworksCompletions for application/json ContentType.
+type PutApiHomeworksCompletionsJSONRequestBody = HomeworkCompletionBatchRequestSchema
 
 // SetHomeworkCompletionJSONRequestBody defines body for SetHomeworkCompletion for application/json ContentType.
 type SetHomeworkCompletionJSONRequestBody = HomeworkCompletionRequestSchema
 
-// SetLocaleJSONRequestBody defines body for SetLocale for application/json ContentType.
-type SetLocaleJSONRequestBody = LocaleUpdateRequestSchema
+// PinDashboardLinkFormdataRequestBody defines body for PinDashboardLink for application/x-www-form-urlencoded ContentType.
+type PinDashboardLinkFormdataRequestBody = DashboardLinkPinRequestSchema
 
-// MatchSectionCodesJSONRequestBody defines body for MatchSectionCodes for application/json ContentType.
-type MatchSectionCodesJSONRequestBody = MatchSectionCodesRequestSchema
+// PostApiWorkspaceLinksPinBatchJSONRequestBody defines body for PostApiWorkspaceLinksPinBatch for application/json ContentType.
+type PostApiWorkspaceLinksPinBatchJSONRequestBody = DashboardLinkPinBatchRequestSchema
+
+// RecordDashboardLinkVisitFormdataRequestBody defines body for RecordDashboardLinkVisit for application/x-www-form-urlencoded ContentType.
+type RecordDashboardLinkVisitFormdataRequestBody = DashboardLinkVisitRequestSchema
+
+// DeleteApiWorkspaceSubscriptionsJSONRequestBody defines body for DeleteApiWorkspaceSubscriptions for application/json ContentType.
+type DeleteApiWorkspaceSubscriptionsJSONRequestBody = CalendarSubscriptionRemoveRequestSchema
+
+// AppendCalendarSubscriptionSectionsJSONRequestBody defines body for AppendCalendarSubscriptionSections for application/json ContentType.
+type AppendCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionAppendRequestSchema
+
+// SetCalendarSubscriptionJSONRequestBody defines body for SetCalendarSubscription for application/json ContentType.
+type SetCalendarSubscriptionJSONRequestBody = CalendarSubscriptionCreateRequestSchema
+
+// BatchUpdateCalendarSubscriptionJSONRequestBody defines body for BatchUpdateCalendarSubscription for application/json ContentType.
+type BatchUpdateCalendarSubscriptionJSONRequestBody = CalendarSubscriptionBatchRequestSchema
+
+// PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody defines body for PostApiWorkspaceSubscriptionsImportCodes for application/json ContentType.
+type PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody = MatchSectionCodesRequestSchema
+
+// QueryCalendarSubscriptionSectionsJSONRequestBody defines body for QueryCalendarSubscriptionSections for application/json ContentType.
+type QueryCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionQueryRequestSchema
 
 // CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
 type CreateTodoJSONRequestBody = TodoCreateRequestSchema
@@ -10473,6 +10473,17 @@ type ClientInterface interface {
 	// OptionsWellKnownOpenidConfigurationApiMcp request
 	OptionsWellKnownOpenidConfigurationApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetMe request
+	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetLocaleWithBody request with any body
+	SetLocaleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetLocale(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiAccountProfile request
+	GetApiAccountProfile(ctx context.Context, params *GetApiAccountProfileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListAdminComments request
 	ListAdminComments(ctx context.Context, params *ListAdminCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -10539,84 +10550,11 @@ type ClientInterface interface {
 	// QueryBus request
 	QueryBus(ctx context.Context, params *QueryBusParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetApiBusNext request
-	GetApiBusNext(ctx context.Context, params *GetApiBusNextParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetBusPreferences request
-	GetBusPreferences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetBusPreferencesWithBody request with any body
-	SetBusPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetBusPreferences(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetApiCatalogBusNext request
+	GetApiCatalogBusNext(ctx context.Context, params *GetApiCatalogBusNextParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetApiBusRoutes request
 	GetApiBusRoutes(ctx context.Context, params *GetApiBusRoutesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteApiCalendarSubscriptionsWithBody request with any body
-	DeleteApiCalendarSubscriptionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	DeleteApiCalendarSubscriptions(ctx context.Context, body DeleteApiCalendarSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// AppendCalendarSubscriptionSectionsWithBody request with any body
-	AppendCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	AppendCalendarSubscriptionSections(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetCalendarSubscriptionWithBody request with any body
-	SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// BatchUpdateCalendarSubscriptionWithBody request with any body
-	BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	BatchUpdateCalendarSubscription(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetCurrentCalendarSubscription request
-	GetCurrentCalendarSubscription(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostApiCalendarSubscriptionsImportCodesWithBody request with any body
-	PostApiCalendarSubscriptionsImportCodesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostApiCalendarSubscriptionsImportCodes(ctx context.Context, body PostApiCalendarSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// QueryCalendarSubscriptionSectionsWithBody request with any body
-	QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListComments request
-	ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateCommentWithBody request with any body
-	CreateCommentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateComment(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteApiCommentsBatchWithBody request with any body
-	DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteComment request
-	DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetComment request
-	GetComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpdateCommentWithBody request with any body
-	UpdateCommentWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	UpdateComment(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// RemoveCommentReaction request
-	RemoveCommentReaction(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// AddCommentReactionWithBody request with any body
-	AddCommentReactionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListCourses request
 	ListCourses(ctx context.Context, params *ListCoursesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10624,107 +10562,8 @@ type ClientInterface interface {
 	// GetCourse request
 	GetCourse(ctx context.Context, jwId int64, params *GetCourseParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PinDashboardLinkWithBody request with any body
-	PinDashboardLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostApiDashboardLinksPinBatchWithBody request with any body
-	PostApiDashboardLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostApiDashboardLinksPinBatch(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// VisitDashboardLink request
-	VisitDashboardLink(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// RecordDashboardLinkVisitWithBody request with any body
-	RecordDashboardLinkVisitWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	RecordDashboardLinkVisitWithFormdataBody(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetDescription request
-	GetDescription(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpsertDescriptionWithBody request with any body
-	UpsertDescriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	UpsertDescription(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListHealth request
-	ListHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListHomeworks request
-	ListHomeworks(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateHomeworkWithBody request with any body
-	CreateHomeworkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateHomework(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PutApiHomeworksCompletionsWithBody request with any body
-	PutApiHomeworksCompletionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PutApiHomeworksCompletions(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteHomework request
-	DeleteHomework(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UpdateHomeworkWithBody request with any body
-	UpdateHomeworkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	UpdateHomework(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetHomeworkCompletionWithBody request with any body
-	SetHomeworkCompletionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetHomeworkCompletion(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetLocaleWithBody request with any body
-	SetLocaleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetLocale(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteApiMcp request
-	DeleteApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListMcp request
-	ListMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OptionsApiMcp request
-	OptionsApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateMcp request
-	CreateMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetApiMcpWellKnownOauthAuthorizationServer request
-	GetApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OptionsApiMcpWellKnownOauthAuthorizationServer request
-	OptionsApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetApiMcpWellKnownOpenidConfiguration request
-	GetApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OptionsApiMcpWellKnownOpenidConfiguration request
-	OptionsApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetMe request
-	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetApiMeOverview request
-	GetApiMeOverview(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSubscribedHomeworks request
-	GetSubscribedHomeworks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetApiMeSubscriptionsSchedules request
-	GetApiMeSubscriptionsSchedules(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetMetadata request
 	GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetOpenApiSpec request
-	GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSchedules request
 	ListSchedules(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10763,6 +10602,173 @@ type ClientInterface interface {
 
 	// GetTeacher request
 	GetTeacher(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListComments request
+	ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateCommentWithBody request with any body
+	CreateCommentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateComment(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiCommentsBatchWithBody request with any body
+	DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteComment request
+	DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetComment request
+	GetComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateCommentWithBody request with any body
+	UpdateCommentWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateComment(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveCommentReaction request
+	RemoveCommentReaction(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddCommentReactionWithBody request with any body
+	AddCommentReactionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDescription request
+	GetDescription(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpsertDescriptionWithBody request with any body
+	UpsertDescriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpsertDescription(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListHomeworks request
+	ListHomeworks(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateHomeworkWithBody request with any body
+	CreateHomeworkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateHomework(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteHomework request
+	DeleteHomework(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateHomeworkWithBody request with any body
+	UpdateHomeworkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateHomework(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetUserCalendar request
+	GetUserCalendar(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListHealth request
+	ListHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiMcp request
+	DeleteApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMcp request
+	ListMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OptionsApiMcp request
+	OptionsApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMcp request
+	CreateMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiMcpWellKnownOauthAuthorizationServer request
+	GetApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OptionsApiMcpWellKnownOauthAuthorizationServer request
+	OptionsApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiMcpWellKnownOpenidConfiguration request
+	GetApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OptionsApiMcpWellKnownOpenidConfiguration request
+	OptionsApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOpenApiSpec request
+	GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBusPreferences request
+	GetBusPreferences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetBusPreferencesWithBody request with any body
+	SetBusPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetBusPreferences(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSubscribedHomeworks request
+	GetSubscribedHomeworks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiHomeworksCompletionsWithBody request with any body
+	PutApiHomeworksCompletionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiHomeworksCompletions(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetHomeworkCompletionWithBody request with any body
+	SetHomeworkCompletionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetHomeworkCompletion(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PinDashboardLinkWithBody request with any body
+	PinDashboardLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiWorkspaceLinksPinBatchWithBody request with any body
+	PostApiWorkspaceLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiWorkspaceLinksPinBatch(ctx context.Context, body PostApiWorkspaceLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VisitDashboardLink request
+	VisitDashboardLink(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RecordDashboardLinkVisitWithBody request with any body
+	RecordDashboardLinkVisitWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RecordDashboardLinkVisitWithFormdataBody(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiMeOverview request
+	GetApiMeOverview(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiMeSubscriptionsSchedules request
+	GetApiMeSubscriptionsSchedules(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApiWorkspaceSubscriptionsWithBody request with any body
+	DeleteApiWorkspaceSubscriptionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteApiWorkspaceSubscriptions(ctx context.Context, body DeleteApiWorkspaceSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AppendCalendarSubscriptionSectionsWithBody request with any body
+	AppendCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AppendCalendarSubscriptionSections(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetCalendarSubscriptionWithBody request with any body
+	SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BatchUpdateCalendarSubscriptionWithBody request with any body
+	BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	BatchUpdateCalendarSubscription(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCurrentCalendarSubscription request
+	GetCurrentCalendarSubscription(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiWorkspaceSubscriptionsImportCodesWithBody request with any body
+	PostApiWorkspaceSubscriptionsImportCodesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiWorkspaceSubscriptionsImportCodes(ctx context.Context, body PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// QueryCalendarSubscriptionSectionsWithBody request with any body
+	QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListTodos request
 	ListTodos(ctx context.Context, params *ListTodosParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10816,12 +10822,6 @@ type ClientInterface interface {
 
 	// DownloadUpload request
 	DownloadUpload(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetApiUsersProfile request
-	GetApiUsersProfile(ctx context.Context, params *GetApiUsersProfileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetUserCalendar request
-	GetUserCalendar(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -11030,6 +11030,54 @@ func (c *Client) GetWellKnownOpenidConfigurationApiMcp(ctx context.Context, reqE
 
 func (c *Client) OptionsWellKnownOpenidConfigurationApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewOptionsWellKnownOpenidConfigurationApiMcpRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetLocaleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetLocaleRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetLocale(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetLocaleRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiAccountProfile(ctx context.Context, params *GetApiAccountProfileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiAccountProfileRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -11328,44 +11376,8 @@ func (c *Client) QueryBus(ctx context.Context, params *QueryBusParams, reqEditor
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetApiBusNext(ctx context.Context, params *GetApiBusNextParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiBusNextRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetBusPreferences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetBusPreferencesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetBusPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetBusPreferencesRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetBusPreferences(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetBusPreferencesRequest(c.Server, body)
+func (c *Client) GetApiCatalogBusNext(ctx context.Context, params *GetApiCatalogBusNextParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogBusNextRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -11378,306 +11390,6 @@ func (c *Client) SetBusPreferences(ctx context.Context, body SetBusPreferencesJS
 
 func (c *Client) GetApiBusRoutes(ctx context.Context, params *GetApiBusRoutesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiBusRoutesRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteApiCalendarSubscriptionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiCalendarSubscriptionsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteApiCalendarSubscriptions(ctx context.Context, body DeleteApiCalendarSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiCalendarSubscriptionsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) AppendCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAppendCalendarSubscriptionSectionsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) AppendCalendarSubscriptionSections(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAppendCalendarSubscriptionSectionsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetCalendarSubscriptionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewBatchUpdateCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) BatchUpdateCalendarSubscription(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewBatchUpdateCalendarSubscriptionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetCurrentCalendarSubscription(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetCurrentCalendarSubscriptionRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiCalendarSubscriptionsImportCodesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiCalendarSubscriptionsImportCodesRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiCalendarSubscriptionsImportCodes(ctx context.Context, body PostApiCalendarSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiCalendarSubscriptionsImportCodesRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQueryCalendarSubscriptionSectionsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQueryCalendarSubscriptionSectionsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListCommentsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateCommentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateCommentRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateComment(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateCommentRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiCommentsBatchRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiCommentsBatchRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteCommentRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetCommentRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateCommentWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateCommentRequestWithBody(c.Server, id, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateComment(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateCommentRequest(c.Server, id, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) RemoveCommentReaction(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRemoveCommentReactionRequest(c.Server, id, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) AddCommentReactionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAddCommentReactionRequestWithBody(c.Server, id, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAddCommentReactionRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -11712,440 +11424,8 @@ func (c *Client) GetCourse(ctx context.Context, jwId int64, params *GetCoursePar
 	return c.Client.Do(req)
 }
 
-func (c *Client) PinDashboardLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPinDashboardLinkRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPinDashboardLinkRequestWithFormdataBody(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiDashboardLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiDashboardLinksPinBatchRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiDashboardLinksPinBatch(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiDashboardLinksPinBatchRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) VisitDashboardLink(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewVisitDashboardLinkRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) RecordDashboardLinkVisitWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRecordDashboardLinkVisitRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) RecordDashboardLinkVisitWithFormdataBody(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRecordDashboardLinkVisitRequestWithFormdataBody(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetDescription(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetDescriptionRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpsertDescriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpsertDescriptionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpsertDescription(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpsertDescriptionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListHealthRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListHomeworks(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListHomeworksRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateHomeworkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateHomeworkRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateHomework(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateHomeworkRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PutApiHomeworksCompletionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPutApiHomeworksCompletionsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PutApiHomeworksCompletions(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPutApiHomeworksCompletionsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteHomework(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteHomeworkRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateHomeworkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateHomeworkRequestWithBody(c.Server, id, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) UpdateHomework(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateHomeworkRequest(c.Server, id, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetHomeworkCompletionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetHomeworkCompletionRequestWithBody(c.Server, id, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetHomeworkCompletion(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetHomeworkCompletionRequest(c.Server, id, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetLocaleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetLocaleRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetLocale(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetLocaleRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteApiMcpRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListMcpRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OptionsApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOptionsApiMcpRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateMcpRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiMcpWellKnownOauthAuthorizationServerRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OptionsApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiMcpWellKnownOpenidConfigurationRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OptionsApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOptionsApiMcpWellKnownOpenidConfigurationRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetMeRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetApiMeOverview(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiMeOverviewRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetSubscribedHomeworks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSubscribedHomeworksRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetApiMeSubscriptionsSchedules(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiMeSubscriptionsSchedulesRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMetadataRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOpenApiSpecRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -12302,6 +11582,750 @@ func (c *Client) ListTeachers(ctx context.Context, params *ListTeachersParams, r
 
 func (c *Client) GetTeacher(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetTeacherRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListCommentsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateCommentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateCommentRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateComment(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateCommentRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiCommentsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiCommentsBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiCommentsBatch(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiCommentsBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteCommentRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetComment(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCommentRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateCommentWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateCommentRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateComment(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateCommentRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveCommentReaction(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveCommentReactionRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddCommentReactionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddCommentReactionRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddCommentReactionRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetDescription(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDescriptionRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpsertDescriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpsertDescriptionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpsertDescription(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpsertDescriptionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListHomeworks(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListHomeworksRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateHomeworkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHomeworkRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateHomework(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHomeworkRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteHomework(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteHomeworkRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateHomeworkWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHomeworkRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateHomework(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHomeworkRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetUserCalendar(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetUserCalendarRequest(c.Server, userId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiMcpRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMcpRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) OptionsApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOptionsApiMcpRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMcpRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiMcpWellKnownOauthAuthorizationServerRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) OptionsApiMcpWellKnownOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiMcpWellKnownOpenidConfigurationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) OptionsApiMcpWellKnownOpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOptionsApiMcpWellKnownOpenidConfigurationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOpenApiSpecRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetBusPreferences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBusPreferencesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetBusPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetBusPreferencesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetBusPreferences(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetBusPreferencesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSubscribedHomeworks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSubscribedHomeworksRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiHomeworksCompletionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiHomeworksCompletionsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiHomeworksCompletions(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiHomeworksCompletionsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetHomeworkCompletionWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetHomeworkCompletionRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetHomeworkCompletion(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetHomeworkCompletionRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PinDashboardLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPinDashboardLinkRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PinDashboardLinkWithFormdataBody(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPinDashboardLinkRequestWithFormdataBody(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiWorkspaceLinksPinBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiWorkspaceLinksPinBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiWorkspaceLinksPinBatch(ctx context.Context, body PostApiWorkspaceLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiWorkspaceLinksPinBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VisitDashboardLink(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVisitDashboardLinkRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RecordDashboardLinkVisitWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRecordDashboardLinkVisitRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RecordDashboardLinkVisitWithFormdataBody(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRecordDashboardLinkVisitRequestWithFormdataBody(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiMeOverview(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiMeOverviewRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiMeSubscriptionsSchedules(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiMeSubscriptionsSchedulesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiWorkspaceSubscriptionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiWorkspaceSubscriptionsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteApiWorkspaceSubscriptions(ctx context.Context, body DeleteApiWorkspaceSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApiWorkspaceSubscriptionsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AppendCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAppendCalendarSubscriptionSectionsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AppendCalendarSubscriptionSections(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAppendCalendarSubscriptionSectionsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetCalendarSubscriptionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBatchUpdateCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BatchUpdateCalendarSubscription(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBatchUpdateCalendarSubscriptionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCurrentCalendarSubscription(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCurrentCalendarSubscriptionRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiWorkspaceSubscriptionsImportCodesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiWorkspaceSubscriptionsImportCodesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiWorkspaceSubscriptionsImportCodes(ctx context.Context, body PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiWorkspaceSubscriptionsImportCodesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryCalendarSubscriptionSectionsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryCalendarSubscriptionSectionsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -12542,30 +12566,6 @@ func (c *Client) UpdateUpload(ctx context.Context, id string, body UpdateUploadJ
 
 func (c *Client) DownloadUpload(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDownloadUploadRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetApiUsersProfile(ctx context.Context, params *GetApiUsersProfileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetApiUsersProfileRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetUserCalendar(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetUserCalendarRequest(c.Server, userId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -13055,6 +13055,139 @@ func NewOptionsWellKnownOpenidConfigurationApiMcpRequest(server string) (*http.R
 	}
 
 	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeRequest generates requests for GetMe
+func NewGetMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/account")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetLocaleRequest calls the generic SetLocale builder with application/json body
+func NewSetLocaleRequest(server string, body SetLocaleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetLocaleRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetLocaleRequestWithBody generates requests for SetLocale with any type of body
+func NewSetLocaleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/account/preferences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApiAccountProfileRequest generates requests for GetApiAccountProfile
+func NewGetApiAccountProfileRequest(server string, params *GetApiAccountProfileParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/account/profile")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Username != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "username", *params.Username, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.UserId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "userId", *params.UserId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -13931,7 +14064,7 @@ func NewQueryBusRequest(server string, params *QueryBusParams) (*http.Request, e
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/bus")
+	operationPath := fmt.Sprintf("/api/catalog/bus")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -13976,8 +14109,8 @@ func NewQueryBusRequest(server string, params *QueryBusParams) (*http.Request, e
 	return req, nil
 }
 
-// NewGetApiBusNextRequest generates requests for GetApiBusNext
-func NewGetApiBusNextRequest(server string, params *GetApiBusNextParams) (*http.Request, error) {
+// NewGetApiCatalogBusNextRequest generates requests for GetApiCatalogBusNext
+func NewGetApiCatalogBusNextRequest(server string, params *GetApiCatalogBusNextParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -13985,7 +14118,7 @@ func NewGetApiBusNextRequest(server string, params *GetApiBusNextParams) (*http.
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/bus/next")
+	operationPath := fmt.Sprintf("/api/catalog/bus/next")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -14106,73 +14239,6 @@ func NewGetApiBusNextRequest(server string, params *GetApiBusNextParams) (*http.
 	return req, nil
 }
 
-// NewGetBusPreferencesRequest generates requests for GetBusPreferences
-func NewGetBusPreferencesRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/bus/preferences")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewSetBusPreferencesRequest calls the generic SetBusPreferences builder with application/json body
-func NewSetBusPreferencesRequest(server string, body SetBusPreferencesJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetBusPreferencesRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewSetBusPreferencesRequestWithBody generates requests for SetBusPreferences with any type of body
-func NewSetBusPreferencesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/bus/preferences")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewGetApiBusRoutesRequest generates requests for GetApiBusRoutes
 func NewGetApiBusRoutesRequest(server string, params *GetApiBusRoutesParams) (*http.Request, error) {
 	var err error
@@ -14182,7 +14248,7 @@ func NewGetApiBusRoutesRequest(server string, params *GetApiBusRoutesParams) (*h
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/bus/routes")
+	operationPath := fmt.Sprintf("/api/catalog/bus/routes")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -14263,742 +14329,6 @@ func NewGetApiBusRoutesRequest(server string, params *GetApiBusRoutesParams) (*h
 	return req, nil
 }
 
-// NewDeleteApiCalendarSubscriptionsRequest calls the generic DeleteApiCalendarSubscriptions builder with application/json body
-func NewDeleteApiCalendarSubscriptionsRequest(server string, body DeleteApiCalendarSubscriptionsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewDeleteApiCalendarSubscriptionsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewDeleteApiCalendarSubscriptionsRequestWithBody generates requests for DeleteApiCalendarSubscriptions with any type of body
-func NewDeleteApiCalendarSubscriptionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewAppendCalendarSubscriptionSectionsRequest calls the generic AppendCalendarSubscriptionSections builder with application/json body
-func NewAppendCalendarSubscriptionSectionsRequest(server string, body AppendCalendarSubscriptionSectionsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewAppendCalendarSubscriptionSectionsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewAppendCalendarSubscriptionSectionsRequestWithBody generates requests for AppendCalendarSubscriptionSections with any type of body
-func NewAppendCalendarSubscriptionSectionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewSetCalendarSubscriptionRequest calls the generic SetCalendarSubscription builder with application/json body
-func NewSetCalendarSubscriptionRequest(server string, body SetCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetCalendarSubscriptionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewSetCalendarSubscriptionRequestWithBody generates requests for SetCalendarSubscription with any type of body
-func NewSetCalendarSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewBatchUpdateCalendarSubscriptionRequest calls the generic BatchUpdateCalendarSubscription builder with application/json body
-func NewBatchUpdateCalendarSubscriptionRequest(server string, body BatchUpdateCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewBatchUpdateCalendarSubscriptionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewBatchUpdateCalendarSubscriptionRequestWithBody generates requests for BatchUpdateCalendarSubscription with any type of body
-func NewBatchUpdateCalendarSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions/batch")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetCurrentCalendarSubscriptionRequest generates requests for GetCurrentCalendarSubscription
-func NewGetCurrentCalendarSubscriptionRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions/current")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostApiCalendarSubscriptionsImportCodesRequest calls the generic PostApiCalendarSubscriptionsImportCodes builder with application/json body
-func NewPostApiCalendarSubscriptionsImportCodesRequest(server string, body PostApiCalendarSubscriptionsImportCodesJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostApiCalendarSubscriptionsImportCodesRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPostApiCalendarSubscriptionsImportCodesRequestWithBody generates requests for PostApiCalendarSubscriptionsImportCodes with any type of body
-func NewPostApiCalendarSubscriptionsImportCodesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions/import-codes")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewQueryCalendarSubscriptionSectionsRequest calls the generic QueryCalendarSubscriptionSections builder with application/json body
-func NewQueryCalendarSubscriptionSectionsRequest(server string, body QueryCalendarSubscriptionSectionsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewQueryCalendarSubscriptionSectionsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewQueryCalendarSubscriptionSectionsRequestWithBody generates requests for QueryCalendarSubscriptionSections with any type of body
-func NewQueryCalendarSubscriptionSectionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/calendar-subscriptions/query")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewListCommentsRequest generates requests for ListComments
-func NewListCommentsRequest(server string, params *ListCommentsParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetType", params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if params.TargetId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetId", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionId", *params.SectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionJwId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.CourseJwId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "courseJwId", *params.CourseJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.TeacherId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "teacherId", *params.TeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.HomeworkId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkId", *params.HomeworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionTeacherId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionTeacherId", *params.SectionTeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Page != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.PageSize != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateCommentRequest calls the generic CreateComment builder with application/json body
-func NewCreateCommentRequest(server string, body CreateCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateCommentRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCreateCommentRequestWithBody generates requests for CreateComment with any type of body
-func NewCreateCommentRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewDeleteApiCommentsBatchRequest calls the generic DeleteApiCommentsBatch builder with application/json body
-func NewDeleteApiCommentsBatchRequest(server string, body DeleteApiCommentsBatchJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewDeleteApiCommentsBatchRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewDeleteApiCommentsBatchRequestWithBody generates requests for DeleteApiCommentsBatch with any type of body
-func NewDeleteApiCommentsBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/batch")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewDeleteCommentRequest generates requests for DeleteComment
-func NewDeleteCommentRequest(server string, id string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetCommentRequest generates requests for GetComment
-func NewGetCommentRequest(server string, id string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewUpdateCommentRequest calls the generic UpdateComment builder with application/json body
-func NewUpdateCommentRequest(server string, id string, body UpdateCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUpdateCommentRequestWithBody(server, id, "application/json", bodyReader)
-}
-
-// NewUpdateCommentRequestWithBody generates requests for UpdateComment with any type of body
-func NewUpdateCommentRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewRemoveCommentReactionRequest generates requests for RemoveCommentReaction
-func NewRemoveCommentReactionRequest(server string, id string, params *RemoveCommentReactionParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/%s/reactions", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewAddCommentReactionRequest calls the generic AddCommentReaction builder with application/json body
-func NewAddCommentReactionRequest(server string, id string, body AddCommentReactionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewAddCommentReactionRequestWithBody(server, id, "application/json", bodyReader)
-}
-
-// NewAddCommentReactionRequestWithBody generates requests for AddCommentReaction with any type of body
-func NewAddCommentReactionRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/comments/%s/reactions", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewListCoursesRequest generates requests for ListCourses
 func NewListCoursesRequest(server string, params *ListCoursesParams) (*http.Request, error) {
 	var err error
@@ -15008,7 +14338,7 @@ func NewListCoursesRequest(server string, params *ListCoursesParams) (*http.Requ
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/courses")
+	operationPath := fmt.Sprintf("/api/catalog/courses")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -15153,7 +14483,7 @@ func NewGetCourseRequest(server string, jwId int64, params *GetCourseParams) (*h
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/courses/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/courses/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -15171,1153 +14501,6 @@ func NewGetCourseRequest(server string, jwId int64, params *GetCourseParams) (*h
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
-
-		if params.Locale != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPinDashboardLinkRequestWithFormdataBody calls the generic PinDashboardLink builder with application/x-www-form-urlencoded body
-func NewPinDashboardLinkRequestWithFormdataBody(server string, body PinDashboardLinkFormdataRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	bodyStr, err := runtime.MarshalForm(body, nil)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = strings.NewReader(bodyStr.Encode())
-	return NewPinDashboardLinkRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
-}
-
-// NewPinDashboardLinkRequestWithBody generates requests for PinDashboardLink with any type of body
-func NewPinDashboardLinkRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/dashboard-links/pin")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostApiDashboardLinksPinBatchRequest calls the generic PostApiDashboardLinksPinBatch builder with application/json body
-func NewPostApiDashboardLinksPinBatchRequest(server string, body PostApiDashboardLinksPinBatchJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostApiDashboardLinksPinBatchRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPostApiDashboardLinksPinBatchRequestWithBody generates requests for PostApiDashboardLinksPinBatch with any type of body
-func NewPostApiDashboardLinksPinBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/dashboard-links/pin/batch")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewVisitDashboardLinkRequest generates requests for VisitDashboardLink
-func NewVisitDashboardLinkRequest(server string, params *VisitDashboardLinkParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/dashboard-links/visit")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "slug", params.Slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewRecordDashboardLinkVisitRequestWithFormdataBody calls the generic RecordDashboardLinkVisit builder with application/x-www-form-urlencoded body
-func NewRecordDashboardLinkVisitRequestWithFormdataBody(server string, body RecordDashboardLinkVisitFormdataRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	bodyStr, err := runtime.MarshalForm(body, nil)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = strings.NewReader(bodyStr.Encode())
-	return NewRecordDashboardLinkVisitRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
-}
-
-// NewRecordDashboardLinkVisitRequestWithBody generates requests for RecordDashboardLinkVisit with any type of body
-func NewRecordDashboardLinkVisitRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/dashboard-links/visit")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetDescriptionRequest generates requests for GetDescription
-func NewGetDescriptionRequest(server string, params *GetDescriptionParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/descriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetType", params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if params.TargetId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetId", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionJwId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.CourseJwId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "courseJwId", *params.CourseJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.TeacherId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "teacherId", *params.TeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.HomeworkId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkId", *params.HomeworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewUpsertDescriptionRequest calls the generic UpsertDescription builder with application/json body
-func NewUpsertDescriptionRequest(server string, body UpsertDescriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUpsertDescriptionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewUpsertDescriptionRequestWithBody generates requests for UpsertDescription with any type of body
-func NewUpsertDescriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/descriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewListHealthRequest generates requests for ListHealth
-func NewListHealthRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/health")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListHomeworksRequest generates requests for ListHomeworks
-func NewListHomeworksRequest(server string, params *ListHomeworksParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.SectionId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionId", *params.SectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionIds != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionIds", *params.SectionIds, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.SectionJwId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.IncludeDeleted != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeDeleted", *params.IncludeDeleted, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateHomeworkRequest calls the generic CreateHomework builder with application/json body
-func NewCreateHomeworkRequest(server string, body CreateHomeworkJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateHomeworkRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCreateHomeworkRequestWithBody generates requests for CreateHomework with any type of body
-func NewCreateHomeworkRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPutApiHomeworksCompletionsRequest calls the generic PutApiHomeworksCompletions builder with application/json body
-func NewPutApiHomeworksCompletionsRequest(server string, body PutApiHomeworksCompletionsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPutApiHomeworksCompletionsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPutApiHomeworksCompletionsRequestWithBody generates requests for PutApiHomeworksCompletions with any type of body
-func NewPutApiHomeworksCompletionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks/completions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewDeleteHomeworkRequest generates requests for DeleteHomework
-func NewDeleteHomeworkRequest(server string, id string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewUpdateHomeworkRequest calls the generic UpdateHomework builder with application/json body
-func NewUpdateHomeworkRequest(server string, id string, body UpdateHomeworkJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewUpdateHomeworkRequestWithBody(server, id, "application/json", bodyReader)
-}
-
-// NewUpdateHomeworkRequestWithBody generates requests for UpdateHomework with any type of body
-func NewUpdateHomeworkRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewSetHomeworkCompletionRequest calls the generic SetHomeworkCompletion builder with application/json body
-func NewSetHomeworkCompletionRequest(server string, id string, body SetHomeworkCompletionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetHomeworkCompletionRequestWithBody(server, id, "application/json", bodyReader)
-}
-
-// NewSetHomeworkCompletionRequestWithBody generates requests for SetHomeworkCompletion with any type of body
-func NewSetHomeworkCompletionRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/homeworks/%s/completion", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewSetLocaleRequest calls the generic SetLocale builder with application/json body
-func NewSetLocaleRequest(server string, body SetLocaleJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetLocaleRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewSetLocaleRequestWithBody generates requests for SetLocale with any type of body
-func NewSetLocaleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/locale")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewDeleteApiMcpRequest generates requests for DeleteApiMcp
-func NewDeleteApiMcpRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListMcpRequest generates requests for ListMcp
-func NewListMcpRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOptionsApiMcpRequest generates requests for OptionsApiMcp
-func NewOptionsApiMcpRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateMcpRequest generates requests for CreateMcp
-func NewCreateMcpRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiMcpWellKnownOauthAuthorizationServerRequest generates requests for GetApiMcpWellKnownOauthAuthorizationServer
-func NewGetApiMcpWellKnownOauthAuthorizationServerRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp/.well-known/oauth-authorization-server")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest generates requests for OptionsApiMcpWellKnownOauthAuthorizationServer
-func NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp/.well-known/oauth-authorization-server")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiMcpWellKnownOpenidConfigurationRequest generates requests for GetApiMcpWellKnownOpenidConfiguration
-func NewGetApiMcpWellKnownOpenidConfigurationRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp/.well-known/openid-configuration")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOptionsApiMcpWellKnownOpenidConfigurationRequest generates requests for OptionsApiMcpWellKnownOpenidConfiguration
-func NewOptionsApiMcpWellKnownOpenidConfigurationRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/mcp/.well-known/openid-configuration")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetMeRequest generates requests for GetMe
-func NewGetMeRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/me")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiMeOverviewRequest generates requests for GetApiMeOverview
-func NewGetApiMeOverviewRequest(server string, params *GetApiMeOverviewParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/me/overview")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.AtTime != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "atTime", *params.AtTime, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.HomeworkWindowDays != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkWindowDays", *params.HomeworkWindowDays, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Locale != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetSubscribedHomeworksRequest generates requests for GetSubscribedHomeworks
-func NewGetSubscribedHomeworksRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/me/subscriptions/homeworks")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiMeSubscriptionsSchedulesRequest generates requests for GetApiMeSubscriptionsSchedules
-func NewGetApiMeSubscriptionsSchedulesRequest(server string, params *GetApiMeSubscriptionsSchedulesParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/me/subscriptions/schedules")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.DateFrom != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateFrom", *params.DateFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.DateTo != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateTo", *params.DateTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Weekday != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "weekday", *params.Weekday, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
 
 		if params.Locale != nil {
 
@@ -16354,34 +14537,7 @@ func NewGetMetadataRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/metadata")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetOpenApiSpecRequest generates requests for GetOpenApiSpec
-func NewGetOpenApiSpecRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/openapi")
+	operationPath := fmt.Sprintf("/api/catalog/metadata")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16408,7 +14564,7 @@ func NewListSchedulesRequest(server string, params *ListSchedulesParams) (*http.
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/schedules")
+	operationPath := fmt.Sprintf("/api/catalog/schedules")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16618,7 +14774,7 @@ func NewListSectionsRequest(server string, params *ListSectionsParams) (*http.Re
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections")
+	operationPath := fmt.Sprintf("/api/catalog/sections")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16840,7 +14996,7 @@ func NewGetSectionsCalendarRequest(server string, params *GetSectionsCalendarPar
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/calendar.ics")
+	operationPath := fmt.Sprintf("/api/catalog/sections/calendar.ics")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16901,7 +15057,7 @@ func NewMatchSectionCodesRequestWithBody(server string, contentType string, body
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/match-codes")
+	operationPath := fmt.Sprintf("/api/catalog/sections/match-codes")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16937,7 +15093,7 @@ func NewGetSectionRequest(server string, jwId int64, params *GetSectionParams) (
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/sections/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -16998,7 +15154,7 @@ func NewGetSectionCalendarRequest(server string, jwId int64) (*http.Request, err
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/%s/calendar.ics", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/sections/%s/calendar.ics", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17032,7 +15188,7 @@ func NewGetSectionScheduleGroupsRequest(server string, jwId int64, params *GetSe
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/%s/schedule-groups", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/sections/%s/schedule-groups", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17093,7 +15249,7 @@ func NewGetSectionSchedulesRequest(server string, jwId int64, params *GetSection
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/sections/%s/schedules", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/sections/%s/schedules", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17183,7 +15339,7 @@ func NewListSemestersRequest(server string, params *ListSemestersParams) (*http.
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/semesters")
+	operationPath := fmt.Sprintf("/api/catalog/semesters")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17261,7 +15417,7 @@ func NewGetCurrentSemesterRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/semesters/current")
+	operationPath := fmt.Sprintf("/api/catalog/semesters/current")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17288,7 +15444,7 @@ func NewListTeachersRequest(server string, params *ListTeachersParams) (*http.Re
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/teachers")
+	operationPath := fmt.Sprintf("/api/catalog/teachers")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17409,7 +15565,7 @@ func NewGetTeacherRequest(server string, id int64, params *GetTeacherParams) (*h
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/teachers/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/catalog/teachers/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17454,6 +15610,1977 @@ func NewGetTeacherRequest(server string, id int64, params *GetTeacherParams) (*h
 	return req, nil
 }
 
+// NewListCommentsRequest generates requests for ListComments
+func NewListCommentsRequest(server string, params *ListCommentsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetType", params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.TargetId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetId", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionId", *params.SectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionJwId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.CourseJwId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "courseJwId", *params.CourseJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TeacherId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "teacherId", *params.TeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HomeworkId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkId", *params.HomeworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionTeacherId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionTeacherId", *params.SectionTeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateCommentRequest calls the generic CreateComment builder with application/json body
+func NewCreateCommentRequest(server string, body CreateCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateCommentRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateCommentRequestWithBody generates requests for CreateComment with any type of body
+func NewCreateCommentRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApiCommentsBatchRequest calls the generic DeleteApiCommentsBatch builder with application/json body
+func NewDeleteApiCommentsBatchRequest(server string, body DeleteApiCommentsBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteApiCommentsBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteApiCommentsBatchRequestWithBody generates requests for DeleteApiCommentsBatch with any type of body
+func NewDeleteApiCommentsBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteCommentRequest generates requests for DeleteComment
+func NewDeleteCommentRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCommentRequest generates requests for GetComment
+func NewGetCommentRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateCommentRequest calls the generic UpdateComment builder with application/json body
+func NewUpdateCommentRequest(server string, id string, body UpdateCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateCommentRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateCommentRequestWithBody generates requests for UpdateComment with any type of body
+func NewUpdateCommentRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveCommentReactionRequest generates requests for RemoveCommentReaction
+func NewRemoveCommentReactionRequest(server string, id string, params *RemoveCommentReactionParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s/reactions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddCommentReactionRequest calls the generic AddCommentReaction builder with application/json body
+func NewAddCommentReactionRequest(server string, id string, body AddCommentReactionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddCommentReactionRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewAddCommentReactionRequestWithBody generates requests for AddCommentReaction with any type of body
+func NewAddCommentReactionRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s/reactions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetDescriptionRequest generates requests for GetDescription
+func NewGetDescriptionRequest(server string, params *GetDescriptionParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/descriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetType", params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.TargetId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetId", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionJwId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.CourseJwId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "courseJwId", *params.CourseJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TeacherId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "teacherId", *params.TeacherId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HomeworkId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkId", *params.HomeworkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpsertDescriptionRequest calls the generic UpsertDescription builder with application/json body
+func NewUpsertDescriptionRequest(server string, body UpsertDescriptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpsertDescriptionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpsertDescriptionRequestWithBody generates requests for UpsertDescription with any type of body
+func NewUpsertDescriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/descriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListHomeworksRequest generates requests for ListHomeworks
+func NewListHomeworksRequest(server string, params *ListHomeworksParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/homeworks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.SectionId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionId", *params.SectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionIds != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionIds", *params.SectionIds, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SectionJwId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sectionJwId", *params.SectionJwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeDeleted != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeDeleted", *params.IncludeDeleted, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateHomeworkRequest calls the generic CreateHomework builder with application/json body
+func NewCreateHomeworkRequest(server string, body CreateHomeworkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateHomeworkRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateHomeworkRequestWithBody generates requests for CreateHomework with any type of body
+func NewCreateHomeworkRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/homeworks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteHomeworkRequest generates requests for DeleteHomework
+func NewDeleteHomeworkRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/homeworks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateHomeworkRequest calls the generic UpdateHomework builder with application/json body
+func NewUpdateHomeworkRequest(server string, id string, body UpdateHomeworkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateHomeworkRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateHomeworkRequestWithBody generates requests for UpdateHomework with any type of body
+func NewUpdateHomeworkRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/homeworks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetUserCalendarRequest generates requests for GetUserCalendar
+func NewGetUserCalendarRequest(server string, userId string, params *GetUserCalendarParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/users/%s/calendar.ics", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Token != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "token", *params.Token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListHealthRequest generates requests for ListHealth
+func NewListHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteApiMcpRequest generates requests for DeleteApiMcp
+func NewDeleteApiMcpRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListMcpRequest generates requests for ListMcp
+func NewListMcpRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOptionsApiMcpRequest generates requests for OptionsApiMcp
+func NewOptionsApiMcpRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateMcpRequest generates requests for CreateMcp
+func NewCreateMcpRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiMcpWellKnownOauthAuthorizationServerRequest generates requests for GetApiMcpWellKnownOauthAuthorizationServer
+func NewGetApiMcpWellKnownOauthAuthorizationServerRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp/.well-known/oauth-authorization-server")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest generates requests for OptionsApiMcpWellKnownOauthAuthorizationServer
+func NewOptionsApiMcpWellKnownOauthAuthorizationServerRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp/.well-known/oauth-authorization-server")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiMcpWellKnownOpenidConfigurationRequest generates requests for GetApiMcpWellKnownOpenidConfiguration
+func NewGetApiMcpWellKnownOpenidConfigurationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp/.well-known/openid-configuration")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOptionsApiMcpWellKnownOpenidConfigurationRequest generates requests for OptionsApiMcpWellKnownOpenidConfiguration
+func NewOptionsApiMcpWellKnownOpenidConfigurationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/mcp/.well-known/openid-configuration")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodOptions, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetOpenApiSpecRequest generates requests for GetOpenApiSpec
+func NewGetOpenApiSpecRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/openapi")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBusPreferencesRequest generates requests for GetBusPreferences
+func NewGetBusPreferencesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/bus-preferences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetBusPreferencesRequest calls the generic SetBusPreferences builder with application/json body
+func NewSetBusPreferencesRequest(server string, body SetBusPreferencesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetBusPreferencesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetBusPreferencesRequestWithBody generates requests for SetBusPreferences with any type of body
+func NewSetBusPreferencesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/bus-preferences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetSubscribedHomeworksRequest generates requests for GetSubscribedHomeworks
+func NewGetSubscribedHomeworksRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/homeworks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiHomeworksCompletionsRequest calls the generic PutApiHomeworksCompletions builder with application/json body
+func NewPutApiHomeworksCompletionsRequest(server string, body PutApiHomeworksCompletionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiHomeworksCompletionsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPutApiHomeworksCompletionsRequestWithBody generates requests for PutApiHomeworksCompletions with any type of body
+func NewPutApiHomeworksCompletionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/homeworks/completions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetHomeworkCompletionRequest calls the generic SetHomeworkCompletion builder with application/json body
+func NewSetHomeworkCompletionRequest(server string, id string, body SetHomeworkCompletionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetHomeworkCompletionRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewSetHomeworkCompletionRequestWithBody generates requests for SetHomeworkCompletion with any type of body
+func NewSetHomeworkCompletionRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/homeworks/%s/completion", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPinDashboardLinkRequestWithFormdataBody calls the generic PinDashboardLink builder with application/x-www-form-urlencoded body
+func NewPinDashboardLinkRequestWithFormdataBody(server string, body PinDashboardLinkFormdataRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	bodyStr, err := runtime.MarshalForm(body, nil)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = strings.NewReader(bodyStr.Encode())
+	return NewPinDashboardLinkRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
+}
+
+// NewPinDashboardLinkRequestWithBody generates requests for PinDashboardLink with any type of body
+func NewPinDashboardLinkRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/links/pin")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostApiWorkspaceLinksPinBatchRequest calls the generic PostApiWorkspaceLinksPinBatch builder with application/json body
+func NewPostApiWorkspaceLinksPinBatchRequest(server string, body PostApiWorkspaceLinksPinBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiWorkspaceLinksPinBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiWorkspaceLinksPinBatchRequestWithBody generates requests for PostApiWorkspaceLinksPinBatch with any type of body
+func NewPostApiWorkspaceLinksPinBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/links/pin/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewVisitDashboardLinkRequest generates requests for VisitDashboardLink
+func NewVisitDashboardLinkRequest(server string, params *VisitDashboardLinkParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/links/visit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "slug", params.Slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRecordDashboardLinkVisitRequestWithFormdataBody calls the generic RecordDashboardLinkVisit builder with application/x-www-form-urlencoded body
+func NewRecordDashboardLinkVisitRequestWithFormdataBody(server string, body RecordDashboardLinkVisitFormdataRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	bodyStr, err := runtime.MarshalForm(body, nil)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = strings.NewReader(bodyStr.Encode())
+	return NewRecordDashboardLinkVisitRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
+}
+
+// NewRecordDashboardLinkVisitRequestWithBody generates requests for RecordDashboardLinkVisit with any type of body
+func NewRecordDashboardLinkVisitRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/links/visit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApiMeOverviewRequest generates requests for GetApiMeOverview
+func NewGetApiMeOverviewRequest(server string, params *GetApiMeOverviewParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/overview")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.AtTime != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "atTime", *params.AtTime, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HomeworkWindowDays != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "homeworkWindowDays", *params.HomeworkWindowDays, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiMeSubscriptionsSchedulesRequest generates requests for GetApiMeSubscriptionsSchedules
+func NewGetApiMeSubscriptionsSchedulesRequest(server string, params *GetApiMeSubscriptionsSchedulesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/schedules")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.DateFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateFrom", *params.DateFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateTo", *params.DateTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Weekday != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "weekday", *params.Weekday, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteApiWorkspaceSubscriptionsRequest calls the generic DeleteApiWorkspaceSubscriptions builder with application/json body
+func NewDeleteApiWorkspaceSubscriptionsRequest(server string, body DeleteApiWorkspaceSubscriptionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteApiWorkspaceSubscriptionsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteApiWorkspaceSubscriptionsRequestWithBody generates requests for DeleteApiWorkspaceSubscriptions with any type of body
+func NewDeleteApiWorkspaceSubscriptionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAppendCalendarSubscriptionSectionsRequest calls the generic AppendCalendarSubscriptionSections builder with application/json body
+func NewAppendCalendarSubscriptionSectionsRequest(server string, body AppendCalendarSubscriptionSectionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAppendCalendarSubscriptionSectionsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAppendCalendarSubscriptionSectionsRequestWithBody generates requests for AppendCalendarSubscriptionSections with any type of body
+func NewAppendCalendarSubscriptionSectionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetCalendarSubscriptionRequest calls the generic SetCalendarSubscription builder with application/json body
+func NewSetCalendarSubscriptionRequest(server string, body SetCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetCalendarSubscriptionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetCalendarSubscriptionRequestWithBody generates requests for SetCalendarSubscription with any type of body
+func NewSetCalendarSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewBatchUpdateCalendarSubscriptionRequest calls the generic BatchUpdateCalendarSubscription builder with application/json body
+func NewBatchUpdateCalendarSubscriptionRequest(server string, body BatchUpdateCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBatchUpdateCalendarSubscriptionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBatchUpdateCalendarSubscriptionRequestWithBody generates requests for BatchUpdateCalendarSubscription with any type of body
+func NewBatchUpdateCalendarSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetCurrentCalendarSubscriptionRequest generates requests for GetCurrentCalendarSubscription
+func NewGetCurrentCalendarSubscriptionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions/current")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiWorkspaceSubscriptionsImportCodesRequest calls the generic PostApiWorkspaceSubscriptionsImportCodes builder with application/json body
+func NewPostApiWorkspaceSubscriptionsImportCodesRequest(server string, body PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiWorkspaceSubscriptionsImportCodesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostApiWorkspaceSubscriptionsImportCodesRequestWithBody generates requests for PostApiWorkspaceSubscriptionsImportCodes with any type of body
+func NewPostApiWorkspaceSubscriptionsImportCodesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions/import-codes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewQueryCalendarSubscriptionSectionsRequest calls the generic QueryCalendarSubscriptionSections builder with application/json body
+func NewQueryCalendarSubscriptionSectionsRequest(server string, body QueryCalendarSubscriptionSectionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewQueryCalendarSubscriptionSectionsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewQueryCalendarSubscriptionSectionsRequestWithBody generates requests for QueryCalendarSubscriptionSections with any type of body
+func NewQueryCalendarSubscriptionSectionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions/query")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListTodosRequest generates requests for ListTodos
 func NewListTodosRequest(server string, params *ListTodosParams) (*http.Request, error) {
 	var err error
@@ -17463,7 +17590,7 @@ func NewListTodosRequest(server string, params *ListTodosParams) (*http.Request,
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos")
+	operationPath := fmt.Sprintf("/api/workspace/todos")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17576,7 +17703,7 @@ func NewCreateTodoRequestWithBody(server string, contentType string, body io.Rea
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos")
+	operationPath := fmt.Sprintf("/api/workspace/todos")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17616,7 +17743,7 @@ func NewDeleteApiTodosBatchRequestWithBody(server string, contentType string, bo
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos/batch")
+	operationPath := fmt.Sprintf("/api/workspace/todos/batch")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17656,7 +17783,7 @@ func NewPatchApiTodosBatchRequestWithBody(server string, contentType string, bod
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos/batch")
+	operationPath := fmt.Sprintf("/api/workspace/todos/batch")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17692,7 +17819,7 @@ func NewDeleteTodoRequest(server string, id string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/workspace/todos/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17737,7 +17864,7 @@ func NewUpdateTodoRequestWithBody(server string, id string, contentType string, 
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/todos/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/workspace/todos/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17766,7 +17893,7 @@ func NewListUploadsRequest(server string, params *ListUploadsParams) (*http.Requ
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads")
+	operationPath := fmt.Sprintf("/api/workspace/uploads")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17855,7 +17982,7 @@ func NewCreateUploadRequestWithBody(server string, contentType string, body io.R
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads")
+	operationPath := fmt.Sprintf("/api/workspace/uploads")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17895,7 +18022,7 @@ func NewCompleteUploadRequestWithBody(server string, contentType string, body io
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads/complete")
+	operationPath := fmt.Sprintf("/api/workspace/uploads/complete")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17924,7 +18051,7 @@ func NewPutApiUploadsObjectRequestWithBody(server string, params *PutApiUploadsO
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads/object")
+	operationPath := fmt.Sprintf("/api/workspace/uploads/object")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -17983,7 +18110,7 @@ func NewDeleteUploadRequest(server string, id string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/workspace/uploads/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -18028,7 +18155,7 @@ func NewUpdateUploadRequestWithBody(server string, id string, contentType string
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/workspace/uploads/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -18064,7 +18191,7 @@ func NewDownloadUploadRequest(server string, id string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/uploads/%s/download", pathParam0)
+	operationPath := fmt.Sprintf("/api/workspace/uploads/%s/download", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -18072,133 +18199,6 @@ func NewDownloadUploadRequest(server string, id string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetApiUsersProfileRequest generates requests for GetApiUsersProfile
-func NewGetApiUsersProfileRequest(server string, params *GetApiUsersProfileParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/users/profile")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Username != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "username", *params.Username, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.UserId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "userId", *params.UserId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetUserCalendarRequest generates requests for GetUserCalendar
-func NewGetUserCalendarRequest(server string, userId string, params *GetUserCalendarParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/users/%s/calendar.ics", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Token != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "token", *params.Token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -18306,6 +18306,17 @@ type ClientWithResponsesInterface interface {
 	// OptionsWellKnownOpenidConfigurationApiMcpWithResponse request
 	OptionsWellKnownOpenidConfigurationApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsWellKnownOpenidConfigurationApiMcpResponse, error)
 
+	// GetMeWithResponse request
+	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// SetLocaleWithBodyWithResponse request with any body
+	SetLocaleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error)
+
+	SetLocaleWithResponse(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error)
+
+	// GetApiAccountProfileWithResponse request
+	GetApiAccountProfileWithResponse(ctx context.Context, params *GetApiAccountProfileParams, reqEditors ...RequestEditorFn) (*GetApiAccountProfileResponse, error)
+
 	// ListAdminCommentsWithResponse request
 	ListAdminCommentsWithResponse(ctx context.Context, params *ListAdminCommentsParams, reqEditors ...RequestEditorFn) (*ListAdminCommentsResponse, error)
 
@@ -18372,84 +18383,11 @@ type ClientWithResponsesInterface interface {
 	// QueryBusWithResponse request
 	QueryBusWithResponse(ctx context.Context, params *QueryBusParams, reqEditors ...RequestEditorFn) (*QueryBusResponse, error)
 
-	// GetApiBusNextWithResponse request
-	GetApiBusNextWithResponse(ctx context.Context, params *GetApiBusNextParams, reqEditors ...RequestEditorFn) (*GetApiBusNextResponse, error)
-
-	// GetBusPreferencesWithResponse request
-	GetBusPreferencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBusPreferencesResponse, error)
-
-	// SetBusPreferencesWithBodyWithResponse request with any body
-	SetBusPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error)
-
-	SetBusPreferencesWithResponse(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error)
+	// GetApiCatalogBusNextWithResponse request
+	GetApiCatalogBusNextWithResponse(ctx context.Context, params *GetApiCatalogBusNextParams, reqEditors ...RequestEditorFn) (*GetApiCatalogBusNextResponse, error)
 
 	// GetApiBusRoutesWithResponse request
 	GetApiBusRoutesWithResponse(ctx context.Context, params *GetApiBusRoutesParams, reqEditors ...RequestEditorFn) (*GetApiBusRoutesResponse, error)
-
-	// DeleteApiCalendarSubscriptionsWithBodyWithResponse request with any body
-	DeleteApiCalendarSubscriptionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCalendarSubscriptionsResponse, error)
-
-	DeleteApiCalendarSubscriptionsWithResponse(ctx context.Context, body DeleteApiCalendarSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCalendarSubscriptionsResponse, error)
-
-	// AppendCalendarSubscriptionSectionsWithBodyWithResponse request with any body
-	AppendCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error)
-
-	AppendCalendarSubscriptionSectionsWithResponse(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error)
-
-	// SetCalendarSubscriptionWithBodyWithResponse request with any body
-	SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
-
-	SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
-
-	// BatchUpdateCalendarSubscriptionWithBodyWithResponse request with any body
-	BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error)
-
-	BatchUpdateCalendarSubscriptionWithResponse(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error)
-
-	// GetCurrentCalendarSubscriptionWithResponse request
-	GetCurrentCalendarSubscriptionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentCalendarSubscriptionResponse, error)
-
-	// PostApiCalendarSubscriptionsImportCodesWithBodyWithResponse request with any body
-	PostApiCalendarSubscriptionsImportCodesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiCalendarSubscriptionsImportCodesResponse, error)
-
-	PostApiCalendarSubscriptionsImportCodesWithResponse(ctx context.Context, body PostApiCalendarSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiCalendarSubscriptionsImportCodesResponse, error)
-
-	// QueryCalendarSubscriptionSectionsWithBodyWithResponse request with any body
-	QueryCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
-
-	QueryCalendarSubscriptionSectionsWithResponse(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
-
-	// ListCommentsWithResponse request
-	ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error)
-
-	// CreateCommentWithBodyWithResponse request with any body
-	CreateCommentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error)
-
-	CreateCommentWithResponse(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error)
-
-	// DeleteApiCommentsBatchWithBodyWithResponse request with any body
-	DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
-
-	DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
-
-	// DeleteCommentWithResponse request
-	DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error)
-
-	// GetCommentWithResponse request
-	GetCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetCommentResponse, error)
-
-	// UpdateCommentWithBodyWithResponse request with any body
-	UpdateCommentWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error)
-
-	UpdateCommentWithResponse(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error)
-
-	// RemoveCommentReactionWithResponse request
-	RemoveCommentReactionWithResponse(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*RemoveCommentReactionResponse, error)
-
-	// AddCommentReactionWithBodyWithResponse request with any body
-	AddCommentReactionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error)
-
-	AddCommentReactionWithResponse(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error)
 
 	// ListCoursesWithResponse request
 	ListCoursesWithResponse(ctx context.Context, params *ListCoursesParams, reqEditors ...RequestEditorFn) (*ListCoursesResponse, error)
@@ -18457,107 +18395,8 @@ type ClientWithResponsesInterface interface {
 	// GetCourseWithResponse request
 	GetCourseWithResponse(ctx context.Context, jwId int64, params *GetCourseParams, reqEditors ...RequestEditorFn) (*GetCourseResponse, error)
 
-	// PinDashboardLinkWithBodyWithResponse request with any body
-	PinDashboardLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
-
-	PinDashboardLinkWithFormdataBodyWithResponse(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
-
-	// PostApiDashboardLinksPinBatchWithBodyWithResponse request with any body
-	PostApiDashboardLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error)
-
-	PostApiDashboardLinksPinBatchWithResponse(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error)
-
-	// VisitDashboardLinkWithResponse request
-	VisitDashboardLinkWithResponse(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*VisitDashboardLinkResponse, error)
-
-	// RecordDashboardLinkVisitWithBodyWithResponse request with any body
-	RecordDashboardLinkVisitWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error)
-
-	RecordDashboardLinkVisitWithFormdataBodyWithResponse(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error)
-
-	// GetDescriptionWithResponse request
-	GetDescriptionWithResponse(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*GetDescriptionResponse, error)
-
-	// UpsertDescriptionWithBodyWithResponse request with any body
-	UpsertDescriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error)
-
-	UpsertDescriptionWithResponse(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error)
-
-	// ListHealthWithResponse request
-	ListHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHealthResponse, error)
-
-	// ListHomeworksWithResponse request
-	ListHomeworksWithResponse(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*ListHomeworksResponse, error)
-
-	// CreateHomeworkWithBodyWithResponse request with any body
-	CreateHomeworkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error)
-
-	CreateHomeworkWithResponse(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error)
-
-	// PutApiHomeworksCompletionsWithBodyWithResponse request with any body
-	PutApiHomeworksCompletionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error)
-
-	PutApiHomeworksCompletionsWithResponse(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error)
-
-	// DeleteHomeworkWithResponse request
-	DeleteHomeworkWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteHomeworkResponse, error)
-
-	// UpdateHomeworkWithBodyWithResponse request with any body
-	UpdateHomeworkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error)
-
-	UpdateHomeworkWithResponse(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error)
-
-	// SetHomeworkCompletionWithBodyWithResponse request with any body
-	SetHomeworkCompletionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error)
-
-	SetHomeworkCompletionWithResponse(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error)
-
-	// SetLocaleWithBodyWithResponse request with any body
-	SetLocaleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error)
-
-	SetLocaleWithResponse(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error)
-
-	// DeleteApiMcpWithResponse request
-	DeleteApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteApiMcpResponse, error)
-
-	// ListMcpWithResponse request
-	ListMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMcpResponse, error)
-
-	// OptionsApiMcpWithResponse request
-	OptionsApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpResponse, error)
-
-	// CreateMcpWithResponse request
-	CreateMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMcpResponse, error)
-
-	// GetApiMcpWellKnownOauthAuthorizationServerWithResponse request
-	GetApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOauthAuthorizationServerResponse, error)
-
-	// OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse request
-	OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOauthAuthorizationServerResponse, error)
-
-	// GetApiMcpWellKnownOpenidConfigurationWithResponse request
-	GetApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOpenidConfigurationResponse, error)
-
-	// OptionsApiMcpWellKnownOpenidConfigurationWithResponse request
-	OptionsApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOpenidConfigurationResponse, error)
-
-	// GetMeWithResponse request
-	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
-
-	// GetApiMeOverviewWithResponse request
-	GetApiMeOverviewWithResponse(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*GetApiMeOverviewResponse, error)
-
-	// GetSubscribedHomeworksWithResponse request
-	GetSubscribedHomeworksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error)
-
-	// GetApiMeSubscriptionsSchedulesWithResponse request
-	GetApiMeSubscriptionsSchedulesWithResponse(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*GetApiMeSubscriptionsSchedulesResponse, error)
-
 	// GetMetadataWithResponse request
 	GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error)
-
-	// GetOpenApiSpecWithResponse request
-	GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error)
 
 	// ListSchedulesWithResponse request
 	ListSchedulesWithResponse(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error)
@@ -18596,6 +18435,173 @@ type ClientWithResponsesInterface interface {
 
 	// GetTeacherWithResponse request
 	GetTeacherWithResponse(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*GetTeacherResponse, error)
+
+	// ListCommentsWithResponse request
+	ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error)
+
+	// CreateCommentWithBodyWithResponse request with any body
+	CreateCommentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error)
+
+	CreateCommentWithResponse(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error)
+
+	// DeleteApiCommentsBatchWithBodyWithResponse request with any body
+	DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
+
+	DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error)
+
+	// DeleteCommentWithResponse request
+	DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error)
+
+	// GetCommentWithResponse request
+	GetCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetCommentResponse, error)
+
+	// UpdateCommentWithBodyWithResponse request with any body
+	UpdateCommentWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error)
+
+	UpdateCommentWithResponse(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error)
+
+	// RemoveCommentReactionWithResponse request
+	RemoveCommentReactionWithResponse(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*RemoveCommentReactionResponse, error)
+
+	// AddCommentReactionWithBodyWithResponse request with any body
+	AddCommentReactionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error)
+
+	AddCommentReactionWithResponse(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error)
+
+	// GetDescriptionWithResponse request
+	GetDescriptionWithResponse(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*GetDescriptionResponse, error)
+
+	// UpsertDescriptionWithBodyWithResponse request with any body
+	UpsertDescriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error)
+
+	UpsertDescriptionWithResponse(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error)
+
+	// ListHomeworksWithResponse request
+	ListHomeworksWithResponse(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*ListHomeworksResponse, error)
+
+	// CreateHomeworkWithBodyWithResponse request with any body
+	CreateHomeworkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error)
+
+	CreateHomeworkWithResponse(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error)
+
+	// DeleteHomeworkWithResponse request
+	DeleteHomeworkWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteHomeworkResponse, error)
+
+	// UpdateHomeworkWithBodyWithResponse request with any body
+	UpdateHomeworkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error)
+
+	UpdateHomeworkWithResponse(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error)
+
+	// GetUserCalendarWithResponse request
+	GetUserCalendarWithResponse(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*GetUserCalendarResponse, error)
+
+	// ListHealthWithResponse request
+	ListHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHealthResponse, error)
+
+	// DeleteApiMcpWithResponse request
+	DeleteApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteApiMcpResponse, error)
+
+	// ListMcpWithResponse request
+	ListMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMcpResponse, error)
+
+	// OptionsApiMcpWithResponse request
+	OptionsApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpResponse, error)
+
+	// CreateMcpWithResponse request
+	CreateMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMcpResponse, error)
+
+	// GetApiMcpWellKnownOauthAuthorizationServerWithResponse request
+	GetApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOauthAuthorizationServerResponse, error)
+
+	// OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse request
+	OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOauthAuthorizationServerResponse, error)
+
+	// GetApiMcpWellKnownOpenidConfigurationWithResponse request
+	GetApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOpenidConfigurationResponse, error)
+
+	// OptionsApiMcpWellKnownOpenidConfigurationWithResponse request
+	OptionsApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOpenidConfigurationResponse, error)
+
+	// GetOpenApiSpecWithResponse request
+	GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error)
+
+	// GetBusPreferencesWithResponse request
+	GetBusPreferencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBusPreferencesResponse, error)
+
+	// SetBusPreferencesWithBodyWithResponse request with any body
+	SetBusPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error)
+
+	SetBusPreferencesWithResponse(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error)
+
+	// GetSubscribedHomeworksWithResponse request
+	GetSubscribedHomeworksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error)
+
+	// PutApiHomeworksCompletionsWithBodyWithResponse request with any body
+	PutApiHomeworksCompletionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error)
+
+	PutApiHomeworksCompletionsWithResponse(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error)
+
+	// SetHomeworkCompletionWithBodyWithResponse request with any body
+	SetHomeworkCompletionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error)
+
+	SetHomeworkCompletionWithResponse(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error)
+
+	// PinDashboardLinkWithBodyWithResponse request with any body
+	PinDashboardLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
+
+	PinDashboardLinkWithFormdataBodyWithResponse(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error)
+
+	// PostApiWorkspaceLinksPinBatchWithBodyWithResponse request with any body
+	PostApiWorkspaceLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiWorkspaceLinksPinBatchResponse, error)
+
+	PostApiWorkspaceLinksPinBatchWithResponse(ctx context.Context, body PostApiWorkspaceLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiWorkspaceLinksPinBatchResponse, error)
+
+	// VisitDashboardLinkWithResponse request
+	VisitDashboardLinkWithResponse(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*VisitDashboardLinkResponse, error)
+
+	// RecordDashboardLinkVisitWithBodyWithResponse request with any body
+	RecordDashboardLinkVisitWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error)
+
+	RecordDashboardLinkVisitWithFormdataBodyWithResponse(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error)
+
+	// GetApiMeOverviewWithResponse request
+	GetApiMeOverviewWithResponse(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*GetApiMeOverviewResponse, error)
+
+	// GetApiMeSubscriptionsSchedulesWithResponse request
+	GetApiMeSubscriptionsSchedulesWithResponse(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*GetApiMeSubscriptionsSchedulesResponse, error)
+
+	// DeleteApiWorkspaceSubscriptionsWithBodyWithResponse request with any body
+	DeleteApiWorkspaceSubscriptionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiWorkspaceSubscriptionsResponse, error)
+
+	DeleteApiWorkspaceSubscriptionsWithResponse(ctx context.Context, body DeleteApiWorkspaceSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiWorkspaceSubscriptionsResponse, error)
+
+	// AppendCalendarSubscriptionSectionsWithBodyWithResponse request with any body
+	AppendCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error)
+
+	AppendCalendarSubscriptionSectionsWithResponse(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error)
+
+	// SetCalendarSubscriptionWithBodyWithResponse request with any body
+	SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
+
+	SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
+
+	// BatchUpdateCalendarSubscriptionWithBodyWithResponse request with any body
+	BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error)
+
+	BatchUpdateCalendarSubscriptionWithResponse(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error)
+
+	// GetCurrentCalendarSubscriptionWithResponse request
+	GetCurrentCalendarSubscriptionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentCalendarSubscriptionResponse, error)
+
+	// PostApiWorkspaceSubscriptionsImportCodesWithBodyWithResponse request with any body
+	PostApiWorkspaceSubscriptionsImportCodesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiWorkspaceSubscriptionsImportCodesResponse, error)
+
+	PostApiWorkspaceSubscriptionsImportCodesWithResponse(ctx context.Context, body PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiWorkspaceSubscriptionsImportCodesResponse, error)
+
+	// QueryCalendarSubscriptionSectionsWithBodyWithResponse request with any body
+	QueryCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
+
+	QueryCalendarSubscriptionSectionsWithResponse(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
 
 	// ListTodosWithResponse request
 	ListTodosWithResponse(ctx context.Context, params *ListTodosParams, reqEditors ...RequestEditorFn) (*ListTodosResponse, error)
@@ -18649,12 +18655,6 @@ type ClientWithResponsesInterface interface {
 
 	// DownloadUploadWithResponse request
 	DownloadUploadWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DownloadUploadResponse, error)
-
-	// GetApiUsersProfileWithResponse request
-	GetApiUsersProfileWithResponse(ctx context.Context, params *GetApiUsersProfileParams, reqEditors ...RequestEditorFn) (*GetApiUsersProfileResponse, error)
-
-	// GetUserCalendarWithResponse request
-	GetUserCalendarWithResponse(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*GetUserCalendarResponse, error)
 }
 
 type ListOauthAuthorizationServerResponse struct {
@@ -19173,6 +19173,100 @@ func (r OptionsWellKnownOpenidConfigurationApiMcpResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r OptionsWellKnownOpenidConfigurationApiMcpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *MeResponseSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetLocaleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SuccessResponseSchema
+	JSON400      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r SetLocaleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetLocaleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetLocaleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiAccountProfileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PublicUserProfileResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiAccountProfileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiAccountProfileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiAccountProfileResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -19763,7 +19857,7 @@ func (r QueryBusResponse) ContentType() string {
 	return ""
 }
 
-type GetApiBusNextResponse struct {
+type GetApiCatalogBusNextResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *BusNextDeparturesResponseSchema
@@ -19772,7 +19866,7 @@ type GetApiBusNextResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetApiBusNextResponse) Status() string {
+func (r GetApiCatalogBusNextResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -19780,7 +19874,7 @@ func (r GetApiBusNextResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetApiBusNextResponse) StatusCode() int {
+func (r GetApiCatalogBusNextResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -19788,72 +19882,7 @@ func (r GetApiBusNextResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiBusNextResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetBusPreferencesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *BusPreferenceResponseSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetBusPreferencesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetBusPreferencesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetBusPreferencesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type SetBusPreferencesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *BusPreferenceResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r SetBusPreferencesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetBusPreferencesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SetBusPreferencesResponse) ContentType() string {
+func (r GetApiCatalogBusNextResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -19886,521 +19915,6 @@ func (r GetApiBusRoutesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetApiBusRoutesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteApiCalendarSubscriptionsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionRemoveResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteApiCalendarSubscriptionsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteApiCalendarSubscriptionsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteApiCalendarSubscriptionsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type AppendCalendarSubscriptionSectionsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionAppendResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r AppendCalendarSubscriptionSectionsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r AppendCalendarSubscriptionSectionsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r AppendCalendarSubscriptionSectionsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type SetCalendarSubscriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionCreateResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r SetCalendarSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetCalendarSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SetCalendarSubscriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type BatchUpdateCalendarSubscriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionBatchResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r BatchUpdateCalendarSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r BatchUpdateCalendarSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r BatchUpdateCalendarSubscriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetCurrentCalendarSubscriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CurrentCalendarSubscriptionResponseSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetCurrentCalendarSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetCurrentCalendarSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetCurrentCalendarSubscriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type PostApiCalendarSubscriptionsImportCodesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionImportResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r PostApiCalendarSubscriptionsImportCodesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostApiCalendarSubscriptionsImportCodesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostApiCalendarSubscriptionsImportCodesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type QueryCalendarSubscriptionSectionsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionQueryResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r QueryCalendarSubscriptionSectionsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r QueryCalendarSubscriptionSectionsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r QueryCalendarSubscriptionSectionsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListCommentsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CommentsListResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r ListCommentsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListCommentsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListCommentsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type CreateCommentResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON201      *IdResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r CreateCommentResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteApiCommentsBatchResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CommentBatchDeleteResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteApiCommentsBatchResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteApiCommentsBatchResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteApiCommentsBatchResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteCommentResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SuccessResponseSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteCommentResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetCommentResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CommentThreadResponseSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetCommentResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type UpdateCommentResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CommentUpdateResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r UpdateCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UpdateCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r UpdateCommentResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type RemoveCommentReactionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SuccessResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r RemoveCommentReactionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r RemoveCommentReactionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r RemoveCommentReactionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type AddCommentReactionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SuccessResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r AddCommentReactionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r AddCommentReactionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r AddCommentReactionResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -20470,837 +19984,6 @@ func (r GetCourseResponse) ContentType() string {
 	return ""
 }
 
-type PinDashboardLinkResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *DashboardLinkPinResponseSchema
-	JSON400      *DashboardLinkPinResponseSchema
-	JSON401      *DashboardLinkPinResponseSchema
-	JSON429      *OpenApiErrorSchema
-	JSON500      *DashboardLinkPinResponseSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r PinDashboardLinkResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PinDashboardLinkResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PinDashboardLinkResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type PostApiDashboardLinksPinBatchResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *DashboardLinkPinResponseSchema
-	JSON400      *DashboardLinkPinResponseSchema
-	JSON401      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON500      *DashboardLinkPinResponseSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r PostApiDashboardLinksPinBatchResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostApiDashboardLinksPinBatchResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostApiDashboardLinksPinBatchResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type VisitDashboardLinkResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r VisitDashboardLinkResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r VisitDashboardLinkResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r VisitDashboardLinkResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type RecordDashboardLinkVisitResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r RecordDashboardLinkVisitResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r RecordDashboardLinkVisitResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r RecordDashboardLinkVisitResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetDescriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *DescriptionsResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetDescriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetDescriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetDescriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type UpsertDescriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *DescriptionUpsertResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r UpsertDescriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UpsertDescriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r UpsertDescriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListHealthResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r ListHealthResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListHealthResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListHealthResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListHomeworksResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *HomeworksListResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r ListHomeworksResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListHomeworksResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListHomeworksResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type CreateHomeworkResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON201      *HomeworkCreateResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateHomeworkResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateHomeworkResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r CreateHomeworkResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type PutApiHomeworksCompletionsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *HomeworkCompletionBatchResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r PutApiHomeworksCompletionsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PutApiHomeworksCompletionsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PutApiHomeworksCompletionsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteHomeworkResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SuccessResponseSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteHomeworkResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteHomeworkResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteHomeworkResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type UpdateHomeworkResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *HomeworkUpdateResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r UpdateHomeworkResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UpdateHomeworkResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r UpdateHomeworkResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type SetHomeworkCompletionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *HomeworkCompletionResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r SetHomeworkCompletionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetHomeworkCompletionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SetHomeworkCompletionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type SetLocaleResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SuccessResponseSchema
-	JSON400      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r SetLocaleResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetLocaleResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SetLocaleResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteApiMcpResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteApiMcpResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteApiMcpResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteApiMcpResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListMcpResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON403      *OpenApiErrorSchema
-	JSON405      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r ListMcpResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListMcpResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListMcpResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type OptionsApiMcpResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON403      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r OptionsApiMcpResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OptionsApiMcpResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r OptionsApiMcpResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type CreateMcpResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateMcpResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateMcpResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r CreateMcpResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetApiMcpWellKnownOauthAuthorizationServerResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type OptionsApiMcpWellKnownOauthAuthorizationServerResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetApiMcpWellKnownOpenidConfigurationResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiMcpWellKnownOpenidConfigurationResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiMcpWellKnownOpenidConfigurationResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiMcpWellKnownOpenidConfigurationResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type OptionsApiMcpWellKnownOpenidConfigurationResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetMeResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *MeResponseSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetMeResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetMeResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetMeResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetApiMeOverviewResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CompactOverviewResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiMeOverviewResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiMeOverviewResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiMeOverviewResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetSubscribedHomeworksResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SubscribedHomeworksResponseSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSubscribedHomeworksResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSubscribedHomeworksResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSubscribedHomeworksResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetApiMeSubscriptionsSchedulesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SubscribedSchedulesResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiMeSubscriptionsSchedulesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiMeSubscriptionsSchedulesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiMeSubscriptionsSchedulesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 type GetMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -21325,36 +20008,6 @@ func (r GetMetadataResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMetadataResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetOpenApiSpecResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *OpenApiDocumentResponseSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOpenApiSpecResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOpenApiSpecResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOpenApiSpecResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -21729,6 +20382,1417 @@ func (r GetTeacherResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetTeacherResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListCommentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentsListResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r ListCommentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListCommentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListCommentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateCommentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *IdResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateCommentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteApiCommentsBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentBatchDeleteResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiCommentsBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiCommentsBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApiCommentsBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteCommentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SuccessResponseSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteCommentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetCommentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentThreadResponseSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetCommentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateCommentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentUpdateResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateCommentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveCommentReactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SuccessResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveCommentReactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveCommentReactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveCommentReactionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AddCommentReactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SuccessResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r AddCommentReactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddCommentReactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddCommentReactionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDescriptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DescriptionsResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDescriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDescriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDescriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpsertDescriptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DescriptionUpsertResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r UpsertDescriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpsertDescriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpsertDescriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListHomeworksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HomeworksListResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r ListHomeworksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListHomeworksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListHomeworksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateHomeworkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *HomeworkCreateResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateHomeworkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateHomeworkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateHomeworkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteHomeworkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SuccessResponseSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteHomeworkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteHomeworkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteHomeworkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateHomeworkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HomeworkUpdateResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateHomeworkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateHomeworkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateHomeworkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetUserCalendarResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetUserCalendarResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetUserCalendarResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetUserCalendarResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListHealthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r ListHealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListHealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListHealthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteApiMcpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiMcpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiMcpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApiMcpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListMcpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON403      *OpenApiErrorSchema
+	JSON405      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMcpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMcpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMcpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OptionsApiMcpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON403      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r OptionsApiMcpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OptionsApiMcpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OptionsApiMcpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateMcpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateMcpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateMcpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateMcpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiMcpWellKnownOauthAuthorizationServerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiMcpWellKnownOauthAuthorizationServerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OptionsApiMcpWellKnownOauthAuthorizationServerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OptionsApiMcpWellKnownOauthAuthorizationServerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiMcpWellKnownOpenidConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiMcpWellKnownOpenidConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiMcpWellKnownOpenidConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiMcpWellKnownOpenidConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OptionsApiMcpWellKnownOpenidConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OptionsApiMcpWellKnownOpenidConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetOpenApiSpecResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *OpenApiDocumentResponseSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOpenApiSpecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOpenApiSpecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOpenApiSpecResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetBusPreferencesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BusPreferenceResponseSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBusPreferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBusPreferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBusPreferencesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetBusPreferencesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BusPreferenceResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r SetBusPreferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetBusPreferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetBusPreferencesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSubscribedHomeworksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SubscribedHomeworksResponseSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSubscribedHomeworksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSubscribedHomeworksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSubscribedHomeworksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutApiHomeworksCompletionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HomeworkCompletionBatchResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiHomeworksCompletionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiHomeworksCompletionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApiHomeworksCompletionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetHomeworkCompletionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HomeworkCompletionResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r SetHomeworkCompletionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetHomeworkCompletionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetHomeworkCompletionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PinDashboardLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DashboardLinkPinResponseSchema
+	JSON400      *DashboardLinkPinResponseSchema
+	JSON401      *DashboardLinkPinResponseSchema
+	JSON429      *OpenApiErrorSchema
+	JSON500      *DashboardLinkPinResponseSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PinDashboardLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PinDashboardLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PinDashboardLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostApiWorkspaceLinksPinBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *DashboardLinkPinResponseSchema
+	JSON400      *DashboardLinkPinResponseSchema
+	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON500      *DashboardLinkPinResponseSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiWorkspaceLinksPinBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiWorkspaceLinksPinBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApiWorkspaceLinksPinBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type VisitDashboardLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r VisitDashboardLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VisitDashboardLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r VisitDashboardLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RecordDashboardLinkVisitResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r RecordDashboardLinkVisitResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RecordDashboardLinkVisitResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RecordDashboardLinkVisitResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiMeOverviewResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CompactOverviewResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiMeOverviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiMeOverviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiMeOverviewResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiMeSubscriptionsSchedulesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SubscribedSchedulesResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiMeSubscriptionsSchedulesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiMeSubscriptionsSchedulesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiMeSubscriptionsSchedulesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteApiWorkspaceSubscriptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionRemoveResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApiWorkspaceSubscriptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApiWorkspaceSubscriptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApiWorkspaceSubscriptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AppendCalendarSubscriptionSectionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionAppendResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r AppendCalendarSubscriptionSectionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AppendCalendarSubscriptionSectionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AppendCalendarSubscriptionSectionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetCalendarSubscriptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionCreateResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r SetCalendarSubscriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetCalendarSubscriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetCalendarSubscriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BatchUpdateCalendarSubscriptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionBatchResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r BatchUpdateCalendarSubscriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BatchUpdateCalendarSubscriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BatchUpdateCalendarSubscriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetCurrentCalendarSubscriptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CurrentCalendarSubscriptionResponseSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCurrentCalendarSubscriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCurrentCalendarSubscriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetCurrentCalendarSubscriptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostApiWorkspaceSubscriptionsImportCodesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionImportResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiWorkspaceSubscriptionsImportCodesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiWorkspaceSubscriptionsImportCodesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApiWorkspaceSubscriptionsImportCodesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type QueryCalendarSubscriptionSectionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CalendarSubscriptionQueryResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r QueryCalendarSubscriptionSectionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r QueryCalendarSubscriptionSectionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r QueryCalendarSubscriptionSectionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -22182,70 +22246,6 @@ func (r DownloadUploadResponse) ContentType() string {
 	return ""
 }
 
-type GetApiUsersProfileResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *PublicUserProfileResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetApiUsersProfileResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetApiUsersProfileResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetApiUsersProfileResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetUserCalendarResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON401      *OpenApiErrorSchema
-	JSON403      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r GetUserCalendarResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetUserCalendarResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetUserCalendarResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // ListOauthAuthorizationServerWithResponse request returning *ListOauthAuthorizationServerResponse
 func (c *ClientWithResponses) ListOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOauthAuthorizationServerResponse, error) {
 	rsp, err := c.ListOauthAuthorizationServer(ctx, reqEditors...)
@@ -22406,6 +22406,41 @@ func (c *ClientWithResponses) OptionsWellKnownOpenidConfigurationApiMcpWithRespo
 		return nil, err
 	}
 	return ParseOptionsWellKnownOpenidConfigurationApiMcpResponse(rsp)
+}
+
+// GetMeWithResponse request returning *GetMeResponse
+func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error) {
+	rsp, err := c.GetMe(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeResponse(rsp)
+}
+
+// SetLocaleWithBodyWithResponse request with arbitrary body returning *SetLocaleResponse
+func (c *ClientWithResponses) SetLocaleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error) {
+	rsp, err := c.SetLocaleWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetLocaleResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetLocaleWithResponse(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error) {
+	rsp, err := c.SetLocale(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetLocaleResponse(rsp)
+}
+
+// GetApiAccountProfileWithResponse request returning *GetApiAccountProfileResponse
+func (c *ClientWithResponses) GetApiAccountProfileWithResponse(ctx context.Context, params *GetApiAccountProfileParams, reqEditors ...RequestEditorFn) (*GetApiAccountProfileResponse, error) {
+	rsp, err := c.GetApiAccountProfile(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiAccountProfileResponse(rsp)
 }
 
 // ListAdminCommentsWithResponse request returning *ListAdminCommentsResponse
@@ -22618,39 +22653,13 @@ func (c *ClientWithResponses) QueryBusWithResponse(ctx context.Context, params *
 	return ParseQueryBusResponse(rsp)
 }
 
-// GetApiBusNextWithResponse request returning *GetApiBusNextResponse
-func (c *ClientWithResponses) GetApiBusNextWithResponse(ctx context.Context, params *GetApiBusNextParams, reqEditors ...RequestEditorFn) (*GetApiBusNextResponse, error) {
-	rsp, err := c.GetApiBusNext(ctx, params, reqEditors...)
+// GetApiCatalogBusNextWithResponse request returning *GetApiCatalogBusNextResponse
+func (c *ClientWithResponses) GetApiCatalogBusNextWithResponse(ctx context.Context, params *GetApiCatalogBusNextParams, reqEditors ...RequestEditorFn) (*GetApiCatalogBusNextResponse, error) {
+	rsp, err := c.GetApiCatalogBusNext(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetApiBusNextResponse(rsp)
-}
-
-// GetBusPreferencesWithResponse request returning *GetBusPreferencesResponse
-func (c *ClientWithResponses) GetBusPreferencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBusPreferencesResponse, error) {
-	rsp, err := c.GetBusPreferences(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetBusPreferencesResponse(rsp)
-}
-
-// SetBusPreferencesWithBodyWithResponse request with arbitrary body returning *SetBusPreferencesResponse
-func (c *ClientWithResponses) SetBusPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error) {
-	rsp, err := c.SetBusPreferencesWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetBusPreferencesResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetBusPreferencesWithResponse(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error) {
-	rsp, err := c.SetBusPreferences(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetBusPreferencesResponse(rsp)
+	return ParseGetApiCatalogBusNextResponse(rsp)
 }
 
 // GetApiBusRoutesWithResponse request returning *GetApiBusRoutesResponse
@@ -22660,221 +22669,6 @@ func (c *ClientWithResponses) GetApiBusRoutesWithResponse(ctx context.Context, p
 		return nil, err
 	}
 	return ParseGetApiBusRoutesResponse(rsp)
-}
-
-// DeleteApiCalendarSubscriptionsWithBodyWithResponse request with arbitrary body returning *DeleteApiCalendarSubscriptionsResponse
-func (c *ClientWithResponses) DeleteApiCalendarSubscriptionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCalendarSubscriptionsResponse, error) {
-	rsp, err := c.DeleteApiCalendarSubscriptionsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteApiCalendarSubscriptionsResponse(rsp)
-}
-
-func (c *ClientWithResponses) DeleteApiCalendarSubscriptionsWithResponse(ctx context.Context, body DeleteApiCalendarSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCalendarSubscriptionsResponse, error) {
-	rsp, err := c.DeleteApiCalendarSubscriptions(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteApiCalendarSubscriptionsResponse(rsp)
-}
-
-// AppendCalendarSubscriptionSectionsWithBodyWithResponse request with arbitrary body returning *AppendCalendarSubscriptionSectionsResponse
-func (c *ClientWithResponses) AppendCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error) {
-	rsp, err := c.AppendCalendarSubscriptionSectionsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAppendCalendarSubscriptionSectionsResponse(rsp)
-}
-
-func (c *ClientWithResponses) AppendCalendarSubscriptionSectionsWithResponse(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error) {
-	rsp, err := c.AppendCalendarSubscriptionSections(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAppendCalendarSubscriptionSectionsResponse(rsp)
-}
-
-// SetCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *SetCalendarSubscriptionResponse
-func (c *ClientWithResponses) SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
-	rsp, err := c.SetCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetCalendarSubscriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
-	rsp, err := c.SetCalendarSubscription(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetCalendarSubscriptionResponse(rsp)
-}
-
-// BatchUpdateCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *BatchUpdateCalendarSubscriptionResponse
-func (c *ClientWithResponses) BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error) {
-	rsp, err := c.BatchUpdateCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseBatchUpdateCalendarSubscriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) BatchUpdateCalendarSubscriptionWithResponse(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error) {
-	rsp, err := c.BatchUpdateCalendarSubscription(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseBatchUpdateCalendarSubscriptionResponse(rsp)
-}
-
-// GetCurrentCalendarSubscriptionWithResponse request returning *GetCurrentCalendarSubscriptionResponse
-func (c *ClientWithResponses) GetCurrentCalendarSubscriptionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentCalendarSubscriptionResponse, error) {
-	rsp, err := c.GetCurrentCalendarSubscription(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetCurrentCalendarSubscriptionResponse(rsp)
-}
-
-// PostApiCalendarSubscriptionsImportCodesWithBodyWithResponse request with arbitrary body returning *PostApiCalendarSubscriptionsImportCodesResponse
-func (c *ClientWithResponses) PostApiCalendarSubscriptionsImportCodesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiCalendarSubscriptionsImportCodesResponse, error) {
-	rsp, err := c.PostApiCalendarSubscriptionsImportCodesWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiCalendarSubscriptionsImportCodesResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostApiCalendarSubscriptionsImportCodesWithResponse(ctx context.Context, body PostApiCalendarSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiCalendarSubscriptionsImportCodesResponse, error) {
-	rsp, err := c.PostApiCalendarSubscriptionsImportCodes(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiCalendarSubscriptionsImportCodesResponse(rsp)
-}
-
-// QueryCalendarSubscriptionSectionsWithBodyWithResponse request with arbitrary body returning *QueryCalendarSubscriptionSectionsResponse
-func (c *ClientWithResponses) QueryCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error) {
-	rsp, err := c.QueryCalendarSubscriptionSectionsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseQueryCalendarSubscriptionSectionsResponse(rsp)
-}
-
-func (c *ClientWithResponses) QueryCalendarSubscriptionSectionsWithResponse(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error) {
-	rsp, err := c.QueryCalendarSubscriptionSections(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseQueryCalendarSubscriptionSectionsResponse(rsp)
-}
-
-// ListCommentsWithResponse request returning *ListCommentsResponse
-func (c *ClientWithResponses) ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error) {
-	rsp, err := c.ListComments(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListCommentsResponse(rsp)
-}
-
-// CreateCommentWithBodyWithResponse request with arbitrary body returning *CreateCommentResponse
-func (c *ClientWithResponses) CreateCommentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error) {
-	rsp, err := c.CreateCommentWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateCommentWithResponse(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error) {
-	rsp, err := c.CreateComment(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateCommentResponse(rsp)
-}
-
-// DeleteApiCommentsBatchWithBodyWithResponse request with arbitrary body returning *DeleteApiCommentsBatchResponse
-func (c *ClientWithResponses) DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
-	rsp, err := c.DeleteApiCommentsBatchWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteApiCommentsBatchResponse(rsp)
-}
-
-func (c *ClientWithResponses) DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
-	rsp, err := c.DeleteApiCommentsBatch(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteApiCommentsBatchResponse(rsp)
-}
-
-// DeleteCommentWithResponse request returning *DeleteCommentResponse
-func (c *ClientWithResponses) DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error) {
-	rsp, err := c.DeleteComment(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteCommentResponse(rsp)
-}
-
-// GetCommentWithResponse request returning *GetCommentResponse
-func (c *ClientWithResponses) GetCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetCommentResponse, error) {
-	rsp, err := c.GetComment(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetCommentResponse(rsp)
-}
-
-// UpdateCommentWithBodyWithResponse request with arbitrary body returning *UpdateCommentResponse
-func (c *ClientWithResponses) UpdateCommentWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error) {
-	rsp, err := c.UpdateCommentWithBody(ctx, id, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) UpdateCommentWithResponse(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error) {
-	rsp, err := c.UpdateComment(ctx, id, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateCommentResponse(rsp)
-}
-
-// RemoveCommentReactionWithResponse request returning *RemoveCommentReactionResponse
-func (c *ClientWithResponses) RemoveCommentReactionWithResponse(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*RemoveCommentReactionResponse, error) {
-	rsp, err := c.RemoveCommentReaction(ctx, id, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRemoveCommentReactionResponse(rsp)
-}
-
-// AddCommentReactionWithBodyWithResponse request with arbitrary body returning *AddCommentReactionResponse
-func (c *ClientWithResponses) AddCommentReactionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error) {
-	rsp, err := c.AddCommentReactionWithBody(ctx, id, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAddCommentReactionResponse(rsp)
-}
-
-func (c *ClientWithResponses) AddCommentReactionWithResponse(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error) {
-	rsp, err := c.AddCommentReaction(ctx, id, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAddCommentReactionResponse(rsp)
 }
 
 // ListCoursesWithResponse request returning *ListCoursesResponse
@@ -22895,312 +22689,6 @@ func (c *ClientWithResponses) GetCourseWithResponse(ctx context.Context, jwId in
 	return ParseGetCourseResponse(rsp)
 }
 
-// PinDashboardLinkWithBodyWithResponse request with arbitrary body returning *PinDashboardLinkResponse
-func (c *ClientWithResponses) PinDashboardLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error) {
-	rsp, err := c.PinDashboardLinkWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePinDashboardLinkResponse(rsp)
-}
-
-func (c *ClientWithResponses) PinDashboardLinkWithFormdataBodyWithResponse(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error) {
-	rsp, err := c.PinDashboardLinkWithFormdataBody(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePinDashboardLinkResponse(rsp)
-}
-
-// PostApiDashboardLinksPinBatchWithBodyWithResponse request with arbitrary body returning *PostApiDashboardLinksPinBatchResponse
-func (c *ClientWithResponses) PostApiDashboardLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error) {
-	rsp, err := c.PostApiDashboardLinksPinBatchWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiDashboardLinksPinBatchResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostApiDashboardLinksPinBatchWithResponse(ctx context.Context, body PostApiDashboardLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiDashboardLinksPinBatchResponse, error) {
-	rsp, err := c.PostApiDashboardLinksPinBatch(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiDashboardLinksPinBatchResponse(rsp)
-}
-
-// VisitDashboardLinkWithResponse request returning *VisitDashboardLinkResponse
-func (c *ClientWithResponses) VisitDashboardLinkWithResponse(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*VisitDashboardLinkResponse, error) {
-	rsp, err := c.VisitDashboardLink(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseVisitDashboardLinkResponse(rsp)
-}
-
-// RecordDashboardLinkVisitWithBodyWithResponse request with arbitrary body returning *RecordDashboardLinkVisitResponse
-func (c *ClientWithResponses) RecordDashboardLinkVisitWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error) {
-	rsp, err := c.RecordDashboardLinkVisitWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRecordDashboardLinkVisitResponse(rsp)
-}
-
-func (c *ClientWithResponses) RecordDashboardLinkVisitWithFormdataBodyWithResponse(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error) {
-	rsp, err := c.RecordDashboardLinkVisitWithFormdataBody(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRecordDashboardLinkVisitResponse(rsp)
-}
-
-// GetDescriptionWithResponse request returning *GetDescriptionResponse
-func (c *ClientWithResponses) GetDescriptionWithResponse(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*GetDescriptionResponse, error) {
-	rsp, err := c.GetDescription(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetDescriptionResponse(rsp)
-}
-
-// UpsertDescriptionWithBodyWithResponse request with arbitrary body returning *UpsertDescriptionResponse
-func (c *ClientWithResponses) UpsertDescriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error) {
-	rsp, err := c.UpsertDescriptionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpsertDescriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) UpsertDescriptionWithResponse(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error) {
-	rsp, err := c.UpsertDescription(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpsertDescriptionResponse(rsp)
-}
-
-// ListHealthWithResponse request returning *ListHealthResponse
-func (c *ClientWithResponses) ListHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHealthResponse, error) {
-	rsp, err := c.ListHealth(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListHealthResponse(rsp)
-}
-
-// ListHomeworksWithResponse request returning *ListHomeworksResponse
-func (c *ClientWithResponses) ListHomeworksWithResponse(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*ListHomeworksResponse, error) {
-	rsp, err := c.ListHomeworks(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListHomeworksResponse(rsp)
-}
-
-// CreateHomeworkWithBodyWithResponse request with arbitrary body returning *CreateHomeworkResponse
-func (c *ClientWithResponses) CreateHomeworkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error) {
-	rsp, err := c.CreateHomeworkWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateHomeworkResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateHomeworkWithResponse(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error) {
-	rsp, err := c.CreateHomework(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateHomeworkResponse(rsp)
-}
-
-// PutApiHomeworksCompletionsWithBodyWithResponse request with arbitrary body returning *PutApiHomeworksCompletionsResponse
-func (c *ClientWithResponses) PutApiHomeworksCompletionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error) {
-	rsp, err := c.PutApiHomeworksCompletionsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePutApiHomeworksCompletionsResponse(rsp)
-}
-
-func (c *ClientWithResponses) PutApiHomeworksCompletionsWithResponse(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error) {
-	rsp, err := c.PutApiHomeworksCompletions(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePutApiHomeworksCompletionsResponse(rsp)
-}
-
-// DeleteHomeworkWithResponse request returning *DeleteHomeworkResponse
-func (c *ClientWithResponses) DeleteHomeworkWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteHomeworkResponse, error) {
-	rsp, err := c.DeleteHomework(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteHomeworkResponse(rsp)
-}
-
-// UpdateHomeworkWithBodyWithResponse request with arbitrary body returning *UpdateHomeworkResponse
-func (c *ClientWithResponses) UpdateHomeworkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error) {
-	rsp, err := c.UpdateHomeworkWithBody(ctx, id, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateHomeworkResponse(rsp)
-}
-
-func (c *ClientWithResponses) UpdateHomeworkWithResponse(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error) {
-	rsp, err := c.UpdateHomework(ctx, id, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUpdateHomeworkResponse(rsp)
-}
-
-// SetHomeworkCompletionWithBodyWithResponse request with arbitrary body returning *SetHomeworkCompletionResponse
-func (c *ClientWithResponses) SetHomeworkCompletionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error) {
-	rsp, err := c.SetHomeworkCompletionWithBody(ctx, id, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetHomeworkCompletionResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetHomeworkCompletionWithResponse(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error) {
-	rsp, err := c.SetHomeworkCompletion(ctx, id, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetHomeworkCompletionResponse(rsp)
-}
-
-// SetLocaleWithBodyWithResponse request with arbitrary body returning *SetLocaleResponse
-func (c *ClientWithResponses) SetLocaleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error) {
-	rsp, err := c.SetLocaleWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetLocaleResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetLocaleWithResponse(ctx context.Context, body SetLocaleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetLocaleResponse, error) {
-	rsp, err := c.SetLocale(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetLocaleResponse(rsp)
-}
-
-// DeleteApiMcpWithResponse request returning *DeleteApiMcpResponse
-func (c *ClientWithResponses) DeleteApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteApiMcpResponse, error) {
-	rsp, err := c.DeleteApiMcp(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteApiMcpResponse(rsp)
-}
-
-// ListMcpWithResponse request returning *ListMcpResponse
-func (c *ClientWithResponses) ListMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMcpResponse, error) {
-	rsp, err := c.ListMcp(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListMcpResponse(rsp)
-}
-
-// OptionsApiMcpWithResponse request returning *OptionsApiMcpResponse
-func (c *ClientWithResponses) OptionsApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpResponse, error) {
-	rsp, err := c.OptionsApiMcp(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOptionsApiMcpResponse(rsp)
-}
-
-// CreateMcpWithResponse request returning *CreateMcpResponse
-func (c *ClientWithResponses) CreateMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMcpResponse, error) {
-	rsp, err := c.CreateMcp(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateMcpResponse(rsp)
-}
-
-// GetApiMcpWellKnownOauthAuthorizationServerWithResponse request returning *GetApiMcpWellKnownOauthAuthorizationServerResponse
-func (c *ClientWithResponses) GetApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOauthAuthorizationServerResponse, error) {
-	rsp, err := c.GetApiMcpWellKnownOauthAuthorizationServer(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiMcpWellKnownOauthAuthorizationServerResponse(rsp)
-}
-
-// OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse request returning *OptionsApiMcpWellKnownOauthAuthorizationServerResponse
-func (c *ClientWithResponses) OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOauthAuthorizationServerResponse, error) {
-	rsp, err := c.OptionsApiMcpWellKnownOauthAuthorizationServer(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOptionsApiMcpWellKnownOauthAuthorizationServerResponse(rsp)
-}
-
-// GetApiMcpWellKnownOpenidConfigurationWithResponse request returning *GetApiMcpWellKnownOpenidConfigurationResponse
-func (c *ClientWithResponses) GetApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOpenidConfigurationResponse, error) {
-	rsp, err := c.GetApiMcpWellKnownOpenidConfiguration(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiMcpWellKnownOpenidConfigurationResponse(rsp)
-}
-
-// OptionsApiMcpWellKnownOpenidConfigurationWithResponse request returning *OptionsApiMcpWellKnownOpenidConfigurationResponse
-func (c *ClientWithResponses) OptionsApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOpenidConfigurationResponse, error) {
-	rsp, err := c.OptionsApiMcpWellKnownOpenidConfiguration(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOptionsApiMcpWellKnownOpenidConfigurationResponse(rsp)
-}
-
-// GetMeWithResponse request returning *GetMeResponse
-func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error) {
-	rsp, err := c.GetMe(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetMeResponse(rsp)
-}
-
-// GetApiMeOverviewWithResponse request returning *GetApiMeOverviewResponse
-func (c *ClientWithResponses) GetApiMeOverviewWithResponse(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*GetApiMeOverviewResponse, error) {
-	rsp, err := c.GetApiMeOverview(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiMeOverviewResponse(rsp)
-}
-
-// GetSubscribedHomeworksWithResponse request returning *GetSubscribedHomeworksResponse
-func (c *ClientWithResponses) GetSubscribedHomeworksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error) {
-	rsp, err := c.GetSubscribedHomeworks(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSubscribedHomeworksResponse(rsp)
-}
-
-// GetApiMeSubscriptionsSchedulesWithResponse request returning *GetApiMeSubscriptionsSchedulesResponse
-func (c *ClientWithResponses) GetApiMeSubscriptionsSchedulesWithResponse(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*GetApiMeSubscriptionsSchedulesResponse, error) {
-	rsp, err := c.GetApiMeSubscriptionsSchedules(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiMeSubscriptionsSchedulesResponse(rsp)
-}
-
 // GetMetadataWithResponse request returning *GetMetadataResponse
 func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error) {
 	rsp, err := c.GetMetadata(ctx, reqEditors...)
@@ -23208,15 +22696,6 @@ func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEd
 		return nil, err
 	}
 	return ParseGetMetadataResponse(rsp)
-}
-
-// GetOpenApiSpecWithResponse request returning *GetOpenApiSpecResponse
-func (c *ClientWithResponses) GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error) {
-	rsp, err := c.GetOpenApiSpec(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOpenApiSpecResponse(rsp)
 }
 
 // ListSchedulesWithResponse request returning *ListSchedulesResponse
@@ -23333,6 +22812,545 @@ func (c *ClientWithResponses) GetTeacherWithResponse(ctx context.Context, id int
 		return nil, err
 	}
 	return ParseGetTeacherResponse(rsp)
+}
+
+// ListCommentsWithResponse request returning *ListCommentsResponse
+func (c *ClientWithResponses) ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error) {
+	rsp, err := c.ListComments(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListCommentsResponse(rsp)
+}
+
+// CreateCommentWithBodyWithResponse request with arbitrary body returning *CreateCommentResponse
+func (c *ClientWithResponses) CreateCommentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error) {
+	rsp, err := c.CreateCommentWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateCommentWithResponse(ctx context.Context, body CreateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCommentResponse, error) {
+	rsp, err := c.CreateComment(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateCommentResponse(rsp)
+}
+
+// DeleteApiCommentsBatchWithBodyWithResponse request with arbitrary body returning *DeleteApiCommentsBatchResponse
+func (c *ClientWithResponses) DeleteApiCommentsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
+	rsp, err := c.DeleteApiCommentsBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiCommentsBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteApiCommentsBatchWithResponse(ctx context.Context, body DeleteApiCommentsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiCommentsBatchResponse, error) {
+	rsp, err := c.DeleteApiCommentsBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiCommentsBatchResponse(rsp)
+}
+
+// DeleteCommentWithResponse request returning *DeleteCommentResponse
+func (c *ClientWithResponses) DeleteCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteCommentResponse, error) {
+	rsp, err := c.DeleteComment(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteCommentResponse(rsp)
+}
+
+// GetCommentWithResponse request returning *GetCommentResponse
+func (c *ClientWithResponses) GetCommentWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetCommentResponse, error) {
+	rsp, err := c.GetComment(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCommentResponse(rsp)
+}
+
+// UpdateCommentWithBodyWithResponse request with arbitrary body returning *UpdateCommentResponse
+func (c *ClientWithResponses) UpdateCommentWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error) {
+	rsp, err := c.UpdateCommentWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateCommentWithResponse(ctx context.Context, id string, body UpdateCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateCommentResponse, error) {
+	rsp, err := c.UpdateComment(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateCommentResponse(rsp)
+}
+
+// RemoveCommentReactionWithResponse request returning *RemoveCommentReactionResponse
+func (c *ClientWithResponses) RemoveCommentReactionWithResponse(ctx context.Context, id string, params *RemoveCommentReactionParams, reqEditors ...RequestEditorFn) (*RemoveCommentReactionResponse, error) {
+	rsp, err := c.RemoveCommentReaction(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveCommentReactionResponse(rsp)
+}
+
+// AddCommentReactionWithBodyWithResponse request with arbitrary body returning *AddCommentReactionResponse
+func (c *ClientWithResponses) AddCommentReactionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error) {
+	rsp, err := c.AddCommentReactionWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddCommentReactionResponse(rsp)
+}
+
+func (c *ClientWithResponses) AddCommentReactionWithResponse(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error) {
+	rsp, err := c.AddCommentReaction(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddCommentReactionResponse(rsp)
+}
+
+// GetDescriptionWithResponse request returning *GetDescriptionResponse
+func (c *ClientWithResponses) GetDescriptionWithResponse(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*GetDescriptionResponse, error) {
+	rsp, err := c.GetDescription(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDescriptionResponse(rsp)
+}
+
+// UpsertDescriptionWithBodyWithResponse request with arbitrary body returning *UpsertDescriptionResponse
+func (c *ClientWithResponses) UpsertDescriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error) {
+	rsp, err := c.UpsertDescriptionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpsertDescriptionResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpsertDescriptionWithResponse(ctx context.Context, body UpsertDescriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertDescriptionResponse, error) {
+	rsp, err := c.UpsertDescription(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpsertDescriptionResponse(rsp)
+}
+
+// ListHomeworksWithResponse request returning *ListHomeworksResponse
+func (c *ClientWithResponses) ListHomeworksWithResponse(ctx context.Context, params *ListHomeworksParams, reqEditors ...RequestEditorFn) (*ListHomeworksResponse, error) {
+	rsp, err := c.ListHomeworks(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListHomeworksResponse(rsp)
+}
+
+// CreateHomeworkWithBodyWithResponse request with arbitrary body returning *CreateHomeworkResponse
+func (c *ClientWithResponses) CreateHomeworkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error) {
+	rsp, err := c.CreateHomeworkWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHomeworkResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateHomeworkWithResponse(ctx context.Context, body CreateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHomeworkResponse, error) {
+	rsp, err := c.CreateHomework(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHomeworkResponse(rsp)
+}
+
+// DeleteHomeworkWithResponse request returning *DeleteHomeworkResponse
+func (c *ClientWithResponses) DeleteHomeworkWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteHomeworkResponse, error) {
+	rsp, err := c.DeleteHomework(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteHomeworkResponse(rsp)
+}
+
+// UpdateHomeworkWithBodyWithResponse request with arbitrary body returning *UpdateHomeworkResponse
+func (c *ClientWithResponses) UpdateHomeworkWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error) {
+	rsp, err := c.UpdateHomeworkWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHomeworkResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateHomeworkWithResponse(ctx context.Context, id string, body UpdateHomeworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHomeworkResponse, error) {
+	rsp, err := c.UpdateHomework(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHomeworkResponse(rsp)
+}
+
+// GetUserCalendarWithResponse request returning *GetUserCalendarResponse
+func (c *ClientWithResponses) GetUserCalendarWithResponse(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*GetUserCalendarResponse, error) {
+	rsp, err := c.GetUserCalendar(ctx, userId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetUserCalendarResponse(rsp)
+}
+
+// ListHealthWithResponse request returning *ListHealthResponse
+func (c *ClientWithResponses) ListHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHealthResponse, error) {
+	rsp, err := c.ListHealth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListHealthResponse(rsp)
+}
+
+// DeleteApiMcpWithResponse request returning *DeleteApiMcpResponse
+func (c *ClientWithResponses) DeleteApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteApiMcpResponse, error) {
+	rsp, err := c.DeleteApiMcp(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiMcpResponse(rsp)
+}
+
+// ListMcpWithResponse request returning *ListMcpResponse
+func (c *ClientWithResponses) ListMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMcpResponse, error) {
+	rsp, err := c.ListMcp(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMcpResponse(rsp)
+}
+
+// OptionsApiMcpWithResponse request returning *OptionsApiMcpResponse
+func (c *ClientWithResponses) OptionsApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpResponse, error) {
+	rsp, err := c.OptionsApiMcp(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOptionsApiMcpResponse(rsp)
+}
+
+// CreateMcpWithResponse request returning *CreateMcpResponse
+func (c *ClientWithResponses) CreateMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMcpResponse, error) {
+	rsp, err := c.CreateMcp(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMcpResponse(rsp)
+}
+
+// GetApiMcpWellKnownOauthAuthorizationServerWithResponse request returning *GetApiMcpWellKnownOauthAuthorizationServerResponse
+func (c *ClientWithResponses) GetApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOauthAuthorizationServerResponse, error) {
+	rsp, err := c.GetApiMcpWellKnownOauthAuthorizationServer(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiMcpWellKnownOauthAuthorizationServerResponse(rsp)
+}
+
+// OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse request returning *OptionsApiMcpWellKnownOauthAuthorizationServerResponse
+func (c *ClientWithResponses) OptionsApiMcpWellKnownOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOauthAuthorizationServerResponse, error) {
+	rsp, err := c.OptionsApiMcpWellKnownOauthAuthorizationServer(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOptionsApiMcpWellKnownOauthAuthorizationServerResponse(rsp)
+}
+
+// GetApiMcpWellKnownOpenidConfigurationWithResponse request returning *GetApiMcpWellKnownOpenidConfigurationResponse
+func (c *ClientWithResponses) GetApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiMcpWellKnownOpenidConfigurationResponse, error) {
+	rsp, err := c.GetApiMcpWellKnownOpenidConfiguration(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiMcpWellKnownOpenidConfigurationResponse(rsp)
+}
+
+// OptionsApiMcpWellKnownOpenidConfigurationWithResponse request returning *OptionsApiMcpWellKnownOpenidConfigurationResponse
+func (c *ClientWithResponses) OptionsApiMcpWellKnownOpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OptionsApiMcpWellKnownOpenidConfigurationResponse, error) {
+	rsp, err := c.OptionsApiMcpWellKnownOpenidConfiguration(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOptionsApiMcpWellKnownOpenidConfigurationResponse(rsp)
+}
+
+// GetOpenApiSpecWithResponse request returning *GetOpenApiSpecResponse
+func (c *ClientWithResponses) GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error) {
+	rsp, err := c.GetOpenApiSpec(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOpenApiSpecResponse(rsp)
+}
+
+// GetBusPreferencesWithResponse request returning *GetBusPreferencesResponse
+func (c *ClientWithResponses) GetBusPreferencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBusPreferencesResponse, error) {
+	rsp, err := c.GetBusPreferences(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBusPreferencesResponse(rsp)
+}
+
+// SetBusPreferencesWithBodyWithResponse request with arbitrary body returning *SetBusPreferencesResponse
+func (c *ClientWithResponses) SetBusPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error) {
+	rsp, err := c.SetBusPreferencesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetBusPreferencesResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetBusPreferencesWithResponse(ctx context.Context, body SetBusPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetBusPreferencesResponse, error) {
+	rsp, err := c.SetBusPreferences(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetBusPreferencesResponse(rsp)
+}
+
+// GetSubscribedHomeworksWithResponse request returning *GetSubscribedHomeworksResponse
+func (c *ClientWithResponses) GetSubscribedHomeworksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error) {
+	rsp, err := c.GetSubscribedHomeworks(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSubscribedHomeworksResponse(rsp)
+}
+
+// PutApiHomeworksCompletionsWithBodyWithResponse request with arbitrary body returning *PutApiHomeworksCompletionsResponse
+func (c *ClientWithResponses) PutApiHomeworksCompletionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error) {
+	rsp, err := c.PutApiHomeworksCompletionsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiHomeworksCompletionsResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiHomeworksCompletionsWithResponse(ctx context.Context, body PutApiHomeworksCompletionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiHomeworksCompletionsResponse, error) {
+	rsp, err := c.PutApiHomeworksCompletions(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiHomeworksCompletionsResponse(rsp)
+}
+
+// SetHomeworkCompletionWithBodyWithResponse request with arbitrary body returning *SetHomeworkCompletionResponse
+func (c *ClientWithResponses) SetHomeworkCompletionWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error) {
+	rsp, err := c.SetHomeworkCompletionWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetHomeworkCompletionResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetHomeworkCompletionWithResponse(ctx context.Context, id string, body SetHomeworkCompletionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetHomeworkCompletionResponse, error) {
+	rsp, err := c.SetHomeworkCompletion(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetHomeworkCompletionResponse(rsp)
+}
+
+// PinDashboardLinkWithBodyWithResponse request with arbitrary body returning *PinDashboardLinkResponse
+func (c *ClientWithResponses) PinDashboardLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error) {
+	rsp, err := c.PinDashboardLinkWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePinDashboardLinkResponse(rsp)
+}
+
+func (c *ClientWithResponses) PinDashboardLinkWithFormdataBodyWithResponse(ctx context.Context, body PinDashboardLinkFormdataRequestBody, reqEditors ...RequestEditorFn) (*PinDashboardLinkResponse, error) {
+	rsp, err := c.PinDashboardLinkWithFormdataBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePinDashboardLinkResponse(rsp)
+}
+
+// PostApiWorkspaceLinksPinBatchWithBodyWithResponse request with arbitrary body returning *PostApiWorkspaceLinksPinBatchResponse
+func (c *ClientWithResponses) PostApiWorkspaceLinksPinBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiWorkspaceLinksPinBatchResponse, error) {
+	rsp, err := c.PostApiWorkspaceLinksPinBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiWorkspaceLinksPinBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiWorkspaceLinksPinBatchWithResponse(ctx context.Context, body PostApiWorkspaceLinksPinBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiWorkspaceLinksPinBatchResponse, error) {
+	rsp, err := c.PostApiWorkspaceLinksPinBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiWorkspaceLinksPinBatchResponse(rsp)
+}
+
+// VisitDashboardLinkWithResponse request returning *VisitDashboardLinkResponse
+func (c *ClientWithResponses) VisitDashboardLinkWithResponse(ctx context.Context, params *VisitDashboardLinkParams, reqEditors ...RequestEditorFn) (*VisitDashboardLinkResponse, error) {
+	rsp, err := c.VisitDashboardLink(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVisitDashboardLinkResponse(rsp)
+}
+
+// RecordDashboardLinkVisitWithBodyWithResponse request with arbitrary body returning *RecordDashboardLinkVisitResponse
+func (c *ClientWithResponses) RecordDashboardLinkVisitWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error) {
+	rsp, err := c.RecordDashboardLinkVisitWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRecordDashboardLinkVisitResponse(rsp)
+}
+
+func (c *ClientWithResponses) RecordDashboardLinkVisitWithFormdataBodyWithResponse(ctx context.Context, body RecordDashboardLinkVisitFormdataRequestBody, reqEditors ...RequestEditorFn) (*RecordDashboardLinkVisitResponse, error) {
+	rsp, err := c.RecordDashboardLinkVisitWithFormdataBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRecordDashboardLinkVisitResponse(rsp)
+}
+
+// GetApiMeOverviewWithResponse request returning *GetApiMeOverviewResponse
+func (c *ClientWithResponses) GetApiMeOverviewWithResponse(ctx context.Context, params *GetApiMeOverviewParams, reqEditors ...RequestEditorFn) (*GetApiMeOverviewResponse, error) {
+	rsp, err := c.GetApiMeOverview(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiMeOverviewResponse(rsp)
+}
+
+// GetApiMeSubscriptionsSchedulesWithResponse request returning *GetApiMeSubscriptionsSchedulesResponse
+func (c *ClientWithResponses) GetApiMeSubscriptionsSchedulesWithResponse(ctx context.Context, params *GetApiMeSubscriptionsSchedulesParams, reqEditors ...RequestEditorFn) (*GetApiMeSubscriptionsSchedulesResponse, error) {
+	rsp, err := c.GetApiMeSubscriptionsSchedules(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiMeSubscriptionsSchedulesResponse(rsp)
+}
+
+// DeleteApiWorkspaceSubscriptionsWithBodyWithResponse request with arbitrary body returning *DeleteApiWorkspaceSubscriptionsResponse
+func (c *ClientWithResponses) DeleteApiWorkspaceSubscriptionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteApiWorkspaceSubscriptionsResponse, error) {
+	rsp, err := c.DeleteApiWorkspaceSubscriptionsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiWorkspaceSubscriptionsResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteApiWorkspaceSubscriptionsWithResponse(ctx context.Context, body DeleteApiWorkspaceSubscriptionsJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteApiWorkspaceSubscriptionsResponse, error) {
+	rsp, err := c.DeleteApiWorkspaceSubscriptions(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApiWorkspaceSubscriptionsResponse(rsp)
+}
+
+// AppendCalendarSubscriptionSectionsWithBodyWithResponse request with arbitrary body returning *AppendCalendarSubscriptionSectionsResponse
+func (c *ClientWithResponses) AppendCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error) {
+	rsp, err := c.AppendCalendarSubscriptionSectionsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAppendCalendarSubscriptionSectionsResponse(rsp)
+}
+
+func (c *ClientWithResponses) AppendCalendarSubscriptionSectionsWithResponse(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error) {
+	rsp, err := c.AppendCalendarSubscriptionSections(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAppendCalendarSubscriptionSectionsResponse(rsp)
+}
+
+// SetCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *SetCalendarSubscriptionResponse
+func (c *ClientWithResponses) SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
+	rsp, err := c.SetCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetCalendarSubscriptionResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
+	rsp, err := c.SetCalendarSubscription(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetCalendarSubscriptionResponse(rsp)
+}
+
+// BatchUpdateCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *BatchUpdateCalendarSubscriptionResponse
+func (c *ClientWithResponses) BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error) {
+	rsp, err := c.BatchUpdateCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBatchUpdateCalendarSubscriptionResponse(rsp)
+}
+
+func (c *ClientWithResponses) BatchUpdateCalendarSubscriptionWithResponse(ctx context.Context, body BatchUpdateCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error) {
+	rsp, err := c.BatchUpdateCalendarSubscription(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBatchUpdateCalendarSubscriptionResponse(rsp)
+}
+
+// GetCurrentCalendarSubscriptionWithResponse request returning *GetCurrentCalendarSubscriptionResponse
+func (c *ClientWithResponses) GetCurrentCalendarSubscriptionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCurrentCalendarSubscriptionResponse, error) {
+	rsp, err := c.GetCurrentCalendarSubscription(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCurrentCalendarSubscriptionResponse(rsp)
+}
+
+// PostApiWorkspaceSubscriptionsImportCodesWithBodyWithResponse request with arbitrary body returning *PostApiWorkspaceSubscriptionsImportCodesResponse
+func (c *ClientWithResponses) PostApiWorkspaceSubscriptionsImportCodesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiWorkspaceSubscriptionsImportCodesResponse, error) {
+	rsp, err := c.PostApiWorkspaceSubscriptionsImportCodesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiWorkspaceSubscriptionsImportCodesResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiWorkspaceSubscriptionsImportCodesWithResponse(ctx context.Context, body PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiWorkspaceSubscriptionsImportCodesResponse, error) {
+	rsp, err := c.PostApiWorkspaceSubscriptionsImportCodes(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiWorkspaceSubscriptionsImportCodesResponse(rsp)
+}
+
+// QueryCalendarSubscriptionSectionsWithBodyWithResponse request with arbitrary body returning *QueryCalendarSubscriptionSectionsResponse
+func (c *ClientWithResponses) QueryCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error) {
+	rsp, err := c.QueryCalendarSubscriptionSectionsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryCalendarSubscriptionSectionsResponse(rsp)
+}
+
+func (c *ClientWithResponses) QueryCalendarSubscriptionSectionsWithResponse(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error) {
+	rsp, err := c.QueryCalendarSubscriptionSections(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryCalendarSubscriptionSectionsResponse(rsp)
 }
 
 // ListTodosWithResponse request returning *ListTodosResponse
@@ -23506,24 +23524,6 @@ func (c *ClientWithResponses) DownloadUploadWithResponse(ctx context.Context, id
 		return nil, err
 	}
 	return ParseDownloadUploadResponse(rsp)
-}
-
-// GetApiUsersProfileWithResponse request returning *GetApiUsersProfileResponse
-func (c *ClientWithResponses) GetApiUsersProfileWithResponse(ctx context.Context, params *GetApiUsersProfileParams, reqEditors ...RequestEditorFn) (*GetApiUsersProfileResponse, error) {
-	rsp, err := c.GetApiUsersProfile(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetApiUsersProfileResponse(rsp)
-}
-
-// GetUserCalendarWithResponse request returning *GetUserCalendarResponse
-func (c *ClientWithResponses) GetUserCalendarWithResponse(ctx context.Context, userId string, params *GetUserCalendarParams, reqEditors ...RequestEditorFn) (*GetUserCalendarResponse, error) {
-	rsp, err := c.GetUserCalendar(ctx, userId, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetUserCalendarResponse(rsp)
 }
 
 // ParseListOauthAuthorizationServerResponse parses an HTTP response from a ListOauthAuthorizationServerWithResponse call
@@ -23809,6 +23809,112 @@ func ParseOptionsWellKnownOpenidConfigurationApiMcpResponse(rsp *http.Response) 
 	response := &OptionsWellKnownOpenidConfigurationApiMcpResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
+func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MeResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetLocaleResponse parses an HTTP response from a SetLocaleWithResponse call
+func ParseSetLocaleResponse(rsp *http.Response) (*SetLocaleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetLocaleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SuccessResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiAccountProfileResponse parses an HTTP response from a GetApiAccountProfileWithResponse call
+func ParseGetApiAccountProfileResponse(rsp *http.Response) (*GetApiAccountProfileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiAccountProfileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PublicUserProfileResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
 	}
 
 	return response, nil
@@ -24581,15 +24687,15 @@ func ParseQueryBusResponse(rsp *http.Response) (*QueryBusResponse, error) {
 	return response, nil
 }
 
-// ParseGetApiBusNextResponse parses an HTTP response from a GetApiBusNextWithResponse call
-func ParseGetApiBusNextResponse(rsp *http.Response) (*GetApiBusNextResponse, error) {
+// ParseGetApiCatalogBusNextResponse parses an HTTP response from a GetApiCatalogBusNextWithResponse call
+func ParseGetApiCatalogBusNextResponse(rsp *http.Response) (*GetApiCatalogBusNextResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetApiBusNextResponse{
+	response := &GetApiCatalogBusNextResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -24615,93 +24721,6 @@ func ParseGetApiBusNextResponse(rsp *http.Response) (*GetApiBusNextResponse, err
 			return nil, err
 		}
 		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetBusPreferencesResponse parses an HTTP response from a GetBusPreferencesWithResponse call
-func ParseGetBusPreferencesResponse(rsp *http.Response) (*GetBusPreferencesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetBusPreferencesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BusPreferenceResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSetBusPreferencesResponse parses an HTTP response from a SetBusPreferencesWithResponse call
-func ParseSetBusPreferencesResponse(rsp *http.Response) (*SetBusPreferencesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SetBusPreferencesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BusPreferenceResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
 
 	}
 
@@ -24748,22 +24767,22 @@ func ParseGetApiBusRoutesResponse(rsp *http.Response) (*GetApiBusRoutesResponse,
 	return response, nil
 }
 
-// ParseDeleteApiCalendarSubscriptionsResponse parses an HTTP response from a DeleteApiCalendarSubscriptionsWithResponse call
-func ParseDeleteApiCalendarSubscriptionsResponse(rsp *http.Response) (*DeleteApiCalendarSubscriptionsResponse, error) {
+// ParseListCoursesResponse parses an HTTP response from a ListCoursesWithResponse call
+func ParseListCoursesResponse(rsp *http.Response) (*ListCoursesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &DeleteApiCalendarSubscriptionsResponse{
+	response := &ListCoursesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionRemoveResponseSchema
+		var dest PaginatedCourseResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -24776,12 +24795,38 @@ func ParseDeleteApiCalendarSubscriptionsResponse(rsp *http.Response) (*DeleteApi
 		}
 		response.JSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+	}
+
+	return response, nil
+}
+
+// ParseGetCourseResponse parses an HTTP response from a GetCourseWithResponse call
+func ParseGetCourseResponse(rsp *http.Response) (*GetCourseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCourseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CourseDetailSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON401 = &dest
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -24790,41 +24835,53 @@ func ParseDeleteApiCalendarSubscriptionsResponse(rsp *http.Response) (*DeleteApi
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseAppendCalendarSubscriptionSectionsResponse parses an HTTP response from a AppendCalendarSubscriptionSectionsWithResponse call
-func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*AppendCalendarSubscriptionSectionsResponse, error) {
+// ParseGetMetadataResponse parses an HTTP response from a GetMetadataWithResponse call
+func ParseGetMetadataResponse(rsp *http.Response) (*GetMetadataResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &AppendCalendarSubscriptionSectionsResponse{
+	response := &GetMetadataResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionAppendResponseSchema
+		var dest MetadataResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSchedulesResponse parses an HTTP response from a ListSchedulesWithResponse call
+func ParseListSchedulesResponse(rsp *http.Response) (*ListSchedulesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSchedulesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedScheduleResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -24837,12 +24894,97 @@ func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*Appen
 		}
 		response.JSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+	}
+
+	return response, nil
+}
+
+// ParseListSectionsResponse parses an HTTP response from a ListSectionsWithResponse call
+func ParseListSectionsResponse(rsp *http.Response) (*ListSectionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSectionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedSectionResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON401 = &dest
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSectionsCalendarResponse parses an HTTP response from a GetSectionsCalendarWithResponse call
+func ParseGetSectionsCalendarResponse(rsp *http.Response) (*GetSectionsCalendarResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSectionsCalendarResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMatchSectionCodesResponse parses an HTTP response from a MatchSectionCodesWithResponse call
+func ParseMatchSectionCodesResponse(rsp *http.Response) (*MatchSectionCodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MatchSectionCodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MatchSectionCodesResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -24851,41 +24993,27 @@ func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*Appen
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseSetCalendarSubscriptionResponse parses an HTTP response from a SetCalendarSubscriptionWithResponse call
-func ParseSetCalendarSubscriptionResponse(rsp *http.Response) (*SetCalendarSubscriptionResponse, error) {
+// ParseGetSectionResponse parses an HTTP response from a GetSectionWithResponse call
+func ParseGetSectionResponse(rsp *http.Response) (*GetSectionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &SetCalendarSubscriptionResponse{
+	response := &GetSectionResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionCreateResponseSchema
+		var dest SectionDetailSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -24897,67 +25025,6 @@ func ParseSetCalendarSubscriptionResponse(rsp *http.Response) (*SetCalendarSubsc
 			return nil, err
 		}
 		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseBatchUpdateCalendarSubscriptionResponse parses an HTTP response from a BatchUpdateCalendarSubscriptionWithResponse call
-func ParseBatchUpdateCalendarSubscriptionResponse(rsp *http.Response) (*BatchUpdateCalendarSubscriptionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &BatchUpdateCalendarSubscriptionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionBatchResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -24966,92 +25033,57 @@ func ParseBatchUpdateCalendarSubscriptionResponse(rsp *http.Response) (*BatchUpd
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseGetCurrentCalendarSubscriptionResponse parses an HTTP response from a GetCurrentCalendarSubscriptionWithResponse call
-func ParseGetCurrentCalendarSubscriptionResponse(rsp *http.Response) (*GetCurrentCalendarSubscriptionResponse, error) {
+// ParseGetSectionCalendarResponse parses an HTTP response from a GetSectionCalendarWithResponse call
+func ParseGetSectionCalendarResponse(rsp *http.Response) (*GetSectionCalendarResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetCurrentCalendarSubscriptionResponse{
+	response := &GetSectionCalendarResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CurrentCalendarSubscriptionResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON401 = &dest
+		response.JSON404 = &dest
 
 	}
 
 	return response, nil
 }
 
-// ParsePostApiCalendarSubscriptionsImportCodesResponse parses an HTTP response from a PostApiCalendarSubscriptionsImportCodesWithResponse call
-func ParsePostApiCalendarSubscriptionsImportCodesResponse(rsp *http.Response) (*PostApiCalendarSubscriptionsImportCodesResponse, error) {
+// ParseGetSectionScheduleGroupsResponse parses an HTTP response from a GetSectionScheduleGroupsWithResponse call
+func ParseGetSectionScheduleGroupsResponse(rsp *http.Response) (*GetSectionScheduleGroupsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostApiCalendarSubscriptionsImportCodesResponse{
+	response := &GetSectionScheduleGroupsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionImportResponseSchema
+		var dest []map[string]interface{}
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -25060,41 +25092,27 @@ func ParsePostApiCalendarSubscriptionsImportCodesResponse(rsp *http.Response) (*
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseQueryCalendarSubscriptionSectionsResponse parses an HTTP response from a QueryCalendarSubscriptionSectionsWithResponse call
-func ParseQueryCalendarSubscriptionSectionsResponse(rsp *http.Response) (*QueryCalendarSubscriptionSectionsResponse, error) {
+// ParseGetSectionSchedulesResponse parses an HTTP response from a GetSectionSchedulesWithResponse call
+func ParseGetSectionSchedulesResponse(rsp *http.Response) (*GetSectionSchedulesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &QueryCalendarSubscriptionSectionsResponse{
+	response := &GetSectionSchedulesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionQueryResponseSchema
+		var dest []map[string]interface{}
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -25107,12 +25125,144 @@ func ParseQueryCalendarSubscriptionSectionsResponse(rsp *http.Response) (*QueryC
 		}
 		response.JSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON401 = &dest
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSemestersResponse parses an HTTP response from a ListSemestersWithResponse call
+func ParseListSemestersResponse(rsp *http.Response) (*ListSemestersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSemestersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedSemesterResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCurrentSemesterResponse parses an HTTP response from a GetCurrentSemesterWithResponse call
+func ParseGetCurrentSemesterResponse(rsp *http.Response) (*GetCurrentSemesterResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCurrentSemesterResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SemesterSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTeachersResponse parses an HTTP response from a ListTeachersWithResponse call
+func ParseListTeachersResponse(rsp *http.Response) (*ListTeachersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTeachersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedTeacherResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTeacherResponse parses an HTTP response from a GetTeacherWithResponse call
+func ParseGetTeacherResponse(rsp *http.Response) (*GetTeacherResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTeacherResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeacherDetailSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -25593,233 +25743,6 @@ func ParseAddCommentReactionResponse(rsp *http.Response) (*AddCommentReactionRes
 	return response, nil
 }
 
-// ParseListCoursesResponse parses an HTTP response from a ListCoursesWithResponse call
-func ParseListCoursesResponse(rsp *http.Response) (*ListCoursesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListCoursesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PaginatedCourseResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetCourseResponse parses an HTTP response from a GetCourseWithResponse call
-func ParseGetCourseResponse(rsp *http.Response) (*GetCourseResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetCourseResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CourseDetailSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePinDashboardLinkResponse parses an HTTP response from a PinDashboardLinkWithResponse call
-func ParsePinDashboardLinkResponse(rsp *http.Response) (*PinDashboardLinkResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PinDashboardLinkResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostApiDashboardLinksPinBatchResponse parses an HTTP response from a PostApiDashboardLinksPinBatchWithResponse call
-func ParsePostApiDashboardLinksPinBatchResponse(rsp *http.Response) (*PostApiDashboardLinksPinBatchResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostApiDashboardLinksPinBatchResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest DashboardLinkPinResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseVisitDashboardLinkResponse parses an HTTP response from a VisitDashboardLinkWithResponse call
-func ParseVisitDashboardLinkResponse(rsp *http.Response) (*VisitDashboardLinkResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &VisitDashboardLinkResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	return response, nil
-}
-
-// ParseRecordDashboardLinkVisitResponse parses an HTTP response from a RecordDashboardLinkVisitWithResponse call
-func ParseRecordDashboardLinkVisitResponse(rsp *http.Response) (*RecordDashboardLinkVisitResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &RecordDashboardLinkVisitResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	return response, nil
-}
-
 // ParseGetDescriptionResponse parses an HTTP response from a GetDescriptionWithResponse call
 func ParseGetDescriptionResponse(rsp *http.Response) (*GetDescriptionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -25928,22 +25851,6 @@ func ParseUpsertDescriptionResponse(rsp *http.Response) (*UpsertDescriptionRespo
 	return response, nil
 }
 
-// ParseListHealthResponse parses an HTTP response from a ListHealthWithResponse call
-func ParseListHealthResponse(rsp *http.Response) (*ListHealthResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListHealthResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	return response, nil
-}
-
 // ParseListHomeworksResponse parses an HTTP response from a ListHomeworksWithResponse call
 func ParseListHomeworksResponse(rsp *http.Response) (*ListHomeworksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -26032,60 +25939,6 @@ func ParseCreateHomeworkResponse(rsp *http.Response) (*CreateHomeworkResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePutApiHomeworksCompletionsResponse parses an HTTP response from a PutApiHomeworksCompletionsWithResponse call
-func ParsePutApiHomeworksCompletionsResponse(rsp *http.Response) (*PutApiHomeworksCompletionsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PutApiHomeworksCompletionsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HomeworkCompletionBatchResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest OpenApiErrorSchema
@@ -26235,40 +26088,33 @@ func ParseUpdateHomeworkResponse(rsp *http.Response) (*UpdateHomeworkResponse, e
 	return response, nil
 }
 
-// ParseSetHomeworkCompletionResponse parses an HTTP response from a SetHomeworkCompletionWithResponse call
-func ParseSetHomeworkCompletionResponse(rsp *http.Response) (*SetHomeworkCompletionResponse, error) {
+// ParseGetUserCalendarResponse parses an HTTP response from a GetUserCalendarWithResponse call
+func ParseGetUserCalendarResponse(rsp *http.Response) (*GetUserCalendarResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &SetHomeworkCompletionResponse{
+	response := &GetUserCalendarResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HomeworkCompletionResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -26277,53 +26123,22 @@ func ParseSetHomeworkCompletionResponse(rsp *http.Response) (*SetHomeworkComplet
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseSetLocaleResponse parses an HTTP response from a SetLocaleWithResponse call
-func ParseSetLocaleResponse(rsp *http.Response) (*SetLocaleResponse, error) {
+// ParseListHealthResponse parses an HTTP response from a ListHealthWithResponse call
+func ParseListHealthResponse(rsp *http.Response) (*ListHealthResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &SetLocaleResponse{
+	response := &ListHealthResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SuccessResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
 	}
 
 	return response, nil
@@ -26532,22 +26347,48 @@ func ParseOptionsApiMcpWellKnownOpenidConfigurationResponse(rsp *http.Response) 
 	return response, nil
 }
 
-// ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
-func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
+// ParseGetOpenApiSpecResponse parses an HTTP response from a GetOpenApiSpecWithResponse call
+func ParseGetOpenApiSpecResponse(rsp *http.Response) (*GetOpenApiSpecResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetMeResponse{
+	response := &GetOpenApiSpecResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MeResponseSchema
+		var dest OpenApiDocumentResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBusPreferencesResponse parses an HTTP response from a GetBusPreferencesWithResponse call
+func ParseGetBusPreferencesResponse(rsp *http.Response) (*GetBusPreferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBusPreferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BusPreferenceResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26560,6 +26401,362 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 		}
 		response.JSON401 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseSetBusPreferencesResponse parses an HTTP response from a SetBusPreferencesWithResponse call
+func ParseSetBusPreferencesResponse(rsp *http.Response) (*SetBusPreferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetBusPreferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BusPreferenceResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSubscribedHomeworksResponse parses an HTTP response from a GetSubscribedHomeworksWithResponse call
+func ParseGetSubscribedHomeworksResponse(rsp *http.Response) (*GetSubscribedHomeworksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSubscribedHomeworksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SubscribedHomeworksResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiHomeworksCompletionsResponse parses an HTTP response from a PutApiHomeworksCompletionsWithResponse call
+func ParsePutApiHomeworksCompletionsResponse(rsp *http.Response) (*PutApiHomeworksCompletionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiHomeworksCompletionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HomeworkCompletionBatchResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetHomeworkCompletionResponse parses an HTTP response from a SetHomeworkCompletionWithResponse call
+func ParseSetHomeworkCompletionResponse(rsp *http.Response) (*SetHomeworkCompletionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetHomeworkCompletionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HomeworkCompletionResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePinDashboardLinkResponse parses an HTTP response from a PinDashboardLinkWithResponse call
+func ParsePinDashboardLinkResponse(rsp *http.Response) (*PinDashboardLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PinDashboardLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiWorkspaceLinksPinBatchResponse parses an HTTP response from a PostApiWorkspaceLinksPinBatchWithResponse call
+func ParsePostApiWorkspaceLinksPinBatchResponse(rsp *http.Response) (*PostApiWorkspaceLinksPinBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiWorkspaceLinksPinBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest DashboardLinkPinResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseVisitDashboardLinkResponse parses an HTTP response from a VisitDashboardLinkWithResponse call
+func ParseVisitDashboardLinkResponse(rsp *http.Response) (*VisitDashboardLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VisitDashboardLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseRecordDashboardLinkVisitResponse parses an HTTP response from a RecordDashboardLinkVisitWithResponse call
+func ParseRecordDashboardLinkVisitResponse(rsp *http.Response) (*RecordDashboardLinkVisitResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RecordDashboardLinkVisitResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
 	}
 
 	return response, nil
@@ -26592,39 +26789,6 @@ func ParseGetApiMeOverviewResponse(rsp *http.Response) (*GetApiMeOverviewRespons
 			return nil, err
 		}
 		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSubscribedHomeworksResponse parses an HTTP response from a GetSubscribedHomeworksWithResponse call
-func ParseGetSubscribedHomeworksResponse(rsp *http.Response) (*GetSubscribedHomeworksResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSubscribedHomeworksResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SubscribedHomeworksResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
@@ -26678,74 +26842,22 @@ func ParseGetApiMeSubscriptionsSchedulesResponse(rsp *http.Response) (*GetApiMeS
 	return response, nil
 }
 
-// ParseGetMetadataResponse parses an HTTP response from a GetMetadataWithResponse call
-func ParseGetMetadataResponse(rsp *http.Response) (*GetMetadataResponse, error) {
+// ParseDeleteApiWorkspaceSubscriptionsResponse parses an HTTP response from a DeleteApiWorkspaceSubscriptionsWithResponse call
+func ParseDeleteApiWorkspaceSubscriptionsResponse(rsp *http.Response) (*DeleteApiWorkspaceSubscriptionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetMetadataResponse{
+	response := &DeleteApiWorkspaceSubscriptionsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MetadataResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetOpenApiSpecResponse parses an HTTP response from a GetOpenApiSpecWithResponse call
-func ParseGetOpenApiSpecResponse(rsp *http.Response) (*GetOpenApiSpecResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOpenApiSpecResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OpenApiDocumentResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListSchedulesResponse parses an HTTP response from a ListSchedulesWithResponse call
-func ParseListSchedulesResponse(rsp *http.Response) (*ListSchedulesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListSchedulesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PaginatedScheduleResponseSchema
+		var dest CalendarSubscriptionRemoveResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26758,97 +26870,12 @@ func ParseListSchedulesResponse(rsp *http.Response) (*ListSchedulesResponse, err
 		}
 		response.JSON400 = &dest
 
-	}
-
-	return response, nil
-}
-
-// ParseListSectionsResponse parses an HTTP response from a ListSectionsWithResponse call
-func ParseListSectionsResponse(rsp *http.Response) (*ListSectionsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListSectionsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PaginatedSectionResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON400 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSectionsCalendarResponse parses an HTTP response from a GetSectionsCalendarWithResponse call
-func ParseGetSectionsCalendarResponse(rsp *http.Response) (*GetSectionsCalendarResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSectionsCalendarResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseMatchSectionCodesResponse parses an HTTP response from a MatchSectionCodesWithResponse call
-func ParseMatchSectionCodesResponse(rsp *http.Response) (*MatchSectionCodesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &MatchSectionCodesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MatchSectionCodesResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -26857,27 +26884,41 @@ func ParseMatchSectionCodesResponse(rsp *http.Response) (*MatchSectionCodesRespo
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
 }
 
-// ParseGetSectionResponse parses an HTTP response from a GetSectionWithResponse call
-func ParseGetSectionResponse(rsp *http.Response) (*GetSectionResponse, error) {
+// ParseAppendCalendarSubscriptionSectionsResponse parses an HTTP response from a AppendCalendarSubscriptionSectionsWithResponse call
+func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*AppendCalendarSubscriptionSectionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetSectionResponse{
+	response := &AppendCalendarSubscriptionSectionsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SectionDetailSchema
+		var dest CalendarSubscriptionAppendResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26890,64 +26931,12 @@ func ParseGetSectionResponse(rsp *http.Response) (*GetSectionResponse, error) {
 		}
 		response.JSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSectionCalendarResponse parses an HTTP response from a GetSectionCalendarWithResponse call
-func ParseGetSectionCalendarResponse(rsp *http.Response) (*GetSectionCalendarResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSectionCalendarResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSectionScheduleGroupsResponse parses an HTTP response from a GetSectionScheduleGroupsWithResponse call
-func ParseGetSectionScheduleGroupsResponse(rsp *http.Response) (*GetSectionScheduleGroupsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSectionScheduleGroupsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -26956,27 +26945,41 @@ func ParseGetSectionScheduleGroupsResponse(rsp *http.Response) (*GetSectionSched
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
 }
 
-// ParseGetSectionSchedulesResponse parses an HTTP response from a GetSectionSchedulesWithResponse call
-func ParseGetSectionSchedulesResponse(rsp *http.Response) (*GetSectionSchedulesResponse, error) {
+// ParseSetCalendarSubscriptionResponse parses an HTTP response from a SetCalendarSubscriptionWithResponse call
+func ParseSetCalendarSubscriptionResponse(rsp *http.Response) (*SetCalendarSubscriptionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetSectionSchedulesResponse{
+	response := &SetCalendarSubscriptionResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []map[string]interface{}
+		var dest CalendarSubscriptionCreateResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26989,6 +26992,67 @@ func ParseGetSectionSchedulesResponse(rsp *http.Response) (*GetSectionSchedulesR
 		}
 		response.JSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBatchUpdateCalendarSubscriptionResponse parses an HTTP response from a BatchUpdateCalendarSubscriptionWithResponse call
+func ParseBatchUpdateCalendarSubscriptionResponse(rsp *http.Response) (*BatchUpdateCalendarSubscriptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BatchUpdateCalendarSubscriptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CalendarSubscriptionBatchResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -26996,27 +27060,74 @@ func ParseGetSectionSchedulesResponse(rsp *http.Response) (*GetSectionSchedulesR
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
 }
 
-// ParseListSemestersResponse parses an HTTP response from a ListSemestersWithResponse call
-func ParseListSemestersResponse(rsp *http.Response) (*ListSemestersResponse, error) {
+// ParseGetCurrentCalendarSubscriptionResponse parses an HTTP response from a GetCurrentCalendarSubscriptionWithResponse call
+func ParseGetCurrentCalendarSubscriptionResponse(rsp *http.Response) (*GetCurrentCalendarSubscriptionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListSemestersResponse{
+	response := &GetCurrentCalendarSubscriptionResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PaginatedSemesterResponseSchema
+		var dest CurrentCalendarSubscriptionResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiWorkspaceSubscriptionsImportCodesResponse parses an HTTP response from a PostApiWorkspaceSubscriptionsImportCodesWithResponse call
+func ParsePostApiWorkspaceSubscriptionsImportCodesResponse(rsp *http.Response) (*PostApiWorkspaceSubscriptionsImportCodesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiWorkspaceSubscriptionsImportCodesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CalendarSubscriptionImportResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27029,31 +27140,12 @@ func ParseListSemestersResponse(rsp *http.Response) (*ListSemestersResponse, err
 		}
 		response.JSON400 = &dest
 
-	}
-
-	return response, nil
-}
-
-// ParseGetCurrentSemesterResponse parses an HTTP response from a GetCurrentSemesterWithResponse call
-func ParseGetCurrentSemesterResponse(rsp *http.Response) (*GetCurrentSemesterResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetCurrentSemesterResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SemesterSchema
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON200 = &dest
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -27062,27 +27154,41 @@ func ParseGetCurrentSemesterResponse(rsp *http.Response) (*GetCurrentSemesterRes
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
 }
 
-// ParseListTeachersResponse parses an HTTP response from a ListTeachersWithResponse call
-func ParseListTeachersResponse(rsp *http.Response) (*ListTeachersResponse, error) {
+// ParseQueryCalendarSubscriptionSectionsResponse parses an HTTP response from a QueryCalendarSubscriptionSectionsWithResponse call
+func ParseQueryCalendarSubscriptionSectionsResponse(rsp *http.Response) (*QueryCalendarSubscriptionSectionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListTeachersResponse{
+	response := &QueryCalendarSubscriptionSectionsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PaginatedTeacherResponseSchema
+		var dest CalendarSubscriptionQueryResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27095,38 +27201,12 @@ func ParseListTeachersResponse(rsp *http.Response) (*ListTeachersResponse, error
 		}
 		response.JSON400 = &dest
 
-	}
-
-	return response, nil
-}
-
-// ParseGetTeacherResponse parses an HTTP response from a GetTeacherWithResponse call
-func ParseGetTeacherResponse(rsp *http.Response) (*GetTeacherResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetTeacherResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest TeacherDetailSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON400 = &dest
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -27864,86 +27944,6 @@ func ParseDownloadUploadResponse(rsp *http.Response) (*DownloadUploadResponse, e
 			return nil, err
 		}
 		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetApiUsersProfileResponse parses an HTTP response from a GetApiUsersProfileWithResponse call
-func ParseGetApiUsersProfileResponse(rsp *http.Response) (*GetApiUsersProfileResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetApiUsersProfileResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PublicUserProfileResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetUserCalendarResponse parses an HTTP response from a GetUserCalendarWithResponse call
-func ParseGetUserCalendarResponse(rsp *http.Response) (*GetUserCalendarResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetUserCalendarResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema

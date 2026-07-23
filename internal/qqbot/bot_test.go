@@ -337,7 +337,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校车 / xc") {
+	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 	waitInteractionCount(t, db, 2)
@@ -431,7 +431,7 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校车 / xc") {
+	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 	waitInteractionCount(t, db, 2)
@@ -507,7 +507,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 	if gotBody.EventID != "interaction-id" || gotBody.MsgID != "" || gotBody.MsgSeq != 0 {
 		t.Fatalf("reply fields = %#v", gotBody)
 	}
-	if !strings.Contains(gotBody.Content, "校车 / xc") {
+	if !strings.Contains(gotBody.Content, "校园信息") || !strings.Contains(gotBody.Content, "我的工作区") {
 		t.Fatalf("reply content = %q", gotBody.Content)
 	}
 }

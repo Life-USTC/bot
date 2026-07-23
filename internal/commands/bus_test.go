@@ -44,7 +44,7 @@ const busPreferenceTestData = `{
 
 func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bus" {
+		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{
@@ -116,7 +116,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 
 func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bus" {
+		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{
@@ -144,7 +144,7 @@ func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
 
 func TestBusAtImageModeOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bus" {
+		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(busPreferenceTestData))
@@ -166,7 +166,7 @@ func TestBusAtImageModeOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T
 
 func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bus" {
+		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{
@@ -204,7 +204,7 @@ func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
 
 func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bus" {
+		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{
@@ -227,14 +227,14 @@ func TestHandleBusPreferencesViewAndSet(t *testing.T) {
 	var saved map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			if got := r.Header.Get("Authorization"); got != "Bearer access" {
 				t.Fatalf("authorization = %q", got)
 			}
 			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":1,"preferredDestinationCampusId":2,"showDepartedTrips":false}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/bus-preferences":
 			if got := r.Header.Get("Authorization"); got != "Bearer access" {
 				t.Fatalf("authorization = %q", got)
 			}
@@ -294,9 +294,9 @@ func TestHandleBusBarePrivateQueryHidesSouthByDefault(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":true}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -316,9 +316,9 @@ func TestHandleBusBarePrivateQueryCanShowSouth(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":true}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -341,9 +341,9 @@ func TestHandleBusExplicitSouthRouteIgnoresSouthPreference(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -363,9 +363,9 @@ func TestHandleBusPreferredRouteUsesSavedPreferences(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(busPreferenceTestData))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"preferredOriginCampusId":3,"preferredDestinationCampusId":1,"showDepartedTrips":false}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -385,7 +385,7 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(`{
 				"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"高新区"}}]}],
 				"trips":[
@@ -400,7 +400,7 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 					]}
 				]
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -426,7 +426,7 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(`{
 				"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"高新区"}}]}],
 				"trips":[
@@ -438,7 +438,7 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 					]}
 				]
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":true}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -463,7 +463,7 @@ func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(`{
 				"routes":[
 					{"id":"direct","stops":[
@@ -485,7 +485,7 @@ func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 					]}
 				]
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/bus/preferences":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace/bus-preferences":
 			_, _ = w.Write([]byte(`{"preference":{"showDepartedTrips":false}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
