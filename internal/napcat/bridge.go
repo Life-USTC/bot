@@ -187,15 +187,22 @@ func (b *Bridge) RunReverse(ctx context.Context, addr, path string) error {
 }
 
 func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
-	defer func() { _ = conn.Close() }()
 	writeMu := &sync.Mutex{}
 	connID := b.setReverseConn(conn, writeMu)
 	defer b.clearReverseConn(connID)
 	connCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	defer b.failReversePending(conn, errors.New("napcat reverse websocket closed"))
 	events := make(chan messageEvent, reverseEventQueueSize)
-	go b.handleReverseEvents(connCtx, conn, writeMu, events)
+	eventsDone := make(chan struct{})
+	go func() {
+		defer close(eventsDone)
+		b.handleReverseEvents(connCtx, conn, writeMu, events)
+	}()
+	defer func() {
+		cancel()
+		_ = conn.Close()
+		<-eventsDone
+	}()
 	for {
 		var raw json.RawMessage
 		if err := conn.ReadJSON(&raw); err != nil {
