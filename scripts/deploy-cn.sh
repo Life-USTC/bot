@@ -21,7 +21,7 @@ fi
 
 REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 
-ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_DIR/data' && chmod 700 '$REMOTE_DIR'"
+ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_DIR/data' && chown 10001:10001 '$REMOTE_DIR/data' && chmod 700 '$REMOTE_DIR'"
 
 git -C "$ROOT" archive --format=tar.gz --prefix=src/ "$REVISION" \
 	| ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && rm -rf src && tar -xzf - && printf '%s\n' '$REVISION' > .deploy-revision"
