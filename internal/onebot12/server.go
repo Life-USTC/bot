@@ -77,14 +77,14 @@ func (s *Server) mux() *libob.ActionMux {
 		err := s.life.Health(ctx)
 		w.WriteData(map[string]any{"good": err == nil, "online": err == nil})
 	})
-	mux.HandleFunc(actionPrefix+".get_current_semester", s.currentSemester)
-	mux.HandleFunc(actionPrefix+".search_courses", s.searchCourses)
-	mux.HandleFunc(actionPrefix+".search_sections", s.searchSections)
-	mux.HandleFunc(actionPrefix+".get_bus", s.bus)
-	mux.HandleFunc(actionPrefix+".begin_login", s.beginLogin)
-	mux.HandleFunc(actionPrefix+".poll_login", s.pollLogin)
-	mux.HandleFunc(actionPrefix+".get_me", s.me)
-	mux.HandleFunc(actionPrefix+".list_todos", s.todos)
+	mux.HandleFunc(actionPrefix+".catalog_semester_current", s.currentSemester)
+	mux.HandleFunc(actionPrefix+".catalog_course_search", s.searchCourses)
+	mux.HandleFunc(actionPrefix+".catalog_section_search", s.searchSections)
+	mux.HandleFunc(actionPrefix+".catalog_bus_timetable_get", s.bus)
+	mux.HandleFunc(actionPrefix+".account_login_begin", s.beginLogin)
+	mux.HandleFunc(actionPrefix+".account_login_poll", s.pollLogin)
+	mux.HandleFunc(actionPrefix+".account_profile_get", s.me)
+	mux.HandleFunc(actionPrefix+".workspace_todo_list", s.todos)
 	return mux
 }
 

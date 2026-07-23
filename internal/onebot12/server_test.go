@@ -54,7 +54,7 @@ func TestStatusWithoutLifeClientReportsOffline(t *testing.T) {
 
 func TestLifeActionWithoutLifeClientFails(t *testing.T) {
 	server := New(Config{SelfID: "bot"}, nil)
-	resp := server.onebot.CallAction(actionPrefix+".get_current_semester", nil)
+	resp := server.onebot.CallAction(actionPrefix+".catalog_semester_current", nil)
 	if resp.Status != "failed" || resp.RetCode != libob.RetCodeUnsupportedAction {
 		t.Fatalf("response = %#v", resp)
 	}
@@ -85,7 +85,7 @@ func TestTodosRefreshesUnauthorizedToken(t *testing.T) {
 			"expires_in":    3600,
 		})
 	})
-	mux.HandleFunc("/api/todos", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/workspace/todos", func(w http.ResponseWriter, r *http.Request) {
 		todoRequests++
 		switch r.Header.Get("Authorization") {
 		case "Bearer old-access":
@@ -120,7 +120,7 @@ func TestTodosRefreshesUnauthorizedToken(t *testing.T) {
 		SelfID: "bot",
 		Auth:   &auth.Manager{Server: lifeServer.URL, HTTPClient: lifeServer.Client(), Store: db},
 	}, life.NewClient(lifeServer.URL, lifeServer.Client()))
-	resp := server.onebot.CallAction(actionPrefix+".list_todos", map[string]interface{}{
+	resp := server.onebot.CallAction(actionPrefix+".workspace_todo_list", map[string]interface{}{
 		"user_id": "42",
 	})
 	if resp.Status != "ok" {
