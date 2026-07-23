@@ -660,42 +660,6 @@ func (e CompactOverviewResponseSchemaTodosItemsPriority) Valid() bool {
 	}
 }
 
-// Defines values for DashboardLinkPinBatchRequestSchemaItemsAction.
-const (
-	DashboardLinkPinBatchRequestSchemaItemsActionPin   DashboardLinkPinBatchRequestSchemaItemsAction = "pin"
-	DashboardLinkPinBatchRequestSchemaItemsActionUnpin DashboardLinkPinBatchRequestSchemaItemsAction = "unpin"
-)
-
-// Valid indicates whether the value is a known member of the DashboardLinkPinBatchRequestSchemaItemsAction enum.
-func (e DashboardLinkPinBatchRequestSchemaItemsAction) Valid() bool {
-	switch e {
-	case DashboardLinkPinBatchRequestSchemaItemsActionPin:
-		return true
-	case DashboardLinkPinBatchRequestSchemaItemsActionUnpin:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for DashboardLinkPinRequestSchemaAction.
-const (
-	DashboardLinkPinRequestSchemaActionPin   DashboardLinkPinRequestSchemaAction = "pin"
-	DashboardLinkPinRequestSchemaActionUnpin DashboardLinkPinRequestSchemaAction = "unpin"
-)
-
-// Valid indicates whether the value is a known member of the DashboardLinkPinRequestSchemaAction enum.
-func (e DashboardLinkPinRequestSchemaAction) Valid() bool {
-	switch e {
-	case DashboardLinkPinRequestSchemaActionPin:
-		return true
-	case DashboardLinkPinRequestSchemaActionUnpin:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DescriptionUpsertRequestSchemaTargetType.
 const (
 	DescriptionUpsertRequestSchemaTargetTypeCourse   DescriptionUpsertRequestSchemaTargetType = "course"
@@ -1257,6 +1221,42 @@ func (e TodosListResponseSchemaTodosPriority) Valid() bool {
 	case TodosListResponseSchemaTodosPriorityLow:
 		return true
 	case TodosListResponseSchemaTodosPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceLinkPinBatchRequestSchemaItemsAction.
+const (
+	WorkspaceLinkPinBatchRequestSchemaItemsActionPin   WorkspaceLinkPinBatchRequestSchemaItemsAction = "pin"
+	WorkspaceLinkPinBatchRequestSchemaItemsActionUnpin WorkspaceLinkPinBatchRequestSchemaItemsAction = "unpin"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceLinkPinBatchRequestSchemaItemsAction enum.
+func (e WorkspaceLinkPinBatchRequestSchemaItemsAction) Valid() bool {
+	switch e {
+	case WorkspaceLinkPinBatchRequestSchemaItemsActionPin:
+		return true
+	case WorkspaceLinkPinBatchRequestSchemaItemsActionUnpin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceLinkPinRequestSchemaAction.
+const (
+	WorkspaceLinkPinRequestSchemaActionPin   WorkspaceLinkPinRequestSchemaAction = "pin"
+	WorkspaceLinkPinRequestSchemaActionUnpin WorkspaceLinkPinRequestSchemaAction = "unpin"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceLinkPinRequestSchemaAction enum.
+func (e WorkspaceLinkPinRequestSchemaAction) Valid() bool {
+	switch e {
+	case WorkspaceLinkPinRequestSchemaActionPin:
+		return true
+	case WorkspaceLinkPinRequestSchemaActionUnpin:
 		return true
 	default:
 		return false
@@ -3944,6 +3944,11 @@ type CatalogLinkListResponseSchemaLinksIcon string
 // CatalogLinkListResponseSchemaLinksLocale defines model for CatalogLinkListResponseSchema.Links.Locale.
 type CatalogLinkListResponseSchemaLinksLocale string
 
+// CatalogLinkVisitRequestSchema defines model for catalogLinkVisitRequestSchema.
+type CatalogLinkVisitRequestSchema struct {
+	Slug string `json:"slug"`
+}
+
 // CommentBatchDeleteRequestSchema defines model for commentBatchDeleteRequestSchema.
 type CommentBatchDeleteRequestSchema struct {
 	Ids []string `json:"ids"`
@@ -4845,39 +4850,6 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 		} `json:"sections"`
 		UserId string `json:"userId"`
 	} `json:"subscription"`
-}
-
-// DashboardLinkPinBatchRequestSchema defines model for dashboardLinkPinBatchRequestSchema.
-type DashboardLinkPinBatchRequestSchema struct {
-	Items []struct {
-		Action DashboardLinkPinBatchRequestSchemaItemsAction `json:"action"`
-		Slug   string                                        `json:"slug"`
-	} `json:"items"`
-}
-
-// DashboardLinkPinBatchRequestSchemaItemsAction defines model for DashboardLinkPinBatchRequestSchema.Items.Action.
-type DashboardLinkPinBatchRequestSchemaItemsAction string
-
-// DashboardLinkPinRequestSchema defines model for dashboardLinkPinRequestSchema.
-type DashboardLinkPinRequestSchema struct {
-	Action   *DashboardLinkPinRequestSchemaAction `json:"action,omitempty"`
-	ReturnTo *string                              `json:"returnTo,omitempty"`
-	Slug     string                               `json:"slug"`
-}
-
-// DashboardLinkPinRequestSchemaAction defines model for DashboardLinkPinRequestSchema.Action.
-type DashboardLinkPinRequestSchemaAction string
-
-// DashboardLinkPinResponseSchema defines model for dashboardLinkPinResponseSchema.
-type DashboardLinkPinResponseSchema struct {
-	Error          *string  `json:"error"`
-	MaxPinnedLinks int      `json:"maxPinnedLinks"`
-	PinnedSlugs    []string `json:"pinnedSlugs"`
-}
-
-// DashboardLinkVisitRequestSchema defines model for dashboardLinkVisitRequestSchema.
-type DashboardLinkVisitRequestSchema struct {
-	Slug string `json:"slug"`
 }
 
 // DescriptionUpsertRequestSchema defines model for descriptionUpsertRequestSchema.
@@ -7246,6 +7218,34 @@ type UploadsListResponseSchema struct {
 	} `json:"pagination"`
 }
 
+// WorkspaceLinkPinBatchRequestSchema defines model for workspaceLinkPinBatchRequestSchema.
+type WorkspaceLinkPinBatchRequestSchema struct {
+	Items []struct {
+		Action WorkspaceLinkPinBatchRequestSchemaItemsAction `json:"action"`
+		Slug   string                                        `json:"slug"`
+	} `json:"items"`
+}
+
+// WorkspaceLinkPinBatchRequestSchemaItemsAction defines model for WorkspaceLinkPinBatchRequestSchema.Items.Action.
+type WorkspaceLinkPinBatchRequestSchemaItemsAction string
+
+// WorkspaceLinkPinRequestSchema defines model for workspaceLinkPinRequestSchema.
+type WorkspaceLinkPinRequestSchema struct {
+	Action   *WorkspaceLinkPinRequestSchemaAction `json:"action,omitempty"`
+	ReturnTo *string                              `json:"returnTo,omitempty"`
+	Slug     string                               `json:"slug"`
+}
+
+// WorkspaceLinkPinRequestSchemaAction defines model for WorkspaceLinkPinRequestSchema.Action.
+type WorkspaceLinkPinRequestSchemaAction string
+
+// WorkspaceLinkPinResponseSchema defines model for workspaceLinkPinResponseSchema.
+type WorkspaceLinkPinResponseSchema struct {
+	Error          *string  `json:"error"`
+	MaxPinnedLinks int      `json:"maxPinnedLinks"`
+	PinnedSlugs    []string `json:"pinnedSlugs"`
+}
+
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
@@ -7639,7 +7639,7 @@ type PostApiAuthOauth2DeviceAuthorizationFormdataRequestBody = OauthDeviceAuthor
 type PostApiAuthOauth2TokenFormdataRequestBody = OauthTokenRequestSchema
 
 // CatalogLinkVisitRecordFormdataRequestBody defines body for CatalogLinkVisitRecord for application/x-www-form-urlencoded ContentType.
-type CatalogLinkVisitRecordFormdataRequestBody = DashboardLinkVisitRequestSchema
+type CatalogLinkVisitRecordFormdataRequestBody = CatalogLinkVisitRequestSchema
 
 // MatchSectionCodesJSONRequestBody defines body for MatchSectionCodes for application/json ContentType.
 type MatchSectionCodesJSONRequestBody = MatchSectionCodesRequestSchema
@@ -7675,10 +7675,10 @@ type PutApiHomeworksCompletionsJSONRequestBody = HomeworkCompletionBatchRequestS
 type SetHomeworkCompletionJSONRequestBody = HomeworkCompletionRequestSchema
 
 // WorkspaceLinkPinSetFormdataRequestBody defines body for WorkspaceLinkPinSet for application/x-www-form-urlencoded ContentType.
-type WorkspaceLinkPinSetFormdataRequestBody = DashboardLinkPinRequestSchema
+type WorkspaceLinkPinSetFormdataRequestBody = WorkspaceLinkPinRequestSchema
 
 // WorkspaceLinkPinBatchSetJSONRequestBody defines body for WorkspaceLinkPinBatchSet for application/json ContentType.
-type WorkspaceLinkPinBatchSetJSONRequestBody = DashboardLinkPinBatchRequestSchema
+type WorkspaceLinkPinBatchSetJSONRequestBody = WorkspaceLinkPinBatchRequestSchema
 
 // DeleteApiWorkspaceSubscriptionsJSONRequestBody defines body for DeleteApiWorkspaceSubscriptions for application/json ContentType.
 type DeleteApiWorkspaceSubscriptionsJSONRequestBody = CalendarSubscriptionRemoveRequestSchema
@@ -21625,7 +21625,7 @@ func (r SetHomeworkCompletionResponse) ContentType() string {
 type WorkspaceLinkPinListResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *DashboardLinkPinResponseSchema
+	JSON200      *WorkspaceLinkPinResponseSchema
 	JSON401      *OpenApiErrorSchema
 }
 
@@ -21656,7 +21656,7 @@ func (r WorkspaceLinkPinListResponse) ContentType() string {
 type WorkspaceLinkPinSetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *DashboardLinkPinResponseSchema
+	JSON200      *WorkspaceLinkPinResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON429      *OpenApiErrorSchema
@@ -21691,7 +21691,7 @@ func (r WorkspaceLinkPinSetResponse) ContentType() string {
 type WorkspaceLinkPinBatchSetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *DashboardLinkPinResponseSchema
+	JSON200      *WorkspaceLinkPinResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON429      *OpenApiErrorSchema
@@ -26932,7 +26932,7 @@ func ParseWorkspaceLinkPinListResponse(rsp *http.Response) (*WorkspaceLinkPinLis
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DashboardLinkPinResponseSchema
+		var dest WorkspaceLinkPinResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26965,7 +26965,7 @@ func ParseWorkspaceLinkPinSetResponse(rsp *http.Response) (*WorkspaceLinkPinSetR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DashboardLinkPinResponseSchema
+		var dest WorkspaceLinkPinResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27026,7 +27026,7 @@ func ParseWorkspaceLinkPinBatchSetResponse(rsp *http.Response) (*WorkspaceLinkPi
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DashboardLinkPinResponseSchema
+		var dest WorkspaceLinkPinResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

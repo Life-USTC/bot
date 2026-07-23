@@ -101,7 +101,7 @@ func (c *Client) SetLinkPin(
 	ctx context.Context,
 	token, slug, action string,
 ) (map[string]any, error) {
-	value := openapi.DashboardLinkPinRequestSchemaAction(action)
+	value := openapi.WorkspaceLinkPinRequestSchemaAction(action)
 	var out map[string]any
 	resp, err := c.Typed(ctx, token).WorkspaceLinkPinSetWithFormdataBody(
 		ctx,
