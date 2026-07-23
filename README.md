@@ -72,7 +72,11 @@ life_ustc.workspace_link_pin_set      {"platform":"napcat","user_id":"123","slug
 `/life login` starts an OAuth device-code login and replies with the
 verification link and user code. After approving in the browser, send
 `/life login status`; the bot persists the token for that chat user in SQLite.
-Authenticated commands refresh tokens automatically when possible.
+Authenticated commands refresh tokens automatically when possible. Concurrent
+requests for the same user share one refresh exchange so rotating refresh tokens
+cannot be mistaken for replay. If the authorization server rejects a refresh
+grant, the stale local credential is removed and the next command asks the user
+to log in again.
 
 `/life 设置 通知` manages private-chat active pushes. The shorter
 `/life 通知` form remains an alias. Class reminders and homework reminders can

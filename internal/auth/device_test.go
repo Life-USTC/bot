@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -671,6 +673,141 @@ func TestAccessTokenRefreshThresholdUsesManagerClock(t *testing.T) {
 	}
 	if token != "new-access" || refreshRequests != 1 {
 		t.Fatalf("token = %q, refreshRequests = %d", token, refreshRequests)
+	}
+}
+
+func TestConcurrentAccessTokenRefreshIsShared(t *testing.T) {
+	var serverURL string
+	var refreshRequests atomic.Int32
+	tokenStarted := make(chan struct{})
+	releaseToken := make(chan struct{})
+	var startedOnce sync.Once
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests.Add(1)
+		startedOnce.Do(func() { close(tokenStarted) })
+		<-releaseToken
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"expires_in":    3600,
+			"id_token":      idToken,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    authTestNow,
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := Manager{
+		Server: server.URL, HTTPClient: server.Client(), Store: s,
+		Now: fixedClock(authTestNow),
+	}
+
+	results := make(chan string, 2)
+	failures := make(chan error, 2)
+	requestToken := func() {
+		token, err := manager.AccessToken(ctx, ident)
+		results <- token
+		failures <- err
+	}
+	go requestToken()
+	<-tokenStarted
+	go requestToken()
+
+	time.Sleep(50 * time.Millisecond)
+	close(releaseToken)
+	for range 2 {
+		if err := <-failures; err != nil {
+			t.Fatal(err)
+		}
+		if token := <-results; token != "new-access" {
+			t.Fatalf("token = %q", token)
+		}
+	}
+	if got := refreshRequests.Load(); got != 1 {
+		t.Fatalf("refresh requests = %d, want 1", got)
+	}
+}
+
+func TestAccessTokenRemovesCredentialRejectedAsInvalidGrant(t *testing.T) {
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "The refresh token no longer has an active user grant.",
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    authTestNow,
+		Resource:     server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := Manager{
+		Server: server.URL, HTTPClient: server.Client(), Store: s,
+		Now: fixedClock(authTestNow),
+	}
+
+	if _, err := manager.AccessToken(ctx, ident); !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("AccessToken error = %v", err)
+	}
+	credential, err := s.Credential(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential != nil {
+		t.Fatalf("credential = %#v, want nil", credential)
 	}
 }
 

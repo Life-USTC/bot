@@ -16,6 +16,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 )
 
 var oauthScope = strings.Join([]string{
@@ -56,6 +57,7 @@ type Manager struct {
 	HTTPClient *http.Client
 	Store      *store.Store
 	Now        func() time.Time
+	refreshes  singleflight.Group
 }
 
 type metadata struct {
@@ -262,14 +264,7 @@ func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string
 	if cred.RefreshToken == "" {
 		return "", ErrNotLoggedIn
 	}
-	refreshed, err := m.refresh(ctx, *cred)
-	if err != nil {
-		return "", err
-	}
-	if err := authStore.SaveCredential(ctx, ident, refreshed); err != nil {
-		return "", err
-	}
-	return refreshed.AccessToken, nil
+	return m.refreshStoredCredential(ctx, ident, true)
 }
 
 func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
@@ -450,6 +445,24 @@ func tokenExpiresInFromRaw(raw map[string]any) int {
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
+	return m.refreshStoredCredential(ctx, ident, false)
+}
+
+func (m *Manager) refreshStoredCredential(ctx context.Context, ident store.Identity, useCurrent bool) (string, error) {
+	value, err, _ := m.refreshes.Do(refreshKey(ident), func() (any, error) {
+		return m.refreshCredential(ctx, ident, useCurrent)
+	})
+	if err != nil {
+		return "", err
+	}
+	return value.(string), nil
+}
+
+func refreshKey(ident store.Identity) string {
+	return strings.ToLower(strings.TrimSpace(ident.Platform)) + "\x00" + strings.TrimSpace(ident.UserID)
+}
+
+func (m *Manager) refreshCredential(ctx context.Context, ident store.Identity, useCurrent bool) (string, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
 		return "", err
@@ -461,8 +474,18 @@ func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, er
 	if cred == nil || cred.RefreshToken == "" {
 		return "", ErrNotLoggedIn
 	}
+	if useCurrent && cred.ExpiresAt.Sub(m.now()) > time.Minute {
+		return cred.AccessToken, nil
+	}
 	refreshed, err := m.refresh(ctx, *cred)
 	if err != nil {
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "invalid_grant" {
+			if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
+				return "", fmt.Errorf("delete rejected OAuth credential: %w", deleteErr)
+			}
+			return "", ErrNotLoggedIn
+		}
 		return "", err
 	}
 	if err := authStore.SaveCredential(ctx, ident, refreshed); err != nil {
