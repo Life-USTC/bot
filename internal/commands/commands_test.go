@@ -1070,6 +1070,67 @@ func TestHandleImageDirectiveRejectsMutatingCommand(t *testing.T) {
 	}
 }
 
+func TestDocumentedImageDirectiveFormsAreAllowed(t *testing.T) {
+	handler := Handler{}
+	examples := []string{
+		"校车",
+		"校车 查询 全部",
+		"校车 查询 我的路线",
+		"校车 查询 东区 西区",
+		"校车 查询 东区 西区 之后 14:00 已发车",
+		"课表",
+		"课表 本周",
+		"课表 下周",
+		"课表 第3周",
+		"课表 05.06",
+		"课表 7.20周",
+		"课表 2026-05-06",
+		"课表 2026/5/6",
+		"课表 2026.05.06",
+		"课表 2026年5月6日",
+		"课表 单日 今天",
+		"课表 单日 明天",
+		"今日课表",
+		"明日课表",
+		"今天课表",
+		"明天课表",
+		"课表 下一节",
+		"下一节课",
+		"待办",
+		"待办 列表 全部",
+		"待办 列表 未完成",
+		"待办 列表 已完成",
+		"待办 列表 未完成 优先级 高 截止前 2026-06-10 截止后 2026-06-01 第2页",
+		"作业",
+		"作业 列表 未完成",
+		"作业 列表 全部 学期ID 12 学期JWID 123 第2页",
+		"考试",
+		"考试 第2页",
+		"概览",
+		"日程 概览",
+		"近期截止",
+		"近期截止 14",
+		"日程 截止",
+		"日程 截止 14",
+		"教学班 作业 654",
+		"教学班 作业 654 第2页",
+		"教学班 考试 321",
+		"教学班 考试 321 第2页",
+		"教学班作业 654",
+		"教学班考试 321 第2页",
+	}
+	for _, example := range examples {
+		cmd, ok := handler.parse(example)
+		if !ok {
+			t.Errorf("%q was not parsed", example)
+			continue
+		}
+		if !imageDirectiveCommandAllowed(cmd) {
+			t.Errorf("%q parsed as %#v but is not image-directive safe", example, cmd)
+		}
+	}
+}
+
 func TestSubcommandHelpUsesImage(t *testing.T) {
 	handler := Handler{Prefix: "/life", EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
