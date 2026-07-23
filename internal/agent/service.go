@@ -97,16 +97,21 @@ func (s *Service) Enabled() bool {
 }
 
 func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
+	response, ok := s.HandleResponse(ctx, input)
+	return response.Text, ok
+}
+
+func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
 	inputText := strings.TrimSpace(input.Text)
 	if !s.Enabled() || inputText == "" || store.IsGroupConversation(input.Identity) {
-		return "", false
+		return commands.Response{}, false
 	}
 	runID := s.recordAgentRun(ctx, input)
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
 		reply := "AI 工具设置读取失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
-		return reply, true
+		return agentTextResponse(reply), true
 	}
 	var trace *toolTraceNotifier
 	if traceEnabled {
@@ -117,11 +122,11 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := "需要先登录。发送：登录"
 			s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil)
-			return reply, true
+			return agentTextResponse(reply), true
 		}
 		reply := "AI 工具初始化失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
-		return reply, true
+		return agentTextResponse(reply), true
 	}
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
@@ -148,14 +153,14 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	if err != nil {
 		reply := "AI 助手初始化失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
-		return reply, true
+		return agentTextResponse(reply), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 	messages, err := s.messagesFor(ctx, input)
 	if err != nil {
 		reply := "AI 历史记录读取失败：" + err.Error()
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
-		return reply, true
+		return agentTextResponse(reply), true
 	}
 	iter := runner.Run(ctx, messages)
 	reply := ""
@@ -167,7 +172,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 		if event.Err != nil {
 			reply := agentFailureReply(runID, event.Err)
 			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err)
-			return reply, true
+			return agentTextResponse(reply), true
 		}
 		msg, _, err := adk.GetMessage(event)
 		if err != nil || msg == nil {
@@ -180,11 +185,80 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	}
 	if reply == "" {
 		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil)
+		return commands.Response{}, false
+	}
+	response := s.responseFor(ctx, input, reply)
+	if response.Text == "" && len(response.Parts) == 0 {
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil)
+		return commands.Response{}, false
+	}
+	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, response.Text, nil)
+	return response, true
+}
+
+func agentTextResponse(text string) commands.Response {
+	return commands.Response{Text: cleanQQReply(text), Kind: "agent"}
+}
+
+func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
+	lines := strings.Split(reply, "\n")
+	parts := make([]commands.Response, 0, maxImageDirectives*2+1)
+	pendingText := make([]string, 0, len(lines))
+	history := make([]string, 0, len(lines))
+	directiveCount := 0
+
+	flushText := func() {
+		text := cleanQQReply(strings.Join(pendingText, "\n"))
+		pendingText = pendingText[:0]
+		if text != "" {
+			parts = append(parts, commands.Response{Text: text, Kind: "agent"})
+		}
+	}
+
+	for _, line := range lines {
+		command, matched := parseImageDirective(line)
+		if !matched {
+			pendingText = append(pendingText, line)
+			history = append(history, line)
+			continue
+		}
+		if command == "" || len([]rune(command)) > maxImageDirectiveCommandRunes || directiveCount >= maxImageDirectives {
+			continue
+		}
+		response, ok := s.handler.HandleImageDirective(ctx, commands.Input{
+			Text:        command,
+			Identity:    input.Identity,
+			SuppressLog: true,
+		})
+		if !ok {
+			continue
+		}
+		flushText()
+		directiveCount++
+		if response.Image != nil {
+			history = append(history, "[已发送图片："+command+"]")
+		} else if fallback := strings.TrimSpace(response.Text); fallback != "" {
+			history = append(history, fallback)
+		}
+		if response.Text != "" || response.Image != nil {
+			parts = append(parts, response)
+		}
+	}
+	flushText()
+
+	historyText := cleanQQReply(strings.Join(history, "\n"))
+	if directiveCount == 0 {
+		return commands.Response{Text: historyText, Kind: "agent"}
+	}
+	return commands.Response{Text: historyText, Kind: "agent", Parts: parts}
+}
+
+func parseImageDirective(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "![](") || !strings.HasSuffix(line, ")") {
 		return "", false
 	}
-	reply = cleanQQReply(reply)
-	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil)
-	return reply, true
+	return strings.TrimSpace(line[len("![](") : len(line)-1]), true
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -588,6 +662,8 @@ const historyTurnLimit = 20
 const agentMaxIterations = 12
 const agentHTTPTimeout = 60 * time.Second
 const maxHistoryTextRunes = 1200
+const maxImageDirectives = 2
+const maxImageDirectiveCommandRunes = 200
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
@@ -609,6 +685,7 @@ Tools that create, update, delete, complete, subscribe, or change notification s
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
+When a schedule, next-class, homework, todo, exam, overview, upcoming-deadline, dashboard, or shuttle-bus result is easier to read as an image, put a read-only Bot command on its own line using exactly this form: ![](校车 东区 西区). Text before it is sent before the image, and text after it is sent after the image. Use at most two such directives. Never put a URL, file path, explanation, login command, setting change, or other mutation inside the directive.
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
 When a tool returns login-required text, tell the user to log in with 登录.`, now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"))

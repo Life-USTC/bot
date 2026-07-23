@@ -19,6 +19,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -59,6 +60,87 @@ func TestAgentIgnoresBlankMessages(t *testing.T) {
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
+}
+
+func TestResponseForExpandsImageDirectivesInOrder(t *testing.T) {
+	svc := newImageDirectiveTestService(t)
+	response := svc.responseFor(context.Background(), Input{
+		Identity: store.Identity{
+			Platform:         "napcat",
+			UserID:           "42",
+			ConversationType: "private",
+			ConversationID:   "42",
+		},
+	}, "先看图：\n\n![](校车 东区 西区)\n\n建议提前到站。")
+
+	if len(response.Parts) != 3 {
+		t.Fatalf("parts = %#v", response.Parts)
+	}
+	if response.Parts[0].Text != "先看图：" {
+		t.Fatalf("first part = %#v", response.Parts[0])
+	}
+	if response.Parts[1].Image == nil || response.Parts[1].Kind != "bus" {
+		t.Fatalf("image part = %#v", response.Parts[1])
+	}
+	if response.Parts[2].Text != "建议提前到站。" {
+		t.Fatalf("last part = %#v", response.Parts[2])
+	}
+	if !strings.Contains(response.Text, "[已发送图片：校车 东区 西区]") {
+		t.Fatalf("history text = %q", response.Text)
+	}
+}
+
+func TestResponseForRejectsMutationAndLimitsImageDirectives(t *testing.T) {
+	svc := newImageDirectiveTestService(t)
+	response := svc.responseFor(context.Background(), Input{
+		Identity: store.Identity{
+			Platform:         "napcat",
+			UserID:           "42",
+			ConversationType: "private",
+			ConversationID:   "42",
+		},
+	}, strings.Join([]string{
+		"开始",
+		"![](待办 添加 不应执行)",
+		"![](校车 东区 西区)",
+		"![](校车 西区 东区)",
+		"![](校车 东区 西区)",
+		"结束",
+	}, "\n"))
+
+	if len(response.Parts) != 4 {
+		t.Fatalf("parts = %#v", response.Parts)
+	}
+	imageCount := 0
+	for _, part := range response.Parts {
+		if part.Image != nil {
+			imageCount++
+		}
+		if strings.Contains(part.Text, "不应执行") || strings.Contains(part.Text, "![](") {
+			t.Fatalf("unsafe directive leaked into part %#v", part)
+		}
+	}
+	if imageCount != 2 {
+		t.Fatalf("image count = %d, parts = %#v", imageCount, response.Parts)
+	}
+}
+
+func newImageDirectiveTestService(t *testing.T) *Service {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]},
+				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]}
+			]
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	return &Service{handler: commands.Handler{
+		Life:                 life.NewClient(server.URL, server.Client()),
+		EnableImageResponses: true,
+	}}
 }
 
 func TestNewNormalizesModelCredentials(t *testing.T) {

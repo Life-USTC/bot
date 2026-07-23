@@ -15,6 +15,7 @@ type Response struct {
 	Text  string
 	Image *responses.Image
 	Kind  string
+	Parts []Response
 }
 
 func textResponse(text string) Response {

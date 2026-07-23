@@ -136,6 +136,45 @@ func TestSendResponsePostsImageSegmentWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSendResponseSendsSequenceInOrder(t *testing.T) {
+	var messages []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		messages = append(messages, body["message"])
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":102}}`))
+	}))
+	defer server.Close()
+
+	bridge := Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	response := commands.Response{Parts: []commands.Response{
+		{Text: "上文"},
+		{
+			Text:  "校车：\n东区 西区\n23:59 23:59",
+			Image: responses.NewTextImage("bus", "校车 东区 → 西区", "校车：\n东区 西区\n23:59 23:59"),
+		},
+		{Text: "下文"},
+	}}
+
+	if err := bridge.SendResponse(context.Background(), messageEvent{MessageType: "private", UserID: 456}, response); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 3 || messages[0] != "上文" || messages[2] != "下文" {
+		t.Fatalf("messages = %#v", messages)
+	}
+	imageMessage, ok := messages[1].([]any)
+	if !ok || len(imageMessage) != 1 || imageMessage[0].(map[string]any)["type"] != "image" {
+		t.Fatalf("image message = %#v", messages[1])
+	}
+}
+
 func TestSendRichMessagePostsImageSegmentForIdentity(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
