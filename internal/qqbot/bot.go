@@ -771,7 +771,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (comm
 	if !ok {
 		agentReply, agentOK := b.handleAgent(ctx, message)
 		if agentOK {
-			return commands.Response{Text: agentReply, Kind: "agent"}, true
+			return agentReply, true
 		}
 	}
 	if !ok {
@@ -781,11 +781,11 @@ func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (comm
 	return reply, true
 }
 
-func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (string, bool) {
+func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
 	if b.Agent == nil {
-		return "", false
+		return commands.Response{}, false
 	}
-	reply, ok := b.Agent.Handle(ctx, agent.Input{
+	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
 		Text:     message.Text,
 		Identity: message.Identity,
 		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
@@ -793,13 +793,13 @@ func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (string
 		},
 	})
 	if !ok {
-		return "", false
+		return commands.Response{}, false
 	}
 	b.recordInteraction(ctx, message.Identity, store.Interaction{
 		RawText: message.Text,
 		Command: "agent",
 		Handled: true,
-		Reply:   reply,
+		Reply:   reply.Text,
 		Status:  store.InteractionStatusHandled,
 	}, "agent")
 	return reply, true
@@ -818,6 +818,14 @@ func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) e
 func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
 	if message == nil {
 		return errors.New("qq bot message is nil")
+	}
+	if len(response.Parts) > 0 {
+		for _, part := range response.Parts {
+			if err := b.SendResponse(ctx, message, part); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if response.Image != nil && b.MediaStore != nil {
 		if receipt, err := b.sendImageResponse(ctx, message, response); err == nil {

@@ -1035,6 +1035,41 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	assertResponseImageRenders(t, response.Image)
 }
 
+func TestHandleImageDirectiveAllowsRenderableReadOnlyCommand(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]},
+				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]}
+			]
+		}`))
+	}))
+	defer server.Close()
+	handler := Handler{
+		Life:                 life.NewClient(server.URL, server.Client()),
+		EnableImageResponses: true,
+	}
+	response, ok := handler.HandleImageDirective(context.Background(), Input{
+		Text:     "校车 东区 西区",
+		Identity: testIdentity(),
+	})
+	if !ok || response.Image == nil || response.Kind != "bus" {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+}
+
+func TestHandleImageDirectiveRejectsMutatingCommand(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	response, ok := handler.HandleImageDirective(context.Background(), Input{
+		Text:     "待办 添加 写报告",
+		Identity: testIdentity(),
+	})
+	if ok || response.Text != "" || response.Image != nil || response.Kind != "" || len(response.Parts) != 0 {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+}
+
 func TestSubcommandHelpUsesImage(t *testing.T) {
 	handler := Handler{Prefix: "/life", EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})

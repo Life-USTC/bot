@@ -261,7 +261,7 @@ func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (command
 	if !ok {
 		agentReply, agentOK := b.handleAgent(ctx, event)
 		if agentOK {
-			return commands.Response{Text: agentReply, Kind: "agent"}, true
+			return agentReply, true
 		}
 	}
 	if !ok {
@@ -271,23 +271,23 @@ func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (command
 	return reply, true
 }
 
-func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (string, bool) {
+func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (commands.Response, bool) {
 	if b.Agent == nil {
-		return "", false
+		return commands.Response{}, false
 	}
-	reply, ok := b.Agent.Handle(ctx, agent.Input{
+	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
 		Text:       event.RawMessage,
 		Identity:   event.identity(),
 		SendUpdate: b.SendMessage,
 	})
 	if !ok {
-		return "", false
+		return commands.Response{}, false
 	}
 	b.recordInteraction(ctx, event, store.Interaction{
 		RawText: event.RawMessage,
 		Command: "agent",
 		Handled: true,
-		Reply:   reply,
+		Reply:   reply.Text,
 		Status:  store.InteractionStatusHandled,
 	}, "agent")
 	return reply, true
@@ -371,6 +371,14 @@ func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) e
 }
 
 func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response commands.Response) error {
+	if len(response.Parts) > 0 {
+		for _, part := range response.Parts {
+			if err := b.SendResponse(ctx, event, part); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if response.Image != nil && b.MediaStore != nil {
 		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
 			conn, writeMu := b.activeReverseConn()
@@ -396,6 +404,14 @@ func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response 
 }
 
 func (b *Bridge) sendReverseResponse(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, response commands.Response) error {
+	if len(response.Parts) > 0 {
+		for _, part := range response.Parts {
+			if err := b.sendReverseResponse(ctx, conn, writeMu, event, part); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if response.Image != nil && b.MediaStore != nil {
 		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
 			if receipt, err := b.sendCachedImage(ctx, conn, writeMu, event, imageURL); err == nil {

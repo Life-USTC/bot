@@ -272,6 +272,71 @@ func TestSendResponseUploadsAndSendsC2CImage(t *testing.T) {
 	}
 }
 
+func TestSendResponseSendsSequenceInOrder(t *testing.T) {
+	var sent []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/getAppAccessToken":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access-token", "expires_in": 7200})
+		case "/v2/users/user-openid/files":
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token"})
+		case "/v2/users/user-openid/messages":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			sent = append(sent, body)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		AppID:      "appid",
+		AppSecret:  "secret",
+		APIBaseURL: server.URL,
+		TokenURL:   server.URL + "/app/getAppAccessToken",
+		HTTPClient: server.Client(),
+		Renderer:   responses.Renderer{FontPath: testResponseFontPath(t)},
+		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
+	}
+	message := &incomingMessage{
+		ID:   "message-id",
+		Type: "C2C_MESSAGE_CREATE",
+		Identity: store.Identity{
+			Platform:         "qqbot",
+			UserID:           "user-openid",
+			ConversationType: "private",
+			ConversationID:   "user-openid",
+		},
+	}
+	response := commands.Response{Parts: []commands.Response{
+		{Text: "上文"},
+		{
+			Text:  "校车：\n东区 西区\n23:59 23:59",
+			Image: responses.NewTextImage("bus", "校车 东区 → 西区", "校车：\n东区 西区\n23:59 23:59"),
+		},
+		{Text: "下文"},
+	}}
+
+	if err := bot.SendResponse(context.Background(), message, response); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 3 {
+		t.Fatalf("sent = %#v", sent)
+	}
+	if sent[0]["content"] != "上文" || sent[1]["msg_type"].(float64) != 7 || sent[2]["content"] != "下文" {
+		t.Fatalf("sent = %#v", sent)
+	}
+	for i, body := range sent {
+		if body["msg_seq"].(float64) != float64(i+1) {
+			t.Fatalf("message %d = %#v", i, body)
+		}
+	}
+}
+
 func TestSendRichMessageUploadsAndSendsProactiveC2CImage(t *testing.T) {
 	var sent map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

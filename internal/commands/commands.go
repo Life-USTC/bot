@@ -124,6 +124,33 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 	return Response{Text: reply, Image: h.imageResponseFor(cmd, reply), Kind: cmd.Name}, true
 }
 
+func (h Handler) HandleImageDirective(ctx context.Context, input Input) (Response, bool) {
+	cmd, ok := h.parse(input.Text)
+	if !ok || !imageDirectiveCommandAllowed(cmd) {
+		return Response{}, false
+	}
+	input.SuppressLog = true
+	return h.HandleResponse(ctx, input)
+}
+
+func imageDirectiveCommandAllowed(cmd parsedCommand) bool {
+	if firstArgIsHelp(cmd.Args) {
+		return false
+	}
+	switch cmd.Name {
+	case "schedule", "section_homeworks", "exam", "section_exams", "nextclass", "overview", "dashboard", "upcoming_deadlines":
+		return true
+	case "todo":
+		return todoImageArgs(cmd.Args)
+	case "homework":
+		return homeworkImageArgs(cmd.Args)
+	case "bus":
+		return !busPreferenceArgs(cmd.Args)
+	default:
+		return false
+	}
+}
+
 type parsedCommand struct {
 	Name string
 	Args []string
