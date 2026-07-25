@@ -592,7 +592,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			face = headerEmphasisFace
 			monoFace = headerEmphasisMonoFace
 		}
-		drawCenteredMixedText(dst, face, monoFace, cellX+columnWidths[i]/2, y+headerH/2+5*scale, header.Text, ink)
+		drawCenteredMixedText(dst, face, monoFace, cellX+columnWidths[i]/2, y+headerH/2+5*scale, fitRichTextToWidth(header.Text, (columnWidths[i]-2*cellPadding)/scale, 13), ink)
 		cellX += columnWidths[i]
 	}
 	for ri, row := range table.Rows {
@@ -609,6 +609,7 @@ func drawBusTable(dst *image.RGBA, renderedHeaders []busStopHeader, table busRen
 			if ci < len(row.Cells) {
 				cell = row.Cells[ci]
 			}
+			cell = fitRichTextToWidth(cell, (columnWidths[ci]-2*cellPadding)/scale, 14)
 			drawMixedText(dst, bodyFace, monoFace, cellX+cellPadding, rowY+rowH/2+5*scale, cell, textColor)
 			cellX += columnWidths[ci]
 		}
