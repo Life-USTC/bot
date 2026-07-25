@@ -19,6 +19,8 @@ type tokenUsage struct {
 	CacheMissTokens  int64
 	CompletionTokens int64
 	TotalTokens      int64
+	ModelRequests    int64
+	ToolCalls        int64
 }
 
 type usageAccumulator struct {
@@ -34,6 +36,8 @@ func (a *usageAccumulator) add(usage tokenUsage) {
 	a.total.CacheMissTokens += usage.CacheMissTokens
 	a.total.CompletionTokens += usage.CompletionTokens
 	a.total.TotalTokens += usage.TotalTokens
+	a.total.ModelRequests += usage.ModelRequests
+	a.total.ToolCalls += usage.ToolCalls
 }
 
 func (a *usageAccumulator) snapshot() tokenUsage {
@@ -44,6 +48,12 @@ func (a *usageAccumulator) snapshot() tokenUsage {
 
 func withUsageAccumulator(ctx context.Context, accumulator *usageAccumulator) context.Context {
 	return context.WithValue(ctx, usageContextKey{}, accumulator)
+}
+
+func recordToolCall(ctx context.Context) {
+	if accumulator, ok := ctx.Value(usageContextKey{}).(*usageAccumulator); ok {
+		accumulator.add(tokenUsage{ToolCalls: 1})
+	}
 }
 
 type usageCaptureTransport struct {
@@ -103,6 +113,7 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 			CacheMissTokens:  miss,
 			CompletionTokens: payload.Usage.CompletionTokens,
 			TotalTokens:      payload.Usage.TotalTokens,
+			ModelRequests:    1,
 		})
 	}
 	return resp, nil
@@ -125,6 +136,8 @@ func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {
 		CachedTokens:     usage.CachedTokens,
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		ModelRequests:    usage.ModelRequests,
+		ToolCalls:        usage.ToolCalls,
 		CostNanoCNY: usage.CachedTokens*cachedNanoPerToken +
 			usage.CacheMissTokens*missedNanoPerToken +
 			usage.CompletionTokens*outputNanoPerToken,

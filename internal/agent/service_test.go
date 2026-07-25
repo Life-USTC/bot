@@ -3,7 +3,9 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -747,6 +749,99 @@ func TestMessagesForCompactsLongHistory(t *testing.T) {
 	}
 	if !strings.Contains(messages[1].Content, "历史内容已截断") {
 		t.Fatalf("reply was not marked compacted: %q", messages[1].Content)
+	}
+}
+
+func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
+		if err := db.RecordInteraction(ctx, ident, store.Interaction{
+			RawText: fmt.Sprintf("turn-%02d", i),
+			Handled: true,
+			Reply:   fmt.Sprintf("reply-%02d", i),
+			Status:  store.InteractionStatusHandled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Messages []map[string]any `json:"messages"`
+			Tools    []any            `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.Tools) != 0 {
+			t.Fatalf("summary request unexpectedly included tools: %#v", request.Tools)
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-summary",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"用户此前逐轮测试了对话记忆。"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+	svc, err := New(ctx, Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.compactConversationHistory(ctx, ident, svc.model); err != nil {
+		t.Fatal(err)
+	}
+	summary, found, err := db.ConversationSummary(ctx, ident)
+	if err != nil || !found {
+		t.Fatalf("summary found = %v, err = %v", found, err)
+	}
+	if summary.Summary != "用户此前逐轮测试了对话记忆。" {
+		t.Fatalf("summary = %#v", summary)
+	}
+	messages, err := svc.messagesFor(ctx, Input{Text: "continue", Identity: ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1+conversationRecentTurnLimit*2+1 {
+		t.Fatalf("message count = %d, messages = %#v", len(messages), messages)
+	}
+	if !strings.HasPrefix(messages[0].Content, conversationSummaryPrefix) ||
+		!strings.Contains(messages[1].Content, "turn-16") ||
+		messages[len(messages)-1].Content != "continue" {
+		t.Fatalf("messages = %#v", messages)
+	}
+	for _, message := range messages {
+		if strings.Contains(message.Content, "turn-01") {
+			t.Fatalf("compacted raw turn leaked into recent history: %#v", messages)
+		}
+	}
+}
+
+func TestToolResultMiddlewareLimitsLargeResults(t *testing.T) {
+	accumulator := &usageAccumulator{}
+	next := func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
+		return &compose.ToolOutput{Result: strings.Repeat("课", maxToolResultRunes+10)}, nil
+	}
+	out, err := toolErrorCatchingMiddleware(next)(
+		withUsageAccumulator(context.Background(), accumulator),
+		&compose.ToolInput{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len([]rune(out.Result)); got <= maxToolResultRunes || !strings.Contains(out.Result, "工具结果过长") {
+		t.Fatalf("limited result length = %d, result suffix missing", got)
+	}
+	if got := accumulator.snapshot().ToolCalls; got != 1 {
+		t.Fatalf("tool calls = %d", got)
 	}
 }
 
