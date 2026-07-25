@@ -346,14 +346,14 @@ type agentRunRow struct {
 	ConversationType string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	ConversationID   string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	RawText          string `gorm:"not null"`
-	Provider         string `gorm:"not null"`
-	Model            string `gorm:"not null"`
-	Currency         string `gorm:"not null"`
-	PromptTokens     int64  `gorm:"not null"`
-	CachedTokens     int64  `gorm:"not null"`
-	CompletionTokens int64  `gorm:"not null"`
-	TotalTokens      int64  `gorm:"not null"`
-	CostNanoCNY      int64  `gorm:"not null"`
+	Provider         string `gorm:"not null;default:''"`
+	Model            string `gorm:"not null;default:''"`
+	Currency         string `gorm:"not null;default:CNY"`
+	PromptTokens     int64  `gorm:"not null;default:0"`
+	CachedTokens     int64  `gorm:"not null;default:0"`
+	CompletionTokens int64  `gorm:"not null;default:0"`
+	TotalTokens      int64  `gorm:"not null;default:0"`
+	CostNanoCNY      int64  `gorm:"not null;default:0"`
 	Status           string `gorm:"not null;index"`
 	Reply            string
 	Error            string

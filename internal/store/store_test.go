@@ -2,12 +2,15 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestPublicCommandCacheUsesVersionAndExpiration(t *testing.T) {
@@ -1563,6 +1566,55 @@ func TestAgentRunLifecycle(t *testing.T) {
 	}
 	if row.Status != AgentRunStatusFailed || row.Reply != "失败了" || row.Error != "deepseek timeout" {
 		t.Fatalf("failed agent run row = %#v", row)
+	}
+}
+
+func TestOpenMigratesLegacyAgentRunsWithExistingRows(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE agent_runs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			platform TEXT NOT NULL,
+			external_user_id TEXT NOT NULL,
+			conversation_type TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			raw_text TEXT NOT NULL,
+			status TEXT NOT NULL,
+			reply TEXT,
+			error TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		);
+		INSERT INTO agent_runs (
+			user_id, platform, external_user_id, conversation_type,
+			conversation_id, raw_text, status
+		) VALUES (1, 'napcat', '42', 'private', '42', 'legacy', 'completed');
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var row agentRunRow
+	if err := s.db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Provider != "" || row.Model != "" || row.Currency != SpendingCurrencyCNY ||
+		row.PromptTokens != 0 || row.CostNanoCNY != 0 {
+		t.Fatalf("migrated row = %#v", row)
 	}
 }
 
