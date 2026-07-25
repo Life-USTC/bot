@@ -180,12 +180,17 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
 	}
+	if err := s.compactConversationHistory(ctx, input.Identity, model); err != nil {
+		s.logf("compact conversation history failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
+	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
 		Description:   "Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
 		Model:         model,
 		MaxIterations: agentMaxIterations,
+		Handlers:      []adk.ChatModelAgentMiddleware{newToolHistoryReducer()},
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools,
@@ -332,7 +337,16 @@ func normalizeAgentHistoryReply(reply string) string {
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
 	messages := make([]*schema.Message, 0, historyTurnLimit*2+1)
 	if s.handler.Store != nil {
-		history, err := s.handler.Store.RecentHandledInteractions(ctx, input.Identity, historyTurnLimit)
+		summary, found, err := s.handler.Store.ConversationSummary(ctx, input.Identity)
+		if err != nil {
+			return nil, err
+		}
+		afterID := int64(0)
+		if found {
+			afterID = summary.ThroughInteractionID
+			messages = append(messages, schema.UserMessage(conversationSummaryPrefix+summary.Summary))
+		}
+		history, err := s.handler.Store.RecentHandledInteractionsAfter(ctx, input.Identity, afterID, historyTurnLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -780,9 +794,12 @@ func formatToolResult(value string) string {
 }
 
 const historyTurnLimit = 20
-const agentMaxIterations = 12
+const agentMaxIterations = 8
 const agentHTTPTimeout = 60 * time.Second
 const maxHistoryTextRunes = 1200
+const maxToolResultRunes = 6000
+const agentToolHistoryTokenLimit int64 = 32_000
+const agentToolHistoryRetention = 2
 const maxImageDirectives = 10
 const maxImageDirectiveCommandRunes = 200
 
@@ -884,16 +901,29 @@ func agentFailureReply(runID int64, err error) string {
 
 func toolErrorCatchingMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+		recordToolCall(ctx)
 		out, err := next(ctx, input)
 		if err != nil {
-			return &compose.ToolOutput{Result: "工具调用失败：" + err.Error()}, nil
+			return &compose.ToolOutput{Result: limitToolResult("工具调用失败：" + err.Error())}, nil
+		}
+		if out != nil {
+			out.Result = limitToolResult(out.Result)
 		}
 		return out, nil
 	}
 }
 
+func limitToolResult(result string) string {
+	runes := []rune(result)
+	if len(runes) <= maxToolResultRunes {
+		return result
+	}
+	return string(runes[:maxToolResultRunes]) + "\n...(工具结果过长，已截断；请缩小查询范围)"
+}
+
 func streamToolErrorCatchingMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
+		recordToolCall(ctx)
 		out, err := next(ctx, input)
 		if err != nil {
 			return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{"工具调用失败：" + err.Error()})}, nil

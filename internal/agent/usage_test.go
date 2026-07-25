@@ -81,7 +81,7 @@ func TestPremiumAdminMultimodalRunRecordsSpending(t *testing.T) {
 		t.Fatal(err)
 	}
 	if total.PromptTokens != 10 || total.CachedTokens != 5 || total.CompletionTokens != 2 ||
-		total.TotalTokens != 12 || total.CostNanoCNY != 92_000 {
+		total.TotalTokens != 12 || total.CostNanoCNY != 92_000 || total.ModelRequests != 1 {
 		t.Fatalf("spending = %#v", total)
 	}
 }
@@ -105,7 +105,7 @@ func TestUsageCaptureReadsProviderCacheFields(t *testing.T) {
 	_ = resp.Body.Close()
 	got := accumulator.snapshot()
 	if got.PromptTokens != 10 || got.CachedTokens != 4 || got.CacheMissTokens != 6 ||
-		got.CompletionTokens != 3 || got.TotalTokens != 13 {
+		got.CompletionTokens != 3 || got.TotalTokens != 13 || got.ModelRequests != 1 {
 		t.Fatalf("usage = %#v", got)
 	}
 }

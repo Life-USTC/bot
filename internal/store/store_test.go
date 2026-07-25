@@ -1545,6 +1545,8 @@ func TestAgentRunLifecycle(t *testing.T) {
 		CompletionTokens: 20,
 		TotalTokens:      120,
 		CostNanoCNY:      301_000,
+		ModelRequests:    3,
+		ToolCalls:        2,
 		Currency:         SpendingCurrencyCNY,
 	}
 	if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "查到了", nil, spending); err != nil {
@@ -1555,7 +1557,8 @@ func TestAgentRunLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if row.Status != AgentRunStatusCompleted || row.RawText != "帮我查一下" || row.Reply != "查到了" ||
-		row.Provider != "deepseek" || row.Model != "deepseek-v4-pro" || row.CostNanoCNY != spending.CostNanoCNY {
+		row.Provider != "deepseek" || row.Model != "deepseek-v4-pro" || row.CostNanoCNY != spending.CostNanoCNY ||
+		row.ModelRequests != spending.ModelRequests || row.ToolCalls != spending.ToolCalls {
 		t.Fatalf("agent run row = %#v", row)
 	}
 	if err := s.FinishAgentRun(ctx, id, AgentRunStatusFailed, "失败了", errors.New("deepseek timeout"), spending); err != nil {
@@ -1613,7 +1616,7 @@ func TestOpenMigratesLegacyAgentRunsWithExistingRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	if row.Provider != "" || row.Model != "" || row.Currency != SpendingCurrencyCNY ||
-		row.PromptTokens != 0 || row.CostNanoCNY != 0 {
+		row.PromptTokens != 0 || row.CostNanoCNY != 0 || row.ModelRequests != 0 || row.ToolCalls != 0 {
 		t.Fatalf("migrated row = %#v", row)
 	}
 }
@@ -1639,7 +1642,7 @@ func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 		}
 		if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "ok", nil, AgentSpending{
 			PromptTokens: 10, CachedTokens: 2, CompletionTokens: 3, TotalTokens: 13,
-			CostNanoCNY: cost, Currency: SpendingCurrencyCNY,
+			CostNanoCNY: cost, ModelRequests: 2, ToolCalls: 1, Currency: SpendingCurrencyCNY,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1652,15 +1655,70 @@ func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conversation.CostNanoCNY != 100 || conversation.TotalTokens != 13 || conversation.Currency != SpendingCurrencyCNY {
+	if conversation.CostNanoCNY != 100 || conversation.TotalTokens != 13 || conversation.ModelRequests != 2 ||
+		conversation.ToolCalls != 1 || conversation.Currency != SpendingCurrencyCNY {
 		t.Fatalf("conversation spending = %#v", conversation)
 	}
 	user, err := s.UserSpending(ctx, first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.CostNanoCNY != 300 || user.TotalTokens != 26 || user.Currency != SpendingCurrencyCNY {
+	if user.CostNanoCNY != 300 || user.TotalTokens != 26 || user.ModelRequests != 4 ||
+		user.ToolCalls != 2 || user.Currency != SpendingCurrencyCNY {
 		t.Fatalf("user spending = %#v", user)
+	}
+}
+
+func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	for _, text := range []string{"first", "second", "third"} {
+		if err := s.RecordInteraction(ctx, ident, Interaction{
+			RawText: text, Handled: true, Reply: text + "-reply", Status: InteractionStatusHandled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.HandledInteractionsAfter(ctx, ident, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 || all[0].ID <= 0 || all[0].RawText != "first" || all[2].RawText != "third" {
+		t.Fatalf("interactions = %#v", all)
+	}
+	if err := s.SaveConversationSummary(ctx, ConversationSummary{
+		Identity: ident, Summary: "first two turns", ThroughInteractionID: all[1].ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := s.ConversationSummary(ctx, ident)
+	if err != nil || !found {
+		t.Fatalf("summary found = %v, err = %v", found, err)
+	}
+	if got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
+		t.Fatalf("summary = %#v", got)
+	}
+	if err := s.SaveConversationSummary(ctx, ConversationSummary{
+		Identity: ident, Summary: "stale", ThroughInteractionID: all[0].ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err = s.ConversationSummary(ctx, ident)
+	if err != nil || !found || got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
+		t.Fatalf("summary regressed = %#v, found = %v, err = %v", got, found, err)
+	}
+	remaining, err := s.RecentHandledInteractionsAfter(ctx, ident, got.ThroughInteractionID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0].RawText != "third" {
+		t.Fatalf("remaining = %#v", remaining)
 	}
 }
 

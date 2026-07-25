@@ -51,6 +51,7 @@ type LoginSession struct {
 }
 
 type Interaction struct {
+	ID                int64
 	Direction         string
 	RawText           string
 	Command           string
@@ -118,6 +119,8 @@ type AgentRun struct {
 	CompletionTokens int64
 	TotalTokens      int64
 	CostNanoCNY      int64
+	ModelRequests    int64
+	ToolCalls        int64
 	Status           string
 	Reply            string
 	Error            string
@@ -133,7 +136,17 @@ type AgentSpending struct {
 	CompletionTokens int64
 	TotalTokens      int64
 	CostNanoCNY      int64
+	ModelRequests    int64
+	ToolCalls        int64
 	Currency         string
+}
+
+type ConversationSummary struct {
+	Identity             Identity
+	Summary              string
+	ThroughInteractionID int64
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type FeedbackRecord struct {
@@ -354,6 +367,8 @@ type agentRunRow struct {
 	CompletionTokens int64  `gorm:"not null;default:0"`
 	TotalTokens      int64  `gorm:"not null;default:0"`
 	CostNanoCNY      int64  `gorm:"not null;default:0"`
+	ModelRequests    int64  `gorm:"not null;default:0"`
+	ToolCalls        int64  `gorm:"not null;default:0"`
 	Status           string `gorm:"not null;index"`
 	Reply            string
 	Error            string
@@ -363,6 +378,21 @@ type agentRunRow struct {
 
 func (agentRunRow) TableName() string {
 	return "agent_runs"
+}
+
+type conversationSummaryRow struct {
+	ID                   int64  `gorm:"primaryKey"`
+	Platform             string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
+	ConversationType     string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
+	ConversationID       string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
+	Summary              string `gorm:"not null"`
+	ThroughInteractionID int64  `gorm:"not null;default:0"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func (conversationSummaryRow) TableName() string {
+	return "conversation_summaries"
 }
 
 type feedbackRecordRow struct {
@@ -472,6 +502,7 @@ func (s *Store) migrate() error {
 		&busSettingRow{},
 		&notificationDeliveryRow{},
 		&agentRunRow{},
+		&conversationSummaryRow{},
 		&feedbackRecordRow{},
 		&pendingConfirmationRow{},
 		&publicCommandCacheRow{},
@@ -977,27 +1008,45 @@ func interactionDirection(direction string) string {
 }
 
 func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, limit int) ([]Interaction, error) {
+	return s.handledInteractions(ctx, ident, 0, limit, true)
+}
+
+func (s *Store) HandledInteractionsAfter(ctx context.Context, ident Identity, afterID int64) ([]Interaction, error) {
+	return s.handledInteractions(ctx, ident, afterID, 0, false)
+}
+
+func (s *Store) RecentHandledInteractionsAfter(ctx context.Context, ident Identity, afterID int64, limit int) ([]Interaction, error) {
+	return s.handledInteractions(ctx, ident, afterID, limit, true)
+}
+
+func (s *Store) handledInteractions(ctx context.Context, ident Identity, afterID int64, limit int, newestFirst bool) ([]Interaction, error) {
 	if err := validateConversationIdentity(ident); err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
+	if newestFirst && limit <= 0 {
 		return nil, nil
 	}
 	ident = normalizeIdentity(ident)
 	var rows []interactionRow
-	err := s.db.WithContext(ctx).
+	query := s.db.WithContext(ctx).
 		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND direction = ? AND handled = ? AND status = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, InteractionDirectionInbound, true, InteractionStatusHandled).
-		Order("created_at desc, id desc").
-		Limit(limit).
-		Find(&rows).Error
+			ident.Platform, ident.ConversationType, ident.ConversationID, InteractionDirectionInbound, true, InteractionStatusHandled)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if newestFirst {
+		query = query.Order("created_at desc, id desc").Limit(limit)
+	} else {
+		query = query.Order("created_at asc, id asc")
+	}
+	err := query.Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Interaction, 0, len(rows))
-	for i := len(rows) - 1; i >= 0; i-- {
-		row := rows[i]
+	appendRow := func(row interactionRow) {
 		out = append(out, Interaction{
+			ID:                row.ID,
 			Direction:         row.Direction,
 			RawText:           row.RawText,
 			Command:           row.Command,
@@ -1013,7 +1062,77 @@ func (s *Store) RecentHandledInteractions(ctx context.Context, ident Identity, l
 			CreatedAt:         row.CreatedAt,
 		})
 	}
+	if newestFirst {
+		for i := len(rows) - 1; i >= 0; i-- {
+			appendRow(rows[i])
+		}
+	} else {
+		for _, row := range rows {
+			appendRow(row)
+		}
+	}
 	return out, nil
+}
+
+func (s *Store) ConversationSummary(ctx context.Context, ident Identity) (ConversationSummary, bool, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return ConversationSummary{}, false, err
+	}
+	ident = normalizeIdentity(ident)
+	var row conversationSummaryRow
+	err := s.db.WithContext(ctx).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
+			ident.Platform, ident.ConversationType, ident.ConversationID).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ConversationSummary{}, false, nil
+	}
+	if err != nil {
+		return ConversationSummary{}, false, err
+	}
+	return ConversationSummary{
+		Identity:             ident,
+		Summary:              row.Summary,
+		ThroughInteractionID: row.ThroughInteractionID,
+		CreatedAt:            row.CreatedAt,
+		UpdatedAt:            row.UpdatedAt,
+	}, true, nil
+}
+
+func (s *Store) SaveConversationSummary(ctx context.Context, summary ConversationSummary) error {
+	if err := validateConversationIdentity(summary.Identity); err != nil {
+		return err
+	}
+	ident := normalizeIdentity(summary.Identity)
+	text := strings.TrimSpace(summary.Summary)
+	if text == "" || summary.ThroughInteractionID <= 0 {
+		return errors.New("conversation summary and checkpoint are required")
+	}
+	now := nowUTC()
+	row := conversationSummaryRow{
+		Platform:             ident.Platform,
+		ConversationType:     ident.ConversationType,
+		ConversationID:       ident.ConversationID,
+		Summary:              text,
+		ThroughInteractionID: summary.ThroughInteractionID,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "platform"},
+			{Name: "conversation_type"},
+			{Name: "conversation_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]any{
+			"summary":                row.Summary,
+			"through_interaction_id": row.ThroughInteractionID,
+			"updated_at":             row.UpdatedAt,
+		}),
+		Where: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "excluded.through_interaction_id > conversation_summaries.through_interaction_id"},
+		}},
+	}).Create(&row).Error
 }
 
 func dereferenceTime(value *time.Time) time.Time {
@@ -1086,6 +1205,8 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 			"completion_tokens": spending.CompletionTokens,
 			"total_tokens":      spending.TotalTokens,
 			"cost_nano_cny":     spending.CostNanoCNY,
+			"model_requests":    spending.ModelRequests,
+			"tool_calls":        spending.ToolCalls,
 			"updated_at":        nowUTC(),
 		}).Error
 }
@@ -1116,7 +1237,9 @@ func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {
 			"COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
 			"COALESCE(SUM(completion_tokens), 0) AS completion_tokens, " +
 			"COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
-			"COALESCE(SUM(cost_nano_cny), 0) AS cost_nano_cny",
+			"COALESCE(SUM(cost_nano_cny), 0) AS cost_nano_cny, " +
+			"COALESCE(SUM(model_requests), 0) AS model_requests, " +
+			"COALESCE(SUM(tool_calls), 0) AS tool_calls",
 	).Scan(&total).Error
 	total.Currency = SpendingCurrencyCNY
 	return total, err
