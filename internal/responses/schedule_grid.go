@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type scheduleGridMetrics struct {
@@ -254,12 +255,86 @@ func fitScheduleGridText(value string, maxWidth, fontSize int) string {
 	if value == "" || richTextWidth(value, fontSize) <= maxWidth {
 		return value
 	}
+	// Drop a trailing parenthetical whole rather than cutting it in half.
+	if head := scheduleGridHeadBeforeTrailingBracket(value); head != "" && richTextWidth(head, fontSize) <= maxWidth {
+		return head
+	}
 	runes := []rune(value)
-	for len(runes) > 0 && richTextWidth(string(runes)+"…", fontSize) > maxWidth {
-		runes = runes[:len(runes)-1]
+	cut := len(runes)
+	for cut > 0 && richTextWidth(string(runes[:cut])+"…", fontSize) > maxWidth {
+		cut--
 	}
-	if len(runes) == 0 {
-		return "…"
+	// Never leave the cut dangling inside an unclosed bracket pair.
+	if open := scheduleGridUnclosedBracket(runes[:cut]); open >= 0 {
+		cut = open
 	}
-	return string(runes) + "…"
+	// Cut Latin text at the last word boundary instead of mid-word.
+	if cut > 0 && cut < len(runes) && isScheduleGridLatinWordRune(runes[cut-1]) && isScheduleGridLatinWordRune(runes[cut]) {
+		for i := cut - 1; i > 0; i-- {
+			if runes[i] == ' ' {
+				cut = i
+				break
+			}
+		}
+	}
+	kept := runes[:cut]
+	for len(kept) > 0 {
+		switch kept[len(kept)-1] {
+		case ' ', '/', '（', '(':
+			kept = kept[:len(kept)-1]
+		default:
+			return string(kept) + "…"
+		}
+	}
+	return "…"
+}
+
+// scheduleGridHeadBeforeTrailingBracket returns value without its trailing
+// parenthetical, or "" when value does not end with one.
+func scheduleGridHeadBeforeTrailingBracket(value string) string {
+	runes := []rune(value)
+	for i := len(runes) - 2; i > 0; i-- {
+		var close rune
+		switch runes[i] {
+		case '（':
+			close = '）'
+		case '(':
+			close = ')'
+		default:
+			continue
+		}
+		if runes[len(runes)-1] != close {
+			return ""
+		}
+		return strings.TrimRight(string(runes[:i]), " /")
+	}
+	return ""
+}
+
+// scheduleGridUnclosedBracket returns the index of the outermost opening
+// bracket that is never closed within runes, or -1 when all pairs balance.
+func scheduleGridUnclosedBracket(runes []rune) int {
+	open := -1
+	depth := 0
+	for i, r := range runes {
+		switch r {
+		case '（', '(':
+			if depth == 0 {
+				open = i
+			}
+			depth++
+		case '）', ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	if depth > 0 {
+		return open
+	}
+	return -1
+}
+
+func isScheduleGridLatinWordRune(r rune) bool {
+	return r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r))
 }

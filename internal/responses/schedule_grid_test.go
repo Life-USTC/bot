@@ -70,6 +70,41 @@ func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	}
 }
 
+func TestFitScheduleGridText(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		maxWidth int
+		fontSize int
+		want     string
+	}{
+		{name: "fits unchanged", value: "数据库系统", maxWidth: 144, fontSize: 13, want: "数据库系统"},
+		{name: "normalizes whitespace", value: "  数据库   系统  ", maxWidth: 144, fontSize: 13, want: "数据库 系统"},
+		{name: "latin cut at word boundary", value: "Computer Networks Laboratory", maxWidth: 200, fontSize: 13, want: "Computer Networks…"},
+		{name: "latin long name keeps whole words", value: "Introduction to Computational Thinking and Programming Methodology", maxWidth: 144, fontSize: 13, want: "Introduction to…"},
+		{name: "latin single word falls back to rune cut", value: "Supercalifragilisticexpialidocious", maxWidth: 80, fontSize: 13, want: "Supercal…"},
+		{name: "cjk trailing parenthetical stripped when head fits", value: "中国近现代史纲要（上）", maxWidth: 110, fontSize: 13, want: "中国近现代史纲要"},
+		{name: "ascii trailing parenthetical stripped when head fits", value: "Data Structures (Honors)", maxWidth: 130, fontSize: 13, want: "Data Structures"},
+		{name: "cut backs out of unclosed bracket", value: "物理（上）电磁学与光学", maxWidth: 47, fontSize: 13, want: "物理…"},
+		{name: "no dangling merged-slot separator", value: "中国近现代史纲要 / 军事理论", maxWidth: 120, fontSize: 13, want: "中国近现代史纲要…"},
+		{name: "location not clipped mid-word", value: "西区 3A204", maxWidth: 55, fontSize: 13, want: "西区…"},
+		{name: "nothing fits", value: "数据库系统", maxWidth: 5, fontSize: 13, want: "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fitScheduleGridText(tt.value, tt.maxWidth, tt.fontSize)
+			if got != tt.want {
+				t.Fatalf("fitScheduleGridText(%q, %d, %d) = %q, want %q", tt.value, tt.maxWidth, tt.fontSize, got, tt.want)
+			}
+			if got != "…" {
+				if width := richTextWidth(got, tt.fontSize); width > tt.maxWidth {
+					t.Fatalf("result width %d exceeds maxWidth %d", width, tt.maxWidth)
+				}
+			}
+		})
+	}
+}
+
 func testScheduleGrid() *ScheduleGrid {
 	days := []ScheduleGridDay{
 		{Label: "周日", Date: "07-12"},
