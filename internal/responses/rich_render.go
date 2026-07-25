@@ -15,6 +15,14 @@ import (
 const (
 	richMetaFontSize = 9
 	richNextFontSize = richMetaFontSize + 2
+	// minRichTableColumnWidth is the floor below which table columns are not
+	// shrunk when fitting a table into the clamped content width.
+	minRichTableColumnWidth = 48
+	// verboseRichTableColumnWidth marks columns whose widest cell is long
+	// free text (course names, titles, descriptions). Only verbose columns
+	// absorb the width clamp; narrower columns hold short structural cells
+	// (times, class codes, rooms) that must stay fully readable.
+	verboseRichTableColumnWidth = 192
 )
 
 type richRenderMetrics struct {
@@ -33,6 +41,8 @@ type richRenderMetrics struct {
 	FooterGap         int
 	FooterLineGap     int
 	BottomMargin      int
+	MinContentWidth   int
+	MaxContentWidth   int
 }
 
 func defaultRichRenderMetrics() richRenderMetrics {
@@ -52,6 +62,8 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		FooterGap:         24,
 		FooterLineGap:     14,
 		BottomMargin:      32,
+		MinContentWidth:   480,
+		MaxContentWidth:   640,
 	}
 }
 
@@ -100,17 +112,19 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		headerWidth := richTextWidth(doc.Title, 18) + richTextWidth("下一班 "+nextTime+" "+nextWait, richNextFontSize) + 40
 		contentWidth = max(contentWidth, headerWidth)
 	}
+	contentWidth = clampRichContentWidth(contentWidth, m)
 	canvasWidth := contentWidth + 2*m.MarginX
 	y := m.ContentTop
 	nodes := []richLayoutNode{}
 	lastGap := 0
 	compactHelpIntro := richDocumentHasCompactHelpIntro(doc)
+	wrapWidth := contentWidth - 2*m.TextPaddingX
 	for blockIndex, block := range doc.Blocks {
 		if block.Table == nil {
 			lines := make([]string, 0, len(block.Lines))
 			for _, line := range block.Lines {
 				if strings.TrimSpace(line) != "" {
-					lines = append(lines, line)
+					lines = append(lines, wrapRichText(line, wrapWidth, 13)...)
 				}
 			}
 			if block.Heading == "" && len(lines) == 0 {
@@ -122,11 +136,17 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 				rowHeight = 24
 			}
 			height := len(lines) * rowHeight
+			blockWidth := 0
 			if block.Heading != "" {
 				height += m.TableHeaderHeight
+				blockWidth = richTextWidth(block.Heading, 13) + 2*m.TextPaddingX
 			}
+			for _, line := range lines {
+				blockWidth = max(blockWidth, richTextWidth(line, 13)+2*m.TextPaddingX)
+			}
+			blockWidth = min(blockWidth, contentWidth)
 			nodes = append(nodes, richLayoutNode{
-				Bounds:    image.Rect(m.MarginX, y, m.MarginX+measureRichBlockWidth(block, m), y+height),
+				Bounds:    image.Rect(m.MarginX, y, m.MarginX+blockWidth, y+height),
 				Heading:   block.Heading,
 				Lines:     lines,
 				RowHeight: rowHeight,
@@ -138,6 +158,7 @@ func layoutRichText(doc richDocument, now time.Time) richLayout {
 		}
 		table := block.Table
 		columnWidths := measureRichTableColumnWidths(*table, m)
+		fitRichTableColumnWidths(columnWidths, contentWidth)
 		width := sumRichWidths(columnWidths)
 		height := m.TableHeaderHeight + len(table.Rows)*m.TableRowHeight
 		if block.Heading != "" {
@@ -399,19 +420,122 @@ func sumRichWidths(widths []int) int {
 	return total
 }
 
+func clampRichContentWidth(width int, metrics richRenderMetrics) int {
+	return min(max(width, metrics.MinContentWidth), metrics.MaxContentWidth)
+}
+
+// wrapRichText breaks a line into segments that each fit maxWidth, preferring
+// to break at spaces and falling back to breaking between runes for text
+// without spaces (e.g. CJK or unbroken Latin strings).
+func wrapRichText(line string, maxWidth, fontSize int) []string {
+	if maxWidth <= 0 || richTextWidth(line, fontSize) <= maxWidth {
+		return []string{line}
+	}
+	runes := []rune(line)
+	lines := []string{}
+	start := 0
+	for start < len(runes) {
+		end := start
+		width := 0.0
+		lastSpace := -1
+		for end < len(runes) {
+			rw := richRuneWidth(runes[end], fontSize)
+			if width+rw > float64(maxWidth) && end > start {
+				break
+			}
+			width += rw
+			if runes[end] == ' ' {
+				lastSpace = end
+			}
+			end++
+		}
+		if end < len(runes) && lastSpace > start {
+			end = lastSpace + 1
+		}
+		if segment := strings.TrimSpace(string(runes[start:end])); segment != "" {
+			lines = append(lines, segment)
+		}
+		start = end
+		for start < len(runes) && runes[start] == ' ' {
+			start++
+		}
+	}
+	if len(lines) == 0 {
+		return []string{line}
+	}
+	return lines
+}
+
+// fitRichTextToWidth ellipsizes value so its measured width stays within
+// maxWidth. Used when drawing table cells whose columns were shrunk.
+func fitRichTextToWidth(value string, maxWidth, fontSize int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" || richTextWidth(value, fontSize) <= maxWidth {
+		return value
+	}
+	runes := []rune(value)
+	for len(runes) > 0 && richTextWidth(string(runes)+"…", fontSize) > maxWidth {
+		runes = runes[:len(runes)-1]
+	}
+	if len(runes) == 0 {
+		return "…"
+	}
+	return string(runes) + "…"
+}
+
+// fitRichTableColumnWidths shrinks table columns until the table fits
+// maxTotal, then pads the last column so the table spans the full content
+// width. Only verbose columns (whose widest cell exceeds
+// verboseRichTableColumnWidth) are shrunk, so short structural cells (times,
+// class codes, rooms) stay fully readable; if that alone cannot fit the
+// table, all columns share the remaining clamp rather than exceeding the
+// maximum card width. Cell text that no longer fits is ellipsized at draw
+// time.
+func fitRichTableColumnWidths(widths []int, maxTotal int) {
+	total := sumRichWidths(widths)
+	verbose := make([]bool, len(widths))
+	for i, width := range widths {
+		verbose[i] = width > verboseRichTableColumnWidth
+	}
+	shrink := func(candidate func(int) bool) {
+		for total > maxTotal {
+			widest := -1
+			for i, width := range widths {
+				if candidate(i) && width > minRichTableColumnWidth && (widest == -1 || width > widths[widest]) {
+					widest = i
+				}
+			}
+			if widest == -1 {
+				return
+			}
+			widths[widest]--
+			total--
+		}
+	}
+	shrink(func(i int) bool { return verbose[i] })
+	shrink(func(i int) bool { return true })
+	if total < maxTotal && len(widths) > 0 {
+		widths[len(widths)-1] += maxTotal - total
+	}
+}
+
 func richTextWidth(text string, fontSize int) int {
 	width := 0.0
 	for _, r := range text {
-		switch {
-		case unicode.Is(unicode.Han, r), unicode.Is(unicode.Hiragana, r), unicode.Is(unicode.Katakana, r), unicode.Is(unicode.Hangul, r):
-			width += float64(fontSize)
-		case r == '\u3000':
-			width += float64(fontSize)
-		default:
-			width += float64(fontSize) * 0.62
-		}
+		width += richRuneWidth(r, fontSize)
 	}
 	return int(width + 0.5)
+}
+
+func richRuneWidth(r rune, fontSize int) float64 {
+	switch {
+	case unicode.Is(unicode.Han, r), unicode.Is(unicode.Hiragana, r), unicode.Is(unicode.Katakana, r), unicode.Is(unicode.Hangul, r):
+		return float64(fontSize)
+	case r == '\u3000':
+		return float64(fontSize)
+	default:
+		return float64(fontSize) * 0.62
+	}
 }
 
 type richFaces struct {
@@ -541,7 +665,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 		if node.Table != nil {
 			tableY := y
 			if node.Heading != "" {
-				drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), node.Heading, ink)
+				drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), fitRichTextToWidth(node.Heading, node.Bounds.Dx()-2*layout.Metrics.TextPaddingX, 13), ink)
 				tableY += s(layout.Metrics.TableHeaderHeight)
 				drawRect(canvas, image.Rect(x, tableY, s(node.Bounds.Max.X), tableY+layout.Space.Scale), line)
 			}
@@ -555,7 +679,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 		drawRect(canvas, image.Rect(x, y, s(node.Bounds.Max.X), s(node.Bounds.Max.Y)), rowBg)
 		rowY := y
 		if node.Heading != "" {
-			drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), node.Heading, ink)
+			drawMixedText(canvas, faces.Bold, faces.BoldMono, x+s(layout.Metrics.TextPaddingX), y+s(layout.Metrics.TableHeaderHeight/2+5), fitRichTextToWidth(node.Heading, node.Bounds.Dx()-2*layout.Metrics.TextPaddingX, 13), ink)
 			rowY += s(layout.Metrics.TableHeaderHeight)
 			if len(node.Lines) > 0 {
 				drawRect(canvas, image.Rect(x, rowY, s(node.Bounds.Max.X), rowY+layout.Space.Scale), line)

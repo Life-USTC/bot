@@ -3,6 +3,7 @@ package responses
 import (
 	"image"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -133,7 +134,7 @@ func TestRendererLayoutDependsOnRichTextNotResponseKind(t *testing.T) {
 func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	shortDoc := parseRichText("# 待办\n\n买咖啡")
-	wideDoc := parseRichText("# 待办\n\n完成一份包含数据库实验结果和性能分析的课程报告")
+	wideDoc := parseRichText("# 待办\n\n完成一份包含数据库实验结果和性能分析的课程报告以及相关的文献综述与实验数据整理工作")
 	short := layoutRichText(shortDoc, now)
 	wide := layoutRichText(wideDoc, now)
 	tall := layoutRichText(parseRichText("# 待办\n\n买咖啡\n提交报告\n参加会议"), now)
@@ -143,6 +144,9 @@ func TestLayoutRichTextSizesCanvasFromContent(t *testing.T) {
 	}
 	if short.Space.Height >= tall.Space.Height {
 		t.Fatalf("short height = %d, tall height = %d", short.Space.Height, tall.Space.Height)
+	}
+	if got, want := short.Space.Width, short.Metrics.MinContentWidth+2*short.Metrics.MarginX; got != want {
+		t.Fatalf("short width = %d, want min content width + margins = %d", got, want)
 	}
 	if got, want := wide.Space.Width, measureRichDocument(wideDoc, wide.Metrics)+2*wide.Metrics.MarginX; got != want {
 		t.Fatalf("wide width = %d, measured width = %d", got, want)
@@ -177,8 +181,14 @@ func TestLayoutRichTextMeasuresTableColumns(t *testing.T) {
 	narrow := layoutRichText(parseRichText("# 表格\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"), now)
 	wide := layoutRichText(parseRichText("# 表格\n\n| 一个非常非常长的站点名称 | 另一个同样很长的站点名称 |\n| --- | --- |\n| 14:30 | 14:45 |"), now)
 
-	if narrow.Nodes[0].Bounds.Dx() >= wide.Nodes[0].Bounds.Dx() {
-		t.Fatalf("narrow table = %d, wide table = %d", narrow.Nodes[0].Bounds.Dx(), wide.Nodes[0].Bounds.Dx())
+	// Both tables are narrower than the minimum content width, so they are
+	// padded out to the same clamped width while keeping their own column
+	// proportions.
+	if narrow.Nodes[0].Bounds.Dx() != wide.Nodes[0].Bounds.Dx() {
+		t.Fatalf("narrow table = %d, wide table = %d, want equal clamped widths", narrow.Nodes[0].Bounds.Dx(), wide.Nodes[0].Bounds.Dx())
+	}
+	if narrow.Nodes[0].ColumnWidths[0] >= wide.Nodes[0].ColumnWidths[0] {
+		t.Fatalf("narrow first column = %d, wide first column = %d", narrow.Nodes[0].ColumnWidths[0], wide.Nodes[0].ColumnWidths[0])
 	}
 }
 
@@ -285,18 +295,183 @@ func TestLayoutRichTextMeasuresColumnsIndependently(t *testing.T) {
 	}
 }
 
-func TestLayoutRichTextDoesNotClampWideTables(t *testing.T) {
+func TestLayoutRichTextClampsWideTables(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	doc := parseRichText("# 表格\n\n| 一个非常非常非常非常非常非常非常非常长的站点名称 | 另一个非常非常非常非常非常非常非常非常长的站点名称 | 第三个非常非常非常非常非常非常非常非常长的站点名称 |\n| --- | --- | --- |\n| 14:30 | 14:45 | 15:00 |")
 	layout := layoutRichText(doc, now)
 	node := layout.Nodes[0]
-	want := sumRichWidths(measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics))
+	natural := sumRichWidths(measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics))
+	want := layout.Metrics.MaxContentWidth
 
+	if natural <= want {
+		t.Fatalf("fixture table should exceed the max content width: natural = %d, max = %d", natural, want)
+	}
 	if node.Bounds.Dx() != want || sumRichWidths(node.ColumnWidths) != want {
-		t.Fatalf("table width = %d, columns = %v, measured = %d", node.Bounds.Dx(), node.ColumnWidths, want)
+		t.Fatalf("table width = %d, columns = %v, want clamped width %d", node.Bounds.Dx(), node.ColumnWidths, want)
 	}
 	if got := layout.Space.Width; got != want+2*layout.Metrics.MarginX {
 		t.Fatalf("canvas width = %d, want %d", got, want+2*layout.Metrics.MarginX)
+	}
+}
+
+func TestLayoutRichTextPadsNarrowTablesToContentWidth(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	doc := parseRichText("# 表格\n\n| 命令 | 说明 |\n| --- | --- |\n| 日程 | 查看日程 |")
+	layout := layoutRichText(doc, now)
+	node := layout.Nodes[0]
+	natural := measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics)
+	want := layout.Space.Width - 2*layout.Metrics.MarginX
+
+	if want != layout.Metrics.MinContentWidth {
+		t.Fatalf("content width = %d, want min content width %d", want, layout.Metrics.MinContentWidth)
+	}
+	if got := sumRichWidths(node.ColumnWidths); got != want {
+		t.Fatalf("padded table width = %d, want content width %d", got, want)
+	}
+	last := len(natural) - 1
+	if node.ColumnWidths[last] <= natural[last] {
+		t.Fatalf("last column = %d, natural width = %d, want padding", node.ColumnWidths[last], natural[last])
+	}
+	if node.ColumnWidths[0] != natural[0] {
+		t.Fatalf("first column = %d, natural width = %d, want unchanged", node.ColumnWidths[0], natural[0])
+	}
+}
+
+func TestLayoutRichTextWrapsLongLinesWithinMaxWidth(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	longLine := strings.Repeat("这是一段需要换行的长文本，", 8)
+	layout := layoutRichText(parseRichText("# 待办\n\n"+longLine), now)
+
+	if got, want := layout.Space.Width, layout.Metrics.MaxContentWidth+2*layout.Metrics.MarginX; got != want {
+		t.Fatalf("canvas width = %d, want clamped width %d", got, want)
+	}
+	if len(layout.Nodes) != 1 {
+		t.Fatalf("nodes = %#v", layout.Nodes)
+	}
+	node := layout.Nodes[0]
+	wrapWidth := layout.Metrics.MaxContentWidth - 2*layout.Metrics.TextPaddingX
+	if len(node.Lines) < 2 {
+		t.Fatalf("wrapped lines = %#v, want at least 2", node.Lines)
+	}
+	for _, line := range node.Lines {
+		if width := richTextWidth(line, 13); width > wrapWidth {
+			t.Fatalf("line %q width = %d, exceeds wrap width %d", line, width, wrapWidth)
+		}
+	}
+	if got, want := node.Bounds.Dy(), len(node.Lines)*layout.Metrics.TextRowHeight; got != want {
+		t.Fatalf("node height = %d, want %d for %d wrapped lines", got, want, len(node.Lines))
+	}
+	canvas := image.Rect(0, 0, layout.Space.Width, layout.Space.Height)
+	if !node.Bounds.In(canvas) {
+		t.Fatalf("node bounds %v outside canvas %v", node.Bounds, canvas)
+	}
+}
+
+func TestWrapRichText(t *testing.T) {
+	if got := wrapRichText("短行", 100, 13); len(got) != 1 || got[0] != "短行" {
+		t.Fatalf("short line wrapped to %#v", got)
+	}
+	got := wrapRichText("aaa bbb ccc", 70, 13)
+	if len(got) != 2 || got[0] != "aaa bbb" || got[1] != "ccc" {
+		t.Fatalf("latin text broke at %#v, want break at space", got)
+	}
+	got = wrapRichText(strings.Repeat("字", 20), 10*13, 13)
+	if len(got) != 2 {
+		t.Fatalf("unbroken CJK wrapped to %#v, want 2 lines", got)
+	}
+	for _, line := range got {
+		if width := richTextWidth(line, 13); width > 10*13 {
+			t.Fatalf("line %q width = %d exceeds max", line, width)
+		}
+	}
+}
+
+func TestFitRichTableColumnWidths(t *testing.T) {
+	widths := []int{300, 100}
+	fitRichTableColumnWidths(widths, 280)
+	if widths[0] != 180 || widths[1] != 100 {
+		t.Fatalf("shrunk widths = %v, want [180 100]", widths)
+	}
+
+	widths = []int{100, 100}
+	fitRichTableColumnWidths(widths, 300)
+	if widths[0] != 100 || widths[1] != 200 {
+		t.Fatalf("padded widths = %v, want [100 200]", widths)
+	}
+
+	widths = []int{60, 60, 60}
+	fitRichTableColumnWidths(widths, 100)
+	for _, width := range widths {
+		if width < minRichTableColumnWidth {
+			t.Fatalf("column shrunk below floor: %v", widths)
+		}
+	}
+}
+
+func TestFitRichTableColumnWidthsSparesStructuralColumns(t *testing.T) {
+	// Mirrors the 考试 table: short structural columns around one verbose
+	// free-text course column.
+	widths := []int{25, 59, 111, 299, 111, 44, 133}
+	fitRichTableColumnWidths(widths, 640)
+	want := []int{25, 59, 111, 157, 111, 44, 133}
+	for i := range want {
+		if widths[i] != want[i] {
+			t.Fatalf("widths = %v, want %v (only the verbose column may shrink)", widths, want)
+		}
+	}
+
+	// When no column is verbose, all columns share the clamp down to the floor.
+	widths = []int{150, 150, 150, 150}
+	fitRichTableColumnWidths(widths, 400)
+	if sumRichWidths(widths) != 400 {
+		t.Fatalf("widths = %v, want total 400", widths)
+	}
+	for _, width := range widths {
+		if width != 100 {
+			t.Fatalf("widths = %v, want [100 100 100 100]", widths)
+		}
+	}
+}
+
+func TestLayoutRichTextKeepsExamStructuralColumnsReadable(t *testing.T) {
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	doc := parseRichText(`# 未来 7 天截止
+
+## 考试 (3)
+| # | 日期 | 时间 | 课程 | 教学班 | 方式 | 教室 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 07-29 | 08:30-10:30 | 数学分析（B1） | MATH1001.01 | 闭卷 | 东区 五教 5102 |
+| 2 | 08-02 | 14:30-16:30 | 数据结构 | CS2001.03 | 开卷 | 西区 三教 3A204 |
+| 3 | 08-04 | 19:00-21:00 | 量子力学与统计物理综合考试（荣誉学位项目） | PHYS3001.01 | 闭卷 | 高新区 GT-B112 |`)
+	layout := layoutRichText(doc, now)
+	node := layout.Nodes[0]
+	natural := measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics)
+
+	if got := sumRichWidths(node.ColumnWidths); got != layout.Metrics.MaxContentWidth {
+		t.Fatalf("table width = %d, want clamped width %d", got, layout.Metrics.MaxContentWidth)
+	}
+	// Only the verbose 课程 column (index 3) may shrink.
+	for i := range natural {
+		if i == 3 {
+			if node.ColumnWidths[i] >= natural[i] {
+				t.Fatalf("verbose column should absorb the clamp: widths = %v, natural = %v", node.ColumnWidths, natural)
+			}
+			continue
+		}
+		if node.ColumnWidths[i] != natural[i] {
+			t.Fatalf("structural column %d shrunk: widths = %v, natural = %v", i, node.ColumnWidths, natural)
+		}
+	}
+	// Every structural cell still fits its column without ellipsizing.
+	for _, row := range doc.Blocks[0].Table.Rows {
+		for i, cell := range row.Cells {
+			if i == 3 {
+				continue
+			}
+			if width := richTextWidth(cell, 14); width > node.ColumnWidths[i]-2*layout.Metrics.TableCellPaddingX {
+				t.Fatalf("cell %q (col %d) width %d exceeds column %d", cell, i, width, node.ColumnWidths[i])
+			}
+		}
 	}
 }
 

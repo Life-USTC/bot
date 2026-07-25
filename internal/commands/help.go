@@ -97,7 +97,7 @@ func helpDetailSections() []helpSection {
 				{topic: "todo", commandName: "todo", command: "待办 列表 截止前 2026-06-10", description: "筛选该日期前截止的待办"},
 				{topic: "todo", commandName: "todo", command: "待办 列表 截止后 2026-06-10", description: "筛选该日期后截止的待办"},
 				{topic: "todo", commandName: "todo", command: "待办 添加 写报告", description: "新增待办"},
-				{topic: "todo", commandName: "todo", command: "待办 添加 写报告 内容 完成初稿 截止 2026-06-10 优先级 高", description: "新增带详细信息的待办"},
+				{topic: "todo", commandName: "todo", command: "待办 添加 写报告 内容 初稿 截止 2026-06-10", description: "新增带详细信息的待办"},
 				{topic: "todo", commandName: "todo", command: "待办 完成 1", description: "完成第 1 条待办"},
 				{topic: "todo", commandName: "todo", command: "待办 完成 1,2,3", description: "批量完成待办"},
 				{topic: "todo", commandName: "todo", command: "待办 恢复 1", description: "恢复已完成待办"},
