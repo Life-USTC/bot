@@ -3,7 +3,11 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -124,6 +128,41 @@ func TestLoadImageDataURLDownloadsAndEncodesSupportedImage(t *testing.T) {
 	}
 	if got != "data:image/png;base64,iVBORw0KGgo=" {
 		t.Fatalf("data URL = %q", got)
+	}
+}
+
+func TestLoadImageDataURLCompressesPayloadOverTenMiB(t *testing.T) {
+	var source bytes.Buffer
+	original := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	original.Set(0, 0, color.RGBA{R: 20, G: 40, B: 60, A: 255})
+	if err := png.Encode(&source, original); err != nil {
+		t.Fatal(err)
+	}
+	payload := append(source.Bytes(), make([]byte, maxImageBytes-source.Len()+1)...)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	svc := &Service{httpClient: server.Client()}
+	got, err := svc.loadImageDataURL(context.Background(), server.URL+"/large.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, encoded, found := strings.Cut(got, ",")
+	if !found || header != "data:image/jpeg;base64" {
+		t.Fatalf("data URL header = %q", header)
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > maxImageBytes {
+		t.Fatalf("compressed image size = %d", len(data))
+	}
+	if _, format, err := image.DecodeConfig(bytes.NewReader(data)); err != nil || format != "jpeg" {
+		t.Fatalf("compressed format = %q, err = %v", format, err)
 	}
 }
 
