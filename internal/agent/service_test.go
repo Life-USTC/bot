@@ -763,7 +763,7 @@ func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
 func TestFinishAgentRunLogsErrors(t *testing.T) {
 	var logs bytes.Buffer
 	svc := &Service{logger: log.New(&logs, "", 0)}
-	svc.finishAgentRun(context.Background(), 0, store.AgentRunStatusFailed, "", context.DeadlineExceeded)
+	svc.finishAgentRun(context.Background(), 0, store.AgentRunStatusFailed, "", context.DeadlineExceeded, "deepseek", "test", tokenUsage{})
 	if !strings.Contains(logs.String(), "agent run failed") || !strings.Contains(logs.String(), "context deadline exceeded") {
 		t.Fatalf("logs = %q", logs.String())
 	}

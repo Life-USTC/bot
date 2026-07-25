@@ -26,9 +26,11 @@ func newAgentHTTPClient(base *http.Client, timeout time.Duration, logger *log.Lo
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	client.Transport = &llmRetryTransport{
-		base:   transport,
-		logger: logger,
+	client.Transport = &usageCaptureTransport{
+		base: &llmRetryTransport{
+			base:   transport,
+			logger: logger,
+		},
 	}
 	return &client
 }

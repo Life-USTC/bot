@@ -107,14 +107,33 @@ type BusSettings struct {
 }
 
 type AgentRun struct {
-	ID        int64
-	Identity  Identity
-	RawText   string
-	Status    string
-	Reply     string
-	Error     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID               int64
+	Identity         Identity
+	RawText          string
+	Provider         string
+	Model            string
+	Currency         string
+	PromptTokens     int64
+	CachedTokens     int64
+	CompletionTokens int64
+	TotalTokens      int64
+	CostNanoCNY      int64
+	Status           string
+	Reply            string
+	Error            string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+const SpendingCurrencyCNY = "CNY"
+
+type AgentSpending struct {
+	PromptTokens     int64
+	CachedTokens     int64
+	CompletionTokens int64
+	TotalTokens      int64
+	CostNanoCNY      int64
+	Currency         string
 }
 
 type FeedbackRecord struct {
@@ -327,6 +346,14 @@ type agentRunRow struct {
 	ConversationType string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	ConversationID   string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	RawText          string `gorm:"not null"`
+	Provider         string `gorm:"not null;default:''"`
+	Model            string `gorm:"not null;default:''"`
+	Currency         string `gorm:"not null;default:CNY"`
+	PromptTokens     int64  `gorm:"not null;default:0"`
+	CachedTokens     int64  `gorm:"not null;default:0"`
+	CompletionTokens int64  `gorm:"not null;default:0"`
+	TotalTokens      int64  `gorm:"not null;default:0"`
+	CostNanoCNY      int64  `gorm:"not null;default:0"`
 	Status           string `gorm:"not null;index"`
 	Reply            string
 	Error            string
@@ -1002,7 +1029,7 @@ func (s *Store) InteractionCount(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, rawText string) (int64, error) {
+func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, run AgentRun) (int64, error) {
 	if err := validateConversationIdentity(ident); err != nil {
 		return 0, err
 	}
@@ -1018,7 +1045,10 @@ func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, rawText stri
 		ExternalUserID:   ident.UserID,
 		ConversationType: ident.ConversationType,
 		ConversationID:   ident.ConversationID,
-		RawText:          strings.TrimSpace(rawText),
+		RawText:          strings.TrimSpace(run.RawText),
+		Provider:         textutil.LowerTrim(run.Provider),
+		Model:            strings.TrimSpace(run.Model),
+		Currency:         strings.ToUpper(strings.TrimSpace(run.Currency)),
 		Status:           AgentRunStatusStarted,
 		CreatedAt:        now,
 		UpdatedAt:        now,
@@ -1032,7 +1062,7 @@ func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, rawText stri
 	return row.ID, nil
 }
 
-func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply string, runErr error) error {
+func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply string, runErr error, spending AgentSpending) error {
 	if id <= 0 {
 		return nil
 	}
@@ -1047,11 +1077,49 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 	return s.db.WithContext(ctx).Model(&agentRunRow{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"status":     status,
-			"reply":      reply,
-			"error":      strings.TrimSpace(errText),
-			"updated_at": nowUTC(),
+			"status":            status,
+			"reply":             reply,
+			"error":             strings.TrimSpace(errText),
+			"currency":          SpendingCurrencyCNY,
+			"prompt_tokens":     spending.PromptTokens,
+			"cached_tokens":     spending.CachedTokens,
+			"completion_tokens": spending.CompletionTokens,
+			"total_tokens":      spending.TotalTokens,
+			"cost_nano_cny":     spending.CostNanoCNY,
+			"updated_at":        nowUTC(),
 		}).Error
+}
+
+func (s *Store) ConversationSpending(ctx context.Context, ident Identity) (AgentSpending, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return AgentSpending{}, err
+	}
+	ident = normalizeIdentity(ident)
+	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
+			ident.Platform, ident.ConversationType, ident.ConversationID))
+}
+
+func (s *Store) UserSpending(ctx context.Context, ident Identity) (AgentSpending, error) {
+	if err := validateIdentity(ident); err != nil {
+		return AgentSpending{}, err
+	}
+	ident = normalizeIdentity(ident)
+	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).
+		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID))
+}
+
+func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {
+	var total AgentSpending
+	err := query.Select(
+		"COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, " +
+			"COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+			"COALESCE(SUM(completion_tokens), 0) AS completion_tokens, " +
+			"COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
+			"COALESCE(SUM(cost_nano_cny), 0) AS cost_nano_cny",
+	).Scan(&total).Error
+	total.Currency = SpendingCurrencyCNY
+	return total, err
 }
 
 func (s *Store) RecordFeedback(ctx context.Context, ident Identity, feedback FeedbackRecord) (int64, error) {

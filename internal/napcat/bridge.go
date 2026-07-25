@@ -277,6 +277,7 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (commands.
 	}
 	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
 		Text:       event.RawMessage,
+		ImageURLs:  event.imageURLs(),
 		Identity:   event.identity(),
 		SendUpdate: b.SendMessage,
 	})
@@ -362,6 +363,89 @@ func (e messageEvent) identity() store.Identity {
 		ConversationType: e.MessageType,
 		ConversationID:   conversationID,
 	}
+}
+
+func (e messageEvent) imageURLs() []string {
+	urls := imageURLsFromMessage(e.Message)
+	if len(urls) == 0 {
+		urls = imageURLsFromCQMessage(e.RawMessage)
+	}
+	if len(urls) > 4 {
+		urls = urls[:4]
+	}
+	return urls
+}
+
+func imageURLsFromMessage(message any) []string {
+	var segments []any
+	switch value := message.(type) {
+	case []any:
+		segments = value
+	case []map[string]any:
+		segments = make([]any, len(value))
+		for i := range value {
+			segments[i] = value[i]
+		}
+	default:
+		return nil
+	}
+	var urls []string
+	for _, rawSegment := range segments {
+		segment, ok := rawSegment.(map[string]any)
+		if !ok || !strings.EqualFold(strings.TrimSpace(fmt.Sprint(segment["type"])), "image") {
+			continue
+		}
+		data, ok := segment["data"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"url", "file"} {
+			candidate := strings.TrimSpace(fmt.Sprint(data[key]))
+			if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+				urls = append(urls, candidate)
+				break
+			}
+		}
+	}
+	return urls
+}
+
+func imageURLsFromCQMessage(message string) []string {
+	var urls []string
+	for _, part := range strings.Split(message, "[CQ:image,")[1:] {
+		end := strings.IndexByte(part, ']')
+		if end < 0 {
+			continue
+		}
+		fields := strings.Split(part[:end], ",")
+		found := false
+		for _, key := range []string{"url=", "file="} {
+			for _, field := range fields {
+				if !strings.HasPrefix(field, key) {
+					continue
+				}
+				candidate := unescapeCQValue(strings.TrimSpace(strings.TrimPrefix(field, key)))
+				if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+					urls = append(urls, candidate)
+					found = true
+				}
+				break
+			}
+			if found {
+				break
+			}
+		}
+	}
+	return urls
+}
+
+func unescapeCQValue(value string) string {
+	return strings.NewReplacer(
+		"&#44;", ",",
+		"&#91;", "[",
+		"&#93;", "]",
+		"&amp;", "&",
+	).Replace(value)
 }
 
 func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) error {

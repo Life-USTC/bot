@@ -173,6 +173,17 @@ still use deterministic command handling only. Increase `BOT_LLM_TIMEOUT_SECONDS
 for slower reasoning models; failed agent runs store the provider error in
 SQLite `agent_runs.error`.
 
+Set `PREMIUM_MODEL_API_KEY` to enable the OpenAI-compatible premium model.
+`PREMIUM_MODEL_BASE_URL` defaults to `https://api.moonshot.cn/v1` and
+`PREMIUM_MODEL` defaults to `kimi-k3`. IDs already listed in
+`BOT_FEEDBACK_ADMIN_USERS` automatically use this model; all other users remain
+on the default model. Premium users can send up to four PNG, JPEG, WebP, or GIF
+images in a message for visual understanding.
+
+Each agent run records its provider, model, prompt/cache/output token counts,
+and cost in nanoyuan in SQLite `agent_runs`. `ConversationSpending` and
+`UserSpending` aggregate totals for a conversation or platform user.
+
 Set `BOT_ALLOW_GROUP_PERSONAL_INFO=true` to allow read-only personal-info
 commands such as curriculum, homework, todos, and exams in group chats. Mutating
 commands such as todo add/done/delete, homework done/undo, login/logout, and

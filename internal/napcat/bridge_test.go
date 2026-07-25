@@ -944,6 +944,20 @@ func TestHandleMessageRecordsIgnored(t *testing.T) {
 	}
 }
 
+func TestMessageEventExtractsStructuredAndCQImages(t *testing.T) {
+	structured := messageEvent{Message: []any{
+		map[string]any{"type": "text", "data": map[string]any{"text": "看看"}},
+		map[string]any{"type": "image", "data": map[string]any{"url": "https://cdn.example/image.png"}},
+	}}
+	if got := structured.imageURLs(); len(got) != 1 || got[0] != "https://cdn.example/image.png" {
+		t.Fatalf("structured image URLs = %#v", got)
+	}
+	cq := messageEvent{RawMessage: "[CQ:image,file=https://cdn.example/fallback.jpg?x=1&amp;y=2]"}
+	if got := cq.imageURLs(); len(got) != 1 || got[0] != "https://cdn.example/fallback.jpg?x=1&y=2" {
+		t.Fatalf("CQ image URLs = %#v", got)
+	}
+}
+
 func TestRecordIgnoredLogsStoreError(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {

@@ -1052,6 +1052,29 @@ func TestMessageFromPayloadNormalizesGroupIdentityAndMention(t *testing.T) {
 	}
 }
 
+func TestMessageFromPayloadExtractsImageAttachments(t *testing.T) {
+	bot := &Bot{}
+	message, err := bot.messageFromPayload(gatewayPayload{
+		ID: "event-id",
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"content":"看看这张图",
+			"author":{"user_openid":"user-openid"},
+			"attachments":[
+				{"content_type":"image/png","url":"https://cdn.example/image.png"},
+				{"content_type":"application/pdf","url":"https://cdn.example/file.pdf"}
+			]
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(message.ImageURLs) != 1 || message.ImageURLs[0] != "https://cdn.example/image.png" {
+		t.Fatalf("image URLs = %#v", message.ImageURLs)
+	}
+}
+
 func TestMessageFromPayloadNormalizesChannelIdentityAndMention(t *testing.T) {
 	bot := &Bot{BotID: "bot-id"}
 	message, err := bot.messageFromPayload(gatewayPayload{

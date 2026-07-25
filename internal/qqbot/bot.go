@@ -159,11 +159,12 @@ type messageAuthor struct {
 }
 
 type incomingMessage struct {
-	ID       string
-	EventID  string
-	Type     string
-	Text     string
-	Identity store.Identity
+	ID        string
+	EventID   string
+	Type      string
+	Text      string
+	ImageURLs []string
+	Identity  store.Identity
 
 	replySeq uint64
 }
@@ -671,6 +672,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 	}
 	messageID := textutil.FirstNonEmpty(data.ID, payload.ID)
 	text := b.cleanContent(data.Content)
+	imageURLs := attachmentImageURLs(data.Attachments)
 	switch payload.T {
 	case "C2C_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.UserOpenID, data.Author.ID)
@@ -678,9 +680,10 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot c2c message has empty user openid")
 		}
 		return &incomingMessage{
-			ID:   messageID,
-			Type: payload.T,
-			Text: text,
+			ID:        messageID,
+			Type:      payload.T,
+			Text:      text,
+			ImageURLs: imageURLs,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -698,9 +701,10 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot group message has empty group openid")
 		}
 		return &incomingMessage{
-			ID:   messageID,
-			Type: payload.T,
-			Text: text,
+			ID:        messageID,
+			Type:      payload.T,
+			Text:      text,
+			ImageURLs: imageURLs,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -717,9 +721,10 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot channel message has empty channel id")
 		}
 		return &incomingMessage{
-			ID:   messageID,
-			Type: payload.T,
-			Text: text,
+			ID:        messageID,
+			Type:      payload.T,
+			Text:      text,
+			ImageURLs: imageURLs,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -736,9 +741,10 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot direct message has empty guild id")
 		}
 		return &incomingMessage{
-			ID:   messageID,
-			Type: payload.T,
-			Text: text,
+			ID:        messageID,
+			Type:      payload.T,
+			Text:      text,
+			ImageURLs: imageURLs,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -786,8 +792,9 @@ func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (comman
 		return commands.Response{}, false
 	}
 	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
-		Text:     message.Text,
-		Identity: message.Identity,
+		Text:      message.Text,
+		ImageURLs: message.ImageURLs,
+		Identity:  message.Identity,
 		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
 			return b.Send(ctx, message, update)
 		},
@@ -803,6 +810,24 @@ func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (comman
 		Status:  store.InteractionStatusHandled,
 	}, "agent")
 	return reply, true
+}
+
+func attachmentImageURLs(attachments []map[string]any) []string {
+	urls := make([]string, 0, min(len(attachments), 4))
+	for _, attachment := range attachments {
+		contentType := strings.ToLower(strings.TrimSpace(fmt.Sprint(attachment["content_type"])))
+		if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+			continue
+		}
+		candidate := strings.TrimSpace(fmt.Sprint(attachment["url"]))
+		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+			urls = append(urls, candidate)
+			if len(urls) == 4 {
+				break
+			}
+		}
+	}
+	return urls
 }
 
 func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) error {
