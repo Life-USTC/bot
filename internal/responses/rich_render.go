@@ -18,6 +18,11 @@ const (
 	// minRichTableColumnWidth is the floor below which table columns are not
 	// shrunk when fitting a table into the clamped content width.
 	minRichTableColumnWidth = 48
+	// verboseRichTableColumnWidth marks columns whose widest cell is long
+	// free text (course names, titles, descriptions). Only verbose columns
+	// absorb the width clamp; narrower columns hold short structural cells
+	// (times, class codes, rooms) that must stay fully readable.
+	verboseRichTableColumnWidth = 192
 )
 
 type richRenderMetrics struct {
@@ -58,7 +63,7 @@ func defaultRichRenderMetrics() richRenderMetrics {
 		FooterLineGap:     14,
 		BottomMargin:      32,
 		MinContentWidth:   480,
-		MaxContentWidth:   560,
+		MaxContentWidth:   640,
 	}
 }
 
@@ -478,24 +483,37 @@ func fitRichTextToWidth(value string, maxWidth, fontSize int) string {
 	return string(runes) + "…"
 }
 
-// fitRichTableColumnWidths shrinks the widest columns until the table fits
+// fitRichTableColumnWidths shrinks table columns until the table fits
 // maxTotal, then pads the last column so the table spans the full content
-// width. Cell text that no longer fits is ellipsized at draw time.
+// width. Only verbose columns (whose widest cell exceeds
+// verboseRichTableColumnWidth) are shrunk, so short structural cells (times,
+// class codes, rooms) stay fully readable; if that alone cannot fit the
+// table, all columns share the remaining clamp rather than exceeding the
+// maximum card width. Cell text that no longer fits is ellipsized at draw
+// time.
 func fitRichTableColumnWidths(widths []int, maxTotal int) {
 	total := sumRichWidths(widths)
-	for total > maxTotal {
-		widest := -1
-		for i, width := range widths {
-			if width > minRichTableColumnWidth && (widest == -1 || width > widths[widest]) {
-				widest = i
-			}
-		}
-		if widest == -1 {
-			return
-		}
-		widths[widest]--
-		total--
+	verbose := make([]bool, len(widths))
+	for i, width := range widths {
+		verbose[i] = width > verboseRichTableColumnWidth
 	}
+	shrink := func(candidate func(int) bool) {
+		for total > maxTotal {
+			widest := -1
+			for i, width := range widths {
+				if candidate(i) && width > minRichTableColumnWidth && (widest == -1 || width > widths[widest]) {
+					widest = i
+				}
+			}
+			if widest == -1 {
+				return
+			}
+			widths[widest]--
+			total--
+		}
+	}
+	shrink(func(i int) bool { return verbose[i] })
+	shrink(func(i int) bool { return true })
 	if total < maxTotal && len(widths) > 0 {
 		widths[len(widths)-1] += maxTotal - total
 	}

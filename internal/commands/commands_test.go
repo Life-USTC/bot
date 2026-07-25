@@ -2757,6 +2757,28 @@ func TestFormatExamDateUnknown(t *testing.T) {
 	}
 }
 
+func TestFormatExamRoomsDeduplicatesSharedBuildingPrefix(t *testing.T) {
+	exam := func(rooms ...string) map[string]any {
+		list := make([]any, len(rooms))
+		for i, room := range rooms {
+			list[i] = map[string]any{"name": room}
+		}
+		return map[string]any{"examRooms": list}
+	}
+	if got := formatExamRooms(exam("东区 五教 5102", "东区 五教 5103")); got != "东区 五教 5102、5103" {
+		t.Fatalf("shared-prefix rooms = %q", got)
+	}
+	if got := formatExamRooms(exam("东区 五教 5102", "西区 三教 3A204")); got != "东区 五教 5102、西区 三教 3A204" {
+		t.Fatalf("distinct rooms = %q", got)
+	}
+	if got := formatExamRooms(exam("东区 五教 5102")); got != "东区 五教 5102" {
+		t.Fatalf("single room = %q", got)
+	}
+	if got := formatExamRooms(exam("GT-B112", "GT-B113")); got != "GT-B112、GT-B113" {
+		t.Fatalf("prefix-less rooms = %q", got)
+	}
+}
+
 func TestHandleTodayCurriculum(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

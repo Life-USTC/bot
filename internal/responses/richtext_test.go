@@ -408,6 +408,73 @@ func TestFitRichTableColumnWidths(t *testing.T) {
 	}
 }
 
+func TestFitRichTableColumnWidthsSparesStructuralColumns(t *testing.T) {
+	// Mirrors the 考试 table: short structural columns around one verbose
+	// free-text course column.
+	widths := []int{25, 59, 111, 299, 111, 44, 133}
+	fitRichTableColumnWidths(widths, 640)
+	want := []int{25, 59, 111, 157, 111, 44, 133}
+	for i := range want {
+		if widths[i] != want[i] {
+			t.Fatalf("widths = %v, want %v (only the verbose column may shrink)", widths, want)
+		}
+	}
+
+	// When no column is verbose, all columns share the clamp down to the floor.
+	widths = []int{150, 150, 150, 150}
+	fitRichTableColumnWidths(widths, 400)
+	if sumRichWidths(widths) != 400 {
+		t.Fatalf("widths = %v, want total 400", widths)
+	}
+	for _, width := range widths {
+		if width != 100 {
+			t.Fatalf("widths = %v, want [100 100 100 100]", widths)
+		}
+	}
+}
+
+func TestLayoutRichTextKeepsExamStructuralColumnsReadable(t *testing.T) {
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	doc := parseRichText(`# 未来 7 天截止
+
+## 考试 (3)
+| # | 日期 | 时间 | 课程 | 教学班 | 方式 | 教室 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 07-29 | 08:30-10:30 | 数学分析（B1） | MATH1001.01 | 闭卷 | 东区 五教 5102 |
+| 2 | 08-02 | 14:30-16:30 | 数据结构 | CS2001.03 | 开卷 | 西区 三教 3A204 |
+| 3 | 08-04 | 19:00-21:00 | 量子力学与统计物理综合考试（荣誉学位项目） | PHYS3001.01 | 闭卷 | 高新区 GT-B112 |`)
+	layout := layoutRichText(doc, now)
+	node := layout.Nodes[0]
+	natural := measureRichTableColumnWidths(*doc.Blocks[0].Table, layout.Metrics)
+
+	if got := sumRichWidths(node.ColumnWidths); got != layout.Metrics.MaxContentWidth {
+		t.Fatalf("table width = %d, want clamped width %d", got, layout.Metrics.MaxContentWidth)
+	}
+	// Only the verbose 课程 column (index 3) may shrink.
+	for i := range natural {
+		if i == 3 {
+			if node.ColumnWidths[i] >= natural[i] {
+				t.Fatalf("verbose column should absorb the clamp: widths = %v, natural = %v", node.ColumnWidths, natural)
+			}
+			continue
+		}
+		if node.ColumnWidths[i] != natural[i] {
+			t.Fatalf("structural column %d shrunk: widths = %v, natural = %v", i, node.ColumnWidths, natural)
+		}
+	}
+	// Every structural cell still fits its column without ellipsizing.
+	for _, row := range doc.Blocks[0].Table.Rows {
+		for i, cell := range row.Cells {
+			if i == 3 {
+				continue
+			}
+			if width := richTextWidth(cell, 14); width > node.ColumnWidths[i]-2*layout.Metrics.TableCellPaddingX {
+				t.Fatalf("cell %q (col %d) width %d exceeds column %d", cell, i, width, node.ColumnWidths[i])
+			}
+		}
+	}
+}
+
 func TestLayoutRichTextUsesEqualOuterMargins(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	layout := layoutRichText(parseRichText("# 表格\n\n| 东区始发站 | 西区中转站 | 先研院站点 | 高新区终点 |\n| --- | --- | --- | --- |\n| 14:30 | 14:40 | 14:52 | 15:05 |"), now)

@@ -4190,7 +4190,36 @@ func formatExamRooms(exam map[string]any) string {
 			labels = append(labels, label)
 		}
 	}
+	if prefix, ok := sharedRoomPrefix(labels); ok {
+		suffixes := make([]string, len(labels))
+		for i, label := range labels {
+			suffixes[i] = label[len(prefix):]
+		}
+		return prefix + strings.Join(suffixes, "、")
+	}
 	return strings.Join(labels, "、")
+}
+
+// sharedRoomPrefix returns the common building prefix of multi-room labels
+// like "东区 五教 5102" / "东区 五教 5103" so the join can drop the repeated
+// prefix ("东区 五教 5102、5103") instead of overflowing the card column.
+func sharedRoomPrefix(labels []string) (string, bool) {
+	if len(labels) < 2 {
+		return "", false
+	}
+	prefix := ""
+	for i, label := range labels {
+		idx := strings.LastIndex(label, " ")
+		if idx < 0 || strings.TrimSpace(label[idx+1:]) == "" {
+			return "", false
+		}
+		if i == 0 {
+			prefix = label[:idx+1]
+		} else if label[:idx+1] != prefix {
+			return "", false
+		}
+	}
+	return prefix, prefix != ""
 }
 
 func formatCodeLabelLine(code, label string) string {
