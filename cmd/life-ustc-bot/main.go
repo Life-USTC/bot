@@ -157,14 +157,18 @@ func main() {
 		PublicCache:            publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
-		Enabled:     cfg.EnableAgent,
-		APIKey:      cfg.LLMAPIKey,
-		BaseURL:     cfg.LLMBaseURL,
-		Model:       cfg.LLMModel,
-		Timeout:     cfg.LLMTimeout,
-		Logger:      logger,
-		MCPBaseURL:  strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
-		AuthManager: authManager,
+		Enabled:        cfg.EnableAgent,
+		APIKey:         cfg.LLMAPIKey,
+		BaseURL:        cfg.LLMBaseURL,
+		Model:          cfg.LLMModel,
+		Timeout:        cfg.LLMTimeout,
+		PremiumAPIKey:  cfg.PremiumAPIKey,
+		PremiumBaseURL: cfg.PremiumBaseURL,
+		PremiumModel:   cfg.PremiumModel,
+		PremiumUserIDs: cfg.FeedbackAdminUsers,
+		Logger:         logger,
+		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
+		AuthManager:    authManager,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)

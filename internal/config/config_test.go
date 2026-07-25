@@ -142,6 +142,30 @@ func TestFromEnvParsesFeedbackTargets(t *testing.T) {
 	}
 }
 
+func TestFromEnvParsesPremiumModelConfig(t *testing.T) {
+	t.Setenv("PREMIUM_MODEL_API_KEY", " premium-key ")
+	t.Setenv("PREMIUM_MODEL_BASE_URL", " https://compatible.example/v1/// ")
+	t.Setenv("PREMIUM_MODEL", " premium-model ")
+
+	cfg := FromEnv()
+	if cfg.PremiumAPIKey != "premium-key" {
+		t.Fatalf("PremiumAPIKey = %q", cfg.PremiumAPIKey)
+	}
+	if cfg.PremiumBaseURL != "https://compatible.example/v1" {
+		t.Fatalf("PremiumBaseURL = %q", cfg.PremiumBaseURL)
+	}
+	if cfg.PremiumModel != "premium-model" {
+		t.Fatalf("PremiumModel = %q", cfg.PremiumModel)
+	}
+}
+
+func TestFromEnvUsesPremiumModelDefaults(t *testing.T) {
+	cfg := FromEnv()
+	if cfg.PremiumBaseURL != "https://api.moonshot.cn/v1" || cfg.PremiumModel != "kimi-k3" {
+		t.Fatalf("premium defaults = base %q model %q", cfg.PremiumBaseURL, cfg.PremiumModel)
+	}
+}
+
 func TestFromEnvParsesAllowGroupPersonalInfo(t *testing.T) {
 	t.Setenv("BOT_ALLOW_GROUP_PERSONAL_INFO", "true")
 

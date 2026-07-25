@@ -1524,24 +1524,38 @@ func TestAgentRunLifecycle(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	id, err := s.RecordAgentRun(ctx, ident, "帮我查一下")
+	id, err := s.RecordAgentRun(ctx, ident, AgentRun{
+		RawText:  "帮我查一下",
+		Provider: "deepseek",
+		Model:    "deepseek-v4-pro",
+		Currency: SpendingCurrencyCNY,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if id == 0 {
 		t.Fatal("agent run id was not set")
 	}
-	if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "查到了", nil); err != nil {
+	spending := AgentSpending{
+		PromptTokens:     100,
+		CachedTokens:     40,
+		CompletionTokens: 20,
+		TotalTokens:      120,
+		CostNanoCNY:      301_000,
+		Currency:         SpendingCurrencyCNY,
+	}
+	if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "查到了", nil, spending); err != nil {
 		t.Fatal(err)
 	}
 	var row agentRunRow
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.Status != AgentRunStatusCompleted || row.RawText != "帮我查一下" || row.Reply != "查到了" {
+	if row.Status != AgentRunStatusCompleted || row.RawText != "帮我查一下" || row.Reply != "查到了" ||
+		row.Provider != "deepseek" || row.Model != "deepseek-v4-pro" || row.CostNanoCNY != spending.CostNanoCNY {
 		t.Fatalf("agent run row = %#v", row)
 	}
-	if err := s.FinishAgentRun(ctx, id, AgentRunStatusFailed, "失败了", errors.New("deepseek timeout")); err != nil {
+	if err := s.FinishAgentRun(ctx, id, AgentRunStatusFailed, "失败了", errors.New("deepseek timeout"), spending); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
@@ -1549,6 +1563,52 @@ func TestAgentRunLifecycle(t *testing.T) {
 	}
 	if row.Status != AgentRunStatusFailed || row.Reply != "失败了" || row.Error != "deepseek timeout" {
 		t.Fatalf("failed agent run row = %#v", row)
+	}
+}
+
+func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	first := Identity{Platform: "qqbot", UserID: "admin", ConversationType: "private", ConversationID: "conversation-1"}
+	second := Identity{Platform: "qqbot", UserID: "admin", ConversationType: "private", ConversationID: "conversation-2"}
+	other := Identity{Platform: "qqbot", UserID: "other", ConversationType: "private", ConversationID: "conversation-3"}
+	record := func(ident Identity, cost int64) {
+		t.Helper()
+		id, err := s.RecordAgentRun(ctx, ident, AgentRun{
+			RawText: "hello", Provider: "premium", Model: "premium-model", Currency: SpendingCurrencyCNY,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.FinishAgentRun(ctx, id, AgentRunStatusCompleted, "ok", nil, AgentSpending{
+			PromptTokens: 10, CachedTokens: 2, CompletionTokens: 3, TotalTokens: 13,
+			CostNanoCNY: cost, Currency: SpendingCurrencyCNY,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record(first, 100)
+	record(second, 200)
+	record(other, 400)
+
+	conversation, err := s.ConversationSpending(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.CostNanoCNY != 100 || conversation.TotalTokens != 13 || conversation.Currency != SpendingCurrencyCNY {
+		t.Fatalf("conversation spending = %#v", conversation)
+	}
+	user, err := s.UserSpending(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.CostNanoCNY != 300 || user.TotalTokens != 26 || user.Currency != SpendingCurrencyCNY {
+		t.Fatalf("user spending = %#v", user)
 	}
 }
 

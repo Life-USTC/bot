@@ -49,6 +49,9 @@ type Config struct {
 	LLMBaseURL             string
 	LLMModel               string
 	LLMTimeout             time.Duration
+	PremiumAPIKey          string
+	PremiumBaseURL         string
+	PremiumModel           string
 	FeedbackAdminPlatform  string
 	FeedbackAdminUsers     []string
 	FeedbackAdminGroups    []string
@@ -97,6 +100,9 @@ func FromEnv() Config {
 		LLMBaseURL:             envOptionalString("OPENAI_BASE_URL"),
 		LLMModel:               envString("BOT_LLM_MODEL", "gpt-4o-mini"),
 		LLMTimeout:             time.Duration(envPositiveInt("BOT_LLM_TIMEOUT_SECONDS", 60)) * time.Second,
+		PremiumAPIKey:          envOptionalString("PREMIUM_MODEL_API_KEY"),
+		PremiumBaseURL:         envTrimRight("PREMIUM_MODEL_BASE_URL", "https://api.moonshot.cn/v1", "/"),
+		PremiumModel:           envString("PREMIUM_MODEL", "kimi-k3"),
 		FeedbackAdminPlatform:  envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
 		FeedbackAdminUsers:     envList("BOT_FEEDBACK_ADMIN_USERS"),
 		FeedbackAdminGroups:    envList("BOT_FEEDBACK_ADMIN_GROUPS"),

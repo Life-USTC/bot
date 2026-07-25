@@ -35,16 +35,25 @@ type Config struct {
 	Timeout time.Duration
 	Logger  *log.Logger
 
-	MCPBaseURL  string
-	AuthManager *auth.Manager
+	PremiumAPIKey  string
+	PremiumBaseURL string
+	PremiumModel   string
+	PremiumUserIDs []string
+	MCPBaseURL     string
+	AuthManager    *auth.Manager
 }
 
 type Service struct {
-	handler commands.Handler
-	model   *einoopenai.ChatModel
-	enabled bool
-	timeout time.Duration
-	logger  *log.Logger
+	handler        commands.Handler
+	model          *einoopenai.ChatModel
+	modelName      string
+	premiumModel   *einoopenai.ChatModel
+	premiumName    string
+	premiumUserIDs map[string]struct{}
+	enabled        bool
+	timeout        time.Duration
+	logger         *log.Logger
+	httpClient     *http.Client
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
@@ -52,6 +61,7 @@ type Service struct {
 
 type Input struct {
 	Text       string
+	ImageURLs  []string
 	Identity   store.Identity
 	SendUpdate func(context.Context, store.Identity, string) error
 }
@@ -89,7 +99,37 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
-	return &Service{handler: handler, model: chatModel, enabled: true, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
+	service := &Service{
+		handler:        handler,
+		model:          chatModel,
+		modelName:      modelName,
+		premiumUserIDs: normalizedUserIDSet(cfg.PremiumUserIDs),
+		enabled:        true,
+		timeout:        timeout,
+		logger:         cfg.Logger,
+		httpClient:     agentHTTPClient,
+		mcpClient:      mcpClient,
+		auth:           authManager,
+	}
+	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
+		premiumName := strings.TrimSpace(cfg.PremiumModel)
+		if premiumName == "" {
+			premiumName = "kimi-k3"
+		}
+		premiumModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
+			APIKey:     premiumAPIKey,
+			BaseURL:    textutil.TrimTrailingSlash(cfg.PremiumBaseURL),
+			Model:      premiumName,
+			HTTPClient: agentHTTPClient,
+			Timeout:    timeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create premium chat model: %w", err)
+		}
+		service.premiumModel = premiumModel
+		service.premiumName = premiumName
+	}
+	return service, nil
 }
 
 func (s *Service) Enabled() bool {
@@ -103,14 +143,23 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 
 func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
 	inputText := strings.TrimSpace(input.Text)
-	if !s.Enabled() || inputText == "" || store.IsGroupConversation(input.Identity) {
+	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) || store.IsGroupConversation(input.Identity) {
 		return commands.Response{}, false
 	}
-	runID := s.recordAgentRun(ctx, input)
+	model, provider, modelName := s.modelFor(input.Identity)
+	if provider != "premium" && len(input.ImageURLs) > 0 {
+		input.ImageURLs = nil
+		if inputText == "" {
+			return agentTextResponse("图片理解目前仅对管理员开放。"), true
+		}
+	}
+	runID := s.recordAgentRun(ctx, input, provider, modelName)
+	usage := &usageAccumulator{}
+	ctx = withUsageAccumulator(ctx, usage)
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
 		reply := "AI 工具设置读取失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
 		return agentTextResponse(reply), true
 	}
 	var trace *toolTraceNotifier
@@ -121,11 +170,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if err != nil {
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := "需要先登录。发送：登录"
-			s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil)
+			s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil, provider, modelName, usage.snapshot())
 			return agentTextResponse(reply), true
 		}
 		reply := "AI 工具初始化失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
 		return agentTextResponse(reply), true
 	}
 	if mcpSession != nil {
@@ -135,7 +184,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		Name:          "life_ustc_assistant",
 		Description:   "Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
-		Model:         s.model,
+		Model:         model,
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
@@ -152,14 +201,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	})
 	if err != nil {
 		reply := "AI 助手初始化失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
 		return agentTextResponse(reply), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 	messages, err := s.messagesFor(ctx, input)
 	if err != nil {
 		reply := "AI 历史记录读取失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
 		return agentTextResponse(reply), true
 	}
 	iter := runner.Run(ctx, messages)
@@ -171,7 +220,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 		if event.Err != nil {
 			reply := agentFailureReply(runID, event.Err)
-			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err)
+			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err, provider, modelName, usage.snapshot())
 			return agentTextResponse(reply), true
 		}
 		msg, _, err := adk.GetMessage(event)
@@ -184,15 +233,15 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 	}
 	if reply == "" {
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil, provider, modelName, usage.snapshot())
 		return commands.Response{}, false
 	}
 	response := s.responseFor(ctx, input, reply)
 	if response.Text == "" && len(response.Parts) == 0 {
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil)
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil, provider, modelName, usage.snapshot())
 		return commands.Response{}, false
 	}
-	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, response.Text, nil)
+	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, response.Text, nil, provider, modelName, usage.snapshot())
 	return response, true
 }
 
@@ -298,7 +347,31 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 			}
 		}
 	}
-	messages = append(messages, schema.UserMessage(strings.TrimSpace(input.Text)))
+	currentText := strings.TrimSpace(input.Text)
+	if len(input.ImageURLs) == 0 {
+		messages = append(messages, schema.UserMessage(currentText))
+		return messages, nil
+	}
+	if currentText == "" {
+		currentText = "请描述并分析这张图片。"
+	}
+	parts := []schema.MessageInputPart{{
+		Type: schema.ChatMessagePartTypeText,
+		Text: currentText,
+	}}
+	for _, imageURL := range input.ImageURLs {
+		dataURL, err := s.loadImageDataURL(ctx, imageURL)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeImageURL,
+			Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &dataURL},
+			},
+		})
+	}
+	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
 	return messages, nil
 }
 
@@ -418,11 +491,20 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 	return tools, mcpSession, nil
 }
 
-func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {
+func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) int64 {
 	if s.handler.Store == nil || !store.HasConversationIdentity(input.Identity) {
 		return 0
 	}
-	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, input.Text)
+	rawText := strings.TrimSpace(input.Text)
+	if rawText == "" && len(input.ImageURLs) > 0 {
+		rawText = "[image]"
+	}
+	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, store.AgentRun{
+		RawText:  rawText,
+		Provider: provider,
+		Model:    model,
+		Currency: store.SpendingCurrencyCNY,
+	})
 	if err != nil {
 		s.logf("record agent run failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
@@ -431,16 +513,36 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input) int64 {
 	return id
 }
 
-func (s *Service) finishAgentRun(ctx context.Context, id int64, status, reply string, err error) {
+func (s *Service) finishAgentRun(ctx context.Context, id int64, status, reply string, err error, provider, model string, usage tokenUsage) {
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}
 	if s.handler.Store == nil || id <= 0 {
 		return
 	}
-	if finishErr := s.handler.Store.FinishAgentRun(ctx, id, status, reply, err); finishErr != nil {
+	spending := spendingFor(provider, model, usage)
+	if finishErr := s.handler.Store.FinishAgentRun(ctx, id, status, reply, err, spending); finishErr != nil {
 		s.logf("finish agent run failed: id=%d status=%s error=%v", id, status, finishErr)
 	}
+}
+
+func (s *Service) modelFor(ident store.Identity) (*einoopenai.ChatModel, string, string) {
+	if s.premiumModel != nil {
+		if _, ok := s.premiumUserIDs[strings.TrimSpace(ident.UserID)]; ok {
+			return s.premiumModel, "premium", s.premiumName
+		}
+	}
+	return s.model, "deepseek", s.modelName
+}
+
+func normalizedUserIDSet(ids []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" {
+			out[id] = struct{}{}
+		}
+	}
+	return out
 }
 
 func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
