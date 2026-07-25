@@ -64,6 +64,8 @@ type Input struct {
 	ImageURLs  []string
 	Identity   store.Identity
 	SendUpdate func(context.Context, store.Identity, string) error
+
+	imageDataURLs []string
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
@@ -156,6 +158,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
+	if err := s.prepareInputImages(ctx, &input); err != nil {
+		reply := "AI 图片处理失败：" + err.Error()
+		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		return agentTextResponse(reply), true
+	}
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
 		reply := "AI 工具设置读取失败：" + err.Error()
@@ -373,11 +380,18 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 		Type: schema.ChatMessagePartTypeText,
 		Text: currentText,
 	}}
-	for _, imageURL := range input.ImageURLs {
-		dataURL, err := s.loadImageDataURL(ctx, imageURL)
-		if err != nil {
-			return nil, err
+	imageDataURLs := input.imageDataURLs
+	if imageDataURLs == nil {
+		imageDataURLs = make([]string, 0, len(input.ImageURLs))
+		for _, imageURL := range input.ImageURLs {
+			dataURL, err := s.loadImageDataURL(ctx, imageURL)
+			if err != nil {
+				return nil, err
+			}
+			imageDataURLs = append(imageDataURLs, dataURL)
 		}
+	}
+	for _, dataURL := range imageDataURLs {
 		parts = append(parts, schema.MessageInputPart{
 			Type: schema.ChatMessagePartTypeImageURL,
 			Image: &schema.MessageInputImage{

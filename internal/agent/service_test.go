@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -763,15 +764,17 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
 		if err := db.RecordInteraction(ctx, ident, store.Interaction{
-			RawText: fmt.Sprintf("turn-%02d", i),
+			RawText: fmt.Sprintf("turn-%02d %s", i, strings.Repeat("问", maxHistoryTextRunes)),
 			Handled: true,
-			Reply:   fmt.Sprintf("reply-%02d", i),
+			Reply:   fmt.Sprintf("reply-%02d %s", i, strings.Repeat("答", maxHistoryTextRunes)),
 			Status:  store.InteractionStatusHandled,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	var summaryRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		summaryRequests.Add(1)
 		var request struct {
 			Messages []map[string]any `json:"messages"`
 			Tools    []any            `json:"tools"`
@@ -800,6 +803,9 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	if err := svc.compactConversationHistory(ctx, ident, svc.model); err != nil {
 		t.Fatal(err)
 	}
+	if summaryRequests.Load() != 1 {
+		t.Fatalf("summary requests = %d", summaryRequests.Load())
+	}
 	summary, found, err := db.ConversationSummary(ctx, ident)
 	if err != nil || !found {
 		t.Fatalf("summary found = %v, err = %v", found, err)
@@ -811,11 +817,11 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1+conversationRecentTurnLimit*2+1 {
+	if len(messages) != 1+3*2+1 {
 		t.Fatalf("message count = %d, messages = %#v", len(messages), messages)
 	}
 	if !strings.HasPrefix(messages[0].Content, conversationSummaryPrefix) ||
-		!strings.Contains(messages[1].Content, "turn-16") ||
+		!strings.Contains(messages[1].Content, "turn-19") ||
 		messages[len(messages)-1].Content != "continue" {
 		t.Fatalf("messages = %#v", messages)
 	}
@@ -902,6 +908,54 @@ func TestHandleResponseCompactsHistoryBeforeAnswering(t *testing.T) {
 	}
 	if total.ModelRequests != 2 || total.PromptTokens != 8 || total.CompletionTokens != 2 {
 		t.Fatalf("spending = %#v", total)
+	}
+}
+
+func TestHandleResponseRejectsHardLimitImageBeforeCompaction(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "admin", ConversationType: "private", ConversationID: "admin"}
+	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
+		if err := db.RecordInteraction(ctx, ident, store.Interaction{
+			RawText: fmt.Sprintf("turn-%02d", i), Handled: true, Reply: "reply", Status: store.InteractionStatusHandled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", strconv.FormatInt(maxImageDownloadBytes+1, 10))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer imageServer.Close()
+	var modelRequests atomic.Int32
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		modelRequests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer modelServer.Close()
+	svc, err := New(ctx, Config{
+		Enabled: true, APIKey: "default", BaseURL: modelServer.URL, Model: "default",
+		PremiumAPIKey: "premium", PremiumBaseURL: modelServer.URL, PremiumModel: "premium",
+		PremiumUserIDs: []string{"admin"},
+	}, commands.Handler{Store: db}, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(ctx, Input{
+		Text: "看图", ImageURLs: []string{imageServer.URL + "/too-large.png"}, Identity: ident,
+	})
+	if !ok || !strings.Contains(response.Text, "AI 图片处理失败：图片超过 25 MiB 安全上限") {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if modelRequests.Load() != 0 {
+		t.Fatalf("model requests before image validation = %d", modelRequests.Load())
+	}
+	if _, found, err := db.ConversationSummary(ctx, ident); err != nil || found {
+		t.Fatalf("summary found = %v, err = %v", found, err)
 	}
 }
 
