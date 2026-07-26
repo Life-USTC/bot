@@ -144,6 +144,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
+	runStarted := time.Now()
 	inputText := strings.TrimSpace(input.Text)
 	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) || store.IsGroupConversation(input.Identity) {
 		return commands.Response{}, false
@@ -158,15 +159,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
+	finishRun := func(status, reply string, runErr error) {
+		s.finishAgentRun(ctx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
+	}
 	if err := s.prepareInputImages(ctx, &input); err != nil {
 		reply := "AI 图片处理失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
 		reply := "AI 工具设置读取失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	var trace *toolTraceNotifier
@@ -177,17 +181,17 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if err != nil {
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := "需要先登录。发送：登录"
-			s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, reply, nil, provider, modelName, usage.snapshot())
+			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
 		reply := "AI 工具初始化失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
 	}
-	if err := s.compactConversationHistory(ctx, input.Identity, model); err != nil {
+	if err := s.compactConversationHistory(ctx, input.Identity, model, runID); err != nil {
 		s.logf("compact conversation history failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 	}
@@ -213,14 +217,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	})
 	if err != nil {
 		reply := "AI 助手初始化失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 	messages, err := s.messagesFor(ctx, input)
 	if err != nil {
 		reply := "AI 历史记录读取失败：" + err.Error()
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, err, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	iter := runner.Run(ctx, messages)
@@ -232,7 +236,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 		if event.Err != nil {
 			reply := agentFailureReply(runID, event.Err)
-			s.finishAgentRun(ctx, runID, store.AgentRunStatusFailed, reply, event.Err, provider, modelName, usage.snapshot())
+			finishRun(store.AgentRunStatusFailed, reply, event.Err)
 			return agentTextResponse(reply), true
 		}
 		msg, _, err := adk.GetMessage(event)
@@ -245,15 +249,15 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 	}
 	if reply == "" {
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
 	response := s.responseFor(ctx, input, reply)
 	if response.Text == "" && len(response.Parts) == 0 {
-		s.finishAgentRun(ctx, runID, store.AgentRunStatusIgnored, "", nil, provider, modelName, usage.snapshot())
+		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
-	s.finishAgentRun(ctx, runID, store.AgentRunStatusCompleted, response.Text, nil, provider, modelName, usage.snapshot())
+	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
 }
 
@@ -538,20 +542,34 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 		return 0
 	}
+	s.logf("llm run started: id=%d provider=%s model=%s platform=%s conversation_type=%s conversation_id=%s images=%d",
+		id, provider, model, input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(input.ImageURLs))
 	return id
 }
 
-func (s *Service) finishAgentRun(ctx context.Context, id int64, status, reply string, err error, provider, model string, usage tokenUsage) {
+func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Identity, status, reply string, err error, provider, model string, usage tokenUsage, duration time.Duration) {
+	spending := spendingFor(provider, model, usage)
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d",
+		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
+		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds())
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}
 	if s.handler.Store == nil || id <= 0 {
 		return
 	}
-	spending := spendingFor(provider, model, usage)
 	if finishErr := s.handler.Store.FinishAgentRun(ctx, id, status, reply, err, spending); finishErr != nil {
 		s.logf("finish agent run failed: id=%d status=%s error=%v", id, status, finishErr)
+		return
 	}
+	conversationTotal, conversationErr := s.handler.Store.ConversationSpending(ctx, ident)
+	userTotal, userErr := s.handler.Store.UserSpending(ctx, ident)
+	if conversationErr != nil || userErr != nil {
+		s.logf("read llm spending totals failed: id=%d conversation_error=%v user_error=%v", id, conversationErr, userErr)
+		return
+	}
+	s.logf("llm spending totals: id=%d conversation_cost_cny=%.6f user_cost_cny=%.6f",
+		id, float64(conversationTotal.CostNanoCNY)/1_000_000_000, float64(userTotal.CostNanoCNY)/1_000_000_000)
 }
 
 func (s *Service) modelFor(ident store.Identity) (*einoopenai.ChatModel, string, string) {

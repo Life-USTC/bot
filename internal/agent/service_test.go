@@ -756,6 +756,7 @@ func TestMessagesForCompactsLongHistory(t *testing.T) {
 
 func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	ctx := context.Background()
+	var logs bytes.Buffer
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -796,12 +797,24 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	defer server.Close()
 	svc, err := New(ctx, Config{
 		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+		Logger: log.New(&logs, "", 0),
 	}, commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.compactConversationHistory(ctx, ident, svc.model); err != nil {
+	if err := svc.compactConversationHistory(ctx, ident, svc.model, 77); err != nil {
 		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"llm compaction started: run_id=77",
+		"compacted_turns=18 retained_turns=3",
+		"estimated_input_tokens=",
+		"llm compaction completed: run_id=77",
+		"summary_runes=14",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("compaction logs missing %q: %q", want, logs.String())
+		}
 	}
 	if summaryRequests.Load() != 1 {
 		t.Fatalf("summary requests = %d", summaryRequests.Load())
@@ -1048,8 +1061,36 @@ func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
 func TestFinishAgentRunLogsErrors(t *testing.T) {
 	var logs bytes.Buffer
 	svc := &Service{logger: log.New(&logs, "", 0)}
-	svc.finishAgentRun(context.Background(), 0, store.AgentRunStatusFailed, "", context.DeadlineExceeded, "deepseek", "test", tokenUsage{})
+	svc.finishAgentRun(context.Background(), 0, store.Identity{}, store.AgentRunStatusFailed, "", context.DeadlineExceeded, "deepseek", "test", tokenUsage{}, time.Second)
 	if !strings.Contains(logs.String(), "agent run failed") || !strings.Contains(logs.String(), "context deadline exceeded") {
 		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+func TestFinishAgentRunLogsUsageAndTotals(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var logs bytes.Buffer
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	svc := &Service{logger: log.New(&logs, "", 0), handler: commands.Handler{Store: db}}
+	id := svc.recordAgentRun(ctx, Input{Text: "hello", Identity: ident}, "premium", "premium-model")
+	svc.finishAgentRun(ctx, id, ident, store.AgentRunStatusCompleted, "ok", nil, "premium", "premium-model", tokenUsage{
+		PromptTokens: 100, CachedTokens: 10, CacheMissTokens: 90, CompletionTokens: 20,
+		TotalTokens: 120, ModelRequests: 2, ToolCalls: 1,
+	}, 1500*time.Millisecond)
+	for _, want := range []string{
+		"llm run started: id=1 provider=premium model=premium-model",
+		"llm run completed: id=1 status=completed provider=premium model=premium-model",
+		"prompt_tokens=100 cached_tokens=10 completion_tokens=20 total_tokens=120",
+		"model_requests=2 tool_calls=1 estimated_cost_cny=0.001136 duration_ms=1500",
+		"llm spending totals: id=1 conversation_cost_cny=0.001136 user_cost_cny=0.001136",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("usage logs missing %q: %q", want, logs.String())
+		}
 	}
 }
