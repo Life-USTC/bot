@@ -32,6 +32,7 @@ type Bridge struct {
 	WSURL       string
 	Handler     commands.Handler
 	Agent       *agent.Service
+	Dispatcher  *agent.Dispatcher
 	HTTPClient  *http.Client
 	Logger      *log.Logger
 	Renderer    responses.Renderer
@@ -146,13 +147,11 @@ func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 		if event.PostType != "message" {
 			continue
 		}
-		reply, ok := b.handleMessage(ctx, event)
-		if !ok {
-			continue
-		}
-		if err := b.SendResponse(ctx, event, reply); err != nil {
-			b.logf("send reply failed: %v", err)
-		}
+		b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
+			if err := b.SendResponse(ctx, event, reply); err != nil {
+				b.logf("send reply failed: %v", err)
+			}
+		})
 	}
 }
 
@@ -224,8 +223,8 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		}
 		select {
 		case events <- event:
-		default:
-			b.logf("reverse websocket message queue full; dropping user_id=%d group_id=%d", event.UserID, event.GroupID)
+		case <-connCtx.Done():
+			return
 		}
 	}
 }
@@ -240,17 +239,42 @@ func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, 
 		}
 		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d",
 			event.MessageType, event.UserID, event.GroupID)
+		b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
+			if err := b.sendReverseResponse(ctx, conn, writeMu, event, reply); err != nil {
+				b.logf("reverse websocket send failed: %v", err)
+			} else {
+				b.logf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
+			}
+		})
+	}
+}
+
+func (b *Bridge) dispatchMessage(ctx context.Context, event messageEvent, send func(context.Context, messageEvent, commands.Response)) {
+	if b.Dispatcher == nil {
 		reply, ok := b.handleMessage(ctx, event)
 		if !ok {
 			b.logf("reverse websocket ignored message from user_id=%d", event.UserID)
-			continue
+			return
 		}
-		if err := b.sendReverseResponse(ctx, conn, writeMu, event, reply); err != nil {
-			b.logf("reverse websocket send failed: %v", err)
-		} else {
-			b.logf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
-		}
+		send(ctx, event, reply)
+		return
 	}
+	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{Text: event.RawMessage, Identity: event.identity()})
+	if ok {
+		send(ctx, event, reply)
+		return
+	}
+	b.Dispatcher.Submit(b.agentInput(event), func(ctx context.Context, input agent.Input, reply commands.Response, ok bool) {
+		mergedEvent := event
+		mergedEvent.RawMessage = input.Text
+		if !ok {
+			b.recordIgnored(ctx, mergedEvent)
+			b.logf("reverse websocket ignored message from user_id=%d", mergedEvent.UserID)
+			return
+		}
+		b.recordAgentResponse(ctx, mergedEvent, reply)
+		send(ctx, mergedEvent, reply)
+	})
 }
 
 func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (commands.Response, bool) {
@@ -275,15 +299,24 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (commands.
 	if b.Agent == nil {
 		return commands.Response{}, false
 	}
-	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
+	reply, ok := b.Agent.HandleResponse(ctx, b.agentInput(event))
+	if !ok {
+		return commands.Response{}, false
+	}
+	b.recordAgentResponse(ctx, event, reply)
+	return reply, true
+}
+
+func (b *Bridge) agentInput(event messageEvent) agent.Input {
+	return agent.Input{
 		Text:       event.RawMessage,
 		ImageURLs:  event.imageURLs(),
 		Identity:   event.identity(),
 		SendUpdate: b.SendMessage,
-	})
-	if !ok {
-		return commands.Response{}, false
 	}
+}
+
+func (b *Bridge) recordAgentResponse(ctx context.Context, event messageEvent, reply commands.Response) {
 	b.recordInteraction(ctx, event, store.Interaction{
 		RawText: event.RawMessage,
 		Command: "agent",
@@ -291,7 +324,6 @@ func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (commands.
 		Reply:   reply.Text,
 		Status:  store.InteractionStatusHandled,
 	}, "agent")
-	return reply, true
 }
 
 func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {

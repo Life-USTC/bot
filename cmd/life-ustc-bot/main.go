@@ -176,6 +176,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var agentDispatcher *agent.Dispatcher
+	if agentService.Enabled() {
+		agentDispatcher = agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{Logger: logger})
+	}
 
 	if cfg.EnableOneBotServer {
 		server := onebot12.New(onebot12.Config{
@@ -197,6 +201,7 @@ func main() {
 			WSURL:       cfg.NapCatWSURL,
 			Handler:     handler,
 			Agent:       agentService,
+			Dispatcher:  agentDispatcher,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 			Renderer:    renderer,
@@ -215,6 +220,7 @@ func main() {
 			AccessToken: cfg.NapCatAccessToken,
 			Handler:     handler,
 			Agent:       agentService,
+			Dispatcher:  agentDispatcher,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 			Renderer:    renderer,
@@ -240,6 +246,7 @@ func main() {
 			Intents:    cfg.QQBotIntents,
 			Handler:    handler,
 			Agent:      agentService,
+			Dispatcher: agentDispatcher,
 			HTTPClient: httpClient,
 			Logger:     logger,
 			Renderer:   renderer,

@@ -68,6 +68,7 @@ type Bot struct {
 	Intents    uint64
 	Handler    commands.Handler
 	Agent      *agent.Service
+	Dispatcher *agent.Dispatcher
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
@@ -533,6 +534,10 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			message.Identity.UserID,
 			message.Identity.ConversationID,
 		)
+		if b.Dispatcher != nil {
+			b.dispatchMessage(ctx, message)
+			return
+		}
 		reply, ok := b.handleMessage(ctx, message)
 		if !ok {
 			b.logf("QQ bot ignored message: event=%s", payload.T)
@@ -564,6 +569,10 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 	)
 	if err := b.ackInteraction(ctx, message.EventID, 0); err != nil {
 		b.logf("ack QQ bot interaction failed: %v", err)
+	}
+	if b.Dispatcher != nil {
+		b.dispatchMessage(ctx, message)
+		return
 	}
 	reply, ok := b.handleMessage(ctx, message)
 	if !ok {
@@ -787,21 +796,59 @@ func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (comm
 	return reply, true
 }
 
+func (b *Bot) dispatchMessage(ctx context.Context, message *incomingMessage) {
+	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{Text: message.Text, Identity: message.Identity})
+	if ok {
+		b.sendDispatchedResponse(ctx, message, reply)
+		return
+	}
+	b.Dispatcher.Submit(b.agentInput(message), func(ctx context.Context, input agent.Input, reply commands.Response, ok bool) {
+		mergedMessage := *message
+		mergedMessage.Text = input.Text
+		mergedMessage.ImageURLs = input.ImageURLs
+		if !ok {
+			b.recordIgnored(ctx, &mergedMessage)
+			b.logf("QQ bot ignored message: event=%s", mergedMessage.Type)
+			return
+		}
+		b.recordAgentResponse(ctx, &mergedMessage, reply)
+		b.sendDispatchedResponse(ctx, &mergedMessage, reply)
+	})
+}
+
+func (b *Bot) sendDispatchedResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
+	if err := b.SendResponse(ctx, message, reply); err != nil {
+		b.logf("send QQ bot reply failed: %v", err)
+		return
+	}
+	b.logf("QQ bot replied: event=%s conversation_type=%s conversation_id=%q",
+		message.Type, message.Identity.ConversationType, message.Identity.ConversationID)
+}
+
 func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
 	if b.Agent == nil {
 		return commands.Response{}, false
 	}
-	reply, ok := b.Agent.HandleResponse(ctx, agent.Input{
+	reply, ok := b.Agent.HandleResponse(ctx, b.agentInput(message))
+	if !ok {
+		return commands.Response{}, false
+	}
+	b.recordAgentResponse(ctx, message, reply)
+	return reply, true
+}
+
+func (b *Bot) agentInput(message *incomingMessage) agent.Input {
+	return agent.Input{
 		Text:      message.Text,
 		ImageURLs: message.ImageURLs,
 		Identity:  message.Identity,
 		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
 			return b.Send(ctx, message, update)
 		},
-	})
-	if !ok {
-		return commands.Response{}, false
 	}
+}
+
+func (b *Bot) recordAgentResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
 	b.recordInteraction(ctx, message.Identity, store.Interaction{
 		RawText: message.Text,
 		Command: "agent",
@@ -809,7 +856,6 @@ func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (comman
 		Reply:   reply.Text,
 		Status:  store.InteractionStatusHandled,
 	}, "agent")
-	return reply, true
 }
 
 func attachmentImageURLs(attachments []map[string]any) []string {

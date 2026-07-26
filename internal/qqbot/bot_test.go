@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tencent-connect/botgo/interaction/signature"
 
+	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
@@ -199,6 +200,63 @@ func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `QQ bot message: event=C2C_MESSAGE_CREATE conversation_type=private user_id="user-openid" conversation_id="user-openid"`) {
 		t.Fatalf("logs missing message metadata: %q", logs.String())
+	}
+}
+
+func TestDispatchMessageBatchesAgentMessages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var modelRequests atomic.Int32
+	var sent sendMessageRequest
+	sentCh := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			modelRequests.Add(1)
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-batch","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"合并完成"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
+			}`))
+		case r.URL.Path == "/v2/users/user-openid/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Error(err)
+				return
+			}
+			sentCh <- struct{}{}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	agentService, err := agent.New(ctx, agent.Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot := &Bot{
+		BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client(), Agent: agentService,
+		Dispatcher: agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
+			Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
+		}),
+	}
+	ident := store.Identity{Platform: "qqbot", UserID: "user-openid", ConversationType: "private", ConversationID: "user-openid"}
+	bot.dispatchMessage(ctx, &incomingMessage{ID: "first-id", Type: "C2C_MESSAGE_CREATE", Text: "第一条", Identity: ident})
+	bot.dispatchMessage(ctx, &incomingMessage{ID: "second-id", Type: "C2C_MESSAGE_CREATE", Text: "补充说明", Identity: ident})
+
+	select {
+	case <-sentCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for batched QQ reply")
+	}
+	if modelRequests.Load() != 1 {
+		t.Fatalf("model requests = %d", modelRequests.Load())
+	}
+	if sent.MsgID != "second-id" || sent.Content != "合并完成" {
+		t.Fatalf("sent = %#v", sent)
 	}
 }
 
