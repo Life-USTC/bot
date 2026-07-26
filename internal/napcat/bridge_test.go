@@ -19,6 +19,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/responses"
@@ -761,6 +762,98 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `reverse websocket message: message_type="private" user_id=456 group_id=0`) {
 		t.Fatalf("logs missing message metadata: %q", logs.String())
+	}
+}
+
+func TestDispatchMessageBatchesAgentMessages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var modelRequests atomic.Int32
+	var requestBody map[string]any
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelRequests.Add(1)
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Error(err)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-batch","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"合并完成"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
+		}`))
+	}))
+	defer modelServer.Close()
+	agentService, err := agent.New(ctx, agent.Config{
+		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model",
+	}, commands.Handler{}, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &Bridge{
+		Agent: agentService,
+		Dispatcher: agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
+			Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
+		}),
+	}
+	replies := make(chan messageEvent, 2)
+	send := func(_ context.Context, event messageEvent, response commands.Response) {
+		if response.Text != "合并完成" {
+			t.Errorf("response = %#v", response)
+		}
+		replies <- event
+	}
+	bridge.dispatchMessage(ctx, messageEvent{PostType: "message", MessageType: "private", RawMessage: "第一条", UserID: 42}, send)
+	bridge.dispatchMessage(ctx, messageEvent{PostType: "message", MessageType: "private", RawMessage: "补充说明", UserID: 42}, send)
+
+	select {
+	case event := <-replies:
+		if event.RawMessage != "第一条\n\n补充说明" {
+			t.Fatalf("merged event = %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for batched reply")
+	}
+	if modelRequests.Load() != 1 {
+		t.Fatalf("model requests = %d", modelRequests.Load())
+	}
+	select {
+	case extra := <-replies:
+		t.Fatalf("unexpected extra reply: %#v", extra)
+	case <-time.After(40 * time.Millisecond):
+	}
+	encoded, _ := json.Marshal(requestBody["messages"])
+	if !bytes.Contains(encoded, []byte("第一条\\n\\n补充说明")) {
+		t.Fatalf("model messages = %s", encoded)
+	}
+}
+
+func TestDispatchMessageBypassesAgentQueueForCommands(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	agentService, err := agent.New(ctx, agent.Config{Enabled: false}, commands.Handler{}, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &Bridge{
+		Handler: commands.Handler{Prefix: "/life"},
+		Agent:   agentService,
+		Dispatcher: agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
+			Debounce: 200 * time.Millisecond, MaxWait: 300 * time.Millisecond,
+		}),
+	}
+	replied := make(chan commands.Response, 1)
+	bridge.dispatchMessage(ctx, messageEvent{
+		PostType: "message", MessageType: "private", RawMessage: "帮助", UserID: 42,
+	}, func(_ context.Context, _ messageEvent, response commands.Response) {
+		replied <- response
+	})
+	select {
+	case response := <-replied:
+		if !strings.Contains(response.Text, "Bot 帮助") {
+			t.Fatalf("response = %#v", response)
+		}
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("command waited for the agent batching window")
 	}
 }
 
