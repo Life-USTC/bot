@@ -36,6 +36,12 @@ func helpOverviewSections() []helpSection {
 				{topic: "feedback", command: "反馈", description: "向管理员提交反馈"},
 			},
 		},
+		{
+			title: "进阶",
+			rows: []helpRow{
+				{topic: "advanced", command: "帮助 AI", description: "查看工具调用提示等进阶用法"},
+			},
+		},
 	}
 }
 
@@ -245,6 +251,15 @@ func helpDetailSections() []helpSection {
 			},
 		},
 		{
+			title: "进阶 AI",
+			rows: []helpRow{
+				{topic: "advanced", commandName: "agent", command: "AI 工具", description: "查看当前工具调用提示设置"},
+				{topic: "advanced", commandName: "agent", command: "AI 工具 开", description: "回答时显示 LLM 工具调用提示"},
+				{topic: "advanced", commandName: "agent", command: "AI 工具 关", description: "回答时隐藏 LLM 工具调用提示"},
+				{topic: "advanced", commandName: "settings", command: "设置", description: "查看通知和 AI 相关设置入口"},
+			},
+		},
+		{
 			title: "系统",
 			rows: []helpRow{
 				{topic: "system", commandName: "status", command: "系统 状态", description: "查看服务与登录状态"},
@@ -333,6 +348,10 @@ func helpOverviewRichText() string {
 }
 
 var helpTopicAliases = map[string]string{
+	"AI":           "advanced",
+	"ai":           "advanced",
+	"进阶":           "advanced",
+	"高级":           "advanced",
 	"快捷入口":         "shortcuts",
 	"快捷":           "shortcuts",
 	"shortcuts":    "shortcuts",
@@ -426,6 +445,7 @@ func helpTopicCommand(args []string) string {
 }
 
 var helpTopicTitles = map[string]string{
+	"advanced":     "进阶 AI",
 	"shortcuts":    "快捷入口",
 	"agenda":       "日程",
 	"schedule":     "课表",

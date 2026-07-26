@@ -213,6 +213,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
 		"常用：",
 		"账户与系统：",
+		"进阶：",
 		"命令\t说明",
 		"日程\t今日安排、综合概览与近期截止",
 		"课表\t周课表、单日课表与下一节课",
@@ -220,6 +221,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t查询班次、路线与设置偏好",
 		"设置\t管理通知与工具调用展示",
+		"帮助 AI\t查看工具调用提示等进阶用法",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -243,6 +245,24 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	}
 	if !strings.Contains(reply, "\n") || strings.ContainsAny(reply, "\r\x1b") {
 		t.Fatalf("reply separators = %q", reply)
+	}
+}
+
+func TestAdvancedAIHelpShowsToolTraceControls(t *testing.T) {
+	reply, ok := (Handler{}).Handle(context.Background(), Input{Text: "帮助 AI", Identity: testIdentity()})
+	if !ok {
+		t.Fatal("advanced AI help was not handled")
+	}
+	for _, want := range []string{
+		"进阶 AI 帮助：",
+		"AI 工具\t查看当前工具调用提示设置",
+		"AI 工具 开\t回答时显示 LLM 工具调用提示",
+		"AI 工具 关\t回答时隐藏 LLM 工具调用提示",
+		"设置\t查看通知和 AI 相关设置入口",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
 }
 
@@ -357,7 +377,7 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 	}
 	visibleTopics := map[string]bool{
 		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
-		"bus": true, "account": true, "settings": true, "system": true, "feedback": true,
+		"bus": true, "account": true, "settings": true, "system": true, "feedback": true, "advanced": true,
 	}
 	if len(overviewCount) != len(visibleTopics) {
 		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))
