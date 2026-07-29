@@ -350,7 +350,15 @@ func (c *Client) GetMyDashboard(ctx context.Context, token string) (map[string]a
 }
 
 func (c *Client) GetUpcomingDeadlines(ctx context.Context, token string, dayLimit int) (map[string]any, error) {
+	return c.GetUpcomingDeadlinesAt(ctx, token, dayLimit, time.Time{})
+}
+
+func (c *Client) GetUpcomingDeadlinesAt(ctx context.Context, token string, dayLimit int, atTime time.Time) (map[string]any, error) {
 	params := openapi.WorkspaceOverviewGetParams{}
+	if !atTime.IsZero() {
+		value := atTime.Format(time.RFC3339)
+		params.AtTime = &value
+	}
 	if dayLimit > 0 {
 		params.HomeworkWindowDays = int64Ptr(int64(dayLimit))
 	}
