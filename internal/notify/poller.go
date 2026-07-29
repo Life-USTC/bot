@@ -70,6 +70,9 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) {
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+		return
+	}
 	token, err := p.Auth.AccessToken(ctx, settings.Identity)
 	if err != nil {
 		p.logf("notification token unavailable for %s: %v", settings.Identity.UserID, err)
@@ -77,19 +80,42 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 	}
 	now := p.now().In(lifedata.ChinaLocation())
 	if settings.ClassesEnabled {
-		token = p.notifyClasses(ctx, settings.Identity, token, now)
+		if settings.HomeworkEnabled {
+			overview, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) (map[string]any, error) {
+				return p.Life.GetUpcomingDeadlinesAt(ctx, token, 1, now)
+			})
+			if err != nil {
+				p.logf("load notification overview failed: %v", err)
+				return
+			}
+			p.notifyClasses(ctx, settings.Identity, overviewItems(overview, "schedules"), now)
+			p.notifyHomeworks(ctx, settings.Identity, overviewItems(overview, "homeworks"), now)
+			return
+		}
+		dateFrom, dateTo := lifedata.DayRFC3339Range(now)
+		schedules, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
+			return p.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+		})
+		if err != nil {
+			p.logf("load schedules for notification failed: %v", err)
+			return
+		}
+		p.notifyClasses(ctx, settings.Identity, schedules, now)
+		return
 	}
-	if settings.HomeworkEnabled {
-		p.notifyHomeworks(ctx, settings.Identity, token, now)
+	homeworks, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
+		return p.Life.SubscribedHomeworks(ctx, token)
+	})
+	if err != nil {
+		p.logf("load homework notifications failed: %v", err)
+		return
 	}
+	p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
 }
 
-func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token string, now time.Time) string {
-	schedules, token, err := p.schedulesForDay(ctx, ident, token, now)
-	if err != nil {
-		p.logf("load schedules for notification failed: %v", err)
-		return token
-	}
+func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedules []map[string]any, now time.Time) {
+	schedules = lifedata.FilterSchedulesForDay(schedules, now)
+	lifedata.SortSchedulesByStart(schedules)
 	for _, schedule := range schedules {
 		start := lifedata.ScheduleStartTime(schedule, now, nil)
 		if start.IsZero() || start.Before(now) || start.After(now.Add(30*time.Minute)) {
@@ -103,17 +129,9 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, token 
 		}
 		p.sendNotificationOnce(ctx, ident, classKind, key, message, image)
 	}
-	return token
 }
 
-func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, token string, now time.Time) {
-	homeworks, err := auth.WithRefresh(ctx, p.Auth, ident, token, func(token string) ([]map[string]any, error) {
-		return p.Life.SubscribedHomeworks(ctx, token)
-	})
-	if err != nil {
-		p.logf("load homework notifications failed: %v", err)
-		return
-	}
+func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, homeworks []map[string]any, now time.Time) {
 	lifedata.SortHomeworksByDue(homeworks)
 	for _, homework := range homeworks {
 		if lifedata.HomeworkCompleted(homework) {
@@ -133,6 +151,11 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, toke
 	}
 }
 
+func overviewItems(overview map[string]any, key string) []map[string]any {
+	group, _ := overview[key].(map[string]any)
+	return lifedata.MapSlice(group["items"])
+}
+
 func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity, kind, key, message string, image *responses.Image) {
 	delivered, err := p.Store.NotificationDelivered(ctx, ident, kind, key)
 	if err != nil {
@@ -149,38 +172,6 @@ func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity,
 	if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, kind, key); err != nil {
 		p.logf("record %s notification failed: %v", kind, err)
 	}
-}
-
-func (p *Poller) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
-	sub, err := p.Life.CurrentSubscription(ctx, token)
-	if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-		token = refreshed
-		sub, err = p.Life.CurrentSubscription(ctx, token)
-	}
-	if err != nil {
-		return nil, token, err
-	}
-	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
-	if len(sectionIDs) == 0 {
-		return nil, token, nil
-	}
-	dateFrom, dateTo := lifedata.DayRFC3339Range(day)
-	all := make([]map[string]any, 0, len(sectionIDs))
-	for _, sectionID := range sectionIDs {
-		values := life.ScheduleQuery(sectionID, dateFrom, dateTo)
-		schedules, err := p.Life.Schedules(ctx, token, values)
-		if refreshed, ok := p.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
-			token = refreshed
-			schedules, err = p.Life.Schedules(ctx, token, values)
-		}
-		if err != nil {
-			return nil, token, err
-		}
-		all = append(all, schedules...)
-	}
-	all = lifedata.FilterSchedulesForDay(all, day)
-	lifedata.SortSchedulesByStart(all)
-	return all, token, nil
 }
 
 func (p *Poller) now() time.Time {
