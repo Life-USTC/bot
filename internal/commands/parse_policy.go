@@ -8,12 +8,8 @@ import (
 // natural language falls through to the agent.
 func commandArgsAcceptable(name string, args []string) bool {
 	switch name {
-	case "help":
-		return true
 	case "notify":
 		return notifyArgsAcceptable(args)
-	case "feedback":
-		return true
 	case "calendar", "overview", "account", "ping", "logout", "nextclass", "status", "semester":
 		return !hasArgs(args) || firstArgIsHelp(args)
 	case "list_semesters":
@@ -36,16 +32,8 @@ func commandArgsAcceptable(name string, args []string) bool {
 		return !hasArgs(args) || firstArgIsHelp(args) || firstArgIn(args, "status")
 	case "settings":
 		return settingsArgsAcceptable(args)
-	case "todo":
-		return true
 	case "exam":
 		return examArgsAcceptable(args)
-	case "course", "teacher", "section", "course_search", "teacher_search", "section_search",
-		"course_by_jw_id", "teacher_by_id", "section_by_jw_id",
-		"section_schedules", "section_exams", "section_homeworks",
-		"bus_routes", "unsubscribe_section_by_jw_id", "my_subscribed_sections",
-		"upcoming_deadlines":
-		return true
 	default:
 		return true
 	}
@@ -69,10 +57,10 @@ func settingsArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIsHelp(args) {
 		return true
 	}
-	switch normToken(args[0]) {
-	case "notify", "notice", "提醒", "通知", "推送":
+	switch settingsTopic(args[0]) {
+	case "notify":
 		return notifyArgsAcceptable(normalizeNotifyArgs(args[1:]))
-	case "agent", "ai", "llm", "tool", "tools", "工具", "调试":
+	case "agent":
 		rest := args[1:]
 		if len(rest) > 0 && firstArgIn(rest, "tool", "tools", "工具") {
 			rest = rest[1:]
@@ -165,15 +153,23 @@ func examArgsAcceptable(args []string) bool {
 }
 
 func isListPageToken(value string) bool {
-	token := strings.TrimSpace(value)
-	if token == "" {
-		return false
-	}
-	if strings.HasPrefix(token, "第") && strings.HasSuffix(token, "页") {
+	remaining, _, err := extractListPage([]string{value})
+	if err == nil && len(remaining) == 0 && strings.TrimSpace(value) != "" {
 		return true
 	}
-	n, ok := parseIntArg(token)
+	n, ok := parseIntArg(strings.TrimSpace(value))
 	return ok && n > 0
+}
+
+func settingsTopic(token string) string {
+	switch normToken(token) {
+	case "notify", "notice", "提醒", "通知", "推送":
+		return "notify"
+	case "agent", "ai", "llm", "tool", "tools", "工具", "调试":
+		return "agent"
+	default:
+		return ""
+	}
 }
 
 func acceptedCommand(raw, name string, args []string) (parsedCommand, bool) {

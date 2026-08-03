@@ -19,6 +19,7 @@ const (
 	classKind               = "class"
 	homeworkKind            = "homework"
 	maxNotificationAttempts = 3
+	notificationAttemptTTL  = 2 * time.Hour
 )
 
 type Sender interface {
@@ -27,7 +28,7 @@ type Sender interface {
 
 type notificationAttempt struct {
 	count int
-	last  time.Time
+	at    time.Time
 }
 
 type Poller struct {
@@ -201,6 +202,7 @@ func notificationAttemptKey(ident store.Identity, kind, key string) string {
 func (p *Poller) shouldAttempt(ident store.Identity, kind, key string) bool {
 	p.attemptMu.Lock()
 	defer p.attemptMu.Unlock()
+	p.pruneAttemptsLocked()
 	if p.attempts == nil {
 		return true
 	}
@@ -210,13 +212,14 @@ func (p *Poller) shouldAttempt(ident store.Identity, kind, key string) bool {
 func (p *Poller) noteFailedAttempt(ident store.Identity, kind, key string) int {
 	p.attemptMu.Lock()
 	defer p.attemptMu.Unlock()
+	p.pruneAttemptsLocked()
 	if p.attempts == nil {
 		p.attempts = make(map[string]notificationAttempt)
 	}
 	id := notificationAttemptKey(ident, kind, key)
 	attempt := p.attempts[id]
 	attempt.count++
-	attempt.last = p.now()
+	attempt.at = p.now()
 	p.attempts[id] = attempt
 	return attempt.count
 }
@@ -228,6 +231,18 @@ func (p *Poller) clearAttempt(ident store.Identity, kind, key string) {
 		return
 	}
 	delete(p.attempts, notificationAttemptKey(ident, kind, key))
+}
+
+func (p *Poller) pruneAttemptsLocked() {
+	if p.attempts == nil {
+		return
+	}
+	now := p.now()
+	for key, attempt := range p.attempts {
+		if now.Sub(attempt.at) > notificationAttemptTTL {
+			delete(p.attempts, key)
+		}
+	}
 }
 
 func (p *Poller) now() time.Time {

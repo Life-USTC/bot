@@ -418,16 +418,8 @@ func (e messageEvent) imageURLs() []string {
 }
 
 func imageURLsFromMessage(message any) []string {
-	var segments []any
-	switch value := message.(type) {
-	case []any:
-		segments = value
-	case []map[string]any:
-		segments = make([]any, len(value))
-		for i := range value {
-			segments[i] = value[i]
-		}
-	default:
+	segments := messageSegments(message)
+	if len(segments) == 0 {
 		return nil
 	}
 	var urls []string
@@ -453,31 +445,35 @@ func imageURLsFromMessage(message any) []string {
 
 func imageURLsFromCQMessage(message string) []string {
 	var urls []string
-	for _, part := range strings.Split(message, "[CQ:image,")[1:] {
+	for _, candidate := range cqAttrValues(message, "[CQ:image,", "url=", "file=") {
+		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+			urls = append(urls, candidate)
+		}
+	}
+	return urls
+}
+
+func cqAttrValues(message, prefix string, keys ...string) []string {
+	var values []string
+	for _, part := range strings.Split(message, prefix)[1:] {
 		end := strings.IndexByte(part, ']')
 		if end < 0 {
 			continue
 		}
 		fields := strings.Split(part[:end], ",")
-		found := false
-		for _, key := range []string{"url=", "file="} {
+		for _, key := range keys {
 			for _, field := range fields {
 				if !strings.HasPrefix(field, key) {
 					continue
 				}
-				candidate := unescapeCQValue(strings.TrimSpace(strings.TrimPrefix(field, key)))
-				if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
-					urls = append(urls, candidate)
-					found = true
+				value := unescapeCQValue(strings.TrimSpace(strings.TrimPrefix(field, key)))
+				if value != "" {
+					values = append(values, value)
 				}
-				break
-			}
-			if found {
-				break
 			}
 		}
 	}
-	return urls
+	return values
 }
 
 func unescapeCQValue(value string) string {
@@ -866,10 +862,6 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return store.MessageAcceptance{}, fmt.Errorf("napcat %s: %w", endpoint, err)
 	}
 	return receipt, nil
-}
-
-func (b *Bridge) postAction(ctx context.Context, endpoint string, payload map[string]any) (napcatActionResponse, error) {
-	return b.postActionResponse(ctx, endpoint, payload)
 }
 
 func (b *Bridge) postActionResponse(ctx context.Context, endpoint string, payload map[string]any) (napcatActionResponse, error) {

@@ -75,3 +75,23 @@ func TestProjectBusStyleForwardIDsFromCQ(t *testing.T) {
 		t.Fatalf("ids = %#v", ids)
 	}
 }
+
+func TestFormatForwardMessageTruncatesLargePayload(t *testing.T) {
+	nodes := make([]any, 0, maxForwardNodes+5)
+	for i := 0; i < maxForwardNodes+5; i++ {
+		nodes = append(nodes, map[string]any{
+			"data": map[string]any{
+				"nickname": "U",
+				"content":  []any{map[string]any{"type": "text", "data": map[string]any{"text": strings.Repeat("x", 20)}}},
+			},
+		})
+	}
+	raw, _ := json.Marshal(map[string]any{"messages": nodes})
+	got := formatForwardMessageData(raw)
+	if !strings.Contains(got, "合并转发已截断") {
+		t.Fatalf("expected truncation marker, got %q", got)
+	}
+	if strings.Count(got, "\n")+1 > maxForwardNodes+2 {
+		t.Fatalf("too many lines after truncate: %q", got)
+	}
+}

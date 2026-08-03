@@ -2663,10 +2663,10 @@ func (h Handler) settings(ctx context.Context, ident store.Identity, args []stri
 			"设置 AI 工具 开 / 关",
 		}, "\n")
 	}
-	switch normToken(args[0]) {
-	case "notify", "notice", "提醒", "通知", "推送":
+	switch settingsTopic(args[0]) {
+	case "notify":
 		return h.notify(ctx, ident, normalizeNotifyArgs(args[1:]))
-	case "agent", "ai", "llm", "tool", "tools", "工具", "调试":
+	case "agent":
 		rest := args[1:]
 		if len(rest) > 0 && firstArgIn(rest, "tool", "tools", "工具") {
 			rest = rest[1:]

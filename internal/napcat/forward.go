@@ -83,7 +83,7 @@ func (b *Bridge) setFriendAddRequest(ctx context.Context, flag string, approve b
 		_, err := b.requestReverseAction(ctx, conn, writeMu, "set_friend_add_request", params)
 		return err
 	}
-	_, err := b.postAction(ctx, "/set_friend_add_request", params)
+	_, err := b.postActionResponse(ctx, "/set_friend_add_request", params)
 	return err
 }
 
@@ -123,22 +123,13 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 }
 
 func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (string, error) {
+	// Always use HTTP for forward expansion. Calling requestReverseAction from the
+	// reverse read loop would deadlock waiting for an echo that same loop must deliver.
 	params := map[string]any{"message_id": id}
-	var response napcatActionResponse
-	var err error
-	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		response, err = b.requestReverseAction(ctx, conn, writeMu, "get_forward_msg", params)
-	} else {
-		response, err = b.postAction(ctx, "/get_forward_msg", params)
-	}
+	response, err := b.postActionResponse(ctx, "/get_forward_msg", params)
 	if err != nil {
 		// Some NapCat builds expect `id` instead of `message_id`.
-		params = map[string]any{"id": id}
-		if conn, writeMu := b.activeReverseConn(); conn != nil {
-			response, err = b.requestReverseAction(ctx, conn, writeMu, "get_forward_msg", params)
-		} else {
-			response, err = b.postAction(ctx, "/get_forward_msg", params)
-		}
+		response, err = b.postActionResponse(ctx, "/get_forward_msg", map[string]any{"id": id})
 		if err != nil {
 			return "", err
 		}
@@ -146,16 +137,25 @@ func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (string, er
 	return formatForwardMessageData(response.Data), nil
 }
 
+const (
+	maxForwardNodes = 40
+	maxForwardRunes = 4000
+)
+
 func formatForwardMessageData(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return ""
+		return "[合并转发:无法解析]"
 	}
-	lines := forwardContentLines(payload)
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	text := strings.TrimSpace(strings.Join(forwardContentLines(payload), "\n"))
+	runes := []rune(text)
+	if len(runes) > maxForwardRunes {
+		return string(runes[:maxForwardRunes]) + "\n...(合并转发已截断)"
+	}
+	return text
 }
 
 func forwardContentLines(payload any) []string {
@@ -179,6 +179,10 @@ func forwardContentLines(payload any) []string {
 func forwardNodeLines(nodes []any) []string {
 	lines := make([]string, 0, len(nodes))
 	for _, raw := range nodes {
+		if len(lines) >= maxForwardNodes {
+			lines = append(lines, "...(合并转发已截断)")
+			break
+		}
 		node, ok := raw.(map[string]any)
 		if !ok {
 			continue
@@ -237,24 +241,7 @@ func forwardIDsFromMessage(message any) []string {
 func forwardIDsFromCQMessage(message string) []string {
 	var ids []string
 	for _, prefix := range []string{"[CQ:forward,", "[CQ:node,"} {
-		for _, part := range strings.Split(message, prefix)[1:] {
-			end := strings.IndexByte(part, ']')
-			if end < 0 {
-				continue
-			}
-			fields := strings.Split(part[:end], ",")
-			for _, field := range fields {
-				for _, key := range []string{"id=", "message_id="} {
-					if !strings.HasPrefix(field, key) {
-						continue
-					}
-					id := unescapeCQValue(strings.TrimSpace(strings.TrimPrefix(field, key)))
-					if id != "" {
-						ids = append(ids, id)
-					}
-				}
-			}
-		}
+		ids = append(ids, cqAttrValues(message, prefix, "id=", "message_id=")...)
 	}
 	return ids
 }

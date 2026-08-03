@@ -3,10 +3,67 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 )
+
+// followUpInbox holds user messages that arrive while an agent run is active.
+// They are injected into ChatModelAgent state before the next model call.
+type followUpInbox struct {
+	mu       sync.Mutex
+	messages []Input
+}
+
+func newFollowUpInbox() *followUpInbox {
+	return &followUpInbox{}
+}
+
+func (b *followUpInbox) TryPush(input Input, max int) (ok bool, depth int) {
+	if b == nil {
+		return false, 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if max > 0 && len(b.messages) >= max {
+		return false, len(b.messages)
+	}
+	b.messages = append(b.messages, input)
+	return true, len(b.messages)
+}
+
+func (b *followUpInbox) Len() int {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.messages)
+}
+
+func (b *followUpInbox) Push(input Input) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.messages = append(b.messages, input)
+}
+
+func (b *followUpInbox) Drain() []Input {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.messages) == 0 {
+		return nil
+	}
+	out := append([]Input(nil), b.messages...)
+	b.messages = nil
+	return out
+}
 
 type followUpInjector struct {
 	*adk.BaseChatModelAgentMiddleware
@@ -25,7 +82,7 @@ func (i *followUpInjector) BeforeModelRewriteState(
 	state *adk.ChatModelAgentState,
 	_ *adk.ModelContext,
 ) (context.Context, *adk.ChatModelAgentState, error) {
-	if i == nil || i.inbox == nil || state == nil {
+	if i.inbox == nil || state == nil {
 		return ctx, state, nil
 	}
 	for _, followUp := range i.inbox.Drain() {
@@ -46,7 +103,7 @@ func newStateCapture() *stateCapture {
 }
 
 func (c *stateCapture) AfterAgent(ctx context.Context, state *adk.ChatModelAgentState) (context.Context, error) {
-	if c != nil && state != nil {
+	if state != nil {
 		c.messages = append([]*schema.Message(nil), state.Messages...)
 	}
 	return ctx, nil
@@ -54,11 +111,8 @@ func (c *stateCapture) AfterAgent(ctx context.Context, state *adk.ChatModelAgent
 
 func followUpUserMessage(input Input) *schema.Message {
 	text := strings.TrimSpace(input.Text)
-	if text == "" && len(input.ImageURLs) == 0 && len(input.imageDataURLs) == 0 {
-		return nil
-	}
 	if text == "" {
-		text = "（用户补充了一条消息）"
+		return nil
 	}
 	return schema.UserMessage(text)
 }

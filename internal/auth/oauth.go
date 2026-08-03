@@ -86,17 +86,53 @@ func (t *VerifiedToken) ValidateIDToken(issuer, audience string, now time.Time) 
 }
 
 func audienceMatches(audClaim any, expected string) bool {
-	if s, ok := audClaim.(string); ok {
-		return strings.TrimSpace(s) == expected
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return false
 	}
-	if list, ok := audClaim.([]any); ok {
-		for _, item := range list {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) == expected {
-				return true
-			}
+	for _, audience := range audienceValues(audClaim) {
+		if audience == expected {
+			return true
 		}
 	}
 	return false
+}
+
+func audienceValues(audClaim any) []string {
+	switch typed := audClaim.(type) {
+	case string:
+		if typed = strings.TrimSpace(typed); typed != "" {
+			return []string{typed}
+		}
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func accessTokenAudienceClaim(accessToken string) (any, bool) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, false
+	}
+	parsed, err := jwt.ParseSigned(accessToken, []jose.SignatureAlgorithm{
+		jose.RS256, jose.ES256, jose.EdDSA, jose.HS256,
+	})
+	if err != nil {
+		return nil, false
+	}
+	claims := map[string]any{}
+	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil {
+		return nil, false
+	}
+	aud, ok := claims["aud"]
+	return aud, ok
 }
 
 func expiresAtFromClaim(expClaim any) (time.Time, bool) {
