@@ -318,7 +318,9 @@ func TestAgentToolConstruction(t *testing.T) {
 		"get_current_semester",
 		"get_current_time",
 		"list_my_homeworks",
+		"lookup_bot_help",
 		"record_bot_feedback",
+		"resolve_image_command",
 		"send_message_part",
 		"search_courses",
 	)
@@ -327,6 +329,8 @@ func TestAgentToolConstruction(t *testing.T) {
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
 		"get_current_time",
+		"lookup_bot_help",
+		"resolve_image_command",
 		"send_message_part",
 	)
 }
@@ -340,7 +344,9 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
+		"lookup_bot_help",
 		"record_bot_feedback",
+		"resolve_image_command",
 		"send_message_part",
 	)
 }
@@ -639,8 +645,8 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 		t.Fatalf("currentTimeMessageAt = %q", got)
 	}
 	instruction := currentInstructionAt(now)
-	if !strings.Contains(instruction, "Current local time is 2026-06-07 18:30 CST.") {
-		t.Fatalf("instruction = %q", instruction)
+	if strings.Contains(instruction, "Current local time is") {
+		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
 	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
@@ -662,27 +668,19 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Image rendering protocol:",
+		"Image-only rewrite",
+		"resolve_image_command",
+		"lookup_bot_help",
 		"![](校车 查询 东区 西区)",
-		"![](校车 查询 东区 西区 之后 14:00 已发车)",
-		"![](今天课表)",
-		"![](课表 第3周)",
-		"![](课表 2026年5月6日)",
-		"![](课表 2026-09-04)",
-		"第N周 uses the current semester only",
+		"![](今日课表)",
 		"![](下一节课)",
 		"![](待办)",
-		"![](待办 列表 未完成 优先级 高 截止前 2026-06-10 第2页)",
 		"![](作业)",
-		"![](作业 列表 全部 学期JWID 123 第2页)",
 		"![](考试)",
 		"![](概览)",
 		"![](近期截止 14)",
-		"![](教学班作业 654)",
-		"![](教学班考试 321 第2页)",
-		"The only valid image output is a standalone ![](command) directive.",
-		"MUST include one supported directive",
-		"By default, proactively include one directive",
-		"Do not merely tell the user that an image is available; emit the directive.",
+		"第N周 is current semester only",
+		"reply with ONLY that ![](command) line",
 	} {
 		if !strings.Contains(instruction, want) {
 			t.Fatalf("instruction lacks image rendering guidance %q: %q", want, instruction)
@@ -725,7 +723,8 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	}
 	if messages[0].Content != "你好" ||
 		messages[1].Content != "你好！\n![](课表 2026-09-04)\n有什么可以帮你的吗？" ||
-		messages[2].Content != "我上面说了什么？" {
+		!strings.Contains(messages[2].Content, "我上面说了什么？") ||
+		!strings.HasPrefix(messages[2].Content, "现在是 ") {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
@@ -817,7 +816,7 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	}
 	for _, want := range []string{
 		"llm compaction started: run_id=77",
-		"compacted_turns=18 retained_turns=3",
+		"compacted_turns=21 retained_turns=4",
 		"estimated_input_tokens=",
 		"llm compaction completed: run_id=77",
 		"summary_runes=14",
@@ -840,12 +839,13 @@ func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1+3*2+1 {
+	if len(messages) != 1+4*2+1 {
 		t.Fatalf("message count = %d, messages = %#v", len(messages), messages)
 	}
 	if !strings.HasPrefix(messages[0].Content, conversationSummaryPrefix) ||
-		!strings.Contains(messages[1].Content, "turn-19") ||
-		messages[len(messages)-1].Content != "continue" {
+		!strings.Contains(messages[1].Content, "turn-22") ||
+		!strings.Contains(messages[len(messages)-1].Content, "continue") ||
+		!strings.HasPrefix(messages[len(messages)-1].Content, "现在是 ") {
 		t.Fatalf("messages = %#v", messages)
 	}
 	for _, message := range messages {

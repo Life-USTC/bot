@@ -3,28 +3,28 @@ package agent
 import (
 	"strings"
 	"testing"
-
-	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestConversationRetainedTurnCountUsesTokenBudget(t *testing.T) {
-	turns := make([]store.Interaction, conversationRecentTurnLimit)
-	for i := range turns {
-		turns[i] = store.Interaction{
-			RawText: strings.Repeat("问", maxHistoryTextRunes),
-			Reply:   strings.Repeat("答", maxHistoryTextRunes),
+func TestPruneHistoryNoise(t *testing.T) {
+	in := strings.Join([]string{
+		"工具调用：search_courses {}",
+		"工具结果：",
+		"课程列表",
+		"合并转发内容：",
+		"Alice: hi",
+		"Bob: yo",
+		"![](校车 东区 西区)",
+		"建议提前到站",
+	}, "\n")
+	got := pruneHistoryNoise(in)
+	for _, unwanted := range []string{"工具调用", "工具结果", "Alice:", "Bob:", "![]("} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("noise remained %q in %q", unwanted, got)
 		}
 	}
-	if !conversationHistoryNeedsCompaction("", turns) {
-		t.Fatal("large recent turns did not trigger compaction")
-	}
-	if got := conversationRetainedTurnCount("", turns); got >= conversationRecentTurnLimit || got < 2 {
-		t.Fatalf("retained turns = %d", got)
-	}
-}
-
-func TestEstimateTextTokensTreatsChineseConservatively(t *testing.T) {
-	if got := estimateTextTokens("abcd课程"); got != 3 {
-		t.Fatalf("estimated tokens = %d", got)
+	for _, want := range []string{"[合并转发]", "[图片卡片:校车 东区 西区]", "建议提前到站"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
 	}
 }

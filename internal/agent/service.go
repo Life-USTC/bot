@@ -422,12 +422,13 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	}
 	currentText := strings.TrimSpace(input.Text)
 	if len(input.ImageURLs) == 0 {
-		messages = append(messages, schema.UserMessage(currentText))
+		messages = append(messages, schema.UserMessage(withCurrentTimePrefix(currentText)))
 		return messages, nil
 	}
 	if currentText == "" {
 		currentText = "请描述并分析这张图片。"
 	}
+	currentText = withCurrentTimePrefix(currentText)
 	parts := []schema.MessageInputPart{{
 		Type: schema.ChatMessagePartTypeText,
 		Text: currentText,
@@ -505,6 +506,14 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
+type helpLookupInput struct {
+	Topic string `json:"topic,omitempty" jsonschema_description:"Help topic such as 校车, 课表, 待办, 作业, 考试, 日程. Empty returns the overview."`
+}
+
+type resolveImageCommandInput struct {
+	Text string `json:"text" jsonschema_description:"Raw user text to map onto a validated ![](command) image directive"`
+}
+
 func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
@@ -558,6 +567,29 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 			}
 			return nil, nil, err
 		}
+	}
+	tools, err = appendInferredTool(tools, "lookup_bot_help", "Look up Bot command help for a topic (校车/课表/待办/作业/考试/日程/…). Use when unsure which ![](command) shape is valid.", trace, func(_ context.Context, input helpLookupInput) (string, error) {
+		return commands.LookupBotHelp(input.Topic), nil
+	})
+	if err != nil {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		return nil, nil, err
+	}
+	tools, err = appendInferredTool(tools, "resolve_image_command", "Map messy user text (missing spaces, glued campuses like 校车东西区) to a host-validated ![](command). When directive is set, reply with only that line.", trace, func(_ context.Context, input resolveImageCommandInput) (string, error) {
+		resolved := commands.ResolveImageCommand(input.Text)
+		raw, err := json.Marshal(resolved)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+	})
+	if err != nil {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", trace, func(_ context.Context, _ emptyInput) (string, error) {
 		return currentTimeMessage(), nil
@@ -923,13 +955,13 @@ func currentInstruction() string {
 }
 
 func currentInstructionAt(now time.Time) string {
-	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
+	_ = now // kept for tests/call sites; wall-clock time is injected per-turn, not here (prompt-cache stable).
+	return `You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
-Current local time is %s.
 You can answer questions about prior messages using the chat history provided in this run. If additional user messages appear later in this same run (follow-ups sent while tools were running), treat them as part of the current conversation and answer everything together in a single final reply. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
 For bus planning after a class or event, pass the class/event end time to get_next_bus.after (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
 Course / section subscribe-by-name flow:
@@ -941,40 +973,30 @@ Tools that create, update, delete, complete, subscribe, or change notification s
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
-%s
+` + imageDirectiveInstruction() + `
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`,
-		now.In(shanghaiLocation).Format("2006-01-02 15:04 MST"),
-		imageDirectiveInstruction(),
-	)
+When a tool returns login-required text, tell the user to log in with 登录.`
 }
 
 func imageDirectiveInstruction() string {
 	return `Image rendering protocol:
-The host replaces a standalone ![](command) directive with an image rendered by the existing read-only Bot command, at the same position in the reply. Text before the directive is sent before the image, and text after it is sent after the image.
-Complete supported command shapes (use these canonical Chinese forms):
-- Shuttle bus: ![](校车); ![](校车 查询 全部); ![](校车 查询 我的路线); ![](校车 查询 东区 西区); optionally append 之后 HH:MM and/or 已发车, for example ![](校车 查询 东区 西区 之后 14:00 已发车). Do not use route-list or preference-setting commands.
-- Weekly curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), or a week containing an absolute date such as ![](课表 05.06), ![](课表 7.20周), ![](课表 2026-05-06), ![](课表 2026/5/6), ![](课表 2026.05.06), or ![](课表 2026年5月6日).
-- Single-day curriculum is available for today and tomorrow only: ![](课表 单日 今天), ![](课表 单日 明天), ![](今日课表), ![](明日课表), ![](今天课表), or ![](明天课表).
-- Next class: ![](课表 下一节) or ![](下一节课).
-- Todo list: ![](待办), or ![](待办 列表 [全部|未完成|已完成] [优先级 低|中|高] [截止前 YYYY-MM-DD] [截止后 YYYY-MM-DD] [第N页]). The filters may be combined; for example ![](待办 列表 未完成 优先级 高 截止前 2026-06-10 第2页).
-- Homework list: ![](作业), or ![](作业 列表 [未完成|全部] [学期ID ID] [学期JWID JW_ID] [第N页]). The filters may be combined; for example ![](作业 列表 全部 学期JWID 123 第2页).
-- Exams: ![](考试) or ![](考试 第N页), for example ![](考试 第2页).
-- Personal overview: ![](概览) or ![](日程 概览).
-- Upcoming deadlines: ![](近期截止), ![](近期截止 N), ![](日程 截止), or ![](日程 截止 N), where N is the number of days; for example ![](近期截止 14).
-- Section data when a numeric JW ID is known: ![](教学班 作业 JW_ID [第N页]) or ![](教学班 考试 JW_ID [第N页]); compact forms such as ![](教学班作业 654) and ![](教学班考试 321 第2页) also work.
-Curriculum date rule:
-- 第N周 uses the current semester only. For a requested week in another semester, use the semester data/tool result to convert that week to an absolute calendar date, then emit 课表 with that date (for example ![](课表 2026-09-04)). Never use 第N周 for a non-current semester.
-Rendering policy:
-- MUST include one supported directive when the user explicitly asks for an image, card, chart, visual, 图片, 图表, 卡片, or 可视化 of supported data.
-- By default, proactively include one directive after a successful tool result for a curriculum, shuttle-bus timetable, personal overview, upcoming deadlines, or a multi-item todo, homework, or exam list, unless the user asks for text only.
-- Do not merely tell the user that an image is available; emit the directive.
-- Never output or imitate host-generated prose claiming that an image was sent. The only valid image output is a standalone ![](command) directive.
-- Preserve the user's requested day, week, route, section, or deadline range in the command.
-- Do not emit a directive for an empty result, an error, a login-required response, or a single short fact that is clearer as text.
-- Put each directive on its own line. Use one by default and at most ten when the user explicitly requests multiple distinct images.
-- Never put a URL, file path, explanation, login command, setting change, or any create, update, delete, complete, subscribe, or notification mutation inside a directive.`
+The host replaces a standalone ![](command) line with a rendered read-only Bot card. Text before/after the directive is sent around the image.
+Image-only rewrite (highest priority for simple lookups):
+- If the user is mainly asking for bus / curriculum / todo / homework / exam / overview / upcoming deadlines—even with missing spaces or glued campuses like 「校车东西区」—call resolve_image_command on their text.
+- When resolve_image_command returns a directive, reply with ONLY that ![](command) line and nothing else.
+- Do not narrate that an image will be sent; do not dump a long text table when a card answers the ask.
+Command card (canonical forms; use resolve_image_command or lookup_bot_help when unsure):
+- Bus: ![](校车), ![](校车 查询 东区 西区), ![](校车 查询 东区 西区 之后 14:00), ![](校车 查询 东区 西区 已发车)
+- Curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), ![](课表 2026-05-06), ![](今日课表), ![](明日课表), ![](下一节课)
+- Lists: ![](待办), ![](作业), ![](考试), ![](概览), ![](近期截止), ![](近期截止 14)
+- Section pages when JW ID is known: ![](教学班作业 654), ![](教学班考试 321)
+Tools:
+- resolve_image_command: map messy user text to a host-validated ![](command).
+- lookup_bot_help: fetch command help for a topic (校车/课表/待办/…).
+Curriculum date rule: 第N周 is current semester only; for other semesters convert to an absolute date first.
+Also emit a directive after successful tool results for curriculum, bus, overview, deadlines, or multi-item lists unless the user asked for text only.
+Never put mutations, login, settings, URLs, or explanations inside ![](...).`
 }
 
 func currentTimeMessage() string {
@@ -983,6 +1005,15 @@ func currentTimeMessage() string {
 
 func currentTimeMessageAt(now time.Time) string {
 	return now.In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。")
+}
+
+func withCurrentTimePrefix(text string) string {
+	text = strings.TrimSpace(text)
+	prefix := currentTimeMessage()
+	if text == "" {
+		return prefix
+	}
+	return prefix + "\n\n" + text
 }
 
 var _ = schema.Assistant
