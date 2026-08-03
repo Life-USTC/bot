@@ -939,7 +939,7 @@ func formatToolResult(value string) string {
 }
 
 const historyTurnLimit = 20
-const agentMaxIterations = 16
+const agentMaxIterations = 32
 const agentHTTPTimeout = 60 * time.Second
 const maxHistoryTextRunes = 1200
 const maxToolResultRunes = 6000
