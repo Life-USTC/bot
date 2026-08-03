@@ -473,6 +473,7 @@ const (
 	CommentBatchDeleteResponseSchemaResults1ErrorCodeForbidden CommentBatchDeleteResponseSchemaResults1ErrorCode = "forbidden"
 	CommentBatchDeleteResponseSchemaResults1ErrorCodeLocked    CommentBatchDeleteResponseSchemaResults1ErrorCode = "locked"
 	CommentBatchDeleteResponseSchemaResults1ErrorCodeNotFound  CommentBatchDeleteResponseSchemaResults1ErrorCode = "not_found"
+	CommentBatchDeleteResponseSchemaResults1ErrorCodeSuspended CommentBatchDeleteResponseSchemaResults1ErrorCode = "suspended"
 )
 
 // Valid indicates whether the value is a known member of the CommentBatchDeleteResponseSchemaResults1ErrorCode enum.
@@ -483,6 +484,8 @@ func (e CommentBatchDeleteResponseSchemaResults1ErrorCode) Valid() bool {
 	case CommentBatchDeleteResponseSchemaResults1ErrorCodeLocked:
 		return true
 	case CommentBatchDeleteResponseSchemaResults1ErrorCodeNotFound:
+		return true
+	case CommentBatchDeleteResponseSchemaResults1ErrorCodeSuspended:
 		return true
 	default:
 		return false
@@ -2658,7 +2661,6 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -2669,12 +2671,9 @@ type CalendarSubscriptionAppendResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -2813,7 +2812,6 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -2824,12 +2822,9 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -2944,7 +2939,6 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -2955,12 +2949,9 @@ type CalendarSubscriptionBatchResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3089,7 +3080,6 @@ type CalendarSubscriptionCreateResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -3100,12 +3090,9 @@ type CalendarSubscriptionCreateResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3218,7 +3205,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -3229,12 +3215,9 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3341,7 +3324,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -3352,12 +3334,9 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3465,7 +3444,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -3476,12 +3454,9 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3596,7 +3571,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -3607,12 +3581,9 @@ type CalendarSubscriptionImportResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3746,7 +3717,6 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -3757,12 +3727,9 @@ type CalendarSubscriptionQueryResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -3890,7 +3857,6 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -3901,12 +3867,9 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -4547,8 +4510,9 @@ type CompactOverviewResponseSchema struct {
 			StartTime string `json:"startTime"`
 			StartUnit int    `json:"startUnit"`
 			Teachers  []struct {
-				Address    *string `json:"address"`
-				Age        *int    `json:"age"`
+				UnderscoreCount *struct {
+					Sections int `json:"sections"`
+				} `json:"_count,omitempty"`
 				Code       *string `json:"code"`
 				Department *struct {
 					Code          string  `json:"code"`
@@ -4559,21 +4523,23 @@ type CompactOverviewResponseSchema struct {
 					NamePrimary   string  `json:"namePrimary"`
 					NameSecondary *string `json:"nameSecondary"`
 				} `json:"department"`
-				DepartmentId   *int    `json:"departmentId"`
-				Email          *string `json:"email"`
-				Id             int     `json:"id"`
-				Mobile         *string `json:"mobile"`
-				NameCn         string  `json:"nameCn"`
-				NameEn         *string `json:"nameEn"`
-				NamePrimary    string  `json:"namePrimary"`
-				NameSecondary  *string `json:"nameSecondary"`
-				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
-				TeacherId      *int    `json:"teacherId"`
-				TeacherTitleId *int    `json:"teacherTitleId"`
-				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
+				Id            int     `json:"id"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+				PersonId      *int    `json:"personId"`
+				TeacherId     *int    `json:"teacherId"`
+				TeacherTitle  *struct {
+					Code          string  `json:"code"`
+					Enabled       *bool   `json:"enabled"`
+					Id            int     `json:"id"`
+					JwId          int     `json:"jwId"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"teacherTitle,omitempty"`
 			} `json:"teachers"`
 			WeekIndex int `json:"weekIndex"`
 			Weekday   int `json:"weekday"`
@@ -4692,7 +4658,6 @@ type CourseDetailSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -4701,12 +4666,9 @@ type CourseDetailSchema struct {
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -4826,7 +4788,6 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			TeachLanguageId         *int            `json:"teachLanguageId"`
 			Teachers                []struct {
 				Address        *string `json:"address"`
-				Age            *int    `json:"age"`
 				Code           *string `json:"code"`
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
@@ -4837,12 +4798,9 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				Postcode       *string `json:"postcode"`
-				Qq             *string `json:"qq"`
 				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
-				Wechat         *string `json:"wechat"`
 			} `json:"teachers"`
 			TestPeriods   *float32 `json:"testPeriods"`
 			TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -5720,7 +5678,6 @@ type MatchSectionCodesResponseSchema struct {
 		TeachLanguageId         *int            `json:"teachLanguageId"`
 		Teachers                []struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -5731,12 +5688,9 @@ type MatchSectionCodesResponseSchema struct {
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teachers"`
 		TestPeriods   *float32 `json:"testPeriods"`
 		TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -6095,8 +6049,9 @@ type PaginatedScheduleResponseSchema struct {
 		StartTime string `json:"startTime"`
 		StartUnit int    `json:"startUnit"`
 		Teachers  []struct {
-			Address    *string `json:"address"`
-			Age        *int    `json:"age"`
+			UnderscoreCount *struct {
+				Sections int `json:"sections"`
+			} `json:"_count,omitempty"`
 			Code       *string `json:"code"`
 			Department *struct {
 				Code          string  `json:"code"`
@@ -6107,21 +6062,23 @@ type PaginatedScheduleResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"department"`
-			DepartmentId   *int    `json:"departmentId"`
-			Email          *string `json:"email"`
-			Id             int     `json:"id"`
-			Mobile         *string `json:"mobile"`
-			NameCn         string  `json:"nameCn"`
-			NameEn         *string `json:"nameEn"`
-			NamePrimary    string  `json:"namePrimary"`
-			NameSecondary  *string `json:"nameSecondary"`
-			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
-			TeacherId      *int    `json:"teacherId"`
-			TeacherTitleId *int    `json:"teacherTitleId"`
-			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
+			Id            int     `json:"id"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+			PersonId      *int    `json:"personId"`
+			TeacherId     *int    `json:"teacherId"`
+			TeacherTitle  *struct {
+				Code          string  `json:"code"`
+				Enabled       *bool   `json:"enabled"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+			} `json:"teacherTitle,omitempty"`
 		} `json:"teachers"`
 		WeekIndex int `json:"weekIndex"`
 		Weekday   int `json:"weekday"`
@@ -6202,7 +6159,6 @@ type PaginatedTeacherResponseSchema struct {
 			Sections int `json:"sections"`
 		} `json:"_count"`
 		Address    *string `json:"address"`
-		Age        *int    `json:"age"`
 		Code       *string `json:"code"`
 		Department *struct {
 			Code      string  `json:"code"`
@@ -6218,8 +6174,6 @@ type PaginatedTeacherResponseSchema struct {
 		NameCn       string  `json:"nameCn"`
 		NameEn       *string `json:"nameEn"`
 		PersonId     *int    `json:"personId"`
-		Postcode     *string `json:"postcode"`
-		Qq           *string `json:"qq"`
 		TeacherId    *int    `json:"teacherId"`
 		TeacherTitle *struct {
 			Code    string  `json:"code"`
@@ -6231,7 +6185,6 @@ type PaginatedTeacherResponseSchema struct {
 		} `json:"teacherTitle"`
 		TeacherTitleId *int    `json:"teacherTitleId"`
 		Telephone      *string `json:"telephone"`
-		Wechat         *string `json:"wechat"`
 	} `json:"data"`
 	Pagination struct {
 		Page       int `json:"page"`
@@ -6445,7 +6398,6 @@ type SectionDetailSchema struct {
 		SectionId int     `json:"sectionId"`
 		Teacher   struct {
 			Address        *string `json:"address"`
-			Age            *int    `json:"age"`
 			Code           *string `json:"code"`
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
@@ -6454,12 +6406,9 @@ type SectionDetailSchema struct {
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
 			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
 		} `json:"teacher"`
 		TeacherId         int `json:"teacherId"`
 		TeacherLessonType *struct {
@@ -6477,7 +6426,6 @@ type SectionDetailSchema struct {
 	} `json:"teacherAssignments"`
 	Teachers []struct {
 		Address    *string `json:"address"`
-		Age        *int    `json:"age"`
 		Code       *string `json:"code"`
 		Department *struct {
 			Code      string  `json:"code"`
@@ -6493,8 +6441,6 @@ type SectionDetailSchema struct {
 		NameCn       string  `json:"nameCn"`
 		NameEn       *string `json:"nameEn"`
 		PersonId     *int    `json:"personId"`
-		Postcode     *string `json:"postcode"`
-		Qq           *string `json:"qq"`
 		TeacherId    *int    `json:"teacherId"`
 		TeacherTitle *struct {
 			Code    string  `json:"code"`
@@ -6506,7 +6452,6 @@ type SectionDetailSchema struct {
 		} `json:"teacherTitle"`
 		TeacherTitleId *int    `json:"teacherTitleId"`
 		Telephone      *string `json:"telephone"`
-		Wechat         *string `json:"wechat"`
 	} `json:"teachers"`
 	TestPeriods   *float32 `json:"testPeriods"`
 	TheoryPeriods *float32 `json:"theoryPeriods"`
@@ -6786,8 +6731,9 @@ type SubscribedSchedulesResponseSchema struct {
 		StartTime string `json:"startTime"`
 		StartUnit int    `json:"startUnit"`
 		Teachers  []struct {
-			Address    *string `json:"address"`
-			Age        *int    `json:"age"`
+			UnderscoreCount *struct {
+				Sections int `json:"sections"`
+			} `json:"_count,omitempty"`
 			Code       *string `json:"code"`
 			Department *struct {
 				Code          string  `json:"code"`
@@ -6798,21 +6744,23 @@ type SubscribedSchedulesResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"department"`
-			DepartmentId   *int    `json:"departmentId"`
-			Email          *string `json:"email"`
-			Id             int     `json:"id"`
-			Mobile         *string `json:"mobile"`
-			NameCn         string  `json:"nameCn"`
-			NameEn         *string `json:"nameEn"`
-			NamePrimary    string  `json:"namePrimary"`
-			NameSecondary  *string `json:"nameSecondary"`
-			PersonId       *int    `json:"personId"`
-			Postcode       *string `json:"postcode"`
-			Qq             *string `json:"qq"`
-			TeacherId      *int    `json:"teacherId"`
-			TeacherTitleId *int    `json:"teacherTitleId"`
-			Telephone      *string `json:"telephone"`
-			Wechat         *string `json:"wechat"`
+			Id            int     `json:"id"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+			PersonId      *int    `json:"personId"`
+			TeacherId     *int    `json:"teacherId"`
+			TeacherTitle  *struct {
+				Code          string  `json:"code"`
+				Enabled       *bool   `json:"enabled"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+			} `json:"teacherTitle,omitempty"`
 		} `json:"teachers"`
 		WeekIndex int `json:"weekIndex"`
 		Weekday   int `json:"weekday"`
@@ -6830,7 +6778,6 @@ type TeacherDetailSchema struct {
 		Sections int `json:"sections"`
 	} `json:"_count"`
 	Address    *string `json:"address"`
-	Age        *int    `json:"age"`
 	Code       *string `json:"code"`
 	Department *struct {
 		Code      string  `json:"code"`
@@ -6846,8 +6793,6 @@ type TeacherDetailSchema struct {
 	NameCn       string  `json:"nameCn"`
 	NameEn       *string `json:"nameEn"`
 	PersonId     *int    `json:"personId"`
-	Postcode     *string `json:"postcode"`
-	Qq           *string `json:"qq"`
 	Sections     []struct {
 		ActualPeriods *int   `json:"actualPeriods"`
 		BizTypeId     *int   `json:"bizTypeId"`
@@ -6941,7 +6886,6 @@ type TeacherDetailSchema struct {
 	} `json:"teacherTitle"`
 	TeacherTitleId *int    `json:"teacherTitleId"`
 	Telephone      *string `json:"telephone"`
-	Wechat         *string `json:"wechat"`
 }
 
 // TodoBatchDeleteRequestSchema defines model for todoBatchDeleteRequestSchema.
@@ -10836,6 +10780,9 @@ type ClientInterface interface {
 	// GetOpenApiSpec request
 	GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiSearch request
+	GetApiSearch(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// WorkspaceBusPreferencesGet request
 	WorkspaceBusPreferencesGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12153,6 +12100,18 @@ func (c *Client) OptionsApiMcpWellKnownOpenidConfiguration(ctx context.Context, 
 
 func (c *Client) GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetOpenApiSpecRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiSearch(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiSearchRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -16992,6 +16951,33 @@ func NewGetOpenApiSpecRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetApiSearchRequest generates requests for GetApiSearch
+func NewGetApiSearchRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewWorkspaceBusPreferencesGetRequest generates requests for WorkspaceBusPreferencesGet
 func NewWorkspaceBusPreferencesGetRequest(server string) (*http.Request, error) {
 	var err error
@@ -18693,6 +18679,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetOpenApiSpecWithResponse request
 	GetOpenApiSpecWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenApiSpecResponse, error)
+
+	// GetApiSearchWithResponse request
+	GetApiSearchWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiSearchResponse, error)
 
 	// WorkspaceBusPreferencesGetWithResponse request
 	WorkspaceBusPreferencesGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WorkspaceBusPreferencesGetResponse, error)
@@ -21457,6 +21446,36 @@ func (r GetOpenApiSpecResponse) ContentType() string {
 	return ""
 }
 
+type GetApiSearchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiSearchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiSearchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiSearchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type WorkspaceBusPreferencesGetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -23354,6 +23373,15 @@ func (c *ClientWithResponses) GetOpenApiSpecWithResponse(ctx context.Context, re
 		return nil, err
 	}
 	return ParseGetOpenApiSpecResponse(rsp)
+}
+
+// GetApiSearchWithResponse request returning *GetApiSearchResponse
+func (c *ClientWithResponses) GetApiSearchWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiSearchResponse, error) {
+	rsp, err := c.GetApiSearch(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiSearchResponse(rsp)
 }
 
 // WorkspaceBusPreferencesGetWithResponse request returning *WorkspaceBusPreferencesGetResponse
@@ -26676,6 +26704,32 @@ func ParseGetOpenApiSpecResponse(rsp *http.Response) (*GetOpenApiSpecResponse, e
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiSearchResponse parses an HTTP response from a GetApiSearchWithResponse call
+func ParseGetApiSearchResponse(rsp *http.Response) (*GetApiSearchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiSearchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	}
 

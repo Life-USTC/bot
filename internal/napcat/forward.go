@@ -34,8 +34,10 @@ func (b *Bridge) handleIncomingEvent(ctx context.Context, raw json.RawMessage, d
 		if !isPrivateOrGroupMessage(event.MessageType) {
 			return
 		}
-		b.enrichMessageEvent(ctx, &event)
-		if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
+		// Local-only prep here. Network enrichment (get_forward_msg) must not run on
+		// the websocket read loop — reverse action replies need that loop free.
+		normalizeMessageText(&event)
+		if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 && !hasForwardPayload(event) {
 			return
 		}
 		dispatch(ctx, event)
@@ -45,7 +47,8 @@ func (b *Bridge) handleIncomingEvent(ctx context.Context, raw json.RawMessage, d
 			b.logf("napcat ignored invalid request event: %v", err)
 			return
 		}
-		b.handleRequestEvent(ctx, event)
+		// Approve off the read loop so reverse-WS set_friend_add_request can complete.
+		go b.handleRequestEvent(context.WithoutCancel(ctx), event)
 	}
 }
 
@@ -75,36 +78,53 @@ func (b *Bridge) handleRequestEvent(ctx context.Context, event requestEvent) {
 }
 
 func (b *Bridge) setFriendAddRequest(ctx context.Context, flag string, approve bool) error {
-	params := map[string]any{
+	_, err := b.callNapCatAction(ctx, "set_friend_add_request", map[string]any{
 		"flag":    flag,
 		"approve": approve,
-	}
-	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		_, err := b.requestReverseAction(ctx, conn, writeMu, "set_friend_add_request", params)
-		return err
-	}
-	_, err := b.postActionResponse(ctx, "/set_friend_add_request", params)
+	})
 	return err
+}
+
+func normalizeMessageText(event *messageEvent) {
+	if event == nil {
+		return
+	}
+	if strings.TrimSpace(event.RawMessage) == "" {
+		event.RawMessage = plainTextFromMessage(event.Message)
+	}
+}
+
+func hasForwardPayload(event messageEvent) bool {
+	return len(forwardIDsFromMessage(event.Message)) > 0 ||
+		len(forwardIDsFromCQMessage(event.RawMessage)) > 0 ||
+		len(inlineForwardContents(event.Message)) > 0
 }
 
 func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 	if event == nil {
 		return
 	}
+	normalizeMessageText(event)
 	text := strings.TrimSpace(event.RawMessage)
+
+	inlineBodies := inlineForwardContents(event.Message)
 	forwardIDs := forwardIDsFromMessage(event.Message)
-	if len(forwardIDs) == 0 {
+	if len(forwardIDs) == 0 && len(inlineBodies) == 0 {
 		forwardIDs = forwardIDsFromCQMessage(event.RawMessage)
 	}
-	if len(forwardIDs) == 0 {
-		if text == "" {
-			event.RawMessage = plainTextFromMessage(event.Message)
-		}
+	if len(forwardIDs) == 0 && len(inlineBodies) == 0 {
 		return
 	}
-	parts := make([]string, 0, len(forwardIDs)+1)
-	if text != "" && !looksLikeForwardOnlyCQ(text) {
+
+	parts := make([]string, 0, len(forwardIDs)+len(inlineBodies)+1)
+	if text != "" && !looksLikeForwardOnlyCQ(text) && !isForwardPlaceholder(text) {
 		parts = append(parts, text)
+	}
+	for _, body := range inlineBodies {
+		if body == "" {
+			continue
+		}
+		parts = append(parts, "合并转发内容：\n"+body)
 	}
 	for _, id := range forwardIDs {
 		body, err := b.fetchForwardMessage(ctx, id)
@@ -123,23 +143,54 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 }
 
 func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (string, error) {
-	// Always use HTTP for forward expansion. Calling requestReverseAction from the
-	// reverse read loop would deadlock waiting for an echo that same loop must deliver.
-	params := map[string]any{"message_id": id}
-	response, err := b.postActionResponse(ctx, "/get_forward_msg", params)
-	if err != nil {
-		// Some NapCat builds expect `id` instead of `message_id`.
-		response, err = b.postActionResponse(ctx, "/get_forward_msg", map[string]any{"id": id})
+	var lastErr error
+	for _, params := range []map[string]any{
+		{"id": id},
+		{"message_id": id},
+	} {
+		response, err := b.callNapCatAction(ctx, "get_forward_msg", params)
 		if err != nil {
-			return "", err
+			lastErr = err
+			continue
 		}
+		return formatForwardMessageData(response.Data), nil
 	}
-	return formatForwardMessageData(response.Data), nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("get_forward_msg returned no data")
+	}
+	return "", lastErr
+}
+
+// callNapCatAction prefers the reverse websocket (production), then HTTP.
+func (b *Bridge) callNapCatAction(ctx context.Context, action string, params map[string]any) (napcatActionResponse, error) {
+	var reverseErr error
+	if conn, writeMu := b.activeReverseConn(); conn != nil {
+		response, err := b.requestReverseAction(ctx, conn, writeMu, action, params)
+		if err == nil {
+			if err := napcatActionError(response); err != nil {
+				return napcatActionResponse{}, err
+			}
+			return response, nil
+		}
+		reverseErr = err
+	}
+	endpoint := "/" + strings.TrimPrefix(action, "/")
+	response, err := b.postActionResponse(ctx, endpoint, params)
+	if err != nil {
+		if reverseErr != nil {
+			return napcatActionResponse{}, fmt.Errorf("%v; http fallback: %w", reverseErr, err)
+		}
+		return napcatActionResponse{}, err
+	}
+	if err := napcatActionError(response); err != nil {
+		return napcatActionResponse{}, err
+	}
+	return response, nil
 }
 
 const (
-	maxForwardNodes = 40
-	maxForwardRunes = 4000
+	maxForwardNodes = 200
+	maxForwardRunes = 50000
 )
 
 func formatForwardMessageData(raw json.RawMessage) string {
@@ -187,22 +238,11 @@ func forwardNodeLines(nodes []any) []string {
 		if !ok {
 			continue
 		}
-		data, _ := node["data"].(map[string]any)
-		if data == nil {
-			data = node
-		}
-		nickname := strings.TrimSpace(fmt.Sprint(data["nickname"]))
-		if nickname == "" {
-			nickname = strings.TrimSpace(fmt.Sprint(data["user_id"]))
-		}
-		content := plainTextFromMessage(data["content"])
-		if content == "" {
-			content = strings.TrimSpace(fmt.Sprint(data["content"]))
-		}
+		nickname, content := forwardNodeFields(node)
 		if content == "" {
 			continue
 		}
-		if nickname != "" && nickname != "<nil>" {
+		if nickname != "" {
 			lines = append(lines, nickname+": "+content)
 		} else {
 			lines = append(lines, content)
@@ -211,9 +251,70 @@ func forwardNodeLines(nodes []any) []string {
 	return lines
 }
 
+func forwardNodeFields(node map[string]any) (nickname, content string) {
+	data, _ := node["data"].(map[string]any)
+	if data == nil {
+		data = node
+	}
+
+	nickname = firstNonEmpty(
+		stringField(data, "nickname"),
+		stringField(data, "name"),
+		senderNickname(data["sender"]),
+		senderNickname(node["sender"]),
+		stringField(data, "user_id"),
+		stringField(data, "uin"),
+	)
+
+	content = plainTextFromMessage(firstPresent(data["content"], data["message"], node["message"], node["content"]))
+	if content == "" {
+		content = firstNonEmpty(
+			stringField(data, "raw_message"),
+			stringField(node, "raw_message"),
+			stringField(data, "content"),
+		)
+	}
+	return nickname, content
+}
+
+func senderNickname(raw any) string {
+	sender, ok := raw.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return firstNonEmpty(stringField(sender, "nickname"), stringField(sender, "card"), stringField(sender, "user_id"))
+}
+
+func inlineForwardContents(message any) []string {
+	var bodies []string
+	for _, rawSegment := range messageSegments(message) {
+		segment, ok := rawSegment.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ := strings.ToLower(strings.TrimSpace(fmt.Sprint(segment["type"])))
+		if typ != "forward" {
+			continue
+		}
+		data, _ := segment["data"].(map[string]any)
+		if data == nil {
+			continue
+		}
+		body := strings.TrimSpace(strings.Join(forwardContentLines(data["content"]), "\n"))
+		if body == "" {
+			body = strings.TrimSpace(strings.Join(forwardContentLines(data), "\n"))
+		}
+		if body != "" {
+			bodies = append(bodies, body)
+		}
+	}
+	return bodies
+}
+
 func forwardIDsFromMessage(message any) []string {
 	segments := messageSegments(message)
 	var ids []string
+	seen := map[string]struct{}{}
 	for _, rawSegment := range segments {
 		segment, ok := rawSegment.(map[string]any)
 		if !ok {
@@ -227,12 +328,22 @@ func forwardIDsFromMessage(message any) []string {
 		if data == nil {
 			continue
 		}
+		// Prefer fetching by id when content is absent; skip id when inline content
+		// already covers the payload so we don't double-append.
+		if body := strings.TrimSpace(strings.Join(forwardContentLines(data["content"]), "\n")); body != "" {
+			continue
+		}
 		for _, key := range []string{"id", "message_id"} {
 			id := strings.TrimSpace(fmt.Sprint(data[key]))
-			if id != "" && id != "<nil>" {
-				ids = append(ids, id)
+			if id == "" || id == "<nil>" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
 				break
 			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+			break
 		}
 	}
 	return ids
@@ -249,6 +360,11 @@ func forwardIDsFromCQMessage(message string) []string {
 func looksLikeForwardOnlyCQ(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	return strings.HasPrefix(trimmed, "[CQ:forward,") || strings.HasPrefix(trimmed, "[CQ:node,")
+}
+
+func isForwardPlaceholder(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed == "[合并转发]" || trimmed == "[转发]"
 }
 
 func plainTextFromMessage(message any) string {
@@ -283,13 +399,20 @@ func plainTextFromMessage(message any) string {
 			}
 		case "image":
 			parts = append(parts, "[图片]")
-		case "face":
+		case "face", "mface":
 			parts = append(parts, "[表情]")
 		case "reply":
 			parts = append(parts, "[回复]")
 		case "forward":
+			// Prefer expanding nested inline content when present.
+			if data != nil {
+				if nested := strings.TrimSpace(strings.Join(forwardContentLines(data["content"]), "\n")); nested != "" {
+					parts = append(parts, nested)
+					continue
+				}
+			}
 			parts = append(parts, "[合并转发]")
-		case "json":
+		case "json", "lightapp":
 			parts = append(parts, "[卡片]")
 		case "file":
 			parts = append(parts, "[文件]")
@@ -297,6 +420,10 @@ func plainTextFromMessage(message any) string {
 			parts = append(parts, "[语音]")
 		case "video":
 			parts = append(parts, "[视频]")
+		case "markdown":
+			if data != nil {
+				parts = append(parts, firstNonEmpty(stringField(data, "content"), stringField(data, "text")))
+			}
 		}
 	}
 	return strings.TrimSpace(strings.Join(parts, ""))
@@ -315,4 +442,53 @@ func messageSegments(message any) []any {
 	default:
 		return nil
 	}
+}
+
+func stringField(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	value := strings.TrimSpace(fmt.Sprint(m[key]))
+	if value == "" || value == "<nil>" {
+		return ""
+	}
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func firstPresent(values ...any) any {
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				return typed
+			}
+		case []any:
+			if len(typed) > 0 {
+				return typed
+			}
+		case []map[string]any:
+			if len(typed) > 0 {
+				return typed
+			}
+		case map[string]any:
+			if len(typed) > 0 {
+				return typed
+			}
+		default:
+			return value
+		}
+	}
+	return nil
 }

@@ -145,11 +145,18 @@ func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 		}
 		received = true
 		b.handleIncomingEvent(ctx, raw, func(ctx context.Context, event messageEvent) {
-			b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
-				if err := b.SendResponse(ctx, event, reply); err != nil {
-					b.logf("send reply failed: %v", err)
+			// Enrich off the read loop so get_forward_msg can use HTTP without stalling reads.
+			go func(event messageEvent) {
+				b.enrichMessageEvent(ctx, &event)
+				if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
+					return
 				}
-			})
+				b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
+					if err := b.SendResponse(ctx, event, reply); err != nil {
+						b.logf("send reply failed: %v", err)
+					}
+				})
+			}(event)
 		})
 	}
 }
@@ -228,6 +235,12 @@ func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, 
 		case <-ctx.Done():
 			return
 		case event = <-events:
+		}
+		// Expand 合并转发 here (worker goroutine), not on the read loop, so
+		// get_forward_msg reverse-WS replies can be delivered by resolveReverseAction.
+		b.enrichMessageEvent(ctx, &event)
+		if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
+			continue
 		}
 		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d",
 			event.MessageType, event.UserID, event.GroupID)
