@@ -459,6 +459,48 @@ func TestDiscoverReportsHTTPFailure(t *testing.T) {
 	}
 }
 
+func TestDiscoverCachesMetadataAndFallsBackWhenStaleFetchFails(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"issuer":                        "https://life.example",
+				"device_authorization_endpoint": "https://life.example/device",
+				"token_endpoint":                "https://life.example/token",
+				"registration_endpoint":         "https://life.example/register",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("down"))
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	manager := Manager{Server: server.URL, Now: func() time.Time { return now }}
+	meta, err := manager.discover(context.Background())
+	if err != nil || meta.TokenEndpoint != "https://life.example/token" {
+		t.Fatalf("first discover = %#v err=%v", meta, err)
+	}
+	meta, err = manager.discover(context.Background())
+	if err != nil || meta.TokenEndpoint != "https://life.example/token" {
+		t.Fatalf("cached discover = %#v err=%v", meta, err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected cache hit, calls=%d", calls.Load())
+	}
+
+	now = now.Add(oidcMetadataTTL + time.Minute)
+	meta, err = manager.discover(context.Background())
+	if err != nil || meta.TokenEndpoint != "https://life.example/token" {
+		t.Fatalf("stale fallback = %#v err=%v", meta, err)
+	}
+	if calls.Load() < 2 {
+		t.Fatalf("expected refresh attempt after TTL, calls=%d", calls.Load())
+	}
+}
+
 func TestPollDeviceLoginRejectsInvalidErrorJSON(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
@@ -830,7 +872,7 @@ func TestRefreshReturnsBodyReadError(t *testing.T) {
 	_, err := manager.refresh(context.Background(), store.Credential{
 		ClientID:     "client",
 		RefreshToken: "refresh",
-	})
+	}, []string{"https://life.test"})
 	if err == nil || !strings.Contains(err.Error(), "refresh response read failed") {
 		t.Fatalf("error = %v", err)
 	}
@@ -855,7 +897,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		if r.Form.Get("refresh_token") != "refresh" {
 			t.Fatalf("refresh_token = %q", r.Form.Get("refresh_token"))
 		}
-		wantResources := []string{serverURL, serverURL + "/api/mcp"}
+		wantResources := []string{serverURL}
 		if got := r.Form["resource"]; strings.Join(got, " ") != strings.Join(wantResources, " ") {
 			t.Fatalf("refresh resources = %#v, want %#v", got, wantResources)
 		}

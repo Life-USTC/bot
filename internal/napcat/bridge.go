@@ -139,18 +139,17 @@ func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 
 	received := false
 	for {
-		var event messageEvent
-		if err := conn.ReadJSON(&event); err != nil {
+		var raw json.RawMessage
+		if err := conn.ReadJSON(&raw); err != nil {
 			return received, err
 		}
 		received = true
-		if event.PostType != "message" {
-			continue
-		}
-		b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
-			if err := b.SendResponse(ctx, event, reply); err != nil {
-				b.logf("send reply failed: %v", err)
-			}
+		b.handleIncomingEvent(ctx, raw, func(ctx context.Context, event messageEvent) {
+			b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
+				if err := b.SendResponse(ctx, event, reply); err != nil {
+					b.logf("send reply failed: %v", err)
+				}
+			})
 		})
 	}
 }
@@ -213,19 +212,12 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		if b.resolveReverseAction(raw) {
 			continue
 		}
-		var event messageEvent
-		if err := json.Unmarshal(raw, &event); err != nil {
-			b.logf("reverse websocket ignored invalid event: %v", err)
-			continue
-		}
-		if event.PostType != "message" {
-			continue
-		}
-		select {
-		case events <- event:
-		case <-connCtx.Done():
-			return
-		}
+		b.handleIncomingEvent(connCtx, raw, func(ctx context.Context, event messageEvent) {
+			select {
+			case events <- event:
+			case <-connCtx.Done():
+			}
+		})
 	}
 }
 
@@ -259,7 +251,11 @@ func (b *Bridge) dispatchMessage(ctx context.Context, event messageEvent, send f
 		send(ctx, event, reply)
 		return
 	}
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{Text: event.RawMessage, Identity: event.identity()})
+	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
+		Text:         event.RawMessage,
+		Identity:     event.identity(),
+		BotMentioned: messageMentionsBot(event.RawMessage, event.SelfID),
+	})
 	if ok {
 		send(ctx, event, reply)
 		return
@@ -279,8 +275,9 @@ func (b *Bridge) dispatchMessage(ctx context.Context, event messageEvent, send f
 
 func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (commands.Response, bool) {
 	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
-		Text:     event.RawMessage,
-		Identity: event.identity(),
+		Text:         event.RawMessage,
+		Identity:     event.identity(),
+		BotMentioned: messageMentionsBot(event.RawMessage, event.SelfID),
 	})
 	if !ok {
 		agentReply, agentOK := b.handleAgent(ctx, event)
@@ -382,6 +379,18 @@ func (b *Bridge) logf(format string, args ...any) {
 	if b.Logger != nil {
 		b.Logger.Printf(format, args...)
 	}
+}
+
+func messageMentionsBot(raw string, selfID int64) bool {
+	if selfID <= 0 {
+		return false
+	}
+	lower := strings.ToLower(raw)
+	if strings.Contains(lower, "[cq:at,qq=all]") {
+		return true
+	}
+	target := fmt.Sprintf("[cq:at,qq=%d]", selfID)
+	return strings.Contains(lower, target)
 }
 
 func (e messageEvent) identity() store.Identity {
@@ -857,6 +866,10 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 		return store.MessageAcceptance{}, fmt.Errorf("napcat %s: %w", endpoint, err)
 	}
 	return receipt, nil
+}
+
+func (b *Bridge) postAction(ctx context.Context, endpoint string, payload map[string]any) (napcatActionResponse, error) {
+	return b.postActionResponse(ctx, endpoint, payload)
 }
 
 func (b *Bridge) postActionResponse(ctx context.Context, endpoint string, payload map[string]any) (napcatActionResponse, error) {

@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -57,12 +60,13 @@ func TestDispatcherBatchesConsecutiveTextAndImages(t *testing.T) {
 	}
 }
 
-func TestDispatcherSerializesConversationAndBatchesWhileActive(t *testing.T) {
+func TestDispatcherInjectsFollowUpsIntoActiveRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	inputs := make(chan Input, 2)
+	callbacks := make(chan struct{}, 2)
 	var calls atomic.Int32
 	dispatcher := newDispatcher(ctx, func(_ context.Context, input Input) (commands.Response, bool) {
 		call := calls.Add(1)
@@ -70,18 +74,32 @@ func TestDispatcherSerializesConversationAndBatchesWhileActive(t *testing.T) {
 		if call == 1 {
 			close(firstStarted)
 			<-releaseFirst
+			if input.FollowUps == nil {
+				t.Error("active run missing FollowUps inbox")
+			} else {
+				got := input.FollowUps.Drain()
+				if len(got) != 2 || got[0].Text != "second" || got[1].Text != "third" {
+					t.Errorf("injected follow-ups = %#v", got)
+				}
+			}
 		}
 		return commands.Response{Text: "ok"}, true
 	}, DispatcherConfig{Debounce: 10 * time.Millisecond, MaxWait: 30 * time.Millisecond})
 	ident := dispatchIdentity("one")
-	dispatcher.Submit(Input{Text: "first", Identity: ident}, nil)
+	dispatcher.Submit(Input{Text: "first", Identity: ident}, func(_ context.Context, _ Input, _ commands.Response, _ bool) {
+		callbacks <- struct{}{}
+	})
 	select {
 	case <-firstStarted:
 	case <-time.After(time.Second):
 		t.Fatal("first batch did not start")
 	}
-	dispatcher.Submit(Input{Text: "second", Identity: ident}, nil)
-	dispatcher.Submit(Input{Text: "third", Identity: ident}, nil)
+	dispatcher.Submit(Input{Text: "second", Identity: ident}, func(_ context.Context, _ Input, _ commands.Response, _ bool) {
+		callbacks <- struct{}{}
+	})
+	dispatcher.Submit(Input{Text: "third", Identity: ident}, func(_ context.Context, _ Input, _ commands.Response, _ bool) {
+		callbacks <- struct{}{}
+	})
 	time.Sleep(30 * time.Millisecond)
 	if calls.Load() != 1 {
 		t.Fatalf("same conversation ran concurrently: calls = %d", calls.Load())
@@ -89,9 +107,21 @@ func TestDispatcherSerializesConversationAndBatchesWhileActive(t *testing.T) {
 	close(releaseFirst)
 
 	first := <-inputs
-	second := <-inputs
-	if first.Text != "first" || second.Text != "second\n\nthird" {
-		t.Fatalf("inputs = %#v, %#v", first, second)
+	if first.Text != "first" {
+		t.Fatalf("first input = %#v", first)
+	}
+	select {
+	case <-callbacks:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for single callback")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("follow-ups should stay in the same run, calls = %d", calls.Load())
+	}
+	select {
+	case <-callbacks:
+		t.Fatal("unexpected second callback")
+	case <-time.After(40 * time.Millisecond):
 	}
 }
 
@@ -189,6 +219,27 @@ func TestDispatcherLogsQueueAndBatchMetrics(t *testing.T) {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("logs missing %q: %q", want, logs.String())
 		}
+	}
+}
+
+func TestFollowUpInjectorAppendsUserMessages(t *testing.T) {
+	inbox := newFollowUpInbox()
+	inbox.Push(Input{Text: "补充一下：只要东区"})
+	inbox.Push(Input{Text: "还有明天的"})
+	injector := newFollowUpInjector(inbox).(*followUpInjector)
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{schema.UserMessage("原始问题")}}
+	_, state2, err := injector.BeforeModelRewriteState(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state2.Messages) != 3 {
+		t.Fatalf("messages = %#v", state2.Messages)
+	}
+	if state2.Messages[1].Content != "补充一下：只要东区" || state2.Messages[2].Content != "还有明天的" {
+		t.Fatalf("injected = %#v", state2.Messages)
+	}
+	if inbox.Len() != 0 {
+		t.Fatalf("inbox not drained: %d", inbox.Len())
 	}
 }
 

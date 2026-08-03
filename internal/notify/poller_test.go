@@ -212,6 +212,45 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	}
 }
 
+func TestPollerStopsRetryingAfterAttemptBudget(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+	}))
+	defer server.Close()
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer", ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	sender := &fakeSender{failCount: 100}
+	poller := &Poller{
+		Life: life.NewClient(server.URL, server.Client()),
+		Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store: db, Sender: sender, Now: func() time.Time { return now },
+	}
+	for i := 0; i < maxNotificationAttempts+2; i++ {
+		poller.tick(ctx)
+	}
+	if sender.failCount != 100-maxNotificationAttempts {
+		t.Fatalf("attempts = %d, want %d (failCount left %d)", 100-sender.failCount, maxNotificationAttempts, sender.failCount)
+	}
+	if len(sender.messages) != 0 {
+		t.Fatalf("messages = %#v", sender.messages)
+	}
+}
+
 func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())

@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/life"
@@ -58,7 +60,13 @@ type Manager struct {
 	Store      *store.Store
 	Now        func() time.Time
 	refreshes  singleflight.Group
+
+	metaMu    sync.Mutex
+	metaCache *metadata
+	metaAt    time.Time
 }
+
+const oidcMetadataTTL = 30 * time.Minute
 
 type metadata struct {
 	Issuer                      string `json:"issuer"`
@@ -183,6 +191,77 @@ func joinResources(resources []string) string {
 	return strings.Join(splitResources(strings.Join(resources, " ")), " ")
 }
 
+func normalizeResourceURL(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
+}
+
+func resourceURLsMatch(left, right string) bool {
+	return normalizeResourceURL(left) == normalizeResourceURL(right)
+}
+
+func tokenAudienceValues(accessToken string) []string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	payload := parts[1]
+	payload = strings.ReplaceAll(payload, "-", "+")
+	payload = strings.ReplaceAll(payload, "_", "/")
+	if pad := len(payload) % 4; pad != 0 {
+		payload += strings.Repeat("=", 4-pad)
+	}
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		return nil
+	}
+	aud, ok := claims["aud"]
+	if !ok {
+		return nil
+	}
+	switch typed := aud.(type) {
+	case string:
+		if typed = strings.TrimSpace(typed); typed != "" {
+			return []string{typed}
+		}
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func tokenAudienceMatches(accessToken, resource string) bool {
+	audiences := tokenAudienceValues(accessToken)
+	if len(audiences) == 0 {
+		return true
+	}
+	resource = normalizeResourceURL(resource)
+	for _, audience := range audiences {
+		if resourceURLsMatch(audience, resource) {
+			return true
+		}
+	}
+	return false
+}
+
+func approvedRefreshResource(approved []string, resource string) string {
+	for _, candidate := range approved {
+		if resourceURLsMatch(candidate, resource) {
+			return normalizeResourceURL(candidate)
+		}
+	}
+	return normalizeResourceURL(resource)
+}
+
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
@@ -247,6 +326,18 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 }
 
 func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string, error) {
+	return m.accessTokenForResource(ctx, ident, "rest")
+}
+
+func (m *Manager) MCPAccessToken(ctx context.Context, ident store.Identity) (string, error) {
+	return m.accessTokenForResource(ctx, ident, "mcp")
+}
+
+func (m *Manager) accessTokenForResource(
+	ctx context.Context,
+	ident store.Identity,
+	purpose string,
+) (string, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
 		return "", err
@@ -258,13 +349,29 @@ func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string
 	if cred == nil {
 		return "", ErrNotLoggedIn
 	}
-	if cred.ExpiresAt.Sub(m.now()) > time.Minute {
+
+	if cred.ExpiresAt.Sub(m.now()) > time.Minute &&
+		len(tokenAudienceValues(cred.AccessToken)) == 0 {
+		return cred.AccessToken, nil
+	}
+
+	meta, err := m.discover(ctx)
+	if err != nil {
+		return "", err
+	}
+	targetResource := m.resource(meta)
+	if purpose == "mcp" {
+		targetResource = m.mcpResource()
+	}
+
+	if cred.ExpiresAt.Sub(m.now()) > time.Minute &&
+		tokenAudienceMatches(cred.AccessToken, targetResource) {
 		return cred.AccessToken, nil
 	}
 	if cred.RefreshToken == "" {
 		return "", ErrNotLoggedIn
 	}
-	return m.refreshStoredCredential(ctx, ident, true)
+	return m.refreshStoredCredential(ctx, ident, false, purpose)
 }
 
 func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
@@ -278,12 +385,11 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 var ErrNotLoggedIn = errors.New("not logged in")
 var ErrStoreNotConfigured = errors.New("auth store not configured")
 
-func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Credential, error) {
+func (m *Manager) refresh(ctx context.Context, cred store.Credential, resources []string) (store.Credential, error) {
 	meta, err := m.discover(ctx)
 	if err != nil {
 		return store.Credential{}, err
 	}
-	resources := splitResources(cred.Resource)
 	if len(resources) == 0 {
 		resources = []string{m.resource(meta)}
 	}
@@ -298,7 +404,14 @@ func (m *Manager) refresh(ctx context.Context, cred store.Credential) (store.Cre
 	if err := vt.ValidateIDToken(issuer, audience, m.now()); err != nil {
 		return store.Credential{}, err
 	}
-	return verifiedTokenToCredential(cred.ClientID, joinResources(resources), vt, cred.RefreshToken, cred.Scope, m.now())
+	return verifiedTokenToCredential(
+		cred.ClientID,
+		cred.Resource,
+		vt,
+		cred.RefreshToken,
+		cred.Scope,
+		m.now(),
+	)
 }
 
 func (m *Manager) refreshTokenRequest(ctx context.Context, endpoint, clientID, refreshToken, scope string, resources []string) (*oauth2.Token, error) {
@@ -445,12 +558,17 @@ func tokenExpiresInFromRaw(raw map[string]any) int {
 }
 
 func (m *Manager) Refresh(ctx context.Context, ident store.Identity) (string, error) {
-	return m.refreshStoredCredential(ctx, ident, false)
+	return m.refreshStoredCredential(ctx, ident, false, "rest")
 }
 
-func (m *Manager) refreshStoredCredential(ctx context.Context, ident store.Identity, useCurrent bool) (string, error) {
-	value, err, _ := m.refreshes.Do(refreshKey(ident), func() (any, error) {
-		return m.refreshCredential(ctx, ident, useCurrent)
+func (m *Manager) refreshStoredCredential(
+	ctx context.Context,
+	ident store.Identity,
+	useCurrent bool,
+	purpose string,
+) (string, error) {
+	value, err, _ := m.refreshes.Do(refreshKey(ident, purpose), func() (any, error) {
+		return m.refreshCredential(ctx, ident, useCurrent, purpose)
 	})
 	if err != nil {
 		return "", err
@@ -458,11 +576,20 @@ func (m *Manager) refreshStoredCredential(ctx context.Context, ident store.Ident
 	return value.(string), nil
 }
 
-func refreshKey(ident store.Identity) string {
-	return strings.ToLower(strings.TrimSpace(ident.Platform)) + "\x00" + strings.TrimSpace(ident.UserID)
+func refreshKey(ident store.Identity, purpose string) string {
+	return strings.ToLower(strings.TrimSpace(ident.Platform)) +
+		"\x00" +
+		strings.TrimSpace(ident.UserID) +
+		"\x00" +
+		purpose
 }
 
-func (m *Manager) refreshCredential(ctx context.Context, ident store.Identity, useCurrent bool) (string, error) {
+func (m *Manager) refreshCredential(
+	ctx context.Context,
+	ident store.Identity,
+	useCurrent bool,
+	purpose string,
+) (string, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
 		return "", err
@@ -474,10 +601,26 @@ func (m *Manager) refreshCredential(ctx context.Context, ident store.Identity, u
 	if cred == nil || cred.RefreshToken == "" {
 		return "", ErrNotLoggedIn
 	}
-	if useCurrent && cred.ExpiresAt.Sub(m.now()) > time.Minute {
+
+	meta, err := m.discover(ctx)
+	if err != nil {
+		return "", err
+	}
+	targetResource := m.resource(meta)
+	if purpose == "mcp" {
+		targetResource = m.mcpResource()
+	}
+	if useCurrent &&
+		cred.ExpiresAt.Sub(m.now()) > time.Minute &&
+		tokenAudienceMatches(cred.AccessToken, targetResource) {
 		return cred.AccessToken, nil
 	}
-	refreshed, err := m.refresh(ctx, *cred)
+
+	approved := splitResources(cred.Resource)
+	refreshResources := []string{
+		approvedRefreshResource(approved, targetResource),
+	}
+	refreshed, err := m.refresh(ctx, *cred, refreshResources)
 	if err != nil {
 		var retrieveErr *oauth2.RetrieveError
 		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "invalid_grant" {
@@ -510,6 +653,9 @@ func (m *Manager) requireStore() (*store.Store, error) {
 }
 
 func (m *Manager) discover(ctx context.Context) (metadata, error) {
+	if cached, ok := m.cachedMetadata(); ok {
+		return cached, nil
+	}
 	var lastErr error
 	server := m.serverURL()
 	for _, path := range []string{
@@ -531,12 +677,55 @@ func (m *Manager) discover(ctx context.Context) (metadata, error) {
 			var out metadata
 			err = json.NewDecoder(resp.Body).Decode(&out)
 			_ = resp.Body.Close()
-			return out, err
+			if err != nil {
+				return metadata{}, err
+			}
+			m.storeMetadata(out)
+			return out, nil
 		}
 		lastErr = fmt.Errorf("%s returned %d: %s", path, resp.StatusCode, responseBodyText(resp))
 		_ = resp.Body.Close()
 	}
+	if cached, ok := m.cachedMetadataStale(); ok {
+		return cached, nil
+	}
 	return metadata{}, fmt.Errorf("could not discover OAuth metadata from %s: %v", m.Server, lastErr)
+}
+
+func (m *Manager) cachedMetadata() (metadata, bool) {
+	m.metaMu.Lock()
+	defer m.metaMu.Unlock()
+	if m.metaCache == nil {
+		return metadata{}, false
+	}
+	if m.now().Sub(m.metaAt) > oidcMetadataTTL {
+		return metadata{}, false
+	}
+	return *m.metaCache, true
+}
+
+func (m *Manager) cachedMetadataStale() (metadata, bool) {
+	m.metaMu.Lock()
+	defer m.metaMu.Unlock()
+	if m.metaCache == nil {
+		return metadata{}, false
+	}
+	return *m.metaCache, true
+}
+
+func (m *Manager) storeMetadata(meta metadata) {
+	m.metaMu.Lock()
+	defer m.metaMu.Unlock()
+	copy := meta
+	m.metaCache = &copy
+	m.metaAt = m.now()
+}
+
+func (m *Manager) now() time.Time {
+	if m != nil && m.Now != nil {
+		return m.Now()
+	}
+	return time.Now()
 }
 
 func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, error) {
@@ -698,11 +887,4 @@ func (m *Manager) httpClient() *http.Client {
 		return m.HTTPClient
 	}
 	return &http.Client{Timeout: 15 * time.Second}
-}
-
-func (m *Manager) now() time.Time {
-	if m.Now != nil {
-		return m.Now()
-	}
-	return time.Now()
 }

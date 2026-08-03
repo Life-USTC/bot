@@ -458,6 +458,40 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	}
 }
 
+func TestHandleBusExplicitRouteDropsStopsOutsideSegment(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[
+				{"campus":{"nameCn":"东区"}},
+				{"campus":{"nameCn":"西区"}},
+				{"campus":{"nameCn":"先研院"}},
+				{"campus":{"nameCn":"高新区"}}
+			]}],
+			"trips":[{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"09:00","stopTimes":[
+				{"campusName":"东区","time":"08:00"},
+				{"campusName":"西区","time":"08:10"},
+				{"campusName":"先研院","time":"08:30"},
+				{"campusName":"高新区","time":"09:00"}
+			]}]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply := handler.busAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation()))
+	if !strings.Contains(reply, "东区") || !strings.Contains(reply, "西区") || !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "先研院") || strings.Contains(reply, "高新区") {
+		t.Fatalf("explicit route should drop stops after destination: %q", reply)
+	}
+}
+
 func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()

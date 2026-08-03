@@ -669,7 +669,7 @@ func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
 		Auth:   &auth.Manager{},
 		Prefix: "/life",
 	}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "我", Identity: testIdentity()})
+	reply, ok := handler.Handle(context.Background(), Input{Text: "我的", Identity: testIdentity()})
 	if !ok || reply != "登录未配置。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
@@ -690,7 +690,7 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 		Life:   life.NewClient(server.URL, server.Client()),
 		Prefix: "/life",
 	}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "我", Identity: testIdentity()})
+	reply, ok := handler.Handle(context.Background(), Input{Text: "我的", Identity: testIdentity()})
 	if !ok || reply != "登录未配置。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
@@ -3214,8 +3214,8 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("missing state reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 校车", Identity: ident})
-	if !ok || !strings.Contains(reply, "支持：课表、作业") {
-		t.Fatalf("invalid kind reply = %q, ok = %v", reply, ok)
+	if ok {
+		t.Fatalf("unknown notify kind should fall through, reply = %q", reply)
 	}
 
 	paddedIdent := ident
@@ -3256,8 +3256,8 @@ func TestAgentSettingsCommand(t *testing.T) {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 maybe", Identity: ident})
-	if !ok || !strings.Contains(reply, "想打开还是关闭") {
-		t.Fatalf("invalid reply = %q, ok = %v", reply, ok)
+	if ok {
+		t.Fatalf("invalid agent args should fall through, reply = %q", reply)
 	}
 	groupIdent := ident
 	groupIdent.ConversationType = "group"
@@ -3621,16 +3621,27 @@ func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
 func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 
-	cmd, ok := handler.parse("反馈上面的对话问题")
+	if _, ok := handler.parse("反馈上面的对话问题"); ok {
+		t.Fatal("attached feedback without space should not parse")
+	}
+	if _, ok := handler.parse("通知课表开"); ok {
+		t.Fatal("attached notify without space should not parse")
+	}
+	if _, ok := handler.parse("提醒我这周三之前研究清楚"); ok {
+		t.Fatal("natural-language reminder should not parse as notify")
+	}
+	if _, ok := handler.parse("建议你改进校车显示"); ok {
+		t.Fatal("natural-language suggestion should not parse as feedback")
+	}
+
+	cmd, ok := handler.parse("反馈 上面的对话问题")
 	if !ok || cmd.Name != "feedback" || strings.Join(cmd.Args, " ") != "上面的对话问题" {
-		t.Fatalf("feedback parsed as %#v, ok=%v", cmd, ok)
+		t.Fatalf("spaced feedback parsed as %#v, ok=%v", cmd, ok)
 	}
-
-	cmd, ok = handler.parse("通知课表开")
+	cmd, ok = handler.parse("通知 课表 开")
 	if !ok || cmd.Name != "notify" || strings.Join(cmd.Args, " ") != "classes on" {
-		t.Fatalf("notify parsed as %#v, ok=%v", cmd, ok)
+		t.Fatalf("spaced notify parsed as %#v, ok=%v", cmd, ok)
 	}
-
 	if _, ok = handler.parse("设置作业呃开"); ok {
 		t.Fatal("compact settings text unexpectedly parsed as a notification command")
 	}

@@ -624,9 +624,10 @@ func TestCleanQQReplyRemovesMarkdownTables(t *testing.T) {
 |------|------|------|
 | **07:50-09:25** | 组合数学 | 高新区 **GT-B112** |
 
-> 建议下课后出发`
+> 建议下课后出发
+详情见 [校车](https://example.test/bus)`
 	got := cleanQQReply(input)
-	want := "明天行程\n时间  事项  地点\n07:50-09:25  组合数学  高新区 GT-B112\n\n建议下课后出发"
+	want := "明天行程\n时间  事项  地点\n07:50-09:25  组合数学  高新区 GT-B112\n\n建议下课后出发\n详情见 校车"
 	if got != want {
 		t.Fatalf("cleanQQReply = %q", got)
 	}
@@ -644,11 +645,20 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
-	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, or service availability") {
+	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
+	}
+	if !strings.Contains(instruction, "Course / section subscribe-by-name flow") {
+		t.Fatalf("instruction lacks subscribe-by-name flow: %q", instruction)
+	}
+	if !strings.Contains(instruction, "follow-ups sent while tools were running") {
+		t.Fatalf("instruction lacks multi-paragraph follow-up rule: %q", instruction)
+	}
+	if !strings.Contains(instruction, "Never use Markdown tables") {
+		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
 	for _, want := range []string{
 		"Image rendering protocol:",

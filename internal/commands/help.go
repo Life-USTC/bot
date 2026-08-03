@@ -60,7 +60,7 @@ func helpDetailSections() []helpSection {
 				{topic: "shortcuts", commandName: "upcoming_deadlines", command: "近期截止 14", description: "相当于“日程 截止 14”"},
 				{topic: "shortcuts", commandName: "schedule", command: "明日课表", description: "相当于“课表 单日 明天”"},
 				{topic: "shortcuts", commandName: "nextclass", command: "下一节课", description: "相当于“课表 下一节”"},
-				{topic: "shortcuts", commandName: "account", command: "我（me）", description: "相当于“账户 信息”"},
+				{topic: "shortcuts", commandName: "account", command: "我的", description: "相当于“账户 信息”"},
 				{topic: "shortcuts", commandName: "logout", command: "退出", description: "相当于“账户 退出”"},
 				{topic: "shortcuts", commandName: "status", command: "状态（status）", description: "相当于“系统 状态”"},
 				{topic: "shortcuts", commandName: "notify", command: "通知", description: "相当于“设置 通知”"},

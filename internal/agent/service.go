@@ -65,6 +65,11 @@ type Input struct {
 	Identity   store.Identity
 	SendUpdate func(context.Context, store.Identity, string) error
 
+	// FollowUps is set by the dispatcher for an in-flight run. Mid-run user
+	// messages are injected into the current agent state instead of starting a
+	// second reply.
+	FollowUps *followUpInbox
+
 	imageDataURLs []string
 }
 
@@ -195,13 +200,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		s.logf("compact conversation history failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 	}
+	capture := newStateCapture()
+	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer(), capture}
+	if input.FollowUps != nil {
+		handlers = append(handlers, newFollowUpInjector(input.FollowUps))
+	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
 		Description:   "Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
 		Model:         model,
 		MaxIterations: agentMaxIterations,
-		Handlers:      []adk.ChatModelAgentMiddleware{newToolHistoryReducer()},
+		Handlers:      handlers,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools,
@@ -227,26 +237,64 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	iter := runner.Run(ctx, messages)
+
+	const maxFollowUpContinues = 3
 	reply := ""
-	for {
-		event, ok := iter.Next()
-		if !ok {
+	for continueRound := 0; ; continueRound++ {
+		iter := runner.Run(ctx, messages)
+		reply = ""
+		for {
+			event, ok := iter.Next()
+			if !ok {
+				break
+			}
+			if event.Err != nil {
+				if errors.Is(event.Err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+					finishRun(store.AgentRunStatusIgnored, "", event.Err)
+					return commands.Response{}, false
+				}
+				reply := agentFailureReply(runID, event.Err)
+				finishRun(store.AgentRunStatusFailed, reply, event.Err)
+				return agentTextResponse(reply), true
+			}
+			msg, _, err := adk.GetMessage(event)
+			if err != nil || msg == nil {
+				continue
+			}
+			content := strings.TrimSpace(msg.Content)
+			if content != "" {
+				reply = content
+			}
+		}
+		followUps := input.FollowUps.Drain()
+		if len(followUps) == 0 {
 			break
 		}
-		if event.Err != nil {
-			reply := agentFailureReply(runID, event.Err)
-			finishRun(store.AgentRunStatusFailed, reply, event.Err)
-			return agentTextResponse(reply), true
+		if continueRound >= maxFollowUpContinues {
+			for _, followUp := range followUps {
+				input.FollowUps.Push(followUp)
+			}
+			break
 		}
-		msg, _, err := adk.GetMessage(event)
-		if err != nil || msg == nil {
-			continue
+		// Late follow-ups arrived after the model finished this turn: continue
+		// the same conversation from captured state without sending an intermediate reply.
+		messages = append([]*schema.Message(nil), capture.messages...)
+		if len(messages) == 0 {
+			messages, err = s.messagesFor(ctx, input)
+			if err != nil {
+				break
+			}
+			if reply != "" {
+				messages = append(messages, schema.AssistantMessage(reply, nil))
+			}
 		}
-		content := strings.TrimSpace(msg.Content)
-		if content != "" {
-			reply = content
+		for _, followUp := range followUps {
+			if msg := followUpUserMessage(followUp); msg != nil {
+				messages = append(messages, msg)
+			}
 		}
+		s.logf("llm follow-up continue: platform=%s conversation_type=%s conversation_id=%s followups=%d round=%d",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(followUps), continueRound+1)
 	}
 	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
@@ -462,7 +510,7 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 	var err error
 	var mcpSession *botmcp.Session
 	if s.mcpClient != nil && s.auth != nil {
-		token, err := s.auth.AccessToken(ctx, ident)
+		token, err := s.auth.MCPAccessToken(ctx, ident)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get MCP access token: %w", err)
 		}
@@ -773,7 +821,8 @@ func cleanQQReply(reply string) string {
 			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 		}
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
-		trimmed = strings.NewReplacer("**", "", "__", "", "`", "").Replace(trimmed)
+		trimmed = strings.NewReplacer("**", "", "__", "", "```", "", "`", "").Replace(trimmed)
+		trimmed = stripMarkdownLinks(trimmed)
 		if blank {
 			out = append(out, "")
 			blank = false
@@ -781,6 +830,38 @@ func cleanQQReply(reply string) string {
 		out = append(out, trimmed)
 	}
 	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func stripMarkdownLinks(line string) string {
+	var b strings.Builder
+	b.Grow(len(line))
+	for i := 0; i < len(line); {
+		if line[i] == '[' {
+			if i > 0 && line[i-1] == '!' {
+				b.WriteByte(line[i])
+				i++
+				continue
+			}
+			mid := strings.Index(line[i:], "](")
+			if mid < 0 {
+				b.WriteString(line[i:])
+				break
+			}
+			mid += i
+			end := strings.IndexByte(line[mid+2:], ')')
+			if end < 0 {
+				b.WriteString(line[i:])
+				break
+			}
+			end += mid + 2
+			b.WriteString(line[i+1 : mid])
+			i = end + 1
+			continue
+		}
+		b.WriteByte(line[i])
+		i++
+	}
+	return b.String()
 }
 
 func isMarkdownTableSeparator(line string) bool {
@@ -844,13 +925,18 @@ func currentInstruction() string {
 func currentInstructionAt(now time.Time) string {
 	return fmt.Sprintf(`You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
-QQ does not render Markdown tables well. Do not use Markdown tables, horizontal rules, blockquotes, or heading markers. Use short plain-text lines and compact numbered lists.
+QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
-Never invent prices, menus, locations, schedules, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
+Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
 Current local time is %s.
-You can answer questions about prior messages using the chat history provided in this run.
-For bus planning after a class or event, pass the class/event end time to get_next_bus.after so the bus result is after that time.
+You can answer questions about prior messages using the chat history provided in this run. If additional user messages appear later in this same run (follow-ups sent while tools were running), treat them as part of the current conversation and answer everything together in a single final reply. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
+For bus planning after a class or event, pass the class/event end time to get_next_bus.after (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
+Course / section subscribe-by-name flow:
+1. Search with search_teachers / search_courses / search_sections using the teacher's name and course title the user gave.
+2. Show a short candidate list (teacher, course, section code / JW ID) when matches are ambiguous.
+3. When the user confirms, call the subscribe / bulk_subscribe tool so the host prepares a confirmation command. Do not claim subscription succeeded until the user confirms with ok or the confirmation command.
+Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
 Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.

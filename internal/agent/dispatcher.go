@@ -43,8 +43,12 @@ type Dispatcher struct {
 }
 
 type dispatchConversation struct {
-	pending []dispatchMessage
-	wake    chan struct{}
+	pending        []dispatchMessage
+	wake           chan struct{}
+	active         bool
+	inbox          *followUpInbox
+	activeCallback DispatchCallback
+	activeInput    Input
 }
 
 type dispatchMessage struct {
@@ -104,6 +108,30 @@ func (d *Dispatcher) Submit(input Input, callback DispatchCallback) {
 		d.conversations[key] = conversation
 		go d.runConversation(key, conversation)
 	}
+
+	// Mid-run follow-ups go into the current agent context instead of starting
+	// another reply after the active run finishes.
+	if conversation.active && conversation.inbox != nil {
+		if conversation.inbox.Len() >= d.maxPending {
+			d.mu.Unlock()
+			d.logf("llm follow-up rejected: platform=%s conversation_type=%s conversation_id=%s reason=full",
+				input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID)
+			if callback != nil {
+				callback(d.ctx, input, commands.Response{Text: queueFullReply, Kind: "agent"}, true)
+			}
+			return
+		}
+		conversation.inbox.Push(input)
+		if callback != nil {
+			conversation.activeCallback = callback
+		}
+		depth := conversation.inbox.Len()
+		d.mu.Unlock()
+		d.logf("llm follow-up injected: platform=%s conversation_type=%s conversation_id=%s inbox_depth=%d images=%d",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, depth, len(input.ImageURLs))
+		return
+	}
+
 	if len(conversation.pending) >= d.maxPending {
 		depth := len(conversation.pending)
 		d.mu.Unlock()
@@ -137,19 +165,50 @@ func (d *Dispatcher) runConversation(key string, conversation *dispatchConversat
 			d.removeConversation(key, conversation)
 			return
 		}
-		started := time.Now()
+		inbox := newFollowUpInbox()
 		merged := mergeDispatchInputs(batch)
+		merged.FollowUps = inbox
+		d.mu.Lock()
+		conversation.active = true
+		conversation.inbox = inbox
+		conversation.activeCallback = batch[len(batch)-1].callback
+		conversation.activeInput = merged
+		d.mu.Unlock()
+
+		started := time.Now()
 		oldestWait := started.Sub(batch[0].enqueuedAt)
 		d.logf("llm batch started: platform=%s conversation_type=%s conversation_id=%s message_count=%d images=%d queue_wait_ms=%d",
 			merged.Identity.Platform, merged.Identity.ConversationType, merged.Identity.ConversationID,
 			len(batch), len(merged.ImageURLs), oldestWait.Milliseconds())
 		response, handled := d.execute(d.ctx, merged)
 		<-d.semaphore
+
+		d.mu.Lock()
+		callback := conversation.activeCallback
+		callbackInput := conversation.activeInput
+		if injected := inbox.Drain(); len(injected) > 0 {
+			// Arrived after the run finished reading the inbox; queue for the next turn.
+			for _, followUp := range injected {
+				conversation.pending = append(conversation.pending, dispatchMessage{
+					input: followUp, callback: callback, enqueuedAt: time.Now(),
+				})
+			}
+			select {
+			case conversation.wake <- struct{}{}:
+			default:
+			}
+		}
+		conversation.active = false
+		conversation.inbox = nil
+		conversation.activeCallback = nil
+		conversation.activeInput = Input{}
+		d.mu.Unlock()
+
 		d.logf("llm batch completed: platform=%s conversation_type=%s conversation_id=%s message_count=%d handled=%v duration_ms=%d",
 			merged.Identity.Platform, merged.Identity.ConversationType, merged.Identity.ConversationID,
 			len(batch), handled, time.Since(started).Milliseconds())
-		if callback := batch[len(batch)-1].callback; callback != nil {
-			callback(d.ctx, merged, response, handled)
+		if callback != nil {
+			callback(d.ctx, callbackInput, response, handled)
 		}
 	}
 }

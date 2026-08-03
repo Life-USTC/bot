@@ -230,7 +230,9 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		items = markNextBusItem(items, effectiveBusNow(now, options))
 	}
 	if options.ExplicitRoute {
-		return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
+		if campuses := busCampusesFromArgs(routeArgs); len(campuses) >= 2 {
+			items = projectBusItemsToCampuses(items, campuses[:2])
+		}
 	}
 	return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 }
@@ -839,6 +841,65 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		EmptyWidthText: busMissingTimePlaceholder,
 		EmptyCell:      busTableBlankCell,
 	})
+}
+
+func projectBusItemsToCampuses(items []busItem, campuses []string) []busItem {
+	if len(campuses) < 2 {
+		return items
+	}
+	from := campusName(campuses[0])
+	to := campusName(campuses[1])
+	if from == "" || to == "" || from == to {
+		return items
+	}
+	out := make([]busItem, 0, len(items))
+	for _, item := range items {
+		fromIdx, toIdx := busStopIndexes(item.Stops, from, to)
+		if fromIdx < 0 || toIdx < 0 {
+			continue
+		}
+		lo, hi := fromIdx, toIdx
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		segment := make([]busStop, 0, hi-lo+1)
+		for _, stop := range item.Stops[lo : hi+1] {
+			segment = append(segment, busStop{Name: campusName(stop.Name), Time: stop.Time})
+		}
+		next := item
+		next.Stops = segment
+		out = append(out, next)
+	}
+	if len(out) == 0 {
+		return items
+	}
+	return out
+}
+
+func busStopIndexes(stops []busStop, from, to string) (int, int) {
+	fromIdx, toIdx := -1, -1
+	for i, stop := range stops {
+		name := campusName(stop.Name)
+		if name == from && fromIdx < 0 {
+			fromIdx = i
+		}
+		if fromIdx >= 0 && name == to {
+			toIdx = i
+			return fromIdx, toIdx
+		}
+	}
+	fromIdx, toIdx = -1, -1
+	for i, stop := range stops {
+		name := campusName(stop.Name)
+		if name == to && fromIdx < 0 {
+			fromIdx = i
+		}
+		if fromIdx >= 0 && name == from {
+			toIdx = i
+			return fromIdx, toIdx
+		}
+	}
+	return -1, -1
 }
 
 func busTableBlankCell(width int) string {

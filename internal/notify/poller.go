@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
@@ -15,12 +16,18 @@ import (
 )
 
 const (
-	classKind    = "class"
-	homeworkKind = "homework"
+	classKind               = "class"
+	homeworkKind            = "homework"
+	maxNotificationAttempts = 3
 )
 
 type Sender interface {
 	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
+}
+
+type notificationAttempt struct {
+	count int
+	last  time.Time
 }
 
 type Poller struct {
@@ -32,6 +39,9 @@ type Poller struct {
 	Now                  func() time.Time
 	Logger               *log.Logger
 	EnableImageResponses bool
+
+	attemptMu sync.Mutex
+	attempts  map[string]notificationAttempt
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -163,15 +173,61 @@ func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity,
 		return
 	}
 	if delivered {
+		p.clearAttempt(ident, kind, key)
+		return
+	}
+	if !p.shouldAttempt(ident, kind, key) {
 		return
 	}
 	if err := p.Sender.SendRichMessage(ctx, ident, message, image); err != nil {
+		attempts := p.noteFailedAttempt(ident, kind, key)
+		if attempts >= maxNotificationAttempts {
+			p.logf("send %s notification circuit open after %d attempts: %v", kind, attempts, err)
+			return
+		}
 		p.logf("send %s notification failed: %v", kind, err)
 		return
 	}
+	p.clearAttempt(ident, kind, key)
 	if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, kind, key); err != nil {
 		p.logf("record %s notification failed: %v", kind, err)
 	}
+}
+
+func notificationAttemptKey(ident store.Identity, kind, key string) string {
+	return ident.Platform + "|" + ident.UserID + "|" + kind + "|" + key
+}
+
+func (p *Poller) shouldAttempt(ident store.Identity, kind, key string) bool {
+	p.attemptMu.Lock()
+	defer p.attemptMu.Unlock()
+	if p.attempts == nil {
+		return true
+	}
+	return p.attempts[notificationAttemptKey(ident, kind, key)].count < maxNotificationAttempts
+}
+
+func (p *Poller) noteFailedAttempt(ident store.Identity, kind, key string) int {
+	p.attemptMu.Lock()
+	defer p.attemptMu.Unlock()
+	if p.attempts == nil {
+		p.attempts = make(map[string]notificationAttempt)
+	}
+	id := notificationAttemptKey(ident, kind, key)
+	attempt := p.attempts[id]
+	attempt.count++
+	attempt.last = p.now()
+	p.attempts[id] = attempt
+	return attempt.count
+}
+
+func (p *Poller) clearAttempt(ident store.Identity, kind, key string) {
+	p.attemptMu.Lock()
+	defer p.attemptMu.Unlock()
+	if p.attempts == nil {
+		return
+	}
+	delete(p.attempts, notificationAttemptKey(ident, kind, key))
 }
 
 func (p *Poller) now() time.Time {

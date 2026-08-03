@@ -58,9 +58,10 @@ func CommandSpecs() []CommandSpec {
 }
 
 type Input struct {
-	Text        string
-	Identity    store.Identity
-	SuppressLog bool
+	Text         string
+	Identity     store.Identity
+	SuppressLog  bool
+	BotMentioned bool
 }
 
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
@@ -69,6 +70,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
+	input.Text = stripCQCodes(input.Text)
 	if isConfirmationOK(input.Text) {
 		if reply, ok := h.confirmPending(ctx, input); ok {
 			return textResponse(reply), true
@@ -82,7 +84,15 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 		return Response{}, false
 	}
 	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(cmd) {
-		return Response{}, false
+		if !input.BotMentioned {
+			return Response{}, false
+		}
+		reply := "此功能请私聊使用。"
+		if !input.SuppressLog {
+			h.recordState(ctx, input.Identity, cmd)
+			h.recordInteraction(ctx, input.Identity, cmd, reply)
+		}
+		return textResponse(reply), true
 	}
 	if h.hasAdditionalCommandLine(input.Text) {
 		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
@@ -158,8 +168,6 @@ type parsedCommand struct {
 }
 
 var scheduleAliases = []string{"schedule", "sched", "kb", "课表", "课标"}
-var attachedFeedbackAliases = []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"}
-var attachedNotifyAliases = []string{"notify", "notice", "push", "提醒", "通知", "推送"}
 
 const (
 	feedbackContextLimit     = 3
@@ -171,6 +179,10 @@ var feedbackEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\
 
 func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
 	if groupCommandAlwaysAllowed(cmd.Name) {
+		return true
+	}
+	// Bare help/menu is always available in groups; topic help stays behind the personal opt-in.
+	if cmd.Name == "help" && len(cmd.Args) == 0 {
 		return true
 	}
 	if !h.AllowGroupPersonalInfo {
@@ -239,7 +251,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "account",
-		Aliases:   []string{"account", "账户", "我", "我的", "profile", "个人"},
+		Aliases:   []string{"account", "账户", "我的", "profile"},
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -270,7 +282,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "calendar",
-		Aliases:   []string{"calendar", "today", "rc", "jr", "ddl", "deadline", "deadlines", "日程", "今日", "今天", "安排", "日程安排"},
+		Aliases:   []string{"calendar", "today", "rc", "jr", "ddl", "deadline", "deadlines", "日程", "今日", "今天", "日程安排"},
 		NeedsLife: true,
 		NeedsAuth: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -290,7 +302,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:       "notify",
-		Aliases:    []string{"notify", "notice", "push", "提醒", "通知", "推送"},
+		Aliases:    []string{"notify", "提醒", "通知", "推送"},
 		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeNotifyArgs,
@@ -308,7 +320,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:       "agent",
-		Aliases:    []string{"agent", "ai", "llm", "tool", "tools", "工具", "调试"},
+		Aliases:    []string{"agent", "ai", "llm", "tools", "ai工具"},
 		HasHelp:    true,
 		NeedsStore: true,
 		Normalize:  normalizeAgentArgs,
@@ -318,7 +330,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:    "feedback",
-		Aliases: []string{"feedback", "fb", "反馈", "意见", "建议", "吐槽"},
+		Aliases: []string{"feedback", "fb", "反馈"},
 		HasHelp: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
@@ -326,7 +338,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "ping",
-		Aliases:   []string{"p", "ping"},
+		Aliases:   []string{"ping"},
 		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			if err := h.Life.Health(ctx); err != nil {
@@ -381,7 +393,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Name:      "bus",
-		Aliases:   []string{"bus", "xc", "校车", "车"},
+		Aliases:   []string{"bus", "xc", "校车"},
 		HasHelp:   true,
 		NeedsLife: true,
 		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
@@ -576,14 +588,14 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		if name == "" {
 			return helpCommand(raw), true
 		}
-		return commandResult(raw, name, args), true
+		return acceptedCommand(raw, name, args)
 	}
 	if strings.HasPrefix(fields[0], prefix) {
 		name, args := normalizeCommand(strings.TrimPrefix(fields[0], prefix), fields[1:])
 		if name == "" {
 			return helpCommand(raw), true
 		}
-		return commandResult(raw, name, args), true
+		return acceptedCommand(raw, name, args)
 	}
 
 	if isHelpToken(fields[0]) {
@@ -591,13 +603,13 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	}
 
 	if name, args, ok := normalizeHierarchicalCommand(commandToken(fields[0]), fields[1:]); ok {
-		return commandResult(raw, name, args), true
+		return acceptedCommand(raw, name, args)
 	}
 
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		if name, args, ok := normalizeJoinedCommand(joined, fields[2:]); ok {
-			return commandResult(raw, name, args), true
+			return acceptedCommand(raw, name, args)
 		}
 	}
 
@@ -605,7 +617,7 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if name == "" {
 		return parsedCommand{}, false
 	}
-	return commandResult(raw, name, args), true
+	return acceptedCommand(raw, name, args)
 }
 
 func helpCommand(raw string, args ...string) parsedCommand {
@@ -626,12 +638,6 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	}
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
 		return normalized, normalizedArgs
-	}
-	if tail, ok := splitAttachedAlias(name, attachedFeedbackAliases); ok {
-		return "feedback", append([]string{tail}, args...)
-	}
-	if tail, ok := splitAttachedAlias(name, attachedNotifyAliases); ok {
-		return "notify", normalizeNotifyArgs(append([]string{tail}, args...))
 	}
 	for _, spec := range commandSpecs {
 		for _, alias := range spec.Aliases {
@@ -1230,27 +1236,6 @@ func compactCommandToken(value string) string {
 	token := commandToken(value)
 	replacer := strings.NewReplacer("呃", "", "额", "", "嗯", "", "啊", "")
 	return replacer.Replace(token)
-}
-
-func splitAttachedAlias(name string, aliases []string) (string, bool) {
-	key := commandToken(name)
-	display := strings.TrimLeft(strings.TrimSpace(name), "/")
-	for _, alias := range aliases {
-		aliasKey := commandToken(alias)
-		if key == aliasKey || !strings.HasPrefix(key, aliasKey) {
-			continue
-		}
-		displayRunes := []rune(display)
-		aliasRunes := []rune(alias)
-		if len(displayRunes) <= len(aliasRunes) {
-			continue
-		}
-		tail := strings.TrimSpace(string(displayRunes[len(aliasRunes):]))
-		if tail != "" {
-			return tail, true
-		}
-	}
-	return "", false
 }
 
 func isHelpToken(value string) bool {
