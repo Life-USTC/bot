@@ -209,8 +209,25 @@ func TestHandleIncomingEventDispatchesForwardWithoutNetwork(t *testing.T) {
 	}
 }
 
+type syncLogBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncLogBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncLogBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 func TestReverseEnrichForwardUsesWebsocketAction(t *testing.T) {
-	var logs strings.Builder
+	var logs syncLogBuffer
 	bridge := &Bridge{
 		Handler: commands.Handler{},
 		Logger:  log.New(&logs, "", 0),
@@ -288,11 +305,12 @@ func TestReverseEnrichForwardUsesWebsocketAction(t *testing.T) {
 	for {
 		select {
 		case <-deadline:
-			if !strings.Contains(logs.String(), `reverse websocket message: message_type="private"`) {
-				t.Fatalf("expected enriched message handling, logs=%q", logs.String())
+			logText := logs.String()
+			if !strings.Contains(logText, `reverse websocket message: message_type="private"`) {
+				t.Fatalf("expected enriched message handling, logs=%q", logText)
 			}
-			if strings.Contains(logs.String(), "get_forward_msg failed") {
-				t.Fatalf("forward fetch failed over reverse ws: %q", logs.String())
+			if strings.Contains(logText, "get_forward_msg failed") {
+				t.Fatalf("forward fetch failed over reverse ws: %q", logText)
 			}
 			_ = conn.Close()
 			select {
@@ -301,8 +319,9 @@ func TestReverseEnrichForwardUsesWebsocketAction(t *testing.T) {
 			}
 			return
 		case <-time.After(50 * time.Millisecond):
-			if strings.Contains(logs.String(), `reverse websocket message: message_type="private"`) &&
-				!strings.Contains(logs.String(), "get_forward_msg failed") {
+			logText := logs.String()
+			if strings.Contains(logText, `reverse websocket message: message_type="private"`) &&
+				!strings.Contains(logText, "get_forward_msg failed") {
 				_ = conn.Close()
 				select {
 				case <-handled:

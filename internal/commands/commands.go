@@ -4016,7 +4016,7 @@ func (h Handler) status(ctx context.Context, ident store.Identity) string {
 	}
 	return strings.Join([]string{
 		"状态：",
-		"Life API：" + api,
+		"Life @ USTC：" + api,
 		"登录：" + login,
 	}, "\n")
 }

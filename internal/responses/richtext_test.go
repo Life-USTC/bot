@@ -528,7 +528,7 @@ func TestLayoutRichTextKeepsBusSemanticsOutOfOtherTables(t *testing.T) {
 
 func TestRichFooterOnlyShowsTimeDayTypeAndSource(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 34, 0, 0, time.FixedZone("CST", 8*60*60))
-	if got, want := richFooterLines(now), [2]string{"12:34 · 工作日", "Life@USTC"}; got != want {
+	if got, want := richFooterLines(now), [2]string{"12:34 · 工作日", "Life @ USTC"}; got != want {
 		t.Fatalf("footer = %#v, want %#v", got, want)
 	}
 }

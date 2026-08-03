@@ -224,7 +224,7 @@ func helpDetailSections() []helpSection {
 		{
 			title: "账户",
 			rows: []helpRow{
-				{topic: "account", commandName: "login", command: "账户 登录", description: "开始 Life@USTC 登录"},
+				{topic: "account", commandName: "login", command: "账户 登录", description: "开始 Life @ USTC 登录"},
 				{topic: "account", commandName: "login", command: "账户 登录状态", description: "查询当前登录流程"},
 				{topic: "account", commandName: "account", command: "账户 信息", description: "查看当前登录用户"},
 				{topic: "account", commandName: "status", command: "账户 状态", description: "查看服务与登录状态"},
@@ -257,7 +257,7 @@ func helpDetailSections() []helpSection {
 			title: "系统",
 			rows: []helpRow{
 				{topic: "system", commandName: "status", command: "系统 状态", description: "查看服务与登录状态"},
-				{topic: "system", commandName: "ping", command: "系统 检查", description: "检查 Life@USTC API 是否可用"},
+				{topic: "system", commandName: "ping", command: "系统 检查", description: "检查 Life @ USTC API 是否可用"},
 			},
 		},
 		{

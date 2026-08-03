@@ -391,7 +391,7 @@ func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
 }
 
 func richFooterLines(now time.Time) [2]string {
-	return [2]string{now.Format("15:04") + " · " + busDayType(now), "Life@USTC"}
+	return [2]string{now.Format("15:04") + " · " + busDayType(now), "Life @ USTC"}
 }
 
 func measureRichTableColumnWidths(table busRenderTable, metrics richRenderMetrics) []int {

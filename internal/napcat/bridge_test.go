@@ -690,7 +690,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	var logs bytes.Buffer
 	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/courses" {
-			t.Fatalf("unexpected Life API path %s", r.URL.Path)
+			t.Fatalf("unexpected Life @ USTC API path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
 	}))
@@ -860,7 +860,7 @@ func TestDispatchMessageBypassesAgentQueueForCommands(t *testing.T) {
 func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *testing.T) {
 	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/courses" {
-			t.Fatalf("unexpected Life API path %s", r.URL.Path)
+			t.Fatalf("unexpected Life @ USTC API path %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
 	}))
