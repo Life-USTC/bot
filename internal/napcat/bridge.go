@@ -92,6 +92,9 @@ type messageEvent struct {
 	GroupID     int64  `json:"group_id"`
 	UserID      int64  `json:"user_id"`
 	SelfID      int64  `json:"self_id"`
+
+	// Images extracted from 合并转发 payloads (not present on the top-level message).
+	forwardImageURLs []string
 }
 
 func (b *Bridge) Run(ctx context.Context) error {
@@ -420,10 +423,10 @@ func (e messageEvent) identity() store.Identity {
 }
 
 func (e messageEvent) imageURLs() []string {
-	urls := imageURLsFromMessage(e.Message)
-	if len(urls) == 0 {
-		urls = imageURLsFromCQMessage(e.RawMessage)
-	}
+	urls := append([]string{}, imageURLsFromMessage(e.Message)...)
+	urls = append(urls, e.forwardImageURLs...)
+	urls = append(urls, imageURLsFromCQMessage(e.RawMessage)...)
+	urls = dedupeImageURLs(urls)
 	if len(urls) > 4 {
 		urls = urls[:4]
 	}
@@ -431,29 +434,74 @@ func (e messageEvent) imageURLs() []string {
 }
 
 func imageURLsFromMessage(message any) []string {
-	segments := messageSegments(message)
+	return imageURLsFromSegments(messageSegments(message))
+}
+
+func imageURLsFromSegments(segments []any) []string {
 	if len(segments) == 0 {
 		return nil
 	}
 	var urls []string
 	for _, rawSegment := range segments {
 		segment, ok := rawSegment.(map[string]any)
-		if !ok || !strings.EqualFold(strings.TrimSpace(fmt.Sprint(segment["type"])), "image") {
+		if !ok {
+			continue
+		}
+		typ := strings.ToLower(strings.TrimSpace(fmt.Sprint(segment["type"])))
+		if typ != "image" && typ != "mface" {
 			continue
 		}
 		data, ok := segment["data"].(map[string]any)
 		if !ok {
 			continue
 		}
-		for _, key := range []string{"url", "file"} {
-			candidate := strings.TrimSpace(fmt.Sprint(data[key]))
-			if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
-				urls = append(urls, candidate)
-				break
-			}
+		if url := imageURLFromData(data); url != "" {
+			urls = append(urls, url)
 		}
 	}
 	return urls
+}
+
+func imageURLFromData(data map[string]any) string {
+	if data == nil {
+		return ""
+	}
+	for _, key := range []string{"url", "file", "path"} {
+		candidate := strings.TrimSpace(fmt.Sprint(data[key]))
+		if candidate == "" || candidate == "<nil>" {
+			continue
+		}
+		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+			return candidate
+		}
+		if strings.HasPrefix(strings.ToLower(candidate), "base64://") {
+			payload := strings.TrimSpace(candidate[len("base64://"):])
+			if payload != "" {
+				return "data:image/jpeg;base64," + payload
+			}
+		}
+	}
+	return ""
+}
+
+func dedupeImageURLs(urls []string) []string {
+	if len(urls) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(urls))
+	out := make([]string, 0, len(urls))
+	for _, url := range urls {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		out = append(out, url)
+	}
+	return out
 }
 
 func imageURLsFromCQMessage(message string) []string {

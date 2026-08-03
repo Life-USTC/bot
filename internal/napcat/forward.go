@@ -107,7 +107,7 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 	normalizeMessageText(event)
 	text := strings.TrimSpace(event.RawMessage)
 
-	inlineBodies := inlineForwardContents(event.Message)
+	inlineBodies, inlineImages := inlineForwardExpansions(event.Message)
 	forwardIDs := forwardIDsFromMessage(event.Message)
 	if len(forwardIDs) == 0 && len(inlineBodies) == 0 {
 		forwardIDs = forwardIDsFromCQMessage(event.RawMessage)
@@ -117,6 +117,7 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 	}
 
 	parts := make([]string, 0, len(forwardIDs)+len(inlineBodies)+1)
+	images := append([]string{}, inlineImages...)
 	if text != "" && !looksLikeForwardOnlyCQ(text) && !isForwardPlaceholder(text) {
 		parts = append(parts, text)
 	}
@@ -127,22 +128,29 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 		parts = append(parts, "合并转发内容：\n"+body)
 	}
 	for _, id := range forwardIDs {
-		body, err := b.fetchForwardMessage(ctx, id)
+		expansion, err := b.fetchForwardMessage(ctx, id)
 		if err != nil {
 			b.logf("get_forward_msg failed: id=%s error=%v", id, err)
 			parts = append(parts, "[合并转发:无法读取]")
 			continue
 		}
-		if body == "" {
+		if expansion.text == "" {
 			parts = append(parts, "[合并转发:空内容]")
 			continue
 		}
-		parts = append(parts, "合并转发内容：\n"+body)
+		parts = append(parts, "合并转发内容：\n"+expansion.text)
+		images = append(images, expansion.imageURLs...)
 	}
 	event.RawMessage = strings.TrimSpace(strings.Join(parts, "\n\n"))
+	event.forwardImageURLs = dedupeImageURLs(images)
 }
 
-func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (string, error) {
+type forwardExpansion struct {
+	text      string
+	imageURLs []string
+}
+
+func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (forwardExpansion, error) {
 	var lastErr error
 	for _, params := range []map[string]any{
 		{"id": id},
@@ -153,12 +161,12 @@ func (b *Bridge) fetchForwardMessage(ctx context.Context, id string) (string, er
 			lastErr = err
 			continue
 		}
-		return formatForwardMessageData(response.Data), nil
+		return parseForwardMessageData(response.Data), nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("get_forward_msg returned no data")
 	}
-	return "", lastErr
+	return forwardExpansion{}, lastErr
 }
 
 // callNapCatAction prefers the reverse websocket (production), then HTTP.
@@ -194,19 +202,26 @@ const (
 )
 
 func formatForwardMessageData(raw json.RawMessage) string {
+	return parseForwardMessageData(raw).text
+}
+
+func parseForwardMessageData(raw json.RawMessage) forwardExpansion {
 	if len(raw) == 0 {
-		return ""
+		return forwardExpansion{}
 	}
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "[合并转发:无法解析]"
+		return forwardExpansion{text: "[合并转发:无法解析]"}
 	}
 	text := strings.TrimSpace(strings.Join(forwardContentLines(payload), "\n"))
 	runes := []rune(text)
 	if len(runes) > maxForwardRunes {
-		return string(runes[:maxForwardRunes]) + "\n...(合并转发已截断)"
+		text = string(runes[:maxForwardRunes]) + "\n...(合并转发已截断)"
 	}
-	return text
+	return forwardExpansion{
+		text:      text,
+		imageURLs: imageURLsFromForwardPayload(payload),
+	}
 }
 
 func forwardContentLines(payload any) []string {
@@ -225,6 +240,42 @@ func forwardContentLines(payload any) []string {
 		return forwardNodeLines(value)
 	}
 	return nil
+}
+
+func imageURLsFromForwardPayload(payload any) []string {
+	switch value := payload.(type) {
+	case map[string]any:
+		if messages, ok := value["messages"].([]any); ok {
+			return imageURLsFromForwardNodes(messages)
+		}
+		if message, ok := value["message"].([]any); ok {
+			return imageURLsFromForwardNodes(message)
+		}
+		if content, ok := value["content"].([]any); ok {
+			return imageURLsFromForwardNodes(content)
+		}
+	case []any:
+		return imageURLsFromForwardNodes(value)
+	}
+	return nil
+}
+
+func imageURLsFromForwardNodes(nodes []any) []string {
+	var urls []string
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		data, _ := node["data"].(map[string]any)
+		if data == nil {
+			data = node
+		}
+		for _, candidate := range []any{data["content"], data["message"], node["message"], node["content"]} {
+			urls = append(urls, imageURLsFromMessage(candidate)...)
+		}
+	}
+	return dedupeImageURLs(urls)
 }
 
 func forwardNodeLines(nodes []any) []string {
@@ -286,7 +337,11 @@ func senderNickname(raw any) string {
 }
 
 func inlineForwardContents(message any) []string {
-	var bodies []string
+	bodies, _ := inlineForwardExpansions(message)
+	return bodies
+}
+
+func inlineForwardExpansions(message any) (bodies []string, images []string) {
 	for _, rawSegment := range messageSegments(message) {
 		segment, ok := rawSegment.(map[string]any)
 		if !ok {
@@ -301,14 +356,17 @@ func inlineForwardContents(message any) []string {
 			continue
 		}
 		body := strings.TrimSpace(strings.Join(forwardContentLines(data["content"]), "\n"))
+		nodeImages := imageURLsFromForwardPayload(data["content"])
 		if body == "" {
 			body = strings.TrimSpace(strings.Join(forwardContentLines(data), "\n"))
+			nodeImages = imageURLsFromForwardPayload(data)
 		}
 		if body != "" {
 			bodies = append(bodies, body)
 		}
+		images = append(images, nodeImages...)
 	}
-	return bodies
+	return bodies, dedupeImageURLs(images)
 }
 
 func forwardIDsFromMessage(message any) []string {

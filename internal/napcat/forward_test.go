@@ -94,7 +94,7 @@ func TestEnrichForwardMessageNapCatMessageShape(t *testing.T) {
 			{
 				"sender":{"user_id":1001,"nickname":"小明"},
 				"raw_message":"作业截图",
-				"message":[{"type":"text","data":{"text":"作业截图"}},{"type":"image","data":{"url":"https://x/a.png"}}]
+				"message":[{"type":"text","data":{"text":"作业截图"}},{"type":"image","data":{"url":"https://cdn.example/a.png"}}]
 			},
 			{
 				"sender":{"user_id":1002,"nickname":"小红"},
@@ -118,6 +118,10 @@ func TestEnrichForwardMessageNapCatMessageShape(t *testing.T) {
 	if !strings.Contains(event.RawMessage, "小明: 作业截图[图片]") || !strings.Contains(event.RawMessage, "小红: 好的") {
 		t.Fatalf("raw = %q", event.RawMessage)
 	}
+	urls := event.imageURLs()
+	if len(urls) != 1 || urls[0] != "https://cdn.example/a.png" {
+		t.Fatalf("forward images = %#v", urls)
+	}
 }
 
 func TestEnrichForwardMessageUsesInlineContent(t *testing.T) {
@@ -134,7 +138,10 @@ func TestEnrichForwardMessageUsesInlineContent(t *testing.T) {
 						"type": "node",
 						"data": map[string]any{
 							"nickname": "A",
-							"content":  []any{map[string]any{"type": "text", "data": map[string]any{"text": "内联全文"}}},
+							"content": []any{
+								map[string]any{"type": "text", "data": map[string]any{"text": "内联全文"}},
+								map[string]any{"type": "image", "data": map[string]any{"url": "https://cdn.example/inline.png"}},
+							},
 						},
 					},
 				},
@@ -142,11 +149,15 @@ func TestEnrichForwardMessageUsesInlineContent(t *testing.T) {
 		}},
 	}
 	bridge.enrichMessageEvent(context.Background(), &event)
-	if !strings.Contains(event.RawMessage, "A: 内联全文") {
+	if !strings.Contains(event.RawMessage, "A: 内联全文[图片]") {
 		t.Fatalf("raw = %q", event.RawMessage)
 	}
 	if strings.Contains(event.RawMessage, "无法读取") {
 		t.Fatalf("should not fetch when inline content exists: %q", event.RawMessage)
+	}
+	urls := event.imageURLs()
+	if len(urls) != 1 || urls[0] != "https://cdn.example/inline.png" {
+		t.Fatalf("inline forward images = %#v", urls)
 	}
 }
 
