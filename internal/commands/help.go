@@ -31,15 +31,10 @@ func helpOverviewSections() []helpSection {
 			title: "账户与系统",
 			rows: []helpRow{
 				{topic: "account", command: "账户", description: "登录、退出与查看账户信息"},
-				{topic: "settings", command: "设置", description: "管理通知与工具调用展示"},
+				{topic: "settings", command: "设置", description: "管理通知等偏好"},
+				{topic: "advanced", command: "AI", description: "管理 AI 工具调用展示"},
 				{topic: "system", command: "系统", description: "查看服务状态与检查连通性"},
 				{topic: "feedback", command: "反馈", description: "向管理员提交反馈"},
-			},
-		},
-		{
-			title: "进阶",
-			rows: []helpRow{
-				{topic: "advanced", command: "帮助 AI", description: "查看工具调用提示等进阶用法"},
 			},
 		},
 	}
@@ -245,18 +240,17 @@ func helpDetailSections() []helpSection {
 				{topic: "settings", commandName: "notify", command: "设置 通知 课表 关", description: "关闭课前提醒"},
 				{topic: "settings", commandName: "notify", command: "设置 通知 作业 开", description: "开启作业提醒"},
 				{topic: "settings", commandName: "notify", command: "设置 通知 作业 关", description: "关闭作业提醒"},
-				{topic: "settings", commandName: "agent", command: "设置 工具调用", description: "查看工具调用展示设置"},
-				{topic: "settings", commandName: "agent", command: "设置 工具调用 开", description: "显示 LLM 工具调用"},
-				{topic: "settings", commandName: "agent", command: "设置 工具调用 关", description: "隐藏 LLM 工具调用"},
 			},
 		},
 		{
-			title: "进阶 AI",
+			title: "AI",
 			rows: []helpRow{
 				{topic: "advanced", commandName: "agent", command: "AI 工具", description: "查看当前工具调用提示设置"},
 				{topic: "advanced", commandName: "agent", command: "AI 工具 开", description: "回答时显示 LLM 工具调用提示"},
 				{topic: "advanced", commandName: "agent", command: "AI 工具 关", description: "回答时隐藏 LLM 工具调用提示"},
-				{topic: "advanced", commandName: "settings", command: "设置", description: "查看通知和 AI 相关设置入口"},
+				{topic: "advanced", commandName: "agent", command: "设置 工具调用", description: "等同于「AI 工具」"},
+				{topic: "advanced", commandName: "agent", command: "设置 工具调用 开", description: "等同于「AI 工具 开」"},
+				{topic: "advanced", commandName: "agent", command: "设置 工具调用 关", description: "等同于「AI 工具 关」"},
 			},
 		},
 		{
@@ -280,9 +274,17 @@ func (h Handler) help(args ...string) string {
 		return helpOverviewText()
 	}
 	topic := helpTopicCommand(args)
-	title, ok := helpTopicTitle(topic)
-	if !ok {
+	text := formatHelpTopic(topic)
+	if text == "" {
 		return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
+	}
+	return text
+}
+
+func formatHelpTopic(topic string) string {
+	title, ok := helpTopicTitles[topic]
+	if !ok {
+		return ""
 	}
 	lines := []string{title + " 帮助：", "命令\t说明"}
 	for _, row := range helpDetailRows(topic) {
@@ -352,6 +354,8 @@ var helpTopicAliases = map[string]string{
 	"ai":           "advanced",
 	"进阶":           "advanced",
 	"高级":           "advanced",
+	"帮助AI":         "advanced",
+	"帮助ai":         "advanced",
 	"快捷入口":         "shortcuts",
 	"快捷":           "shortcuts",
 	"shortcuts":    "shortcuts",
@@ -423,7 +427,7 @@ var internalHelpTopics = map[string]string{
 	"account":                      "account",
 	"settings":                     "settings",
 	"notify":                       "settings",
-	"agent":                        "settings",
+	"agent":                        "advanced",
 	"status":                       "system",
 	"ping":                         "system",
 	"feedback":                     "feedback",
@@ -437,6 +441,9 @@ func helpTopicCommand(args []string) string {
 	if topic, ok := helpTopicAliases[key]; ok {
 		return topic
 	}
+	if _, ok := helpTopicTitles[key]; ok {
+		return key
+	}
 	if name, _, ok := normalizeJoinedCommand(args[0], args[1:]); ok {
 		return internalHelpTopics[name]
 	}
@@ -445,7 +452,7 @@ func helpTopicCommand(args []string) string {
 }
 
 var helpTopicTitles = map[string]string{
-	"advanced":     "进阶 AI",
+	"advanced":     "AI",
 	"shortcuts":    "快捷入口",
 	"agenda":       "日程",
 	"schedule":     "课表",

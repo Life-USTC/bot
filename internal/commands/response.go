@@ -22,6 +22,30 @@ func textResponse(text string) Response {
 	return Response{Text: text}
 }
 
+// helpImageTopic returns the help topic to render as an image for this command, if any.
+func helpImageTopic(cmd parsedCommand) (string, bool) {
+	if firstArgIsHelp(cmd.Args) {
+		if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
+			return topic, true
+		}
+		return cmd.Name, true
+	}
+	// Root commands whose empty-arg reply is the topic help card.
+	switch cmd.Name {
+	case "settings":
+		if !hasArgs(cmd.Args) {
+			return "settings", true
+		}
+	case "account", "system", "feedback", "subscription":
+		if !hasArgs(cmd.Args) {
+			if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
+				return topic, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Image {
 	if !h.EnableImageResponses || strings.TrimSpace(text) == "" {
 		return nil
@@ -33,8 +57,11 @@ func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Ima
 	if cmd.Name == "help" {
 		return responses.NewRichTextImage("help", helpRichText(cmd.Args...), imageText)
 	}
-	if firstArgIsHelp(cmd.Args) {
-		return responses.NewRichTextImage("help", helpRichText(cmd.Name), imageText)
+	if topic, ok := helpImageTopic(cmd); ok {
+		rich := helpRichText(topic)
+		if strings.TrimSpace(rich) != "" {
+			return responses.NewRichTextImage("help", rich, imageText)
+		}
 	}
 	switch cmd.Name {
 	case "schedule":

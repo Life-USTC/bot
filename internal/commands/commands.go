@@ -2654,14 +2654,7 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 
 func (h Handler) settings(ctx context.Context, ident store.Identity, args []string) string {
 	if !hasArgs(args) || firstArgIs(args, "help") {
-		return strings.Join([]string{
-			"设置用法：",
-			"设置 通知：查看课前与作业提醒",
-			"设置 通知 课表 开 / 关",
-			"设置 通知 作业 开 / 关",
-			"设置 AI 工具：查看 AI 工具调用显示设置",
-			"设置 AI 工具 开 / 关",
-		}, "\n")
+		return formatHelpTopic("settings")
 	}
 	switch settingsTopic(args[0]) {
 	case "notify":
@@ -2673,7 +2666,7 @@ func (h Handler) settings(ctx context.Context, ident store.Identity, args []stri
 		}
 		return h.agentSettings(ctx, ident, normalizeAgentArgs(rest))
 	default:
-		return "未知设置项。\n" + h.settings(ctx, ident, []string{"help"})
+		return "未知设置项。\n" + formatHelpTopic("settings")
 	}
 }
 
@@ -2736,12 +2729,7 @@ func formatNotificationSettings(settings store.NotificationSettings) string {
 
 func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args []string) string {
 	if firstArgIs(args, "help") {
-		return strings.Join([]string{
-			"AI 工具用法：",
-			"AI 工具：查看设置",
-			"AI 工具 开：显示 LLM 工具调用",
-			"AI 工具 关：隐藏 LLM 工具调用",
-		}, "\n")
+		return formatHelpTopic("advanced")
 	}
 	if h.Store == nil {
 		return "存储未配置。"

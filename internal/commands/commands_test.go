@@ -213,15 +213,14 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
 		"常用：",
 		"账户与系统：",
-		"进阶：",
 		"命令\t说明",
 		"日程\t今日安排、综合概览与近期截止",
 		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t查询班次、路线与设置偏好",
-		"设置\t管理通知与工具调用展示",
-		"帮助 AI\t查看工具调用提示等进阶用法",
+		"设置\t管理通知等偏好",
+		"AI\t管理 AI 工具调用展示",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -238,6 +237,8 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"教学班 搜索 老师代码",
 		"教学资源：",
 		"课程\t搜索或查看课程",
+		"进阶：",
+		"帮助 AI",
 	} {
 		if strings.Contains(reply, unwanted) {
 			t.Fatalf("overview contains detailed usage %q: %q", unwanted, reply)
@@ -254,15 +255,98 @@ func TestAdvancedAIHelpShowsToolTraceControls(t *testing.T) {
 		t.Fatal("advanced AI help was not handled")
 	}
 	for _, want := range []string{
-		"进阶 AI 帮助：",
+		"AI 帮助：",
 		"AI 工具\t查看当前工具调用提示设置",
 		"AI 工具 开\t回答时显示 LLM 工具调用提示",
 		"AI 工具 关\t回答时隐藏 LLM 工具调用提示",
-		"设置\t查看通知和 AI 相关设置入口",
+		"设置 工具调用\t等同于「AI 工具」",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
+	}
+	for _, unwanted := range []string{
+		"进阶 AI 帮助：",
+		"设置\t查看通知",
+		"设置 通知",
+	} {
+		if strings.Contains(reply, unwanted) {
+			t.Fatalf("AI help unexpectedly contains %q: %q", unwanted, reply)
+		}
+	}
+}
+
+func TestSettingsAndAIHelpRenderAsImages(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	cases := []struct {
+		text  string
+		title string
+		want  []string
+		avoid []string
+	}{
+		{
+			text:  "设置",
+			title: "设置 帮助",
+			want:  []string{"设置 通知", "开启课前提醒"},
+			avoid: []string{"AI 工具", "工具调用"},
+		},
+		{
+			text:  "设置 帮助",
+			title: "设置 帮助",
+			want:  []string{"设置 通知 作业 开"},
+			avoid: []string{"AI 工具"},
+		},
+		{
+			text:  "帮助 设置",
+			title: "设置 帮助",
+			want:  []string{"设置 通知"},
+			avoid: []string{"AI 工具"},
+		},
+		{
+			text:  "帮助 AI",
+			title: "AI 帮助",
+			want:  []string{"AI 工具 开", "设置 工具调用"},
+			avoid: []string{"设置 通知"},
+		},
+		{
+			text:  "AI 帮助",
+			title: "AI 帮助",
+			want:  []string{"AI 工具"},
+			avoid: []string{"设置 通知"},
+		},
+		{
+			text:  "AI 工具 帮助",
+			title: "AI 帮助",
+			want:  []string{"AI 工具 关"},
+			avoid: []string{"设置 通知"},
+		},
+	}
+	for _, tc := range cases {
+		resp, ok := handler.HandleResponse(context.Background(), Input{Text: tc.text, Identity: testIdentity()})
+		if !ok {
+			t.Fatalf("%q not handled", tc.text)
+		}
+		if resp.Image == nil {
+			t.Fatalf("%q expected help image, got text only: %q", tc.text, resp.Text)
+		}
+		if resp.Image.Kind != "help" {
+			t.Fatalf("%q image kind = %q, want help", tc.text, resp.Image.Kind)
+		}
+		if resp.Image.Title != tc.title {
+			t.Fatalf("%q image title = %q, want %q (rich=%q)", tc.text, resp.Image.Title, tc.title, resp.Image.RichText)
+		}
+		body := resp.Text + "\n" + resp.Image.RichText
+		for _, want := range tc.want {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%q missing %q in text=%q rich=%q", tc.text, want, resp.Text, resp.Image.RichText)
+			}
+		}
+		for _, avoid := range tc.avoid {
+			if strings.Contains(body, avoid) {
+				t.Fatalf("%q unexpectedly contains %q in text=%q rich=%q", tc.text, avoid, resp.Text, resp.Image.RichText)
+			}
+		}
+		assertResponseImageRenders(t, resp.Image)
 	}
 }
 
@@ -1038,7 +1122,8 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 查询班次、路线与设置偏好 |",
-		"| 设置 | 管理通知与工具调用展示 |",
+		"| 设置 | 管理通知等偏好 |",
+		"| AI | 管理 AI 工具调用展示 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -1047,7 +1132,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpOverviewSections()) {
 		t.Fatalf("help table count = %d, want %d", got, len(helpOverviewSections()))
 	}
-	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "## 教学资源", "| 教学班 |"} {
+	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "## 教学资源", "| 教学班 |", "## 进阶", "帮助 AI"} {
 		if strings.Contains(response.Image.RichText, unwanted) {
 			t.Fatalf("help overview still contains %q: %q", unwanted, response.Image.RichText)
 		}
@@ -3182,7 +3267,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "设置", Identity: ident})
-	if !ok || !strings.Contains(reply, "设置用法：") || !strings.Contains(reply, "设置 通知") || !strings.Contains(reply, "设置 AI 工具") {
+	if !ok || !strings.Contains(reply, "设置 帮助：") || !strings.Contains(reply, "设置 通知") || strings.Contains(reply, "AI 工具") {
 		t.Fatalf("settings help reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知", Identity: ident})
