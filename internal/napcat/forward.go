@@ -88,9 +88,25 @@ func (b *Bridge) setFriendAddRequest(ctx context.Context, flag string, approve b
 
 type doubtFriendRequest struct {
 	UserID   int64  `json:"user_id"`
+	Uin      int64  `json:"uin"`
 	Nickname string `json:"nickname"`
+	Nick     string `json:"nick"`
 	Flag     string `json:"flag"`
 	Reason   string `json:"reason"`
+}
+
+func (r doubtFriendRequest) displayUserID() int64 {
+	if r.UserID != 0 {
+		return r.UserID
+	}
+	return r.Uin
+}
+
+func (r doubtFriendRequest) displayNickname() string {
+	if strings.TrimSpace(r.Nickname) != "" {
+		return r.Nickname
+	}
+	return r.Nick
 }
 
 // approvePendingFriendRequests lists NapCat "doubt" friend requests and approves them.
@@ -123,20 +139,21 @@ func (b *Bridge) approvePendingFriendRequests(ctx context.Context) {
 	for _, item := range items {
 		flag := strings.TrimSpace(item.Flag)
 		if flag == "" {
-			b.logf("pending friend request missing flag: user_id=%d", item.UserID)
+			b.logf("pending friend request missing flag: user_id=%d", item.displayUserID())
 			continue
 		}
 		if err := b.approveDoubtFriendRequest(ctx, flag); err != nil {
-			b.logf("auto-approve pending friend request failed: user_id=%d nickname=%q error=%v", item.UserID, item.Nickname, err)
+			b.logf("auto-approve pending friend request failed: user_id=%d nickname=%q error=%v", item.displayUserID(), item.displayNickname(), err)
 			continue
 		}
-		b.logf("auto-approved pending friend request: user_id=%d nickname=%q", item.UserID, item.Nickname)
+		b.logf("auto-approved pending friend request: user_id=%d nickname=%q", item.displayUserID(), item.displayNickname())
 	}
 }
 
 func (b *Bridge) approveDoubtFriendRequest(ctx context.Context, flag string) error {
 	_, err := b.callNapCatAction(ctx, "set_doubt_friends_add_request", map[string]any{
-		"flag": flag,
+		"flag":    flag,
+		"approve": true,
 	})
 	if err == nil {
 		return nil

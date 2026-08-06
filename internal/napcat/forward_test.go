@@ -132,6 +132,19 @@ func TestParseDoubtFriendRequestsWrapped(t *testing.T) {
 	}
 }
 
+func TestParseDoubtFriendRequestsNapCatFields(t *testing.T) {
+	items, err := parseDoubtFriendRequests([]byte(`[{"uin":2047532941,"nick":"Alice","flag":"u_abc","reason":"hi"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0].displayUserID() != 2047532941 || items[0].displayNickname() != "Alice" || items[0].Flag != "u_abc" {
+		t.Fatalf("item = %#v", items[0])
+	}
+}
+
 func TestEnrichForwardMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/get_forward_msg" {
