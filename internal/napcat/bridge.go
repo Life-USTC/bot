@@ -206,6 +206,8 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		defer close(eventsDone)
 		b.handleReverseEvents(connCtx, conn, writeMu, events)
 	}()
+	// Drain QQ's pending/doubt friend-request queue off the read loop.
+	go b.approvePendingFriendRequests(connCtx)
 	defer func() {
 		cancel()
 		_ = conn.Close()

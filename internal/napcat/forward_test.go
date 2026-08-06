@@ -56,6 +56,82 @@ func TestAutoApproveFriendRequest(t *testing.T) {
 	}
 }
 
+func TestApprovePendingFriendRequests(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		paths = append(paths, r.URL.Path)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		bodies = append(bodies, body)
+		switch r.URL.Path {
+		case "/get_doubt_friends_add_request":
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":[
+				{"user_id":111,"nickname":"Alice","flag":"f1","reason":"hi"},
+				{"user_id":222,"nickname":"Bob","flag":"f2","reason":""}
+			]}`))
+		case "/set_doubt_friends_add_request":
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	logs := &strings.Builder{}
+	bridge := &Bridge{
+		APIURL:     server.URL,
+		HTTPClient: server.Client(),
+		Logger:     log.New(logs, "", 0),
+	}
+	// Bypass the startup delay by using a cancelled-after-wait pattern via direct call
+	// with a context that is already past the timer: call the helper pieces instead.
+	ctx := context.Background()
+	response, err := bridge.callNapCatAction(ctx, "get_doubt_friends_add_request", map[string]any{"count": 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := parseDoubtFriendRequests(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d", len(items))
+	}
+	for _, item := range items {
+		if err := bridge.approveDoubtFriendRequest(ctx, item.Flag); err != nil {
+			t.Fatalf("approve %s: %v", item.Flag, err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) != 3 {
+		t.Fatalf("paths = %#v", paths)
+	}
+	if paths[0] != "/get_doubt_friends_add_request" {
+		t.Fatalf("first path = %s", paths[0])
+	}
+	if bodies[1]["flag"] != "f1" || bodies[2]["flag"] != "f2" {
+		t.Fatalf("bodies = %#v", bodies)
+	}
+}
+
+func TestParseDoubtFriendRequestsWrapped(t *testing.T) {
+	items, err := parseDoubtFriendRequests([]byte(`{"list":[{"user_id":1,"flag":"x"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Flag != "x" {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
 func TestEnrichForwardMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/get_forward_msg" {

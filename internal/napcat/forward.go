@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type requestEvent struct {
@@ -83,6 +84,94 @@ func (b *Bridge) setFriendAddRequest(ctx context.Context, flag string, approve b
 		"approve": approve,
 	})
 	return err
+}
+
+type doubtFriendRequest struct {
+	UserID   int64  `json:"user_id"`
+	Nickname string `json:"nickname"`
+	Flag     string `json:"flag"`
+	Reason   string `json:"reason"`
+}
+
+// approvePendingFriendRequests lists NapCat "doubt" friend requests and approves them.
+// Regular friend-request events are handled by handleRequestEvent as they arrive; this
+// covers the backlog that sits in QQ's suspicious-request queue.
+func (b *Bridge) approvePendingFriendRequests(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Second):
+	}
+
+	response, err := b.callNapCatAction(ctx, "get_doubt_friends_add_request", map[string]any{
+		"count": 100,
+	})
+	if err != nil {
+		b.logf("list pending friend requests failed: %v", err)
+		return
+	}
+	items, err := parseDoubtFriendRequests(response.Data)
+	if err != nil {
+		b.logf("parse pending friend requests failed: %v data=%s", err, string(response.Data))
+		return
+	}
+	if len(items) == 0 {
+		b.logf("no pending friend requests")
+		return
+	}
+	b.logf("pending friend requests: count=%d", len(items))
+	for _, item := range items {
+		flag := strings.TrimSpace(item.Flag)
+		if flag == "" {
+			b.logf("pending friend request missing flag: user_id=%d", item.UserID)
+			continue
+		}
+		if err := b.approveDoubtFriendRequest(ctx, flag); err != nil {
+			b.logf("auto-approve pending friend request failed: user_id=%d nickname=%q error=%v", item.UserID, item.Nickname, err)
+			continue
+		}
+		b.logf("auto-approved pending friend request: user_id=%d nickname=%q", item.UserID, item.Nickname)
+	}
+}
+
+func (b *Bridge) approveDoubtFriendRequest(ctx context.Context, flag string) error {
+	_, err := b.callNapCatAction(ctx, "set_doubt_friends_add_request", map[string]any{
+		"flag": flag,
+	})
+	if err == nil {
+		return nil
+	}
+	// Some NapCat builds only expose the classic OneBot approve action.
+	if fallbackErr := b.setFriendAddRequest(ctx, flag, true); fallbackErr != nil {
+		return fmt.Errorf("%v; set_friend_add_request: %w", err, fallbackErr)
+	}
+	return nil
+}
+
+func parseDoubtFriendRequests(raw json.RawMessage) ([]doubtFriendRequest, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var items []doubtFriendRequest
+	if err := json.Unmarshal(raw, &items); err == nil {
+		return items, nil
+	}
+	var wrapped struct {
+		Requests []doubtFriendRequest `json:"requests"`
+		List     []doubtFriendRequest `json:"list"`
+		Data     []doubtFriendRequest `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	switch {
+	case len(wrapped.Requests) > 0:
+		return wrapped.Requests, nil
+	case len(wrapped.List) > 0:
+		return wrapped.List, nil
+	default:
+		return wrapped.Data, nil
+	}
 }
 
 func normalizeMessageText(event *messageEvent) {
