@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type requestEvent struct {
@@ -37,6 +38,12 @@ func (b *Bridge) handleIncomingEvent(ctx context.Context, raw json.RawMessage, d
 		// Local-only prep here. Network enrichment (get_forward_msg) must not run on
 		// the websocket read loop — reverse action replies need that loop free.
 		normalizeMessageText(&event)
+		if isFriendRequestTipMessage(event.RawMessage) {
+			// QQ often surfaces pending friend requests as private tip text instead of
+			// (or in addition to) post_type=request. Handle off the read loop.
+			go b.handleFriendRequestTip(context.WithoutCancel(ctx), event)
+			return
+		}
 		if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 && !hasForwardPayload(event) {
 			return
 		}
@@ -77,12 +84,209 @@ func (b *Bridge) handleRequestEvent(ctx context.Context, event requestEvent) {
 	b.logf("auto-approved friend request: user_id=%d", event.UserID)
 }
 
+func isFriendRequestTipMessage(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	switch trimmed {
+	case "请求添加你为好友", "请求添加您为好友":
+		return true
+	default:
+		return strings.Contains(trimmed, "请求添加你为好友") || strings.Contains(trimmed, "请求添加您为好友")
+	}
+}
+
+func (b *Bridge) handleFriendRequestTip(ctx context.Context, event messageEvent) {
+	b.logf("friend request tip message: user_id=%d time=%d", event.UserID, event.Time)
+	if event.Time > 0 {
+		if ok := b.tryApproveFriendRequestFlags(ctx, event.UserID, friendRequestFlagCandidates(event.Time)); ok {
+			return
+		}
+	}
+	// Tip text alone is not enough when time is missing; refresh the doubt queue too.
+	b.approveDoubtFriendRequests(ctx)
+}
+
+func friendRequestFlagCandidates(center int64) []string {
+	if center <= 0 {
+		return nil
+	}
+	const window = 3
+	out := make([]string, 0, window*2+1)
+	for delta := int64(-window); delta <= window; delta++ {
+		out = append(out, fmt.Sprintf("%d", center+delta))
+	}
+	return out
+}
+
+func (b *Bridge) tryApproveFriendRequestFlags(ctx context.Context, userID int64, flags []string) bool {
+	for _, flag := range flags {
+		flag = strings.TrimSpace(flag)
+		if flag == "" {
+			continue
+		}
+		if err := b.setFriendAddRequest(ctx, flag, true); err != nil {
+			continue
+		}
+		b.logf("auto-approved friend request: user_id=%d flag=%s", userID, flag)
+		return true
+	}
+	b.logf("friend request tip approve missed: user_id=%d candidates=%d", userID, len(flags))
+	return false
+}
+
 func (b *Bridge) setFriendAddRequest(ctx context.Context, flag string, approve bool) error {
 	_, err := b.callNapCatAction(ctx, "set_friend_add_request", map[string]any{
 		"flag":    flag,
 		"approve": approve,
 	})
 	return err
+}
+
+type doubtFriendRequest struct {
+	UserID   int64  `json:"user_id"`
+	Uin      int64  `json:"uin"`
+	Nickname string `json:"nickname"`
+	Nick     string `json:"nick"`
+	Flag     string `json:"flag"`
+	Reason   string `json:"reason"`
+}
+
+func (r doubtFriendRequest) displayUserID() int64 {
+	if r.UserID != 0 {
+		return r.UserID
+	}
+	return r.Uin
+}
+
+func (r doubtFriendRequest) displayNickname() string {
+	if strings.TrimSpace(r.Nickname) != "" {
+		return r.Nickname
+	}
+	return r.Nick
+}
+
+// approvePendingFriendRequests drains NapCat pending friend-request queues.
+// Regular request events are handled by handleRequestEvent; tip messages are
+// handled by handleFriendRequestTip. This covers the backlog that still sits
+// in QQ when those paths were missed.
+func (b *Bridge) approvePendingFriendRequests(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Second):
+	}
+
+	b.approveDoubtFriendRequests(ctx)
+	b.approveHistoricalFriendRequestTips(ctx)
+}
+
+func (b *Bridge) approveDoubtFriendRequests(ctx context.Context) {
+	response, err := b.callNapCatAction(ctx, "get_doubt_friends_add_request", map[string]any{
+		"count": 500,
+	})
+	if err != nil {
+		b.logf("list pending friend requests failed: %v", err)
+		return
+	}
+	b.logf("doubt friend request raw: %s", string(response.Data))
+	items, err := parseDoubtFriendRequests(response.Data)
+	if err != nil {
+		b.logf("parse pending friend requests failed: %v data=%s", err, string(response.Data))
+		return
+	}
+	if len(items) == 0 {
+		b.logf("no pending doubt friend requests")
+		return
+	}
+	b.logf("pending doubt friend requests: count=%d", len(items))
+	for _, item := range items {
+		flag := strings.TrimSpace(item.Flag)
+		if flag == "" {
+			b.logf("pending friend request missing flag: user_id=%d", item.displayUserID())
+			continue
+		}
+		if err := b.approveDoubtFriendRequest(ctx, flag); err != nil {
+			b.logf("auto-approve pending friend request failed: user_id=%d nickname=%q error=%v", item.displayUserID(), item.displayNickname(), err)
+			continue
+		}
+		b.logf("auto-approved pending friend request: user_id=%d nickname=%q", item.displayUserID(), item.displayNickname())
+	}
+}
+
+// historicalFriendRequestTipTimes are unix seconds for inbound "请求添加你为好友"
+// tip messages that were previously mishandled as normal chat. NapCat's
+// set_friend_add_request flag is buddyReq.reqTime, which often matches the tip
+// message time closely enough for a small search window.
+var historicalFriendRequestTipTimes = []struct {
+	userID int64
+	unix   int64
+}{
+	{2047532941, 1785762573},
+	{3905701512, 1786026367},
+	{3415369213, 1786026508},
+	{510223284, 1786026550},
+	{3500432733, 1786026554},
+	{3754066788, 1786026754},
+	{2675715651, 1786027315},
+	{3912535320, 1786030188},
+	{3381646459, 1786034137},
+	{1642618272, 1786039792},
+}
+
+func (b *Bridge) approveHistoricalFriendRequestTips(ctx context.Context) {
+	approved := 0
+	for _, item := range historicalFriendRequestTipTimes {
+		if ctx.Err() != nil {
+			return
+		}
+		if b.tryApproveFriendRequestFlags(ctx, item.userID, friendRequestFlagCandidates(item.unix)) {
+			approved++
+		}
+	}
+	b.logf("historical friend request tip sweep done: approved=%d candidates=%d", approved, len(historicalFriendRequestTipTimes))
+}
+
+func (b *Bridge) approveDoubtFriendRequest(ctx context.Context, flag string) error {
+	_, err := b.callNapCatAction(ctx, "set_doubt_friends_add_request", map[string]any{
+		"flag":    flag,
+		"approve": true,
+	})
+	if err == nil {
+		return nil
+	}
+	// Some NapCat builds only expose the classic OneBot approve action.
+	if fallbackErr := b.setFriendAddRequest(ctx, flag, true); fallbackErr != nil {
+		return fmt.Errorf("%v; set_friend_add_request: %w", err, fallbackErr)
+	}
+	return nil
+}
+
+func parseDoubtFriendRequests(raw json.RawMessage) ([]doubtFriendRequest, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var items []doubtFriendRequest
+	if err := json.Unmarshal(raw, &items); err == nil {
+		return items, nil
+	}
+	var wrapped struct {
+		Requests []doubtFriendRequest `json:"requests"`
+		List     []doubtFriendRequest `json:"list"`
+		Data     []doubtFriendRequest `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	switch {
+	case len(wrapped.Requests) > 0:
+		return wrapped.Requests, nil
+	case len(wrapped.List) > 0:
+		return wrapped.List, nil
+	default:
+		return wrapped.Data, nil
+	}
 }
 
 func normalizeMessageText(event *messageEvent) {

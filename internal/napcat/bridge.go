@@ -92,6 +92,7 @@ type messageEvent struct {
 	GroupID     int64  `json:"group_id"`
 	UserID      int64  `json:"user_id"`
 	SelfID      int64  `json:"self_id"`
+	Time        int64  `json:"time"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
 	forwardImageURLs []string
@@ -206,6 +207,8 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 		defer close(eventsDone)
 		b.handleReverseEvents(connCtx, conn, writeMu, events)
 	}()
+	// Drain QQ's pending/doubt friend-request queue off the read loop.
+	go b.approvePendingFriendRequests(connCtx)
 	defer func() {
 		cancel()
 		_ = conn.Close()
