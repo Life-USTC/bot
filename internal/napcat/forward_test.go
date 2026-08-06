@@ -3,6 +3,8 @@ package napcat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -53,6 +55,66 @@ func TestAutoApproveFriendRequest(t *testing.T) {
 	defer mu.Unlock()
 	if gotBody["flag"] != "flag-1" || gotBody["approve"] != true {
 		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestFriendRequestTipMessageIsNotDispatched(t *testing.T) {
+	var mu sync.Mutex
+	var flags []string
+	done := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/set_friend_add_request":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+			}
+			mu.Lock()
+			flags = append(flags, fmt.Sprintf("%v", body["flag"]))
+			mu.Unlock()
+			if body["flag"] == "1005" {
+				_, _ = w.Write([]byte(`{"status":"ok","retcode":0}`))
+				select {
+				case done <- struct{}{}:
+				default:
+				}
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"failed","retcode":1,"message":"No such request"}`))
+		case "/get_doubt_friends_add_request":
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":[]}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client(), Logger: log.New(io.Discard, "", 0)}
+	raw, _ := json.Marshal(map[string]any{
+		"post_type":    "message",
+		"message_type": "private",
+		"user_id":      42,
+		"time":         1000,
+		"raw_message":  "请求添加你为好友",
+		"message":      []any{},
+	})
+	dispatched := false
+	bridge.handleIncomingEvent(context.Background(), raw, func(context.Context, messageEvent) {
+		dispatched = true
+	})
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for tip approve")
+	}
+	if dispatched {
+		t.Fatal("friend request tip should not dispatch as chat")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(flags) == 0 || flags[len(flags)-1] != "1005" {
+		t.Fatalf("flags = %#v", flags)
 	}
 }
 

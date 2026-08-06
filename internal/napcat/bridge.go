@@ -92,6 +92,7 @@ type messageEvent struct {
 	GroupID     int64  `json:"group_id"`
 	UserID      int64  `json:"user_id"`
 	SelfID      int64  `json:"self_id"`
+	Time        int64  `json:"time"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
 	forwardImageURLs []string
