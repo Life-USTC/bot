@@ -61,7 +61,8 @@ func TestAutoApproveFriendRequest(t *testing.T) {
 func TestFriendRequestTipMessageIsNotDispatched(t *testing.T) {
 	var mu sync.Mutex
 	var flags []string
-	done := make(chan struct{}, 1)
+	done := make(chan struct{})
+	var once sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/set_friend_add_request":
@@ -72,12 +73,9 @@ func TestFriendRequestTipMessageIsNotDispatched(t *testing.T) {
 			mu.Lock()
 			flags = append(flags, fmt.Sprintf("%v", body["flag"]))
 			mu.Unlock()
-			if body["flag"] == "1005" {
+			if fmt.Sprintf("%v", body["flag"]) == "1002" {
 				_, _ = w.Write([]byte(`{"status":"ok","retcode":0}`))
-				select {
-				case done <- struct{}{}:
-				default:
-				}
+				once.Do(func() { close(done) })
 				return
 			}
 			_, _ = w.Write([]byte(`{"status":"failed","retcode":1,"message":"No such request"}`))
@@ -113,7 +111,7 @@ func TestFriendRequestTipMessageIsNotDispatched(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(flags) == 0 || flags[len(flags)-1] != "1005" {
+	if len(flags) == 0 || flags[len(flags)-1] != "1002" {
 		t.Fatalf("flags = %#v", flags)
 	}
 }
