@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-cn}"
-REMOTE_DIR="${REMOTE_DIR:-/srv/docker/life-ustc-bot}"
+REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST to the SSH host}"
+REMOTE_DIR="${REMOTE_DIR:?set REMOTE_DIR to the remote deploy directory}"
 SERVICE="${SERVICE:-bot}"
 ENV_FILE="${ENV_FILE:-.env}"
 
