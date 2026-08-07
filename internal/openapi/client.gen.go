@@ -1527,6 +1527,60 @@ func (e GetSectionParamsLocale) Valid() bool {
 	}
 }
 
+// Defines values for GetSectionParamsIncludeExams.
+const (
+	GetSectionParamsIncludeExamsFalse GetSectionParamsIncludeExams = "false"
+	GetSectionParamsIncludeExamsTrue  GetSectionParamsIncludeExams = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetSectionParamsIncludeExams enum.
+func (e GetSectionParamsIncludeExams) Valid() bool {
+	switch e {
+	case GetSectionParamsIncludeExamsFalse:
+		return true
+	case GetSectionParamsIncludeExamsTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetSectionParamsIncludeSchedules.
+const (
+	GetSectionParamsIncludeSchedulesFalse GetSectionParamsIncludeSchedules = "false"
+	GetSectionParamsIncludeSchedulesTrue  GetSectionParamsIncludeSchedules = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetSectionParamsIncludeSchedules enum.
+func (e GetSectionParamsIncludeSchedules) Valid() bool {
+	switch e {
+	case GetSectionParamsIncludeSchedulesFalse:
+		return true
+	case GetSectionParamsIncludeSchedulesTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetSectionParamsIncludeTeacherDepartments.
+const (
+	GetSectionParamsIncludeTeacherDepartmentsFalse GetSectionParamsIncludeTeacherDepartments = "false"
+	GetSectionParamsIncludeTeacherDepartmentsTrue  GetSectionParamsIncludeTeacherDepartments = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetSectionParamsIncludeTeacherDepartments enum.
+func (e GetSectionParamsIncludeTeacherDepartments) Valid() bool {
+	switch e {
+	case GetSectionParamsIncludeTeacherDepartmentsFalse:
+		return true
+	case GetSectionParamsIncludeTeacherDepartmentsTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetSectionScheduleGroupsParamsLocale.
 const (
 	GetSectionScheduleGroupsParamsLocaleEnUs GetSectionScheduleGroupsParamsLocale = "en-us"
@@ -1742,16 +1796,16 @@ func (e WorkspaceScheduleListParamsLocale) Valid() bool {
 
 // Defines values for ListTodosParamsCompleted.
 const (
-	False ListTodosParamsCompleted = "false"
-	True  ListTodosParamsCompleted = "true"
+	ListTodosParamsCompletedFalse ListTodosParamsCompleted = "false"
+	ListTodosParamsCompletedTrue  ListTodosParamsCompleted = "true"
 )
 
 // Valid indicates whether the value is a known member of the ListTodosParamsCompleted enum.
 func (e ListTodosParamsCompleted) Valid() bool {
 	switch e {
-	case False:
+	case ListTodosParamsCompletedFalse:
 		return true
-	case True:
+	case ListTodosParamsCompletedTrue:
 		return true
 	default:
 		return false
@@ -3906,11 +3960,6 @@ type CatalogLinkListResponseSchemaLinksIcon string
 
 // CatalogLinkListResponseSchemaLinksLocale defines model for CatalogLinkListResponseSchema.Links.Locale.
 type CatalogLinkListResponseSchemaLinksLocale string
-
-// CatalogLinkVisitRequestSchema defines model for catalogLinkVisitRequestSchema.
-type CatalogLinkVisitRequestSchema struct {
-	Slug string `json:"slug"`
-}
 
 // CommentBatchDeleteRequestSchema defines model for commentBatchDeleteRequestSchema.
 type CommentBatchDeleteRequestSchema struct {
@@ -7392,11 +7441,23 @@ type GetSectionsCalendarParams struct {
 
 // GetSectionParams defines parameters for GetSection.
 type GetSectionParams struct {
-	Locale *GetSectionParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+	Locale                    *GetSectionParamsLocale                    `form:"locale,omitempty" json:"locale,omitempty"`
+	IncludeExams              *GetSectionParamsIncludeExams              `form:"includeExams,omitempty" json:"includeExams,omitempty"`
+	IncludeSchedules          *GetSectionParamsIncludeSchedules          `form:"includeSchedules,omitempty" json:"includeSchedules,omitempty"`
+	IncludeTeacherDepartments *GetSectionParamsIncludeTeacherDepartments `form:"includeTeacherDepartments,omitempty" json:"includeTeacherDepartments,omitempty"`
 }
 
 // GetSectionParamsLocale defines parameters for GetSection.
 type GetSectionParamsLocale string
+
+// GetSectionParamsIncludeExams defines parameters for GetSection.
+type GetSectionParamsIncludeExams string
+
+// GetSectionParamsIncludeSchedules defines parameters for GetSection.
+type GetSectionParamsIncludeSchedules string
+
+// GetSectionParamsIncludeTeacherDepartments defines parameters for GetSection.
+type GetSectionParamsIncludeTeacherDepartments string
 
 // GetSectionScheduleGroupsParams defines parameters for GetSectionScheduleGroups.
 type GetSectionScheduleGroupsParams struct {
@@ -7581,9 +7642,6 @@ type PostApiAuthOauth2DeviceAuthorizationFormdataRequestBody = OauthDeviceAuthor
 
 // PostApiAuthOauth2TokenFormdataRequestBody defines body for PostApiAuthOauth2Token for application/x-www-form-urlencoded ContentType.
 type PostApiAuthOauth2TokenFormdataRequestBody = OauthTokenRequestSchema
-
-// CatalogLinkVisitRecordFormdataRequestBody defines body for CatalogLinkVisitRecord for application/x-www-form-urlencoded ContentType.
-type CatalogLinkVisitRecordFormdataRequestBody = CatalogLinkVisitRequestSchema
 
 // MatchSectionCodesJSONRequestBody defines body for MatchSectionCodes for application/json ContentType.
 type MatchSectionCodesJSONRequestBody = MatchSectionCodesRequestSchema
@@ -10645,11 +10703,6 @@ type ClientInterface interface {
 	// CatalogLinkResolve request
 	CatalogLinkResolve(ctx context.Context, params *CatalogLinkResolveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CatalogLinkVisitRecordWithBody request with any body
-	CatalogLinkVisitRecordWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CatalogLinkVisitRecordWithFormdataBody(ctx context.Context, body CatalogLinkVisitRecordFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetMetadata request
 	GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -11524,30 +11577,6 @@ func (c *Client) CatalogLinkList(ctx context.Context, reqEditors ...RequestEdito
 
 func (c *Client) CatalogLinkResolve(ctx context.Context, params *CatalogLinkResolveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCatalogLinkResolveRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CatalogLinkVisitRecordWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCatalogLinkVisitRecordRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CatalogLinkVisitRecordWithFormdataBody(ctx context.Context, body CatalogLinkVisitRecordFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCatalogLinkVisitRecordRequestWithFormdataBody(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -14695,46 +14724,6 @@ func NewCatalogLinkResolveRequest(server string, params *CatalogLinkResolveParam
 	return req, nil
 }
 
-// NewCatalogLinkVisitRecordRequestWithFormdataBody calls the generic CatalogLinkVisitRecord builder with application/x-www-form-urlencoded body
-func NewCatalogLinkVisitRecordRequestWithFormdataBody(server string, body CatalogLinkVisitRecordFormdataRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	bodyStr, err := runtime.MarshalForm(body, nil)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = strings.NewReader(bodyStr.Encode())
-	return NewCatalogLinkVisitRecordRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
-}
-
-// NewCatalogLinkVisitRecordRequestWithBody generates requests for CatalogLinkVisitRecord with any type of body
-func NewCatalogLinkVisitRecordRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/catalog/links/resolve")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewGetMetadataRequest generates requests for GetMetadata
 func NewGetMetadataRequest(server string) (*http.Request, error) {
 	var err error
@@ -15322,6 +15311,42 @@ func NewGetSectionRequest(server string, jwId int64, params *GetSectionParams) (
 		if params.Locale != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeExams != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeExams", *params.IncludeExams, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeSchedules != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeSchedules", *params.IncludeSchedules, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeTeacherDepartments != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeTeacherDepartments", *params.IncludeTeacherDepartments, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -18545,11 +18570,6 @@ type ClientWithResponsesInterface interface {
 	// CatalogLinkResolveWithResponse request
 	CatalogLinkResolveWithResponse(ctx context.Context, params *CatalogLinkResolveParams, reqEditors ...RequestEditorFn) (*CatalogLinkResolveResponse, error)
 
-	// CatalogLinkVisitRecordWithBodyWithResponse request with any body
-	CatalogLinkVisitRecordWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CatalogLinkVisitRecordResponse, error)
-
-	CatalogLinkVisitRecordWithFormdataBodyWithResponse(ctx context.Context, body CatalogLinkVisitRecordFormdataRequestBody, reqEditors ...RequestEditorFn) (*CatalogLinkVisitRecordResponse, error)
-
 	// GetMetadataWithResponse request
 	GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error)
 
@@ -20192,35 +20212,6 @@ func (r CatalogLinkResolveResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CatalogLinkResolveResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type CatalogLinkVisitRecordResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-}
-
-// Status returns HTTPResponse.Status
-func (r CatalogLinkVisitRecordResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CatalogLinkVisitRecordResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r CatalogLinkVisitRecordResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -22952,23 +22943,6 @@ func (c *ClientWithResponses) CatalogLinkResolveWithResponse(ctx context.Context
 	return ParseCatalogLinkResolveResponse(rsp)
 }
 
-// CatalogLinkVisitRecordWithBodyWithResponse request with arbitrary body returning *CatalogLinkVisitRecordResponse
-func (c *ClientWithResponses) CatalogLinkVisitRecordWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CatalogLinkVisitRecordResponse, error) {
-	rsp, err := c.CatalogLinkVisitRecordWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCatalogLinkVisitRecordResponse(rsp)
-}
-
-func (c *ClientWithResponses) CatalogLinkVisitRecordWithFormdataBodyWithResponse(ctx context.Context, body CatalogLinkVisitRecordFormdataRequestBody, reqEditors ...RequestEditorFn) (*CatalogLinkVisitRecordResponse, error) {
-	rsp, err := c.CatalogLinkVisitRecordWithFormdataBody(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCatalogLinkVisitRecordResponse(rsp)
-}
-
 // GetMetadataWithResponse request returning *GetMetadataResponse
 func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error) {
 	rsp, err := c.GetMetadata(ctx, reqEditors...)
@@ -25161,22 +25135,6 @@ func ParseCatalogLinkResolveResponse(rsp *http.Response) (*CatalogLinkResolveRes
 	}
 
 	response := &CatalogLinkResolveResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	return response, nil
-}
-
-// ParseCatalogLinkVisitRecordResponse parses an HTTP response from a CatalogLinkVisitRecordWithResponse call
-func ParseCatalogLinkVisitRecordResponse(rsp *http.Response) (*CatalogLinkVisitRecordResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CatalogLinkVisitRecordResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
