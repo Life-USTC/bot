@@ -1,71 +1,48 @@
 # Life @ USTC Bot
 
-Go chat client for [Life@USTC](https://life-ustc.tiankaima.dev). Speaks OneBot 12
-(HTTP + NapCat reverse WebSocket) and the QQ official bot gateway. All product
-data comes from the **server** (`LIFE_USTC_SERVER`); domain nouns follow
-[server interface hierarchy](https://github.com/Life-USTC/server/blob/main/docs/interface-hierarchy.md).
+在 QQ 里使用 Life@USTC 的聊天入口。连到
+[Life@USTC server](https://github.com/Life-USTC/server)，能力命名与 Web / CLI /
+MCP 对齐（见
+[interface hierarchy](https://github.com/Life-USTC/server/blob/main/docs/interface-hierarchy.md)）。
 
-## Commands
+## 面向谁
 
-Prefix defaults to `/life`. Chinese names match the shared domains:
+- 想在群或私聊里查课表、作业、校车、待办的科大用户
+- 需要 OneBot / QQ 官方 Bot 接入校园工作区的部署者
 
-```text
-校园信息    学期 · 课程 · 教学班 · 老师 · 校车
-我的工作区  日程 · 课表 · 下一节课 · 待办[+添加] · 作业 · 考试 · 订阅
-社区        反馈 <建议>
-账户与设置  账户 · 登录[/状态] · 退出 · 设置[通知…] · 设置 AI 工具
-系统        状态 · 帮助
-```
+## 用户能做什么
 
-Aliases (`td`, `hw`, `xc`, `kb`, `ddl`, `status`, …) are shortcuts, not domains.
-`日程` aggregates classes/homework/exams/todos; `课表` is schedules only.
+默认命令前缀 `/life`（可改）。中文命令按域分组：
 
-OneBot 12 extension actions use `life_ustc.<capability_id>` (e.g.
-`life_ustc.workspace_todo_list`). See `--help` / source for the full parameter set.
+| 域 | 示例 |
+|----|------|
+| 校园信息 | `学期` · `课程` · `教学班` · `老师` · `校车` |
+| 工作区 | `日程` · `课表` · `下一节课` · `待办` · `作业` · `考试` · `订阅` |
+| 社区 | `反馈 …`（可路由给管理员） |
+| 账户 | `登录` / `登录状态` · `退出` · `账户` · `设置` |
+| 系统 | `状态` · `帮助`（含 `帮助 课表` 等专题） |
 
-`/life login` starts OAuth device-code login; `/life login status` finishes and
-stores the token in SQLite. Tokens refresh automatically; failed refresh clears
-credentials. `/life 设置 通知` (alias `/life 通知`) toggles class/homework pushes.
+别名如 `td` / `hw` / `xc` / `kb` / `ddl` / `status` 只是捷径。`日程` 是课表+作业+考试+待办的聚合；`课表` 只看上课安排。
 
-## Run
+**登录**：设备码 OAuth；浏览器确认后用 `登录状态` 落库。Token 自动刷新，失败则清凭证并提示重登。
 
-```bash
-go run ./cmd/life-ustc-bot
-go test ./...
-```
+**通知（仅私聊）**：`设置 通知` 可分别开关课表 / 作业提醒；课前约 30 分钟、作业截止约 24 小时内推送（可配图）。群聊默认不推个人通知。
 
-| Variable | Purpose |
-|----------|---------|
-| `LIFE_USTC_SERVER` | Server base URL (e.g. `http://localhost:3000`) |
-| `BOT_COMMAND_PREFIX` | Default `/life` |
-| `BOT_DB_PATH` | SQLite path (default `.run/life-ustc-bot.db`) |
-| `BOT_ONEBOT_HTTP_HOST` / `PORT` | OneBot 12 HTTP listen |
-| `BOT_ONEBOT_ACCESS_TOKEN` | Optional OneBot access token |
-| `NAPCAT_REVERSE_ADDR` / `PATH` | NapCat reverse WS (Compose: `0.0.0.0:2280`, `/ws`) |
-| `NAPCAT_WS_URL` | Optional outbound NapCat WS instead of reverse listen |
-| `QQ_BOT_APPID` + `QQ_BOT_APPSECRET` or `QQ_BOT_TOKEN` | Enable QQ official bot |
-| `QQ_BOT_WEBHOOK_ADDR` / `PATH` | Preferred QQ event callback (`/qqbot`) |
-| `BOT_ENABLE_IMAGE_RESPONSES` + `BOT_PUBLIC_BASE_URL` | PNG cards via `/media/*` → `BOT_MEDIA_ADDR` |
-| `BOT_ENABLE_AGENT` + `OPENAI_API_KEY` | Optional private-chat LLM agent |
-| `PREMIUM_MODEL_API_KEY` | Optional premium model (admins in `BOT_FEEDBACK_ADMIN_USERS`) |
-| `BOT_ALLOW_GROUP_PERSONAL_INFO` | Allow read-only personal commands in groups |
-| `BOT_FEEDBACK_ADMIN_USERS` / `GROUPS` / `PLATFORM` | Feedback admin routing |
-| `BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS` | Cache TTL for public reads (`BOT_BUILD_VERSION` in key) |
+**图卡（可选）**：开启后，课表、待办、作业、考试、概览、校车、提醒等可先发短时 PNG，再回退文字。
 
-QQ default intents cover DM, group/@, and interaction events. Prefer webhook
-callbacks to `http(s)://<public-host>/qqbot`; gateway may stay for diagnostics.
+**AI 助手（可选，仅私聊）**：接 OpenAI 兼容模型 + server MCP；群聊仍只走确定性命令。管理员可走 premium 模型，并支持用户发图理解。用量记在本地 SQLite。
 
-Image replies need `fonts-noto-cjk` (image sets this in Docker) or
-`BOT_IMAGE_FONT_PATH`. Agent runs log tokens/cost in SQLite `agent_runs`.
+**群聊**：个人只读命令默认关闭；开启后仍禁止改待办 / 作业完成 / 登录 / 通知等写操作。
 
-## Deploy
+## 接入方式
 
-`compose.yaml` + `scripts/deploy-cn.sh`. In-container binds:
+- **NapCat**：OneBot 11 反向 WebSocket（或出站 WS）
+- **QQ 官方 Bot**：Webhook（推荐）和/或 Gateway
+- **OneBot 12 HTTP**：扩展 action `life_ustc.<capability_id>`（学期、搜课、登录、待办、链接置顶等）
 
-```text
-NAPCAT_REVERSE_ADDR=0.0.0.0:2280
-BOT_MEDIA_ADDR=0.0.0.0:2281
-QQ_BOT_WEBHOOK_ADDR=0.0.0.0:2290
-```
+公开只读命令可按 TTL 缓存在本地 SQLite，部署版本参与缓存键，避免旧版本脏读。
 
-Host ports default to `127.0.0.1`. Proxy `/media/*` → `:2281` and `/qqbot` → `:2290`.
+## 给贡献者
+
+环境变量、Compose 端口与反代路径见源码旁配置与 `compose.yaml`；开发检查用 `go test ./...`。
+编码约定以本仓库与 server 契约为准，不在此重复运维手册。
