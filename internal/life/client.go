@@ -791,24 +791,8 @@ func responseMethodPath(resp *http.Response) (string, string) {
 	return "", ""
 }
 
-func (c *Client) get(ctx context.Context, path string, values url.Values, out any) error {
-	return c.do(ctx, http.MethodGet, path, values, "", nil, out)
-}
-
 func (c *Client) getAuth(ctx context.Context, path string, values url.Values, token string, out any) error {
 	return c.do(ctx, http.MethodGet, path, values, token, nil, out)
-}
-
-func (c *Client) postAuth(ctx context.Context, path string, token string, body []byte, out any) error {
-	return c.do(ctx, http.MethodPost, path, nil, token, body, out)
-}
-
-func (c *Client) patchAuth(ctx context.Context, path string, token string, body []byte, out any) error {
-	return c.do(ctx, http.MethodPatch, path, nil, token, body, out)
-}
-
-func (c *Client) putAuth(ctx context.Context, path string, token string, body []byte, out any) error {
-	return c.do(ctx, http.MethodPut, path, nil, token, body, out)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, values url.Values, token string, body []byte, out any) error {

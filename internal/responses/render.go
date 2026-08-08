@@ -79,34 +79,6 @@ var busMonoBoldFontPaths = []string{
 	"/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
 }
 
-var busSerifFontPaths = []string{
-	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Regular.otf",
-	"/usr/share/fonts/google-noto-serif-cjk-vf-fonts/NotoSerifCJK-VF.ttc",
-	"/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
-}
-
-var busSerifBoldFontPaths = []string{
-	"/home/tiankaima/.local/share/fonts/source-han-serif-sc/SourceHanSerifSC-Bold.otf",
-	"/usr/share/fonts/google-noto-serif-cjk-vf-fonts/NotoSerifCJK-VF.ttc",
-	"/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc",
-}
-
-func (r Renderer) serifFontFace(size float64) (font.Face, error) {
-	face, err := r.loadFont(busSerifFontPaths, size)
-	if err == nil {
-		return face, nil
-	}
-	return r.sansFontFace(size)
-}
-
-func (r Renderer) serifBoldFontFace(size float64) (font.Face, error) {
-	face, err := r.loadFont(busSerifBoldFontPaths, size)
-	if err == nil {
-		return face, nil
-	}
-	return r.sansBoldFontFace(size)
-}
-
 func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if img == nil || strings.TrimSpace(img.AltText) == "" {
 		return nil, 0, 0, errors.New("response image is empty")
@@ -442,16 +414,6 @@ func splitBusTableCells(line string) []string {
 	return out
 }
 
-func maxBusTableColumns(tables []busRenderTable) int {
-	maxColumns := 0
-	for _, table := range tables {
-		if len(table.Header) > maxColumns {
-			maxColumns = len(table.Header)
-		}
-	}
-	return maxColumns
-}
-
 // busTablePairRows groups tables by their unordered endpoints. Within each group,
 // tables whose headers are exact reverses of each other are paired and placed on
 // the same row when they fit. A group never shares a row with another group, so
@@ -546,17 +508,6 @@ func isReverseRoute(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func busTablesHeight(tables []busRenderTable, headerH, rowH int) int {
-	if len(tables) == 0 {
-		return 0
-	}
-	height := 0
-	for _, table := range tables {
-		height = max(height, busTableHeight(table, headerH, rowH))
-	}
-	return height
 }
 
 func busTableHeight(table busRenderTable, headerH, rowH int) int {
@@ -654,33 +605,6 @@ func drawRotatedLogoTile(dst *image.RGBA, src image.Image, centerX, centerY, siz
 			blendPixel(dst, x, y, src.At(sx, sy), opacity)
 		}
 	}
-}
-
-func drawLogoTile(dst *image.RGBA, src image.Image, centerX, centerY, size int, opacity float64) {
-	bounds := src.Bounds()
-	if bounds.Empty() || size <= 0 || opacity <= 0 {
-		return
-	}
-	radius := size / 2
-	half := float64(size) / 2
-	for y := centerY - radius; y <= centerY+radius; y++ {
-		for x := centerX - radius; x <= centerX+radius; x++ {
-			dx := float64(x - centerX)
-			dy := float64(y - centerY)
-			u := dx + half
-			v := dy + half
-			if u < 0 || v < 0 || u >= float64(size) || v >= float64(size) {
-				continue
-			}
-			sx := bounds.Min.X + int(u*float64(bounds.Dx())/float64(size))
-			sy := bounds.Min.Y + int(v*float64(bounds.Dy())/float64(size))
-			blendPixel(dst, x, y, src.At(sx, sy), opacity)
-		}
-	}
-}
-
-func (r Renderer) fontFace(size float64) (font.Face, error) {
-	return r.loadFont(defaultFontPaths, size)
 }
 
 func (r Renderer) sansBoldFontFace(size float64) (font.Face, error) {
@@ -1113,20 +1037,6 @@ func blendPixel(dst *image.RGBA, x, y int, src color.Color, opacity float64) {
 		B: uint8((float64(sb>>8)*alpha + float64(db>>8)*inv) + 0.5),
 		A: uint8((float64(sa>>8)*alpha + float64(da>>8)*inv) + 0.5),
 	})
-}
-
-func wrappedLines(lines []string, maxRunes int) []string {
-	out := []string{}
-	for _, line := range lines {
-		line = strings.TrimRight(line, "\r")
-		runes := []rune(line)
-		for len(runes) > maxRunes {
-			out = append(out, string(runes[:maxRunes]))
-			runes = runes[maxRunes:]
-		}
-		out = append(out, string(runes))
-	}
-	return out
 }
 
 func fileExists(path string) bool {
