@@ -1,5 +1,5 @@
 {
   "name": "Life@USTC Bot",
   "user": "ubuntu",
-  "install": "bash /agent/repos/bot/.cursor/install.sh"
+  "install": "bash .cursor/install.sh"
 }
