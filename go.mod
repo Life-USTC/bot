@@ -6,14 +6,16 @@ require (
 	github.com/botuniverse/go-libonebot v0.7.0
 	github.com/cloudwego/eino v0.9.2
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
+	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v0.55.1
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/oapi-codegen/runtime v1.4.2
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/image v0.34.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.22.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -29,7 +31,6 @@ require (
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
 	github.com/getkin/kin-openapi v0.135.0 // indirect
 	github.com/go-openapi/jsonpointer v0.22.4 // indirect
@@ -43,7 +44,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/meguminnnnnnnnn/go-openai v0.1.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
