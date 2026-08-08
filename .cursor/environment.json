@@ -1,5 +1,10 @@
 {
   "name": "Life@USTC Bot",
   "user": "ubuntu",
-  "install": "bash .cursor/install.sh"
+  "install": "bash .cursor/install.sh",
+  "repositoryDependencies": [
+    "github.com/Life-USTC/server",
+    "github.com/Life-USTC/static",
+    "github.com/Life-USTC/cli"
+  ]
 }
