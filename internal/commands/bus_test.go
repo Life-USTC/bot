@@ -90,7 +90,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}
 
 	groupInput.Identity.ConversationType = " GROUP "
-	reply, ok = handler.Handle(context.Background(), groupInput)
+	_, ok = handler.Handle(context.Background(), groupInput)
 	if !ok {
 		t.Fatal("padded/cased group bus message was not handled")
 	}
@@ -907,10 +907,10 @@ func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
 			t.Fatalf("formatted lines missing %q: %q", want, got)
 		}
 	}
-	if !(strings.Index(got, eastHigh) < strings.Index(got, eastWest) &&
-		strings.Index(got, eastWest) < strings.Index(got, highTechLocal) &&
-		strings.Index(got, highTechLocal) < strings.Index(got, south) &&
-		strings.Index(got, south) < strings.Index(got, other)) {
+	if strings.Index(got, eastHigh) >= strings.Index(got, eastWest) ||
+		strings.Index(got, eastWest) >= strings.Index(got, highTechLocal) ||
+		strings.Index(got, highTechLocal) >= strings.Index(got, south) ||
+		strings.Index(got, south) >= strings.Index(got, other) {
 		t.Fatalf("formatted lines not grouped in route order: %q", got)
 	}
 }

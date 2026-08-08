@@ -2530,10 +2530,6 @@ func formatHomework(homework map[string]any) string {
 	return textutil.MonospaceDigits(strings.TrimRight(strings.Join(cells, "\t"), "\t"))
 }
 
-func formatHomeworkList(homeworks []map[string]any) string {
-	return formatHomeworkListAt(homeworks, chinaNow())
-}
-
 func formatHomeworkListAt(homeworks []map[string]any, now time.Time) string {
 	ordered := append([]map[string]any(nil), homeworks...)
 	sortHomeworksForDisplay(ordered, now)

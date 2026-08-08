@@ -285,6 +285,7 @@ func (s *Server) withAccessToken(
 
 func (s *Server) lifeClientForAction(w libob.ResponseWriter) (*life.Client, bool) {
 	if s.life == nil {
+		//nolint:staticcheck // product name
 		w.WriteFailed(libob.RetCodeUnsupportedAction, fmt.Errorf("Life @ USTC API is not configured"))
 		return nil, false
 	}
@@ -363,9 +364,11 @@ func write(w libob.ResponseWriter, data any, err error) {
 		return
 	}
 	if isLifeAPIError(err) {
+		//nolint:staticcheck // product name
 		w.WriteFailed(retCode, fmt.Errorf("Life @ USTC API error: %w", err))
 		return
 	}
+	//nolint:staticcheck // product name
 	w.WriteFailed(retCode, fmt.Errorf("Life @ USTC action error: %w", err))
 }
 

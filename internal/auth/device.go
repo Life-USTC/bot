@@ -735,17 +735,6 @@ func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, 
 	return result.ClientID, nil
 }
 
-func (m *Manager) oauth2Config(meta metadata, clientID string) oauth2.Config {
-	return oauth2.Config{
-		ClientID: clientID,
-		Scopes:   strings.Fields(oauthScope),
-		Endpoint: oauth2.Endpoint{
-			DeviceAuthURL: meta.DeviceAuthorizationEndpoint,
-			TokenURL:      meta.TokenEndpoint,
-		},
-	}
-}
-
 type contextBoundTransport struct {
 	base http.RoundTripper
 	ctx  context.Context

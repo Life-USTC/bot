@@ -2497,7 +2497,7 @@ func TestHomeworkDisplayIndexesMatchActionsForUndatedItems(t *testing.T) {
 		t.Fatal("command was not handled")
 	}
 	plain := textutil.PlainMonospace(reply)
-	if strings.Index(plain, "1. \t\t\t未定日期作业") < 0 || strings.Index(plain, "2. \t截止") < 0 {
+	if !strings.Contains(plain, "1. \t\t\t未定日期作业") || !strings.Contains(plain, "2. \t截止") {
 		t.Fatalf("unexpected display order: %q", plain)
 	}
 
@@ -2891,8 +2891,8 @@ func TestHandleTodayCurriculum(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
-		switch {
-		case r.URL.Path == "/api/workspace/schedules":
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
 			if !strings.HasSuffix(r.URL.Query().Get("dateFrom"), "Z") || !strings.HasSuffix(r.URL.Query().Get("dateTo"), "Z") {
 				t.Fatalf("date range = %q %q", r.URL.Query().Get("dateFrom"), r.URL.Query().Get("dateTo"))
 			}
@@ -3076,10 +3076,10 @@ func TestBareCurriculumReusesRefreshedTokenForWeek(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 			case "Bearer refreshed":
 				scheduleCalls++
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"schedules":[
+				_, _ = fmt.Fprintf(w, `{"schedules":[
 					{"date":"%sT08:00:00+08:00","startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}}},
 					{"date":"%sT08:00:00+08:00","startTime":"14:00","endTime":"15:35","section":{"course":{"namePrimary":"编译原理"}}}
-				]}`, today, tomorrow)))
+				]}`, today, tomorrow)
 			default:
 				t.Fatalf("schedules authorization = %q", r.Header.Get("Authorization"))
 			}
@@ -3106,8 +3106,8 @@ func TestBareCurriculumShowsSundayToSaturdayWeek(t *testing.T) {
 	scheduleCalls := 0
 	day := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/workspace/schedules":
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
 			scheduleCalls++
 			if got := r.URL.Query().Get("dateFrom"); got != "2026-07-11T16:00:00Z" {
 				t.Fatalf("dateFrom = %q", got)
@@ -3169,8 +3169,8 @@ func TestNextClassSkipsPastClassAtFixedTime(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/workspace/schedules":
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
 			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:00","endTime":"09:45","section":{"course":{"namePrimary":"已过去"}}},{"startTime":"11:00","endTime":"11:45","section":{"course":{"namePrimary":"下一节"}}}]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)

@@ -81,10 +81,7 @@ func homeworkArgsAcceptable(args []string) bool {
 	case "semester_id", "semester_jw_id", "学期id", "学期jwid":
 		return true
 	}
-	if isListPageToken(args[0]) {
-		return true
-	}
-	return false
+	return isListPageToken(args[0])
 }
 
 func scheduleArgsAcceptable(args []string) bool {

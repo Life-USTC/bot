@@ -1423,13 +1423,6 @@ func jsonPreview(value any) string {
 	return trimLogText(string(data))
 }
 
-func seqText(seq *int64) string {
-	if seq == nil {
-		return "<nil>"
-	}
-	return strconv.FormatInt(*seq, 10)
-}
-
 func maskID(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

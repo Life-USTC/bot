@@ -476,17 +476,6 @@ func helpTopicTitle(topic string) (string, bool) {
 	return title, ok
 }
 
-func helpOverviewRow(topic string) (helpRow, bool) {
-	for _, section := range helpOverviewSections() {
-		for _, row := range section.rows {
-			if row.topic == topic {
-				return row, true
-			}
-		}
-	}
-	return helpRow{}, false
-}
-
 func helpDetailRows(topic string) []helpRow {
 	rows := []helpRow{}
 	for _, section := range helpDetailSections() {

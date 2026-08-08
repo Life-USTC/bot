@@ -877,26 +877,24 @@ func projectBusItemsToCampuses(items []busItem, campuses []string) []busItem {
 }
 
 func busStopIndexes(stops []busStop, from, to string) (int, int) {
-	fromIdx, toIdx := -1, -1
+	fromIdx := -1
 	for i, stop := range stops {
 		name := campusName(stop.Name)
 		if name == from && fromIdx < 0 {
 			fromIdx = i
 		}
 		if fromIdx >= 0 && name == to {
-			toIdx = i
-			return fromIdx, toIdx
+			return fromIdx, i
 		}
 	}
-	fromIdx, toIdx = -1, -1
+	fromIdx = -1
 	for i, stop := range stops {
 		name := campusName(stop.Name)
 		if name == to && fromIdx < 0 {
 			fromIdx = i
 		}
 		if fromIdx >= 0 && name == from {
-			toIdx = i
-			return fromIdx, toIdx
+			return fromIdx, i
 		}
 	}
 	return -1, -1
@@ -1028,30 +1026,6 @@ func hasBusStop(stops []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func formatBusItem(item busItem) string {
-	if len(item.Stops) > 0 {
-		parts := make([]string, 0, len(item.Stops))
-		for _, stop := range item.Stops {
-			parts = append(parts, formatBusStop(stop))
-		}
-		return strings.Join(parts, "  →  ")
-	}
-	line := strings.ReplaceAll(item.Route, " -> ", " → ") + "：" + textutil.MonospaceDigits(item.DepartureTime)
-	if item.Arrival != "" {
-		line += "（到 " + textutil.MonospaceDigits(item.Arrival) + "）"
-	}
-	return line
-}
-
-func formatBusStop(stop busStop) string {
-	name := textutil.PadRightDisplayWide(stop.Name, busStopNameColumnWidth)
-	timeText := busMissingTimePlaceholder
-	if stop.Time != "" {
-		timeText = textutil.MonospaceDigits(stop.Time)
-	}
-	return name + " " + timeText
 }
 
 type busRoute struct {
@@ -1252,6 +1226,5 @@ func busTime(value string, minutes int) string {
 	return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60)
 }
 
-const busStopNameColumnWidth = 3
 const busMissingTimePlaceholder = "———"
 const busOverviewTripsPerRoute = 3
