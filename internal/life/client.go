@@ -15,6 +15,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/openapi"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -476,14 +477,49 @@ func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoLi
 	if dueAfter := strings.TrimSpace(opts.DueAfter); dueAfter != "" {
 		params.DueAfter = &dueAfter
 	}
-	var out struct {
-		Todos []map[string]any `json:"todos"`
+	return retryRead(ctx, func() ([]map[string]any, error) {
+		var out struct {
+			Todos []map[string]any `json:"todos"`
+		}
+		resp, err := c.Typed(ctx, token).ListTodos(ctx, &params)
+		if err := typedJSON(resp, err, "todos", &out); err != nil {
+			return nil, err
+		}
+		return out.Todos, nil
+	})
+}
+
+func retryRead[T any](ctx context.Context, read func() (T, error)) (T, error) {
+	const attempts = 3
+	backoff := retry.Backoff{Initial: 100 * time.Millisecond, Max: 200 * time.Millisecond}
+	var zero T
+	for attempt := 0; attempt < attempts; attempt++ {
+		value, err := read()
+		if err == nil {
+			return value, nil
+		}
+		if !retryableReadError(err) || attempt == attempts-1 {
+			return zero, err
+		}
+		if !retry.Wait(ctx, backoff.Duration(attempt)) {
+			return zero, ctx.Err()
+		}
 	}
-	resp, err := c.Typed(ctx, token).ListTodos(ctx, &params)
-	if err := typedJSON(resp, err, "todos", &out); err != nil {
-		return nil, err
+	return zero, errors.New("read retry exhausted")
+}
+
+func retryableReadError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
-	return out.Todos, nil
+	var httpErr HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == http.StatusRequestTimeout ||
+			httpErr.StatusCode == http.StatusTooManyRequests ||
+			httpErr.StatusCode >= http.StatusInternalServerError
+	}
+	var urlErr *url.Error
+	return errors.As(err, &urlErr) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 func (c *Client) CreateTodo(ctx context.Context, token, title string) (map[string]any, error) {
