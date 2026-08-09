@@ -65,6 +65,24 @@ func TestServiceRejectsDuplicateAdapters(t *testing.T) {
 	}
 }
 
+func TestServiceRegistersAdapterDuringComposition(t *testing.T) {
+	service, err := New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &testAdapter{platform: "napcat", outcome: Outcome{State: OutcomeAccepted}}
+	if err := service.Register(adapter); err != nil {
+		t.Fatal(err)
+	}
+	outcome := service.DeliverNow(context.Background(), message.Outbound{
+		Target:  message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Content: message.Content{Text: "hello"},
+	})
+	if outcome.State != OutcomeAccepted {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+}
+
 func TestServiceNormalizesInvalidAdapterOutcome(t *testing.T) {
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{Err: errors.New("broken")}}
 	service, err := New(nil, adapter)

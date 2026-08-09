@@ -73,19 +73,28 @@ type Service struct {
 func New(repository Repository, adapters ...Adapter) (*Service, error) {
 	service := &Service{repository: repository, adapters: make(map[string]Adapter, len(adapters))}
 	for _, adapter := range adapters {
-		if adapter == nil {
-			continue
+		if err := service.Register(adapter); err != nil {
+			return nil, err
 		}
-		platform := normalizePlatform(adapter.Platform())
-		if platform == "" {
-			return nil, errors.New("delivery adapter platform is empty")
-		}
-		if _, exists := service.adapters[platform]; exists {
-			return nil, fmt.Errorf("duplicate delivery adapter for platform %q", platform)
-		}
-		service.adapters[platform] = adapter
 	}
 	return service, nil
+}
+
+// Register adds a platform adapter while the application is being composed.
+// All adapters must be registered before a Worker starts using the service.
+func (s *Service) Register(adapter Adapter) error {
+	if adapter == nil {
+		return nil
+	}
+	platform := normalizePlatform(adapter.Platform())
+	if platform == "" {
+		return errors.New("delivery adapter platform is empty")
+	}
+	if _, exists := s.adapters[platform]; exists {
+		return fmt.Errorf("duplicate delivery adapter for platform %q", platform)
+	}
+	s.adapters[platform] = adapter
+	return nil
 }
 
 func (s *Service) Enqueue(ctx context.Context, outbound message.Outbound) (Record, bool, error) {
