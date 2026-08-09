@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,7 +22,6 @@ import (
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -79,12 +77,6 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
 
-type errReader struct{}
-
-func (errReader) Read([]byte) (int, error) {
-	return 0, errors.New("read failed")
-}
-
 func TestSendPayloadReturnsPlatformAcceptance(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":"message-123"}}`))
@@ -102,45 +94,6 @@ func TestSendPayloadReturnsPlatformAcceptance(t *testing.T) {
 	if receipt.PlatformMessageID != "message-123" || receipt.AcceptedAt.IsZero() {
 		t.Fatalf("receipt = %#v", receipt)
 	}
-}
-
-func TestForwardCachedImageReturnsSourceAcceptance(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/forward_friend_single_msg" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":null}`))
-	}))
-	defer server.Close()
-
-	bridge := Bridge{APIURL: server.URL, HTTPClient: server.Client()}
-	receipt, err := bridge.forwardCachedImage(
-		context.Background(),
-		nil,
-		nil,
-		messageEvent{MessageType: "private", UserID: 456},
-		"source-103",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if receipt.DeliveryMethod != store.DeliveryMethodForward ||
-		receipt.SourceMessageID != "source-103" ||
-		receipt.PlatformMessageID != "" ||
-		receipt.AcceptedAt.IsZero() {
-		t.Fatalf("receipt = %#v", receipt)
-	}
-}
-
-func testResponseFontPath(t *testing.T) string {
-	t.Helper()
-	for _, path := range responses.DefaultFontPathsForTest() {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	t.Skip("no CJK font found")
-	return ""
 }
 
 func TestSendReverseReply(t *testing.T) {

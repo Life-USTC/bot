@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,7 +21,6 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -322,17 +320,6 @@ func TestQQBotOutgoingMessageAddsLeadingBlankLineForGroups(t *testing.T) {
 	if got != "hello" {
 		t.Fatalf("private message = %q", got)
 	}
-}
-
-func testResponseFontPath(t *testing.T) string {
-	t.Helper()
-	for _, path := range responses.DefaultFontPathsForTest() {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	t.Skip("no CJK font found")
-	return ""
 }
 
 func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) {

@@ -42,8 +42,6 @@ type Bridge struct {
 	reverseConns   map[uint64]reverseConnection
 	reversePending map[string]reversePendingAction
 	reverseTimeout time.Duration
-	mediaCache     napcatMediaCache
-	now            func() time.Time
 }
 
 const (

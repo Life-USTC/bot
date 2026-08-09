@@ -33,15 +33,6 @@ type qqMediaLookup struct {
 	uploader *byte
 }
 
-func (b *Bot) sendCachedRichMedia(
-	ctx context.Context,
-	ident store.Identity,
-	imageURL, msgID, eventID string,
-	msgSeq int,
-) (store.MessageAcceptance, error) {
-	return b.sendCachedRichMediaContent(ctx, ident, imageURL, "", msgID, eventID, msgSeq)
-}
-
 func (b *Bot) sendCachedRichMediaContent(
 	ctx context.Context,
 	ident store.Identity,
