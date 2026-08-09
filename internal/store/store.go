@@ -343,18 +343,6 @@ func (busSettingRow) TableName() string {
 	return "bus_settings"
 }
 
-type notificationDeliveryRow struct {
-	ID        int64  `gorm:"primaryKey"`
-	UserID    int64  `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	Kind      string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	ItemKey   string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	CreatedAt time.Time
-}
-
-func (notificationDeliveryRow) TableName() string {
-	return "notification_deliveries"
-}
-
 type agentRunRow struct {
 	ID               int64  `gorm:"primaryKey"`
 	UserID           int64  `gorm:"not null;index"`
@@ -539,7 +527,6 @@ func (s *Store) migrate() error {
 		&notificationSettingRow{},
 		&agentSettingRow{},
 		&busSettingRow{},
-		&notificationDeliveryRow{},
 		&agentRunRow{},
 		&conversationSummaryRow{},
 		&feedbackRecordRow{},
@@ -1810,62 +1797,6 @@ func (s *Store) SaveBusSettings(ctx context.Context, settings BusSettings) error
 			"updated_at",
 		}),
 	}).Create(&row).Error
-}
-
-func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
-	if err != nil {
-		return false, err
-	}
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return false, err
-	}
-	row := notificationDeliveryRow{
-		UserID:    userID,
-		Kind:      kind,
-		ItemKey:   itemKey,
-		CreatedAt: nowUTC(),
-	}
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "kind"}, {Name: "item_key"}},
-		DoNothing: true,
-	}).Create(&row)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
-func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
-	if err != nil {
-		return false, err
-	}
-	userID, ok, err := s.userID(ctx, ident)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, nil
-	}
-	var count int64
-	err = s.db.WithContext(ctx).Model(&notificationDeliveryRow{}).
-		Where("user_id = ? AND kind = ? AND item_key = ?", userID, kind, itemKey).
-		Count(&count).Error
-	return count > 0, err
-}
-
-func normalizeNotificationDeliveryKey(kind, itemKey string) (string, string, error) {
-	kind = textutil.LowerTrim(kind)
-	itemKey = strings.TrimSpace(itemKey)
-	if kind == "" {
-		return "", "", errors.New("notification delivery kind is empty")
-	}
-	if itemKey == "" {
-		return "", "", errors.New("notification delivery item key is empty")
-	}
-	return kind, itemKey, nil
 }
 
 func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) NotificationSettings {

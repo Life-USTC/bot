@@ -1301,7 +1301,7 @@ func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
 	}
 }
 
-func TestNotificationSettingsAndDeliveries(t *testing.T) {
+func TestNotificationSettings(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1336,35 +1336,6 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	}
 	if settingRow.UpdatedAt.IsZero() {
 		t.Fatal("notification settings updated_at was not set")
-	}
-
-	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !recorded {
-		t.Fatal("first delivery was not recorded")
-	}
-	var delivery notificationDeliveryRow
-	if err := s.db.WithContext(ctx).First(&delivery, "kind = ? AND item_key = ?", "class", "section-1").Error; err != nil {
-		t.Fatal(err)
-	}
-	if delivery.CreatedAt.IsZero() {
-		t.Fatal("delivery created_at was not set")
-	}
-	delivered, err := s.NotificationDelivered(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !delivered {
-		t.Fatal("delivery was not found")
-	}
-	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recorded {
-		t.Fatal("duplicate delivery was recorded")
 	}
 }
 
@@ -1525,99 +1496,6 @@ func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T)
 		Identity: Identity{Platform: "napcat", UserID: "42"},
 	}); err != nil {
 		t.Fatalf("disabled settings should remain saveable: %v", err)
-	}
-}
-
-func TestNotificationDeliveryTrimsKeys(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42"}
-	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, " CLASS ", " section-1 ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !recorded {
-		t.Fatal("first delivery was not recorded")
-	}
-	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recorded {
-		t.Fatal("normalized duplicate delivery was recorded")
-	}
-	delivered, err := s.NotificationDelivered(ctx, ident, " class ", " section-1 ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !delivered {
-		t.Fatal("trimmed delivery was not found")
-	}
-}
-
-func TestNotificationDeliveryRejectsBlankKeys(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42"}
-	tests := []struct {
-		kind    string
-		itemKey string
-	}{
-		{kind: "", itemKey: "section-1"},
-		{kind: "   ", itemKey: "section-1"},
-		{kind: "class", itemKey: ""},
-		{kind: "class", itemKey: "   "},
-	}
-	for _, tt := range tests {
-		recorded, err := s.TryRecordNotificationDelivery(ctx, ident, tt.kind, tt.itemKey)
-		if err == nil || recorded {
-			t.Fatalf("TryRecordNotificationDelivery(%q, %q) = %v, %v", tt.kind, tt.itemKey, recorded, err)
-		}
-		delivered, err := s.NotificationDelivered(ctx, ident, tt.kind, tt.itemKey)
-		if err == nil || delivered {
-			t.Fatalf("NotificationDelivered(%q, %q) = %v, %v", tt.kind, tt.itemKey, delivered, err)
-		}
-	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("user count after invalid notification delivery = %d", count)
-	}
-}
-
-func TestNotificationDeliveredDoesNotCreateMissingUser(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	delivered, err := s.NotificationDelivered(ctx, Identity{Platform: "napcat", UserID: "42"}, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if delivered {
-		t.Fatal("missing user delivery reported true")
-	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("user count after delivery lookup = %d", count)
 	}
 }
 

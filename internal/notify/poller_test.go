@@ -10,35 +10,34 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-type fakeSender struct {
-	messages  []string
-	images    []*responses.Image
+type fakePublisher struct {
+	messages  []message.Outbound
+	dedupe    map[string]struct{}
 	failCount int
 }
 
-func (s *fakeSender) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	if s.failCount > 0 {
-		s.failCount--
-		return fmt.Errorf("send failed")
+func (p *fakePublisher) Enqueue(_ context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
+	if p.failCount > 0 {
+		p.failCount--
+		return delivery.Record{}, false, fmt.Errorf("enqueue failed")
 	}
-	s.messages = append(s.messages, message)
-	return nil
-}
-
-func (s *fakeSender) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	if s.failCount > 0 {
-		s.failCount--
-		return fmt.Errorf("send failed")
+	if p.dedupe == nil {
+		p.dedupe = make(map[string]struct{})
 	}
-	s.messages = append(s.messages, message)
-	s.images = append(s.images, image)
-	return nil
+	if _, exists := p.dedupe[outbound.DedupeKey]; exists {
+		return delivery.Record{}, false, nil
+	}
+	p.dedupe[outbound.DedupeKey] = struct{}{}
+	p.messages = append(p.messages, outbound)
+	return delivery.Record{Message: outbound}, true, nil
 }
 
 func TestFormatHomeworkIncludesDetails(t *testing.T) {
@@ -114,12 +113,14 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	sender := &fakeSender{}
+	publisher := &fakePublisher{}
+	renderer := responses.Renderer{}
 	poller := &Poller{
 		Life:                 life.NewClient(server.URL, server.Client()),
 		Auth:                 &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		Store:                db,
-		Sender:               sender,
+		Publisher:            publisher,
+		Renderer:             renderer,
 		Now:                  func() time.Time { return now },
 		EnableImageResponses: true,
 	}
@@ -129,29 +130,22 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 		t.Fatalf("overviewRequests = %d, want one per tick", overviewRequests)
 	}
 
-	if len(sender.messages) != 2 {
-		t.Fatalf("messages = %#v", sender.messages)
+	if len(publisher.messages) != 2 {
+		t.Fatalf("messages = %#v", publisher.messages)
 	}
-	joined := strings.Join(sender.messages, "\n")
+	joined := publisher.messages[0].Content.Text + "\n" + publisher.messages[1].Content.Text
 	for _, want := range []string{"课前提醒：", "作业提醒：", "数据库系统", "Problem Set 𝟷"} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("messages missing %q: %#v", want, sender.messages)
+			t.Fatalf("messages missing %q: %#v", want, publisher.messages)
 		}
 	}
-	if len(sender.images) != 2 || sender.images[0] == nil || sender.images[0].Kind != "class_reminder" || sender.images[1] == nil || sender.images[1].Kind != "homework_reminder" {
-		t.Fatalf("images = %#v", sender.images)
-	}
-	if !strings.Contains(sender.images[0].RichText, "| 地点 | 时间 | 课程 |") || !strings.Contains(sender.images[0].RichText, "| 西区 3A204 | 14:20-15:55 | 数据库系统 |") {
-		t.Fatalf("class reminder rich text = %q", sender.images[0].RichText)
-	}
-	if !strings.Contains(sender.images[1].RichText, "| 截止 | 课程 | 作业 |") || !strings.Contains(sender.images[1].RichText, "| 06-08 10:00 | 数据库系统 | Problem Set 1 |") {
-		t.Fatalf("homework reminder rich text = %q", sender.images[1].RichText)
-	}
-	renderer := responses.Renderer{}
-	for _, image := range sender.images {
-		if _, _, _, err := renderer.RenderPNG(image); err != nil {
-			t.Fatalf("render %s notification: %v", image.Kind, err)
+	for _, outbound := range publisher.messages {
+		if outbound.Content.Attachment == nil || outbound.Content.Attachment.MIMEType != "image/png" || len(outbound.Content.Attachment.Data) == 0 {
+			t.Fatalf("attachment = %#v", outbound.Content.Attachment)
 		}
+	}
+	if !publisher.messages[0].ExpiresAt.Equal(now.Add(35*time.Minute)) || !publisher.messages[1].ExpiresAt.Equal(time.Date(2026, 6, 8, 10, 0, 0, 0, lifedata.ChinaLocation())) {
+		t.Fatalf("expiry = %v, %v", publisher.messages[0].ExpiresAt, publisher.messages[1].ExpiresAt)
 	}
 }
 
@@ -187,28 +181,28 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	sender := &fakeSender{failCount: 1}
+	publisher := &fakePublisher{failCount: 1}
 	poller := &Poller{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
-		Store:  db,
-		Sender: sender,
-		Now:    func() time.Time { return now },
+		Life:      life.NewClient(server.URL, server.Client()),
+		Auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store:     db,
+		Publisher: publisher,
+		Now:       func() time.Time { return now },
 	}
 	poller.tick(ctx)
-	if len(sender.messages) != 0 {
-		t.Fatalf("messages after failed send = %#v", sender.messages)
+	if len(publisher.messages) != 0 {
+		t.Fatalf("messages after failed enqueue = %#v", publisher.messages)
 	}
 	poller.tick(ctx)
-	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "作业提醒：") {
-		t.Fatalf("messages after retry = %#v", sender.messages)
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "作业提醒：") {
+		t.Fatalf("messages after retry = %#v", publisher.messages)
 	}
-	if len(sender.images) != 1 || sender.images[0] != nil {
-		t.Fatalf("disabled image responses = %#v, want one nil image", sender.images)
+	if publisher.messages[0].Content.Attachment != nil {
+		t.Fatalf("disabled image responses = %#v", publisher.messages[0].Content.Attachment)
 	}
 	poller.tick(ctx)
-	if len(sender.messages) != 1 {
-		t.Fatalf("notification was sent again: %#v", sender.messages)
+	if len(publisher.messages) != 1 {
+		t.Fatalf("notification was enqueued again: %#v", publisher.messages)
 	}
 }
 
@@ -238,7 +232,7 @@ func TestPollerBacksOffAfterNotificationAuthFailure(t *testing.T) {
 	}
 	poller := &Poller{
 		Life: life.NewClient(server.URL, server.Client()), Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
-		Store: db, Sender: &fakeSender{}, Now: func() time.Time { return now },
+		Store: db, Publisher: &fakePublisher{}, Now: func() time.Time { return now },
 	}
 
 	poller.tick(ctx)
@@ -253,7 +247,7 @@ func TestPollerBacksOffAfterNotificationAuthFailure(t *testing.T) {
 	}
 }
 
-func TestPollerStopsRetryingAfterAttemptBudget(t *testing.T) {
+func TestPollerLeavesDeliveryRetriesToOutbox(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
@@ -275,20 +269,17 @@ func TestPollerStopsRetryingAfterAttemptBudget(t *testing.T) {
 	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	sender := &fakeSender{failCount: 100}
+	publisher := &fakePublisher{}
 	poller := &Poller{
 		Life:  life.NewClient(server.URL, server.Client()),
 		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
-		Store: db, Sender: sender, Now: func() time.Time { return now },
+		Store: db, Publisher: publisher, Now: func() time.Time { return now },
 	}
-	for i := 0; i < maxNotificationAttempts+2; i++ {
+	for i := 0; i < 5; i++ {
 		poller.tick(ctx)
 	}
-	if sender.failCount != 100-maxNotificationAttempts {
-		t.Fatalf("attempts = %d, want %d (failCount left %d)", 100-sender.failCount, maxNotificationAttempts, sender.failCount)
-	}
-	if len(sender.messages) != 0 {
-		t.Fatalf("messages = %#v", sender.messages)
+	if len(publisher.messages) != 1 {
+		t.Fatalf("outbox messages = %#v", publisher.messages)
 	}
 }
 
@@ -349,21 +340,21 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sender := &fakeSender{}
+	publisher := &fakePublisher{}
 	poller := &Poller{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db, Now: func() time.Time { return now }},
-		Store:  db,
-		Sender: sender,
-		Now:    func() time.Time { return now },
+		Life:      life.NewClient(server.URL, server.Client()),
+		Auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db, Now: func() time.Time { return now }},
+		Store:     db,
+		Publisher: publisher,
+		Now:       func() time.Time { return now },
 	}
 	poller.tick(ctx)
 
 	if refreshRequests != 1 || scheduleRequests != 2 {
 		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
 	}
-	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "课前提醒：") {
-		t.Fatalf("messages = %#v", sender.messages)
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "课前提醒：") {
+		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }
 
@@ -420,21 +411,21 @@ func TestPollerUsesRefreshedTokenForHomeworks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sender := &fakeSender{}
+	publisher := &fakePublisher{}
 	poller := &Poller{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db, Now: func() time.Time { return now }},
-		Store:  db,
-		Sender: sender,
-		Now:    func() time.Time { return now },
+		Life:      life.NewClient(server.URL, server.Client()),
+		Auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db, Now: func() time.Time { return now }},
+		Store:     db,
+		Publisher: publisher,
+		Now:       func() time.Time { return now },
 	}
 	poller.tick(ctx)
 
 	if refreshRequests != 1 || homeworkRequests != 2 {
 		t.Fatalf("refreshRequests = %d, homeworkRequests = %d", refreshRequests, homeworkRequests)
 	}
-	if len(sender.messages) != 1 || !strings.Contains(sender.messages[0], "作业提醒：") {
-		t.Fatalf("messages = %#v", sender.messages)
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "作业提醒：") {
+		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }
 
@@ -445,15 +436,15 @@ func TestPollerSkipsAuthWithoutStore(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	sender := &fakeSender{}
+	publisher := &fakePublisher{}
 	poller := &Poller{
-		Life:   life.NewClient("https://life.example", nil),
-		Auth:   &auth.Manager{},
-		Store:  db,
-		Sender: sender,
+		Life:      life.NewClient("https://life.example", nil),
+		Auth:      &auth.Manager{},
+		Store:     db,
+		Publisher: publisher,
 	}
 	poller.tick(context.Background())
-	if len(sender.messages) != 0 {
-		t.Fatalf("messages = %#v", sender.messages)
+	if len(publisher.messages) != 0 {
+		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }
