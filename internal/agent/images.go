@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -36,6 +35,19 @@ var supportedImageTypes = map[string]struct{}{
 	"image/webp": {},
 }
 
+// imageInputError is safe to show to users. Keep transport, decoding internals,
+// and upstream response details as ordinary errors so they are only recorded in
+// logs and agent_runs.
+type imageInputError struct {
+	message string
+}
+
+func (e *imageInputError) Error() string { return e.message }
+
+func newImageInputError(message string) error {
+	return &imageInputError{message: message}
+}
+
 func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 	if input == nil || len(input.ImageURLs) == 0 {
 		return nil
@@ -62,7 +74,7 @@ func (s *Service) loadImageDataURL(ctx context.Context, rawURL string) (string, 
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return "", errors.New("不支持的图片地址")
+		return "", newImageInputError("不支持的图片地址")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
@@ -81,14 +93,14 @@ func (s *Service) loadImageDataURL(ctx context.Context, rawURL string) (string, 
 		return "", fmt.Errorf("图片下载失败：HTTP %d", resp.StatusCode)
 	}
 	if resp.ContentLength > maxImageDownloadBytes {
-		return "", errors.New("图片超过 25 MiB 安全上限")
+		return "", newImageInputError("图片超过 25 MiB 安全上限")
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageDownloadBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("图片读取失败：%w", err)
 	}
 	if len(data) > maxImageDownloadBytes {
-		return "", errors.New("图片超过 25 MiB 安全上限")
+		return "", newImageInputError("图片超过 25 MiB 安全上限")
 	}
 	contentType := normalizedImageContentType(resp.Header.Get("Content-Type"), data)
 	return normalizeImageDataURL(data, contentType)
@@ -97,14 +109,14 @@ func (s *Service) loadImageDataURL(ctx context.Context, rawURL string) (string, 
 func decodeImageDataURL(rawURL string) ([]byte, string, error) {
 	header, encoded, found := strings.Cut(rawURL, ",")
 	if !found || !strings.HasSuffix(strings.ToLower(header), ";base64") {
-		return nil, "", errors.New("不支持的图片数据")
+		return nil, "", newImageInputError("不支持的图片数据")
 	}
 	if len(encoded) > base64.StdEncoding.EncodedLen(maxImageDownloadBytes)+4 {
-		return nil, "", errors.New("图片超过 25 MiB 安全上限")
+		return nil, "", newImageInputError("图片超过 25 MiB 安全上限")
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, "", errors.New("图片数据损坏")
+		return nil, "", newImageInputError("图片数据损坏")
 	}
 	contentType := strings.TrimSuffix(strings.TrimPrefix(header, "data:"), ";base64")
 	return data, normalizedImageContentType(contentType, data), nil
@@ -123,21 +135,21 @@ func normalizedImageContentType(contentType string, data []byte) string {
 
 func normalizeImageDataURL(data []byte, contentType string) (string, error) {
 	if _, ok := supportedImageTypes[contentType]; !ok {
-		return "", fmt.Errorf("不支持的图片格式 %q", contentType)
+		return "", newImageInputError(fmt.Sprintf("不支持的图片格式 %q", contentType))
 	}
 	if len(data) <= maxImageBytes {
 		return imageDataURL(data, contentType), nil
 	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || config.Width <= 0 || config.Height <= 0 {
-		return "", errors.New("图片数据损坏，无法压缩")
+		return "", newImageInputError("图片数据损坏，无法压缩")
 	}
 	if int64(config.Width)*int64(config.Height) > maxImagePixels {
-		return "", errors.New("图片像素尺寸过大")
+		return "", newImageInputError("图片像素尺寸过大")
 	}
 	source, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return "", errors.New("图片数据损坏，无法压缩")
+		return "", newImageInputError("图片数据损坏，无法压缩")
 	}
 	compressed, err := compressVisionImage(source)
 	if err != nil {
@@ -159,7 +171,7 @@ func compressVisionImage(source image.Image) ([]byte, error) {
 			}
 		}
 	}
-	return nil, errors.New("图片压缩后仍超过 10 MiB")
+	return nil, newImageInputError("图片压缩后仍超过 10 MiB")
 }
 
 func resizeImage(source image.Image, maxSide int) image.Image {

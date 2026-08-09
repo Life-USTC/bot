@@ -435,19 +435,24 @@ func assertAgentToolNames(t *testing.T, svc *Service, wantNames ...string) {
 func TestToolErrorCatchingMiddlewareReturnsErrorAsResult(t *testing.T) {
 	ctx := context.Background()
 	input := &compose.ToolInput{Name: "test_tool", Arguments: "{}", CallID: "call-1"}
+	var logs bytes.Buffer
+	logf := log.New(&logs, "", 0).Printf
 
-	failing := toolErrorCatchingMiddleware(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+	failing := toolErrorCatchingMiddleware(logf)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return nil, errors.New("bad args")
 	})
 	out, err := failing(ctx, input)
 	if err != nil {
 		t.Fatalf("middleware returned error: %v", err)
 	}
-	if out == nil || !strings.Contains(out.Result, "bad args") {
+	if out == nil || strings.Contains(out.Result, "bad args") || !strings.Contains(out.Result, "请检查参数") {
 		t.Fatalf("result = %q", out.Result)
 	}
+	if !strings.Contains(logs.String(), "bad args") || !strings.Contains(logs.String(), "test_tool") {
+		t.Fatalf("logs = %q", logs.String())
+	}
 
-	ok := toolErrorCatchingMiddleware(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+	ok := toolErrorCatchingMiddleware(nil)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: "ok"}, nil
 	})
 	out, err = ok(ctx, input)
@@ -474,7 +479,8 @@ func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 		Keyword string `json:"keyword"`
 	}{Keyword: "数学分析"}, "课程：数学分析\n教师：张三", nil)
 	trace.Notify(context.Background(), "get_current_time", emptyInput{}, "", nil)
-	if len(messages) != 2 {
+	trace.Notify(context.Background(), "search_courses", struct{}{}, "", errors.New("token=secret upstream exploded"))
+	if len(messages) != 3 {
 		t.Fatalf("messages = %#v", messages)
 	}
 	if messages[0] != "工具调用：search_courses {\"keyword\":\"数学分析\"}\n工具结果：\n课程：数学分析\n教师：张三" {
@@ -482,6 +488,9 @@ func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
 	}
 	if messages[1] != "工具调用：get_current_time\n工具结果：" {
 		t.Fatalf("message 1 = %q", messages[1])
+	}
+	if strings.Contains(messages[2], "token=secret") || !strings.Contains(messages[2], "工具暂时不可用") {
+		t.Fatalf("message 2 exposes error = %q", messages[2])
 	}
 }
 
@@ -1022,17 +1031,20 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, ok := svc.HandleResponse(ctx, Input{Text: "loop", Identity: ident})
-	if !ok || !strings.Contains(response.Text, "AI 工具调用过多") {
+	if !ok {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
-	if got := int(requests.Load()); got != agentMaxIterations {
-		t.Fatalf("model requests = %d, want %d", got, agentMaxIterations)
+	if !strings.Contains(response.Text, "重复调用了相同工具") {
+		t.Fatalf("response = %#v", response)
+	}
+	if got := int(requests.Load()); got != 2 {
+		t.Fatalf("model requests = %d, want 2", got)
 	}
 	total, err := db.ConversationSpending(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total.ModelRequests != agentMaxIterations || total.ToolCalls != agentMaxIterations {
+	if total.ModelRequests != 2 || total.ToolCalls != 1 {
 		t.Fatalf("spending = %#v", total)
 	}
 }
@@ -1042,7 +1054,7 @@ func TestToolResultMiddlewareLimitsLargeResults(t *testing.T) {
 	next := func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: strings.Repeat("课", maxToolResultRunes+10)}, nil
 	}
-	out, err := toolErrorCatchingMiddleware(next)(
+	out, err := toolErrorCatchingMiddleware(nil)(next)(
 		withUsageAccumulator(context.Background(), accumulator),
 		&compose.ToolInput{},
 	)
@@ -1064,6 +1076,21 @@ func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
 	}
 	if strings.Contains(reply, "deadline") {
 		t.Fatalf("reply exposes provider error: %q", reply)
+	}
+}
+
+func TestImageFailureReplyOnlyExposesInputValidation(t *testing.T) {
+	internal := imageFailureReply(7, errors.New("GET https://secret.example: dial tcp 10.0.0.1: refused"))
+	if !strings.Contains(internal, "图片处理失败，请稍后重试") || !strings.Contains(internal, "记录 #7") {
+		t.Fatalf("internal reply = %q", internal)
+	}
+	if strings.Contains(internal, "secret.example") || strings.Contains(internal, "10.0.0.1") {
+		t.Fatalf("internal details exposed: %q", internal)
+	}
+
+	validation := imageFailureReply(8, newImageInputError("图片超过 25 MiB 安全上限"))
+	if !strings.Contains(validation, "图片超过 25 MiB 安全上限") || !strings.Contains(validation, "记录 #8") {
+		t.Fatalf("validation reply = %q", validation)
 	}
 }
 
