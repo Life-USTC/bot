@@ -415,6 +415,7 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 
 var ErrNotLoggedIn = errors.New("not logged in")
 var ErrStoreNotConfigured = errors.New("auth store not configured")
+var ErrResourceNotApproved = errors.New("token resource not approved")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential, resources []string) (store.Credential, error) {
 	meta, err := m.discover(ctx)
@@ -640,6 +641,9 @@ func (m *Manager) refreshCredential(
 	approvedResources := splitResources(cred.Resource)
 	refreshResource, resourceApproved := approvedRefreshResource(approvedResources, targetResource)
 	if !resourceApproved {
+		if purpose == purposeMCP {
+			return "", fmt.Errorf("%w: %s", ErrResourceNotApproved, targetResource)
+		}
 		if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
 			return "", fmt.Errorf("delete credential missing approved resource: %w", deleteErr)
 		}

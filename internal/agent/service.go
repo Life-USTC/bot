@@ -521,31 +521,18 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 	var err error
 	var mcpSession *botmcp.Session
 	if s.mcpClient != nil && s.auth != nil {
-		token, err := s.auth.MCPAccessToken(ctx, ident)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get MCP access token: %w", err)
-		}
-		mcpSession, err = s.mcpClient.OpenSession(ctx, token)
-		if err != nil {
+		var mcpTools []tool.BaseTool
+		mcpTools, mcpSession, err = s.openMCPTools(ctx, ident, trace)
+		if errors.Is(err, auth.ErrNotLoggedIn) {
 			return nil, nil, err
 		}
-		mcpTools, err := mcpSession.Tools(ctx)
 		if err != nil {
-			_ = mcpSession.Close()
-			return nil, nil, err
+			s.logf("MCP tools unavailable; continuing without them: platform=%s conversation_type=%s conversation_id=%s error=%v",
+				ident.Platform, ident.ConversationType, ident.ConversationID, err)
+			mcpSession = nil
+		} else {
+			tools = append(tools, mcpTools...)
 		}
-		einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
-			result, err := mcpSession.Call(ctx, name, args)
-			if trace != nil {
-				trace.Notify(ctx, name, args, result, err)
-			}
-			return result, err
-		})
-		if err != nil {
-			_ = mcpSession.Close()
-			return nil, nil, err
-		}
-		tools = append(tools, einoTools...)
 	}
 
 	if s.handler.Store != nil {
@@ -603,6 +590,34 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 		return nil, nil, err
 	}
 	return tools, mcpSession, nil
+}
+
+func (s *Service) openMCPTools(ctx context.Context, ident store.Identity, trace *toolTraceNotifier) ([]tool.BaseTool, *botmcp.Session, error) {
+	token, err := s.auth.MCPAccessToken(ctx, ident)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get MCP access token: %w", err)
+	}
+	session, err := s.mcpClient.OpenSession(ctx, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	mcpTools, err := session.Tools(ctx)
+	if err != nil {
+		_ = session.Close()
+		return nil, nil, err
+	}
+	einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
+		result, err := session.Call(ctx, name, args)
+		if trace != nil {
+			trace.Notify(ctx, name, args, result, err)
+		}
+		return result, err
+	})
+	if err != nil {
+		_ = session.Close()
+		return nil, nil, err
+	}
+	return einoTools, session, nil
 }
 
 func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) int64 {
