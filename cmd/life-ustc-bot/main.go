@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -26,73 +25,6 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
-
-type messageSender interface {
-	SendMessage(ctx context.Context, ident store.Identity, message string) error
-	SendLoginMessage(ctx context.Context, ident store.Identity, message string) error
-	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
-}
-
-type platformSender struct {
-	platform string
-	sender   messageSender
-}
-
-type senderRouter struct {
-	senders []platformSender
-}
-
-func (r *senderRouter) Add(platform string, sender messageSender) {
-	if sender == nil {
-		return
-	}
-	r.senders = append(r.senders, platformSender{platform: strings.ToLower(strings.TrimSpace(platform)), sender: sender})
-}
-
-func (r *senderRouter) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	return r.send(ctx, ident, message, false)
-}
-
-func (r *senderRouter) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
-	return r.send(ctx, ident, message, true)
-}
-
-func (r *senderRouter) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	platform := strings.ToLower(strings.TrimSpace(ident.Platform))
-	for _, item := range r.senders {
-		if item.platform == platform {
-			return item.sender.SendRichMessage(ctx, ident, message, image)
-		}
-	}
-	if len(r.senders) == 1 {
-		return r.senders[0].sender.SendRichMessage(ctx, ident, message, image)
-	}
-	return fmt.Errorf("no message sender configured for platform %q", ident.Platform)
-}
-
-func (r *senderRouter) send(ctx context.Context, ident store.Identity, message string, login bool) error {
-	platform := strings.ToLower(strings.TrimSpace(ident.Platform))
-	for _, item := range r.senders {
-		if item.platform != platform {
-			continue
-		}
-		if login {
-			return item.sender.SendLoginMessage(ctx, ident, message)
-		}
-		return item.sender.SendMessage(ctx, ident, message)
-	}
-	if len(r.senders) == 1 {
-		if login {
-			return r.senders[0].sender.SendLoginMessage(ctx, ident, message)
-		}
-		return r.senders[0].sender.SendMessage(ctx, ident, message)
-	}
-	return fmt.Errorf("no message sender configured for platform %q", ident.Platform)
-}
-
-func (r *senderRouter) Available() bool {
-	return len(r.senders) > 0
-}
 
 func main() {
 	cfg := config.FromEnv()
@@ -137,7 +69,7 @@ func main() {
 		logger.Printf("purge public command cache: %v", err)
 	}
 	logger.Printf("Public command cache enabled: version=%s ttl=%s", cfg.BuildVersion, cfg.PublicCommandCacheTTL)
-	messageRouter := &senderRouter{}
+	platformsEnabled := false
 	feedbackService, err := feedback.New(stateStore, feedback.Config{Targets: feedback.AdminTargets(
 		cfg.FeedbackAdminPlatform,
 		cfg.FeedbackAdminUsers,
@@ -243,10 +175,10 @@ func main() {
 			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
-		messageRouter.Add("napcat", napcatBridge)
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)
 		}
+		platformsEnabled = true
 		go func() {
 			if err := napcatBridge.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat bridge stopped: %v", err)
@@ -264,10 +196,10 @@ func main() {
 			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
-		messageRouter.Add("napcat", napcatBridge)
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)
 		}
+		platformsEnabled = true
 		go func() {
 			if err := napcatBridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat reverse bridge stopped: %v", err)
@@ -292,10 +224,10 @@ func main() {
 			Renderer:   renderer,
 			MediaStore: mediaStore,
 		}
-		messageRouter.Add("qqbot", qqBot)
 		if err := deliveryService.Register(qqbot.NewDeliveryAdapter(qqBot)); err != nil {
 			logger.Fatalf("register QQ delivery adapter: %v", err)
 		}
+		platformsEnabled = true
 		if cfg.EnableQQBotWebhook {
 			go func() {
 				if err := qqBot.RunWebhook(ctx, cfg.QQBotWebhookAddr, cfg.QQBotWebhookPath); err != nil && ctx.Err() == nil {
@@ -313,7 +245,7 @@ func main() {
 			logger.Printf("QQ official bot gateway enabled")
 		}
 	}
-	if messageRouter.Available() {
+	if platformsEnabled {
 		deliveryWorker := &delivery.Worker{Service: deliveryService, Logger: logger}
 		go deliveryWorker.Run(ctx)
 		logger.Printf("Delivery worker started")
