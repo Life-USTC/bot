@@ -13,6 +13,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
 	"github.com/Life-USTC/Bot/internal/delivery"
@@ -217,15 +218,26 @@ func main() {
 	if agentService.Enabled() {
 		agentDispatcher = agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{Logger: logger})
 	}
+	app, err := botapp.New(botapp.Config{
+		Commands:   handler,
+		Agent:      agentService,
+		Dispatcher: agentDispatcher,
+		Delivery:   deliveryService,
+		Recorder:   stateStore,
+		Renderer:   renderer,
+		Logger:     logger,
+	})
+	if err != nil {
+		logger.Fatalf("create bot application: %v", err)
+	}
 
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {
 		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
 			WSURL:       cfg.NapCatWSURL,
-			Handler:     handler,
-			Agent:       agentService,
-			Dispatcher:  agentDispatcher,
+			App:         app,
+			Recorder:    stateStore,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 			Renderer:    renderer,
@@ -245,9 +257,8 @@ func main() {
 		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
-			Handler:     handler,
-			Agent:       agentService,
-			Dispatcher:  agentDispatcher,
+			App:         app,
+			Recorder:    stateStore,
 			HTTPClient:  httpClient,
 			Logger:      logger,
 			Renderer:    renderer,
@@ -274,9 +285,8 @@ func main() {
 			TokenURL:   cfg.QQBotTokenURL,
 			GatewayURL: cfg.QQBotGatewayURL,
 			Intents:    cfg.QQBotIntents,
-			Handler:    handler,
-			Agent:      agentService,
-			Dispatcher: agentDispatcher,
+			App:        app,
+			Recorder:   stateStore,
 			HTTPClient: httpClient,
 			Logger:     logger,
 			Renderer:   renderer,
