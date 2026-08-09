@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
 	_ "github.com/mattn/go-sqlite3"
+	"gorm.io/gorm"
 )
 
 func TestOutgoingMessageLifecycleAndDedupe(t *testing.T) {
@@ -1745,7 +1747,7 @@ func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
 	}
 }
 
-func TestFeedbackRecordAndMarkSent(t *testing.T) {
+func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1754,24 +1756,78 @@ func TestFeedbackRecordAndMarkSent(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "qqbot", UserID: "u", ConversationType: "private", ConversationID: "u"}
-	id, err := s.RecordFeedback(ctx, ident, FeedbackRecord{
+	if err := s.db.Callback().Create().Before("gorm:create").Register("test:fail_outgoing_message", func(tx *gorm.DB) {
+		if tx.Statement.Table == "outgoing_messages" {
+			_ = tx.AddError(errors.New("forced outgoing message failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.CreateFeedbackWithOutbounds(ctx, ident, FeedbackRecord{
 		Source:   "llm",
 		Category: "missing_tool",
 		Content:  "需要考试地点查询工具",
 		Context:  "用户问考试地点",
+	}, func(id int64) []message.Outbound {
+		return []message.Outbound{{
+			Kind:      "feedback_admin",
+			Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "admin"},
+			Content:   message.Content{Text: "feedback"},
+			DedupeKey: fmt.Sprintf("feedback:%d:admin", id),
+		}}
 	})
+	if err == nil || !strings.Contains(err.Error(), "forced outgoing message failure") {
+		t.Fatalf("error = %v", err)
+	}
+	count, err := s.FeedbackCount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkFeedbackSent(ctx, id); err != nil {
+	if count != 0 {
+		t.Fatalf("feedback count after rollback = %d", count)
+	}
+	var outgoingCount int64
+	if err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).Count(&outgoingCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	var row feedbackRecordRow
-	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+	if outgoingCount != 0 {
+		t.Fatalf("outgoing count after rollback = %d", outgoingCount)
+	}
+}
+
+func TestOpenDropsObsoleteFeedbackDeliveryColumns(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Source != "llm" || row.Category != "missing_tool" || row.Status != FeedbackStatusOpen || !row.SentToAdmin || row.SentAt == nil {
-		t.Fatalf("feedback row = %#v", row)
+	for _, statement := range []string{
+		"ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0",
+		"ALTER TABLE feedback_records ADD COLUMN sent_at datetime",
+		"ALTER TABLE feedback_records ADD COLUMN resolved numeric NOT NULL DEFAULT 0",
+	} {
+		if err := s.db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+		if s.db.Migrator().HasColumn("feedback_records", column) {
+			t.Fatalf("obsolete column %q still exists", column)
+		}
+	}
+	_, _, err = s.CreateFeedbackWithOutbounds(context.Background(), Identity{
+		Platform: "qqbot", UserID: "user", ConversationType: "private", ConversationID: "user",
+	}, FeedbackRecord{Source: "user", Content: "migration works"}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -154,19 +154,16 @@ type ConversationSummary struct {
 }
 
 type FeedbackRecord struct {
-	ID          int64
-	Identity    Identity
-	Source      string
-	Category    string
-	Content     string
-	Context     string
-	Status      string
-	SentToAdmin bool
-	Resolved    bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	SentAt      *time.Time
-	ResolvedAt  *time.Time
+	ID         int64
+	Identity   Identity
+	Source     string
+	Category   string
+	Content    string
+	Context    string
+	Status     string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	ResolvedAt *time.Time
 }
 
 type PendingConfirmation struct {
@@ -400,9 +397,6 @@ type feedbackRecordRow struct {
 	Content          string `gorm:"not null"`
 	Context          string
 	Status           string `gorm:"not null;index"`
-	SentToAdmin      bool   `gorm:"not null"`
-	Resolved         bool   `gorm:"not null"`
-	SentAt           *time.Time
 	ResolvedAt       *time.Time
 	CreatedAt        time.Time `gorm:"index:idx_feedback_records_conversation_created"`
 	UpdatedAt        time.Time
@@ -519,7 +513,7 @@ func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
 	}
-	return s.db.AutoMigrate(
+	if err := s.db.AutoMigrate(
 		&userRow{},
 		&credentialRow{},
 		&loginSessionRow{},
@@ -534,7 +528,17 @@ func (s *Store) migrate() error {
 		&outgoingMessageRow{},
 		&pendingConfirmationRow{},
 		&publicCommandCacheRow{},
-	)
+	); err != nil {
+		return err
+	}
+	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+		if s.db.Migrator().HasColumn("feedback_records", column) {
+			if err := s.db.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
+				return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
@@ -612,21 +616,24 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 		return 0, err
 	}
 	ident = normalizeIdentity(ident)
-	now := nowUTC()
+	return ensureUser(s.db.WithContext(ctx), ident, nowUTC())
+}
+
+func ensureUser(db *gorm.DB, ident Identity, now time.Time) (int64, error) {
 	user := userRow{
 		Platform:       ident.Platform,
 		ExternalUserID: ident.UserID,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "platform"}, {Name: "external_user_id"}},
 		DoUpdates: clause.Assignments(map[string]any{"updated_at": now}),
 	}).Create(&user).Error
 	if err != nil {
 		return 0, err
 	}
-	err = s.db.WithContext(ctx).
+	err = db.
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID).
 		First(&user).Error
 	return user.ID, err
@@ -1287,72 +1294,95 @@ func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {
 	return total, err
 }
 
-func (s *Store) RecordFeedback(ctx context.Context, ident Identity, feedback FeedbackRecord) (int64, error) {
+func (s *Store) CreateFeedbackWithOutbounds(
+	ctx context.Context,
+	ident Identity,
+	feedback FeedbackRecord,
+	buildOutbounds func(int64) []message.Outbound,
+) (int64, int, error) {
 	if err := validateConversationIdentity(ident); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	ident = normalizeIdentity(ident)
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return 0, err
-	}
 	source := textutil.LowerTrim(feedback.Source)
-	if source == "" {
-		source = "user"
+	if source != "user" && source != "llm" {
+		return 0, 0, fmt.Errorf("invalid feedback source %q", source)
 	}
 	status := textutil.LowerTrim(feedback.Status)
 	if status == "" {
 		status = FeedbackStatusOpen
 	}
+	if status != FeedbackStatusOpen && status != FeedbackStatusResolved {
+		return 0, 0, fmt.Errorf("invalid feedback status %q", status)
+	}
 	content := strings.TrimSpace(feedback.Content)
 	if content == "" {
-		return 0, errors.New("feedback content is empty")
+		return 0, 0, errors.New("feedback content is empty")
 	}
 	now := nowUTC()
-	row := feedbackRecordRow{
-		UserID:           userID,
-		Platform:         ident.Platform,
-		ExternalUserID:   ident.UserID,
-		ConversationType: ident.ConversationType,
-		ConversationID:   ident.ConversationID,
-		Source:           source,
-		Category:         strings.TrimSpace(feedback.Category),
-		Content:          content,
-		Context:          strings.TrimSpace(feedback.Context),
-		Status:           status,
-		SentToAdmin:      feedback.SentToAdmin,
-		Resolved:         feedback.Resolved,
-		SentAt:           feedback.SentAt,
-		ResolvedAt:       feedback.ResolvedAt,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return 0, err
-	}
-	return row.ID, nil
-}
-
-func (s *Store) MarkFeedbackSent(ctx context.Context, id int64) error {
-	if id <= 0 {
+	var row feedbackRecordRow
+	intentCount := 0
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userID, err := ensureUser(tx, ident, now)
+		if err != nil {
+			return err
+		}
+		row = feedbackRecordRow{
+			UserID:           userID,
+			Platform:         ident.Platform,
+			ExternalUserID:   ident.UserID,
+			ConversationType: ident.ConversationType,
+			ConversationID:   ident.ConversationID,
+			Source:           source,
+			Category:         strings.TrimSpace(feedback.Category),
+			Content:          content,
+			Context:          strings.TrimSpace(feedback.Context),
+			Status:           status,
+			ResolvedAt:       feedback.ResolvedAt,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		if buildOutbounds == nil {
+			return nil
+		}
+		for _, outbound := range buildOutbounds(row.ID) {
+			_, created, err := enqueueWithDB(tx, outbound, now)
+			if err != nil {
+				return err
+			}
+			if created {
+				intentCount++
+			}
+		}
 		return nil
+	})
+	if err != nil {
+		return 0, 0, err
 	}
-	now := nowUTC()
-	return s.db.WithContext(ctx).Model(&feedbackRecordRow{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"sent_to_admin": true,
-			"sent_at":       &now,
-			"updated_at":    now,
-		}).Error
+	return row.ID, intentCount, nil
 }
 
 func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
+	return enqueueWithDB(s.db.WithContext(ctx), outbound, nowUTC())
+}
+
+func enqueueWithDB(db *gorm.DB, outbound message.Outbound, now time.Time) (delivery.Record, bool, error) {
+	if strings.TrimSpace(outbound.DedupeKey) == "" {
+		return delivery.Record{}, false, errors.New("outgoing message dedupe key is empty")
+	}
+	if strings.TrimSpace(outbound.Target.Platform) == "" || strings.TrimSpace(outbound.Target.Type) == "" || strings.TrimSpace(outbound.Target.ID) == "" {
+		return delivery.Record{}, false, errors.New("outgoing message target is incomplete")
+	}
+	if strings.TrimSpace(outbound.Content.Text) == "" && outbound.Content.Attachment == nil {
+		return delivery.Record{}, false, errors.New("outgoing message content is empty")
+	}
 	payload, err := json.Marshal(outbound)
 	if err != nil {
 		return delivery.Record{}, false, fmt.Errorf("encode outgoing message: %w", err)
 	}
-	now := nowUTC()
 	row := outgoingMessageRow{
 		DedupeKey:        strings.TrimSpace(outbound.DedupeKey),
 		Kind:             strings.ToLower(strings.TrimSpace(outbound.Kind)),
@@ -1369,13 +1399,13 @@ func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (deliver
 		expiresAt := outbound.ExpiresAt.UTC()
 		row.ExpiresAt = &expiresAt
 	}
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 	if result.Error != nil {
 		return delivery.Record{}, false, result.Error
 	}
 	created := result.RowsAffected == 1
 	if !created {
-		if err := s.db.WithContext(ctx).Where("dedupe_key = ?", row.DedupeKey).First(&row).Error; err != nil {
+		if err := db.Where("dedupe_key = ?", row.DedupeKey).First(&row).Error; err != nil {
 			return delivery.Record{}, false, err
 		}
 	}

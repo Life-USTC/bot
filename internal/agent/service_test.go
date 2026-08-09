@@ -23,6 +23,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -501,7 +502,11 @@ func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	svc := &Service{handler: commands.Handler{Store: db}}
+	recorder, err := botfeedback.New(db, botfeedback.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{feedback: recorder}
 
 	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
 		Category: "missing_tool",
@@ -523,26 +528,21 @@ func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
 	}
 }
 
-func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
+func TestRecordBotFeedbackQueuesConfiguredAdmins(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
-	var targets []store.Identity
-	var messages []string
-	svc := &Service{handler: commands.Handler{
-		Store:            db,
-		FeedbackPlatform: "napcat",
-		FeedbackUsers:    []string{"admin-openid"},
-		FeedbackGroups:   []string{"group-openid"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
-			targets = append(targets, target)
-			messages = append(messages, message)
-			return nil
-		},
-	}}
+	recorder, err := botfeedback.New(db, botfeedback.Config{Targets: []botfeedback.Target{
+		{Platform: "napcat", ConversationType: "private", ConversationID: "admin-openid"},
+		{Platform: "napcat", ConversationType: "group", ConversationID: "group-openid"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{feedback: recorder}
 
 	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
 		Category: "api_gap",
@@ -555,38 +555,36 @@ func TestRecordBotFeedbackSendsToConfiguredAdmins(t *testing.T) {
 	if !strings.Contains(reply, "已转给维护者") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if len(targets) != 2 {
-		t.Fatalf("targets = %#v", targets)
+	due, err := db.ClaimDue(context.Background(), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if targets[0].Platform != "napcat" || targets[0].ConversationType != "private" || targets[0].ConversationID != "admin-openid" {
-		t.Fatalf("private target = %#v", targets[0])
+	if len(due) != 2 {
+		t.Fatalf("intents = %#v", due)
 	}
-	if targets[1].Platform != "napcat" || targets[1].ConversationType != "group" || targets[1].ConversationID != "group-openid" {
-		t.Fatalf("group target = %#v", targets[1])
+	if due[0].Message.Target.Platform != "napcat" || due[0].Message.Target.Type != "private" || due[0].Message.Target.ID != "admin-openid" {
+		t.Fatalf("private target = %#v", due[0].Message.Target)
 	}
-	if !strings.Contains(messages[0], "LLM 反馈") || !strings.Contains(messages[0], "需要按日期查询课表") || !strings.Contains(messages[0], "编号：#1") {
-		t.Fatalf("message = %q", messages[0])
+	if due[1].Message.Target.Platform != "napcat" || due[1].Message.Target.Type != "group" || due[1].Message.Target.ID != "group-openid" {
+		t.Fatalf("group target = %#v", due[1].Message.Target)
+	}
+	if !strings.Contains(due[0].Message.Content.Text, "LLM 反馈") || !strings.Contains(due[0].Message.Content.Text, "需要按日期查询课表") || !strings.Contains(due[0].Message.Content.Text, "编号：#1") {
+		t.Fatalf("message = %q", due[0].Message.Content.Text)
 	}
 }
 
-func TestRecordBotFeedbackStoresWhenAdminSendFails(t *testing.T) {
+func TestRecordBotFeedbackStoresWithoutAdminTargets(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	var logs bytes.Buffer
 	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
-	svc := &Service{
-		logger: log.New(&logs, "", 0),
-		handler: commands.Handler{
-			Store:         db,
-			FeedbackUsers: []string{"bad-openid"},
-			FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
-				return errors.New("qq bot invalid request")
-			},
-		},
+	recorder, err := botfeedback.New(db, botfeedback.Config{})
+	if err != nil {
+		t.Fatal(err)
 	}
+	svc := &Service{feedback: recorder}
 
 	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{Content: "需要按日期查询课表"})
 	if err != nil {
@@ -602,8 +600,12 @@ func TestRecordBotFeedbackStoresWhenAdminSendFails(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("feedback count = %d", count)
 	}
-	if !strings.Contains(logs.String(), "send llm feedback failed") || !strings.Contains(logs.String(), "qq bot invalid request") {
-		t.Fatalf("logs = %q", logs.String())
+	due, err := db.ClaimDue(context.Background(), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("unexpected intents = %#v", due)
 	}
 }
 

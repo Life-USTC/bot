@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
+	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/responses"
@@ -1806,7 +1807,13 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	}
 }
 
-func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
+type feedbackRecorderFunc func(context.Context, store.Identity, botfeedback.Submission) (botfeedback.Result, error)
+
+func (f feedbackRecorderFunc) Record(ctx context.Context, ident store.Identity, submission botfeedback.Submission) (botfeedback.Result, error) {
+	return f(ctx, ident, submission)
+}
+
+func TestHandleFeedbackRecordsThroughService(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	ident.Platform = "qqbot"
@@ -1815,19 +1822,17 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	sent := []store.Identity{}
-	messages := []string{}
+	recorder, err := botfeedback.New(db, botfeedback.Config{Targets: []botfeedback.Target{
+		{Platform: "napcat", ConversationType: "private", ConversationID: "1001"},
+		{Platform: "napcat", ConversationType: "group", ConversationID: "2001"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler := Handler{
-		Store:            db,
-		Prefix:           "/life",
-		FeedbackPlatform: "napcat",
-		FeedbackUsers:    []string{"1001"},
-		FeedbackGroups:   []string{"2001"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
-			sent = append(sent, target)
-			messages = append(messages, message)
-			return nil
-		},
+		Store:    db,
+		Prefix:   "/life",
+		Feedback: recorder,
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "反馈 校车显示有点乱", Identity: ident})
 	if !ok {
@@ -1836,24 +1841,22 @@ func TestHandleFeedbackSendsToConfiguredTargets(t *testing.T) {
 	if reply != "已收到反馈，会转给维护者。" {
 		t.Fatalf("reply = %q", reply)
 	}
-	if len(sent) != 2 {
-		t.Fatalf("sent = %#v", sent)
-	}
-	if sent[0].Platform != "napcat" || sent[0].ConversationType != "private" || sent[0].ConversationID != "1001" {
-		t.Fatalf("private target = %#v", sent[0])
-	}
-	if sent[1].Platform != "napcat" || sent[1].ConversationType != "group" || sent[1].ConversationID != "2001" {
-		t.Fatalf("group target = %#v", sent[1])
-	}
-	if !strings.Contains(messages[0], "用户反馈") || !strings.Contains(messages[0], "用户：42") || !strings.Contains(messages[0], "校车显示有点乱") {
-		t.Fatalf("message = %q", messages[0])
-	}
 	count, err := db.FeedbackCount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
 		t.Fatalf("feedback count = %d", count)
+	}
+	due, err := db.ClaimDue(ctx, time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 2 || due[0].Message.Target.Platform != "napcat" || due[1].Message.Target.Platform != "napcat" {
+		t.Fatalf("admin intents = %#v", due)
+	}
+	if !strings.Contains(due[0].Message.Content.Text, "用户反馈") || !strings.Contains(due[0].Message.Content.Text, "用户：42") {
+		t.Fatalf("message = %q", due[0].Message.Content.Text)
 	}
 }
 
@@ -1892,30 +1895,32 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var message string
+	var submission botfeedback.Submission
 	handler := Handler{
-		Store:         db,
-		Prefix:        "/life",
-		FeedbackUsers: []string{"1001"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, sent string) error {
-			message = sent
-			return nil
-		},
+		Store:  db,
+		Prefix: "/life",
+		Feedback: feedbackRecorderFunc(func(ctx context.Context, ident store.Identity, got botfeedback.Submission) (botfeedback.Result, error) {
+			submission = got
+			return botfeedback.Result{ID: 1, AdminIntents: 1}, nil
+		}),
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "反馈 一下", Identity: ident})
 	if !ok || reply != "已收到反馈，会转给维护者。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
-	for _, want := range []string{"内容：一下", "最近对话：", "用户：xc 东区 高新区", "Bot：东区"} {
-		if !strings.Contains(message, want) {
-			t.Fatalf("message missing %q: %q", want, message)
+	if submission.Content != "一下" {
+		t.Fatalf("content = %q", submission.Content)
+	}
+	for _, want := range []string{"用户：xc 东区 高新区", "Bot：东区"} {
+		if !strings.Contains(submission.Context, want) {
+			t.Fatalf("submission missing %q: %#v", want, submission)
 		}
 	}
-	if strings.Contains(message, "旧反馈") || strings.Contains(message, "反馈发送失败") {
-		t.Fatalf("message includes previous feedback: %q", message)
+	if strings.Contains(submission.Context, "旧反馈") || strings.Contains(submission.Context, "反馈发送失败") {
+		t.Fatalf("submission includes previous feedback: %#v", submission)
 	}
-	if strings.Contains(message, "登录") || strings.Contains(message, "student@example.com") {
-		t.Fatalf("message includes unrelated private context: %q", message)
+	if strings.Contains(submission.Context, "登录") || strings.Contains(submission.Context, "student@example.com") {
+		t.Fatalf("submission includes unrelated private context: %#v", submission)
 	}
 }
 
@@ -1965,15 +1970,14 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	ident.UserID = "42"
 	called := false
 	handler := Handler{
-		Prefix:        "/life",
-		FeedbackUsers: []string{"1001"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
+		Prefix: "/life",
+		Feedback: feedbackRecorderFunc(func(ctx context.Context, target store.Identity, submission botfeedback.Submission) (botfeedback.Result, error) {
 			called = true
-			if !strings.Contains(message, "来源：group:3001") {
-				t.Fatalf("message = %q", message)
+			if target.ConversationType != "group" || target.ConversationID != "3001" {
+				t.Fatalf("target = %#v", target)
 			}
-			return nil
-		},
+			return botfeedback.Result{ID: 1, AdminIntents: 1}, nil
+		}),
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "fb 群里也可以反馈", Identity: ident})
 	if !ok || reply != "已收到反馈，会转给维护者。" || !called {
@@ -1981,50 +1985,23 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	}
 }
 
-func TestHandleFeedbackStoresWhenConfiguredTargetSendFails(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	var logs bytes.Buffer
+func TestHandleFeedbackReportsStoreFailure(t *testing.T) {
 	handler := Handler{
-		Store:         db,
-		Prefix:        "/life",
-		Logger:        log.New(&logs, "", 0),
-		FeedbackUsers: []string{"bad-target"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
-			return errors.New("qq bot invalid request")
-		},
+		Prefix: "/life",
+		Feedback: feedbackRecorderFunc(func(context.Context, store.Identity, botfeedback.Submission) (botfeedback.Result, error) {
+			return botfeedback.Result{}, errors.New("sqlite unavailable")
+		}),
 	}
-	reply, ok := handler.Handle(ctx, Input{Text: "反馈 校车显示有点乱", Identity: ident})
-	if !ok || reply != "已收到反馈。" {
+	reply, ok := handler.Handle(context.Background(), Input{Text: "反馈 校车显示有点乱", Identity: testIdentity()})
+	if !ok || !strings.Contains(reply, "反馈保存失败") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	count, err := db.FeedbackCount(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("feedback count = %d", count)
-	}
-	if !strings.Contains(logs.String(), "send feedback failed") || !strings.Contains(logs.String(), "qq bot invalid request") {
-		t.Fatalf("logs = %q", logs.String())
 	}
 }
 
-func TestHandleFeedbackWithoutStoreReportsSendFailure(t *testing.T) {
-	handler := Handler{
-		Prefix:        "/life",
-		FeedbackUsers: []string{"bad-target"},
-		FeedbackSend: func(ctx context.Context, target store.Identity, message string) error {
-			return errors.New("qq bot invalid request")
-		},
-	}
+func TestHandleFeedbackWithoutServiceReportsUnavailable(t *testing.T) {
+	handler := Handler{Prefix: "/life"}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "反馈 校车显示有点乱", Identity: testIdentity()})
-	if !ok || reply != "反馈发送失败，请稍后再试。" {
+	if !ok || reply != "反馈功能暂不可用。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -2065,7 +2042,7 @@ func TestHandleFeedbackRequiresConfiguredTarget(t *testing.T) {
 		Text:     "反馈 hello",
 		Identity: testIdentity(),
 	})
-	if !ok || reply != "反馈通道还没配置。" {
+	if !ok || reply != "反馈功能暂不可用。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -2079,7 +2056,11 @@ func TestHandleFeedbackRecordsWithoutConfiguredTarget(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	reply, ok := Handler{Prefix: "/life", Store: db}.Handle(ctx, Input{
+	recorder, err := botfeedback.New(db, botfeedback.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, ok := Handler{Prefix: "/life", Store: db, Feedback: recorder}.Handle(ctx, Input{
 		Text:     "反馈 希望支持错别字",
 		Identity: ident,
 	})

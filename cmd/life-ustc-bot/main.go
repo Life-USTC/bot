@@ -15,6 +15,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
+	"github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/health"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/napcat"
@@ -126,6 +127,14 @@ func main() {
 	}
 	logger.Printf("Public command cache enabled: version=%s ttl=%s", cfg.BuildVersion, cfg.PublicCommandCacheTTL)
 	messageRouter := &senderRouter{}
+	feedbackService, err := feedback.New(stateStore, feedback.Config{Targets: feedback.AdminTargets(
+		cfg.FeedbackAdminPlatform,
+		cfg.FeedbackAdminUsers,
+		cfg.FeedbackAdminGroups,
+	)})
+	if err != nil {
+		logger.Fatalf("create feedback service: %v", err)
+	}
 	authManager := &auth.Manager{
 		Server:     cfg.LifeServer,
 		HTTPClient: httpClient,
@@ -157,10 +166,7 @@ func main() {
 		Store:                  stateStore,
 		Prefix:                 cfg.CommandPrefix,
 		Logger:                 logger,
-		FeedbackPlatform:       cfg.FeedbackAdminPlatform,
-		FeedbackUsers:          cfg.FeedbackAdminUsers,
-		FeedbackGroups:         cfg.FeedbackAdminGroups,
-		FeedbackSend:           messageRouter.SendMessage,
+		Feedback:               feedbackService,
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
 		EnableImageResponses:   cfg.EnableImageResponses && mediaStore != nil,
 		PublicCache:            publicCommandCache,
@@ -177,6 +183,7 @@ func main() {
 		Logger:         logger,
 		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
 		AuthManager:    authManager,
+		Feedback:       feedbackService,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)
