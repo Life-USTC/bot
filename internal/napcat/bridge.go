@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/Life-USTC/Bot/internal/botapp"
-	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
@@ -35,7 +34,6 @@ type Bridge struct {
 	Recorder    botapp.Recorder
 	HTTPClient  *http.Client
 	Logger      *log.Logger
-	Renderer    responses.Renderer
 	MediaStore  *responses.MediaStore
 
 	reverseMu      sync.Mutex
@@ -538,56 +536,6 @@ func unescapeCQValue(value string) string {
 	).Replace(value)
 }
 
-func (b *Bridge) Send(ctx context.Context, event messageEvent, message string) error {
-	receipt, err := b.sendPayload(ctx, event, message)
-	b.recordOutbound(ctx, event, message, receipt, err)
-	return err
-}
-
-func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response commands.Response) error {
-	if len(response.Parts) > 0 {
-		for _, part := range response.Parts {
-			if err := b.SendResponse(ctx, event, part); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if response.Image != nil && b.MediaStore != nil {
-		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
-			conn, writeMu := b.activeReverseConn()
-			if receipt, err := b.sendCachedImage(ctx, conn, writeMu, event, imageURL); err == nil {
-				b.recordOutbound(ctx, event, response.Text, receipt, nil)
-				return nil
-			} else if isUncertainSendError(err) {
-				b.recordOutbound(ctx, event, response.Text, store.MessageAcceptance{}, err)
-				return err
-			} else {
-				b.logf("napcat image send failed: %v", err)
-			}
-		} else {
-			b.logf("prepare napcat image failed: %v", err)
-		}
-	}
-	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, response.Text)
-		b.recordOutbound(ctx, event, response.Text, receipt, err)
-		return err
-	}
-	return b.Send(ctx, event, response.Text)
-}
-
-func (b *Bridge) prepareImageURL(img *responses.Image) (string, error) {
-	if img.URL != "" {
-		return img.URL, nil
-	}
-	data, _, _, err := b.Renderer.RenderPNG(img)
-	if err != nil {
-		return "", err
-	}
-	return b.MediaStore.PutImagePNG(img, data)
-}
-
 func napcatImageMessage(url string) []map[string]any {
 	return []map[string]any{{
 		"type": "image",
@@ -607,56 +555,6 @@ func (b *Bridge) sendPayload(ctx context.Context, event messageEvent, message an
 		delete(payload, "user_id")
 	}
 	return b.post(ctx, endpoint, payload)
-}
-
-func (b *Bridge) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
-	return b.SendMessage(ctx, ident, message)
-}
-
-func (b *Bridge) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	event, err := messageEventFromIdentity(ident)
-	if err != nil {
-		return err
-	}
-	return b.SendResponse(ctx, event, commands.Response{Text: message, Image: image})
-}
-
-func (b *Bridge) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	event, err := messageEventFromIdentity(ident)
-	if err != nil {
-		return err
-	}
-	if conn, writeMu := b.activeReverseConn(); conn != nil {
-		if receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, message); err == nil {
-			b.recordOutbound(ctx, event, message, receipt, nil)
-			return nil
-		} else {
-			b.logf("reverse websocket login notification failed: %v", err)
-			if isUncertainSendError(err) {
-				b.recordOutbound(ctx, event, message, store.MessageAcceptance{}, err)
-				return err
-			}
-		}
-	}
-	return b.Send(ctx, event, message)
-}
-
-func messageEventFromIdentity(ident store.Identity) (messageEvent, error) {
-	event := messageEvent{MessageType: ident.ConversationType}
-	if isGroupMessageType(ident.ConversationType) {
-		groupID, err := parseNapCatID(ident.ConversationID, "group")
-		if err != nil {
-			return messageEvent{}, err
-		}
-		event.GroupID = groupID
-		return event, nil
-	}
-	userID, err := parseNapCatID(textutil.FirstNonEmpty(ident.ConversationID, ident.UserID), "user")
-	if err != nil {
-		return messageEvent{}, err
-	}
-	event.UserID = userID
-	return event, nil
 }
 
 func parseNapCatID(value, kind string) (int64, error) {

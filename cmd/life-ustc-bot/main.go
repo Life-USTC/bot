@@ -172,7 +172,6 @@ func main() {
 			Recorder:    stateStore,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
@@ -193,7 +192,6 @@ func main() {
 			Recorder:    stateStore,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
@@ -221,7 +219,6 @@ func main() {
 			Recorder:   stateStore,
 			HTTPClient: httpClient,
 			Logger:     logger,
-			Renderer:   renderer,
 			MediaStore: mediaStore,
 		}
 		if err := deliveryService.Register(qqbot.NewDeliveryAdapter(qqBot)); err != nil {

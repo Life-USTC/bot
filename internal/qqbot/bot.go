@@ -22,7 +22,6 @@ import (
 	"github.com/tencent-connect/botgo/interaction/webhook"
 
 	"github.com/Life-USTC/Bot/internal/botapp"
-	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
@@ -72,7 +71,6 @@ type Bot struct {
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
-	Renderer   responses.Renderer
 	MediaStore *responses.MediaStore
 
 	tokenMu        sync.Mutex
@@ -166,8 +164,6 @@ type incomingMessage struct {
 	Text      string
 	ImageURLs []string
 	Identity  store.Identity
-
-	replySeq uint64
 }
 
 func (m *incomingMessage) inbound() message.Inbound {
@@ -803,96 +799,6 @@ func attachmentImageURLs(attachments []map[string]any) []string {
 		}
 	}
 	return urls
-}
-
-func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) error {
-	if message == nil {
-		return errors.New("qq bot message is nil")
-	}
-	outgoing := qqBotOutgoingMessage(message.Identity, text)
-	receipt, err := b.sendTo(ctx, message.Identity, outgoing, message.ID, message.EventID, message.nextReplySeq())
-	b.recordOutbound(ctx, message.Identity, outgoing, receipt, err)
-	return err
-}
-
-func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
-	if message == nil {
-		return errors.New("qq bot message is nil")
-	}
-	if len(response.Parts) > 0 {
-		for _, part := range response.Parts {
-			if err := b.SendResponse(ctx, message, part); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if response.Image != nil && b.MediaStore != nil {
-		if receipt, err := b.sendImageResponse(ctx, message, response); err == nil {
-			b.recordOutbound(ctx, message.Identity, response.Text, receipt, nil)
-			return nil
-		} else if isUncertainSendError(err) {
-			b.recordOutbound(ctx, message.Identity, response.Text, store.MessageAcceptance{}, err)
-			return err
-		} else {
-			b.logf("QQ bot image response failed: %v", err)
-		}
-	}
-	return b.Send(ctx, message, response.Text)
-}
-
-func (b *Bot) sendImageResponse(ctx context.Context, message *incomingMessage, response commands.Response) (store.MessageAcceptance, error) {
-	imageURL, err := b.prepareImageURL(response.Image)
-	if err != nil {
-		return store.MessageAcceptance{}, err
-	}
-	return b.sendCachedRichMedia(ctx, message.Identity, imageURL, message.ID, message.EventID, message.nextReplySeq())
-}
-
-func (b *Bot) prepareImageURL(img *responses.Image) (string, error) {
-	if img.URL != "" {
-		return img.URL, nil
-	}
-	data, _, _, err := b.Renderer.RenderPNG(img)
-	if err != nil {
-		return "", err
-	}
-	return b.MediaStore.PutImagePNG(img, data)
-}
-
-func (b *Bot) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
-	return b.SendMessage(ctx, ident, message)
-}
-
-func (b *Bot) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	if image != nil && b.MediaStore != nil {
-		imageURL, err := b.prepareImageURL(image)
-		if err == nil {
-			var receipt store.MessageAcceptance
-			receipt, err = b.sendCachedRichMedia(ctx, ident, imageURL, "", "", 0)
-			if err == nil {
-				b.recordOutbound(ctx, ident, message, receipt, nil)
-				return nil
-			}
-		}
-		if isUncertainSendError(err) {
-			b.recordOutbound(ctx, ident, message, store.MessageAcceptance{}, err)
-			return err
-		}
-		b.logf("QQ bot proactive image response failed: %v", err)
-	}
-	return b.SendMessage(ctx, ident, message)
-}
-
-func (b *Bot) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	outgoing := qqBotOutgoingMessage(ident, message)
-	receipt, err := b.sendTo(ctx, ident, outgoing, "", "", 0)
-	b.recordOutbound(ctx, ident, outgoing, receipt, err)
-	return err
-}
-
-func (m *incomingMessage) nextReplySeq() int {
-	return int(atomic.AddUint64(&m.replySeq, 1))
 }
 
 func qqBotOutgoingMessage(ident store.Identity, message string) string {
