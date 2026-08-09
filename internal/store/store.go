@@ -191,10 +191,11 @@ type PublicCommandCacheEntry struct {
 }
 
 const (
-	AgentRunStatusStarted   = "started"
-	AgentRunStatusCompleted = "completed"
-	AgentRunStatusFailed    = "failed"
-	AgentRunStatusIgnored   = "ignored"
+	AgentRunStatusStarted     = "started"
+	AgentRunStatusCompleted   = "completed"
+	AgentRunStatusFailed      = "failed"
+	AgentRunStatusIgnored     = "ignored"
+	AgentRunStatusInterrupted = "interrupted"
 
 	FeedbackStatusOpen     = "open"
 	FeedbackStatusResolved = "resolved"
@@ -1236,6 +1237,20 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 			"tool_calls":        spending.ToolCalls,
 			"updated_at":        nowUTC(),
 		}).Error
+}
+
+// InterruptStartedAgentRuns closes runs left open by a previous process. It is
+// intended to run once during startup before new agent work is accepted.
+func (s *Store) InterruptStartedAgentRuns(ctx context.Context) (int64, error) {
+	now := nowUTC()
+	result := s.db.WithContext(ctx).Model(&agentRunRow{}).
+		Where("status = ?", AgentRunStatusStarted).
+		Updates(map[string]any{
+			"status":     AgentRunStatusInterrupted,
+			"error":      "process interrupted",
+			"updated_at": now,
+		})
+	return result.RowsAffected, result.Error
 }
 
 func (s *Store) ConversationSpending(ctx context.Context, ident Identity) (AgentSpending, error) {

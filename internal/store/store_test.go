@@ -1553,6 +1553,48 @@ func TestAgentRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestInterruptStartedAgentRuns(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	startedID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "unfinished"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "finished"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishAgentRun(ctx, completedID, AgentRunStatusCompleted, "ok", nil, AgentSpending{}); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := s.InterruptStartedAgentRuns(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("interrupted = %d, want 1", count)
+	}
+	var started, completed agentRunRow
+	if err := s.db.WithContext(ctx).First(&started, startedID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.WithContext(ctx).First(&completed, completedID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if started.Status != AgentRunStatusInterrupted || started.Error != "process interrupted" {
+		t.Fatalf("started row = %#v", started)
+	}
+	if completed.Status != AgentRunStatusCompleted {
+		t.Fatalf("completed row = %#v", completed)
+	}
+}
+
 func TestOpenMigratesLegacyAgentRunsWithExistingRows(t *testing.T) {
 	path := t.TempDir() + "/bot.db"
 	db, err := sql.Open("sqlite3", path)
