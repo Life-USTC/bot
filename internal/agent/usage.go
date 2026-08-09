@@ -122,10 +122,10 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {
 	var cachedNanoPerToken, missedNanoPerToken, outputNanoPerToken int64
 	switch provider {
-	case "premium":
-		cachedNanoPerToken = premiumCachedNanoPerToken
-		missedNanoPerToken = premiumMissedNanoPerToken
-		outputNanoPerToken = premiumOutputNanoPerToken
+	case "kimi":
+		cachedNanoPerToken = kimiK3CachedNanoPerToken
+		missedNanoPerToken = kimiK3MissedNanoPerToken
+		outputNanoPerToken = kimiK3OutputNanoPerToken
 	default:
 		cachedNanoPerToken = deepseekCachedNanoPerToken
 		missedNanoPerToken = deepseekMissedNanoPerToken
@@ -146,9 +146,9 @@ func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {
 }
 
 const (
-	premiumCachedNanoPerToken  int64 = 1_100
-	premiumMissedNanoPerToken  int64 = 6_500
-	premiumOutputNanoPerToken  int64 = 27_000
+	kimiK3CachedNanoPerToken   int64 = 2_000
+	kimiK3MissedNanoPerToken   int64 = 20_000
+	kimiK3OutputNanoPerToken   int64 = 100_000
 	deepseekCachedNanoPerToken int64 = 25
 	deepseekMissedNanoPerToken int64 = 3_000
 	deepseekOutputNanoPerToken int64 = 6_000

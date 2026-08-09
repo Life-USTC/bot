@@ -38,22 +38,20 @@ type Config struct {
 	PremiumAPIKey  string
 	PremiumBaseURL string
 	PremiumModel   string
-	PremiumUserIDs []string
 	MCPBaseURL     string
 	AuthManager    *auth.Manager
 }
 
 type Service struct {
-	handler        commands.Handler
-	model          *einoopenai.ChatModel
-	modelName      string
-	premiumModel   *einoopenai.ChatModel
-	premiumName    string
-	premiumUserIDs map[string]struct{}
-	enabled        bool
-	timeout        time.Duration
-	logger         *log.Logger
-	httpClient     *http.Client
+	handler      commands.Handler
+	model        *einoopenai.ChatModel
+	modelName    string
+	premiumModel *einoopenai.ChatModel
+	premiumName  string
+	enabled      bool
+	timeout      time.Duration
+	logger       *log.Logger
+	httpClient   *http.Client
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
@@ -107,16 +105,15 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 	service := &Service{
-		handler:        handler,
-		model:          chatModel,
-		modelName:      modelName,
-		premiumUserIDs: normalizedUserIDSet(cfg.PremiumUserIDs),
-		enabled:        true,
-		timeout:        timeout,
-		logger:         cfg.Logger,
-		httpClient:     agentHTTPClient,
-		mcpClient:      mcpClient,
-		auth:           authManager,
+		handler:    handler,
+		model:      chatModel,
+		modelName:  modelName,
+		enabled:    true,
+		timeout:    timeout,
+		logger:     cfg.Logger,
+		httpClient: agentHTTPClient,
+		mcpClient:  mcpClient,
+		auth:       authManager,
 	}
 	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
 		premiumName := strings.TrimSpace(cfg.PremiumModel)
@@ -124,11 +121,13 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 			premiumName = "kimi-k3"
 		}
 		premiumModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
-			APIKey:     premiumAPIKey,
-			BaseURL:    textutil.TrimTrailingSlash(cfg.PremiumBaseURL),
-			Model:      premiumName,
-			HTTPClient: agentHTTPClient,
-			Timeout:    timeout,
+			APIKey:              premiumAPIKey,
+			BaseURL:             textutil.TrimTrailingSlash(cfg.PremiumBaseURL),
+			Model:               premiumName,
+			HTTPClient:          agentHTTPClient,
+			Timeout:             timeout,
+			MaxCompletionTokens: intPointer(kimiMaxCompletionTokens),
+			ReasoningEffort:     einoopenai.ReasoningEffortLevelLow,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create premium chat model: %w", err)
@@ -154,13 +153,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) || store.IsGroupConversation(input.Identity) {
 		return commands.Response{}, false
 	}
-	model, provider, modelName := s.modelFor(input.Identity)
-	if provider != "premium" && len(input.ImageURLs) > 0 {
-		input.ImageURLs = nil
-		if inputText == "" {
-			return agentTextResponse("图片理解目前仅对管理员开放。"), true
-		}
-	}
+	model, provider, modelName := s.modelFor()
 	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
@@ -652,23 +645,11 @@ func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Iden
 		id, float64(conversationTotal.CostNanoCNY)/1_000_000_000, float64(userTotal.CostNanoCNY)/1_000_000_000)
 }
 
-func (s *Service) modelFor(ident store.Identity) (*einoopenai.ChatModel, string, string) {
+func (s *Service) modelFor() (*einoopenai.ChatModel, string, string) {
 	if s.premiumModel != nil {
-		if _, ok := s.premiumUserIDs[strings.TrimSpace(ident.UserID)]; ok {
-			return s.premiumModel, "premium", s.premiumName
-		}
+		return s.premiumModel, "kimi", s.premiumName
 	}
-	return s.model, "deepseek", s.modelName
-}
-
-func normalizedUserIDSet(ids []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id = strings.TrimSpace(id); id != "" {
-			out[id] = struct{}{}
-		}
-	}
-	return out
+	return s.model, "openai-compatible", s.modelName
 }
 
 func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
@@ -941,6 +922,7 @@ func formatToolResult(value string) string {
 const historyTurnLimit = 20
 const agentMaxIterations = 32
 const agentHTTPTimeout = 60 * time.Second
+const kimiMaxCompletionTokens = 8_192
 const maxHistoryTextRunes = 1200
 const maxToolResultRunes = 6000
 const agentToolHistoryTokenLimit int64 = 32_000
@@ -1025,6 +1007,10 @@ func normalizedAgentTimeout(timeout time.Duration) time.Duration {
 	return timeout
 }
 
+func intPointer(value int) *int {
+	return &value
+}
+
 func compactHistoryText(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -1039,13 +1025,19 @@ func compactHistoryText(text string) string {
 
 func agentFailureReply(runID int64, err error) string {
 	reply := "AI 助手出错，请稍后重试。"
-	if isTimeoutError(err) {
+	if isAgentIterationLimitError(err) {
+		reply = "AI 工具调用过多，已停止。请缩小请求范围后重试。"
+	} else if isTimeoutError(err) {
 		reply = "AI 响应超时，请稍后重试。"
 	}
 	if runID > 0 {
 		reply += fmt.Sprintf("\n记录 #%d", runID)
 	}
 	return reply
+}
+
+func isAgentIterationLimitError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "max iterations")
 }
 
 func toolErrorCatchingMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {

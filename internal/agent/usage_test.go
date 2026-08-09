@@ -18,7 +18,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestPremiumAdminMultimodalRunRecordsSpending(t *testing.T) {
+func TestKimiMultimodalRunIsAvailableToEveryUserAndRecordsSpending(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -49,13 +49,12 @@ func TestPremiumAdminMultimodalRunRecordsSpending(t *testing.T) {
 		PremiumAPIKey:  "premium-key",
 		PremiumBaseURL: server.URL,
 		PremiumModel:   "premium-model",
-		PremiumUserIDs: []string{" admin-id "},
 	}, commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ident := store.Identity{
-		Platform: "qqbot", UserID: "admin-id", ConversationType: "private", ConversationID: "admin-id",
+		Platform: "qqbot", UserID: "ordinary-user", ConversationType: "private", ConversationID: "ordinary-user",
 	}
 	response, ok := svc.HandleResponse(context.Background(), Input{
 		Text: "看图",
@@ -69,6 +68,9 @@ func TestPremiumAdminMultimodalRunRecordsSpending(t *testing.T) {
 	}
 	if requestBody["model"] != "premium-model" {
 		t.Fatalf("model = %#v", requestBody["model"])
+	}
+	if requestBody["reasoning_effort"] != "low" || requestBody["max_completion_tokens"] != float64(kimiMaxCompletionTokens) {
+		t.Fatalf("kimi limits = reasoning %#v max %#v", requestBody["reasoning_effort"], requestBody["max_completion_tokens"])
 	}
 	messages, ok := requestBody["messages"].([]any)
 	if !ok || len(messages) == 0 {
@@ -85,7 +87,7 @@ func TestPremiumAdminMultimodalRunRecordsSpending(t *testing.T) {
 		t.Fatal(err)
 	}
 	if total.PromptTokens != 10 || total.CachedTokens != 5 || total.CompletionTokens != 2 ||
-		total.TotalTokens != 12 || total.CostNanoCNY != 92_000 || total.ModelRequests != 1 {
+		total.TotalTokens != 12 || total.CostNanoCNY != 310_000 || total.ModelRequests != 1 {
 		t.Fatalf("spending = %#v", total)
 	}
 }

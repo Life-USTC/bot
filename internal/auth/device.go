@@ -235,13 +235,13 @@ func (m *Manager) targetResource(meta metadata, purpose tokenPurpose) string {
 	return m.resource(meta)
 }
 
-func approvedRefreshResource(approved []string, resource string) string {
+func approvedRefreshResource(approved []string, resource string) (string, bool) {
 	for _, candidate := range approved {
 		if resourceURLsMatch(candidate, resource) {
-			return normalizeResourceURL(candidate)
+			return normalizeResourceURL(candidate), true
 		}
 	}
-	return normalizeResourceURL(resource)
+	return "", false
 }
 
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
@@ -585,10 +585,15 @@ func (m *Manager) refreshCredential(
 	}
 	targetResource := m.targetResource(meta, purpose)
 
-	approved := splitResources(cred.Resource)
-	refreshResources := []string{
-		approvedRefreshResource(approved, targetResource),
+	approvedResources := splitResources(cred.Resource)
+	refreshResource, resourceApproved := approvedRefreshResource(approvedResources, targetResource)
+	if !resourceApproved {
+		if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
+			return "", fmt.Errorf("delete credential missing approved resource: %w", deleteErr)
+		}
+		return "", ErrNotLoggedIn
 	}
+	refreshResources := []string{refreshResource}
 	refreshed, err := m.refresh(ctx, *cred, refreshResources)
 	if err != nil {
 		var retrieveErr *oauth2.RetrieveError

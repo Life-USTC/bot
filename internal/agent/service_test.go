@@ -963,7 +963,6 @@ func TestHandleResponseRejectsHardLimitImageBeforeCompaction(t *testing.T) {
 	svc, err := New(ctx, Config{
 		Enabled: true, APIKey: "default", BaseURL: modelServer.URL, Model: "default",
 		PremiumAPIKey: "premium", PremiumBaseURL: modelServer.URL, PremiumModel: "premium",
-		PremiumUserIDs: []string{"admin"},
 	}, commands.Handler{Store: db}, modelServer.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -1023,7 +1022,7 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, ok := svc.HandleResponse(ctx, Input{Text: "loop", Identity: ident})
-	if !ok || !strings.Contains(response.Text, "AI 助手出错") {
+	if !ok || !strings.Contains(response.Text, "AI 工具调用过多") {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
 	if got := int(requests.Load()); got != agentMaxIterations {
@@ -1087,17 +1086,17 @@ func TestFinishAgentRunLogsUsageAndTotals(t *testing.T) {
 	var logs bytes.Buffer
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	svc := &Service{logger: log.New(&logs, "", 0), handler: commands.Handler{Store: db}}
-	id := svc.recordAgentRun(ctx, Input{Text: "hello", Identity: ident}, "premium", "premium-model")
-	svc.finishAgentRun(ctx, id, ident, store.AgentRunStatusCompleted, "ok", nil, "premium", "premium-model", tokenUsage{
+	id := svc.recordAgentRun(ctx, Input{Text: "hello", Identity: ident}, "kimi", "kimi-k3")
+	svc.finishAgentRun(ctx, id, ident, store.AgentRunStatusCompleted, "ok", nil, "kimi", "kimi-k3", tokenUsage{
 		PromptTokens: 100, CachedTokens: 10, CacheMissTokens: 90, CompletionTokens: 20,
 		TotalTokens: 120, ModelRequests: 2, ToolCalls: 1,
 	}, 1500*time.Millisecond)
 	for _, want := range []string{
-		"llm run started: id=1 provider=premium model=premium-model",
-		"llm run completed: id=1 status=completed provider=premium model=premium-model",
+		"llm run started: id=1 provider=kimi model=kimi-k3",
+		"llm run completed: id=1 status=completed provider=kimi model=kimi-k3",
 		"prompt_tokens=100 cached_tokens=10 completion_tokens=20 total_tokens=120",
-		"model_requests=2 tool_calls=1 estimated_cost_cny=0.001136 duration_ms=1500",
-		"llm spending totals: id=1 conversation_cost_cny=0.001136 user_cost_cny=0.001136",
+		"model_requests=2 tool_calls=1 estimated_cost_cny=0.003820 duration_ms=1500",
+		"llm spending totals: id=1 conversation_cost_cny=0.003820 user_cost_cny=0.003820",
 	} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("usage logs missing %q: %q", want, logs.String())

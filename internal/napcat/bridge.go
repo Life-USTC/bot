@@ -966,11 +966,15 @@ func (b *Bridge) post(ctx context.Context, endpoint string, payload map[string]a
 }
 
 func (b *Bridge) postActionResponse(ctx context.Context, endpoint string, payload map[string]any) (napcatActionResponse, error) {
+	baseURL := textutil.TrimTrailingSlash(b.APIURL)
+	if baseURL == "" {
+		return napcatActionResponse{}, errors.New("napcat HTTP API is not configured and reverse websocket is unavailable")
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return napcatActionResponse{}, err
 	}
-	apiURL := textutil.TrimTrailingSlash(b.APIURL) + endpoint
+	apiURL := baseURL + endpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
 	if err != nil {
 		return napcatActionResponse{}, err

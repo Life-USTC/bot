@@ -20,6 +20,8 @@ const (
 	homeworkKind            = "homework"
 	maxNotificationAttempts = 3
 	notificationAttemptTTL  = 2 * time.Hour
+	pollFailureBaseDelay    = 5 * time.Minute
+	pollFailureMaxDelay     = time.Hour
 )
 
 type Sender interface {
@@ -29,6 +31,11 @@ type Sender interface {
 type notificationAttempt struct {
 	count int
 	at    time.Time
+}
+
+type pollFailure struct {
+	count  int
+	nextAt time.Time
 }
 
 type Poller struct {
@@ -43,6 +50,8 @@ type Poller struct {
 
 	attemptMu sync.Mutex
 	attempts  map[string]notificationAttempt
+	failureMu sync.Mutex
+	failures  map[string]pollFailure
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -76,18 +85,25 @@ func (p *Poller) tick(ctx context.Context) {
 		if !store.IsPrivateConversation(setting.Identity) {
 			continue
 		}
-		p.notifyUser(ctx, setting)
+		if !p.shouldPoll(setting.Identity) {
+			continue
+		}
+		if p.notifyUser(ctx, setting) {
+			p.clearPollFailure(setting.Identity)
+		} else {
+			p.notePollFailure(setting.Identity)
+		}
 	}
 }
 
-func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) {
+func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) bool {
 	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
-		return
+		return true
 	}
 	token, err := p.Auth.AccessToken(ctx, settings.Identity)
 	if err != nil {
 		p.logf("notification token unavailable for %s: %v", settings.Identity.UserID, err)
-		return
+		return false
 	}
 	now := p.now().In(lifedata.ChinaLocation())
 	if settings.ClassesEnabled {
@@ -97,11 +113,11 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			})
 			if err != nil {
 				p.logf("load notification overview failed: %v", err)
-				return
+				return false
 			}
 			p.notifyClasses(ctx, settings.Identity, overviewItems(overview, "schedules"), now)
 			p.notifyHomeworks(ctx, settings.Identity, overviewItems(overview, "homeworks"), now)
-			return
+			return true
 		}
 		dateFrom, dateTo := lifedata.DayRFC3339Range(now)
 		schedules, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
@@ -109,19 +125,54 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		})
 		if err != nil {
 			p.logf("load schedules for notification failed: %v", err)
-			return
+			return false
 		}
 		p.notifyClasses(ctx, settings.Identity, schedules, now)
-		return
+		return true
 	}
 	homeworks, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
 		return p.Life.SubscribedHomeworks(ctx, token)
 	})
 	if err != nil {
 		p.logf("load homework notifications failed: %v", err)
-		return
+		return false
 	}
 	p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
+	return true
+}
+
+func (p *Poller) shouldPoll(ident store.Identity) bool {
+	p.failureMu.Lock()
+	defer p.failureMu.Unlock()
+	failure, ok := p.failures[notificationIdentityKey(ident)]
+	return !ok || !p.now().Before(failure.nextAt)
+}
+
+func (p *Poller) notePollFailure(ident store.Identity) {
+	p.failureMu.Lock()
+	defer p.failureMu.Unlock()
+	if p.failures == nil {
+		p.failures = make(map[string]pollFailure)
+	}
+	key := notificationIdentityKey(ident)
+	failure := p.failures[key]
+	failure.count++
+	delay := pollFailureBaseDelay << min(failure.count-1, 4)
+	if delay > pollFailureMaxDelay {
+		delay = pollFailureMaxDelay
+	}
+	failure.nextAt = p.now().Add(delay)
+	p.failures[key] = failure
+}
+
+func (p *Poller) clearPollFailure(ident store.Identity) {
+	p.failureMu.Lock()
+	defer p.failureMu.Unlock()
+	delete(p.failures, notificationIdentityKey(ident))
+}
+
+func notificationIdentityKey(ident store.Identity) string {
+	return ident.Platform + "|" + ident.UserID
 }
 
 func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedules []map[string]any, now time.Time) {

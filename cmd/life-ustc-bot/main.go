@@ -94,11 +94,11 @@ func (r *senderRouter) Available() bool {
 func main() {
 	cfg := config.FromEnv()
 	logger := log.New(os.Stdout, "", log.LstdFlags)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 16
 	httpClient := &http.Client{
-		Timeout: cfg.HTTPClientTimeout,
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-		},
+		Timeout:   cfg.HTTPClientTimeout,
+		Transport: transport,
 	}
 	lifeClient := life.NewClient(cfg.LifeServer, httpClient)
 	stateStore, err := store.Open(cfg.DBPath)
@@ -165,7 +165,6 @@ func main() {
 		PremiumAPIKey:  cfg.PremiumAPIKey,
 		PremiumBaseURL: cfg.PremiumBaseURL,
 		PremiumModel:   cfg.PremiumModel,
-		PremiumUserIDs: cfg.FeedbackAdminUsers,
 		Logger:         logger,
 		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
 		AuthManager:    authManager,
