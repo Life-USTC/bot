@@ -3,4 +3,5 @@
 *.pid
 /.env
 /.run/
+/.server/
 /.worktrees/
