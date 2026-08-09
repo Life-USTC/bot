@@ -1,0 +1,120 @@
+name: Sync OpenAPI contract
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      server_sha:
+        description: Exact 40-character Life-USTC/server commit SHA (defaults to main)
+        required: false
+        type: string
+  repository_dispatch:
+    types: [openapi-updated]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: openapi-contract-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout bot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve immutable server commit
+        id: server
+        env:
+          DISPATCH_SHA: ${{ github.event.client_payload.server_sha }}
+          INPUT_SHA: ${{ inputs.server_sha }}
+        run: |
+          requested_sha="${INPUT_SHA:-${DISPATCH_SHA:-}}"
+          if [ -n "$requested_sha" ]; then
+            if ! printf '%s' "$requested_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Explicit server_sha must be an exact 40-character lowercase commit SHA" >&2
+              exit 1
+            fi
+            server_sha="$requested_sha"
+          else
+            server_sha=$(git ls-remote https://github.com/Life-USTC/server.git refs/heads/main | awk 'NR == 1 {print $1}')
+            if ! printf '%s' "$server_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Could not resolve Life-USTC/server main to an immutable commit" >&2
+              exit 1
+            fi
+          fi
+          echo "sha=$server_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact server source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Life-USTC/server
+          ref: ${{ steps.server.outputs.sha }}
+          path: .server
+
+      - name: Detect and sync contract changes
+        id: contract
+        env:
+          SERVER_SHA: ${{ steps.server.outputs.sha }}
+        run: |
+          test "$(git -C .server rev-parse HEAD)" = "$SERVER_SHA"
+          if make check-openapi-provenance >/dev/null 2>&1 \
+            && cmp -s .server/public/openapi.generated.json api/openapi.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Server contract is unchanged; preserving the existing provenance pin." >> "$GITHUB_STEP_SUMMARY"
+          else
+            make sync-openapi generate \
+              OPENAPI_SOURCE=.server/public/openapi.generated.json \
+              OPENAPI_SERVER_SHA="$SERVER_SHA"
+            make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.contract.outputs.changed == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install CJK fonts
+        if: steps.contract.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-firacode fonts-noto-cjk fonts-noto-cjk-extra
+
+      - name: Verify updated client
+        if: steps.contract.outputs.changed == 'true'
+        run: |
+          make build
+          go vet ./...
+          go test -race ./...
+          touch .env
+          docker compose config --quiet
+          make check-openapi-provenance
+          make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
+
+      - name: Open or update contract PR
+        if: steps.contract.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          # Configure OPENAPI_SYNC_TOKEN to make the PR trigger normal pull_request workflows.
+          # The default token is safe because this workflow performs the full verification above.
+          token: ${{ secrets.OPENAPI_SYNC_TOKEN || github.token }}
+          branch: automation/openapi-contract
+          delete-branch: true
+          commit-message: "chore: sync OpenAPI contract"
+          title: "chore: sync OpenAPI contract"
+          body: |
+            Synchronizes the vendored OpenAPI contract and generated Go client with
+            `Life-USTC/server@${{ steps.server.outputs.sha }}`.
+
+            This update was built, vetted, and tested with the race detector before
+            the pull request was created.

@@ -46,3 +46,13 @@ MCP 对齐（见
 
 环境变量、Compose 端口与反代路径见源码旁配置与 `compose.yaml`；开发检查用 `go test ./...`。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
+
+`make build` 会先校验 `api/openapi.provenance`，再从仓库内固定的
+`api/openapi.json` 重新生成客户端，因此构建不依赖网络且可复现。更新契约时需提供
+server 的完整提交 SHA，例如：
+
+```sh
+make sync-openapi generate \
+  OPENAPI_SOURCE=../server/public/openapi.generated.json \
+  OPENAPI_SERVER_SHA=<40-character-server-commit>
+```

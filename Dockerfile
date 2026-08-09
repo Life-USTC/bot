@@ -6,7 +6,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/life-ustc-bot ./cmd/life-ustc-bot
+RUN CGO_ENABLED=1 make build \
+	BUILD_FLAGS='-trimpath -ldflags="-s -w"' \
+	BUILD_OUTPUT=/out/life-ustc-bot \
+	BUILD_PACKAGE=./cmd/life-ustc-bot
 
 FROM debian:bookworm-slim
 

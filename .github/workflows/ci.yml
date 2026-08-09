@@ -30,8 +30,26 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             fonts-firacode fonts-noto-cjk fonts-noto-cjk-extra
 
-      - name: Build
-        run: go build ./...
+      - name: Validate OpenAPI provenance
+        id: openapi
+        run: |
+          make check-openapi-provenance
+          echo "server-sha=$(make --no-print-directory print-openapi-commit)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned server OpenAPI source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Life-USTC/server
+          ref: ${{ steps.openapi.outputs.server-sha }}
+          path: .server
+
+      - name: Verify pinned OpenAPI source
+        run: |
+          test "$(git -C .server rev-parse HEAD)" = "${{ steps.openapi.outputs.server-sha }}"
+          make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
+
+      - name: Build and regenerate OpenAPI client
+        run: make build
 
       - name: Vet
         run: go vet ./...
@@ -44,27 +62,9 @@ jobs:
           touch .env
           docker compose config --quiet
 
-      - name: Resolve server OpenAPI ref
-        id: server-openapi-ref
-        run: |
-          candidate="${SERVER_OPENAPI_REF:-${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}}"
-          if git ls-remote --exit-code --heads https://github.com/Life-USTC/server.git "$candidate" >/dev/null 2>&1; then
-            echo "ref=$candidate" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::server OpenAPI branch '$candidate' not found; falling back to main"
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout server OpenAPI source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Life-USTC/server
-          ref: ${{ steps.server-openapi-ref.outputs.ref }}
-          path: .server
-
       - name: Check OpenAPI generated client is up-to-date
         run: |
-          make sync-openapi generate OPENAPI_SOURCE=.server/public/openapi.generated.json
+          make generate
           git diff --exit-code
 
   lint:
