@@ -6,25 +6,12 @@ import (
 	"time"
 )
 
-func TestFromEnvParsesOneBotHTTPPort(t *testing.T) {
-	t.Setenv("BOT_ONEBOT_HTTP_PORT", "8080")
+func TestFromEnvParsesHealthAddress(t *testing.T) {
+	t.Setenv("BOT_HEALTH_ADDR", " 0.0.0.0:8080 ")
 
 	cfg := FromEnv()
-	if cfg.OneBotHTTPPort != 8080 {
-		t.Fatalf("OneBotHTTPPort = %d, want 8080", cfg.OneBotHTTPPort)
-	}
-}
-
-func TestFromEnvFallsBackForInvalidOneBotHTTPPort(t *testing.T) {
-	for _, value := range []string{"bad", "0", "-1", "70000"} {
-		t.Run(value, func(t *testing.T) {
-			t.Setenv("BOT_ONEBOT_HTTP_PORT", value)
-
-			cfg := FromEnv()
-			if cfg.OneBotHTTPPort != 6700 {
-				t.Fatalf("OneBotHTTPPort = %d, want 6700", cfg.OneBotHTTPPort)
-			}
-		})
+	if cfg.HealthAddr != "0.0.0.0:8080" {
+		t.Fatalf("HealthAddr = %q, want 0.0.0.0:8080", cfg.HealthAddr)
 	}
 }
 
@@ -77,7 +64,6 @@ func TestFromEnvFallsBackForInvalidHTTPClientTimeout(t *testing.T) {
 }
 
 func TestFromEnvTrimsOptionalStrings(t *testing.T) {
-	t.Setenv("BOT_ONEBOT_ACCESS_TOKEN", " onebot-token ")
 	t.Setenv("NAPCAT_ACCESS_TOKEN", " napcat-token ")
 	t.Setenv("NAPCAT_WS_URL", " ws://127.0.0.1:3001 ")
 	t.Setenv("QQ_BOT_APPID", " appid ")
@@ -90,9 +76,6 @@ func TestFromEnvTrimsOptionalStrings(t *testing.T) {
 	t.Setenv("BOT_LLM_TIMEOUT_SECONDS", "120")
 
 	cfg := FromEnv()
-	if cfg.OneBotAccessToken != "onebot-token" {
-		t.Fatalf("OneBotAccessToken = %q", cfg.OneBotAccessToken)
-	}
 	if cfg.NapCatAccessToken != "napcat-token" {
 		t.Fatalf("NapCatAccessToken = %q", cfg.NapCatAccessToken)
 	}

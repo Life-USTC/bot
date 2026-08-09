@@ -15,10 +15,10 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
+	"github.com/Life-USTC/Bot/internal/health"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/napcat"
 	"github.com/Life-USTC/Bot/internal/notify"
-	"github.com/Life-USTC/Bot/internal/onebot12"
 	"github.com/Life-USTC/Bot/internal/qqbot"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -93,6 +93,15 @@ func (r *senderRouter) Available() bool {
 
 func main() {
 	cfg := config.FromEnv()
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if err := health.Probe(ctx, cfg.HealthAddr); err != nil {
+			log.Printf("healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = 16
@@ -175,22 +184,21 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	healthServer := &http.Server{Addr: cfg.HealthAddr, Handler: health.NewHandler(stateStore)}
+	go func() {
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatalf("health server stopped: %v", err)
+		}
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = healthServer.Shutdown(shutdownCtx)
+	}()
+	logger.Printf("Health server listening on %s", cfg.HealthAddr)
 	var agentDispatcher *agent.Dispatcher
 	if agentService.Enabled() {
 		agentDispatcher = agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{Logger: logger})
-	}
-
-	if cfg.EnableOneBotServer {
-		server := onebot12.New(onebot12.Config{
-			Host:        cfg.OneBotHTTPHost,
-			Port:        cfg.OneBotHTTPPort,
-			AccessToken: cfg.OneBotAccessToken,
-			SelfID:      cfg.OneBotSelfID,
-			Auth:        authManager,
-		}, lifeClient)
-		go server.Run()
-		defer server.Shutdown()
-		logger.Printf("OneBot 12 HTTP server listening on %s:%d", cfg.OneBotHTTPHost, cfg.OneBotHTTPPort)
 	}
 
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {

@@ -518,6 +518,14 @@ func (s *Store) Close() error {
 	return db.Close()
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	db, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return db.PingContext(ctx)
+}
+
 func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
