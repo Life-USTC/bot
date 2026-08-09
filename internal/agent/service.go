@@ -21,6 +21,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -40,6 +41,7 @@ type Config struct {
 	PremiumModel   string
 	MCPBaseURL     string
 	AuthManager    *auth.Manager
+	Feedback       botfeedback.Recorder
 }
 
 type Service struct {
@@ -55,6 +57,7 @@ type Service struct {
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
+	feedback  botfeedback.Recorder
 }
 
 type Input struct {
@@ -82,7 +85,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		mcpClient = botmcp.New(mcpBaseURL, httpClient)
 	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
+		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager, feedback: cfg.Feedback}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -114,6 +117,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		httpClient: agentHTTPClient,
 		mcpClient:  mcpClient,
 		auth:       authManager,
+		feedback:   cfg.Feedback,
 	}
 	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
 		premiumName := strings.TrimSpace(cfg.PremiumModel)
@@ -161,13 +165,13 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		s.finishAgentRun(ctx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
 	}
 	if err := s.prepareInputImages(ctx, &input); err != nil {
-		reply := "AI 图片处理失败：" + err.Error()
+		reply := imageFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
 	if err != nil {
-		reply := "AI 工具设置读取失败：" + err.Error()
+		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
@@ -182,7 +186,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
-		reply := "AI 工具初始化失败：" + err.Error()
+		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
@@ -194,6 +198,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 	}
 	capture := newStateCapture()
+	repeatGuard := newToolRepeatGuard()
 	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer(), capture}
 	if input.FollowUps != nil {
 		handlers = append(handlers, newFollowUpInjector(input.FollowUps))
@@ -212,21 +217,24 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					return fmt.Sprintf("未知工具：%s", name), nil
 				},
 				ToolCallMiddlewares: []compose.ToolMiddleware{{
-					Invokable:  toolErrorCatchingMiddleware,
-					Streamable: streamToolErrorCatchingMiddleware,
+					Invokable:  repeatGuard.invokableMiddleware,
+					Streamable: repeatGuard.streamableMiddleware,
+				}, {
+					Invokable:  toolErrorCatchingMiddleware(s.logf),
+					Streamable: streamToolErrorCatchingMiddleware(s.logf),
 				}},
 			},
 		},
 	})
 	if err != nil {
-		reply := "AI 助手初始化失败：" + err.Error()
+		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
 	messages, err := s.messagesFor(ctx, input)
 	if err != nil {
-		reply := "AI 历史记录读取失败：" + err.Error()
+		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
@@ -234,6 +242,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	const maxFollowUpContinues = 3
 	reply := ""
 	for continueRound := 0; ; continueRound++ {
+		repeatGuard.Reset()
 		iter := runner.Run(ctx, messages)
 		reply = ""
 		for {
@@ -477,7 +486,7 @@ func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any, 
 	}
 	message += "\n工具结果："
 	if err != nil {
-		message += "\n失败：" + formatToolResult(err.Error())
+		message += "\n失败：工具暂时不可用，请稍后重试。"
 	} else if formatted := formatToolResult(result); formatted != "" {
 		message += "\n" + formatted
 	}
@@ -653,15 +662,15 @@ func (s *Service) modelFor() (*einoopenai.ChatModel, string, string) {
 }
 
 func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
-	if s.handler.Store == nil {
-		return "", errors.New("feedback store is unavailable")
+	if s.feedback == nil {
+		return "", errors.New("feedback service is unavailable")
 	}
 	content := strings.TrimSpace(input.Content)
 	if content == "" {
 		return "", errors.New("feedback content is required")
 	}
-	id, err := s.handler.Store.RecordFeedback(ctx, ident, store.FeedbackRecord{
-		Source:   "llm",
+	result, err := s.feedback.Record(ctx, ident, botfeedback.Submission{
+		Source:   botfeedback.SourceLLM,
 		Category: input.Category,
 		Content:  content,
 		Context:  input.Context,
@@ -669,98 +678,10 @@ func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, i
 	if err != nil {
 		return "", err
 	}
-	sent := s.sendFeedbackToAdmins(ctx, ident, id, input)
-	if sent > 0 {
-		if id > 0 {
-			return fmt.Sprintf("已记录反馈 #%d，并已转给维护者。", id), nil
-		}
-		return "已记录反馈，并已转给维护者。", nil
+	if result.AdminIntents > 0 {
+		return fmt.Sprintf("已记录反馈 #%d，并已转给维护者。", result.ID), nil
 	}
-	if id > 0 {
-		return fmt.Sprintf("已记录反馈 #%d。", id), nil
-	}
-	return "已记录反馈。", nil
-}
-
-func (s *Service) sendFeedbackToAdmins(ctx context.Context, ident store.Identity, id int64, input feedbackInput) int {
-	if s.handler.FeedbackSend == nil || (len(s.handler.FeedbackUsers) == 0 && len(s.handler.FeedbackGroups) == 0) {
-		return 0
-	}
-	message := formatAgentFeedbackMessage(ident, id, input)
-	sent := 0
-	feedbackPlatform := strings.TrimSpace(s.handler.FeedbackPlatform)
-	if feedbackPlatform == "" {
-		feedbackPlatform = ident.Platform
-	}
-	for _, userID := range s.handler.FeedbackUsers {
-		userID = strings.TrimSpace(userID)
-		if userID == "" {
-			continue
-		}
-		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         feedbackPlatform,
-			UserID:           userID,
-			ConversationType: "private",
-			ConversationID:   userID,
-		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=private:%s error=%v",
-				id, ident.Platform, feedbackPlatform, userID, err)
-			continue
-		}
-		sent++
-	}
-	for _, groupID := range s.handler.FeedbackGroups {
-		groupID = strings.TrimSpace(groupID)
-		if groupID == "" {
-			continue
-		}
-		if err := s.handler.FeedbackSend(ctx, store.Identity{
-			Platform:         feedbackPlatform,
-			ConversationType: "group",
-			ConversationID:   groupID,
-		}, message); err != nil {
-			s.logf("send llm feedback failed: id=%d source_platform=%s target_platform=%s target=group:%s error=%v",
-				id, ident.Platform, feedbackPlatform, groupID, err)
-			continue
-		}
-		sent++
-	}
-	if sent > 0 && s.handler.Store != nil && id > 0 {
-		if err := s.handler.Store.MarkFeedbackSent(ctx, id); err != nil {
-			s.logf("mark llm feedback sent failed: id=%d error=%v", id, err)
-		}
-	}
-	return sent
-}
-
-func formatAgentFeedbackMessage(ident store.Identity, id int64, input feedbackInput) string {
-	source := strings.TrimSpace(ident.ConversationType)
-	if ident.ConversationID != "" {
-		source += ":" + ident.ConversationID
-	}
-	if source == "" {
-		source = "unknown"
-	}
-	userID := strings.TrimSpace(ident.UserID)
-	if userID == "" {
-		userID = "unknown"
-	}
-	lines := []string{
-		"LLM 反馈",
-		"来源：" + source,
-		"用户：" + userID,
-	}
-	if category := strings.TrimSpace(input.Category); category != "" {
-		lines = append(lines, "分类："+category)
-	}
-	lines = append(lines, "内容："+strings.TrimSpace(input.Content))
-	if contextText := strings.TrimSpace(input.Context); contextText != "" {
-		lines = append(lines, "上下文："+contextText)
-	}
-	if id > 0 {
-		lines = append(lines, fmt.Sprintf("编号：#%d", id))
-	}
-	return strings.Join(lines, "\n")
+	return fmt.Sprintf("已记录反馈 #%d。", result.ID), nil
 }
 
 func sendMessagePart(ctx context.Context, ident store.Identity, send func(context.Context, store.Identity, string) error, input messagePartInput) (string, error) {
@@ -1025,10 +946,24 @@ func compactHistoryText(text string) string {
 
 func agentFailureReply(runID int64, err error) string {
 	reply := "AI 助手出错，请稍后重试。"
-	if isAgentIterationLimitError(err) {
+	if errors.Is(err, errRepeatedToolCall) {
+		reply = "AI 重复调用了相同工具，已停止。请换一种说法或缩小请求范围后重试。"
+	} else if isAgentIterationLimitError(err) {
 		reply = "AI 工具调用过多，已停止。请缩小请求范围后重试。"
 	} else if isTimeoutError(err) {
 		reply = "AI 响应超时，请稍后重试。"
+	}
+	if runID > 0 {
+		reply += fmt.Sprintf("\n记录 #%d", runID)
+	}
+	return reply
+}
+
+func imageFailureReply(runID int64, err error) string {
+	reply := "AI 图片处理失败，请稍后重试。"
+	var inputErr *imageInputError
+	if errors.As(err, &inputErr) {
+		reply = "AI 图片处理失败：" + inputErr.Error()
 	}
 	if runID > 0 {
 		reply += fmt.Sprintf("\n记录 #%d", runID)
@@ -1040,17 +975,24 @@ func isAgentIterationLimitError(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "max iterations")
 }
 
-func toolErrorCatchingMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
-	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-		recordToolCall(ctx)
-		out, err := next(ctx, input)
-		if err != nil {
-			return &compose.ToolOutput{Result: limitToolResult("工具调用失败：" + err.Error())}, nil
+type toolErrorLogger func(string, ...any)
+
+func toolErrorCatchingMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware {
+	return func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+			recordToolCall(ctx)
+			out, err := next(ctx, input)
+			if err != nil {
+				if logf != nil {
+					logf("agent tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
+				}
+				return &compose.ToolOutput{Result: "工具调用失败，请检查参数或稍后重试。"}, nil
+			}
+			if out != nil {
+				out.Result = limitToolResult(out.Result)
+			}
+			return out, nil
 		}
-		if out != nil {
-			out.Result = limitToolResult(out.Result)
-		}
-		return out, nil
 	}
 }
 
@@ -1062,14 +1004,19 @@ func limitToolResult(result string) string {
 	return string(runes[:maxToolResultRunes]) + "\n...(工具结果过长，已截断；请缩小查询范围)"
 }
 
-func streamToolErrorCatchingMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
-	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
-		recordToolCall(ctx)
-		out, err := next(ctx, input)
-		if err != nil {
-			return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{"工具调用失败：" + err.Error()})}, nil
+func streamToolErrorCatchingMiddleware(logf toolErrorLogger) compose.StreamableToolMiddleware {
+	return func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
+		return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
+			recordToolCall(ctx)
+			out, err := next(ctx, input)
+			if err != nil {
+				if logf != nil {
+					logf("agent streaming tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
+				}
+				return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{"工具调用失败，请检查参数或稍后重试。"})}, nil
+			}
+			return out, nil
 		}
-		return out, nil
 	}
 }
 

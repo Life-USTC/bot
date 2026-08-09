@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,86 +12,31 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/feedback"
+	"github.com/Life-USTC/Bot/internal/health"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/napcat"
 	"github.com/Life-USTC/Bot/internal/notify"
-	"github.com/Life-USTC/Bot/internal/onebot12"
 	"github.com/Life-USTC/Bot/internal/qqbot"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-type messageSender interface {
-	SendMessage(ctx context.Context, ident store.Identity, message string) error
-	SendLoginMessage(ctx context.Context, ident store.Identity, message string) error
-	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
-}
-
-type platformSender struct {
-	platform string
-	sender   messageSender
-}
-
-type senderRouter struct {
-	senders []platformSender
-}
-
-func (r *senderRouter) Add(platform string, sender messageSender) {
-	if sender == nil {
-		return
-	}
-	r.senders = append(r.senders, platformSender{platform: strings.ToLower(strings.TrimSpace(platform)), sender: sender})
-}
-
-func (r *senderRouter) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	return r.send(ctx, ident, message, false)
-}
-
-func (r *senderRouter) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
-	return r.send(ctx, ident, message, true)
-}
-
-func (r *senderRouter) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	platform := strings.ToLower(strings.TrimSpace(ident.Platform))
-	for _, item := range r.senders {
-		if item.platform == platform {
-			return item.sender.SendRichMessage(ctx, ident, message, image)
-		}
-	}
-	if len(r.senders) == 1 {
-		return r.senders[0].sender.SendRichMessage(ctx, ident, message, image)
-	}
-	return fmt.Errorf("no message sender configured for platform %q", ident.Platform)
-}
-
-func (r *senderRouter) send(ctx context.Context, ident store.Identity, message string, login bool) error {
-	platform := strings.ToLower(strings.TrimSpace(ident.Platform))
-	for _, item := range r.senders {
-		if item.platform != platform {
-			continue
-		}
-		if login {
-			return item.sender.SendLoginMessage(ctx, ident, message)
-		}
-		return item.sender.SendMessage(ctx, ident, message)
-	}
-	if len(r.senders) == 1 {
-		if login {
-			return r.senders[0].sender.SendLoginMessage(ctx, ident, message)
-		}
-		return r.senders[0].sender.SendMessage(ctx, ident, message)
-	}
-	return fmt.Errorf("no message sender configured for platform %q", ident.Platform)
-}
-
-func (r *senderRouter) Available() bool {
-	return len(r.senders) > 0
-}
-
 func main() {
 	cfg := config.FromEnv()
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if err := health.Probe(ctx, cfg.HealthAddr); err != nil {
+			log.Printf("healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = 16
@@ -106,6 +50,15 @@ func main() {
 		logger.Fatalf("open sqlite store: %v", err)
 	}
 	defer func() { _ = stateStore.Close() }()
+	if interrupted, err := stateStore.InterruptStartedAgentRuns(context.Background()); err != nil {
+		logger.Fatalf("recover interrupted agent runs: %v", err)
+	} else if interrupted > 0 {
+		logger.Printf("Marked %d interrupted agent runs", interrupted)
+	}
+	deliveryService, err := delivery.New(stateStore)
+	if err != nil {
+		logger.Fatalf("create delivery service: %v", err)
+	}
 	publicCommandCache := commands.NewPublicCommandCache(
 		stateStore,
 		cfg.BuildVersion,
@@ -116,7 +69,15 @@ func main() {
 		logger.Printf("purge public command cache: %v", err)
 	}
 	logger.Printf("Public command cache enabled: version=%s ttl=%s", cfg.BuildVersion, cfg.PublicCommandCacheTTL)
-	messageRouter := &senderRouter{}
+	platformsEnabled := false
+	feedbackService, err := feedback.New(stateStore, feedback.Config{Targets: feedback.AdminTargets(
+		cfg.FeedbackAdminPlatform,
+		cfg.FeedbackAdminUsers,
+		cfg.FeedbackAdminGroups,
+	)})
+	if err != nil {
+		logger.Fatalf("create feedback service: %v", err)
+	}
 	authManager := &auth.Manager{
 		Server:     cfg.LifeServer,
 		HTTPClient: httpClient,
@@ -148,10 +109,7 @@ func main() {
 		Store:                  stateStore,
 		Prefix:                 cfg.CommandPrefix,
 		Logger:                 logger,
-		FeedbackPlatform:       cfg.FeedbackAdminPlatform,
-		FeedbackUsers:          cfg.FeedbackAdminUsers,
-		FeedbackGroups:         cfg.FeedbackAdminGroups,
-		FeedbackSend:           messageRouter.SendMessage,
+		Feedback:               feedbackService,
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
 		EnableImageResponses:   cfg.EnableImageResponses && mediaStore != nil,
 		PublicCache:            publicCommandCache,
@@ -168,6 +126,7 @@ func main() {
 		Logger:         logger,
 		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
 		AuthManager:    authManager,
+		Feedback:       feedbackService,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)
@@ -175,22 +134,33 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	healthServer := &http.Server{Addr: cfg.HealthAddr, Handler: health.NewHandler(stateStore)}
+	go func() {
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatalf("health server stopped: %v", err)
+		}
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = healthServer.Shutdown(shutdownCtx)
+	}()
+	logger.Printf("Health server listening on %s", cfg.HealthAddr)
 	var agentDispatcher *agent.Dispatcher
 	if agentService.Enabled() {
 		agentDispatcher = agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{Logger: logger})
 	}
-
-	if cfg.EnableOneBotServer {
-		server := onebot12.New(onebot12.Config{
-			Host:        cfg.OneBotHTTPHost,
-			Port:        cfg.OneBotHTTPPort,
-			AccessToken: cfg.OneBotAccessToken,
-			SelfID:      cfg.OneBotSelfID,
-			Auth:        authManager,
-		}, lifeClient)
-		go server.Run()
-		defer server.Shutdown()
-		logger.Printf("OneBot 12 HTTP server listening on %s:%d", cfg.OneBotHTTPHost, cfg.OneBotHTTPPort)
+	app, err := botapp.New(botapp.Config{
+		Commands:   handler,
+		Agent:      agentService,
+		Dispatcher: agentDispatcher,
+		Delivery:   deliveryService,
+		Recorder:   stateStore,
+		Renderer:   renderer,
+		Logger:     logger,
+	})
+	if err != nil {
+		logger.Fatalf("create bot application: %v", err)
 	}
 
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {
@@ -198,15 +168,15 @@ func main() {
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
 			WSURL:       cfg.NapCatWSURL,
-			Handler:     handler,
-			Agent:       agentService,
-			Dispatcher:  agentDispatcher,
+			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
-		messageRouter.Add("napcat", napcatBridge)
+		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
+			logger.Fatalf("register NapCat delivery adapter: %v", err)
+		}
+		platformsEnabled = true
 		go func() {
 			if err := napcatBridge.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat bridge stopped: %v", err)
@@ -217,15 +187,15 @@ func main() {
 		napcatBridge = &napcat.Bridge{
 			APIURL:      cfg.NapCatAPIURL,
 			AccessToken: cfg.NapCatAccessToken,
-			Handler:     handler,
-			Agent:       agentService,
-			Dispatcher:  agentDispatcher,
+			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			Renderer:    renderer,
 			MediaStore:  mediaStore,
 		}
-		messageRouter.Add("napcat", napcatBridge)
+		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
+			logger.Fatalf("register NapCat delivery adapter: %v", err)
+		}
+		platformsEnabled = true
 		go func() {
 			if err := napcatBridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat reverse bridge stopped: %v", err)
@@ -243,15 +213,15 @@ func main() {
 			TokenURL:   cfg.QQBotTokenURL,
 			GatewayURL: cfg.QQBotGatewayURL,
 			Intents:    cfg.QQBotIntents,
-			Handler:    handler,
-			Agent:      agentService,
-			Dispatcher: agentDispatcher,
+			App:        app,
 			HTTPClient: httpClient,
 			Logger:     logger,
-			Renderer:   renderer,
 			MediaStore: mediaStore,
 		}
-		messageRouter.Add("qqbot", qqBot)
+		if err := deliveryService.Register(qqbot.NewDeliveryAdapter(qqBot)); err != nil {
+			logger.Fatalf("register QQ delivery adapter: %v", err)
+		}
+		platformsEnabled = true
 		if cfg.EnableQQBotWebhook {
 			go func() {
 				if err := qqBot.RunWebhook(ctx, cfg.QQBotWebhookAddr, cfg.QQBotWebhookPath); err != nil && ctx.Err() == nil {
@@ -269,11 +239,13 @@ func main() {
 			logger.Printf("QQ official bot gateway enabled")
 		}
 	}
-	if messageRouter.Available() {
+	if platformsEnabled {
+		deliveryWorker := &delivery.Worker{Service: deliveryService, Logger: logger}
+		go deliveryWorker.Run(ctx)
+		logger.Printf("Delivery worker started")
 		loginPoller := &auth.LoginPoller{
-			Manager:  authManager,
-			Notifier: messageRouter,
-			Logger:   logger,
+			Manager: authManager,
+			Logger:  logger,
 		}
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
@@ -281,7 +253,8 @@ func main() {
 			Life:                 lifeClient,
 			Auth:                 authManager,
 			Store:                stateStore,
-			Sender:               messageRouter,
+			Publisher:            deliveryService,
+			Renderer:             renderer,
 			Logger:               logger,
 			EnableImageResponses: handler.EnableImageResponses,
 		}

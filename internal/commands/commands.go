@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -26,16 +27,11 @@ type Handler struct {
 	Store                  *store.Store
 	Prefix                 string
 	Logger                 *log.Logger
-	FeedbackPlatform       string
-	FeedbackUsers          []string
-	FeedbackGroups         []string
-	FeedbackSend           func(context.Context, store.Identity, string) error
+	Feedback               feedback.Recorder
 	AllowGroupPersonalInfo bool
 	EnableImageResponses   bool
 	PublicCache            *PublicCommandCache
 }
-
-var ErrFeedbackSenderUnavailable = errors.New("feedback sender unavailable")
 
 type CommandSpec struct {
 	Name        string
@@ -1318,8 +1314,11 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		return "想反馈什么？例如：反馈 校车时间希望更清楚"
 	}
 	contextText := h.feedbackContext(ctx, ident)
-	feedbackID, err := h.recordFeedback(ctx, ident, store.FeedbackRecord{
-		Source:   "user",
+	if h.Feedback == nil {
+		return "反馈功能暂不可用。"
+	}
+	result, err := h.Feedback.Record(ctx, ident, feedback.Submission{
+		Source:   feedback.SourceUser,
 		Category: "user_feedback",
 		Content:  text,
 		Context:  contextText,
@@ -1327,59 +1326,10 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	if err != nil {
 		return commandError("反馈保存失败：", err)
 	}
-	if h.FeedbackSend == nil || (len(h.FeedbackUsers) == 0 && len(h.FeedbackGroups) == 0) {
-		if feedbackID > 0 {
-			return "已收到反馈。"
-		}
-		return "反馈通道还没配置。"
+	if result.AdminIntents > 0 {
+		return "已收到反馈，会转给维护者。"
 	}
-	message := formatFeedbackMessage(ident, text, contextText, feedbackID)
-	sent := 0
-	feedbackPlatform := strings.TrimSpace(h.FeedbackPlatform)
-	if feedbackPlatform == "" {
-		feedbackPlatform = ident.Platform
-	}
-	for _, userID := range h.FeedbackUsers {
-		userID = strings.TrimSpace(userID)
-		if userID == "" {
-			continue
-		}
-		if err := h.FeedbackSend(ctx, store.Identity{
-			Platform:         feedbackPlatform,
-			UserID:           userID,
-			ConversationType: "private",
-			ConversationID:   userID,
-		}, message); err != nil {
-			h.logf("send feedback failed: id=%d source_platform=%s target_platform=%s target=private:%s error=%v",
-				feedbackID, ident.Platform, feedbackPlatform, userID, err)
-			continue
-		}
-		sent++
-	}
-	for _, groupID := range h.FeedbackGroups {
-		groupID = strings.TrimSpace(groupID)
-		if groupID == "" {
-			continue
-		}
-		if err := h.FeedbackSend(ctx, store.Identity{
-			Platform:         feedbackPlatform,
-			ConversationType: "group",
-			ConversationID:   groupID,
-		}, message); err != nil {
-			h.logf("send feedback failed: id=%d source_platform=%s target_platform=%s target=group:%s error=%v",
-				feedbackID, ident.Platform, feedbackPlatform, groupID, err)
-			continue
-		}
-		sent++
-	}
-	if sent == 0 {
-		if feedbackID > 0 {
-			return "已收到反馈。"
-		}
-		return "反馈发送失败，请稍后再试。"
-	}
-	h.markFeedbackSent(ctx, feedbackID, sent)
-	return "已收到反馈，会转给维护者。"
+	return "已收到反馈。"
 }
 
 func (h Handler) feedbackContext(ctx context.Context, ident store.Identity) string {
@@ -1440,30 +1390,6 @@ func compactFeedbackContextText(text string) string {
 		return text
 	}
 	return string(runes[:feedbackContextTextRunes]) + "..."
-}
-
-func formatFeedbackMessage(ident store.Identity, text, contextText string, id int64) string {
-	source := ident.ConversationType
-	if ident.ConversationID != "" {
-		source += ":" + ident.ConversationID
-	}
-	userID := strings.TrimSpace(ident.UserID)
-	if userID == "" {
-		userID = "unknown"
-	}
-	lines := []string{
-		"用户反馈",
-		"来源：" + source,
-		"用户：" + userID,
-		"内容：" + text,
-	}
-	if strings.TrimSpace(contextText) != "" {
-		lines = append(lines, "最近对话：", contextText)
-	}
-	if id > 0 {
-		lines = append(lines, fmt.Sprintf("编号：#%d", id))
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (h Handler) login(ctx context.Context, ident store.Identity, args []string) string {
@@ -3270,22 +3196,6 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 		Status:  store.InteractionStatusHandled,
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
-	}
-}
-
-func (h Handler) recordFeedback(ctx context.Context, ident store.Identity, feedback store.FeedbackRecord) (int64, error) {
-	if h.Store == nil || !store.HasConversationIdentity(ident) {
-		return 0, nil
-	}
-	return h.Store.RecordFeedback(ctx, ident, feedback)
-}
-
-func (h Handler) markFeedbackSent(ctx context.Context, feedbackID int64, sent int) {
-	if feedbackID <= 0 || sent <= 0 || h.Store == nil {
-		return
-	}
-	if err := h.Store.MarkFeedbackSent(ctx, feedbackID); err != nil {
-		h.logf("mark feedback sent failed: %v", err)
 	}
 }
 

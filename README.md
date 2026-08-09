@@ -8,7 +8,7 @@ MCP 对齐（见
 ## 面向谁
 
 - 想在群或私聊里查课表、作业、校车、待办的科大用户
-- 需要 OneBot / QQ 官方 Bot 接入校园工作区的部署者
+- 需要 NapCat / QQ 官方 Bot 接入校园工作区的部署者
 
 ## 用户能做什么
 
@@ -38,13 +38,13 @@ MCP 对齐（见
 
 - **NapCat**：OneBot 11 反向 WebSocket（或出站 WS）
 - **QQ 官方 Bot**：Webhook（推荐）和/或 Gateway
-- **OneBot 12 HTTP**：扩展 action `life_ustc.<capability_id>`（学期、搜课、登录、待办、链接置顶等）
 
 公开只读命令可按 TTL 缓存在本地 SQLite，部署版本参与缓存键，避免旧版本脏读。
 
 ## 给贡献者
 
 环境变量、Compose 端口与反代路径见源码旁配置与 `compose.yaml`；开发检查用 `go test ./...`。
+进程在 `BOT_HEALTH_ADDR`（默认 `127.0.0.1:2282`）提供 `/live`，只检查进程初始化和本地 SQLite，外部消息渠道断线不会触发容器重启。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
 `make build` 会先校验 `api/openapi.provenance`，再从仓库内固定的

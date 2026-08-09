@@ -9,10 +9,7 @@ import (
 
 type Config struct {
 	LifeServer             string
-	OneBotHTTPHost         string
-	OneBotHTTPPort         uint16
-	OneBotAccessToken      string
-	OneBotSelfID           string
+	HealthAddr             string
 	NapCatAPIURL           string
 	NapCatAccessToken      string
 	NapCatWSURL            string
@@ -33,7 +30,6 @@ type Config struct {
 	BuildVersion           string
 	PublicCommandCacheTTL  time.Duration
 	HTTPClientTimeout      time.Duration
-	EnableOneBotServer     bool
 	EnableNapCatBridge     bool
 	EnableQQBot            bool
 	EnableQQBotGateway     bool
@@ -60,10 +56,7 @@ type Config struct {
 func FromEnv() Config {
 	return Config{
 		LifeServer:             envTrimRight("LIFE_USTC_SERVER", "http://localhost:3000", "/"),
-		OneBotHTTPHost:         envString("BOT_ONEBOT_HTTP_HOST", "127.0.0.1"),
-		OneBotHTTPPort:         envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
-		OneBotAccessToken:      envOptionalString("BOT_ONEBOT_ACCESS_TOKEN"),
-		OneBotSelfID:           envString("BOT_SELF_ID", "life-ustc"),
+		HealthAddr:             envString("BOT_HEALTH_ADDR", "127.0.0.1:2282"),
 		NapCatAPIURL:           envTrimRight("NAPCAT_API_URL", "", "/"),
 		NapCatAccessToken:      envOptionalString("NAPCAT_ACCESS_TOKEN"),
 		NapCatWSURL:            envOptionalString("NAPCAT_WS_URL"),
@@ -84,7 +77,6 @@ func FromEnv() Config {
 		BuildVersion:           envString("BOT_BUILD_VERSION", "dev"),
 		PublicCommandCacheTTL:  time.Duration(envPositiveInt("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", 300)) * time.Second,
 		HTTPClientTimeout:      time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 60)) * time.Second,
-		EnableOneBotServer:     envBool("BOT_ENABLE_ONEBOT_SERVER", true),
 		EnableNapCatBridge:     envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
 		EnableQQBot:            envBool("BOT_ENABLE_QQ_BOT", hasQQBotCredentials()),
 		EnableQQBotGateway:     envBool("BOT_ENABLE_QQ_BOT_GATEWAY", true),
@@ -168,14 +160,6 @@ func envPositiveInt(key string, fallback int) int {
 		return fallback
 	}
 	return value
-}
-
-func envUint16(key string, fallback uint16) uint16 {
-	value, ok := envParsedInt(key)
-	if !ok || value <= 0 || value > int(^uint16(0)) {
-		return fallback
-	}
-	return uint16(value)
 }
 
 func envUint64(key string, fallback uint64) uint64 {

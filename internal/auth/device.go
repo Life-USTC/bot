@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/life"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 	"golang.org/x/oauth2"
@@ -86,6 +88,7 @@ type PollResult struct {
 	Pending    bool
 	SlowDown   bool
 	Authorized bool
+	Status     store.LoginStatus
 	Message    string
 }
 
@@ -245,6 +248,16 @@ func approvedRefreshResource(approved []string, resource string) (string, bool) 
 }
 
 func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (PollResult, error) {
+	return m.pollDeviceLogin(ctx, ident, false)
+}
+
+// PollDeviceLoginAndNotify is for the background poller. Terminal results are
+// atomically published to the durable outbox with the login transition.
+func (m *Manager) PollDeviceLoginAndNotify(ctx context.Context, ident store.Identity) (PollResult, error) {
+	return m.pollDeviceLogin(ctx, ident, true)
+}
+
+func (m *Manager) pollDeviceLogin(ctx context.Context, ident store.Identity, notify bool) (PollResult, error) {
 	authStore, err := m.requireStore()
 	if err != nil {
 		return PollResult{}, err
@@ -257,8 +270,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 		return PollResult{Message: "暂无进行中的登录。发送：登录"}, nil
 	}
 	if m.now().After(session.ExpiresAt) {
-		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "验证码已过期。发送：登录"}, nil
+		return m.finishLogin(ctx, ident, *session, store.LoginStatusExpired, nil, "验证码已过期。发送：登录", notify)
 	}
 
 	meta, err := m.discover(ctx)
@@ -270,8 +282,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	// manager-clock-relative expiration to a real future time.
 	remaining := session.ExpiresAt.Sub(m.now())
 	if remaining <= 0 {
-		_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-		return PollResult{Message: "验证码已过期。发送：登录"}, nil
+		return m.finishLogin(ctx, ident, *session, store.LoginStatusExpired, nil, "验证码已过期。发送：登录", notify)
 	}
 	pollTimeout := time.Duration(session.IntervalSeconds)*time.Second + 2*time.Second
 	if pollTimeout <= 0 {
@@ -286,7 +297,7 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	}
 	tok, err := m.deviceAccessToken(pollCtx, meta.TokenEndpoint, session.ClientID, session.DeviceCode, resources)
 	if err != nil {
-		return m.mapPollError(ctx, ident, *session, err)
+		return m.mapPollError(ctx, ident, *session, err, notify)
 	}
 
 	issuer := m.expectedIssuer(meta)
@@ -300,11 +311,52 @@ func (m *Manager) PollDeviceLogin(ctx context.Context, ident store.Identity) (Po
 	if err != nil {
 		return PollResult{}, err
 	}
-	if err := authStore.SaveCredential(ctx, ident, cred); err != nil {
+	return m.finishLogin(ctx, ident, *session, store.LoginStatusApproved, &cred, "登录完成。", notify)
+}
+
+func (m *Manager) finishLogin(
+	ctx context.Context,
+	ident store.Identity,
+	session store.LoginSession,
+	status store.LoginStatus,
+	credential *store.Credential,
+	resultMessage string,
+	notify bool,
+) (PollResult, error) {
+	transition := store.LoginTransition{Status: status, Credential: credential}
+	if notify && store.HasConversationTarget(ident) {
+		sum := sha256.Sum256([]byte(session.DeviceCode))
+		outbound := message.Outbound{
+			Kind: "login_result",
+			Target: message.Conversation{
+				Platform: ident.Platform,
+				Type:     ident.ConversationType,
+				ID:       ident.ConversationID,
+			},
+			Content: message.Content{Text: resultMessage},
+			DedupeKey: fmt.Sprintf(
+				"login:%s:%s:%s:%x:%s",
+				strings.ToLower(strings.TrimSpace(ident.Platform)),
+				strings.ToLower(strings.TrimSpace(ident.ConversationType)),
+				strings.TrimSpace(ident.ConversationID),
+				sum[:12],
+				status,
+			),
+		}
+		transition.Outbound = &outbound
+	}
+	transitioned, err := m.Store.TransitionLoginSession(ctx, ident, session.DeviceCode, transition)
+	if err != nil {
 		return PollResult{}, err
 	}
-	_ = authStore.MarkLoginSession(ctx, ident, session.DeviceCode, "approved")
-	return PollResult{Authorized: true, Message: "登录完成。"}, nil
+	if !transitioned {
+		return PollResult{Message: "登录状态已由系统处理，请留意最新消息。"}, nil
+	}
+	return PollResult{
+		Authorized: status == store.LoginStatusApproved,
+		Status:     status,
+		Message:    resultMessage,
+	}, nil
 }
 
 func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string, error) {
@@ -771,7 +823,7 @@ func (m *Manager) expectedIssuer(meta metadata) string {
 	return m.serverURL()
 }
 
-func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, session store.LoginSession, err error) (PollResult, error) {
+func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, session store.LoginSession, err error, notify bool) (PollResult, error) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return PollResult{Pending: true, Message: "等待确认登录。"}, nil
 	}
@@ -784,14 +836,11 @@ func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, sessio
 		case "slow_down":
 			return PollResult{SlowDown: true, Message: "轮询频率受限，稍后继续检查。"}, nil
 		case "expired_token":
-			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
-			return PollResult{Message: "验证码已过期。发送：登录"}, nil
+			return m.finishLogin(ctx, ident, session, store.LoginStatusExpired, nil, "验证码已过期。发送：登录", notify)
 		case "invalid_grant":
-			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "invalid")
-			return PollResult{Message: "登录已失效。发送：登录"}, nil
+			return m.finishLogin(ctx, ident, session, store.LoginStatusInvalid, nil, "登录已失效。发送：登录", notify)
 		case "access_denied":
-			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
-			return PollResult{Message: "登录已取消。发送：登录"}, nil
+			return m.finishLogin(ctx, ident, session, store.LoginStatusDenied, nil, "登录已取消。发送：登录", notify)
 		}
 
 		status := 0

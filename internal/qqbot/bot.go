@@ -21,8 +21,8 @@ import (
 	"github.com/tencent-connect/botgo/interaction/signature"
 	"github.com/tencent-connect/botgo/interaction/webhook"
 
-	"github.com/Life-USTC/Bot/internal/agent"
-	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/botapp"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -66,13 +66,10 @@ type Bot struct {
 	TokenURL   string
 	GatewayURL string
 	Intents    uint64
-	Handler    commands.Handler
-	Agent      *agent.Service
-	Dispatcher *agent.Dispatcher
+	App        botapp.Processor
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
-	Renderer   responses.Renderer
 	MediaStore *responses.MediaStore
 
 	tokenMu        sync.Mutex
@@ -166,8 +163,21 @@ type incomingMessage struct {
 	Text      string
 	ImageURLs []string
 	Identity  store.Identity
+}
 
-	replySeq uint64
+func (m *incomingMessage) inbound() message.Inbound {
+	if m == nil {
+		return message.Inbound{}
+	}
+	return message.Inbound{
+		Actor: message.Actor{Platform: m.Identity.Platform, UserID: m.Identity.UserID},
+		Conversation: message.Conversation{
+			Platform: m.Identity.Platform, Type: m.Identity.ConversationType, ID: m.Identity.ConversationID,
+		},
+		Source: message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
+		Text:   m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
+	}
 }
 
 type sendMessageRequest struct {
@@ -197,6 +207,15 @@ func (e qqBotHTTPStatusError) Error() string {
 type uncertainSendError struct {
 	err error
 }
+
+// preSendError marks a failure that happened before a message-send request was
+// issued. Retrying it cannot duplicate a platform message.
+type preSendError struct {
+	err error
+}
+
+func (e preSendError) Error() string { return e.err.Error() }
+func (e preSendError) Unwrap() error { return e.err }
 
 func (e uncertainSendError) Error() string {
 	return e.err.Error()
@@ -534,20 +553,7 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			message.Identity.UserID,
 			message.Identity.ConversationID,
 		)
-		if b.Dispatcher != nil {
-			b.dispatchMessage(ctx, message)
-			return
-		}
-		reply, ok := b.handleMessage(ctx, message)
-		if !ok {
-			b.logf("QQ bot ignored message: event=%s", payload.T)
-			return
-		}
-		if err := b.SendResponse(ctx, message, reply); err != nil {
-			b.logf("send QQ bot reply failed: %v", err)
-			return
-		}
-		b.logf("QQ bot replied: event=%s conversation_type=%s conversation_id=%q", payload.T, message.Identity.ConversationType, message.Identity.ConversationID)
+		b.processInbound(ctx, message)
 	case "INTERACTION_CREATE":
 		b.handleInteraction(ctx, payload)
 	default:
@@ -570,20 +576,7 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 	if err := b.ackInteraction(ctx, message.EventID, 0); err != nil {
 		b.logf("ack QQ bot interaction failed: %v", err)
 	}
-	if b.Dispatcher != nil {
-		b.dispatchMessage(ctx, message)
-		return
-	}
-	reply, ok := b.handleMessage(ctx, message)
-	if !ok {
-		b.logf("QQ bot ignored interaction: type=%s", message.Type)
-		return
-	}
-	if err := b.SendResponse(ctx, message, reply); err != nil {
-		b.logf("send QQ bot interaction reply failed: %v", err)
-		return
-	}
-	b.logf("QQ bot replied to interaction: type=%s conversation_type=%s conversation_id=%q", message.Type, message.Identity.ConversationType, message.Identity.ConversationID)
+	b.processInbound(ctx, message)
 }
 
 func (b *Bot) interactionFromPayload(payload gatewayPayload) (*incomingMessage, error) {
@@ -778,84 +771,15 @@ func (b *Bot) cleanContent(content string) string {
 	return strings.TrimSpace(content)
 }
 
-func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
-		Text:     message.Text,
-		Identity: message.Identity,
-	})
-	if !ok {
-		agentReply, agentOK := b.handleAgent(ctx, message)
-		if agentOK {
-			return agentReply, true
-		}
-	}
-	if !ok {
-		b.recordIgnored(ctx, message)
-		return commands.Response{}, false
-	}
-	return reply, true
-}
-
-func (b *Bot) dispatchMessage(ctx context.Context, message *incomingMessage) {
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{Text: message.Text, Identity: message.Identity})
-	if ok {
-		b.sendDispatchedResponse(ctx, message, reply)
+func (b *Bot) processInbound(ctx context.Context, incoming *incomingMessage) {
+	if incoming == nil {
 		return
 	}
-	b.Dispatcher.Submit(b.agentInput(message), func(ctx context.Context, input agent.Input, reply commands.Response, ok bool) {
-		mergedMessage := *message
-		mergedMessage.Text = input.Text
-		mergedMessage.ImageURLs = input.ImageURLs
-		if !ok {
-			b.recordIgnored(ctx, &mergedMessage)
-			b.logf("QQ bot ignored message: event=%s", mergedMessage.Type)
-			return
-		}
-		b.recordAgentResponse(ctx, &mergedMessage, reply)
-		b.sendDispatchedResponse(ctx, &mergedMessage, reply)
-	})
-}
-
-func (b *Bot) sendDispatchedResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
-	if err := b.SendResponse(ctx, message, reply); err != nil {
-		b.logf("send QQ bot reply failed: %v", err)
+	if b.App == nil {
+		b.logf("QQ bot inbound application is unavailable")
 		return
 	}
-	b.logf("QQ bot replied: event=%s conversation_type=%s conversation_id=%q",
-		message.Type, message.Identity.ConversationType, message.Identity.ConversationID)
-}
-
-func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
-	if b.Agent == nil {
-		return commands.Response{}, false
-	}
-	reply, ok := b.Agent.HandleResponse(ctx, b.agentInput(message))
-	if !ok {
-		return commands.Response{}, false
-	}
-	b.recordAgentResponse(ctx, message, reply)
-	return reply, true
-}
-
-func (b *Bot) agentInput(message *incomingMessage) agent.Input {
-	return agent.Input{
-		Text:      message.Text,
-		ImageURLs: message.ImageURLs,
-		Identity:  message.Identity,
-		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
-			return b.Send(ctx, message, update)
-		},
-	}
-}
-
-func (b *Bot) recordAgentResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
-	b.recordInteraction(ctx, message.Identity, store.Interaction{
-		RawText: message.Text,
-		Command: "agent",
-		Handled: true,
-		Reply:   reply.Text,
-		Status:  store.InteractionStatusHandled,
-	}, "agent")
+	b.App.Process(ctx, incoming.inbound())
 }
 
 func attachmentImageURLs(attachments []map[string]any) []string {
@@ -876,96 +800,6 @@ func attachmentImageURLs(attachments []map[string]any) []string {
 	return urls
 }
 
-func (b *Bot) Send(ctx context.Context, message *incomingMessage, text string) error {
-	if message == nil {
-		return errors.New("qq bot message is nil")
-	}
-	outgoing := qqBotOutgoingMessage(message.Identity, text)
-	receipt, err := b.sendTo(ctx, message.Identity, outgoing, message.ID, message.EventID, message.nextReplySeq())
-	b.recordOutbound(ctx, message.Identity, outgoing, receipt, err)
-	return err
-}
-
-func (b *Bot) SendResponse(ctx context.Context, message *incomingMessage, response commands.Response) error {
-	if message == nil {
-		return errors.New("qq bot message is nil")
-	}
-	if len(response.Parts) > 0 {
-		for _, part := range response.Parts {
-			if err := b.SendResponse(ctx, message, part); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if response.Image != nil && b.MediaStore != nil {
-		if receipt, err := b.sendImageResponse(ctx, message, response); err == nil {
-			b.recordOutbound(ctx, message.Identity, response.Text, receipt, nil)
-			return nil
-		} else if isUncertainSendError(err) {
-			b.recordOutbound(ctx, message.Identity, response.Text, store.MessageAcceptance{}, err)
-			return err
-		} else {
-			b.logf("QQ bot image response failed: %v", err)
-		}
-	}
-	return b.Send(ctx, message, response.Text)
-}
-
-func (b *Bot) sendImageResponse(ctx context.Context, message *incomingMessage, response commands.Response) (store.MessageAcceptance, error) {
-	imageURL, err := b.prepareImageURL(response.Image)
-	if err != nil {
-		return store.MessageAcceptance{}, err
-	}
-	return b.sendCachedRichMedia(ctx, message.Identity, imageURL, message.ID, message.EventID, message.nextReplySeq())
-}
-
-func (b *Bot) prepareImageURL(img *responses.Image) (string, error) {
-	if img.URL != "" {
-		return img.URL, nil
-	}
-	data, _, _, err := b.Renderer.RenderPNG(img)
-	if err != nil {
-		return "", err
-	}
-	return b.MediaStore.PutImagePNG(img, data)
-}
-
-func (b *Bot) SendLoginMessage(ctx context.Context, ident store.Identity, message string) error {
-	return b.SendMessage(ctx, ident, message)
-}
-
-func (b *Bot) SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error {
-	if image != nil && b.MediaStore != nil {
-		imageURL, err := b.prepareImageURL(image)
-		if err == nil {
-			var receipt store.MessageAcceptance
-			receipt, err = b.sendCachedRichMedia(ctx, ident, imageURL, "", "", 0)
-			if err == nil {
-				b.recordOutbound(ctx, ident, message, receipt, nil)
-				return nil
-			}
-		}
-		if isUncertainSendError(err) {
-			b.recordOutbound(ctx, ident, message, store.MessageAcceptance{}, err)
-			return err
-		}
-		b.logf("QQ bot proactive image response failed: %v", err)
-	}
-	return b.SendMessage(ctx, ident, message)
-}
-
-func (b *Bot) SendMessage(ctx context.Context, ident store.Identity, message string) error {
-	outgoing := qqBotOutgoingMessage(ident, message)
-	receipt, err := b.sendTo(ctx, ident, outgoing, "", "", 0)
-	b.recordOutbound(ctx, ident, outgoing, receipt, err)
-	return err
-}
-
-func (m *incomingMessage) nextReplySeq() int {
-	return int(atomic.AddUint64(&m.replySeq, 1))
-}
-
 func qqBotOutgoingMessage(ident store.Identity, message string) string {
 	if !store.IsGroupConversation(ident) {
 		return message
@@ -976,11 +810,11 @@ func qqBotOutgoingMessage(ident store.Identity, message string) string {
 func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageURL string) (richMediaUploadResponse, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	path, err := richMediaUploadPath(ident)
 	if err != nil {
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	var out richMediaUploadResponse
 	startedAt := time.Now()
@@ -992,26 +826,27 @@ func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageUR
 	if err != nil {
 		b.logf("QQ bot media upload failed: conversation_type=%q upload_ms=%d error=%v",
 			ident.ConversationType, time.Since(startedAt).Milliseconds(), err)
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	if len(out.FileInfo) == 0 {
-		return richMediaUploadResponse{}, errors.New("qq bot rich media upload missing file_info")
+		return richMediaUploadResponse{}, preSendError{err: errors.New("qq bot rich media upload missing file_info")}
 	}
 	b.logf("QQ bot media uploaded: conversation_type=%q ttl_seconds=%d upload_ms=%d",
 		ident.ConversationType, out.TTL, time.Since(startedAt).Milliseconds())
 	return out, nil
 }
 
-func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
+func (b *Bot) sendRichMediaContentTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, content, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	body := sendMessageRequest{
+		Content: strings.TrimSpace(content),
 		MsgType: 7,
 		Media:   &mediaInfo{FileInfo: fileInfo},
 	}
@@ -1050,11 +885,11 @@ func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, 
 	}
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	body := sendMessageRequest{
 		Content: message,
@@ -1337,59 +1172,9 @@ func (b *Bot) httpClient() *http.Client {
 	return &http.Client{Timeout: 15 * time.Second}
 }
 
-func (b *Bot) recordIgnored(ctx context.Context, message *incomingMessage) {
-	if message == nil {
-		return
-	}
-	b.recordInteraction(ctx, message.Identity, store.Interaction{
-		RawText: message.Text,
-		Handled: false,
-		Status:  store.InteractionStatusIgnored,
-	}, "ignored")
-}
-
-func (b *Bot) recordOutbound(ctx context.Context, ident store.Identity, message string, receipt store.MessageAcceptance, err error) {
-	errText := ""
-	status := store.InteractionStatusAccepted
-	if err != nil {
-		errText = err.Error()
-		status = store.InteractionStatusFailed
-		if isUncertainSendError(err) {
-			status = store.InteractionStatusUnknown
-		}
-	}
-	b.recordInteraction(ctx, ident, store.Interaction{
-		Direction:         store.InteractionDirectionOutbound,
-		RawText:           message,
-		Handled:           true,
-		Status:            status,
-		Error:             errText,
-		PlatformMessageID: receipt.PlatformMessageID,
-		DeliveryMethod:    receipt.DeliveryMethod,
-		SourceMessageID:   receipt.SourceMessageID,
-		AcceptedAt:        receipt.AcceptedAt,
-	}, "outbound")
-	if err != nil {
-		b.logf("QQ bot message %s: conversation_type=%q conversation_id=%q error=%v",
-			status, ident.ConversationType, ident.ConversationID, err)
-		return
-	}
-	b.logf("QQ bot message accepted: conversation_type=%q conversation_id=%q message_id=%q delivery_method=%q source_message_id=%q",
-		ident.ConversationType, ident.ConversationID, receipt.PlatformMessageID, receipt.DeliveryMethod, receipt.SourceMessageID)
-}
-
 func isUncertainSendError(err error) bool {
 	var target uncertainSendError
 	return errors.As(err, &target)
-}
-
-func (b *Bot) recordInteraction(ctx context.Context, ident store.Identity, interaction store.Interaction, label string) {
-	if b.Handler.Store == nil {
-		return
-	}
-	if err := b.Handler.Store.RecordInteraction(ctx, ident, interaction); err != nil {
-		b.logf("record QQ bot %s interaction failed: %v", label, err)
-	}
 }
 
 func (b *Bot) logf(format string, args ...any) {

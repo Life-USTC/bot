@@ -33,10 +33,10 @@ type qqMediaLookup struct {
 	uploader *byte
 }
 
-func (b *Bot) sendCachedRichMedia(
+func (b *Bot) sendCachedRichMediaContent(
 	ctx context.Context,
 	ident store.Identity,
-	imageURL, msgID, eventID string,
+	imageURL, content, msgID, eventID string,
 	msgSeq int,
 ) (store.MessageAcceptance, error) {
 	key, err := qqMediaCacheKey(ident, imageURL)
@@ -48,7 +48,7 @@ func (b *Bot) sendCachedRichMedia(
 		return store.MessageAcceptance{}, err
 	}
 	startedAt := time.Now()
-	receipt, err := b.sendRichMediaTo(ctx, ident, lookup.entry.fileInfo, msgID, eventID, msgSeq)
+	receipt, err := b.sendRichMediaContentTo(ctx, ident, lookup.entry.fileInfo, content, msgID, eventID, msgSeq)
 	if err == nil {
 		if lookup.hit {
 			receipt.DeliveryMethod = store.DeliveryMethodMediaCache
@@ -59,7 +59,7 @@ func (b *Bot) sendCachedRichMedia(
 			ident.ConversationType, receipt.DeliveryMethod, time.Since(startedAt).Milliseconds())
 		return receipt, nil
 	}
-	if !lookup.hit || isUncertainSendError(err) {
+	if !lookup.hit || isUncertainSendError(err) || !isQQMediaCacheRejection(err) {
 		return store.MessageAcceptance{}, err
 	}
 
@@ -70,7 +70,7 @@ func (b *Bot) sendCachedRichMedia(
 		return store.MessageAcceptance{}, err
 	}
 	startedAt = time.Now()
-	receipt, err = b.sendRichMediaTo(ctx, ident, refreshed.fileInfo, msgID, eventID, msgSeq)
+	receipt, err = b.sendRichMediaContentTo(ctx, ident, refreshed.fileInfo, content, msgID, eventID, msgSeq)
 	if err != nil {
 		return store.MessageAcceptance{}, err
 	}
@@ -78,6 +78,11 @@ func (b *Bot) sendCachedRichMedia(
 	b.logf("QQ bot media sent after refresh: conversation_type=%q delivery_method=%q send_ms=%d",
 		ident.ConversationType, receipt.DeliveryMethod, time.Since(startedAt).Milliseconds())
 	return receipt, nil
+}
+
+func isQQMediaCacheRejection(err error) bool {
+	var statusErr qqBotHTTPStatusError
+	return errors.As(err, &statusErr) && isPermanentHTTPStatus(statusErr.status)
 }
 
 func (b *Bot) cachedOrUploadRichMedia(

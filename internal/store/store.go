@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +16,8 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -48,6 +52,23 @@ type LoginSession struct {
 	// Resources is a space-separated list of OAuth resource indicators requested
 	// during device authorization.
 	Resources string
+}
+
+type LoginStatus string
+
+const (
+	LoginStatusPending    LoginStatus = "pending"
+	LoginStatusApproved   LoginStatus = "approved"
+	LoginStatusExpired    LoginStatus = "expired"
+	LoginStatusDenied     LoginStatus = "denied"
+	LoginStatusInvalid    LoginStatus = "invalid"
+	LoginStatusSuperseded LoginStatus = "superseded"
+)
+
+type LoginTransition struct {
+	Status     LoginStatus
+	Credential *Credential
+	Outbound   *message.Outbound
 }
 
 type Interaction struct {
@@ -150,19 +171,16 @@ type ConversationSummary struct {
 }
 
 type FeedbackRecord struct {
-	ID          int64
-	Identity    Identity
-	Source      string
-	Category    string
-	Content     string
-	Context     string
-	Status      string
-	SentToAdmin bool
-	Resolved    bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	SentAt      *time.Time
-	ResolvedAt  *time.Time
+	ID         int64
+	Identity   Identity
+	Source     string
+	Category   string
+	Content    string
+	Context    string
+	Status     string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	ResolvedAt *time.Time
 }
 
 type PendingConfirmation struct {
@@ -187,10 +205,11 @@ type PublicCommandCacheEntry struct {
 }
 
 const (
-	AgentRunStatusStarted   = "started"
-	AgentRunStatusCompleted = "completed"
-	AgentRunStatusFailed    = "failed"
-	AgentRunStatusIgnored   = "ignored"
+	AgentRunStatusStarted     = "started"
+	AgentRunStatusCompleted   = "completed"
+	AgentRunStatusFailed      = "failed"
+	AgentRunStatusIgnored     = "ignored"
+	AgentRunStatusInterrupted = "interrupted"
 
 	FeedbackStatusOpen     = "open"
 	FeedbackStatusResolved = "resolved"
@@ -339,18 +358,6 @@ func (busSettingRow) TableName() string {
 	return "bus_settings"
 }
 
-type notificationDeliveryRow struct {
-	ID        int64  `gorm:"primaryKey"`
-	UserID    int64  `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	Kind      string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	ItemKey   string `gorm:"not null;uniqueIndex:idx_notification_deliveries_user_kind_key"`
-	CreatedAt time.Time
-}
-
-func (notificationDeliveryRow) TableName() string {
-	return "notification_deliveries"
-}
-
 type agentRunRow struct {
 	ID               int64  `gorm:"primaryKey"`
 	UserID           int64  `gorm:"not null;index"`
@@ -407,12 +414,36 @@ type feedbackRecordRow struct {
 	Content          string `gorm:"not null"`
 	Context          string
 	Status           string `gorm:"not null;index"`
-	SentToAdmin      bool   `gorm:"not null"`
-	Resolved         bool   `gorm:"not null"`
-	SentAt           *time.Time
 	ResolvedAt       *time.Time
 	CreatedAt        time.Time `gorm:"index:idx_feedback_records_conversation_created"`
 	UpdatedAt        time.Time
+}
+
+type outgoingMessageRow struct {
+	ID                int64      `gorm:"primaryKey"`
+	DedupeKey         string     `gorm:"not null;uniqueIndex"`
+	Kind              string     `gorm:"not null;index"`
+	Platform          string     `gorm:"not null;index:idx_outgoing_messages_due"`
+	ConversationType  string     `gorm:"not null"`
+	ConversationID    string     `gorm:"not null"`
+	PayloadJSON       string     `gorm:"not null"`
+	Status            string     `gorm:"not null;index:idx_outgoing_messages_due"`
+	Attempts          int        `gorm:"not null;default:0"`
+	NextAttemptAt     *time.Time `gorm:"index:idx_outgoing_messages_due"`
+	AttemptStartedAt  *time.Time
+	ExpiresAt         *time.Time `gorm:"index"`
+	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
+	ErrorCode         string
+	ErrorMessage      string
+	AcceptedAt        *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func (outgoingMessageRow) TableName() string {
+	return "outgoing_messages"
 }
 
 func (feedbackRecordRow) TableName() string {
@@ -487,11 +518,19 @@ func (s *Store) Close() error {
 	return db.Close()
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	db, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return db.PingContext(ctx)
+}
+
 func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
 	}
-	return s.db.AutoMigrate(
+	if err := s.db.AutoMigrate(
 		&userRow{},
 		&credentialRow{},
 		&loginSessionRow{},
@@ -500,13 +539,31 @@ func (s *Store) migrate() error {
 		&notificationSettingRow{},
 		&agentSettingRow{},
 		&busSettingRow{},
-		&notificationDeliveryRow{},
 		&agentRunRow{},
 		&conversationSummaryRow{},
 		&feedbackRecordRow{},
+		&outgoingMessageRow{},
 		&pendingConfirmationRow{},
 		&publicCommandCacheRow{},
-	)
+	); err != nil {
+		return err
+	}
+	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+		if s.db.Migrator().HasColumn("feedback_records", column) {
+			if err := s.db.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
+				return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+			}
+		}
+	}
+	// notify_failed mixed delivery state into the login domain. Credentials were
+	// already saved for these sessions, so close them without replaying a stale
+	// completion notification.
+	if err := s.db.Model(&loginSessionRow{}).
+		Where("status = ?", "notify_failed").
+		Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
+		return fmt.Errorf("normalize obsolete login status: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
@@ -584,21 +641,24 @@ func (s *Store) EnsureUser(ctx context.Context, ident Identity) (int64, error) {
 		return 0, err
 	}
 	ident = normalizeIdentity(ident)
-	now := nowUTC()
+	return ensureUser(s.db.WithContext(ctx), ident, nowUTC())
+}
+
+func ensureUser(db *gorm.DB, ident Identity, now time.Time) (int64, error) {
 	user := userRow{
 		Platform:       ident.Platform,
 		ExternalUserID: ident.UserID,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "platform"}, {Name: "external_user_id"}},
 		DoUpdates: clause.Assignments(map[string]any{"updated_at": now}),
 	}).Create(&user).Error
 	if err != nil {
 		return 0, err
 	}
-	err = s.db.WithContext(ctx).
+	err = db.
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID).
 		First(&user).Error
 	return user.ID, err
@@ -695,18 +755,17 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 	if err != nil {
 		return err
 	}
+	return saveCredentialWithDB(s.db.WithContext(ctx), userID, cred, nowUTC())
+}
+
+func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.Time) error {
 	row := credentialRow{
-		UserID:       userID,
-		ClientID:     cred.ClientID,
-		AccessToken:  cred.AccessToken,
-		RefreshToken: cred.RefreshToken,
-		TokenType:    cred.TokenType,
-		ExpiresAt:    cred.ExpiresAt.UTC(),
-		Scope:        cred.Scope,
-		Resource:     cred.Resource,
-		UpdatedAt:    nowUTC(),
+		UserID: userID, ClientID: cred.ClientID, AccessToken: cred.AccessToken,
+		RefreshToken: cred.RefreshToken, TokenType: cred.TokenType,
+		ExpiresAt: cred.ExpiresAt.UTC(), Scope: cred.Scope, Resource: cred.Resource,
+		UpdatedAt: now,
 	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"client_id",
@@ -788,8 +847,8 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	now := nowUTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&loginSessionRow{}).
-			Where("user_id = ? AND status IN ?", userID, activeLoginSessionStatuses()).
-			Updates(map[string]any{"status": "superseded", "updated_at": now}).Error; err != nil {
+			Where("user_id = ? AND status = ?", userID, string(LoginStatusPending)).
+			Updates(map[string]any{"status": string(LoginStatusSuperseded), "updated_at": now}).Error; err != nil {
 			return err
 		}
 		row := loginSessionRow{
@@ -830,6 +889,9 @@ func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
 	}
 	if session.Status == "" {
 		return LoginSession{}, errors.New("login session status is empty")
+	}
+	if session.Status != string(LoginStatusPending) {
+		return LoginSession{}, fmt.Errorf("new login session status must be %q", LoginStatusPending)
 	}
 	return session, nil
 }
@@ -875,7 +937,7 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	var rows []loginSessionRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = login_sessions.user_id").
-		Where("login_sessions.status IN ?", activeLoginSessionStatuses()).
+		Where("login_sessions.status = ?", string(LoginStatusPending)).
 		Order("login_sessions.id ASC").
 		Find(&rows).Error
 	if err != nil {
@@ -913,37 +975,78 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	return sessions, nil
 }
 
-func activeLoginSessionStatuses() []string {
-	return []string{"pending", "notify_failed"}
-}
-
-func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode, status string) error {
-	deviceCode, status, err := normalizeLoginSessionUpdate(deviceCode, status)
-	if err != nil {
-		return err
+// TransitionLoginSession atomically commits a pending login's terminal state,
+// optional credential, and optional durable result message. A false return
+// means another actor already completed or superseded the session.
+func (s *Store) TransitionLoginSession(
+	ctx context.Context,
+	ident Identity,
+	deviceCode string,
+	transition LoginTransition,
+) (bool, error) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return false, errors.New("login session device code is empty")
+	}
+	if !terminalLoginStatus(transition.Status) {
+		return false, fmt.Errorf("invalid terminal login status %q", transition.Status)
+	}
+	if transition.Status == LoginStatusApproved && transition.Credential == nil {
+		return false, errors.New("approved login transition requires a credential")
+	}
+	if transition.Status != LoginStatusApproved && transition.Credential != nil {
+		return false, errors.New("only approved login transition may save a credential")
+	}
+	var credential Credential
+	var err error
+	if transition.Credential != nil {
+		credential, err = normalizeCredentialForSave(*transition.Credential)
+		if err != nil {
+			return false, err
+		}
 	}
 	userID, ok, err := s.userID(ctx, ident)
-	if err != nil {
-		return err
+	if err != nil || !ok {
+		return false, err
 	}
-	if !ok {
+	now := nowUTC()
+	transitioned := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&loginSessionRow{}).
+			Where("user_id = ? AND device_code = ? AND status = ?", userID, deviceCode, string(LoginStatusPending)).
+			Updates(map[string]any{"status": string(transition.Status), "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		transitioned = true
+		if transition.Credential != nil {
+			if err := saveCredentialWithDB(tx, userID, credential, now); err != nil {
+				return err
+			}
+		}
+		if transition.Outbound != nil {
+			if _, _, err := enqueueWithDB(tx, *transition.Outbound, now); err != nil {
+				return err
+			}
+		}
 		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
-		Where("user_id = ? AND device_code = ?", userID, deviceCode).
-		Updates(map[string]any{"status": status, "updated_at": nowUTC()}).Error
+	return transitioned, err
 }
 
-func normalizeLoginSessionUpdate(deviceCode, status string) (string, string, error) {
-	deviceCode = strings.TrimSpace(deviceCode)
-	status = strings.TrimSpace(status)
-	if deviceCode == "" {
-		return "", "", errors.New("login session device code is empty")
+func terminalLoginStatus(status LoginStatus) bool {
+	switch status {
+	case LoginStatusApproved, LoginStatusExpired, LoginStatusDenied, LoginStatusInvalid:
+		return true
+	default:
+		return false
 	}
-	if status == "" {
-		return "", "", errors.New("login session status is empty")
-	}
-	return deviceCode, status, nil
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {
@@ -1211,6 +1314,20 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 		}).Error
 }
 
+// InterruptStartedAgentRuns closes runs left open by a previous process. It is
+// intended to run once during startup before new agent work is accepted.
+func (s *Store) InterruptStartedAgentRuns(ctx context.Context) (int64, error) {
+	now := nowUTC()
+	result := s.db.WithContext(ctx).Model(&agentRunRow{}).
+		Where("status = ?", AgentRunStatusStarted).
+		Updates(map[string]any{
+			"status":     AgentRunStatusInterrupted,
+			"error":      "process interrupted",
+			"updated_at": now,
+		})
+	return result.RowsAffected, result.Error
+}
+
 func (s *Store) ConversationSpending(ctx context.Context, ident Identity) (AgentSpending, error) {
 	if err := validateConversationIdentity(ident); err != nil {
 		return AgentSpending{}, err
@@ -1245,64 +1362,273 @@ func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {
 	return total, err
 }
 
-func (s *Store) RecordFeedback(ctx context.Context, ident Identity, feedback FeedbackRecord) (int64, error) {
+func (s *Store) CreateFeedbackWithOutbounds(
+	ctx context.Context,
+	ident Identity,
+	feedback FeedbackRecord,
+	buildOutbounds func(int64) []message.Outbound,
+) (int64, int, error) {
 	if err := validateConversationIdentity(ident); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	ident = normalizeIdentity(ident)
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return 0, err
-	}
 	source := textutil.LowerTrim(feedback.Source)
-	if source == "" {
-		source = "user"
+	if source != "user" && source != "llm" {
+		return 0, 0, fmt.Errorf("invalid feedback source %q", source)
 	}
 	status := textutil.LowerTrim(feedback.Status)
 	if status == "" {
 		status = FeedbackStatusOpen
 	}
+	if status != FeedbackStatusOpen && status != FeedbackStatusResolved {
+		return 0, 0, fmt.Errorf("invalid feedback status %q", status)
+	}
 	content := strings.TrimSpace(feedback.Content)
 	if content == "" {
-		return 0, errors.New("feedback content is empty")
+		return 0, 0, errors.New("feedback content is empty")
 	}
 	now := nowUTC()
-	row := feedbackRecordRow{
-		UserID:           userID,
-		Platform:         ident.Platform,
-		ExternalUserID:   ident.UserID,
-		ConversationType: ident.ConversationType,
-		ConversationID:   ident.ConversationID,
-		Source:           source,
-		Category:         strings.TrimSpace(feedback.Category),
-		Content:          content,
-		Context:          strings.TrimSpace(feedback.Context),
-		Status:           status,
-		SentToAdmin:      feedback.SentToAdmin,
-		Resolved:         feedback.Resolved,
-		SentAt:           feedback.SentAt,
-		ResolvedAt:       feedback.ResolvedAt,
+	var row feedbackRecordRow
+	intentCount := 0
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userID, err := ensureUser(tx, ident, now)
+		if err != nil {
+			return err
+		}
+		row = feedbackRecordRow{
+			UserID:           userID,
+			Platform:         ident.Platform,
+			ExternalUserID:   ident.UserID,
+			ConversationType: ident.ConversationType,
+			ConversationID:   ident.ConversationID,
+			Source:           source,
+			Category:         strings.TrimSpace(feedback.Category),
+			Content:          content,
+			Context:          strings.TrimSpace(feedback.Context),
+			Status:           status,
+			ResolvedAt:       feedback.ResolvedAt,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		if buildOutbounds == nil {
+			return nil
+		}
+		for _, outbound := range buildOutbounds(row.ID) {
+			_, created, err := enqueueWithDB(tx, outbound, now)
+			if err != nil {
+				return err
+			}
+			if created {
+				intentCount++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return row.ID, intentCount, nil
+}
+
+func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
+	return enqueueWithDB(s.db.WithContext(ctx), outbound, nowUTC())
+}
+
+func enqueueWithDB(db *gorm.DB, outbound message.Outbound, now time.Time) (delivery.Record, bool, error) {
+	if strings.TrimSpace(outbound.DedupeKey) == "" {
+		return delivery.Record{}, false, errors.New("outgoing message dedupe key is empty")
+	}
+	if strings.TrimSpace(outbound.Target.Platform) == "" || strings.TrimSpace(outbound.Target.Type) == "" || strings.TrimSpace(outbound.Target.ID) == "" {
+		return delivery.Record{}, false, errors.New("outgoing message target is incomplete")
+	}
+	if strings.TrimSpace(outbound.Content.Text) == "" && outbound.Content.Attachment == nil {
+		return delivery.Record{}, false, errors.New("outgoing message content is empty")
+	}
+	payload, err := json.Marshal(outbound)
+	if err != nil {
+		return delivery.Record{}, false, fmt.Errorf("encode outgoing message: %w", err)
+	}
+	row := outgoingMessageRow{
+		DedupeKey:        strings.TrimSpace(outbound.DedupeKey),
+		Kind:             strings.ToLower(strings.TrimSpace(outbound.Kind)),
+		Platform:         strings.ToLower(strings.TrimSpace(outbound.Target.Platform)),
+		ConversationType: strings.ToLower(strings.TrimSpace(outbound.Target.Type)),
+		ConversationID:   strings.TrimSpace(outbound.Target.ID),
+		PayloadJSON:      string(payload),
+		Status:           string(delivery.StatusPending),
+		NextAttemptAt:    &now,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return 0, err
+	if !outbound.ExpiresAt.IsZero() {
+		expiresAt := outbound.ExpiresAt.UTC()
+		row.ExpiresAt = &expiresAt
 	}
-	return row.ID, nil
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	if result.Error != nil {
+		return delivery.Record{}, false, result.Error
+	}
+	created := result.RowsAffected == 1
+	if !created {
+		if err := db.Where("dedupe_key = ?", row.DedupeKey).First(&row).Error; err != nil {
+			return delivery.Record{}, false, err
+		}
+	}
+	record, err := outgoingMessageRecord(row)
+	return record, created, err
 }
 
-func (s *Store) MarkFeedbackSent(ctx context.Context, id int64) error {
-	if id <= 0 {
+func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]delivery.Record, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	now = now.UTC()
+	records := make([]delivery.Record, 0, limit)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []outgoingMessageRow
+		if err := tx.Where(
+			"status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (expires_at IS NULL OR expires_at > ?)",
+			[]string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, now, now,
+		).Order("id ASC").Limit(limit).Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := range rows {
+			row := &rows[i]
+			result := tx.Model(&outgoingMessageRow{}).
+				Where("id = ? AND status IN ?", row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}).
+				Updates(map[string]any{
+					"status":             string(delivery.StatusDelivering),
+					"attempts":           gorm.Expr("attempts + 1"),
+					"attempt_started_at": now,
+					"updated_at":         now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			row.Status = string(delivery.StatusDelivering)
+			row.Attempts++
+			row.AttemptStartedAt = &now
+			record, err := outgoingMessageRecord(*row)
+			if err != nil {
+				return err
+			}
+			records = append(records, record)
+		}
 		return nil
+	})
+	return records, err
+}
+
+func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome, nextAttemptAt time.Time) error {
+	if id <= 0 {
+		return errors.New("outgoing message id must be positive")
 	}
 	now := nowUTC()
-	return s.db.WithContext(ctx).Model(&feedbackRecordRow{}).
-		Where("id = ?", id).
+	status := delivery.StatusUnknown
+	switch outcome.State {
+	case delivery.OutcomeAccepted:
+		status = delivery.StatusAccepted
+	case delivery.OutcomeRetryable:
+		status = delivery.StatusRetryWait
+	case delivery.OutcomeRejected:
+		status = delivery.StatusRejected
+	case delivery.OutcomeUnknown:
+		status = delivery.StatusUnknown
+	}
+	errorMessage := ""
+	if outcome.Err != nil {
+		errorMessage = outcome.Err.Error()
+		if len(errorMessage) > 4000 {
+			errorMessage = errorMessage[:4000]
+		}
+	}
+	updates := map[string]any{
+		"status":              string(status),
+		"next_attempt_at":     nil,
+		"attempt_started_at":  nil,
+		"platform_message_id": strings.TrimSpace(outcome.Receipt.PlatformMessageID),
+		"delivery_method":     strings.TrimSpace(outcome.Receipt.DeliveryMethod),
+		"source_message_id":   strings.TrimSpace(outcome.Receipt.SourceMessageID),
+		"error_code":          strings.TrimSpace(outcome.Code),
+		"error_message":       errorMessage,
+		"updated_at":          now,
+	}
+	if status == delivery.StatusRetryWait && !nextAttemptAt.IsZero() {
+		updates["next_attempt_at"] = nextAttemptAt.UTC()
+	}
+	if status == delivery.StatusAccepted {
+		acceptedAt := outcome.Receipt.AcceptedAt.UTC()
+		if acceptedAt.IsZero() {
+			acceptedAt = now
+		}
+		updates["accepted_at"] = acceptedAt
+	}
+	result := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("outgoing message %d is not delivering", id)
+	}
+	return nil
+}
+
+func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
+	now = now.UTC()
+	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("status IN ? AND expires_at IS NOT NULL AND expires_at <= ?",
+			[]string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, now).
 		Updates(map[string]any{
-			"sent_to_admin": true,
-			"sent_at":       &now,
-			"updated_at":    now,
+			"status":     string(delivery.StatusExpired),
+			"error_code": "expired",
+			"updated_at": now,
 		}).Error
+}
+
+func (s *Store) RecoverStale(ctx context.Context, before time.Time) error {
+	now := nowUTC()
+	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("status = ? AND attempt_started_at IS NOT NULL AND attempt_started_at <= ?", string(delivery.StatusDelivering), before.UTC()).
+		Updates(map[string]any{
+			"status":             string(delivery.StatusUnknown),
+			"attempt_started_at": nil,
+			"error_code":         "worker_interrupted",
+			"error_message":      "delivery worker stopped while the platform outcome was unknown",
+			"updated_at":         now,
+		}).Error
+}
+
+func outgoingMessageRecord(row outgoingMessageRow) (delivery.Record, error) {
+	var outbound message.Outbound
+	if err := json.Unmarshal([]byte(row.PayloadJSON), &outbound); err != nil {
+		return delivery.Record{}, fmt.Errorf("decode outgoing message %d: %w", row.ID, err)
+	}
+	return delivery.Record{
+		ID:               row.ID,
+		Message:          outbound,
+		Status:           delivery.Status(row.Status),
+		Attempts:         row.Attempts,
+		NextAttemptAt:    dereferenceTime(row.NextAttemptAt),
+		AttemptStartedAt: dereferenceTime(row.AttemptStartedAt),
+		Receipt: message.Receipt{
+			PlatformMessageID: row.PlatformMessageID,
+			DeliveryMethod:    row.DeliveryMethod,
+			SourceMessageID:   row.SourceMessageID,
+			AcceptedAt:        dereferenceTime(row.AcceptedAt),
+		},
+		ErrorCode:    row.ErrorCode,
+		ErrorMessage: row.ErrorMessage,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}, nil
 }
 
 func (s *Store) FeedbackCount(ctx context.Context) (int64, error) {
@@ -1584,62 +1910,6 @@ func (s *Store) SaveBusSettings(ctx context.Context, settings BusSettings) error
 			"updated_at",
 		}),
 	}).Create(&row).Error
-}
-
-func (s *Store) TryRecordNotificationDelivery(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
-	if err != nil {
-		return false, err
-	}
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return false, err
-	}
-	row := notificationDeliveryRow{
-		UserID:    userID,
-		Kind:      kind,
-		ItemKey:   itemKey,
-		CreatedAt: nowUTC(),
-	}
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "kind"}, {Name: "item_key"}},
-		DoNothing: true,
-	}).Create(&row)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
-func (s *Store) NotificationDelivered(ctx context.Context, ident Identity, kind, itemKey string) (bool, error) {
-	kind, itemKey, err := normalizeNotificationDeliveryKey(kind, itemKey)
-	if err != nil {
-		return false, err
-	}
-	userID, ok, err := s.userID(ctx, ident)
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, nil
-	}
-	var count int64
-	err = s.db.WithContext(ctx).Model(&notificationDeliveryRow{}).
-		Where("user_id = ? AND kind = ? AND item_key = ?", userID, kind, itemKey).
-		Count(&count).Error
-	return count > 0, err
-}
-
-func normalizeNotificationDeliveryKey(kind, itemKey string) (string, string, error) {
-	kind = textutil.LowerTrim(kind)
-	itemKey = strings.TrimSpace(itemKey)
-	if kind == "" {
-		return "", "", errors.New("notification delivery kind is empty")
-	}
-	if itemKey == "" {
-		return "", "", errors.New("notification delivery item key is empty")
-	}
-	return kind, itemKey, nil
 }
 
 func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) NotificationSettings {

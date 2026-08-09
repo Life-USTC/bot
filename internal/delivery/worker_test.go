@@ -1,0 +1,91 @@
+package delivery
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/Life-USTC/Bot/internal/message"
+)
+
+type workerRepository struct {
+	records      []Record
+	completed    []Outcome
+	nextAttempts []time.Time
+	recoveredAt  time.Time
+	expiredAt    time.Time
+}
+
+func (r *workerRepository) Enqueue(context.Context, message.Outbound) (Record, bool, error) {
+	return Record{}, false, nil
+}
+
+func (r *workerRepository) ClaimDue(context.Context, time.Time, int) ([]Record, error) {
+	records := r.records
+	r.records = nil
+	return records, nil
+}
+
+func (r *workerRepository) Complete(_ context.Context, _ int64, outcome Outcome, next time.Time) error {
+	r.completed = append(r.completed, outcome)
+	r.nextAttempts = append(r.nextAttempts, next)
+	return nil
+}
+
+func (r *workerRepository) ExpireDue(_ context.Context, now time.Time) error {
+	r.expiredAt = now
+	return nil
+}
+
+func (r *workerRepository) RecoverStale(_ context.Context, before time.Time) error {
+	r.recoveredAt = before
+	return nil
+}
+
+func TestWorkerPersistsRetrySchedule(t *testing.T) {
+	now := time.Date(2026, 8, 10, 1, 0, 0, 0, time.UTC)
+	repository := &workerRepository{records: []Record{{
+		ID:       1,
+		Attempts: 2,
+		Message: message.Outbound{
+			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+			Content: message.Content{Text: "hello"},
+		},
+	}}}
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeRetryable, Code: "offline"}}
+	service, err := New(repository, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := Worker{Service: service, Now: func() time.Time { return now }}
+	worker.tick(context.Background())
+	if len(repository.completed) != 1 || repository.completed[0].State != OutcomeRetryable {
+		t.Fatalf("completed = %#v", repository.completed)
+	}
+	if want := now.Add(10 * time.Second); !repository.nextAttempts[0].Equal(want) {
+		t.Fatalf("next attempt = %v, want %v", repository.nextAttempts[0], want)
+	}
+}
+
+func TestWorkerStopsRetryingAfterAttemptBudget(t *testing.T) {
+	repository := &workerRepository{records: []Record{{
+		ID:       1,
+		Attempts: defaultMaxAttempts,
+		Message: message.Outbound{
+			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+			Content: message.Content{Text: "hello"},
+		},
+	}}}
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeRetryable}}
+	service, err := New(repository, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	(&Worker{Service: service}).tick(context.Background())
+	if got := repository.completed[0]; got.State != OutcomeRejected || got.Code != "attempts_exhausted" {
+		t.Fatalf("outcome = %#v", got)
+	}
+	if !repository.nextAttempts[0].IsZero() {
+		t.Fatalf("unexpected retry = %v", repository.nextAttempts[0])
+	}
+}

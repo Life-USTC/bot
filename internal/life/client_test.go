@@ -255,6 +255,45 @@ func TestTodosWithOptionsSendsFilters(t *testing.T) {
 	}
 }
 
+func TestTodosRetriesTransientReadFailure(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		if requests < 3 {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	todos, err := client.Todos(context.Background(), "token", "false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 3 || len(todos) != 1 {
+		t.Fatalf("requests = %d, todos = %#v", requests, todos)
+	}
+}
+
+func TestTodosDoesNotRetryPermanentFailure(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "bad filter", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	if _, err := client.Todos(context.Background(), "token", "false"); err == nil {
+		t.Fatal("expected error")
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
 func TestCreateTodoTrimsTitle(t *testing.T) {
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

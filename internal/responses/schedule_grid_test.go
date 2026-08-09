@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+	"image/color"
 	"image/png"
 	"strconv"
 	"testing"
@@ -45,6 +46,62 @@ func TestScheduleGridFindsTodayColumn(t *testing.T) {
 	}
 	if got := scheduleGridTodayIndex(grid, time.Date(2026, 7, 20, 12, 0, 0, 0, location)); got != -1 {
 		t.Fatalf("outside week today index = %d, want -1", got)
+	}
+}
+
+func TestScheduleGridCourseColorUsesStableNormalizedKey(t *testing.T) {
+	base := scheduleGridCourseColor(ScheduleGridItem{
+		Day:         0,
+		StartPeriod: 1,
+		EndPeriod:   2,
+		Course:      "Computer Networks",
+	})
+	tests := []struct {
+		name string
+		item ScheduleGridItem
+	}{
+		{
+			name: "different date and periods",
+			item: ScheduleGridItem{Day: 6, StartPeriod: 11, EndPeriod: 13, Course: "Computer Networks"},
+		},
+		{
+			name: "normalized whitespace and case",
+			item: ScheduleGridItem{Day: 3, StartPeriod: 4, EndPeriod: 5, Course: "  computer\t networks  "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scheduleGridCourseColor(tt.item); got != base {
+				t.Fatalf("course color = %v, want %v", got, base)
+			}
+		})
+	}
+}
+
+func TestScheduleGridCourseColorPrefersCourseID(t *testing.T) {
+	want := scheduleGridCourseColor(ScheduleGridItem{CourseID: " section-42 ", Course: "数据库系统"})
+	got := scheduleGridCourseColor(ScheduleGridItem{CourseID: "SECTION-42", Course: "Database Systems"})
+	if got != want {
+		t.Fatalf("same course ID colors differ: got %v, want %v", got, want)
+	}
+}
+
+func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
+	items := []ScheduleGridItem{
+		{Course: "数据库系统"},
+		{Course: "Computer Networks"},
+		{Course: "线性代数"},
+	}
+	want := make(map[string]color.RGBA, len(items))
+	for _, item := range items {
+		want[item.Course] = scheduleGridCourseColor(item)
+	}
+
+	reordered := []ScheduleGridItem{items[2], items[0], items[1]}
+	for _, item := range reordered {
+		if got := scheduleGridCourseColor(item); got != want[item.Course] {
+			t.Fatalf("course %q color after reorder = %v, want %v", item.Course, got, want[item.Course])
+		}
 	}
 }
 

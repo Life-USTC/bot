@@ -8,29 +8,28 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const (
-	classKind               = "class"
-	homeworkKind            = "homework"
-	maxNotificationAttempts = 3
-	notificationAttemptTTL  = 2 * time.Hour
-	pollFailureBaseDelay    = 5 * time.Minute
-	pollFailureMaxDelay     = time.Hour
+	classKind            = "class"
+	homeworkKind         = "homework"
+	pollFailureBaseDelay = 5 * time.Minute
+	pollFailureMaxDelay  = time.Hour
 )
 
-type Sender interface {
-	SendRichMessage(ctx context.Context, ident store.Identity, message string, image *responses.Image) error
+type Publisher interface {
+	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
 }
 
-type notificationAttempt struct {
-	count int
-	at    time.Time
+type ImageRenderer interface {
+	RenderPNG(*responses.Image) ([]byte, int, int, error)
 }
 
 type pollFailure struct {
@@ -42,14 +41,13 @@ type Poller struct {
 	Life                 *life.Client
 	Auth                 *auth.Manager
 	Store                *store.Store
-	Sender               Sender
+	Publisher            Publisher
+	Renderer             ImageRenderer
 	Interval             time.Duration
 	Now                  func() time.Time
 	Logger               *log.Logger
 	EnableImageResponses bool
 
-	attemptMu sync.Mutex
-	attempts  map[string]notificationAttempt
 	failureMu sync.Mutex
 	failures  map[string]pollFailure
 }
@@ -73,7 +71,7 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) tick(ctx context.Context) {
-	if p.Life == nil || p.Auth == nil || p.Auth.Store == nil || p.Store == nil || p.Sender == nil {
+	if p.Life == nil || p.Auth == nil || p.Auth.Store == nil || p.Store == nil || p.Publisher == nil {
 		return
 	}
 	settings, err := p.Store.EnabledNotificationSettings(ctx)
@@ -189,7 +187,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		if p.EnableImageResponses {
 			image = classReminderImage(schedule, message)
 		}
-		p.sendNotificationOnce(ctx, ident, classKind, key, message, image)
+		p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute))
 	}
 }
 
@@ -209,7 +207,7 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, home
 		if p.EnableImageResponses {
 			image = homeworkReminderImage(homework, message)
 		}
-		p.sendNotificationOnce(ctx, ident, homeworkKind, key, message, image)
+		p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due)
 	}
 }
 
@@ -218,81 +216,30 @@ func overviewItems(overview map[string]any, key string) []map[string]any {
 	return lifedata.MapSlice(group["items"])
 }
 
-func (p *Poller) sendNotificationOnce(ctx context.Context, ident store.Identity, kind, key, message string, image *responses.Image) {
-	delivered, err := p.Store.NotificationDelivered(ctx, ident, kind, key)
+func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) {
+	content := message.Content{Text: text}
+	if image != nil && p.Renderer != nil {
+		png, _, _, err := p.Renderer.RenderPNG(image)
+		if err != nil {
+			p.logf("render %s notification failed: %v", kind, err)
+		} else {
+			content.Attachment = &message.Attachment{MIMEType: "image/png", Data: png, AltText: image.AltText}
+		}
+	}
+	target := message.Conversation{
+		Platform: ident.Platform,
+		Type:     ident.ConversationType,
+		ID:       ident.ConversationID,
+	}
+	_, _, err := p.Publisher.Enqueue(ctx, message.Outbound{
+		Kind:      "notification." + kind,
+		Target:    target,
+		Content:   content,
+		DedupeKey: strings.Join([]string{"notification", target.Platform, target.Type, target.ID, key}, ":"),
+		ExpiresAt: expiresAt,
+	})
 	if err != nil {
-		p.logf("check %s notification delivery failed: %v", kind, err)
-		return
-	}
-	if delivered {
-		p.clearAttempt(ident, kind, key)
-		return
-	}
-	if !p.shouldAttempt(ident, kind, key) {
-		return
-	}
-	if err := p.Sender.SendRichMessage(ctx, ident, message, image); err != nil {
-		attempts := p.noteFailedAttempt(ident, kind, key)
-		if attempts >= maxNotificationAttempts {
-			p.logf("send %s notification circuit open after %d attempts: %v", kind, attempts, err)
-			return
-		}
-		p.logf("send %s notification failed: %v", kind, err)
-		return
-	}
-	p.clearAttempt(ident, kind, key)
-	if _, err := p.Store.TryRecordNotificationDelivery(ctx, ident, kind, key); err != nil {
-		p.logf("record %s notification failed: %v", kind, err)
-	}
-}
-
-func notificationAttemptKey(ident store.Identity, kind, key string) string {
-	return ident.Platform + "|" + ident.UserID + "|" + kind + "|" + key
-}
-
-func (p *Poller) shouldAttempt(ident store.Identity, kind, key string) bool {
-	p.attemptMu.Lock()
-	defer p.attemptMu.Unlock()
-	p.pruneAttemptsLocked()
-	if p.attempts == nil {
-		return true
-	}
-	return p.attempts[notificationAttemptKey(ident, kind, key)].count < maxNotificationAttempts
-}
-
-func (p *Poller) noteFailedAttempt(ident store.Identity, kind, key string) int {
-	p.attemptMu.Lock()
-	defer p.attemptMu.Unlock()
-	p.pruneAttemptsLocked()
-	if p.attempts == nil {
-		p.attempts = make(map[string]notificationAttempt)
-	}
-	id := notificationAttemptKey(ident, kind, key)
-	attempt := p.attempts[id]
-	attempt.count++
-	attempt.at = p.now()
-	p.attempts[id] = attempt
-	return attempt.count
-}
-
-func (p *Poller) clearAttempt(ident store.Identity, kind, key string) {
-	p.attemptMu.Lock()
-	defer p.attemptMu.Unlock()
-	if p.attempts == nil {
-		return
-	}
-	delete(p.attempts, notificationAttemptKey(ident, kind, key))
-}
-
-func (p *Poller) pruneAttemptsLocked() {
-	if p.attempts == nil {
-		return
-	}
-	now := p.now()
-	for key, attempt := range p.attempts {
-		if now.Sub(attempt.at) > notificationAttemptTTL {
-			delete(p.attempts, key)
-		}
+		p.logf("enqueue %s notification failed: %v", kind, err)
 	}
 }
 

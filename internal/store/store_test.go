@@ -4,14 +4,119 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 	_ "github.com/mattn/go-sqlite3"
+	"gorm.io/gorm"
 )
+
+func TestOutgoingMessageLifecycleAndDedupe(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	outbound := message.Outbound{
+		Kind:      "auth.result",
+		Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Content:   message.Content{Text: "登录完成。"},
+		DedupeKey: "auth:device:approved",
+		ExpiresAt: now.Add(time.Hour),
+	}
+	first, created, err := s.Enqueue(ctx, outbound)
+	if err != nil || !created || first.ID <= 0 {
+		t.Fatalf("first enqueue = %#v created=%v err=%v", first, created, err)
+	}
+	second, created, err := s.Enqueue(ctx, outbound)
+	if err != nil || created || second.ID != first.ID {
+		t.Fatalf("duplicate enqueue = %#v created=%v err=%v", second, created, err)
+	}
+
+	claimed, err := s.ClaimDue(ctx, now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].Status != delivery.StatusDelivering || claimed[0].Attempts != 1 {
+		t.Fatalf("claimed = %#v", claimed)
+	}
+	acceptedAt := now.Add(time.Second)
+	if err := s.Complete(ctx, first.ID, delivery.Outcome{
+		State: delivery.OutcomeAccepted,
+		Receipt: message.Receipt{
+			PlatformMessageID: "platform-message",
+			DeliveryMethod:    "api",
+			AcceptedAt:        acceptedAt,
+		},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now.Add(time.Minute), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("accepted message reclaimed = %#v err=%v", claimed, err)
+	}
+}
+
+func TestOutgoingMessageRetryExpiryAndStaleRecovery(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	makeOutbound := func(key string, expiresAt time.Time) message.Outbound {
+		return message.Outbound{
+			Kind:    "reminder.class",
+			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+			Content: message.Content{Text: key}, DedupeKey: key, ExpiresAt: expiresAt,
+		}
+	}
+	retryRecord, _, err := s.Enqueue(ctx, makeOutbound("retry", now.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimDue(ctx, now, 1)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim retry = %#v err=%v", claimed, err)
+	}
+	next := now.Add(time.Minute)
+	if err := s.Complete(ctx, retryRecord.ID, delivery.Outcome{State: delivery.OutcomeRetryable, Code: "offline"}, next); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now.Add(30*time.Second), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("retry claimed early = %#v err=%v", claimed, err)
+	}
+	claimed, err = s.ClaimDue(ctx, next, 10)
+	if err != nil || len(claimed) != 1 || claimed[0].ID != retryRecord.ID || claimed[0].Attempts != 2 {
+		t.Fatalf("retry claim = %#v err=%v", claimed, err)
+	}
+	if err := s.RecoverStale(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, next.Add(time.Hour), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("unknown message reclaimed = %#v err=%v", claimed, err)
+	}
+
+	if _, _, err := s.Enqueue(ctx, makeOutbound("expired", now.Add(-time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ExpireDue(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now, 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("expired message claimed = %#v err=%v", claimed, err)
+	}
+}
 
 func TestPublicCommandCacheUsesVersionAndExpiration(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
@@ -892,8 +997,17 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	if got == nil || got.DeviceCode != "device" {
 		t.Fatalf("session = %#v", got)
 	}
-	if err := s.MarkLoginSession(context.Background(), ident, "device", "approved"); err != nil {
+	transitioned, err := s.TransitionLoginSession(context.Background(), ident, "device", LoginTransition{
+		Status: LoginStatusApproved,
+		Credential: &Credential{
+			ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+		},
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !transitioned {
+		t.Fatal("session was not transitioned")
 	}
 	if err := s.db.WithContext(context.Background()).First(&row).Error; err != nil {
 		t.Fatal(err)
@@ -907,6 +1021,119 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("expected no active session, got %#v", got)
+	}
+}
+
+func TestTransitionLoginSessionAtomicallySavesCredentialAndOutbox(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outbound := message.Outbound{
+		Kind: "login_result", Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test:approved",
+	}
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &outbound,
+	})
+	if err != nil || !transitioned {
+		t.Fatalf("transitioned = %v, err = %v", transitioned, err)
+	}
+	credential, err := s.Credential(ctx, ident)
+	if err != nil || credential == nil || credential.AccessToken != "access" {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
+	}
+	var row loginSessionRow
+	if err := s.db.Where("device_code = ?", "device").Take(&row).Error; err != nil || row.Status != "approved" {
+		t.Fatalf("session = %#v, err = %v", row, err)
+	}
+	var messages int64
+	if err := s.db.Model(&outgoingMessageRow{}).Count(&messages).Error; err != nil || messages != 1 {
+		t.Fatalf("outbox count = %d, err = %v", messages, err)
+	}
+	transitioned, err = s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "other", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &outbound,
+	})
+	if err != nil || transitioned {
+		t.Fatalf("second transition = %v, err = %v", transitioned, err)
+	}
+}
+
+func TestTransitionLoginSessionRollsBackTerminalStateWhenOutboxFails(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	invalid := message.Outbound{Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test"}
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &invalid,
+	})
+	if err == nil || transitioned {
+		t.Fatalf("transitioned = %v, err = %v", transitioned, err)
+	}
+	active, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil || active == nil {
+		t.Fatalf("active = %#v, err = %v", active, err)
+	}
+	credential, err := s.Credential(ctx, ident)
+	if err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
+	}
+}
+
+func TestOpenClosesObsoleteFailedNotificationWithoutReplay(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&loginSessionRow{}).Where("device_code = ?", "device").Update("status", "notify_failed").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var row loginSessionRow
+	if err := s.db.Where("device_code = ?", "device").Take(&row).Error; err != nil || row.Status != "approved" {
+		t.Fatalf("session = %#v, err = %v", row, err)
+	}
+	var messages int64
+	if err := s.db.Model(&outgoingMessageRow{}).Count(&messages).Error; err != nil || messages != 0 {
+		t.Fatalf("historical outbox messages = %d, err = %v", messages, err)
 	}
 }
 
@@ -1049,7 +1276,7 @@ func TestSaveLoginSessionRejectsBlankRequiredFields(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
+func TestTransitionLoginSessionTrimsDeviceCode(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1066,8 +1293,12 @@ func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkLoginSession(ctx, ident, " device ", " approved "); err != nil {
+	transitioned, err := s.TransitionLoginSession(ctx, ident, " device ", LoginTransition{Status: LoginStatusExpired})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !transitioned {
+		t.Fatal("session was not transitioned")
 	}
 	got, err := s.ActiveLoginSession(ctx, ident)
 	if err != nil {
@@ -1078,7 +1309,7 @@ func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
+func TestTransitionLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1087,8 +1318,12 @@ func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42"}
-	if err := s.MarkLoginSession(ctx, ident, "device", "approved"); err != nil {
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{Status: LoginStatusExpired})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if transitioned {
+		t.Fatal("missing session transitioned")
 	}
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
@@ -1099,7 +1334,7 @@ func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
+func TestTransitionLoginSessionRejectsInvalidFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1110,17 +1345,17 @@ func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
 	ident := Identity{Platform: "napcat", UserID: "42"}
 	tests := []struct {
 		deviceCode string
-		status     string
+		status     LoginStatus
 	}{
-		{deviceCode: "", status: "approved"},
-		{deviceCode: "   ", status: "approved"},
+		{deviceCode: "", status: LoginStatusExpired},
+		{deviceCode: "   ", status: LoginStatusExpired},
 		{deviceCode: "device", status: ""},
-		{deviceCode: "device", status: "   "},
+		{deviceCode: "device", status: LoginStatusPending},
 	}
 	for _, tt := range tests {
-		err := s.MarkLoginSession(ctx, ident, tt.deviceCode, tt.status)
-		if err == nil || !strings.Contains(err.Error(), "login session") {
-			t.Fatalf("MarkLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
+		_, err := s.TransitionLoginSession(ctx, ident, tt.deviceCode, LoginTransition{Status: tt.status})
+		if err == nil {
+			t.Fatalf("TransitionLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
 		}
 	}
 	var count int64
@@ -1161,7 +1396,7 @@ func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 	}
 }
 
-func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
+func TestSaveLoginSessionSupersedesPendingSession(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1176,9 +1411,6 @@ func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
 		ExpiresAt:  time.Now().Add(time.Minute),
 		Status:     "pending",
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.MarkLoginSession(ctx, ident, "old-device", "notify_failed"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveLoginSession(ctx, ident, LoginSession{
@@ -1198,7 +1430,7 @@ func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
 	}
 }
 
-func TestNotificationSettingsAndDeliveries(t *testing.T) {
+func TestNotificationSettings(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1233,35 +1465,6 @@ func TestNotificationSettingsAndDeliveries(t *testing.T) {
 	}
 	if settingRow.UpdatedAt.IsZero() {
 		t.Fatal("notification settings updated_at was not set")
-	}
-
-	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !recorded {
-		t.Fatal("first delivery was not recorded")
-	}
-	var delivery notificationDeliveryRow
-	if err := s.db.WithContext(ctx).First(&delivery, "kind = ? AND item_key = ?", "class", "section-1").Error; err != nil {
-		t.Fatal(err)
-	}
-	if delivery.CreatedAt.IsZero() {
-		t.Fatal("delivery created_at was not set")
-	}
-	delivered, err := s.NotificationDelivered(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !delivered {
-		t.Fatal("delivery was not found")
-	}
-	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recorded {
-		t.Fatal("duplicate delivery was recorded")
 	}
 }
 
@@ -1425,99 +1628,6 @@ func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T)
 	}
 }
 
-func TestNotificationDeliveryTrimsKeys(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42"}
-	recorded, err := s.TryRecordNotificationDelivery(ctx, ident, " CLASS ", " section-1 ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !recorded {
-		t.Fatal("first delivery was not recorded")
-	}
-	recorded, err = s.TryRecordNotificationDelivery(ctx, ident, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recorded {
-		t.Fatal("normalized duplicate delivery was recorded")
-	}
-	delivered, err := s.NotificationDelivered(ctx, ident, " class ", " section-1 ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !delivered {
-		t.Fatal("trimmed delivery was not found")
-	}
-}
-
-func TestNotificationDeliveryRejectsBlankKeys(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42"}
-	tests := []struct {
-		kind    string
-		itemKey string
-	}{
-		{kind: "", itemKey: "section-1"},
-		{kind: "   ", itemKey: "section-1"},
-		{kind: "class", itemKey: ""},
-		{kind: "class", itemKey: "   "},
-	}
-	for _, tt := range tests {
-		recorded, err := s.TryRecordNotificationDelivery(ctx, ident, tt.kind, tt.itemKey)
-		if err == nil || recorded {
-			t.Fatalf("TryRecordNotificationDelivery(%q, %q) = %v, %v", tt.kind, tt.itemKey, recorded, err)
-		}
-		delivered, err := s.NotificationDelivered(ctx, ident, tt.kind, tt.itemKey)
-		if err == nil || delivered {
-			t.Fatalf("NotificationDelivered(%q, %q) = %v, %v", tt.kind, tt.itemKey, delivered, err)
-		}
-	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("user count after invalid notification delivery = %d", count)
-	}
-}
-
-func TestNotificationDeliveredDoesNotCreateMissingUser(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	delivered, err := s.NotificationDelivered(ctx, Identity{Platform: "napcat", UserID: "42"}, "class", "section-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if delivered {
-		t.Fatal("missing user delivery reported true")
-	}
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("user count after delivery lookup = %d", count)
-	}
-}
-
 func TestAgentRunLifecycle(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1569,6 +1679,48 @@ func TestAgentRunLifecycle(t *testing.T) {
 	}
 	if row.Status != AgentRunStatusFailed || row.Reply != "失败了" || row.Error != "deepseek timeout" {
 		t.Fatalf("failed agent run row = %#v", row)
+	}
+}
+
+func TestInterruptStartedAgentRuns(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	startedID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "unfinished"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "finished"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishAgentRun(ctx, completedID, AgentRunStatusCompleted, "ok", nil, AgentSpending{}); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := s.InterruptStartedAgentRuns(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("interrupted = %d, want 1", count)
+	}
+	var started, completed agentRunRow
+	if err := s.db.WithContext(ctx).First(&started, startedID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.WithContext(ctx).First(&completed, completedID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if started.Status != AgentRunStatusInterrupted || started.Error != "process interrupted" {
+		t.Fatalf("started row = %#v", started)
+	}
+	if completed.Status != AgentRunStatusCompleted {
+		t.Fatalf("completed row = %#v", completed)
 	}
 }
 
@@ -1722,7 +1874,7 @@ func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
 	}
 }
 
-func TestFeedbackRecordAndMarkSent(t *testing.T) {
+func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1731,24 +1883,78 @@ func TestFeedbackRecordAndMarkSent(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "qqbot", UserID: "u", ConversationType: "private", ConversationID: "u"}
-	id, err := s.RecordFeedback(ctx, ident, FeedbackRecord{
+	if err := s.db.Callback().Create().Before("gorm:create").Register("test:fail_outgoing_message", func(tx *gorm.DB) {
+		if tx.Statement.Table == "outgoing_messages" {
+			_ = tx.AddError(errors.New("forced outgoing message failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.CreateFeedbackWithOutbounds(ctx, ident, FeedbackRecord{
 		Source:   "llm",
 		Category: "missing_tool",
 		Content:  "需要考试地点查询工具",
 		Context:  "用户问考试地点",
+	}, func(id int64) []message.Outbound {
+		return []message.Outbound{{
+			Kind:      "feedback_admin",
+			Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "admin"},
+			Content:   message.Content{Text: "feedback"},
+			DedupeKey: fmt.Sprintf("feedback:%d:admin", id),
+		}}
 	})
+	if err == nil || !strings.Contains(err.Error(), "forced outgoing message failure") {
+		t.Fatalf("error = %v", err)
+	}
+	count, err := s.FeedbackCount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkFeedbackSent(ctx, id); err != nil {
+	if count != 0 {
+		t.Fatalf("feedback count after rollback = %d", count)
+	}
+	var outgoingCount int64
+	if err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).Count(&outgoingCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	var row feedbackRecordRow
-	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+	if outgoingCount != 0 {
+		t.Fatalf("outgoing count after rollback = %d", outgoingCount)
+	}
+}
+
+func TestOpenDropsObsoleteFeedbackDeliveryColumns(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Source != "llm" || row.Category != "missing_tool" || row.Status != FeedbackStatusOpen || !row.SentToAdmin || row.SentAt == nil {
-		t.Fatalf("feedback row = %#v", row)
+	for _, statement := range []string{
+		"ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0",
+		"ALTER TABLE feedback_records ADD COLUMN sent_at datetime",
+		"ALTER TABLE feedback_records ADD COLUMN resolved numeric NOT NULL DEFAULT 0",
+	} {
+		if err := s.db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+		if s.db.Migrator().HasColumn("feedback_records", column) {
+			t.Fatalf("obsolete column %q still exists", column)
+		}
+	}
+	_, _, err = s.CreateFeedbackWithOutbounds(context.Background(), Identity{
+		Platform: "qqbot", UserID: "user", ConversationType: "private", ConversationID: "user",
+	}, FeedbackRecord{Source: "user", Content: "migration works"}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
