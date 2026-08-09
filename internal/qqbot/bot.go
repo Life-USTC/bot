@@ -67,7 +67,6 @@ type Bot struct {
 	GatewayURL string
 	Intents    uint64
 	App        botapp.Processor
-	Recorder   botapp.Recorder
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
@@ -1173,48 +1172,9 @@ func (b *Bot) httpClient() *http.Client {
 	return &http.Client{Timeout: 15 * time.Second}
 }
 
-func (b *Bot) recordOutbound(ctx context.Context, ident store.Identity, message string, receipt store.MessageAcceptance, err error) {
-	errText := ""
-	status := store.InteractionStatusAccepted
-	if err != nil {
-		errText = err.Error()
-		status = store.InteractionStatusFailed
-		if isUncertainSendError(err) {
-			status = store.InteractionStatusUnknown
-		}
-	}
-	b.recordInteraction(ctx, ident, store.Interaction{
-		Direction:         store.InteractionDirectionOutbound,
-		RawText:           message,
-		Handled:           true,
-		Status:            status,
-		Error:             errText,
-		PlatformMessageID: receipt.PlatformMessageID,
-		DeliveryMethod:    receipt.DeliveryMethod,
-		SourceMessageID:   receipt.SourceMessageID,
-		AcceptedAt:        receipt.AcceptedAt,
-	}, "outbound")
-	if err != nil {
-		b.logf("QQ bot message %s: conversation_type=%q conversation_id=%q error=%v",
-			status, ident.ConversationType, ident.ConversationID, err)
-		return
-	}
-	b.logf("QQ bot message accepted: conversation_type=%q conversation_id=%q message_id=%q delivery_method=%q source_message_id=%q",
-		ident.ConversationType, ident.ConversationID, receipt.PlatformMessageID, receipt.DeliveryMethod, receipt.SourceMessageID)
-}
-
 func isUncertainSendError(err error) bool {
 	var target uncertainSendError
 	return errors.As(err, &target)
-}
-
-func (b *Bot) recordInteraction(ctx context.Context, ident store.Identity, interaction store.Interaction, label string) {
-	if b.Recorder == nil {
-		return
-	}
-	if err := b.Recorder.RecordInteraction(ctx, ident, interaction); err != nil {
-		b.logf("record QQ bot %s interaction failed: %v", label, err)
-	}
 }
 
 func (b *Bot) logf(format string, args ...any) {

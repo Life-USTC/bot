@@ -71,7 +71,6 @@ func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentSer
 		t.Fatal(err)
 	}
 	bot.App = app
-	bot.Recorder = recorder
 }
 
 func TestSendToReturnsPlatformAcceptance(t *testing.T) {

@@ -71,7 +71,6 @@ func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, ag
 		t.Fatal(err)
 	}
 	bridge.App = app
-	bridge.Recorder = recorder
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

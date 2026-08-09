@@ -31,7 +31,6 @@ type Bridge struct {
 	AccessToken string
 	WSURL       string
 	App         botapp.Processor
-	Recorder    botapp.Recorder
 	HTTPClient  *http.Client
 	Logger      *log.Logger
 	MediaStore  *responses.MediaStore
@@ -326,48 +325,9 @@ func (b *Bridge) processInbound(ctx context.Context, event messageEvent) {
 	b.App.Process(ctx, event.inbound())
 }
 
-func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message string, receipt store.MessageAcceptance, err error) {
-	errText := ""
-	status := store.InteractionStatusAccepted
-	if err != nil {
-		errText = err.Error()
-		status = store.InteractionStatusFailed
-		if isUncertainSendError(err) {
-			status = store.InteractionStatusUnknown
-		}
-	}
-	b.recordInteraction(ctx, event, store.Interaction{
-		Direction:         store.InteractionDirectionOutbound,
-		RawText:           message,
-		Handled:           true,
-		Status:            status,
-		Error:             errText,
-		PlatformMessageID: receipt.PlatformMessageID,
-		DeliveryMethod:    receipt.DeliveryMethod,
-		SourceMessageID:   receipt.SourceMessageID,
-		AcceptedAt:        receipt.AcceptedAt,
-	}, "outbound")
-	if err != nil {
-		b.logf("napcat message %s: message_type=%q user_id=%d group_id=%d error=%v",
-			status, event.MessageType, event.UserID, event.GroupID, err)
-		return
-	}
-	b.logf("napcat message accepted: message_type=%q user_id=%d group_id=%d message_id=%q delivery_method=%q source_message_id=%q",
-		event.MessageType, event.UserID, event.GroupID, receipt.PlatformMessageID, receipt.DeliveryMethod, receipt.SourceMessageID)
-}
-
 func isUncertainSendError(err error) bool {
 	var target uncertainSendError
 	return errors.As(err, &target)
-}
-
-func (b *Bridge) recordInteraction(ctx context.Context, event messageEvent, interaction store.Interaction, label string) {
-	if b.Recorder == nil {
-		return
-	}
-	if err := b.Recorder.RecordInteraction(ctx, event.identity(), interaction); err != nil {
-		b.logf("record %s interaction failed: %v", label, err)
-	}
 }
 
 func (b *Bridge) logf(format string, args ...any) {
