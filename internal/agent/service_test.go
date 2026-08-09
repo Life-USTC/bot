@@ -372,6 +372,55 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 	}
 }
 
+func TestAgentToolConstructionContinuesWhenMCPResourceIsNotApproved(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": serverURL, "token_endpoint": serverURL + "/token",
+			})
+		case "/token":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid_target","error_description":"resource not approved"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	serverURL = server.URL
+
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveCredential(context.Background(), ident, store.Credential{
+		ClientID: "client", AccessToken: "expired", RefreshToken: "refresh",
+		ExpiresAt: time.Now().Add(-time.Hour), Resource: server.URL + " " + server.URL + "/api/mcp",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	svc := &Service{
+		handler:   commands.Handler{Store: db},
+		auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		mcpClient: botmcp.New(server.URL+"/api/mcp", server.Client()),
+		logger:    log.New(&logs, "", 0),
+	}
+
+	names := agentToolNames(t, svc)
+	if !names["get_current_time"] || names["get_current_semester"] {
+		t.Fatalf("tools = %#v", names)
+	}
+	if !strings.Contains(logs.String(), "MCP tools unavailable; continuing without them") || !strings.Contains(logs.String(), "invalid_target") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
 	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
