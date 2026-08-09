@@ -10,8 +10,111 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestOutgoingMessageLifecycleAndDedupe(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	outbound := message.Outbound{
+		Kind:      "auth.result",
+		Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Content:   message.Content{Text: "登录完成。"},
+		DedupeKey: "auth:device:approved",
+		ExpiresAt: now.Add(time.Hour),
+	}
+	first, created, err := s.Enqueue(ctx, outbound)
+	if err != nil || !created || first.ID <= 0 {
+		t.Fatalf("first enqueue = %#v created=%v err=%v", first, created, err)
+	}
+	second, created, err := s.Enqueue(ctx, outbound)
+	if err != nil || created || second.ID != first.ID {
+		t.Fatalf("duplicate enqueue = %#v created=%v err=%v", second, created, err)
+	}
+
+	claimed, err := s.ClaimDue(ctx, now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].Status != delivery.StatusDelivering || claimed[0].Attempts != 1 {
+		t.Fatalf("claimed = %#v", claimed)
+	}
+	acceptedAt := now.Add(time.Second)
+	if err := s.Complete(ctx, first.ID, delivery.Outcome{
+		State: delivery.OutcomeAccepted,
+		Receipt: message.Receipt{
+			PlatformMessageID: "platform-message",
+			DeliveryMethod:    "api",
+			AcceptedAt:        acceptedAt,
+		},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now.Add(time.Minute), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("accepted message reclaimed = %#v err=%v", claimed, err)
+	}
+}
+
+func TestOutgoingMessageRetryExpiryAndStaleRecovery(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	makeOutbound := func(key string, expiresAt time.Time) message.Outbound {
+		return message.Outbound{
+			Kind:    "reminder.class",
+			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+			Content: message.Content{Text: key}, DedupeKey: key, ExpiresAt: expiresAt,
+		}
+	}
+	retryRecord, _, err := s.Enqueue(ctx, makeOutbound("retry", now.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimDue(ctx, now, 1)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim retry = %#v err=%v", claimed, err)
+	}
+	next := now.Add(time.Minute)
+	if err := s.Complete(ctx, retryRecord.ID, delivery.Outcome{State: delivery.OutcomeRetryable, Code: "offline"}, next); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now.Add(30*time.Second), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("retry claimed early = %#v err=%v", claimed, err)
+	}
+	claimed, err = s.ClaimDue(ctx, next, 10)
+	if err != nil || len(claimed) != 1 || claimed[0].ID != retryRecord.ID || claimed[0].Attempts != 2 {
+		t.Fatalf("retry claim = %#v err=%v", claimed, err)
+	}
+	if err := s.RecoverStale(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, next.Add(time.Hour), 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("unknown message reclaimed = %#v err=%v", claimed, err)
+	}
+
+	if _, _, err := s.Enqueue(ctx, makeOutbound("expired", now.Add(-time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ExpireDue(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimDue(ctx, now, 10); err != nil || len(claimed) != 0 {
+		t.Fatalf("expired message claimed = %#v err=%v", claimed, err)
+	}
+}
 
 func TestPublicCommandCacheUsesVersionAndExpiration(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")

@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +16,8 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -415,6 +419,33 @@ type feedbackRecordRow struct {
 	UpdatedAt        time.Time
 }
 
+type outgoingMessageRow struct {
+	ID                int64      `gorm:"primaryKey"`
+	DedupeKey         string     `gorm:"not null;uniqueIndex"`
+	Kind              string     `gorm:"not null;index"`
+	Platform          string     `gorm:"not null;index:idx_outgoing_messages_due"`
+	ConversationType  string     `gorm:"not null"`
+	ConversationID    string     `gorm:"not null"`
+	PayloadJSON       string     `gorm:"not null"`
+	Status            string     `gorm:"not null;index:idx_outgoing_messages_due"`
+	Attempts          int        `gorm:"not null;default:0"`
+	NextAttemptAt     *time.Time `gorm:"index:idx_outgoing_messages_due"`
+	AttemptStartedAt  *time.Time
+	ExpiresAt         *time.Time `gorm:"index"`
+	PlatformMessageID string
+	DeliveryMethod    string
+	SourceMessageID   string
+	ErrorCode         string
+	ErrorMessage      string
+	AcceptedAt        *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func (outgoingMessageRow) TableName() string {
+	return "outgoing_messages"
+}
+
 func (feedbackRecordRow) TableName() string {
 	return "feedback_records"
 }
@@ -504,6 +535,7 @@ func (s *Store) migrate() error {
 		&agentRunRow{},
 		&conversationSummaryRow{},
 		&feedbackRecordRow{},
+		&outgoingMessageRow{},
 		&pendingConfirmationRow{},
 		&publicCommandCacheRow{},
 	)
@@ -1303,6 +1335,192 @@ func (s *Store) MarkFeedbackSent(ctx context.Context, id int64) error {
 			"sent_at":       &now,
 			"updated_at":    now,
 		}).Error
+}
+
+func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
+	payload, err := json.Marshal(outbound)
+	if err != nil {
+		return delivery.Record{}, false, fmt.Errorf("encode outgoing message: %w", err)
+	}
+	now := nowUTC()
+	row := outgoingMessageRow{
+		DedupeKey:        strings.TrimSpace(outbound.DedupeKey),
+		Kind:             strings.ToLower(strings.TrimSpace(outbound.Kind)),
+		Platform:         strings.ToLower(strings.TrimSpace(outbound.Target.Platform)),
+		ConversationType: strings.ToLower(strings.TrimSpace(outbound.Target.Type)),
+		ConversationID:   strings.TrimSpace(outbound.Target.ID),
+		PayloadJSON:      string(payload),
+		Status:           string(delivery.StatusPending),
+		NextAttemptAt:    &now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if !outbound.ExpiresAt.IsZero() {
+		expiresAt := outbound.ExpiresAt.UTC()
+		row.ExpiresAt = &expiresAt
+	}
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	if result.Error != nil {
+		return delivery.Record{}, false, result.Error
+	}
+	created := result.RowsAffected == 1
+	if !created {
+		if err := s.db.WithContext(ctx).Where("dedupe_key = ?", row.DedupeKey).First(&row).Error; err != nil {
+			return delivery.Record{}, false, err
+		}
+	}
+	record, err := outgoingMessageRecord(row)
+	return record, created, err
+}
+
+func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]delivery.Record, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	now = now.UTC()
+	records := make([]delivery.Record, 0, limit)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []outgoingMessageRow
+		if err := tx.Where(
+			"status IN ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?) AND (expires_at IS NULL OR expires_at > ?)",
+			[]string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, now, now,
+		).Order("id ASC").Limit(limit).Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := range rows {
+			row := &rows[i]
+			result := tx.Model(&outgoingMessageRow{}).
+				Where("id = ? AND status IN ?", row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}).
+				Updates(map[string]any{
+					"status":             string(delivery.StatusDelivering),
+					"attempts":           gorm.Expr("attempts + 1"),
+					"attempt_started_at": now,
+					"updated_at":         now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			row.Status = string(delivery.StatusDelivering)
+			row.Attempts++
+			row.AttemptStartedAt = &now
+			record, err := outgoingMessageRecord(*row)
+			if err != nil {
+				return err
+			}
+			records = append(records, record)
+		}
+		return nil
+	})
+	return records, err
+}
+
+func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome, nextAttemptAt time.Time) error {
+	if id <= 0 {
+		return errors.New("outgoing message id must be positive")
+	}
+	now := nowUTC()
+	status := delivery.StatusUnknown
+	switch outcome.State {
+	case delivery.OutcomeAccepted:
+		status = delivery.StatusAccepted
+	case delivery.OutcomeRetryable:
+		status = delivery.StatusRetryWait
+	case delivery.OutcomeRejected:
+		status = delivery.StatusRejected
+	case delivery.OutcomeUnknown:
+		status = delivery.StatusUnknown
+	}
+	errorMessage := ""
+	if outcome.Err != nil {
+		errorMessage = outcome.Err.Error()
+		if len(errorMessage) > 4000 {
+			errorMessage = errorMessage[:4000]
+		}
+	}
+	updates := map[string]any{
+		"status":              string(status),
+		"next_attempt_at":     nil,
+		"attempt_started_at":  nil,
+		"platform_message_id": strings.TrimSpace(outcome.Receipt.PlatformMessageID),
+		"delivery_method":     strings.TrimSpace(outcome.Receipt.DeliveryMethod),
+		"source_message_id":   strings.TrimSpace(outcome.Receipt.SourceMessageID),
+		"error_code":          strings.TrimSpace(outcome.Code),
+		"error_message":       errorMessage,
+		"updated_at":          now,
+	}
+	if status == delivery.StatusRetryWait && !nextAttemptAt.IsZero() {
+		updates["next_attempt_at"] = nextAttemptAt.UTC()
+	}
+	if status == delivery.StatusAccepted {
+		acceptedAt := outcome.Receipt.AcceptedAt.UTC()
+		if acceptedAt.IsZero() {
+			acceptedAt = now
+		}
+		updates["accepted_at"] = acceptedAt
+	}
+	result := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("outgoing message %d is not delivering", id)
+	}
+	return nil
+}
+
+func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
+	now = now.UTC()
+	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("status IN ? AND expires_at IS NOT NULL AND expires_at <= ?",
+			[]string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, now).
+		Updates(map[string]any{
+			"status":     string(delivery.StatusExpired),
+			"error_code": "expired",
+			"updated_at": now,
+		}).Error
+}
+
+func (s *Store) RecoverStale(ctx context.Context, before time.Time) error {
+	now := nowUTC()
+	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+		Where("status = ? AND attempt_started_at IS NOT NULL AND attempt_started_at <= ?", string(delivery.StatusDelivering), before.UTC()).
+		Updates(map[string]any{
+			"status":             string(delivery.StatusUnknown),
+			"attempt_started_at": nil,
+			"error_code":         "worker_interrupted",
+			"error_message":      "delivery worker stopped while the platform outcome was unknown",
+			"updated_at":         now,
+		}).Error
+}
+
+func outgoingMessageRecord(row outgoingMessageRow) (delivery.Record, error) {
+	var outbound message.Outbound
+	if err := json.Unmarshal([]byte(row.PayloadJSON), &outbound); err != nil {
+		return delivery.Record{}, fmt.Errorf("decode outgoing message %d: %w", row.ID, err)
+	}
+	return delivery.Record{
+		ID:               row.ID,
+		Message:          outbound,
+		Status:           delivery.Status(row.Status),
+		Attempts:         row.Attempts,
+		NextAttemptAt:    dereferenceTime(row.NextAttemptAt),
+		AttemptStartedAt: dereferenceTime(row.AttemptStartedAt),
+		Receipt: message.Receipt{
+			PlatformMessageID: row.PlatformMessageID,
+			DeliveryMethod:    row.DeliveryMethod,
+			SourceMessageID:   row.SourceMessageID,
+			AcceptedAt:        dereferenceTime(row.AcceptedAt),
+		},
+		ErrorCode:    row.ErrorCode,
+		ErrorMessage: row.ErrorMessage,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}, nil
 }
 
 func (s *Store) FeedbackCount(ctx context.Context) (int64, error) {
