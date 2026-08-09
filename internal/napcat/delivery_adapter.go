@@ -47,7 +47,7 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 		}
 		payload = napcatDeliveryMessage(outbound.Content.Text, imageURL)
 	}
-	conn, writeMu := a.bridge.activeReverseConn()
+	conn, writeMu := a.bridge.reverseConnForReply(outbound.ReplyTo)
 	var acceptance store.MessageAcceptance
 	if conn != nil {
 		acceptance, err = a.bridge.sendReversePayload(ctx, conn, writeMu, event, payload)

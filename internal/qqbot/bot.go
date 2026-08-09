@@ -21,8 +21,9 @@ import (
 	"github.com/tencent-connect/botgo/interaction/signature"
 	"github.com/tencent-connect/botgo/interaction/webhook"
 
-	"github.com/Life-USTC/Bot/internal/agent"
+	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -66,9 +67,8 @@ type Bot struct {
 	TokenURL   string
 	GatewayURL string
 	Intents    uint64
-	Handler    commands.Handler
-	Agent      *agent.Service
-	Dispatcher *agent.Dispatcher
+	App        botapp.Processor
+	Recorder   botapp.Recorder
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
@@ -168,6 +168,21 @@ type incomingMessage struct {
 	Identity  store.Identity
 
 	replySeq uint64
+}
+
+func (m *incomingMessage) inbound() message.Inbound {
+	if m == nil {
+		return message.Inbound{}
+	}
+	return message.Inbound{
+		Actor: message.Actor{Platform: m.Identity.Platform, UserID: m.Identity.UserID},
+		Conversation: message.Conversation{
+			Platform: m.Identity.Platform, Type: m.Identity.ConversationType, ID: m.Identity.ConversationID,
+		},
+		Source: message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
+		Text:   m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
+	}
 }
 
 type sendMessageRequest struct {
@@ -543,20 +558,7 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 			message.Identity.UserID,
 			message.Identity.ConversationID,
 		)
-		if b.Dispatcher != nil {
-			b.dispatchMessage(ctx, message)
-			return
-		}
-		reply, ok := b.handleMessage(ctx, message)
-		if !ok {
-			b.logf("QQ bot ignored message: event=%s", payload.T)
-			return
-		}
-		if err := b.SendResponse(ctx, message, reply); err != nil {
-			b.logf("send QQ bot reply failed: %v", err)
-			return
-		}
-		b.logf("QQ bot replied: event=%s conversation_type=%s conversation_id=%q", payload.T, message.Identity.ConversationType, message.Identity.ConversationID)
+		b.processInbound(ctx, message)
 	case "INTERACTION_CREATE":
 		b.handleInteraction(ctx, payload)
 	default:
@@ -579,20 +581,7 @@ func (b *Bot) handleInteraction(ctx context.Context, payload gatewayPayload) {
 	if err := b.ackInteraction(ctx, message.EventID, 0); err != nil {
 		b.logf("ack QQ bot interaction failed: %v", err)
 	}
-	if b.Dispatcher != nil {
-		b.dispatchMessage(ctx, message)
-		return
-	}
-	reply, ok := b.handleMessage(ctx, message)
-	if !ok {
-		b.logf("QQ bot ignored interaction: type=%s", message.Type)
-		return
-	}
-	if err := b.SendResponse(ctx, message, reply); err != nil {
-		b.logf("send QQ bot interaction reply failed: %v", err)
-		return
-	}
-	b.logf("QQ bot replied to interaction: type=%s conversation_type=%s conversation_id=%q", message.Type, message.Identity.ConversationType, message.Identity.ConversationID)
+	b.processInbound(ctx, message)
 }
 
 func (b *Bot) interactionFromPayload(payload gatewayPayload) (*incomingMessage, error) {
@@ -787,84 +776,15 @@ func (b *Bot) cleanContent(content string) string {
 	return strings.TrimSpace(content)
 }
 
-func (b *Bot) handleMessage(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
-		Text:     message.Text,
-		Identity: message.Identity,
-	})
-	if !ok {
-		agentReply, agentOK := b.handleAgent(ctx, message)
-		if agentOK {
-			return agentReply, true
-		}
-	}
-	if !ok {
-		b.recordIgnored(ctx, message)
-		return commands.Response{}, false
-	}
-	return reply, true
-}
-
-func (b *Bot) dispatchMessage(ctx context.Context, message *incomingMessage) {
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{Text: message.Text, Identity: message.Identity})
-	if ok {
-		b.sendDispatchedResponse(ctx, message, reply)
+func (b *Bot) processInbound(ctx context.Context, incoming *incomingMessage) {
+	if incoming == nil {
 		return
 	}
-	b.Dispatcher.Submit(b.agentInput(message), func(ctx context.Context, input agent.Input, reply commands.Response, ok bool) {
-		mergedMessage := *message
-		mergedMessage.Text = input.Text
-		mergedMessage.ImageURLs = input.ImageURLs
-		if !ok {
-			b.recordIgnored(ctx, &mergedMessage)
-			b.logf("QQ bot ignored message: event=%s", mergedMessage.Type)
-			return
-		}
-		b.recordAgentResponse(ctx, &mergedMessage, reply)
-		b.sendDispatchedResponse(ctx, &mergedMessage, reply)
-	})
-}
-
-func (b *Bot) sendDispatchedResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
-	if err := b.SendResponse(ctx, message, reply); err != nil {
-		b.logf("send QQ bot reply failed: %v", err)
+	if b.App == nil {
+		b.logf("QQ bot inbound application is unavailable")
 		return
 	}
-	b.logf("QQ bot replied: event=%s conversation_type=%s conversation_id=%q",
-		message.Type, message.Identity.ConversationType, message.Identity.ConversationID)
-}
-
-func (b *Bot) handleAgent(ctx context.Context, message *incomingMessage) (commands.Response, bool) {
-	if b.Agent == nil {
-		return commands.Response{}, false
-	}
-	reply, ok := b.Agent.HandleResponse(ctx, b.agentInput(message))
-	if !ok {
-		return commands.Response{}, false
-	}
-	b.recordAgentResponse(ctx, message, reply)
-	return reply, true
-}
-
-func (b *Bot) agentInput(message *incomingMessage) agent.Input {
-	return agent.Input{
-		Text:      message.Text,
-		ImageURLs: message.ImageURLs,
-		Identity:  message.Identity,
-		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
-			return b.Send(ctx, message, update)
-		},
-	}
-}
-
-func (b *Bot) recordAgentResponse(ctx context.Context, message *incomingMessage, reply commands.Response) {
-	b.recordInteraction(ctx, message.Identity, store.Interaction{
-		RawText: message.Text,
-		Command: "agent",
-		Handled: true,
-		Reply:   reply.Text,
-		Status:  store.InteractionStatusHandled,
-	}, "agent")
+	b.App.Process(ctx, incoming.inbound())
 }
 
 func attachmentImageURLs(attachments []map[string]any) []string {
@@ -1347,17 +1267,6 @@ func (b *Bot) httpClient() *http.Client {
 	return &http.Client{Timeout: 15 * time.Second}
 }
 
-func (b *Bot) recordIgnored(ctx context.Context, message *incomingMessage) {
-	if message == nil {
-		return
-	}
-	b.recordInteraction(ctx, message.Identity, store.Interaction{
-		RawText: message.Text,
-		Handled: false,
-		Status:  store.InteractionStatusIgnored,
-	}, "ignored")
-}
-
 func (b *Bot) recordOutbound(ctx context.Context, ident store.Identity, message string, receipt store.MessageAcceptance, err error) {
 	errText := ""
 	status := store.InteractionStatusAccepted
@@ -1394,10 +1303,10 @@ func isUncertainSendError(err error) bool {
 }
 
 func (b *Bot) recordInteraction(ctx context.Context, ident store.Identity, interaction store.Interaction, label string) {
-	if b.Handler.Store == nil {
+	if b.Recorder == nil {
 		return
 	}
-	if err := b.Handler.Store.RecordInteraction(ctx, ident, interaction); err != nil {
+	if err := b.Recorder.RecordInteraction(ctx, ident, interaction); err != nil {
 		b.logf("record QQ bot %s interaction failed: %v", label, err)
 	}
 }

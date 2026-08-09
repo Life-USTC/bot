@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/Life-USTC/Bot/internal/commands"
 )
 
 func TestAutoApproveFriendRequest(t *testing.T) {
@@ -378,8 +376,7 @@ func (s *syncLogBuffer) String() string {
 func TestReverseEnrichForwardUsesWebsocketAction(t *testing.T) {
 	var logs syncLogBuffer
 	bridge := &Bridge{
-		Handler: commands.Handler{},
-		Logger:  log.New(&logs, "", 0),
+		Logger: log.New(&logs, "", 0),
 		// Intentionally no APIURL: production reverse-only must not need HTTP.
 	}
 	upgrader := websocket.Upgrader{}

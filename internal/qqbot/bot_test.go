@@ -19,11 +19,61 @@ import (
 	"github.com/tencent-connect/botgo/interaction/signature"
 
 	"github.com/Life-USTC/Bot/internal/agent"
+	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
+
+type processorSpy struct{ messages []message.Inbound }
+
+func (s *processorSpy) Process(_ context.Context, inbound message.Inbound) {
+	s.messages = append(s.messages, inbound)
+}
+
+func TestQQBotDelegatesInboundWithSeparateGroupActor(t *testing.T) {
+	processor := &processorSpy{}
+	bot := &Bot{App: processor}
+	bot.processInbound(context.Background(), &incomingMessage{
+		ID: "message-1", Type: "GROUP_AT_MESSAGE_CREATE", Text: "hello",
+		Identity: store.Identity{Platform: "qqbot", UserID: "member-7", ConversationType: "group", ConversationID: "group-99"},
+	})
+	if len(processor.messages) != 1 {
+		t.Fatalf("processed messages = %d", len(processor.messages))
+	}
+	got := processor.messages[0]
+	if got.Actor.UserID != "member-7" || got.Conversation.ID != "group-99" || !got.BotMentioned {
+		t.Fatalf("inbound = %#v", got)
+	}
+}
+
+func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentService *agent.Service, dispatcher *agent.Dispatcher, recorder botapp.Recorder) {
+	t.Helper()
+	deliverer, err := delivery.New(nil, NewDeliveryAdapter(bot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agentHandler botapp.AgentHandler
+	if agentService != nil {
+		agentHandler = agentService
+	}
+	var messageDispatcher botapp.Dispatcher
+	if dispatcher != nil {
+		messageDispatcher = dispatcher
+	}
+	app, err := botapp.New(botapp.Config{
+		Commands: handler, Agent: agentHandler, Dispatcher: messageDispatcher, Delivery: deliverer,
+		Recorder: recorder, Renderer: bot.Renderer, Logger: bot.Logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot.App = app
+	bot.Recorder = recorder
+}
 
 func TestSendMessageFetchesTokenAndSendsGroupMessage(t *testing.T) {
 	requests := 0
@@ -182,8 +232,7 @@ func TestOpenAPILogsMetadataWithoutPayloads(t *testing.T) {
 func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
 	var logs bytes.Buffer
 	bot := &Bot{
-		Handler: commands.Handler{Prefix: "/life"},
-		Logger:  log.New(&logs, "", 0),
+		Logger: log.New(&logs, "", 0),
 	}
 	bot.handleDispatch(context.Background(), gatewayPayload{
 		Op: opDispatch,
@@ -237,15 +286,14 @@ func TestDispatchMessageBatchesAgentMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bot := &Bot{
-		BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client(), Agent: agentService,
-		Dispatcher: agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
-			Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
-		}),
-	}
+	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
+	dispatcher := agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
+		Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
+	})
+	configureTestApp(t, bot, commands.Handler{}, agentService, dispatcher, nil)
 	ident := store.Identity{Platform: "qqbot", UserID: "user-openid", ConversationType: "private", ConversationID: "user-openid"}
-	bot.dispatchMessage(ctx, &incomingMessage{ID: "first-id", Type: "C2C_MESSAGE_CREATE", Text: "第一条", Identity: ident})
-	bot.dispatchMessage(ctx, &incomingMessage{ID: "second-id", Type: "C2C_MESSAGE_CREATE", Text: "补充说明", Identity: ident})
+	bot.processInbound(ctx, &incomingMessage{ID: "first-id", Type: "C2C_MESSAGE_CREATE", Text: "第一条", Identity: ident})
+	bot.processInbound(ctx, &incomingMessage{ID: "second-id", Type: "C2C_MESSAGE_CREATE", Text: "补充说明", Identity: ident})
 
 	select {
 	case <-sentCh:
@@ -859,12 +907,9 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 		AppSecret:  "secret",
 		APIBaseURL: server.URL,
 		TokenURL:   server.URL + "/app/getAppAccessToken",
-		Handler: commands.Handler{
-			Prefix: "/life",
-			Store:  db,
-		},
 		HTTPClient: server.Client(),
 	}
+	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
 	data := json.RawMessage(`{
 		"id":"message-id",
 		"content":"/help",
@@ -939,12 +984,9 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 		AppSecret:  "123456abcdef",
 		APIBaseURL: server.URL,
 		TokenURL:   server.URL + "/app/getAppAccessToken",
-		Handler: commands.Handler{
-			Prefix: "/life",
-			Store:  db,
-		},
 		HTTPClient: server.Client(),
 	}
+	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
 	body := `{
 		"op":0,
 		"id":"event-id",
@@ -1025,12 +1067,9 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 		AppSecret:  "secret",
 		APIBaseURL: server.URL,
 		TokenURL:   server.URL + "/app/getAppAccessToken",
-		Handler: commands.Handler{
-			Prefix: "/life",
-			Store:  db,
-		},
 		HTTPClient: server.Client(),
 	}
+	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
 	bot.handleDispatch(context.Background(), gatewayPayload{
 		ID: "payload-id",
 		Op: opDispatch,

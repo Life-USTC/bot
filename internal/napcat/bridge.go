@@ -18,8 +18,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/Life-USTC/Bot/internal/agent"
+	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -30,9 +31,8 @@ type Bridge struct {
 	APIURL      string
 	AccessToken string
 	WSURL       string
-	Handler     commands.Handler
-	Agent       *agent.Service
-	Dispatcher  *agent.Dispatcher
+	App         botapp.Processor
+	Recorder    botapp.Recorder
 	HTTPClient  *http.Client
 	Logger      *log.Logger
 	Renderer    responses.Renderer
@@ -42,6 +42,7 @@ type Bridge struct {
 	reverseConn    *websocket.Conn
 	reverseWriteMu *sync.Mutex
 	reverseSeq     uint64
+	reverseConns   map[uint64]reverseConnection
 	reversePending map[string]reversePendingAction
 	reverseTimeout time.Duration
 	mediaCache     napcatMediaCache
@@ -99,6 +100,11 @@ type reversePendingAction struct {
 	result chan reverseActionResult
 }
 
+type reverseConnection struct {
+	conn    *websocket.Conn
+	writeMu *sync.Mutex
+}
+
 type uncertainSendError struct {
 	err error
 }
@@ -122,7 +128,8 @@ type messageEvent struct {
 	Time        int64  `json:"time"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
-	forwardImageURLs []string
+	forwardImageURLs   []string
+	reverseTransportID string
 }
 
 func (b *Bridge) Run(ctx context.Context) error {
@@ -218,11 +225,7 @@ func (b *Bridge) handleForwardEvents(ctx context.Context, events <-chan messageE
 			if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
 				continue
 			}
-			b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
-				if err := b.SendResponse(ctx, event, reply); err != nil {
-					b.logf("send reply failed: %v", err)
-				}
-			})
+			b.processInbound(ctx, event)
 		}
 	}
 }
@@ -267,7 +270,7 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	eventsDone := make(chan struct{})
 	go func() {
 		defer close(eventsDone)
-		b.handleReverseEvents(connCtx, conn, writeMu, events)
+		b.handleReverseEvents(connCtx, connID, events)
 	}()
 	// Drain QQ's pending/doubt friend-request queue off the read loop.
 	go b.approvePendingFriendRequests(connCtx)
@@ -296,7 +299,7 @@ func (b *Bridge) handleReverseConn(ctx context.Context, conn *websocket.Conn) {
 	}
 }
 
-func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, events <-chan messageEvent) {
+func (b *Bridge) handleReverseEvents(ctx context.Context, connID uint64, events <-chan messageEvent) {
 	for {
 		var event messageEvent
 		select {
@@ -307,109 +310,22 @@ func (b *Bridge) handleReverseEvents(ctx context.Context, conn *websocket.Conn, 
 		// Expand 合并转发 here (worker goroutine), not on the read loop, so
 		// get_forward_msg reverse-WS replies can be delivered by resolveReverseAction.
 		b.enrichMessageEvent(ctx, &event)
+		event.reverseTransportID = strconv.FormatUint(connID, 10)
 		if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
 			continue
 		}
 		b.logf("reverse websocket message: message_type=%q user_id=%d group_id=%d",
 			event.MessageType, event.UserID, event.GroupID)
-		b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
-			if err := b.sendReverseResponse(ctx, conn, writeMu, event, reply); err != nil {
-				b.logf("reverse websocket send failed: %v", err)
-			} else {
-				b.logf("reverse websocket replied to user_id=%d group_id=%d", event.UserID, event.GroupID)
-			}
-		})
+		b.processInbound(ctx, event)
 	}
 }
 
-func (b *Bridge) dispatchMessage(ctx context.Context, event messageEvent, send func(context.Context, messageEvent, commands.Response)) {
-	if b.Dispatcher == nil {
-		reply, ok := b.handleMessage(ctx, event)
-		if !ok {
-			b.logf("reverse websocket ignored message from user_id=%d", event.UserID)
-			return
-		}
-		send(ctx, event, reply)
+func (b *Bridge) processInbound(ctx context.Context, event messageEvent) {
+	if b.App == nil {
+		b.logf("napcat inbound application is unavailable")
 		return
 	}
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
-		Text:         event.RawMessage,
-		Identity:     event.identity(),
-		BotMentioned: messageMentionsBot(event.RawMessage, event.SelfID),
-	})
-	if ok {
-		send(ctx, event, reply)
-		return
-	}
-	b.Dispatcher.Submit(b.agentInput(event), func(ctx context.Context, input agent.Input, reply commands.Response, ok bool) {
-		mergedEvent := event
-		mergedEvent.RawMessage = input.Text
-		if !ok {
-			b.recordIgnored(ctx, mergedEvent)
-			b.logf("reverse websocket ignored message from user_id=%d", mergedEvent.UserID)
-			return
-		}
-		b.recordAgentResponse(ctx, mergedEvent, reply)
-		send(ctx, mergedEvent, reply)
-	})
-}
-
-func (b *Bridge) handleMessage(ctx context.Context, event messageEvent) (commands.Response, bool) {
-	reply, ok := b.Handler.HandleResponse(ctx, commands.Input{
-		Text:         event.RawMessage,
-		Identity:     event.identity(),
-		BotMentioned: messageMentionsBot(event.RawMessage, event.SelfID),
-	})
-	if !ok {
-		agentReply, agentOK := b.handleAgent(ctx, event)
-		if agentOK {
-			return agentReply, true
-		}
-	}
-	if !ok {
-		b.recordIgnored(ctx, event)
-		return commands.Response{}, false
-	}
-	return reply, true
-}
-
-func (b *Bridge) handleAgent(ctx context.Context, event messageEvent) (commands.Response, bool) {
-	if b.Agent == nil {
-		return commands.Response{}, false
-	}
-	reply, ok := b.Agent.HandleResponse(ctx, b.agentInput(event))
-	if !ok {
-		return commands.Response{}, false
-	}
-	b.recordAgentResponse(ctx, event, reply)
-	return reply, true
-}
-
-func (b *Bridge) agentInput(event messageEvent) agent.Input {
-	return agent.Input{
-		Text:       event.RawMessage,
-		ImageURLs:  event.imageURLs(),
-		Identity:   event.identity(),
-		SendUpdate: b.SendMessage,
-	}
-}
-
-func (b *Bridge) recordAgentResponse(ctx context.Context, event messageEvent, reply commands.Response) {
-	b.recordInteraction(ctx, event, store.Interaction{
-		RawText: event.RawMessage,
-		Command: "agent",
-		Handled: true,
-		Reply:   reply.Text,
-		Status:  store.InteractionStatusHandled,
-	}, "agent")
-}
-
-func (b *Bridge) recordIgnored(ctx context.Context, event messageEvent) {
-	b.recordInteraction(ctx, event, store.Interaction{
-		RawText: event.RawMessage,
-		Handled: false,
-		Status:  store.InteractionStatusIgnored,
-	}, "ignored")
+	b.App.Process(ctx, event.inbound())
 }
 
 func (b *Bridge) recordOutbound(ctx context.Context, event messageEvent, message string, receipt store.MessageAcceptance, err error) {
@@ -448,10 +364,10 @@ func isUncertainSendError(err error) bool {
 }
 
 func (b *Bridge) recordInteraction(ctx context.Context, event messageEvent, interaction store.Interaction, label string) {
-	if b.Handler.Store == nil {
+	if b.Recorder == nil {
 		return
 	}
-	if err := b.Handler.Store.RecordInteraction(ctx, event.identity(), interaction); err != nil {
+	if err := b.Recorder.RecordInteraction(ctx, event.identity(), interaction); err != nil {
 		b.logf("record %s interaction failed: %v", label, err)
 	}
 }
@@ -484,6 +400,17 @@ func (e messageEvent) identity() store.Identity {
 		UserID:           fmt.Sprint(e.UserID),
 		ConversationType: e.MessageType,
 		ConversationID:   conversationID,
+	}
+}
+
+func (e messageEvent) inbound() message.Inbound {
+	ident := e.identity()
+	return message.Inbound{
+		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID},
+		Conversation: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Source:       message.ReplyRef{TransportID: e.reverseTransportID},
+		Text:         e.RawMessage, ImageURLs: e.imageURLs(),
+		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
 	}
 }
 
@@ -650,35 +577,6 @@ func (b *Bridge) SendResponse(ctx context.Context, event messageEvent, response 
 	return b.Send(ctx, event, response.Text)
 }
 
-func (b *Bridge) sendReverseResponse(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, event messageEvent, response commands.Response) error {
-	if len(response.Parts) > 0 {
-		for _, part := range response.Parts {
-			if err := b.sendReverseResponse(ctx, conn, writeMu, event, part); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if response.Image != nil && b.MediaStore != nil {
-		if imageURL, err := b.prepareImageURL(response.Image); err == nil {
-			if receipt, err := b.sendCachedImage(ctx, conn, writeMu, event, imageURL); err == nil {
-				b.recordOutbound(ctx, event, response.Text, receipt, nil)
-				return nil
-			} else if isUncertainSendError(err) {
-				b.recordOutbound(ctx, event, response.Text, store.MessageAcceptance{}, err)
-				return err
-			} else {
-				b.logf("reverse websocket image send failed: %v", err)
-			}
-		} else {
-			b.logf("prepare napcat image failed: %v", err)
-		}
-	}
-	receipt, err := b.sendReverseReply(ctx, conn, writeMu, event, response.Text)
-	b.recordOutbound(ctx, event, response.Text, receipt, err)
-	return err
-}
-
 func (b *Bridge) prepareImageURL(img *responses.Image) (string, error) {
 	if img.URL != "" {
 		return img.URL, nil
@@ -775,16 +673,41 @@ func (b *Bridge) setReverseConn(conn *websocket.Conn, writeMu *sync.Mutex) uint6
 	b.reverseSeq++
 	b.reverseConn = conn
 	b.reverseWriteMu = writeMu
+	if b.reverseConns == nil {
+		b.reverseConns = make(map[uint64]reverseConnection)
+	}
+	b.reverseConns[b.reverseSeq] = reverseConnection{conn: conn, writeMu: writeMu}
 	return b.reverseSeq
 }
 
 func (b *Bridge) clearReverseConn(connID uint64) {
 	b.reverseMu.Lock()
 	defer b.reverseMu.Unlock()
+	delete(b.reverseConns, connID)
 	if b.reverseSeq == connID {
 		b.reverseConn = nil
 		b.reverseWriteMu = nil
 	}
+}
+
+func (b *Bridge) reverseConnByTransportID(transportID string) (*websocket.Conn, *sync.Mutex) {
+	id, err := strconv.ParseUint(strings.TrimSpace(transportID), 10, 64)
+	if err != nil || id == 0 {
+		return nil, nil
+	}
+	b.reverseMu.Lock()
+	defer b.reverseMu.Unlock()
+	connection := b.reverseConns[id]
+	return connection.conn, connection.writeMu
+}
+
+func (b *Bridge) reverseConnForReply(ref *message.ReplyRef) (*websocket.Conn, *sync.Mutex) {
+	if ref != nil {
+		if conn, writeMu := b.reverseConnByTransportID(ref.TransportID); conn != nil {
+			return conn, writeMu
+		}
+	}
+	return b.activeReverseConn()
 }
 
 func (b *Bridge) activeReverseConn() (*websocket.Conn, *sync.Mutex) {

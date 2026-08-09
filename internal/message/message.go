@@ -17,9 +17,10 @@ type Conversation struct {
 }
 
 type ReplyRef struct {
-	MessageID string
-	EventID   string
-	Sequence  int
+	MessageID   string
+	EventID     string
+	Sequence    int
+	TransportID string
 }
 
 type Inbound struct {
@@ -28,6 +29,7 @@ type Inbound struct {
 	Source       ReplyRef
 	Text         string
 	ImageURLs    []string
+	BotMentioned bool
 }
 
 // Attachment contains immutable, delivery-ready media. Rendering belongs to
