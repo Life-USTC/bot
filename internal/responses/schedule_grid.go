@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+	"hash/fnv"
 	"image"
 	"image/color"
 	"image/png"
@@ -27,6 +28,16 @@ type scheduleGridMetrics struct {
 }
 
 const scheduleGridDividerThickness = 4
+
+var scheduleGridCourseBackgrounds = [...]color.RGBA{
+	{224, 242, 254, 255},
+	{237, 233, 254, 255},
+	{220, 252, 231, 255},
+	{254, 243, 199, 255},
+	{255, 228, 230, 255},
+	{224, 231, 255, 255},
+	{204, 251, 241, 255},
+}
 
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
 	dayWidth := 156
@@ -97,6 +108,20 @@ func scheduleGridTodayIndex(grid *ScheduleGrid, now time.Time) int {
 	return -1
 }
 
+func scheduleGridCourseColor(item ScheduleGridItem) color.RGBA {
+	key := normalizeScheduleGridCourseKey(item.CourseID)
+	if key == "" {
+		key = normalizeScheduleGridCourseKey(item.Course)
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key))
+	return scheduleGridCourseBackgrounds[int(hash.Sum32()%uint32(len(scheduleGridCourseBackgrounds)))]
+}
+
+func normalizeScheduleGridCourseKey(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
+
 func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byte, int, int, error) {
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
 	space := metrics.space()
@@ -119,16 +144,6 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	line := color.RGBA{203, 213, 225, 255}
 	divider := color.RGBA{100, 116, 139, 255}
 	accent := color.RGBA{15, 118, 110, 255}
-	courseBackgrounds := []color.RGBA{
-		{224, 242, 254, 255},
-		{237, 233, 254, 255},
-		{220, 252, 231, 255},
-		{254, 243, 199, 255},
-		{255, 228, 230, 255},
-		{224, 231, 255, 255},
-		{204, 251, 241, 255},
-	}
-
 	drawRect(canvas, canvas.Bounds(), background)
 	drawBusLogoWatermark(canvas, canvas.Bounds(), s(120), 0.10)
 	if strings.TrimSpace(title) == "" {
@@ -183,12 +198,12 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		}
 	}
 
-	for itemIndex, item := range grid.Items {
+	for _, item := range grid.Items {
 		rect, ok := scheduleGridItemBounds(item, metrics)
 		if !ok {
 			continue
 		}
-		fill := courseBackgrounds[(item.Day+itemIndex)%len(courseBackgrounds)]
+		fill := scheduleGridCourseColor(item)
 		scaled := image.Rect(s(rect.Min.X+1), s(rect.Min.Y+1), s(rect.Max.X), s(rect.Max.Y))
 		drawRect(canvas, scaled, fill)
 		drawScheduleGridBorder(canvas, rect, s, accent)
