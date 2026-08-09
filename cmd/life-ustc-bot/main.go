@@ -15,6 +15,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/config"
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/health"
 	"github.com/Life-USTC/Bot/internal/life"
@@ -116,6 +117,15 @@ func main() {
 		logger.Fatalf("open sqlite store: %v", err)
 	}
 	defer func() { _ = stateStore.Close() }()
+	if interrupted, err := stateStore.InterruptStartedAgentRuns(context.Background()); err != nil {
+		logger.Fatalf("recover interrupted agent runs: %v", err)
+	} else if interrupted > 0 {
+		logger.Printf("Marked %d interrupted agent runs", interrupted)
+	}
+	deliveryService, err := delivery.New(stateStore)
+	if err != nil {
+		logger.Fatalf("create delivery service: %v", err)
+	}
 	publicCommandCache := commands.NewPublicCommandCache(
 		stateStore,
 		cfg.BuildVersion,
@@ -222,6 +232,9 @@ func main() {
 			MediaStore:  mediaStore,
 		}
 		messageRouter.Add("napcat", napcatBridge)
+		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
+			logger.Fatalf("register NapCat delivery adapter: %v", err)
+		}
 		go func() {
 			if err := napcatBridge.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat bridge stopped: %v", err)
@@ -241,6 +254,9 @@ func main() {
 			MediaStore:  mediaStore,
 		}
 		messageRouter.Add("napcat", napcatBridge)
+		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
+			logger.Fatalf("register NapCat delivery adapter: %v", err)
+		}
 		go func() {
 			if err := napcatBridge.RunReverse(ctx, cfg.NapCatReverseAddr, cfg.NapCatReversePath); err != nil && ctx.Err() == nil {
 				logger.Fatalf("NapCat reverse bridge stopped: %v", err)
@@ -267,6 +283,9 @@ func main() {
 			MediaStore: mediaStore,
 		}
 		messageRouter.Add("qqbot", qqBot)
+		if err := deliveryService.Register(qqbot.NewDeliveryAdapter(qqBot)); err != nil {
+			logger.Fatalf("register QQ delivery adapter: %v", err)
+		}
 		if cfg.EnableQQBotWebhook {
 			go func() {
 				if err := qqBot.RunWebhook(ctx, cfg.QQBotWebhookAddr, cfg.QQBotWebhookPath); err != nil && ctx.Err() == nil {
@@ -285,6 +304,9 @@ func main() {
 		}
 	}
 	if messageRouter.Available() {
+		deliveryWorker := &delivery.Worker{Service: deliveryService, Logger: logger}
+		go deliveryWorker.Run(ctx)
+		logger.Printf("Delivery worker started")
 		loginPoller := &auth.LoginPoller{
 			Manager:  authManager,
 			Notifier: messageRouter,
@@ -296,7 +318,8 @@ func main() {
 			Life:                 lifeClient,
 			Auth:                 authManager,
 			Store:                stateStore,
-			Sender:               messageRouter,
+			Publisher:            deliveryService,
+			Renderer:             renderer,
 			Logger:               logger,
 			EnableImageResponses: handler.EnableImageResponses,
 		}
