@@ -983,6 +983,92 @@ func TestRunTrimsAccessToken(t *testing.T) {
 	}
 }
 
+func TestEnqueueForwardEventAppliesBackpressureAtCapacity(t *testing.T) {
+	events := make(chan messageEvent, forwardEventQueueSize)
+	for id := int64(0); id < forwardEventQueueSize; id++ {
+		if !enqueueForwardEvent(context.Background(), events, messageEvent{UserID: id}) {
+			t.Fatalf("enqueue %d was unexpectedly canceled", id)
+		}
+	}
+	if len(events) != cap(events) {
+		t.Fatalf("queue length = %d, capacity = %d", len(events), cap(events))
+	}
+	done := make(chan bool, 1)
+	go func() {
+		done <- enqueueForwardEvent(context.Background(), events, messageEvent{UserID: 99})
+	}()
+	select {
+	case <-done:
+		t.Fatal("enqueue completed while the queue was full")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if got := (<-events).UserID; got != 0 {
+		t.Fatalf("first queued user ID = %d", got)
+	}
+	select {
+	case accepted := <-done:
+		if !accepted {
+			t.Fatal("enqueue after freeing capacity was canceled")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("enqueue did not resume after freeing capacity")
+	}
+}
+
+func TestEnqueueForwardEventCancellationReleasesBackpressure(t *testing.T) {
+	events := make(chan messageEvent, 1)
+	events <- messageEvent{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool, 1)
+	go func() {
+		done <- enqueueForwardEvent(ctx, events, messageEvent{})
+	}()
+	cancel()
+	select {
+	case accepted := <-done:
+		if accepted {
+			t.Fatal("enqueue succeeded after cancellation with a full queue")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("enqueue did not stop after cancellation")
+	}
+}
+
+func TestRunOnceCancellationStopsConnectionAndWorkers(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	connected := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		close(connected)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	bridge := &Bridge{WSURL: "ws" + server.URL[len("http"):]}
+	go func() {
+		_, err := bridge.runOnce(ctx)
+		done <- err
+	}()
+	<-connected
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runOnce did not stop after cancellation")
+	}
+}
+
 func TestRunReconnectsAfterRepeatedDisconnects(t *testing.T) {
 	var connections atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())

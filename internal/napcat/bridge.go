@@ -50,6 +50,8 @@ type Bridge struct {
 
 const (
 	defaultReverseActionTimeout = 10 * time.Second
+	forwardEventQueueSize       = 32
+	forwardEventWorkerCount     = 4
 	reverseEventQueueSize       = 32
 )
 
@@ -139,7 +141,25 @@ func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = conn.Close() }()
+	connCtx, cancel := context.WithCancel(ctx)
+	events := make(chan messageEvent, forwardEventQueueSize)
+	var workers sync.WaitGroup
+	workers.Add(forwardEventWorkerCount)
+	for range forwardEventWorkerCount {
+		go func() {
+			defer workers.Done()
+			b.handleForwardEvents(connCtx, events)
+		}()
+	}
+	go func() {
+		<-connCtx.Done()
+		_ = conn.Close()
+	}()
+	defer func() {
+		cancel()
+		_ = conn.Close()
+		workers.Wait()
+	}()
 
 	received := false
 	for {
@@ -148,20 +168,37 @@ func (b *Bridge) runOnce(ctx context.Context) (bool, error) {
 			return received, err
 		}
 		received = true
-		b.handleIncomingEvent(ctx, raw, func(ctx context.Context, event messageEvent) {
-			// Enrich off the read loop so get_forward_msg can use HTTP without stalling reads.
-			go func(event messageEvent) {
-				b.enrichMessageEvent(ctx, &event)
-				if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
-					return
-				}
-				b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
-					if err := b.SendResponse(ctx, event, reply); err != nil {
-						b.logf("send reply failed: %v", err)
-					}
-				})
-			}(event)
+		b.handleIncomingEvent(connCtx, raw, func(_ context.Context, event messageEvent) {
+			enqueueForwardEvent(connCtx, events, event)
 		})
+	}
+}
+
+func enqueueForwardEvent(ctx context.Context, events chan<- messageEvent, event messageEvent) bool {
+	select {
+	case events <- event:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (b *Bridge) handleForwardEvents(ctx context.Context, events <-chan messageEvent) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-events:
+			b.enrichMessageEvent(ctx, &event)
+			if strings.TrimSpace(event.RawMessage) == "" && len(event.imageURLs()) == 0 {
+				continue
+			}
+			b.dispatchMessage(ctx, event, func(ctx context.Context, event messageEvent, reply commands.Response) {
+				if err := b.SendResponse(ctx, event, reply); err != nil {
+					b.logf("send reply failed: %v", err)
+				}
+			})
+		}
 	}
 }
 
