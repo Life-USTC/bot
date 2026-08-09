@@ -64,7 +64,7 @@ func FromEnv() Config {
 		OneBotHTTPPort:         envUint16("BOT_ONEBOT_HTTP_PORT", 6700),
 		OneBotAccessToken:      envOptionalString("BOT_ONEBOT_ACCESS_TOKEN"),
 		OneBotSelfID:           envString("BOT_SELF_ID", "life-ustc"),
-		NapCatAPIURL:           envTrimRight("NAPCAT_API_URL", "http://127.0.0.1:3000", "/"),
+		NapCatAPIURL:           envTrimRight("NAPCAT_API_URL", "", "/"),
 		NapCatAccessToken:      envOptionalString("NAPCAT_ACCESS_TOKEN"),
 		NapCatWSURL:            envOptionalString("NAPCAT_WS_URL"),
 		NapCatReverseAddr:      envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),

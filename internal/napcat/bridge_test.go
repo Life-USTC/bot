@@ -39,6 +39,14 @@ func (errReader) Read([]byte) (int, error) {
 	return 0, errors.New("read failed")
 }
 
+func TestSendWithoutConfiguredHTTPAPIStopsAtReverseBoundary(t *testing.T) {
+	bridge := Bridge{}
+	err := bridge.Send(context.Background(), messageEvent{MessageType: "private", UserID: 42}, "hello")
+	if err == nil || err.Error() != "napcat HTTP API is not configured and reverse websocket is unavailable" {
+		t.Fatalf("Send error = %v", err)
+	}
+}
+
 func TestSendGroupMessage(t *testing.T) {
 	var gotPath string
 	var gotBody map[string]any

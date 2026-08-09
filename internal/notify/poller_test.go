@@ -212,6 +212,47 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	}
 }
 
+func TestPollerBacksOffAfterNotificationAuthFailure(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 9, 0, 0, 0, lifedata.ChinaLocation())
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "expired", RefreshToken: "refresh", ExpiresAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	poller := &Poller{
+		Life: life.NewClient(server.URL, server.Client()), Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store: db, Sender: &fakeSender{}, Now: func() time.Time { return now },
+	}
+
+	poller.tick(ctx)
+	poller.tick(ctx)
+	if requests != 1 {
+		t.Fatalf("requests during backoff = %d, want 1", requests)
+	}
+	now = now.Add(pollFailureBaseDelay)
+	poller.tick(ctx)
+	if requests != 2 {
+		t.Fatalf("requests after backoff = %d, want 2", requests)
+	}
+}
+
 func TestPollerStopsRetryingAfterAttemptBudget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
@@ -236,8 +277,8 @@ func TestPollerStopsRetryingAfterAttemptBudget(t *testing.T) {
 	}
 	sender := &fakeSender{failCount: 100}
 	poller := &Poller{
-		Life: life.NewClient(server.URL, server.Client()),
-		Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Life:  life.NewClient(server.URL, server.Client()),
+		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		Store: db, Sender: sender, Now: func() time.Time { return now },
 	}
 	for i := 0; i < maxNotificationAttempts+2; i++ {

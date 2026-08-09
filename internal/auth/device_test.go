@@ -964,6 +964,50 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 	}
 }
 
+func TestMCPAccessTokenRequiresPreviouslyApprovedResource(t *testing.T) {
+	ctx := context.Background()
+	var serverURL string
+	tokenRequests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer": serverURL, "token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		tokenRequests++
+		http.Error(w, "must not refresh", http.StatusInternalServerError)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	accessToken := mustSignIDToken(t, map[string]any{
+		"iss": serverURL, "aud": serverURL, "exp": authTestNow.Add(time.Hour).Unix(), "sub": "user-1",
+	})
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: accessToken, RefreshToken: "refresh", ExpiresAt: authTestNow.Add(time.Hour), Resource: serverURL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{Server: serverURL, HTTPClient: server.Client(), Store: db, Now: fixedClock(authTestNow)}
+	if _, err := manager.MCPAccessToken(ctx, ident); !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("MCPAccessToken error = %v, want ErrNotLoggedIn", err)
+	}
+	if tokenRequests != 0 {
+		t.Fatalf("token requests = %d, want 0", tokenRequests)
+	}
+	if credential, err := db.Credential(ctx, ident); err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
+	}
+}
+
 func TestWithRefreshRetriesUnauthorized(t *testing.T) {
 	ctx := context.Background()
 	var serverURL string

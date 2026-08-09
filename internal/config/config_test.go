@@ -227,11 +227,11 @@ func TestFromEnvFallsBackForEmptyLifeServerAfterTrim(t *testing.T) {
 	}
 }
 
-func TestFromEnvFallsBackForEmptyNapCatAPIURLAfterTrim(t *testing.T) {
+func TestFromEnvKeepsEmptyNapCatAPIURLDisabled(t *testing.T) {
 	t.Setenv("NAPCAT_API_URL", " / ")
 
 	cfg := FromEnv()
-	if cfg.NapCatAPIURL != "http://127.0.0.1:3000" {
+	if cfg.NapCatAPIURL != "" {
 		t.Fatalf("NapCatAPIURL = %q", cfg.NapCatAPIURL)
 	}
 }
