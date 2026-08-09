@@ -64,6 +64,31 @@ type napcatActionResponse struct {
 	Echo    json.RawMessage `json:"echo"`
 }
 
+type napcatHTTPStatusError struct {
+	endpoint string
+	status   int
+	message  string
+}
+
+func (e napcatHTTPStatusError) Error() string {
+	if e.message == "" {
+		return fmt.Sprintf("napcat %s returned %d", e.endpoint, e.status)
+	}
+	return fmt.Sprintf("napcat %s returned %d: %s", e.endpoint, e.status, e.message)
+}
+
+type napcatActionRejectedError struct {
+	retCode int
+	message string
+}
+
+func (e napcatActionRejectedError) Error() string {
+	if e.retCode == 0 {
+		return "send failed: " + e.message
+	}
+	return fmt.Sprintf("send failed with retcode %d: %s", e.retCode, e.message)
+}
+
 type reverseActionResult struct {
 	response napcatActionResponse
 	err      error
@@ -923,10 +948,10 @@ func napcatAcceptance(response napcatActionResponse) (store.MessageAcceptance, e
 
 func napcatActionError(response napcatActionResponse) error {
 	if response.Status != "" && response.Status != "ok" {
-		return fmt.Errorf("send failed: %s", napcatResultText(response.Message, response.Wording, response.Status))
+		return napcatActionRejectedError{message: napcatResultText(response.Message, response.Wording, response.Status)}
 	}
 	if response.RetCode != 0 {
-		return fmt.Errorf("send failed with retcode %d: %s", response.RetCode, napcatResultText(response.Message, response.Wording, response.Status))
+		return napcatActionRejectedError{retCode: response.RetCode, message: napcatResultText(response.Message, response.Wording, response.Status)}
 	}
 	return nil
 }
@@ -998,13 +1023,14 @@ func (b *Bridge) postActionResponse(ctx context.Context, endpoint string, payloa
 	if resp.StatusCode >= 400 {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return napcatActionResponse{}, fmt.Errorf("napcat %s returned %d: read response body: %w", endpoint, resp.StatusCode, err)
+			return napcatActionResponse{}, napcatHTTPStatusError{
+				endpoint: endpoint,
+				status:   resp.StatusCode,
+				message:  "read response body: " + err.Error(),
+			}
 		}
 		message := strings.TrimSpace(string(respBody))
-		if message != "" {
-			return napcatActionResponse{}, fmt.Errorf("napcat %s returned %d: %s", endpoint, resp.StatusCode, message)
-		}
-		return napcatActionResponse{}, fmt.Errorf("napcat %s returned %d", endpoint, resp.StatusCode)
+		return napcatActionResponse{}, napcatHTTPStatusError{endpoint: endpoint, status: resp.StatusCode, message: message}
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

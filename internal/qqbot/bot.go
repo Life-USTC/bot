@@ -198,6 +198,15 @@ type uncertainSendError struct {
 	err error
 }
 
+// preSendError marks a failure that happened before a message-send request was
+// issued. Retrying it cannot duplicate a platform message.
+type preSendError struct {
+	err error
+}
+
+func (e preSendError) Error() string { return e.err.Error() }
+func (e preSendError) Unwrap() error { return e.err }
+
 func (e uncertainSendError) Error() string {
 	return e.err.Error()
 }
@@ -976,11 +985,11 @@ func qqBotOutgoingMessage(ident store.Identity, message string) string {
 func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageURL string) (richMediaUploadResponse, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	path, err := richMediaUploadPath(ident)
 	if err != nil {
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	var out richMediaUploadResponse
 	startedAt := time.Now()
@@ -992,26 +1001,27 @@ func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageUR
 	if err != nil {
 		b.logf("QQ bot media upload failed: conversation_type=%q upload_ms=%d error=%v",
 			ident.ConversationType, time.Since(startedAt).Milliseconds(), err)
-		return richMediaUploadResponse{}, err
+		return richMediaUploadResponse{}, preSendError{err: err}
 	}
 	if len(out.FileInfo) == 0 {
-		return richMediaUploadResponse{}, errors.New("qq bot rich media upload missing file_info")
+		return richMediaUploadResponse{}, preSendError{err: errors.New("qq bot rich media upload missing file_info")}
 	}
 	b.logf("QQ bot media uploaded: conversation_type=%q ttl_seconds=%d upload_ms=%d",
 		ident.ConversationType, out.TTL, time.Since(startedAt).Milliseconds())
 	return out, nil
 }
 
-func (b *Bot) sendRichMediaTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
+func (b *Bot) sendRichMediaContentTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, content, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	body := sendMessageRequest{
+		Content: strings.TrimSpace(content),
 		MsgType: 7,
 		Media:   &mediaInfo{FileInfo: fileInfo},
 	}
@@ -1050,11 +1060,11 @@ func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, 
 	}
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	path, err := sendPath(ident)
 	if err != nil {
-		return store.MessageAcceptance{}, err
+		return store.MessageAcceptance{}, preSendError{err: err}
 	}
 	body := sendMessageRequest{
 		Content: message,
