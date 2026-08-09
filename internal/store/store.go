@@ -54,6 +54,23 @@ type LoginSession struct {
 	Resources string
 }
 
+type LoginStatus string
+
+const (
+	LoginStatusPending    LoginStatus = "pending"
+	LoginStatusApproved   LoginStatus = "approved"
+	LoginStatusExpired    LoginStatus = "expired"
+	LoginStatusDenied     LoginStatus = "denied"
+	LoginStatusInvalid    LoginStatus = "invalid"
+	LoginStatusSuperseded LoginStatus = "superseded"
+)
+
+type LoginTransition struct {
+	Status     LoginStatus
+	Credential *Credential
+	Outbound   *message.Outbound
+}
+
 type Interaction struct {
 	ID                int64
 	Direction         string
@@ -538,6 +555,14 @@ func (s *Store) migrate() error {
 			}
 		}
 	}
+	// notify_failed mixed delivery state into the login domain. Credentials were
+	// already saved for these sessions, so close them without replaying a stale
+	// completion notification.
+	if err := s.db.Model(&loginSessionRow{}).
+		Where("status = ?", "notify_failed").
+		Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
+		return fmt.Errorf("normalize obsolete login status: %w", err)
+	}
 	return nil
 }
 
@@ -730,18 +755,17 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 	if err != nil {
 		return err
 	}
+	return saveCredentialWithDB(s.db.WithContext(ctx), userID, cred, nowUTC())
+}
+
+func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.Time) error {
 	row := credentialRow{
-		UserID:       userID,
-		ClientID:     cred.ClientID,
-		AccessToken:  cred.AccessToken,
-		RefreshToken: cred.RefreshToken,
-		TokenType:    cred.TokenType,
-		ExpiresAt:    cred.ExpiresAt.UTC(),
-		Scope:        cred.Scope,
-		Resource:     cred.Resource,
-		UpdatedAt:    nowUTC(),
+		UserID: userID, ClientID: cred.ClientID, AccessToken: cred.AccessToken,
+		RefreshToken: cred.RefreshToken, TokenType: cred.TokenType,
+		ExpiresAt: cred.ExpiresAt.UTC(), Scope: cred.Scope, Resource: cred.Resource,
+		UpdatedAt: now,
 	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"client_id",
@@ -823,8 +847,8 @@ func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session Lo
 	now := nowUTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&loginSessionRow{}).
-			Where("user_id = ? AND status IN ?", userID, activeLoginSessionStatuses()).
-			Updates(map[string]any{"status": "superseded", "updated_at": now}).Error; err != nil {
+			Where("user_id = ? AND status = ?", userID, string(LoginStatusPending)).
+			Updates(map[string]any{"status": string(LoginStatusSuperseded), "updated_at": now}).Error; err != nil {
 			return err
 		}
 		row := loginSessionRow{
@@ -865,6 +889,9 @@ func normalizeLoginSessionForSave(session LoginSession) (LoginSession, error) {
 	}
 	if session.Status == "" {
 		return LoginSession{}, errors.New("login session status is empty")
+	}
+	if session.Status != string(LoginStatusPending) {
+		return LoginSession{}, fmt.Errorf("new login session status must be %q", LoginStatusPending)
 	}
 	return session, nil
 }
@@ -910,7 +937,7 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	var rows []loginSessionRow
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users ON users.id = login_sessions.user_id").
-		Where("login_sessions.status IN ?", activeLoginSessionStatuses()).
+		Where("login_sessions.status = ?", string(LoginStatusPending)).
 		Order("login_sessions.id ASC").
 		Find(&rows).Error
 	if err != nil {
@@ -948,37 +975,78 @@ func (s *Store) PendingLoginSessions(ctx context.Context) ([]LoginSession, error
 	return sessions, nil
 }
 
-func activeLoginSessionStatuses() []string {
-	return []string{"pending", "notify_failed"}
-}
-
-func (s *Store) MarkLoginSession(ctx context.Context, ident Identity, deviceCode, status string) error {
-	deviceCode, status, err := normalizeLoginSessionUpdate(deviceCode, status)
-	if err != nil {
-		return err
+// TransitionLoginSession atomically commits a pending login's terminal state,
+// optional credential, and optional durable result message. A false return
+// means another actor already completed or superseded the session.
+func (s *Store) TransitionLoginSession(
+	ctx context.Context,
+	ident Identity,
+	deviceCode string,
+	transition LoginTransition,
+) (bool, error) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return false, errors.New("login session device code is empty")
+	}
+	if !terminalLoginStatus(transition.Status) {
+		return false, fmt.Errorf("invalid terminal login status %q", transition.Status)
+	}
+	if transition.Status == LoginStatusApproved && transition.Credential == nil {
+		return false, errors.New("approved login transition requires a credential")
+	}
+	if transition.Status != LoginStatusApproved && transition.Credential != nil {
+		return false, errors.New("only approved login transition may save a credential")
+	}
+	var credential Credential
+	var err error
+	if transition.Credential != nil {
+		credential, err = normalizeCredentialForSave(*transition.Credential)
+		if err != nil {
+			return false, err
+		}
 	}
 	userID, ok, err := s.userID(ctx, ident)
-	if err != nil {
-		return err
+	if err != nil || !ok {
+		return false, err
 	}
-	if !ok {
+	now := nowUTC()
+	transitioned := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&loginSessionRow{}).
+			Where("user_id = ? AND device_code = ? AND status = ?", userID, deviceCode, string(LoginStatusPending)).
+			Updates(map[string]any{"status": string(transition.Status), "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		transitioned = true
+		if transition.Credential != nil {
+			if err := saveCredentialWithDB(tx, userID, credential, now); err != nil {
+				return err
+			}
+		}
+		if transition.Outbound != nil {
+			if _, _, err := enqueueWithDB(tx, *transition.Outbound, now); err != nil {
+				return err
+			}
+		}
 		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	return s.db.WithContext(ctx).Model(&loginSessionRow{}).
-		Where("user_id = ? AND device_code = ?", userID, deviceCode).
-		Updates(map[string]any{"status": status, "updated_at": nowUTC()}).Error
+	return transitioned, err
 }
 
-func normalizeLoginSessionUpdate(deviceCode, status string) (string, string, error) {
-	deviceCode = strings.TrimSpace(deviceCode)
-	status = strings.TrimSpace(status)
-	if deviceCode == "" {
-		return "", "", errors.New("login session device code is empty")
+func terminalLoginStatus(status LoginStatus) bool {
+	switch status {
+	case LoginStatusApproved, LoginStatusExpired, LoginStatusDenied, LoginStatusInvalid:
+		return true
+	default:
+		return false
 	}
-	if status == "" {
-		return "", "", errors.New("login session status is empty")
-	}
-	return deviceCode, status, nil
 }
 
 func (s *Store) RecordConversationState(ctx context.Context, ident Identity, command, state string) error {

@@ -997,8 +997,17 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	if got == nil || got.DeviceCode != "device" {
 		t.Fatalf("session = %#v", got)
 	}
-	if err := s.MarkLoginSession(context.Background(), ident, "device", "approved"); err != nil {
+	transitioned, err := s.TransitionLoginSession(context.Background(), ident, "device", LoginTransition{
+		Status: LoginStatusApproved,
+		Credential: &Credential{
+			ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+		},
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !transitioned {
+		t.Fatal("session was not transitioned")
 	}
 	if err := s.db.WithContext(context.Background()).First(&row).Error; err != nil {
 		t.Fatal(err)
@@ -1012,6 +1021,119 @@ func TestLoginSessionLifecycle(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("expected no active session, got %#v", got)
+	}
+}
+
+func TestTransitionLoginSessionAtomicallySavesCredentialAndOutbox(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outbound := message.Outbound{
+		Kind: "login_result", Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test:approved",
+	}
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &outbound,
+	})
+	if err != nil || !transitioned {
+		t.Fatalf("transitioned = %v, err = %v", transitioned, err)
+	}
+	credential, err := s.Credential(ctx, ident)
+	if err != nil || credential == nil || credential.AccessToken != "access" {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
+	}
+	var row loginSessionRow
+	if err := s.db.Where("device_code = ?", "device").Take(&row).Error; err != nil || row.Status != "approved" {
+		t.Fatalf("session = %#v, err = %v", row, err)
+	}
+	var messages int64
+	if err := s.db.Model(&outgoingMessageRow{}).Count(&messages).Error; err != nil || messages != 1 {
+		t.Fatalf("outbox count = %d, err = %v", messages, err)
+	}
+	transitioned, err = s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "other", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &outbound,
+	})
+	if err != nil || transitioned {
+		t.Fatalf("second transition = %v, err = %v", transitioned, err)
+	}
+}
+
+func TestTransitionLoginSessionRollsBackTerminalStateWhenOutboxFails(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	invalid := message.Outbound{Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test"}
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
+		Status:     LoginStatusApproved,
+		Credential: &Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour)},
+		Outbound:   &invalid,
+	})
+	if err == nil || transitioned {
+		t.Fatalf("transitioned = %v, err = %v", transitioned, err)
+	}
+	active, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil || active == nil {
+		t.Fatalf("active = %#v, err = %v", active, err)
+	}
+	credential, err := s.Credential(ctx, ident)
+	if err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v", credential, err)
+	}
+}
+
+func TestOpenClosesObsoleteFailedNotificationWithoutReplay(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&loginSessionRow{}).Where("device_code = ?", "device").Update("status", "notify_failed").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var row loginSessionRow
+	if err := s.db.Where("device_code = ?", "device").Take(&row).Error; err != nil || row.Status != "approved" {
+		t.Fatalf("session = %#v, err = %v", row, err)
+	}
+	var messages int64
+	if err := s.db.Model(&outgoingMessageRow{}).Count(&messages).Error; err != nil || messages != 0 {
+		t.Fatalf("historical outbox messages = %d, err = %v", messages, err)
 	}
 }
 
@@ -1154,7 +1276,7 @@ func TestSaveLoginSessionRejectsBlankRequiredFields(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
+func TestTransitionLoginSessionTrimsDeviceCode(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1171,8 +1293,12 @@ func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkLoginSession(ctx, ident, " device ", " approved "); err != nil {
+	transitioned, err := s.TransitionLoginSession(ctx, ident, " device ", LoginTransition{Status: LoginStatusExpired})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !transitioned {
+		t.Fatal("session was not transitioned")
 	}
 	got, err := s.ActiveLoginSession(ctx, ident)
 	if err != nil {
@@ -1183,7 +1309,7 @@ func TestMarkLoginSessionTrimsUpdateFields(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
+func TestTransitionLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1192,8 +1318,12 @@ func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42"}
-	if err := s.MarkLoginSession(ctx, ident, "device", "approved"); err != nil {
+	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{Status: LoginStatusExpired})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if transitioned {
+		t.Fatal("missing session transitioned")
 	}
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&count).Error; err != nil {
@@ -1204,7 +1334,7 @@ func TestMarkLoginSessionDoesNotCreateMissingUser(t *testing.T) {
 	}
 }
 
-func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
+func TestTransitionLoginSessionRejectsInvalidFields(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1215,17 +1345,17 @@ func TestMarkLoginSessionRejectsBlankUpdateFields(t *testing.T) {
 	ident := Identity{Platform: "napcat", UserID: "42"}
 	tests := []struct {
 		deviceCode string
-		status     string
+		status     LoginStatus
 	}{
-		{deviceCode: "", status: "approved"},
-		{deviceCode: "   ", status: "approved"},
+		{deviceCode: "", status: LoginStatusExpired},
+		{deviceCode: "   ", status: LoginStatusExpired},
 		{deviceCode: "device", status: ""},
-		{deviceCode: "device", status: "   "},
+		{deviceCode: "device", status: LoginStatusPending},
 	}
 	for _, tt := range tests {
-		err := s.MarkLoginSession(ctx, ident, tt.deviceCode, tt.status)
-		if err == nil || !strings.Contains(err.Error(), "login session") {
-			t.Fatalf("MarkLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
+		_, err := s.TransitionLoginSession(ctx, ident, tt.deviceCode, LoginTransition{Status: tt.status})
+		if err == nil {
+			t.Fatalf("TransitionLoginSession(%q, %q) error = %v", tt.deviceCode, tt.status, err)
 		}
 	}
 	var count int64
@@ -1266,7 +1396,7 @@ func TestPendingLoginSessionsIncludeNotificationIdentity(t *testing.T) {
 	}
 }
 
-func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
+func TestSaveLoginSessionSupersedesPendingSession(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1281,9 +1411,6 @@ func TestSaveLoginSessionSupersedesFailedNotificationSession(t *testing.T) {
 		ExpiresAt:  time.Now().Add(time.Minute),
 		Status:     "pending",
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.MarkLoginSession(ctx, ident, "old-device", "notify_failed"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveLoginSession(ctx, ident, LoginSession{

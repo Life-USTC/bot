@@ -318,9 +318,8 @@ func main() {
 		go deliveryWorker.Run(ctx)
 		logger.Printf("Delivery worker started")
 		loginPoller := &auth.LoginPoller{
-			Manager:  authManager,
-			Notifier: messageRouter,
-			Logger:   logger,
+			Manager: authManager,
+			Logger:  logger,
 		}
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
