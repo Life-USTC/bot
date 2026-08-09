@@ -786,6 +786,9 @@ func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, sessio
 		case "expired_token":
 			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "expired")
 			return PollResult{Message: "验证码已过期。发送：登录"}, nil
+		case "invalid_grant":
+			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "invalid")
+			return PollResult{Message: "登录已失效。发送：登录"}, nil
 		case "access_denied":
 			_ = m.Store.MarkLoginSession(ctx, ident, session.DeviceCode, "denied")
 			return PollResult{Message: "登录已取消。发送：登录"}, nil

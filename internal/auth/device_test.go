@@ -295,6 +295,62 @@ func TestPollDeviceLoginExpiresSessionUsingManagerClock(t *testing.T) {
 	}
 }
 
+func TestPollDeviceLoginInvalidGrantEndsSession(t *testing.T) {
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "The device grant is no longer valid.",
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode:      "device",
+		UserCode:        "USER-CODE",
+		ClientID:        "client",
+		ExpiresAt:       authTestNow.Add(time.Minute),
+		IntervalSeconds: 5,
+		Status:          "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := Manager{Server: server.URL, HTTPClient: server.Client(), Store: s, Now: fixedClock(authTestNow)}
+	result, err := manager.PollDeviceLogin(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Message != "登录已失效。发送：登录" {
+		t.Fatalf("result = %#v", result)
+	}
+	active, err := s.ActiveLoginSession(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != nil {
+		t.Fatalf("session still active = %#v", active)
+	}
+}
+
 func TestBeginDeviceLoginRejectsIncompleteDeviceResponse(t *testing.T) {
 	for _, tc := range []struct {
 		name string
