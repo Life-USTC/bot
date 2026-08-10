@@ -25,7 +25,7 @@ func TestOutgoingMessageLifecycleAndDedupe(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
-	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Add(time.Minute)
 	outbound := message.Outbound{
 		Kind:      "auth.result",
 		Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
@@ -73,7 +73,7 @@ func TestOutgoingMessageRetryExpiryAndStaleRecovery(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
-	now := time.Date(2026, 8, 10, 2, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Add(time.Minute)
 	makeOutbound := func(key string, expiresAt time.Time) message.Outbound {
 		return message.Outbound{
 			Kind:    "reminder.class",
