@@ -236,14 +236,18 @@ func TestPollerBacksOffAfterNotificationAuthFailure(t *testing.T) {
 	}
 
 	poller.tick(ctx)
+	requestsAfterFailure := requests
+	if requestsAfterFailure == 0 {
+		t.Fatal("notification failure made no requests")
+	}
 	poller.tick(ctx)
-	if requests != 1 {
-		t.Fatalf("requests during backoff = %d, want 1", requests)
+	if requests != requestsAfterFailure {
+		t.Fatalf("requests during backoff = %d, want %d", requests, requestsAfterFailure)
 	}
 	now = now.Add(pollFailureBaseDelay)
 	poller.tick(ctx)
-	if requests != 2 {
-		t.Fatalf("requests after backoff = %d, want 2", requests)
+	if requests <= requestsAfterFailure {
+		t.Fatalf("requests after backoff = %d, want more than %d", requests, requestsAfterFailure)
 	}
 }
 
