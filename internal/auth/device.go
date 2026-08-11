@@ -767,10 +767,8 @@ func (m *Manager) now() time.Time {
 func (m *Manager) registerClient(ctx context.Context, endpoint string) (string, error) {
 	body := map[string]any{
 		"client_name":                "life-ustc-onebot",
-		"redirect_uris":              []string{"http://localhost/callback"},
 		"token_endpoint_auth_method": "none",
-		"grant_types":                []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"},
-		"response_types":             []string{"code"},
+		"grant_types":                []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"},
 		"scope":                      oauthScope,
 	}
 	data, err := json.Marshal(body)
