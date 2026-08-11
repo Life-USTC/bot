@@ -26,7 +26,6 @@ type Config struct {
 	QQBotWebhookPath       string
 	QQBotIntents           uint64
 	DBPath                 string
-	CommandPrefix          string
 	BuildVersion           string
 	PublicCommandCacheTTL  time.Duration
 	HTTPClientTimeout      time.Duration
@@ -73,7 +72,6 @@ func FromEnv() Config {
 		QQBotWebhookPath:       envPath("QQ_BOT_WEBHOOK_PATH", "/qqbot"),
 		QQBotIntents:           envUint64("QQ_BOT_INTENTS", 1<<12|1<<25|1<<26|1<<30),
 		DBPath:                 envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
-		CommandPrefix:          envString("BOT_COMMAND_PREFIX", "/life"),
 		BuildVersion:           envString("BOT_BUILD_VERSION", "dev"),
 		PublicCommandCacheTTL:  time.Duration(envPositiveInt("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", 300)) * time.Second,
 		HTTPClientTimeout:      time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 60)) * time.Second,

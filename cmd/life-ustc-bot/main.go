@@ -107,7 +107,6 @@ func main() {
 		Life:                   lifeClient,
 		Auth:                   authManager,
 		Store:                  stateStore,
-		Prefix:                 cfg.CommandPrefix,
 		Logger:                 logger,
 		Feedback:               feedbackService,
 		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,

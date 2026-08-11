@@ -242,7 +242,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 
 	bridge := &Bridge{Logger: log.New(&logs, "", 0)}
 	configureTestApp(t, bridge, commands.Handler{
-		Life: life.NewClient(lifeServer.URL, lifeServer.Client()), Prefix: "/life",
+		Life: life.NewClient(lifeServer.URL, lifeServer.Client()),
 	}, nil, nil, nil)
 	upgrader := websocket.Upgrader{}
 	handled := make(chan struct{})
@@ -268,7 +268,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	err = conn.WriteJSON(map[string]any{
 		"post_type":    "message",
 		"message_type": "private",
-		"raw_message":  "/life course calculus private-query",
+		"raw_message":  "course calculus private-query",
 		"user_id":      456,
 	})
 	if err != nil {
@@ -388,7 +388,7 @@ func TestDispatchMessageBypassesAgentQueueForCommands(t *testing.T) {
 	dispatcher := agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
 		Debounce: 200 * time.Millisecond, MaxWait: 300 * time.Millisecond,
 	})
-	configureTestApp(t, bridge, commands.Handler{Prefix: "/life"}, agentService, dispatcher, nil)
+	configureTestApp(t, bridge, commands.Handler{}, agentService, dispatcher, nil)
 	bridge.processInbound(ctx, messageEvent{
 		PostType: "message", MessageType: "private", RawMessage: "帮助", UserID: 42,
 	})
@@ -410,7 +410,7 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 
 	bridge := &Bridge{}
 	configureTestApp(t, bridge, commands.Handler{
-		Life: life.NewClient(lifeServer.URL, lifeServer.Client()), Prefix: "/life",
+		Life: life.NewClient(lifeServer.URL, lifeServer.Client()),
 	}, nil, nil, nil)
 	upgrader := websocket.Upgrader{}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -442,7 +442,7 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 	err = conn1.WriteJSON(map[string]any{
 		"post_type":    "message",
 		"message_type": "private",
-		"raw_message":  "/life course calculus",
+		"raw_message":  "course calculus",
 		"user_id":      456,
 	})
 	if err != nil {
@@ -645,7 +645,7 @@ func TestHandleMessageRecordsIgnored(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	bridge := &Bridge{}
-	configureTestApp(t, bridge, commands.Handler{Store: db, Prefix: "/life"}, nil, nil, db)
+	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, nil, db)
 	bridge.processInbound(context.Background(), messageEvent{
 		PostType:    "message",
 		MessageType: "private",
@@ -686,7 +686,7 @@ func TestInvalidInboundIsRejectedBeforeRecording(t *testing.T) {
 	bridge := &Bridge{
 		Logger: log.New(&logs, "", 0),
 	}
-	configureTestApp(t, bridge, commands.Handler{Store: db, Prefix: "/life"}, nil, nil, db)
+	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, nil, db)
 	bridge.processInbound(context.Background(), messageEvent{
 		PostType:   "message",
 		RawMessage: "not a command",
