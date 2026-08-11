@@ -39,7 +39,7 @@ type ScheduleGridItem struct {
 	Day         int
 	StartPeriod int
 	EndPeriod   int
-	CourseID    string
+	SectionKey  string
 	Course      string
 	Location    string
 }

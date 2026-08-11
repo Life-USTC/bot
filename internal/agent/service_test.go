@@ -372,7 +372,7 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 	}
 }
 
-func TestAgentToolConstructionContinuesWhenMCPResourceIsNotApproved(t *testing.T) {
+func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -406,18 +406,24 @@ func TestAgentToolConstructionContinuesWhenMCPResourceIsNotApproved(t *testing.T
 	}
 	var logs bytes.Buffer
 	svc := &Service{
+		enabled:   true,
 		handler:   commands.Handler{Store: db},
 		auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		mcpClient: botmcp.New(server.URL+"/api/mcp", server.Client()),
 		logger:    log.New(&logs, "", 0),
 	}
 
-	names := agentToolNames(t, svc)
-	if !names["get_current_time"] || names["get_current_semester"] {
-		t.Fatalf("tools = %#v", names)
+	reply, ok := svc.Handle(context.Background(), Input{Identity: ident, Text: "查询课表"})
+	if !ok || !strings.Contains(reply, "请发送：登录") ||
+		!strings.Contains(reply, "正确权限") || !strings.Contains(reply, "本次没有执行") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
-	if !strings.Contains(logs.String(), "MCP tools unavailable; continuing without them") || !strings.Contains(logs.String(), "invalid_target") {
+	if !strings.Contains(logs.String(), "MCP tools unavailable") || !strings.Contains(logs.String(), "invalid_target") {
 		t.Fatalf("logs = %q", logs.String())
+	}
+	credential, err := db.Credential(context.Background(), ident)
+	if err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v; want deleted", credential, err)
 	}
 }
 
@@ -482,27 +488,24 @@ func assertAgentToolNames(t *testing.T, svc *Service, wantNames ...string) {
 	}
 }
 
-func TestToolErrorCatchingMiddlewareReturnsErrorAsResult(t *testing.T) {
+func TestToolResultMiddlewarePropagatesErrors(t *testing.T) {
 	ctx := context.Background()
 	input := &compose.ToolInput{Name: "test_tool", Arguments: "{}", CallID: "call-1"}
 	var logs bytes.Buffer
 	logf := log.New(&logs, "", 0).Printf
 
-	failing := toolErrorCatchingMiddleware(logf)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+	failing := toolResultMiddleware(logf)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return nil, errors.New("bad args")
 	})
 	out, err := failing(ctx, input)
-	if err != nil {
-		t.Fatalf("middleware returned error: %v", err)
-	}
-	if out == nil || strings.Contains(out.Result, "bad args") || !strings.Contains(out.Result, "请检查参数") {
-		t.Fatalf("result = %q", out.Result)
+	if err == nil || out != nil || !strings.Contains(err.Error(), "bad args") {
+		t.Fatalf("result = %#v, err = %v", out, err)
 	}
 	if !strings.Contains(logs.String(), "bad args") || !strings.Contains(logs.String(), "test_tool") {
 		t.Fatalf("logs = %q", logs.String())
 	}
 
-	ok := toolErrorCatchingMiddleware(nil)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+	ok := toolResultMiddleware(nil)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: "ok"}, nil
 	})
 	out, err = ok(ctx, input)
@@ -1105,7 +1108,7 @@ func TestToolResultMiddlewareLimitsLargeResults(t *testing.T) {
 	next := func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: strings.Repeat("课", maxToolResultRunes+10)}, nil
 	}
-	out, err := toolErrorCatchingMiddleware(nil)(next)(
+	out, err := toolResultMiddleware(nil)(next)(
 		withUsageAccumulator(context.Background(), accumulator),
 		&compose.ToolInput{},
 	)

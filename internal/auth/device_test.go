@@ -1053,14 +1053,14 @@ func TestMCPAccessTokenRequiresPreviouslyApprovedResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := &Manager{Server: serverURL, HTTPClient: server.Client(), Store: db, Now: fixedClock(authTestNow)}
-	if _, err := manager.MCPAccessToken(ctx, ident); !errors.Is(err, ErrResourceNotApproved) {
-		t.Fatalf("MCPAccessToken error = %v, want ErrResourceNotApproved", err)
+	if _, err := manager.MCPAccessToken(ctx, ident); !errors.Is(err, ErrReauthorizationRequired) {
+		t.Fatalf("MCPAccessToken error = %v, want ErrReauthorizationRequired", err)
 	}
 	if tokenRequests != 0 {
 		t.Fatalf("token requests = %d, want 0", tokenRequests)
 	}
-	if credential, err := db.Credential(ctx, ident); err != nil || credential == nil {
-		t.Fatalf("credential = %#v, err = %v", credential, err)
+	if credential, err := db.Credential(ctx, ident); err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v; want deleted", credential, err)
 	}
 }
 

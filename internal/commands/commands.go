@@ -586,14 +586,6 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		}
 		return acceptedCommand(raw, name, args)
 	}
-	if strings.HasPrefix(fields[0], prefix) {
-		name, args := normalizeCommand(strings.TrimPrefix(fields[0], prefix), fields[1:])
-		if name == "" {
-			return helpCommand(raw), true
-		}
-		return acceptedCommand(raw, name, args)
-	}
-
 	if isHelpToken(fields[0]) {
 		return helpCommand(raw, fields[1:]...), true
 	}

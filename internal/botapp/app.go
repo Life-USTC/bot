@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -44,25 +45,27 @@ type Processor interface {
 }
 
 type Config struct {
-	Commands   CommandHandler
-	Agent      AgentHandler
-	Dispatcher Dispatcher
-	Delivery   Deliverer
-	Recorder   Recorder
-	Renderer   Renderer
-	Logger     *log.Logger
+	Commands           CommandHandler
+	Agent              AgentHandler
+	Dispatcher         Dispatcher
+	Delivery           Deliverer
+	Recorder           Recorder
+	Renderer           Renderer
+	ImageRenderTimeout time.Duration
+	Logger             *log.Logger
 }
 
 // App is the sole application layer for inbound bot messages. Protocol
 // adapters translate events into message.Inbound and hand them to Process.
 type App struct {
-	commands   CommandHandler
-	agent      AgentHandler
-	dispatcher Dispatcher
-	delivery   Deliverer
-	recorder   Recorder
-	renderer   Renderer
-	logger     *log.Logger
+	commands           CommandHandler
+	agent              AgentHandler
+	dispatcher         Dispatcher
+	delivery           Deliverer
+	recorder           Recorder
+	renderer           Renderer
+	imageRenderTimeout time.Duration
+	logger             *log.Logger
 }
 
 func New(config Config) (*App, error) {
@@ -75,7 +78,7 @@ func New(config Config) (*App, error) {
 	return &App{
 		commands: config.Commands, agent: config.Agent, dispatcher: config.Dispatcher,
 		delivery: config.Delivery, recorder: config.Recorder, renderer: config.Renderer,
-		logger: config.Logger,
+		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout), logger: config.Logger,
 	}, nil
 }
 
@@ -127,7 +130,7 @@ func (a *App) agentInput(inbound message.Inbound) agent.Input {
 		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...),
 		Identity: legacyIdentity(inbound),
 		SendUpdate: func(ctx context.Context, _ store.Identity, update string) error {
-			outcome := a.deliver(ctx, inbound, commands.Response{Text: update, Kind: "agent_update"}, 0)
+			outcome := a.deliverContent(ctx, inbound, "agent_update", message.Content{Text: update}, 0)
 			if outcome.State == delivery.OutcomeAccepted {
 				return nil
 			}
@@ -144,8 +147,10 @@ func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, resp
 	if len(parts) == 0 {
 		parts = []commands.Response{response}
 	}
-	for index, part := range parts {
-		outcome := a.deliver(ctx, inbound, part, index)
+	attempt := 0
+	for _, part := range parts {
+		outcome, attempts := a.deliverResponsePart(ctx, inbound, part, attempt)
+		attempt += attempts
 		if outcome.State != delivery.OutcomeAccepted {
 			a.logf("immediate reply failed: platform=%s conversation_type=%s conversation_id=%s state=%s code=%s error=%v",
 				inbound.Conversation.Platform, inbound.Conversation.Type, inbound.Conversation.ID,
@@ -153,45 +158,6 @@ func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, resp
 			return
 		}
 	}
-}
-
-func (a *App) deliver(ctx context.Context, inbound message.Inbound, response commands.Response, partIndex int) delivery.Outcome {
-	content := message.Content{Text: response.Text}
-	if response.Image != nil {
-		attachment, err := a.renderAttachment(response.Image)
-		if err != nil {
-			a.logf("render immediate reply failed: %v", err)
-		} else {
-			content.Attachment = attachment
-		}
-	}
-	reply := inbound.Source
-	if partIndex > 0 || reply.Sequence <= 0 {
-		reply.Sequence = partIndex + 1
-	}
-	outbound := message.Outbound{
-		Kind: response.Kind, Target: inbound.Conversation, ReplyTo: &reply, Content: content,
-	}
-	outcome := a.delivery.DeliverNow(ctx, outbound)
-	a.recordOutbound(ctx, inbound, content.Text, outcome)
-	return outcome
-}
-
-func (a *App) renderAttachment(image *responses.Image) (*message.Attachment, error) {
-	if image == nil {
-		return nil, nil
-	}
-	if url := strings.TrimSpace(image.URL); url != "" {
-		return &message.Attachment{MIMEType: "image/png", URL: url}, nil
-	}
-	if a.renderer == nil {
-		return nil, errors.New("response renderer is unavailable")
-	}
-	data, _, _, err := a.renderer.RenderPNG(image)
-	if err != nil {
-		return nil, err
-	}
-	return &message.Attachment{MIMEType: "image/png", Data: data}, nil
 }
 
 func (a *App) recordIgnored(ctx context.Context, inbound message.Inbound) {

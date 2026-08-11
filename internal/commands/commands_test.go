@@ -3687,8 +3687,10 @@ func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
 func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
 
-	if _, ok := handler.parse("反馈上面的对话问题"); ok {
-		t.Fatal("attached feedback without space should not parse")
+	for _, text := range []string{"反馈上面的对话问题", "反馈了吗", "反馈了嘛", "feedbackdone", "fb了吗"} {
+		if _, ok := handler.parse(text); ok {
+			t.Fatalf("attached feedback %q without space should not parse", text)
+		}
 	}
 	if _, ok := handler.parse("通知课表开"); ok {
 		t.Fatal("attached notify without space should not parse")
@@ -3727,22 +3729,16 @@ func TestPrefixedUnknownCommandParsesAsHelp(t *testing.T) {
 	}
 }
 
-func TestAttachedPrefixCommandParses(t *testing.T) {
+func TestCommandPrefixRequiresWhitespace(t *testing.T) {
 	handler := Handler{Prefix: "/life"}
-	tests := map[string]struct {
-		name string
-		args []string
-	}{
-		"/life校车 东区 西区": {name: "bus", args: []string{"东区", "西区"}},
-		"/lifekb今天":     {name: "schedule", args: []string{"today"}},
-	}
-	for text, want := range tests {
-		cmd, ok := handler.parse(text)
-		if !ok {
-			t.Fatalf("%q was not parsed", text)
+	for _, text := range []string{"/life校车 东区 西区", "/lifekb今天", "/lifenope"} {
+		if cmd, ok := handler.parse(text); ok {
+			t.Fatalf("attached prefix %q parsed as %#v", text, cmd)
 		}
-		if cmd.Name != want.name || strings.Join(cmd.Args, " ") != strings.Join(want.args, " ") {
-			t.Fatalf("%q parsed as name=%q args=%#v, want name=%q args=%#v", text, cmd.Name, cmd.Args, want.name, want.args)
+	}
+	for _, text := range []string{"/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容"} {
+		if _, ok := handler.parse(text); !ok {
+			t.Fatalf("whitespace-delimited prefix %q was not parsed", text)
 		}
 	}
 }
@@ -3771,17 +3767,6 @@ func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
 		if !ok || cmd.Name != "schedule" || len(cmd.Args) != 1 || cmd.Args[0] != want {
 			t.Fatalf("%q parsed as %#v, ok=%v", input, cmd, ok)
 		}
-	}
-}
-
-func TestAttachedPrefixUnknownCommandParsesAsHelp(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	cmd, ok := handler.parse("/lifenope")
-	if !ok {
-		t.Fatal("command was not parsed")
-	}
-	if cmd.Name != "help" {
-		t.Fatalf("command name = %q, want help", cmd.Name)
 	}
 }
 
