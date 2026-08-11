@@ -82,6 +82,16 @@ func TestDeviceLoginFlow(t *testing.T) {
 		if body["client_name"] != "life-ustc-onebot" || body["token_endpoint_auth_method"] != "none" {
 			t.Fatalf("registration body = %#v", body)
 		}
+		if _, ok := body["redirect_uris"]; ok {
+			t.Fatalf("device client registration contains redirect_uris: %#v", body)
+		}
+		if _, ok := body["response_types"]; ok {
+			t.Fatalf("device client registration contains response_types: %#v", body)
+		}
+		grantTypes, ok := body["grant_types"].([]any)
+		if !ok || len(grantTypes) != 2 || grantTypes[0] != "urn:ietf:params:oauth:grant-type:device_code" || grantTypes[1] != "refresh_token" {
+			t.Fatalf("registration grant_types = %#v", body["grant_types"])
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
 	})
 	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
