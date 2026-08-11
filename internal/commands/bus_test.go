@@ -71,7 +71,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	groupInput := Input{
 		Text: "东区到西区校车还有吗",
 		Identity: store.Identity{
@@ -95,7 +95,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 		t.Fatal("padded/cased group bus message was not handled")
 	}
 
-	groupInput.Text = "/life td"
+	groupInput.Text = "td"
 	reply, ok = handler.Handle(context.Background(), groupInput)
 	if ok || reply != "" {
 		t.Fatalf("group personal command reply = %q, ok = %v", reply, ok)

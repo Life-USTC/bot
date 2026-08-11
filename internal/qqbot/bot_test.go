@@ -355,7 +355,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
 	data := json.RawMessage(`{
 		"id":"message-id",
 		"content":"/help",
@@ -432,7 +432,7 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
 	body := `{
 		"op":0,
 		"id":"event-id",
@@ -515,7 +515,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Prefix: "/life", Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
 	bot.handleDispatch(context.Background(), gatewayPayload{
 		ID: "payload-id",
 		Op: opDispatch,

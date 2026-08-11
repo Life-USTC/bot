@@ -31,8 +31,8 @@ func TestHandleCourseSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "/life course calculus"})
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	reply, ok := handler.Handle(context.Background(), Input{Text: "course calculus"})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
@@ -56,12 +56,11 @@ func TestHandlePublicCommandSharesCacheAcrossUsersAndAliases(t *testing.T) {
 	defer func() { _ = stateStore.Close() }()
 	handler := Handler{
 		Life:        life.NewClient(server.URL, server.Client()),
-		Prefix:      "/life",
 		PublicCache: NewPublicCommandCache(stateStore, "version-a", time.Minute, nil),
 	}
 
 	first, ok := handler.Handle(context.Background(), Input{
-		Text: "/life course calculus",
+		Text: "course calculus",
 		Identity: store.Identity{
 			Platform: "napcat", UserID: "1", ConversationType: "private", ConversationID: "1",
 		},
@@ -97,7 +96,7 @@ func TestHandleCasualCourseSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "课程 数学分析"})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -165,7 +164,7 @@ func TestHandleTeacherSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "老师 张"})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -194,8 +193,8 @@ func TestSearchTeachersTrimsKeyword(t *testing.T) {
 }
 
 func TestHandleHelpAliases(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"/help", "/?", "帮助", "菜单", "/life -h", "/life 菜单"} {
+	handler := Handler{}
+	for _, text := range []string{"/help", "/?", "帮助", "菜单"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text})
 		if !ok {
 			t.Fatalf("%q was not handled", text)
@@ -352,8 +351,8 @@ func TestSettingsAndAIHelpRenderAsImages(t *testing.T) {
 }
 
 func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"帮助 课表", "/help 课表", "/life help 课表", "课表 帮助", "帮助 kb"} {
+	handler := Handler{}
+	for _, text := range []string{"帮助 课表", "/help 课表", "help 课表", "课表 帮助", "帮助 kb"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
 		if !ok {
 			t.Fatalf("%q was not handled", text)
@@ -382,7 +381,7 @@ func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
 }
 
 func TestShortcutAndLegacyHelpResolveToCanonicalTopics(t *testing.T) {
-	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	handler := Handler{EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "帮助 快捷入口", Identity: testIdentity()})
 	if !ok || response.Image == nil {
 		t.Fatalf("shortcut help response = %#v, ok = %v", response, ok)
@@ -536,7 +535,7 @@ func TestFriendlyError(t *testing.T) {
 func TestCommandSpecsAreUsable(t *testing.T) {
 	seen := map[string]bool{}
 	aliases := map[string]string{}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	lifeCommands := map[string]bool{
 		"account":                      true,
 		"todo":                         true,
@@ -698,7 +697,7 @@ func TestCommandSpecsReturnsIsolatedSlices(t *testing.T) {
 	aliasName := specs[aliasIndex].Name
 	specs[aliasIndex].Aliases[0] = "mutated"
 
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	fresh := CommandSpecs()
 	parsed, ok := handler.parse(fresh[aliasIndex].Aliases[0])
 	if !ok || parsed.Name != aliasName {
@@ -707,7 +706,7 @@ func TestCommandSpecsReturnsIsolatedSlices(t *testing.T) {
 }
 
 func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "课程 数学分析", Identity: testIdentity()})
 	if !ok || !strings.Contains(reply, "Life @ USTC API unavailable") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -731,7 +730,7 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 }
 
 func TestHandleStoreCommandWithoutStoreKeepsHelp(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "通知", Identity: testIdentity()})
 	if !ok || !strings.Contains(reply, "存储未配置") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -750,9 +749,8 @@ func TestHandleAuthCommandWithoutAuthStoreDoesNotPanic(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{},
-		Prefix: "/life",
+		Life: life.NewClient(server.URL, server.Client()),
+		Auth: &auth.Manager{},
 	}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "我的", Identity: testIdentity()})
 	if !ok || reply != "登录未配置。" {
@@ -772,8 +770,7 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Prefix: "/life",
+		Life: life.NewClient(server.URL, server.Client()),
 	}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "我的", Identity: testIdentity()})
 	if !ok || reply != "登录未配置。" {
@@ -793,9 +790,8 @@ func TestStatusWithAuthWithoutStoreDoesNotPanic(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{},
-		Prefix: "/life",
+		Life: life.NewClient(server.URL, server.Client()),
+		Auth: &auth.Manager{},
 	}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "状态", Identity: testIdentity()})
 	if !ok || !strings.Contains(reply, "登录：未登录") {
@@ -804,8 +800,8 @@ func TestStatusWithAuthWithoutStoreDoesNotPanic(t *testing.T) {
 }
 
 func TestHandleTodoHelpAliases(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"待办 -h", "td help", "/life todo --help"} {
+	handler := Handler{}
+	for _, text := range []string{"待办 -h", "td help", "todo --help"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text})
 		if !ok {
 			t.Fatalf("%q was not handled", text)
@@ -1039,10 +1035,9 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	handler := Handler{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
-		Store:  s,
-		Prefix: "/life",
+		Life:  life.NewClient(server.URL, server.Client()),
+		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
+		Store: s,
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "登录", Identity: ident})
 	if !ok {
@@ -1062,7 +1057,7 @@ func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	handler := Handler{Auth: &auth.Manager{Store: s}, Prefix: "/life"}
+	handler := Handler{Auth: &auth.Manager{Store: s}}
 	for _, text := range []string{"登录 状态", "登录 ok", "登录 好了", "登录 完成"} {
 		reply, ok := handler.Handle(ctx, Input{Text: text, Identity: ident})
 		if !ok || reply != "暂无进行中的登录。发送：登录" {
@@ -1072,8 +1067,8 @@ func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
 }
 
 func TestHandleLoginHelpAliases(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"登录 help", "登录 -h", "/life login --help"} {
+	handler := Handler{}
+	for _, text := range []string{"登录 help", "登录 -h", "login --help"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
 		if !ok {
 			t.Fatalf("%q was not handled", text)
@@ -1085,7 +1080,7 @@ func TestHandleLoginHelpAliases(t *testing.T) {
 }
 
 func TestHandleScheduleHelpAliases(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for _, text := range []string{"课表 help", "课表 帮助", "schedule -h"} {
 		reply, ok := handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
 		if !ok {
@@ -1099,7 +1094,7 @@ func TestHandleScheduleHelpAliases(t *testing.T) {
 
 func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	ctx := context.Background()
-	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	handler := Handler{EnableImageResponses: true}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "/help", Identity: testIdentity()})
 	if !ok {
@@ -1238,7 +1233,7 @@ func TestDocumentedImageDirectiveFormsAreAllowed(t *testing.T) {
 }
 
 func TestSubcommandHelpUsesImage(t *testing.T) {
-	handler := Handler{Prefix: "/life", EnableImageResponses: true}
+	handler := Handler{EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
 	if !ok || response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
@@ -1831,7 +1826,6 @@ func TestHandleFeedbackRecordsThroughService(t *testing.T) {
 	}
 	handler := Handler{
 		Store:    db,
-		Prefix:   "/life",
 		Feedback: recorder,
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "反馈 校车显示有点乱", Identity: ident})
@@ -1897,8 +1891,7 @@ func TestHandleFeedbackIncludesRecentContext(t *testing.T) {
 	}
 	var submission botfeedback.Submission
 	handler := Handler{
-		Store:  db,
-		Prefix: "/life",
+		Store: db,
 		Feedback: feedbackRecorderFunc(func(ctx context.Context, ident store.Identity, got botfeedback.Submission) (botfeedback.Result, error) {
 			submission = got
 			return botfeedback.Result{ID: 1, AdminIntents: 1}, nil
@@ -1970,7 +1963,6 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 	ident.UserID = "42"
 	called := false
 	handler := Handler{
-		Prefix: "/life",
 		Feedback: feedbackRecorderFunc(func(ctx context.Context, target store.Identity, submission botfeedback.Submission) (botfeedback.Result, error) {
 			called = true
 			if target.ConversationType != "group" || target.ConversationID != "3001" {
@@ -1987,7 +1979,6 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 
 func TestHandleFeedbackReportsStoreFailure(t *testing.T) {
 	handler := Handler{
-		Prefix: "/life",
 		Feedback: feedbackRecorderFunc(func(context.Context, store.Identity, botfeedback.Submission) (botfeedback.Result, error) {
 			return botfeedback.Result{}, errors.New("sqlite unavailable")
 		}),
@@ -1999,7 +1990,7 @@ func TestHandleFeedbackReportsStoreFailure(t *testing.T) {
 }
 
 func TestHandleFeedbackWithoutServiceReportsUnavailable(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "反馈 校车显示有点乱", Identity: testIdentity()})
 	if !ok || reply != "反馈功能暂不可用。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -2012,7 +2003,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 	ident.ConversationType = "group"
 	ident.ConversationID = "3001"
 
-	reply, ok := Handler{Prefix: "/life"}.Handle(ctx, Input{
+	reply, ok := Handler{}.Handle(ctx, Input{
 		Text:     "课表 help",
 		Identity: ident,
 	})
@@ -2020,7 +2011,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 		t.Fatalf("default group personal reply = %q, ok = %v", reply, ok)
 	}
 
-	reply, ok = Handler{Prefix: "/life", AllowGroupPersonalInfo: true}.Handle(ctx, Input{
+	reply, ok = Handler{AllowGroupPersonalInfo: true}.Handle(ctx, Input{
 		Text:     "课表 help",
 		Identity: ident,
 	})
@@ -2028,7 +2019,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 		t.Fatalf("enabled group schedule reply = %q, ok = %v", reply, ok)
 	}
 
-	reply, ok = Handler{Prefix: "/life", AllowGroupPersonalInfo: true}.Handle(ctx, Input{
+	reply, ok = Handler{AllowGroupPersonalInfo: true}.Handle(ctx, Input{
 		Text:     "td add 写报告",
 		Identity: ident,
 	})
@@ -2038,7 +2029,7 @@ func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
 }
 
 func TestHandleFeedbackRequiresConfiguredTarget(t *testing.T) {
-	reply, ok := Handler{Prefix: "/life"}.Handle(context.Background(), Input{
+	reply, ok := Handler{}.Handle(context.Background(), Input{
 		Text:     "反馈 hello",
 		Identity: testIdentity(),
 	})
@@ -2060,7 +2051,7 @@ func TestHandleFeedbackRecordsWithoutConfiguredTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reply, ok := Handler{Prefix: "/life", Store: db, Feedback: recorder}.Handle(ctx, Input{
+	reply, ok := Handler{Store: db, Feedback: recorder}.Handle(ctx, Input{
 		Text:     "反馈 希望支持错别字",
 		Identity: ident,
 	})
@@ -3202,7 +3193,7 @@ func TestFetchSchedulesForSectionsLimitsConcurrency(t *testing.T) {
 }
 
 func TestSubscriptionHelpDoesNotList(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "订阅 help", Identity: testIdentity()})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -3241,7 +3232,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s, Prefix: "/life"}
+	handler := Handler{Store: s}
 
 	reply, ok := handler.Handle(ctx, Input{Text: "通知", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
@@ -3300,7 +3291,7 @@ func TestAgentSettingsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s, Prefix: "/life"}
+	handler := Handler{Store: s}
 
 	reply, ok := handler.Handle(ctx, Input{Text: "AI 工具", Identity: ident})
 	if !ok || !strings.Contains(reply, "AI 工具调用展示：关") {
@@ -3579,7 +3570,7 @@ func TestNormalizeCommandAliases(t *testing.T) {
 		"反馈": "feedback",
 		"fb": "feedback",
 	}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for text, want := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3592,7 +3583,7 @@ func TestNormalizeCommandAliases(t *testing.T) {
 }
 
 func TestCanonicalCommandHierarchy(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	tests := []struct {
 		text string
 		name string
@@ -3658,7 +3649,7 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 }
 
 func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	tests := []struct {
 		text string
 		name string
@@ -3685,7 +3676,7 @@ func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
 }
 
 func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 
 	for _, text := range []string{"反馈上面的对话问题", "反馈了吗", "反馈了嘛", "feedbackdone", "fb了吗"} {
 		if _, ok := handler.parse(text); ok {
@@ -3715,30 +3706,14 @@ func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 	}
 }
 
-func TestPrefixedUnknownCommandParsesAsHelp(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	cmd, ok := handler.parse("/life nope")
-	if !ok {
-		t.Fatal("command was not parsed")
-	}
-	if cmd.Name != "help" {
-		t.Fatalf("command name = %q, want help", cmd.Name)
-	}
-	if len(cmd.Args) != 0 {
-		t.Fatalf("args = %#v", cmd.Args)
-	}
-}
-
-func TestCommandPrefixRequiresWhitespace(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
-	for _, text := range []string{"/life校车 东区 西区", "/lifekb今天", "/lifenope"} {
+func TestLifePrefixIsRejected(t *testing.T) {
+	handler := Handler{}
+	for _, text := range []string{
+		"/life", "/LIFE help", "/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容",
+		"/life校车 东区 西区", "/lifekb今天", "/lifenope",
+	} {
 		if cmd, ok := handler.parse(text); ok {
-			t.Fatalf("attached prefix %q parsed as %#v", text, cmd)
-		}
-	}
-	for _, text := range []string{"/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容"} {
-		if _, ok := handler.parse(text); !ok {
-			t.Fatalf("whitespace-delimited prefix %q was not parsed", text)
+			t.Fatalf("removed prefix %q parsed as %#v", text, cmd)
 		}
 	}
 }
@@ -3758,7 +3733,7 @@ func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
 		}
 	}
 
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for input, want := range map[string]string{
 		"课表本周":  "this-week",
 		"课表第3周": "week-number:3",
@@ -3771,7 +3746,7 @@ func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
 }
 
 func TestNormalizeSubscriptionImportAliases(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for _, text := range []string{
 		"订阅 导入 CONT5103P.01",
 		"订阅 批量 CONT5103P.01",
@@ -3806,7 +3781,7 @@ func TestNormalizeTodoActionAliases(t *testing.T) {
 		"td 全部":            {"all"},
 		"td 已完成":           {"completed"},
 	}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for text, wantArgs := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3828,7 +3803,7 @@ func TestParseSlashCommandAliases(t *testing.T) {
 		"/作业":       {name: "homework"},
 		"/课表":       {name: "schedule"},
 	}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for text, want := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3846,7 +3821,7 @@ func TestHandleRejectsPastedCommandLines(t *testing.T) {
 		"",
 		"待办 add 随机过程理论 期末考试 due 2026-06-25 09:45",
 	}, "\n")
-	reply, ok := Handler{Prefix: "/life"}.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
+	reply, ok := Handler{}.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
 	if !ok || reply != "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
@@ -3862,7 +3837,7 @@ func TestNormalizeHomeworkActionAliases(t *testing.T) {
 		"作业 未完成":     {"pending"},
 		"hw pending": {"pending"},
 	}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for text, wantArgs := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3902,7 +3877,7 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 		"6.23 课表":           {"week-date:6.23"},
 		"课表6月23日":           {"week-date:6月23日"},
 	}
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for text, wantArgs := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3918,7 +3893,7 @@ func TestNormalizeScheduleTypos(t *testing.T) {
 }
 
 func TestNormalizeJoinedNextClass(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	for _, text := range []string{"下一节课", "下一 节课"} {
 		cmd, ok := handler.parse(text)
 		if !ok {
@@ -3993,9 +3968,9 @@ func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	handler := Handler{Store: s, Prefix: "/life"}
+	handler := Handler{Store: s}
 	reply, ok := handler.Handle(context.Background(), Input{
-		Text: "/life help",
+		Text: "help",
 		Identity: store.Identity{
 			Platform: "napcat",
 			UserID:   "42",
@@ -4013,7 +3988,7 @@ func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
 	}
 }
 
-func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
+func TestRemovedLifePrefixIsNotHandledOrLogged(t *testing.T) {
 	s, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -4021,20 +3996,17 @@ func TestPrefixedUnknownCommandLogsAsHelp(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ident := testIdentity()
-	handler := Handler{Store: s, Prefix: "/life"}
+	handler := Handler{Store: s}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if !ok || !strings.Contains(reply, "待办（td）\t查看和管理待办") {
+	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recent) != 1 {
+	if len(recent) != 0 {
 		t.Fatalf("recent = %#v", recent)
-	}
-	if recent[0].Command != "help" {
-		t.Fatalf("logged command = %q, want help", recent[0].Command)
 	}
 }
 
@@ -4075,10 +4047,9 @@ func TestHandleLogsRecordFailures(t *testing.T) {
 	var logs bytes.Buffer
 	handler := Handler{
 		Store:  s,
-		Prefix: "/life",
 		Logger: log.New(&logs, "", 0),
 	}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "/life help", Identity: testIdentity()})
+	reply, ok := handler.Handle(context.Background(), Input{Text: "help", Identity: testIdentity()})
 	if !ok || reply == "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
@@ -4161,7 +4132,7 @@ func TestHandleCourseSearchWithFilters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "课程搜索 keyword 数学分析 education_level_id 1 category_id 2 class_type_id 3 limit 10"})
 	if !ok || !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟼") || !strings.Contains(reply, "数学分析") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4181,7 +4152,7 @@ func TestHandleSectionSearchWithFilters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "教学班搜索 keyword 高等数学 course_id 11 teacher_code T001 limit 20"})
 	if !ok || !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷.𝟶𝟷") || !strings.Contains(reply, "高等数学") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4201,7 +4172,7 @@ func TestHandleTeacherSearchWithFilters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "老师搜索 keyword 张 department_id 5 limit 8"})
 	if !ok || !strings.Contains(reply, "张三") || !strings.Contains(reply, "数学科学学院") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4217,7 +4188,7 @@ func TestHandleCourseByJwID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "课程编号 123"})
 	if !ok || !strings.Contains(reply, "𝙲𝚂𝟷𝟶𝟶𝟷") || !strings.Contains(reply, "计算机导论") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4233,7 +4204,7 @@ func TestHandleSectionByJwID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "教学班编号 456"})
 	if !ok || !strings.Contains(reply, "𝙲𝚂𝟷𝟶𝟶𝟷.𝟶𝟷") || !strings.Contains(reply, "计算机导论") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4249,7 +4220,7 @@ func TestHandleTeacherByID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "老师编号 12"})
 	if !ok || !strings.Contains(reply, "张三") || !strings.Contains(reply, "教授") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4268,7 +4239,7 @@ func TestHandleListSemesters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "学期列表"})
 	if !ok || !strings.Contains(reply, "2026春季") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4308,7 +4279,7 @@ func TestHandleBusRoutes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), Prefix: "/life"}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "校车路线 from 东区 to 高新区"})
 	if !ok || !strings.Contains(reply, "东高新线") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
@@ -4554,10 +4525,9 @@ func testAuthedHandlerWithCredential(t *testing.T, server *httptest.Server, iden
 		t.Fatal(err)
 	}
 	return Handler{
-		Life:   life.NewClient(server.URL, server.Client()),
-		Auth:   &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
-		Store:  s,
-		Prefix: "/life",
+		Life:  life.NewClient(server.URL, server.Client()),
+		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
+		Store: s,
 	}
 }
 
@@ -4587,7 +4557,7 @@ func testIdentity() store.Identity {
 }
 
 func TestHandleIgnoresOtherMessages(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "hello"})
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)

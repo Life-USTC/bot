@@ -25,7 +25,6 @@ type Handler struct {
 	Life                   *life.Client
 	Auth                   *auth.Manager
 	Store                  *store.Store
-	Prefix                 string
 	Logger                 *log.Logger
 	Feedback               feedback.Recorder
 	AllowGroupPersonalInfo bool
@@ -571,21 +570,6 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if len(fields) == 0 {
 		return parsedCommand{}, false
 	}
-	prefix := h.Prefix
-	if prefix == "" {
-		prefix = "/life"
-	}
-
-	if fields[0] == prefix {
-		if len(fields) == 1 {
-			return helpCommand(raw), true
-		}
-		name, args := normalizeCommand(fields[1], fields[2:])
-		if name == "" {
-			return helpCommand(raw), true
-		}
-		return acceptedCommand(raw, name, args)
-	}
 	if isHelpToken(fields[0]) {
 		return helpCommand(raw, fields[1:]...), true
 	}
@@ -652,7 +636,10 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		rest = args[1:]
 	}
 	if isHelpToken(action) {
-		return help(name)
+		if canonical, ok := canonicalCommandAlias(name); ok {
+			return help(canonical)
+		}
+		return "", args, false
 	}
 
 	switch name {
@@ -857,6 +844,17 @@ func commandSpec(name string) (CommandSpec, bool) {
 		}
 	}
 	return CommandSpec{}, false
+}
+
+func canonicalCommandAlias(name string) (string, bool) {
+	for _, spec := range commandSpecs {
+		for _, alias := range spec.Aliases {
+			if commandToken(alias) == name {
+				return spec.Name, true
+			}
+		}
+	}
+	return "", false
 }
 
 func normalizeJoinedCommand(name string, args []string) (string, []string, bool) {

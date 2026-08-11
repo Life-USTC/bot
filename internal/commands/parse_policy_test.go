@@ -7,7 +7,7 @@ import (
 )
 
 func TestNaturalLanguageFallsThroughToAgent(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	shouldMiss := []string{
 		"提醒我这周三之前我得把显微成像的数据集之类的研究清楚了",
 		"反馈校车时间需要进一步整理",
@@ -34,27 +34,27 @@ func TestNaturalLanguageFallsThroughToAgent(t *testing.T) {
 }
 
 func TestFixedPatternsStillParse(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	tests := map[string]string{
-		"提醒 课表 开":      "notify",
-		"通知 作业 关":      "notify",
-		"设置 通知 课表 开":   "notify",
-		"反馈 校车时间需要整理":  "feedback",
-		"今日课表":         "schedule",
-		"明日课表":         "schedule",
-		"课表 今天":        "schedule",
-		"今天 课表":        "schedule",
-		"待办":           "todo",
-		"td 写报告":       "todo",
-		"作业":           "homework",
-		"作业 done 1":    "homework",
-		"校车":           "bus",
-		"xc 东区 西区":     "bus",
-		"课程 数学分析":      "course",
-		"老师 程艺":        "teacher",
-		"AI 工具 开":      "agent",
-		"帮助":           "help",
-		"/help":        "help",
+		"提醒 课表 开":     "notify",
+		"通知 作业 关":     "notify",
+		"设置 通知 课表 开":  "notify",
+		"反馈 校车时间需要整理": "feedback",
+		"今日课表":        "schedule",
+		"明日课表":        "schedule",
+		"课表 今天":       "schedule",
+		"今天 课表":       "schedule",
+		"待办":          "todo",
+		"td 写报告":      "todo",
+		"作业":          "homework",
+		"作业 done 1":   "homework",
+		"校车":          "bus",
+		"xc 东区 西区":    "bus",
+		"课程 数学分析":     "course",
+		"老师 程艺":       "teacher",
+		"AI 工具 开":     "agent",
+		"帮助":          "help",
+		"/help":       "help",
 	}
 	for text, want := range tests {
 		cmd, ok := handler.parse(text)
@@ -65,7 +65,7 @@ func TestFixedPatternsStillParse(t *testing.T) {
 }
 
 func TestGroupAtHelpParsesAfterCQStrip(t *testing.T) {
-	handler := Handler{Prefix: "/life"}
+	handler := Handler{}
 	group := store.Identity{Platform: "napcat", UserID: "1", ConversationType: "group", ConversationID: "9"}
 
 	reply, ok := handler.Handle(t.Context(), Input{
