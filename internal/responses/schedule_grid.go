@@ -2,10 +2,11 @@ package responses
 
 import (
 	"bytes"
-	"hash/fnv"
+	"crypto/sha256"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -28,16 +29,6 @@ type scheduleGridMetrics struct {
 }
 
 const scheduleGridDividerThickness = 4
-
-var scheduleGridCourseBackgrounds = [...]color.RGBA{
-	{224, 242, 254, 255},
-	{237, 233, 254, 255},
-	{220, 252, 231, 255},
-	{254, 243, 199, 255},
-	{255, 228, 230, 255},
-	{224, 231, 255, 255},
-	{204, 251, 241, 255},
-}
 
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
 	dayWidth := 156
@@ -109,13 +100,47 @@ func scheduleGridTodayIndex(grid *ScheduleGrid, now time.Time) int {
 }
 
 func scheduleGridCourseColor(item ScheduleGridItem) color.RGBA {
-	key := normalizeScheduleGridCourseKey(item.CourseID)
+	key := normalizeScheduleGridCourseKey(item.SectionKey)
 	if key == "" {
 		key = normalizeScheduleGridCourseKey(item.Course)
 	}
-	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(key))
-	return scheduleGridCourseBackgrounds[int(hash.Sum32()%uint32(len(scheduleGridCourseBackgrounds)))]
+	return generateSectionColor(key)
+}
+
+func generateSectionColor(key string) color.RGBA {
+	key = normalizeScheduleGridCourseKey(key)
+	if key == "" {
+		return color.RGBA{226, 232, 240, 255}
+	}
+	sum := sha256.Sum256([]byte(key))
+	hue := float64(uint16(sum[0])<<8|uint16(sum[1])) / 65535 * 360
+	saturation := 0.42 + float64(sum[2])/255*0.14
+	lightness := 0.86 + float64(sum[3])/255*0.05
+	return hslColor(hue, saturation, lightness)
+}
+
+func hslColor(hue, saturation, lightness float64) color.RGBA {
+	chroma := (1 - math.Abs(2*lightness-1)) * saturation
+	sector := math.Mod(hue/60, 6)
+	secondary := chroma * (1 - math.Abs(math.Mod(sector, 2)-1))
+	var red, green, blue float64
+	switch int(sector) {
+	case 0:
+		red, green = chroma, secondary
+	case 1:
+		red, green = secondary, chroma
+	case 2:
+		green, blue = chroma, secondary
+	case 3:
+		green, blue = secondary, chroma
+	case 4:
+		red, blue = secondary, chroma
+	default:
+		red, blue = chroma, secondary
+	}
+	match := lightness - chroma/2
+	channel := func(value float64) uint8 { return uint8(math.Round((value + match) * 255)) }
+	return color.RGBA{channel(red), channel(green), channel(blue), 255}
 }
 
 func normalizeScheduleGridCourseKey(value string) string {

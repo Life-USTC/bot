@@ -186,7 +186,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
-		reply := agentFailureReply(runID, err)
+		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
@@ -220,8 +220,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					Invokable:  repeatGuard.invokableMiddleware,
 					Streamable: repeatGuard.streamableMiddleware,
 				}, {
-					Invokable:  toolErrorCatchingMiddleware(s.logf),
-					Streamable: streamToolErrorCatchingMiddleware(s.logf),
+					Invokable:  toolResultMiddleware(s.logf),
+					Streamable: streamToolResultMiddleware(s.logf),
 				}},
 			},
 		},
@@ -256,6 +256,9 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					return commands.Response{}, false
 				}
 				reply := agentFailureReply(runID, event.Err)
+				if errors.Is(event.Err, auth.ErrReauthorizationRequired) || botmcp.IsAuthorizationRequired(event.Err) {
+					reply = s.mcpFailureReply(ctx, input.Identity, runID, event.Err)
+				}
 				finishRun(store.AgentRunStatusFailed, reply, event.Err)
 				return agentTextResponse(reply), true
 			}
@@ -523,16 +526,12 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 	if s.mcpClient != nil && s.auth != nil {
 		var mcpTools []tool.BaseTool
 		mcpTools, mcpSession, err = s.openMCPTools(ctx, ident, trace)
-		if errors.Is(err, auth.ErrNotLoggedIn) {
+		if err != nil {
+			s.logf("MCP tools unavailable: platform=%s conversation_type=%s conversation_id=%s error=%v",
+				ident.Platform, ident.ConversationType, ident.ConversationID, err)
 			return nil, nil, err
 		}
-		if err != nil {
-			s.logf("MCP tools unavailable; continuing without them: platform=%s conversation_type=%s conversation_id=%s error=%v",
-				ident.Platform, ident.ConversationType, ident.ConversationID, err)
-			mcpSession = nil
-		} else {
-			tools = append(tools, mcpTools...)
-		}
+		tools = append(tools, mcpTools...)
 	}
 
 	if s.handler.Store != nil {
@@ -642,6 +641,23 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 	s.logf("llm run started: id=%d provider=%s model=%s platform=%s conversation_type=%s conversation_id=%s images=%d",
 		id, provider, model, input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(input.ImageURLs))
 	return id
+}
+
+func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, runID int64, err error) string {
+	if errors.Is(err, auth.ErrReauthorizationRequired) || botmcp.IsAuthorizationRequired(err) {
+		if s.auth != nil {
+			if logoutErr := s.auth.Logout(ctx, ident); logoutErr != nil {
+				s.logf("clear credential requiring reauthorization failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+					ident.Platform, ident.ConversationType, ident.ConversationID, logoutErr)
+			}
+		}
+		return "登录权限已失效。请发送：登录\n重新登录会申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
+	}
+	reply := "校园工具暂时不可用，请稍后重试。本次没有执行任何查询或操作。"
+	if runID > 0 {
+		reply += fmt.Sprintf("\n记录 #%d", runID)
+	}
+	return reply
 }
 
 func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Identity, status, reply string, err error, provider, model string, usage tokenUsage, duration time.Duration) {
@@ -888,6 +904,7 @@ Course / section subscribe-by-name flow:
 3. When the user confirms, call the subscribe / bulk_subscribe tool so the host prepares a confirmation command. Do not claim subscription succeeded until the user confirms with ok or the confirmation command.
 Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
 Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
+Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
@@ -992,7 +1009,7 @@ func isAgentIterationLimitError(err error) bool {
 
 type toolErrorLogger func(string, ...any)
 
-func toolErrorCatchingMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware {
+func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware {
 	return func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 			recordToolCall(ctx)
@@ -1001,7 +1018,7 @@ func toolErrorCatchingMiddleware(logf toolErrorLogger) compose.InvokableToolMidd
 				if logf != nil {
 					logf("agent tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
 				}
-				return &compose.ToolOutput{Result: "工具调用失败，请检查参数或稍后重试。"}, nil
+				return nil, err
 			}
 			if out != nil {
 				out.Result = limitToolResult(out.Result)
@@ -1019,7 +1036,7 @@ func limitToolResult(result string) string {
 	return string(runes[:maxToolResultRunes]) + "\n...(工具结果过长，已截断；请缩小查询范围)"
 }
 
-func streamToolErrorCatchingMiddleware(logf toolErrorLogger) compose.StreamableToolMiddleware {
+func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMiddleware {
 	return func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 			recordToolCall(ctx)
@@ -1028,7 +1045,7 @@ func streamToolErrorCatchingMiddleware(logf toolErrorLogger) compose.StreamableT
 				if logf != nil {
 					logf("agent streaming tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
 				}
-				return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{"工具调用失败，请检查参数或稍后重试。"})}, nil
+				return nil, err
 			}
 			return out, nil
 		}

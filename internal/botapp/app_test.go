@@ -2,6 +2,7 @@ package botapp
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -26,13 +28,25 @@ func (fn agentFunc) HandleResponse(ctx context.Context, input agent.Input) (comm
 
 type deliverySpy struct {
 	messages []message.Outbound
+	outcomes []delivery.Outcome
 }
 
 func (s *deliverySpy) DeliverNow(_ context.Context, outbound message.Outbound) delivery.Outcome {
 	s.messages = append(s.messages, outbound)
+	if len(s.outcomes) > 0 {
+		outcome := s.outcomes[0]
+		s.outcomes = s.outcomes[1:]
+		return outcome
+	}
 	return delivery.Outcome{State: delivery.OutcomeAccepted, Receipt: message.Receipt{
 		PlatformMessageID: "accepted-1", DeliveryMethod: "immediate", AcceptedAt: time.Now(),
 	}}
+}
+
+type rendererFunc func(*responses.Image) ([]byte, int, int, error)
+
+func (fn rendererFunc) RenderPNG(image *responses.Image) ([]byte, int, int, error) {
+	return fn(image)
 }
 
 type recordedInteraction struct {
@@ -131,6 +145,123 @@ func TestIgnoredInboundIsRecordedOnceWithoutDelivery(t *testing.T) {
 	app.Process(context.Background(), privateInbound("qqbot", "u-1", "unknown"))
 	if len(deliverer.messages) != 0 || len(recorder.entries) != 1 || recorder.entries[0].interaction.Status != store.InteractionStatusIgnored {
 		t.Fatalf("deliveries=%d interactions=%#v", len(deliverer.messages), recorder.entries)
+	}
+}
+
+func TestImageReplySendsOnlyImageWhenAccepted(t *testing.T) {
+	deliverer := &deliverySpy{}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "fallback", Image: responses.NewTextImage("bus", "校车", "fallback"), Kind: "bus"}, true
+		}),
+		Delivery: deliverer,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			return []byte("png"), 1, 1, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Process(context.Background(), privateInbound("napcat", "42", "校车"))
+
+	if len(deliverer.messages) != 1 {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
+	}
+	content := deliverer.messages[0].Content
+	if content.Text != "" || content.Attachment == nil || string(content.Attachment.Data) != "png" {
+		t.Fatalf("content = %#v", content)
+	}
+}
+
+func TestImageRenderFailureFallsBackToText(t *testing.T) {
+	deliverer := &deliverySpy{}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "fallback", Image: responses.NewTextImage("bus", "校车", "fallback"), Kind: "bus"}, true
+		}),
+		Delivery: deliverer,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			return nil, 0, 0, errors.New("render failed")
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Process(context.Background(), privateInbound("napcat", "42", "校车"))
+
+	if len(deliverer.messages) != 1 || deliverer.messages[0].Content.Text != "fallback" || deliverer.messages[0].Content.Attachment != nil {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
+	}
+}
+
+func TestImageRenderTimeoutFallsBackToText(t *testing.T) {
+	deliverer := &deliverySpy{}
+	unblock := make(chan struct{})
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "fallback", Image: responses.NewTextImage("bus", "校车", "fallback"), Kind: "bus"}, true
+		}),
+		Delivery: deliverer, ImageRenderTimeout: 10 * time.Millisecond,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			<-unblock
+			return []byte("late"), 1, 1, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Process(context.Background(), privateInbound("napcat", "42", "校车"))
+	close(unblock)
+
+	if len(deliverer.messages) != 1 || deliverer.messages[0].Content.Text != "fallback" {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
+	}
+}
+
+func TestRejectedImageDeliveryFallsBackToText(t *testing.T) {
+	deliverer := &deliverySpy{outcomes: []delivery.Outcome{
+		{State: delivery.OutcomeRejected, Code: "invalid_attachment", Err: errors.New("rejected")},
+		{State: delivery.OutcomeAccepted},
+	}}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "fallback", Image: responses.NewTextImage("bus", "校车", "fallback"), Kind: "bus"}, true
+		}),
+		Delivery: deliverer,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			return []byte("png"), 1, 1, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Process(context.Background(), privateInbound("qqbot", "42", "校车"))
+
+	if len(deliverer.messages) != 2 || deliverer.messages[0].Content.Text != "" ||
+		deliverer.messages[0].Content.Attachment == nil || deliverer.messages[1].Content.Text != "fallback" ||
+		deliverer.messages[1].Content.Attachment != nil || deliverer.messages[1].ReplyTo.Sequence != deliverer.messages[0].ReplyTo.Sequence+1 {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
+	}
+}
+
+func TestUnknownImageDeliveryDoesNotRiskDuplicateFallback(t *testing.T) {
+	deliverer := &deliverySpy{outcomes: []delivery.Outcome{{State: delivery.OutcomeUnknown}}}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "fallback", Image: responses.NewTextImage("bus", "校车", "fallback"), Kind: "bus"}, true
+		}),
+		Delivery: deliverer,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			return []byte("png"), 1, 1, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Process(context.Background(), privateInbound("qqbot", "42", "校车"))
+
+	if len(deliverer.messages) != 1 || deliverer.messages[0].Content.Attachment == nil {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
 	}
 }
 

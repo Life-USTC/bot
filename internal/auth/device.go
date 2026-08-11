@@ -415,7 +415,7 @@ func (m *Manager) Logout(ctx context.Context, ident store.Identity) error {
 
 var ErrNotLoggedIn = errors.New("not logged in")
 var ErrStoreNotConfigured = errors.New("auth store not configured")
-var ErrResourceNotApproved = errors.New("token resource not approved")
+var ErrReauthorizationRequired = errors.New("reauthorization required")
 
 func (m *Manager) refresh(ctx context.Context, cred store.Credential, resources []string) (store.Credential, error) {
 	meta, err := m.discover(ctx)
@@ -641,17 +641,23 @@ func (m *Manager) refreshCredential(
 	approvedResources := splitResources(cred.Resource)
 	refreshResource, resourceApproved := approvedRefreshResource(approvedResources, targetResource)
 	if !resourceApproved {
-		if purpose == purposeMCP {
-			return "", fmt.Errorf("%w: %s", ErrResourceNotApproved, targetResource)
-		}
 		if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
 			return "", fmt.Errorf("delete credential missing approved resource: %w", deleteErr)
+		}
+		if purpose == purposeMCP {
+			return "", fmt.Errorf("%w: %s", ErrReauthorizationRequired, targetResource)
 		}
 		return "", ErrNotLoggedIn
 	}
 	refreshResources := []string{refreshResource}
 	refreshed, err := m.refresh(ctx, *cred, refreshResources)
 	if err != nil {
+		if errors.Is(err, ErrReauthorizationRequired) {
+			if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
+				return "", fmt.Errorf("delete credential requiring reauthorization: %w", deleteErr)
+			}
+			return "", err
+		}
 		var retrieveErr *oauth2.RetrieveError
 		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "invalid_grant" {
 			if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
@@ -866,6 +872,13 @@ func (m *Manager) mapPollError(ctx context.Context, ident store.Identity, sessio
 func (m *Manager) mapRefreshError(err error) error {
 	if msg := err.Error(); strings.Contains(msg, "read failed") {
 		return fmt.Errorf("refresh response read failed: %w", err)
+	}
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) {
+		switch retrieveErr.ErrorCode {
+		case "invalid_target", "invalid_scope", "unauthorized_client":
+			return fmt.Errorf("%w: %s", ErrReauthorizationRequired, retrieveErr.ErrorCode)
+		}
 	}
 	return err
 }

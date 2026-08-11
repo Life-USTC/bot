@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/client/transport"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
@@ -111,5 +114,42 @@ func TestToolResultTextJoinsTextContent(t *testing.T) {
 
 	if strings.TrimSpace(result) != "first second" {
 		t.Fatalf("result = %q", result)
+	}
+}
+
+func TestSessionCallRejectsMCPErrorResult(t *testing.T) {
+	mcpServer := mcpserver.NewMCPServer("test-server", "1.0.0")
+	mcpServer.AddTool(
+		mcpgo.NewTool("failing_tool"),
+		func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return mcpgo.NewToolResultError("write did not happen"), nil
+		},
+	)
+	server := httptest.NewServer(mcpserver.NewStreamableHTTPServer(mcpServer))
+	defer server.Close()
+
+	session, err := New(server.URL, server.Client()).OpenSession(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+
+	result, err := session.Call(context.Background(), "failing_tool", nil)
+	if err == nil || result != "" || !strings.Contains(err.Error(), "write did not happen") {
+		t.Fatalf("result = %q, err = %v", result, err)
+	}
+}
+
+func TestAuthorizationRequiredClassification(t *testing.T) {
+	for _, err := range []error{
+		transport.ErrAuthorizationRequired,
+		fmt.Errorf("wrapped: %w", transport.ErrOAuthAuthorizationRequired),
+	} {
+		if !IsAuthorizationRequired(err) {
+			t.Fatalf("error not classified: %v", err)
+		}
+	}
+	if IsAuthorizationRequired(errors.New("server unavailable")) {
+		t.Fatal("ordinary failure classified as authorization required")
 	}
 }

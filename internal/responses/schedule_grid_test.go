@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"image/png"
 	"strconv"
@@ -78,11 +79,27 @@ func TestScheduleGridCourseColorUsesStableNormalizedKey(t *testing.T) {
 	}
 }
 
-func TestScheduleGridCourseColorPrefersCourseID(t *testing.T) {
-	want := scheduleGridCourseColor(ScheduleGridItem{CourseID: " section-42 ", Course: "数据库系统"})
-	got := scheduleGridCourseColor(ScheduleGridItem{CourseID: "SECTION-42", Course: "Database Systems"})
+func TestScheduleGridCourseColorPrefersSectionKey(t *testing.T) {
+	want := scheduleGridCourseColor(ScheduleGridItem{SectionKey: " section-42 ", Course: "数据库系统"})
+	got := scheduleGridCourseColor(ScheduleGridItem{SectionKey: "SECTION-42", Course: "Database Systems"})
 	if got != want {
-		t.Fatalf("same course ID colors differ: got %v, want %v", got, want)
+		t.Fatalf("same section key colors differ: got %v, want %v", got, want)
+	}
+}
+
+func TestGeneratedSectionColorsAvoidSmallPaletteCollisions(t *testing.T) {
+	colors := make(map[color.RGBA]struct{})
+	for i := 0; i < 20; i++ {
+		colors[generateSectionColor(fmt.Sprintf("section-%d", i))] = struct{}{}
+	}
+	if len(colors) < 18 {
+		t.Fatalf("generated only %d distinct colors for 20 sections", len(colors))
+	}
+}
+
+func TestGeneratedSectionColorHasNeutralFallback(t *testing.T) {
+	if got, want := generateSectionColor(""), (color.RGBA{226, 232, 240, 255}); got != want {
+		t.Fatalf("empty section color = %v, want %v", got, want)
 	}
 }
 
