@@ -42,6 +42,7 @@ type ScheduleGridItem struct {
 	SectionKey  string
 	Course      string
 	Location    string
+	Weeks       string
 }
 
 func (img *Image) cacheKey(now time.Time) (string, error) {

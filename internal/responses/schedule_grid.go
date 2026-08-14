@@ -178,6 +178,8 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	summary := "周日–周六 · 第 1–" + strconv.Itoa(len(grid.Periods)) + " 节"
 	if len(grid.Days) == 1 {
 		summary = grid.Days[0].Label + " · 第 1–" + strconv.Itoa(len(grid.Periods)) + " 节"
+	} else if scheduleGridHasNoDates(grid) {
+		summary = "整学期 · 第 1–" + strconv.Itoa(len(grid.Periods)) + " 节"
 	}
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, s(space.Width-metrics.MarginX), s(metrics.TitleBaseline), summary, muted)
 
@@ -199,8 +201,14 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 			dateColor = accent
 		}
 		drawScheduleGridCell(canvas, rect, s, cellBackground, line)
-		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+23), headerText, headerColor)
-		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+43), day.Date, dateColor)
+		headerBaseline := rect.Min.Y + 23
+		if strings.TrimSpace(day.Date) == "" {
+			headerBaseline = rect.Min.Y + 34
+		}
+		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(rect.Min.X+metrics.DayWidth/2), s(headerBaseline), headerText, headerColor)
+		if strings.TrimSpace(day.Date) != "" {
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(rect.Min.X+metrics.DayWidth/2), s(rect.Min.Y+43), day.Date, dateColor)
+		}
 	}
 
 	for periodIndex, period := range grid.Periods {
@@ -237,12 +245,21 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		centerY := s(rect.Min.Y + rect.Dy()/2)
 		course := fitScheduleGridText(item.Course, metrics.DayWidth-12, 13)
 		location := fitScheduleGridText(item.Location, metrics.DayWidth-12, richMetaFontSize)
-		if location == "" {
+		weeks := fitScheduleGridText(item.Weeks, metrics.DayWidth-12, richMetaFontSize)
+		switch {
+		case location == "" && weeks == "":
 			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY+s(5), course, ink)
-			continue
+		case weeks == "":
+			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(3), course, ink)
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), location, muted)
+		case location == "":
+			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(3), course, ink)
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), weeks, accent)
+		default:
+			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(14), course, ink)
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(3), location, muted)
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(20), weeks, accent)
 		}
-		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(3), course, ink)
-		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), location, muted)
 	}
 
 	if todayIndex >= 0 {
@@ -272,6 +289,18 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		return nil, 0, 0, err
 	}
 	return buffer.Bytes(), canvas.Bounds().Dx(), canvas.Bounds().Dy(), nil
+}
+
+func scheduleGridHasNoDates(grid *ScheduleGrid) bool {
+	if grid == nil || len(grid.Days) == 0 {
+		return false
+	}
+	for _, day := range grid.Days {
+		if strings.TrimSpace(day.Date) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func drawScheduleGridCell(dst *image.RGBA, rect image.Rectangle, scale func(int) int, fill, border color.RGBA) {

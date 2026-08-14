@@ -891,6 +891,9 @@ func joinedScheduleDay(key string) (string, bool) {
 			if date, ok := normalizeScheduleDateToken(key[len(scheduleToken):]); ok {
 				return date, true
 			}
+			if semester, ok := normalizeScheduleSemesterTarget(key[len(scheduleToken):]); ok {
+				return semester, true
+			}
 		}
 		if strings.HasSuffix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[:len(key)-len(scheduleToken)]); ok {
@@ -901,6 +904,9 @@ func joinedScheduleDay(key string) (string, bool) {
 			}
 			if date, ok := normalizeScheduleDateToken(key[:len(key)-len(scheduleToken)]); ok {
 				return date, true
+			}
+			if semester, ok := normalizeScheduleSemesterTarget(key[:len(key)-len(scheduleToken)]); ok {
+				return semester, true
 			}
 		}
 	}
@@ -930,6 +936,23 @@ func normalizeScheduleDateToken(value string) (string, bool) {
 }
 
 var scheduleWeekNumberPattern = regexp.MustCompile(`^第?([0-9]+)周$`)
+var scheduleSemesterPattern = regexp.MustCompile(`^(\d{2}|\d{4})年?(春|秋)(?:季)?(?:学期)?$`)
+
+func normalizeScheduleSemesterTarget(value string) (string, bool) {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), "")
+	matches := scheduleSemesterPattern.FindStringSubmatch(value)
+	if len(matches) != 3 {
+		return "", false
+	}
+	year, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return "", false
+	}
+	if year < 100 {
+		year += 2000
+	}
+	return fmt.Sprintf("semester:%04d-%s", year, matches[2]), true
+}
 
 func normalizeScheduleWeekTarget(value string) (string, bool) {
 	value = normToken(value)
@@ -1081,6 +1104,9 @@ func normalizeScheduleArgs(args []string) []string {
 	}
 	if isHelpToken(args[0]) {
 		return withFirstArg(args, "help")
+	}
+	if semester, ok := normalizeScheduleSemesterTarget(strings.Join(args, "")); ok {
+		return []string{semester}
 	}
 	if day, ok := normalizeScheduleDay(normToken(args[0])); ok {
 		return withFirstArg(args, day)
@@ -2831,6 +2857,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 			"课表 / 课表 本周：查看本周（周日至周六）",
 			"课表 下周",
 			"课表 第3周",
+			"课表 2026 秋季学期 / 课表 26秋：查看整学期",
 			"课表 7.20周",
 			"课表 6.23：查看该日期所在周",
 			"课表 2022.05.03：查看该日期所在周",
@@ -2864,6 +2891,8 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 			return commandError("学期周次查不到：", err)
 		}
 		return h.curriculumWeek(ctx, ident, start)
+	case strings.HasPrefix(target, "semester:"):
+		return h.curriculumSemester(ctx, ident, target)
 	}
 	title := "今天 " + textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	if target == "tomorrow" {
@@ -2951,6 +2980,281 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		lines = append(lines, formatScheduleDay(weekdays[day.Weekday()]+" "+day.Format("01-02"), daySchedules)...)
 	}
 	return strings.Join(lines, "\n")
+}
+
+type semesterScheduleEntry struct {
+	day       int
+	startTime string
+	endTime   string
+	course    string
+	place     string
+	weeks     map[int]bool
+}
+
+func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, target string) string {
+	semester, err := h.matchScheduleSemester(ctx, target)
+	if err != nil {
+		return commandError("学期查不到：", err)
+	}
+	if semester == nil {
+		return "没有找到 " + scheduleSemesterTargetLabel(target) + "。可以发「学期 列表」查看可用学期。"
+	}
+	start, okStart := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
+	end, okEnd := lifedata.ParseAPITime(lifedata.FirstString(semester, "endDate"))
+	if !okStart || !okEnd {
+		return "该学期缺少起止日期，暂时无法生成整学期课表。"
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	schedules, _, err := h.schedulesForSemester(ctx, ident, token, semester, start, end)
+	if err != nil {
+		return commandError("课表查不到：", err)
+	}
+	entries := aggregateSemesterSchedules(schedules, start, end)
+	name := lifedata.FirstString(semester, "nameCn", "namePrimary", "name", "code")
+	if name == "" {
+		name = scheduleSemesterTargetLabel(target)
+	}
+	if len(entries) == 0 {
+		return name + "没有查到已关注课程。"
+	}
+	return formatSemesterSchedule(name, entries)
+}
+
+func (h Handler) matchScheduleSemester(ctx context.Context, target string) (map[string]any, error) {
+	semesters, err := h.Life.ListSemesters(ctx, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	for _, semester := range semesters {
+		for _, field := range []string{"nameCn", "namePrimary", "name", "code"} {
+			candidate, ok := normalizeScheduleSemesterTarget(lifedata.FirstString(semester, field))
+			if ok && candidate == target {
+				return semester, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func scheduleSemesterTargetLabel(target string) string {
+	value := strings.TrimPrefix(target, "semester:")
+	parts := strings.SplitN(value, "-", 2)
+	if len(parts) != 2 {
+		return "指定学期"
+	}
+	return parts[0] + "年" + parts[1] + "季学期"
+}
+
+func (h Handler) schedulesForSemester(ctx context.Context, ident store.Identity, token string, semester map[string]any, start, end time.Time) ([]map[string]any, string, error) {
+	dateFrom, _ := lifedata.DayRFC3339Range(start)
+	_, dateTo := lifedata.DayRFC3339Range(end)
+	subscription, err := h.Life.CurrentSubscription(ctx, token)
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		subscription, err = h.Life.CurrentSubscription(ctx, token)
+	}
+	if err != nil {
+		return nil, token, err
+	}
+	sections := subscribedSectionsForSemester(subscription, semester)
+	if len(sections) == 0 {
+		return nil, token, nil
+	}
+	all, err := h.fetchSemesterSchedulesForSections(ctx, token, sections, dateFrom, dateTo)
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		all, err = h.fetchSemesterSchedulesForSections(ctx, token, sections, dateFrom, dateTo)
+	}
+	return all, token, err
+}
+
+func subscribedSectionsForSemester(subscription, semester map[string]any) []map[string]any {
+	semesterID := lifedata.FirstString(semester, "id")
+	semesterJwID := lifedata.FirstString(semester, "jwId")
+	sections := make([]map[string]any, 0)
+	for _, section := range lifedata.SubscriptionSections(subscription) {
+		sectionSemester, _ := section["semester"].(map[string]any)
+		if sectionSemester == nil {
+			continue
+		}
+		matchesID := semesterID != "" && lifedata.FirstString(sectionSemester, "id") == semesterID
+		matchesJwID := semesterJwID != "" && lifedata.FirstString(sectionSemester, "jwId") == semesterJwID
+		if matchesID || matchesJwID {
+			sections = append(sections, section)
+		}
+	}
+	return sections
+}
+
+func (h Handler) fetchSemesterSchedulesForSections(ctx context.Context, token string, sections []map[string]any, dateFrom, dateTo string) ([]map[string]any, error) {
+	var mu sync.Mutex
+	var firstErr error
+	all := make([]map[string]any, 0)
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+scheduleLoop:
+	for _, section := range sections {
+		if ctx.Err() != nil {
+			break
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break scheduleLoop
+		}
+		section := section
+		sectionJwID := int64(lifedata.FirstInt(section, "jwId"))
+		if sectionJwID <= 0 {
+			<-sem
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			schedules, err := h.Life.ListSchedulesBySection(ctx, token, sectionJwID, dateFrom, dateTo)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			for _, schedule := range schedules {
+				if _, ok := schedule["section"].(map[string]any); !ok {
+					schedule["section"] = section
+				}
+				all = append(all, schedule)
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return all, ctx.Err()
+}
+
+func aggregateSemesterSchedules(schedules []map[string]any, semesterStart, semesterEnd time.Time) []semesterScheduleEntry {
+	loc := lifedata.ChinaLocation()
+	semesterStart = semesterStart.In(loc)
+	semesterEnd = semesterEnd.In(loc)
+	semesterStartDate := semesterStart.Format("2006-01-02")
+	semesterEndDate := semesterEnd.Format("2006-01-02")
+	weekOneStart := weekStartSunday(semesterStart)
+	entries := make([]semesterScheduleEntry, 0)
+	indexByKey := make(map[string]int)
+	for _, schedule := range schedules {
+		date, hasDate := lifedata.ParseAPITime(lifedata.FirstString(schedule, "date"))
+		date = date.In(loc)
+		dateValue := date.Format("2006-01-02")
+		if hasDate && (dateValue < semesterStartDate || dateValue > semesterEndDate) {
+			continue
+		}
+		course := lifedata.ScheduleCourseLabel(schedule)
+		startTime := lifedata.FirstString(schedule, "startTime")
+		endTime := lifedata.FirstString(schedule, "endTime")
+		if course == "" || startTime == "" || endTime == "" {
+			continue
+		}
+		sectionKey := lifedata.NestedString(schedule, "section", "id", "jwId", "code")
+		if sectionKey == "" {
+			sectionKey = course
+		}
+		place := strings.TrimSpace(lifedata.SchedulePlaceLabel(schedule))
+		day := -1
+		if hasDate {
+			day = int(date.Weekday())
+		} else if weekday := lifedata.FirstInt(schedule, "weekday"); weekday >= 1 && weekday <= 7 {
+			day = weekday % 7
+		}
+		if day < 0 {
+			continue
+		}
+		key := strings.Join([]string{strconv.Itoa(day), startTime, endTime, sectionKey, course, place}, "\x00")
+		index, exists := indexByKey[key]
+		if !exists {
+			index = len(entries)
+			indexByKey[key] = index
+			entries = append(entries, semesterScheduleEntry{
+				day: day, startTime: startTime, endTime: endTime,
+				course: course, place: place, weeks: make(map[int]bool),
+			})
+		}
+		week := lifedata.FirstInt(schedule, "weekIndex")
+		if week <= 0 && hasDate {
+			week = int(date.Sub(weekOneStart).Hours()/24)/7 + 1
+		}
+		if week > 0 {
+			entries[index].weeks[week] = true
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].day != entries[j].day {
+			return entries[i].day < entries[j].day
+		}
+		if entries[i].startTime != entries[j].startTime {
+			return entries[i].startTime < entries[j].startTime
+		}
+		return entries[i].course < entries[j].course
+	})
+	return entries
+}
+
+func formatSemesterSchedule(name string, entries []semesterScheduleEntry) string {
+	lines := []string{strings.TrimSpace(name) + "课表："}
+	entryIndex := 0
+	for day := 0; day < len(weeklyScheduleDayLabels); day++ {
+		if day > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, weeklyScheduleDayLabels[day]+"：")
+		startIndex := entryIndex
+		for entryIndex < len(entries) && entries[entryIndex].day == day {
+			entry := entries[entryIndex]
+			cells := []string{
+				textutil.MonospaceASCII(entry.place),
+				textutil.MonospaceDigits(strings.TrimSpace(entry.startTime + "-" + entry.endTime)),
+				entry.course,
+				textutil.MonospaceDigits(formatTeachingWeeks(entry.weeks)),
+			}
+			lines = append(lines, strings.Join(cells, "\t"))
+			entryIndex++
+		}
+		if entryIndex == startIndex {
+			lines = append(lines, "没有课。")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatTeachingWeeks(weeks map[int]bool) string {
+	values := make([]int, 0, len(weeks))
+	for week := range weeks {
+		values = append(values, week)
+	}
+	sort.Ints(values)
+	if len(values) == 0 {
+		return ""
+	}
+	ranges := make([]string, 0)
+	for start := 0; start < len(values); {
+		end := start
+		for end+1 < len(values) && values[end+1] == values[end]+1 {
+			end++
+		}
+		if start == end {
+			ranges = append(ranges, strconv.Itoa(values[start]))
+		} else {
+			ranges = append(ranges, strconv.Itoa(values[start])+"-"+strconv.Itoa(values[end]))
+		}
+		start = end + 1
+	}
+	return strings.Join(ranges, "、") + " 周"
 }
 
 func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity, token string) (bool, error) {

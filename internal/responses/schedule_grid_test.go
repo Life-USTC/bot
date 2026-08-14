@@ -124,6 +124,7 @@ func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
 
 func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	grid := testScheduleGrid()
+	grid.Items[0].Weeks = "2-16 周"
 	image := NewScheduleGridImage("schedule", "07-12 至 07-18 课表", grid, "本周课表")
 	if image == nil || image.Grid == nil {
 		t.Fatalf("image = %#v", image)
