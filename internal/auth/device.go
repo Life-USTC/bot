@@ -598,7 +598,8 @@ func (m *Manager) refreshStoredCredential(
 	ident store.Identity,
 	purpose tokenPurpose,
 ) (string, error) {
-	value, err, _ := m.refreshes.Do(refreshKey(ident, purpose), func() (any, error) {
+	// REST and MCP share one rotating refresh token, so serialize them by user.
+	value, err, _ := m.refreshes.Do(refreshKey(ident), func() (any, error) {
 		return m.refreshCredential(ctx, ident, purpose)
 	})
 	if err != nil {
@@ -607,12 +608,10 @@ func (m *Manager) refreshStoredCredential(
 	return value.(string), nil
 }
 
-func refreshKey(ident store.Identity, purpose tokenPurpose) string {
+func refreshKey(ident store.Identity) string {
 	return strings.ToLower(strings.TrimSpace(ident.Platform)) +
 		"\x00" +
-		strings.TrimSpace(ident.UserID) +
-		"\x00" +
-		string(purpose)
+		strings.TrimSpace(ident.UserID)
 }
 
 func (m *Manager) refreshCredential(
@@ -639,7 +638,7 @@ func (m *Manager) refreshCredential(
 	targetResource := m.targetResource(meta, purpose)
 
 	approvedResources := splitResources(cred.Resource)
-	refreshResource, resourceApproved := approvedRefreshResource(approvedResources, targetResource)
+	_, resourceApproved := approvedRefreshResource(approvedResources, targetResource)
 	if !resourceApproved {
 		if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
 			return "", fmt.Errorf("delete credential missing approved resource: %w", deleteErr)
@@ -649,8 +648,9 @@ func (m *Manager) refreshCredential(
 		}
 		return "", ErrNotLoggedIn
 	}
-	refreshResources := []string{refreshResource}
-	refreshed, err := m.refresh(ctx, *cred, refreshResources)
+	// Keep the replacement access token usable for every approved audience so
+	// callers for another purpose can share this refresh result safely.
+	refreshed, err := m.refresh(ctx, *cred, approvedResources)
 	if err != nil {
 		if errors.Is(err, ErrReauthorizationRequired) {
 			if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {

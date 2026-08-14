@@ -865,6 +865,109 @@ func TestConcurrentAccessTokenRefreshIsShared(t *testing.T) {
 	}
 }
 
+func TestConcurrentRESTAndMCPRefreshIsShared(t *testing.T) {
+	var serverURL string
+	var refreshRequests atomic.Int32
+	tokenStarted := make(chan struct{})
+	releaseToken := make(chan struct{})
+	requestedResources := make(chan []string, 2)
+	var startedOnce sync.Once
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer": serverURL, "token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		refreshRequests.Add(1)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		requestedResources <- append([]string(nil), r.Form["resource"]...)
+		startedOnce.Do(func() { close(tokenStarted) })
+		<-releaseToken
+		accessToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": []string{serverURL, serverURL + "/api/mcp"},
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  accessToken,
+			"refresh_token": "new-refresh",
+			"expires_in":    3600,
+			"id_token":      idToken,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	resources := server.URL + " " + server.URL + "/api/mcp"
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    authTestNow,
+		Resource:     resources,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := Manager{
+		Server: server.URL, HTTPClient: server.Client(), Store: db,
+		Now: fixedClock(authTestNow),
+	}
+
+	type result struct {
+		token string
+		err   error
+	}
+	results := make(chan result, 2)
+	go func() {
+		token, err := manager.AccessToken(ctx, ident)
+		results <- result{token: token, err: err}
+	}()
+	<-tokenStarted
+	go func() {
+		token, err := manager.MCPAccessToken(ctx, ident)
+		results <- result{token: token, err: err}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	close(releaseToken)
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if !tokenAudienceMatches(result.token, server.URL) ||
+			!tokenAudienceMatches(result.token, server.URL+"/api/mcp") {
+			t.Fatalf("refreshed token audience = %v", tokenAudienceValues(result.token))
+		}
+	}
+	if got := refreshRequests.Load(); got != 1 {
+		t.Fatalf("refresh requests = %d, want 1", got)
+	}
+	if got := <-requestedResources; strings.Join(got, " ") != resources {
+		t.Fatalf("refresh resources = %q, want %q", got, resources)
+	}
+}
+
 func TestAccessTokenRemovesCredentialRejectedAsInvalidGrant(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()
@@ -963,7 +1066,7 @@ func TestRefreshIfUnauthorized(t *testing.T) {
 		if r.Form.Get("refresh_token") != "refresh" {
 			t.Fatalf("refresh_token = %q", r.Form.Get("refresh_token"))
 		}
-		wantResources := []string{serverURL}
+		wantResources := []string{serverURL, serverURL + "/api/mcp"}
 		if got := r.Form["resource"]; strings.Join(got, " ") != strings.Join(wantResources, " ") {
 			t.Fatalf("refresh resources = %#v, want %#v", got, wantResources)
 		}
