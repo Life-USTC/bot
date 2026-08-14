@@ -2621,7 +2621,7 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -2708,7 +2708,6 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2719,13 +2718,13 @@ type CalendarSubscriptionAppendResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -2772,7 +2771,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -2859,7 +2858,6 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2870,13 +2868,13 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -2899,7 +2897,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -2986,7 +2984,6 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -2997,13 +2994,13 @@ type CalendarSubscriptionBatchResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -3040,7 +3037,7 @@ type CalendarSubscriptionCreateResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -3127,7 +3124,6 @@ type CalendarSubscriptionCreateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3138,13 +3134,13 @@ type CalendarSubscriptionCreateResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -3165,7 +3161,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -3252,7 +3248,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3263,13 +3258,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -3284,7 +3279,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -3371,7 +3366,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3382,13 +3376,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -3404,7 +3398,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -3491,7 +3485,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3502,13 +3495,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -3531,7 +3524,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -3618,7 +3611,6 @@ type CalendarSubscriptionImportResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3629,13 +3621,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -3677,7 +3669,7 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -3764,7 +3756,6 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3775,13 +3766,13 @@ type CalendarSubscriptionQueryResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -3817,7 +3808,7 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -3904,7 +3895,6 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -3915,13 +3905,13 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -4313,7 +4303,6 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
-				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4410,7 +4399,6 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
-				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4450,7 +4438,7 @@ type CompactOverviewResponseSchema struct {
 					Campus *struct {
 						Code          *string `json:"code"`
 						Id            int     `json:"id"`
-						JwId          *int    `json:"jwId"`
+						JwId          int     `json:"jwId"`
 						NameCn        string  `json:"nameCn"`
 						NameEn        *string `json:"nameEn"`
 						NamePrimary   string  `json:"namePrimary"`
@@ -4546,7 +4534,6 @@ type CompactOverviewResponseSchema struct {
 				SelectedStdCount        *int            `json:"selectedStdCount"`
 				Semester                *SemesterSchema `json:"semester"`
 				SemesterId              *int            `json:"semesterId"`
-				SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 				StdCount                *int            `json:"stdCount"`
 				SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 				SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4669,7 +4656,7 @@ type CourseDetailSchema struct {
 		Campus        *struct {
 			Code   *string `json:"code"`
 			Id     int     `json:"id"`
-			JwId   *int    `json:"jwId"`
+			JwId   int     `json:"jwId"`
 			NameCn string  `json:"nameCn"`
 			NameEn *string `json:"nameEn"`
 		} `json:"campus"`
@@ -4700,7 +4687,6 @@ type CourseDetailSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4711,11 +4697,11 @@ type CourseDetailSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -4743,7 +4729,7 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			Campus        *struct {
 				Code          *string `json:"code"`
 				Id            int     `json:"id"`
-				JwId          *int    `json:"jwId"`
+				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
 				NameEn        *string `json:"nameEn"`
 				NamePrimary   string  `json:"namePrimary"`
@@ -4830,7 +4816,6 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -4841,13 +4826,13 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 				DepartmentId   *int    `json:"departmentId"`
 				Email          *string `json:"email"`
 				Id             int     `json:"id"`
+				JwId           int     `json:"jwId"`
 				Mobile         *string `json:"mobile"`
 				NameCn         string  `json:"nameCn"`
 				NameEn         *string `json:"nameEn"`
 				NamePrimary    string  `json:"namePrimary"`
 				NameSecondary  *string `json:"nameSecondary"`
 				PersonId       *int    `json:"personId"`
-				TeacherId      *int    `json:"teacherId"`
 				TeacherTitleId *int    `json:"teacherTitleId"`
 				Telephone      *string `json:"telephone"`
 			} `json:"teachers"`
@@ -5280,7 +5265,6 @@ type HomeworkCreateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5433,7 +5417,6 @@ type HomeworkUpdateResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5557,7 +5540,6 @@ type HomeworksListResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5633,7 +5615,7 @@ type MatchSectionCodesResponseSchema struct {
 		Campus        *struct {
 			Code          *string `json:"code"`
 			Id            int     `json:"id"`
-			JwId          *int    `json:"jwId"`
+			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
 			NameEn        *string `json:"nameEn"`
 			NamePrimary   string  `json:"namePrimary"`
@@ -5720,7 +5702,6 @@ type MatchSectionCodesResponseSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -5731,13 +5712,13 @@ type MatchSectionCodesResponseSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			NamePrimary    string  `json:"namePrimary"`
 			NameSecondary  *string `json:"nameSecondary"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teachers"`
@@ -5780,7 +5761,7 @@ type MetadataResponseSchema struct {
 		} `json:"buildings"`
 		Code   *string `json:"code"`
 		Id     int     `json:"id"`
-		JwId   *int    `json:"jwId"`
+		JwId   int     `json:"jwId"`
 		NameCn string  `json:"nameCn"`
 		NameEn *string `json:"nameEn"`
 	} `json:"campuses"`
@@ -5989,7 +5970,7 @@ type PaginatedScheduleResponseSchema struct {
 				Campus *struct {
 					Code          *string `json:"code"`
 					Id            int     `json:"id"`
-					JwId          *int    `json:"jwId"`
+					JwId          int     `json:"jwId"`
 					NameCn        string  `json:"nameCn"`
 					NameEn        *string `json:"nameEn"`
 					NamePrimary   string  `json:"namePrimary"`
@@ -6085,7 +6066,6 @@ type PaginatedScheduleResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6146,7 +6126,7 @@ type PaginatedSectionResponseSchema struct {
 		Campus *struct {
 			Code   *string `json:"code"`
 			Id     int     `json:"id"`
-			JwId   *int    `json:"jwId"`
+			JwId   int     `json:"jwId"`
 			NameCn string  `json:"nameCn"`
 			NameEn *string `json:"nameEn"`
 		} `json:"campus"`
@@ -6174,12 +6154,12 @@ type PaginatedSectionResponseSchema struct {
 		SemesterId *int `json:"semesterId"`
 		StdCount   *int `json:"stdCount"`
 		Teachers   []struct {
-			Code      *string `json:"code"`
-			Id        int     `json:"id"`
-			NameCn    string  `json:"nameCn"`
-			NameEn    *string `json:"nameEn"`
-			PersonId  *int    `json:"personId"`
-			TeacherId *int    `json:"teacherId"`
+			Code     *string `json:"code"`
+			Id       int     `json:"id"`
+			JwId     int     `json:"jwId"`
+			NameCn   string  `json:"nameCn"`
+			NameEn   *string `json:"nameEn"`
+			PersonId *int    `json:"personId"`
 		} `json:"teachers"`
 	} `json:"data"`
 	Pagination struct {
@@ -6219,11 +6199,11 @@ type PaginatedTeacherResponseSchema struct {
 		DepartmentId *int    `json:"departmentId"`
 		Email        *string `json:"email"`
 		Id           int     `json:"id"`
+		JwId         int     `json:"jwId"`
 		Mobile       *string `json:"mobile"`
 		NameCn       string  `json:"nameCn"`
 		NameEn       *string `json:"nameEn"`
 		PersonId     *int    `json:"personId"`
-		TeacherId    *int    `json:"teacherId"`
 		TeacherTitle *struct {
 			Code    string  `json:"code"`
 			Enabled *bool   `json:"enabled"`
@@ -6276,7 +6256,7 @@ type SectionDetailSchema struct {
 		Enabled   *bool   `json:"enabled"`
 		Grade     *string `json:"grade"`
 		Id        int     `json:"id"`
-		JwId      *int    `json:"jwId"`
+		JwId      int     `json:"jwId"`
 		NameCn    string  `json:"nameCn"`
 		NameEn    *string `json:"nameEn"`
 		PlanCount *int    `json:"planCount"`
@@ -6286,7 +6266,7 @@ type SectionDetailSchema struct {
 	Campus    *struct {
 		Code   *string `json:"code"`
 		Id     int     `json:"id"`
-		JwId   *int    `json:"jwId"`
+		JwId   int     `json:"jwId"`
 		NameCn string  `json:"nameCn"`
 		NameEn *string `json:"nameEn"`
 	} `json:"campus"`
@@ -6430,7 +6410,6 @@ type SectionDetailSchema struct {
 	SelectedStdCount        *int            `json:"selectedStdCount"`
 	Semester                *SemesterSchema `json:"semester"`
 	SemesterId              *int            `json:"semesterId"`
-	SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 	StdCount                *int            `json:"stdCount"`
 	SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 	SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6451,11 +6430,11 @@ type SectionDetailSchema struct {
 			DepartmentId   *int    `json:"departmentId"`
 			Email          *string `json:"email"`
 			Id             int     `json:"id"`
+			JwId           int     `json:"jwId"`
 			Mobile         *string `json:"mobile"`
 			NameCn         string  `json:"nameCn"`
 			NameEn         *string `json:"nameEn"`
 			PersonId       *int    `json:"personId"`
-			TeacherId      *int    `json:"teacherId"`
 			TeacherTitleId *int    `json:"teacherTitleId"`
 			Telephone      *string `json:"telephone"`
 		} `json:"teacher"`
@@ -6486,11 +6465,11 @@ type SectionDetailSchema struct {
 		DepartmentId *int    `json:"departmentId"`
 		Email        *string `json:"email"`
 		Id           int     `json:"id"`
+		JwId         int     `json:"jwId"`
 		Mobile       *string `json:"mobile"`
 		NameCn       string  `json:"nameCn"`
 		NameEn       *string `json:"nameEn"`
 		PersonId     *int    `json:"personId"`
-		TeacherId    *int    `json:"teacherId"`
 		TeacherTitle *struct {
 			Code    string  `json:"code"`
 			Enabled *bool   `json:"enabled"`
@@ -6616,7 +6595,6 @@ type SubscribedHomeworksResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6671,7 +6649,7 @@ type SubscribedSchedulesResponseSchema struct {
 				Campus *struct {
 					Code          *string `json:"code"`
 					Id            int     `json:"id"`
-					JwId          *int    `json:"jwId"`
+					JwId          int     `json:"jwId"`
 					NameCn        string  `json:"nameCn"`
 					NameEn        *string `json:"nameEn"`
 					NamePrimary   string  `json:"namePrimary"`
@@ -6767,7 +6745,6 @@ type SubscribedSchedulesResponseSchema struct {
 			SelectedStdCount        *int            `json:"selectedStdCount"`
 			Semester                *SemesterSchema `json:"semester"`
 			SemesterId              *int            `json:"semesterId"`
-			SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 			StdCount                *int            `json:"stdCount"`
 			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6838,6 +6815,7 @@ type TeacherDetailSchema struct {
 	DepartmentId *int    `json:"departmentId"`
 	Email        *string `json:"email"`
 	Id           int     `json:"id"`
+	JwId         int     `json:"jwId"`
 	Mobile       *string `json:"mobile"`
 	NameCn       string  `json:"nameCn"`
 	NameEn       *string `json:"nameEn"`
@@ -6915,7 +6893,6 @@ type TeacherDetailSchema struct {
 		SelectedStdCount        *int            `json:"selectedStdCount"`
 		Semester                *SemesterSchema `json:"semester"`
 		SemesterId              *int            `json:"semesterId"`
-		SourceLastSeenAt        *time.Time      `json:"sourceLastSeenAt,omitempty"`
 		StdCount                *int            `json:"stdCount"`
 		SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
 		SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
@@ -6924,7 +6901,6 @@ type TeacherDetailSchema struct {
 		TheoryPeriods           *float32        `json:"theoryPeriods"`
 		TimesPerWeek            *int            `json:"timesPerWeek"`
 	} `json:"sections"`
-	TeacherId    *int `json:"teacherId"`
 	TeacherTitle *struct {
 		Code    string  `json:"code"`
 		Enabled *bool   `json:"enabled"`
