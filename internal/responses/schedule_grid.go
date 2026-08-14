@@ -30,6 +30,12 @@ type scheduleGridMetrics struct {
 
 const scheduleGridDividerThickness = 4
 
+const (
+	scheduleGridCourseFontSize      = 13
+	scheduleGridLargeCourseFontSize = 16
+	scheduleGridLargeMetaFontSize   = 11
+)
+
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
 	dayWidth := 156
 	if dayCount == 1 {
@@ -75,6 +81,10 @@ func scheduleGridItemBounds(item ScheduleGridItem, metrics scheduleGridMetrics) 
 	left := metrics.MarginX + metrics.LabelWidth + item.Day*metrics.DayWidth
 	top := metrics.GridTop + metrics.HeaderHeight + (item.StartPeriod-1)*metrics.RowHeight
 	return image.Rect(left, top, left+metrics.DayWidth, top+(item.EndPeriod-item.StartPeriod+1)*metrics.RowHeight), true
+}
+
+func scheduleGridItemUsesLargeText(rect image.Rectangle, metrics scheduleGridMetrics) bool {
+	return rect.Dy() >= 2*metrics.RowHeight
 }
 
 func scheduleGridDividerBounds(boundary int, metrics scheduleGridMetrics) (image.Rectangle, bool) {
@@ -154,6 +164,22 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	now := time.Now().In(time.FixedZone("CST", 8*60*60))
 	todayIndex := scheduleGridTodayIndex(grid, now)
 	faces, err := r.richFaces(space.Scale)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	largeCourseFace, err := r.sansBoldFontFace(float64(scheduleGridLargeCourseFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	largeCourseMonoFace, err := r.monoBoldFontFace(float64(scheduleGridLargeCourseFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	largeMetaFace, err := r.sansFontFace(float64(scheduleGridLargeMetaFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	largeMetaMonoFace, err := r.monoFontFace(float64(scheduleGridLargeMetaFontSize * space.Scale))
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -243,22 +269,43 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 
 		centerX := s(rect.Min.X + rect.Dx()/2)
 		centerY := s(rect.Min.Y + rect.Dy()/2)
-		course := fitScheduleGridText(item.Course, metrics.DayWidth-12, 13)
-		location := fitScheduleGridText(item.Location, metrics.DayWidth-12, richMetaFontSize)
-		weeks := fitScheduleGridText(item.Weeks, metrics.DayWidth-12, richMetaFontSize)
+		courseFace, courseMonoFace := faces.Bold, faces.BoldMono
+		metaFace, metaMonoFace := faces.Meta, faces.MetaMono
+		courseFontSize, metaFontSize := scheduleGridCourseFontSize, richMetaFontSize
+		maxTextWidth := metrics.DayWidth - 12
+		oneLineOffset := 5
+		twoCourseOffset, twoMetaOffset := -3, 16
+		threeCourseOffset, threeLocationOffset, threeWeeksOffset := -14, 3, 20
+		if scheduleGridItemUsesLargeText(rect, metrics) {
+			if richTextWidth(strings.TrimSpace(item.Course), scheduleGridLargeCourseFontSize) <= maxTextWidth {
+				courseFace, courseMonoFace = largeCourseFace, largeCourseMonoFace
+				courseFontSize = scheduleGridLargeCourseFontSize
+			}
+			if richTextWidth(strings.TrimSpace(item.Location), scheduleGridLargeMetaFontSize) <= maxTextWidth &&
+				richTextWidth(strings.TrimSpace(item.Weeks), scheduleGridLargeMetaFontSize) <= maxTextWidth {
+				metaFace, metaMonoFace = largeMetaFace, largeMetaMonoFace
+				metaFontSize = scheduleGridLargeMetaFontSize
+			}
+			oneLineOffset = 6
+			twoCourseOffset, twoMetaOffset = -5, 20
+			threeCourseOffset, threeLocationOffset, threeWeeksOffset = -18, 4, 26
+		}
+		course := fitScheduleGridText(item.Course, maxTextWidth, courseFontSize)
+		location := fitScheduleGridText(item.Location, maxTextWidth, metaFontSize)
+		weeks := fitScheduleGridText(item.Weeks, maxTextWidth, metaFontSize)
 		switch {
 		case location == "" && weeks == "":
-			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY+s(5), course, ink)
+			drawCenteredMixedText(canvas, courseFace, courseMonoFace, centerX, centerY+s(oneLineOffset), course, ink)
 		case weeks == "":
-			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(3), course, ink)
-			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), location, muted)
+			drawCenteredMixedText(canvas, courseFace, courseMonoFace, centerX, centerY+s(twoCourseOffset), course, ink)
+			drawCenteredMixedText(canvas, metaFace, metaMonoFace, centerX, centerY+s(twoMetaOffset), location, muted)
 		case location == "":
-			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(3), course, ink)
-			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(16), weeks, accent)
+			drawCenteredMixedText(canvas, courseFace, courseMonoFace, centerX, centerY+s(twoCourseOffset), course, ink)
+			drawCenteredMixedText(canvas, metaFace, metaMonoFace, centerX, centerY+s(twoMetaOffset), weeks, accent)
 		default:
-			drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, centerX, centerY-s(14), course, ink)
-			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(3), location, muted)
-			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, centerX, centerY+s(20), weeks, accent)
+			drawCenteredMixedText(canvas, courseFace, courseMonoFace, centerX, centerY+s(threeCourseOffset), course, ink)
+			drawCenteredMixedText(canvas, metaFace, metaMonoFace, centerX, centerY+s(threeLocationOffset), location, muted)
+			drawCenteredMixedText(canvas, metaFace, metaMonoFace, centerX, centerY+s(threeWeeksOffset), weeks, accent)
 		}
 	}
 

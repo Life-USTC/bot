@@ -25,6 +25,21 @@ func TestScheduleGridItemBoundsMergePeriods(t *testing.T) {
 	}
 }
 
+func TestScheduleGridItemTextSizeUsesCourseBlockHeight(t *testing.T) {
+	metrics := defaultScheduleGridMetrics(7, 13)
+	onePeriod, ok := scheduleGridItemBounds(ScheduleGridItem{Day: 1, StartPeriod: 3, EndPeriod: 3}, metrics)
+	if !ok || scheduleGridItemUsesLargeText(onePeriod, metrics) {
+		t.Fatalf("one-period block uses large text: rect=%v ok=%v", onePeriod, ok)
+	}
+	twoPeriods, ok := scheduleGridItemBounds(ScheduleGridItem{Day: 1, StartPeriod: 3, EndPeriod: 4}, metrics)
+	if !ok || !scheduleGridItemUsesLargeText(twoPeriods, metrics) {
+		t.Fatalf("two-period block does not use large text: rect=%v ok=%v", twoPeriods, ok)
+	}
+	if scheduleGridLargeCourseFontSize <= scheduleGridCourseFontSize || scheduleGridLargeMetaFontSize <= richMetaFontSize {
+		t.Fatal("large item font sizes must exceed compact font sizes")
+	}
+}
+
 func TestScheduleGridUsesStrongDayPartDividers(t *testing.T) {
 	grid := testScheduleGrid()
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
