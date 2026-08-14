@@ -35,7 +35,8 @@ func TestScheduleGridItemTextSizeUsesCourseBlockHeight(t *testing.T) {
 	if !ok || !scheduleGridItemUsesLargeText(twoPeriods, metrics) {
 		t.Fatalf("two-period block does not use large text: rect=%v ok=%v", twoPeriods, ok)
 	}
-	if scheduleGridLargeCourseFontSize <= scheduleGridCourseFontSize || scheduleGridLargeMetaFontSize <= richMetaFontSize {
+	if scheduleGridCourseFontSize <= 13 || scheduleGridMetaFontSize <= richMetaFontSize ||
+		scheduleGridLargeCourseFontSize <= scheduleGridCourseFontSize || scheduleGridLargeMetaFontSize <= scheduleGridMetaFontSize {
 		t.Fatal("large item font sizes must exceed compact font sizes")
 	}
 }

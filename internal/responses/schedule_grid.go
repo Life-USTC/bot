@@ -31,9 +31,10 @@ type scheduleGridMetrics struct {
 const scheduleGridDividerThickness = 4
 
 const (
-	scheduleGridCourseFontSize      = 13
-	scheduleGridLargeCourseFontSize = 16
-	scheduleGridLargeMetaFontSize   = 11
+	scheduleGridCourseFontSize      = 14
+	scheduleGridMetaFontSize        = 10
+	scheduleGridLargeCourseFontSize = 18
+	scheduleGridLargeMetaFontSize   = 13
 )
 
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
@@ -167,6 +168,22 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	itemCourseFace, err := r.sansBoldFontFace(float64(scheduleGridCourseFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	itemCourseMonoFace, err := r.monoBoldFontFace(float64(scheduleGridCourseFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	itemMetaFace, err := r.sansFontFace(float64(scheduleGridMetaFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	itemMetaMonoFace, err := r.monoFontFace(float64(scheduleGridMetaFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
 	largeCourseFace, err := r.sansBoldFontFace(float64(scheduleGridLargeCourseFontSize * space.Scale))
 	if err != nil {
 		return nil, 0, 0, err
@@ -269,13 +286,13 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 
 		centerX := s(rect.Min.X + rect.Dx()/2)
 		centerY := s(rect.Min.Y + rect.Dy()/2)
-		courseFace, courseMonoFace := faces.Bold, faces.BoldMono
-		metaFace, metaMonoFace := faces.Meta, faces.MetaMono
-		courseFontSize, metaFontSize := scheduleGridCourseFontSize, richMetaFontSize
+		courseFace, courseMonoFace := itemCourseFace, itemCourseMonoFace
+		metaFace, metaMonoFace := itemMetaFace, itemMetaMonoFace
+		courseFontSize, metaFontSize := scheduleGridCourseFontSize, scheduleGridMetaFontSize
 		maxTextWidth := metrics.DayWidth - 12
-		oneLineOffset := 5
-		twoCourseOffset, twoMetaOffset := -3, 16
-		threeCourseOffset, threeLocationOffset, threeWeeksOffset := -14, 3, 20
+		oneLineOffset := 6
+		twoCourseOffset, twoMetaOffset := -4, 18
+		threeCourseOffset, threeLocationOffset, threeWeeksOffset := -15, 3, 21
 		if scheduleGridItemUsesLargeText(rect, metrics) {
 			if richTextWidth(strings.TrimSpace(item.Course), scheduleGridLargeCourseFontSize) <= maxTextWidth {
 				courseFace, courseMonoFace = largeCourseFace, largeCourseMonoFace
@@ -286,9 +303,9 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 				metaFace, metaMonoFace = largeMetaFace, largeMetaMonoFace
 				metaFontSize = scheduleGridLargeMetaFontSize
 			}
-			oneLineOffset = 6
-			twoCourseOffset, twoMetaOffset = -5, 20
-			threeCourseOffset, threeLocationOffset, threeWeeksOffset = -18, 4, 26
+			oneLineOffset = 7
+			twoCourseOffset, twoMetaOffset = -7, 23
+			threeCourseOffset, threeLocationOffset, threeWeeksOffset = -22, 4, 31
 		}
 		course := fitScheduleGridText(item.Course, maxTextWidth, courseFontSize)
 		location := fitScheduleGridText(item.Location, maxTextWidth, metaFontSize)
