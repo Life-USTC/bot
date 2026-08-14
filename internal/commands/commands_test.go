@@ -3137,6 +3137,83 @@ func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
 	}
 }
 
+func TestCurriculumRendersMatchedSemesterWithTeachingWeeks(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	sectionScheduleCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/catalog/semesters":
+			if got := r.URL.Query().Get("limit"); got != "100" {
+				t.Fatalf("semester limit = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":1,"jwId":202601,"nameCn":"2026年春季学期","code":"2026春","startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"},
+				{"id":2,"jwId":202602,"nameCn":"2026年秋季学期","code":"2026秋","startDate":"2026-09-07T00:00:00+08:00","endDate":"2027-01-17T23:59:59+08:00"}
+			]}`))
+		case "/api/workspace/subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[
+				{"id":11,"jwId":1001,"semester":{"id":1,"jwId":202601},"course":{"namePrimary":"春季课程"}},
+				{"id":42,"jwId":2002,"semester":{"id":2,"jwId":202602},"course":{"namePrimary":"数据库系统"}}
+			]}}`))
+		case "/api/catalog/sections/2002/schedules":
+			sectionScheduleCalls++
+			if got := r.URL.Query().Get("limit"); got != "100" {
+				t.Fatalf("schedule limit = %q", got)
+			}
+			_, _ = w.Write([]byte(`[
+				{"date":"2026-09-14T08:00:00+08:00","weekIndex":2,"weekday":1,"startTime":"09:50","endTime":"11:25","room":{"namePrimary":"西区 3A204"}},
+				{"date":"2026-09-21T08:00:00+08:00","weekIndex":3,"weekday":1,"startTime":"09:50","endTime":"11:25","room":{"namePrimary":"西区 3A204"}},
+				{"date":"2026-09-28T08:00:00+08:00","weekIndex":4,"weekday":1,"startTime":"09:50","endTime":"11:25","room":{"namePrimary":"西区 3A204"}},
+				{"date":"2026-10-12T08:00:00+08:00","weekIndex":6,"weekday":1,"startTime":"09:50","endTime":"11:25","room":{"namePrimary":"西区 3A204"}}
+			]`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	handler.EnableImageResponses = true
+	response, ok := handler.HandleResponse(ctx, Input{Text: "课表 26秋", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	plainText := textutil.PlainMonospace(response.Text)
+	for _, want := range []string{"2026年秋季学期课表：", "周一：", "数据库系统", "2-4、6 周"} {
+		if !strings.Contains(plainText, want) {
+			t.Fatalf("reply missing %q: %q", want, response.Text)
+		}
+	}
+	if strings.Contains(response.Text, "春季课程") || sectionScheduleCalls != 1 {
+		t.Fatalf("reply = %q, sectionScheduleCalls = %d", response.Text, sectionScheduleCalls)
+	}
+	if response.Image == nil || response.Image.Grid == nil {
+		t.Fatalf("image = %#v", response.Image)
+	}
+	if len(response.Image.Grid.Items) != 1 || response.Image.Grid.Items[0].Weeks != "2-4、6 周" {
+		t.Fatalf("grid items = %#v", response.Image.Grid.Items)
+	}
+	assertResponseImageRenders(t, response.Image)
+}
+
+func TestCurriculumSemesterReportsMissingMatch(t *testing.T) {
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/semesters" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"nameCn":"2025年秋季学期"}]}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(context.Background(), Input{Text: "课表 2026春", Identity: ident})
+	if !ok || reply != "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。" {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
 func TestNextClassSkipsPastClassAtFixedTime(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -3741,6 +3818,32 @@ func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
 		cmd, ok := handler.parse(input)
 		if !ok || cmd.Name != "schedule" || len(cmd.Args) != 1 || cmd.Args[0] != want {
 			t.Fatalf("%q parsed as %#v, ok=%v", input, cmd, ok)
+		}
+	}
+}
+
+func TestNormalizeScheduleArgsSupportsSemesterTargets(t *testing.T) {
+	handler := Handler{}
+	for _, input := range []string{
+		"课表 2026 秋季学期",
+		"课表 2026 秋",
+		"课表 2026秋",
+		"课表 2026 春",
+		"课表 26春",
+		"课表2026秋",
+		"课表2026秋季学期",
+		"2026秋课表",
+	} {
+		cmd, ok := handler.parse(input)
+		if !ok || cmd.Name != "schedule" || len(cmd.Args) != 1 {
+			t.Fatalf("%q parsed as %#v, ok=%v", input, cmd, ok)
+		}
+		want := "semester:2026-秋"
+		if strings.Contains(input, "春") {
+			want = "semester:2026-春"
+		}
+		if cmd.Args[0] != want {
+			t.Fatalf("%q args = %#v, want %q", input, cmd.Args, want)
 		}
 	}
 }

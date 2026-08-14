@@ -25,6 +25,22 @@ func TestScheduleGridItemBoundsMergePeriods(t *testing.T) {
 	}
 }
 
+func TestScheduleGridItemTextSizeUsesCourseBlockHeight(t *testing.T) {
+	metrics := defaultScheduleGridMetrics(7, 13)
+	onePeriod, ok := scheduleGridItemBounds(ScheduleGridItem{Day: 1, StartPeriod: 3, EndPeriod: 3}, metrics)
+	if !ok || scheduleGridItemUsesLargeText(onePeriod, metrics) {
+		t.Fatalf("one-period block uses large text: rect=%v ok=%v", onePeriod, ok)
+	}
+	twoPeriods, ok := scheduleGridItemBounds(ScheduleGridItem{Day: 1, StartPeriod: 3, EndPeriod: 4}, metrics)
+	if !ok || !scheduleGridItemUsesLargeText(twoPeriods, metrics) {
+		t.Fatalf("two-period block does not use large text: rect=%v ok=%v", twoPeriods, ok)
+	}
+	if scheduleGridCourseFontSize <= 13 || scheduleGridMetaFontSize <= richMetaFontSize ||
+		scheduleGridLargeCourseFontSize <= scheduleGridCourseFontSize || scheduleGridLargeMetaFontSize <= scheduleGridMetaFontSize {
+		t.Fatal("large item font sizes must exceed compact font sizes")
+	}
+}
+
 func TestScheduleGridUsesStrongDayPartDividers(t *testing.T) {
 	grid := testScheduleGrid()
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
@@ -124,6 +140,7 @@ func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
 
 func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	grid := testScheduleGrid()
+	grid.Items[0].Weeks = "2-16 周"
 	image := NewScheduleGridImage("schedule", "07-12 至 07-18 课表", grid, "本周课表")
 	if image == nil || image.Grid == nil {
 		t.Fatalf("image = %#v", image)

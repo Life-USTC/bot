@@ -923,13 +923,13 @@ Image-only rewrite (highest priority for simple lookups):
 - Do not narrate that an image will be sent; do not dump a long text table when a card answers the ask.
 Command card (canonical forms; use resolve_image_command or lookup_bot_help when unsure):
 - Bus: ![](校车), ![](校车 查询 东区 西区), ![](校车 查询 东区 西区 之后 14:00), ![](校车 查询 东区 西区 已发车)
-- Curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), ![](课表 2026-05-06), ![](今日课表), ![](明日课表), ![](下一节课)
+- Curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), ![](课表 2026 秋季学期), ![](课表 26春), ![](课表 2026-05-06), ![](今日课表), ![](明日课表), ![](下一节课)
 - Lists: ![](待办), ![](作业), ![](考试), ![](概览), ![](近期截止), ![](近期截止 14)
 - Section pages when JW ID is known: ![](教学班作业 654), ![](教学班考试 321)
 Tools:
 - resolve_image_command: map messy user text to a host-validated ![](command).
 - lookup_bot_help: fetch command help for a topic (校车/课表/待办/…).
-Curriculum date rule: 第N周 is current semester only; for other semesters convert to an absolute date first.
+Curriculum date rule: 第N周 is current semester only; use 课表 + 年份 + 春/秋 to render another whole semester.
 Also emit a directive after successful tool results for curriculum, bus, overview, deadlines, or multi-item lists unless the user asked for text only.
 Never put mutations, login, settings, URLs, or explanations inside ![](...).`
 }

@@ -99,7 +99,7 @@ func scheduleArgsAcceptable(args []string) bool {
 	case "this-week", "next-week":
 		return true
 	}
-	if strings.HasPrefix(arg, "week-date:") || strings.HasPrefix(arg, "week-number:") || strings.HasPrefix(arg, "date:") {
+	if strings.HasPrefix(arg, "week-date:") || strings.HasPrefix(arg, "week-number:") || strings.HasPrefix(arg, "date:") || strings.HasPrefix(arg, "semester:") {
 		return true
 	}
 	if _, ok := normalizeScheduleWeekTarget(arg); ok {

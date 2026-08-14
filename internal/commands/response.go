@@ -359,6 +359,9 @@ func weeklyScheduleGridDay(line string, expectedIndex int) (responses.ScheduleGr
 	}
 	line = strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(line), "："), ":")
 	fields := strings.Fields(line)
+	if len(fields) == 1 && fields[0] == weeklyScheduleDayLabels[expectedIndex] {
+		return responses.ScheduleGridDay{Label: fields[0]}, true
+	}
 	if len(fields) != 2 || fields[0] != weeklyScheduleDayLabels[expectedIndex] || !scheduleGridDate(fields[1]) {
 		return responses.ScheduleGridDay{}, false
 	}
@@ -382,7 +385,8 @@ func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, b
 	}
 	place := strings.TrimSpace(columns[0])
 	timeRange := strings.TrimSpace(columns[1])
-	course := strings.TrimSpace(strings.Join(columns[2:], " "))
+	course := strings.TrimSpace(columns[2])
+	weeks := strings.TrimSpace(strings.Join(columns[3:], " "))
 	start, end, ok := schedulePeriodRange(timeRange)
 	if !ok || course == "" {
 		return responses.ScheduleGridItem{}, false
@@ -394,6 +398,7 @@ func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, b
 		EndPeriod:   end,
 		Course:      course,
 		Location:    scheduleLocationNote(campus, room),
+		Weeks:       weeks,
 	}, true
 }
 
@@ -404,6 +409,7 @@ func mergeScheduleGridItem(items []responses.ScheduleGridItem, next responses.Sc
 		}
 		items[i].Course = joinScheduleGridText(items[i].Course, next.Course)
 		items[i].Location = joinScheduleGridText(items[i].Location, next.Location)
+		items[i].Weeks = joinScheduleGridText(items[i].Weeks, next.Weeks)
 		return items
 	}
 	return append(items, next)

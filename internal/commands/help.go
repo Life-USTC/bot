@@ -78,6 +78,8 @@ func helpDetailSections() []helpSection {
 				{topic: "schedule", commandName: "schedule", command: "课表 本周", description: "查看本周课表"},
 				{topic: "schedule", commandName: "schedule", command: "课表 下周", description: "查看下周课表"},
 				{topic: "schedule", commandName: "schedule", command: "课表 第3周", description: "查看指定教学周"},
+				{topic: "schedule", commandName: "schedule", command: "课表 2026 秋季学期", description: "查看整学期课表与教学周范围"},
+				{topic: "schedule", commandName: "schedule", command: "课表 26春", description: "用短年份查看整学期课表"},
 				{topic: "schedule", commandName: "schedule", command: "课表 05.06", description: "查看该日期所在周"},
 				{topic: "schedule", commandName: "schedule", command: "课表 7.20周", description: "用月日查看所在周"},
 				{topic: "schedule", commandName: "schedule", command: "课表 2026-05-06", description: "用完整日期查看所在周"},
