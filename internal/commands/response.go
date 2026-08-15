@@ -765,31 +765,20 @@ func successfulImageText(text string) bool {
 	if text == "" {
 		return false
 	}
-	rejectPrefixes := []string{
-		"需要先登录",
-		"登录未配置",
-		"Life @ USTC API unavailable",
-		"课表查不到：",
-		"待办查不到：",
-		"作业查不到：",
-		"考试查不到：",
-		"下一节课查不到：",
-		"教学班查不到：",
-		"今日安排查不到：",
-		"概览查不到：",
-		"近期截止查不到：",
-		"校车查不到：",
-		"今天后面没查到校车。",
-		"没有作业。",
-		"没有未完成作业。",
-		"该教学班没有作业。",
-		"没有订阅课程考试。",
-		"该教学班没有考试。",
-		"接下来一周没查到课。",
-		"需要提供教学班 JW ID。",
+	firstLine := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
+	lowerFirstLine := strings.ToLower(firstLine)
+	if strings.HasPrefix(firstLine, "需要") || strings.HasPrefix(firstLine, "请先") ||
+		strings.HasPrefix(firstLine, "登录") || strings.HasPrefix(firstLine, "没有") ||
+		strings.HasPrefix(firstLine, "还没有") || strings.Contains(lowerFirstLine, "unavailable") {
+		return false
 	}
-	for _, prefix := range rejectPrefixes {
-		if strings.HasPrefix(text, prefix) {
+	failureMarkers := []string{
+		"查不到", "没查到", "没有", "未找到", "失败", "错误", "不可用", "未配置", "无法",
+		"缺少", "无效", "不存在", "格式不太对", "暂时操作不了", "暂时修改不了",
+		"暂时删除不了", "超时", "必须", "只能", "只有", "分页用法",
+	}
+	for _, marker := range failureMarkers {
+		if strings.Contains(firstLine, marker) {
 			return false
 		}
 	}

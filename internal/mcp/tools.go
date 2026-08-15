@@ -41,7 +41,7 @@ func (t *einoMCPTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	var args map[string]any
 	if argumentsInJSON != "" {
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
-			return "", fmt.Errorf("parse arguments for %s: %w", t.info.Name, err)
+			return "", newToolExecutionError(t.info.Name, "工具参数不是有效的 JSON："+err.Error())
 		}
 	}
 	if args == nil {

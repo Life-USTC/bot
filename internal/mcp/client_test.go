@@ -117,7 +117,7 @@ func TestToolResultTextJoinsTextContent(t *testing.T) {
 	}
 }
 
-func TestSessionCallRejectsMCPErrorResult(t *testing.T) {
+func TestSessionCallClassifiesMCPErrorResultAsRecoverable(t *testing.T) {
 	mcpServer := mcpserver.NewMCPServer("test-server", "1.0.0")
 	mcpServer.AddTool(
 		mcpgo.NewTool("failing_tool"),
@@ -137,6 +137,40 @@ func TestSessionCallRejectsMCPErrorResult(t *testing.T) {
 	result, err := session.Call(context.Background(), "failing_tool", nil)
 	if err == nil || result != "" || !strings.Contains(err.Error(), "write did not happen") {
 		t.Fatalf("result = %q, err = %v", result, err)
+	}
+	modelResult, ok := ModelToolErrorResult(err)
+	if !ok || !strings.Contains(modelResult, `"ok":false`) ||
+		!strings.Contains(modelResult, "write did not happen") || !strings.Contains(modelResult, "不要生成图片指令") {
+		t.Fatalf("modelResult = %q, ok = %v", modelResult, ok)
+	}
+}
+
+func TestSessionCallRedactsMCPErrorDetails(t *testing.T) {
+	mcpServer := mcpserver.NewMCPServer("test-server", "1.0.0")
+	mcpServer.AddTool(
+		mcpgo.NewTool("failing_tool"),
+		func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return mcpgo.NewToolResultError("authorization=private-value Bearer abc.def token=also-private invalid semester"), nil
+		},
+	)
+	server := httptest.NewServer(mcpserver.NewStreamableHTTPServer(mcpServer))
+	defer server.Close()
+
+	session, err := New(server.URL, server.Client()).OpenSession(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+
+	_, err = session.Call(context.Background(), "failing_tool", nil)
+	modelResult, ok := ModelToolErrorResult(err)
+	if !ok || !strings.Contains(modelResult, "invalid semester") || !strings.Contains(modelResult, "[REDACTED]") {
+		t.Fatalf("modelResult = %q, ok = %v", modelResult, ok)
+	}
+	for _, secret := range []string{"private-value", "abc.def", "also-private"} {
+		if strings.Contains(err.Error(), secret) || strings.Contains(modelResult, secret) {
+			t.Fatalf("secret %q leaked: err=%q modelResult=%q", secret, err, modelResult)
+		}
 	}
 }
 

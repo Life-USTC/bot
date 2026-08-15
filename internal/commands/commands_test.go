@@ -1302,6 +1302,31 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	}
 }
 
+func TestImageResponseRejectsFailuresAndEmptyResults(t *testing.T) {
+	handler := Handler{EnableImageResponses: true}
+	tests := []struct {
+		cmd  parsedCommand
+		text string
+	}{
+		{cmd: parsedCommand{Name: "schedule"}, text: "学期查不到：server exploded"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "学期周次查不到：timeout"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "该学期缺少起止日期，暂时无法生成整学期课表。"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "2026年春季学期没有查到已关注课程。"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "日期格式不太对。可以发：课表 6.23"},
+		{cmd: parsedCommand{Name: "schedule"}, text: "没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。"},
+		{cmd: parsedCommand{Name: "overview"}, text: "登录权限已失效。请发送：登录"},
+		{cmd: parsedCommand{Name: "homework"}, text: "作业查不到：upstream unavailable"},
+		{cmd: parsedCommand{Name: "homework"}, text: "页码必须是大于 0 的整数。例如：第2页"},
+		{cmd: parsedCommand{Name: "exam"}, text: "考试只有 1 页。发送「考试 第1页」查看最后一页。"},
+	}
+	for _, test := range tests {
+		if image := handler.imageResponseFor(test.cmd, test.text); image != nil {
+			t.Errorf("failure %q rendered as image: %#v", test.text, image)
+		}
+	}
+}
+
 func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
@@ -3208,9 +3233,13 @@ func TestCurriculumSemesterReportsMissingMatch(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(context.Background(), Input{Text: "课表 2026春", Identity: ident})
-	if !ok || reply != "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	handler.EnableImageResponses = true
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 2026春", Identity: ident})
+	if !ok || response.Text != "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。" {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if response.Image != nil {
+		t.Fatalf("failed semester lookup rendered as image: %#v", response.Image)
 	}
 }
 

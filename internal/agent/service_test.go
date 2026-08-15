@@ -421,6 +421,9 @@ func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) 
 	if !strings.Contains(logs.String(), "MCP tools unavailable") || !strings.Contains(logs.String(), "invalid_target") {
 		t.Fatalf("logs = %q", logs.String())
 	}
+	if !strings.Contains(logs.String(), "status=completed") || strings.Contains(logs.String(), "agent run failed") {
+		t.Fatalf("handled authorization failure should complete without agent failure: %q", logs.String())
+	}
 	credential, err := db.Credential(context.Background(), ident)
 	if err != nil || credential != nil {
 		t.Fatalf("credential = %#v, err = %v; want deleted", credential, err)
@@ -505,6 +508,16 @@ func TestToolResultMiddlewarePropagatesErrors(t *testing.T) {
 		t.Fatalf("logs = %q", logs.String())
 	}
 
+	recoverableErr := recoverableMCPToolError(t)
+	recoverable := toolResultMiddleware(logf)(func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
+		return nil, recoverableErr
+	})
+	out, err = recoverable(ctx, input)
+	if err != nil || out == nil || !strings.Contains(out.Result, `"ok":false`) ||
+		!strings.Contains(out.Result, "semesterJwId") {
+		t.Fatalf("recoverable result = %#v, err = %v", out, err)
+	}
+
 	ok := toolResultMiddleware(nil)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: "ok"}, nil
 	})
@@ -512,6 +525,26 @@ func TestToolResultMiddlewarePropagatesErrors(t *testing.T) {
 	if err != nil || out.Result != "ok" {
 		t.Fatalf("ok result = %q, err = %v", out.Result, err)
 	}
+}
+
+func recoverableMCPToolError(t *testing.T) error {
+	t.Helper()
+	mcpServer := mcpserver.NewMCPServer("agent-test", "1.0.0")
+	mcpServer.AddTool(mcpgo.NewTool("search_courses"), func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		return mcpgo.NewToolResultError("semesterJwId must be greater than 0"), nil
+	})
+	server := httptest.NewServer(mcpserver.NewStreamableHTTPServer(mcpServer))
+	t.Cleanup(server.Close)
+	session, err := botmcp.New(server.URL, server.Client()).OpenSession(context.Background(), "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	_, err = session.Call(context.Background(), "search_courses", nil)
+	if err == nil {
+		t.Fatal("MCP error result was not classified")
+	}
+	return err
 }
 
 func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
@@ -728,6 +761,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
+	}
+	if !strings.Contains(instruction, "ok=false") || !strings.Contains(instruction, "must never produce a directive") {
+		t.Fatalf("instruction does not forbid images for failed tool results: %q", instruction)
 	}
 	for _, want := range []string{
 		"Image rendering protocol:",

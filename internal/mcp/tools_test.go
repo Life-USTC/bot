@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -58,5 +59,26 @@ func TestToEinoToolsConvertsMetadataAndInvocation(t *testing.T) {
 	}
 	if completed, ok := gotArgs["completed"].(bool); !ok || completed {
 		t.Fatalf("args = %#v", gotArgs)
+	}
+}
+
+func TestEinoMCPToolClassifiesMalformedArgumentsAsRecoverable(t *testing.T) {
+	mcpTools := []mcpgo.Tool{mcpgo.NewTool("search_courses")}
+	invoked := false
+	einoTools, err := ToEinoTools(mcpTools, func(context.Context, string, map[string]any) (string, error) {
+		invoked = true
+		return "", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invokable := einoTools[0].(einotool.InvokableTool)
+	result, callErr := invokable.InvokableRun(context.Background(), `{"semesterJwId":`)
+	if result != "" || callErr == nil || invoked {
+		t.Fatalf("result=%q err=%v invoked=%v", result, callErr, invoked)
+	}
+	modelResult, ok := ModelToolErrorResult(callErr)
+	if !ok || !strings.Contains(modelResult, "参数不是有效的 JSON") {
+		t.Fatalf("modelResult=%q ok=%v", modelResult, ok)
 	}
 }
