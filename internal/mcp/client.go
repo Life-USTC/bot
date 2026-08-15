@@ -95,19 +95,9 @@ func (s *Session) Call(ctx context.Context, name string, arguments map[string]an
 	}
 	text := textFromToolResult(result)
 	if result != nil && result.IsError {
-		return "", fmt.Errorf("mcp tool %s failed: %s", name, limitedErrorText(text))
+		return "", newToolExecutionError(name, text)
 	}
 	return text, nil
-}
-
-func limitedErrorText(text string) string {
-	const maxRunes = 500
-	text = strings.TrimSpace(text)
-	runes := []rune(text)
-	if len(runes) <= maxRunes {
-		return text
-	}
-	return string(runes[:maxRunes]) + "..."
 }
 
 func textFromToolResult(result *mcpgo.CallToolResult) string {

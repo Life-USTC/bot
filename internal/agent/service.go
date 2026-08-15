@@ -187,6 +187,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return agentTextResponse(reply), true
 		}
 		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
+		if isMCPAuthorizationError(err) {
+			finishRun(store.AgentRunStatusCompleted, reply, nil)
+			return agentTextResponse(reply), true
+		}
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
@@ -256,8 +260,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					return commands.Response{}, false
 				}
 				reply := agentFailureReply(runID, event.Err)
-				if errors.Is(event.Err, auth.ErrReauthorizationRequired) || botmcp.IsAuthorizationRequired(event.Err) {
+				if isMCPAuthorizationError(event.Err) {
 					reply = s.mcpFailureReply(ctx, input.Identity, runID, event.Err)
+					finishRun(store.AgentRunStatusCompleted, reply, nil)
+					return agentTextResponse(reply), true
 				}
 				finishRun(store.AgentRunStatusFailed, reply, event.Err)
 				return agentTextResponse(reply), true
@@ -644,7 +650,7 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 }
 
 func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, runID int64, err error) string {
-	if errors.Is(err, auth.ErrReauthorizationRequired) || botmcp.IsAuthorizationRequired(err) {
+	if isMCPAuthorizationError(err) {
 		if s.auth != nil {
 			if logoutErr := s.auth.Logout(ctx, ident); logoutErr != nil {
 				s.logf("clear credential requiring reauthorization failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
@@ -658,6 +664,10 @@ func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, run
 		reply += fmt.Sprintf("\n记录 #%d", runID)
 	}
 	return reply
+}
+
+func isMCPAuthorizationError(err error) bool {
+	return errors.Is(err, auth.ErrReauthorizationRequired) || botmcp.IsAuthorizationRequired(err)
 }
 
 func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Identity, status, reply string, err error, provider, model string, usage tokenUsage, duration time.Duration) {
@@ -905,6 +915,7 @@ Course / section subscribe-by-name flow:
 Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
 Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
+When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
@@ -930,7 +941,7 @@ Tools:
 - resolve_image_command: map messy user text to a host-validated ![](command).
 - lookup_bot_help: fetch command help for a topic (校车/课表/待办/…).
 Curriculum date rule: 第N周 is current semester only; use 课表 + 年份 + 春/秋 to render another whole semester.
-Also emit a directive after successful tool results for curriculum, bus, overview, deadlines, or multi-item lists unless the user asked for text only.
+Also emit a directive after successful tool results for curriculum, bus, overview, deadlines, or multi-item lists unless the user asked for text only. A tool result with ok=false is not successful and must never produce a directive.
 Never put mutations, login, settings, URLs, or explanations inside ![](...).`
 }
 
@@ -1018,6 +1029,9 @@ func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware 
 				if logf != nil {
 					logf("agent tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
 				}
+				if result, ok := botmcp.ModelToolErrorResult(err); ok {
+					return &compose.ToolOutput{Result: result}, nil
+				}
 				return nil, err
 			}
 			if out != nil {
@@ -1044,6 +1058,9 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 			if err != nil {
 				if logf != nil {
 					logf("agent streaming tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
+				}
+				if result, ok := botmcp.ModelToolErrorResult(err); ok {
+					return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{result})}, nil
 				}
 				return nil, err
 			}
