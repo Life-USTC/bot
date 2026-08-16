@@ -3328,6 +3328,37 @@ func TestSubscriptionCalendarLink(t *testing.T) {
 	if !strings.Contains(reply, "https://example.test/calendar/private-token.ics") || !strings.Contains(reply, "请勿公开") {
 		t.Fatalf("reply = %q", reply)
 	}
+	recent, err := handler.Store.RecentHandledInteractions(ctx, ident, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || strings.Contains(recent[0].Reply, "private-token") || recent[0].Reply != "[私有日历订阅链接已发送]" {
+		t.Fatalf("stored interaction = %#v", recent)
+	}
+}
+
+func TestSubscriptionCalendarLinkRecoversFromStaleScope(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"calendarUrl":null}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandlerWithCredential(t, server, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL, Scope: "openid workspace.subscription:read",
+	})
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅 链接", Identity: ident})
+	if !ok || !strings.Contains(reply, "未获得私有日历链接权限") || !strings.Contains(reply, "请发送：登录") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	if credential, err := handler.Store.Credential(ctx, ident); err != nil || credential != nil {
+		t.Fatalf("credential = %#v, err = %v; want deleted", credential, err)
+	}
 }
 
 func TestNotificationSettingsCommand(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/mark3labs/mcp-go/client/transport"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -427,6 +428,40 @@ func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) 
 	credential, err := db.Credential(context.Background(), ident)
 	if err != nil || credential != nil {
 		t.Fatalf("credential = %#v, err = %v; want deleted", credential, err)
+	}
+}
+
+func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	currentScopes := strings.Join([]string{
+		"openid", "profile", "email", "offline_access", "account.profile:read", "account.client-activity:read",
+		"workspace.todo:read", "workspace.todo:write", "workspace.homework:read", "workspace.homework:write",
+		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read",
+		"community.comment:read", "community.comment:write", "community.description:read", "community.description:write",
+		"workspace.upload:read", "workspace.upload:write", "workspace.overview:read", "workspace.link-pin:read", "workspace.link-pin:write",
+		"catalog.bus:read", "workspace.bus-preferences:read", "workspace.bus-preferences:write",
+		"catalog.course:read", "catalog.section:read", "catalog.teacher:read", "catalog.schedule:read", "workspace.schedule:read",
+		"catalog.exam:read", "workspace.exam:read",
+	}, " ")
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour), Scope: currentScopes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{auth: &auth.Manager{Store: db}}
+	reply := svc.mcpFailureReply(ctx, ident, 0, transport.ErrAuthorizationRequired)
+	if strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "请稍后重试") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if credential, err := db.Credential(ctx, ident); err != nil || credential == nil {
+		t.Fatalf("credential = %#v, err = %v; want preserved", credential, err)
 	}
 }
 
