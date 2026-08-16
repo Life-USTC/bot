@@ -2585,7 +2585,13 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 	}
 	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
 	if calendarURL == "" {
-		return "当前订阅没有可用的日历链接。"
+		if hasCurrentScopes, scopeErr := h.Auth.HasCurrentScopes(ctx, ident); scopeErr == nil && !hasCurrentScopes {
+			if logoutErr := h.Auth.Logout(ctx, ident); logoutErr != nil {
+				h.logf("clear credential missing current OAuth scopes failed: %v", logoutErr)
+			}
+			return "当前登录未获得私有日历链接权限。请发送：登录\n重新登录后再发送：订阅 链接"
+		}
+		return "当前订阅没有可用的私有日历链接。"
 	}
 	return "日历订阅链接：\n" + calendarURL + "\n请勿公开或转发此链接。"
 }
@@ -3486,11 +3492,18 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 		Command: cmd.Name,
 		Args:    joinedArgs(cmd.Args),
 		Handled: true,
-		Reply:   reply,
+		Reply:   interactionReply(cmd, reply),
 		Status:  store.InteractionStatusHandled,
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
 	}
+}
+
+func interactionReply(cmd parsedCommand, reply string) string {
+	if cmd.Name == "subscription" && firstArgIs(cmd.Args, "link") && strings.HasPrefix(reply, "日历订阅链接：\n") {
+		return "[私有日历订阅链接已发送]"
+	}
+	return reply
 }
 
 func isConfirmationOK(text string) bool {

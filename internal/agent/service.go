@@ -651,6 +651,15 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 
 func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, runID int64, err error) string {
 	if isMCPAuthorizationError(err) {
+		if !errors.Is(err, auth.ErrReauthorizationRequired) && s.auth != nil {
+			hasCurrentScopes, scopeErr := s.auth.HasCurrentScopes(ctx, ident)
+			if scopeErr != nil {
+				s.logf("check OAuth scopes after MCP authorization failure failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+					ident.Platform, ident.ConversationType, ident.ConversationID, scopeErr)
+			} else if hasCurrentScopes {
+				return "校园工具拒绝了当前登录权限，请稍后重试。本次没有执行任何查询或操作。"
+			}
+		}
 		if s.auth != nil {
 			if logoutErr := s.auth.Logout(ctx, ident); logoutErr != nil {
 				s.logf("clear credential requiring reauthorization failed: platform=%s conversation_type=%s conversation_id=%s error=%v",

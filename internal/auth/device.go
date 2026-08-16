@@ -28,12 +28,14 @@ var oauthScope = strings.Join([]string{
 	"email",
 	"offline_access",
 	"account.profile:read",
+	"account.client-activity:read",
 	"workspace.todo:read",
 	"workspace.todo:write",
 	"workspace.homework:read",
 	"workspace.homework:write",
 	"workspace.subscription:read",
 	"workspace.subscription:write",
+	"workspace.calendar-feed:read",
 	"community.comment:read",
 	"community.comment:write",
 	"community.description:read",
@@ -307,7 +309,7 @@ func (m *Manager) pollDeviceLogin(ctx context.Context, ident store.Identity, not
 		return PollResult{}, err
 	}
 
-	cred, err := verifiedTokenToCredential(session.ClientID, joinResources(resources), vt, "", "", m.now())
+	cred, err := verifiedTokenToCredential(session.ClientID, joinResources(resources), vt, "", oauthScope, m.now())
 	if err != nil {
 		return PollResult{}, err
 	}
@@ -365,6 +367,34 @@ func (m *Manager) AccessToken(ctx context.Context, ident store.Identity) (string
 
 func (m *Manager) MCPAccessToken(ctx context.Context, ident store.Identity) (string, error) {
 	return m.accessTokenForResource(ctx, ident, purposeMCP)
+}
+
+// HasCurrentScopes reports whether the stored OAuth grant includes every scope
+// requested by this Bot version. It lets callers distinguish a stale grant that
+// needs one reauthorization from a current grant that the server has rejected
+// for another reason.
+func (m *Manager) HasCurrentScopes(ctx context.Context, ident store.Identity) (bool, error) {
+	authStore, err := m.requireStore()
+	if err != nil {
+		return false, err
+	}
+	cred, err := authStore.Credential(ctx, ident)
+	if err != nil {
+		return false, err
+	}
+	if cred == nil {
+		return false, ErrNotLoggedIn
+	}
+	granted := make(map[string]struct{})
+	for _, scope := range strings.Fields(cred.Scope) {
+		granted[scope] = struct{}{}
+	}
+	for _, required := range strings.Fields(oauthScope) {
+		if _, ok := granted[required]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (m *Manager) accessTokenForResource(

@@ -61,6 +61,79 @@ func TestManagerWithoutStoreReturnsConfiguredError(t *testing.T) {
 	}
 }
 
+func TestOAuthScopeContractIncludesAuditedMCPAndCalendarCapabilities(t *testing.T) {
+	want := []string{
+		"openid",
+		"profile",
+		"email",
+		"offline_access",
+		"account.profile:read",
+		"account.client-activity:read",
+		"workspace.todo:read",
+		"workspace.todo:write",
+		"workspace.homework:read",
+		"workspace.homework:write",
+		"workspace.subscription:read",
+		"workspace.subscription:write",
+		"workspace.calendar-feed:read",
+		"community.comment:read",
+		"community.comment:write",
+		"community.description:read",
+		"community.description:write",
+		"workspace.upload:read",
+		"workspace.upload:write",
+		"workspace.overview:read",
+		"workspace.link-pin:read",
+		"workspace.link-pin:write",
+		"catalog.bus:read",
+		"workspace.bus-preferences:read",
+		"workspace.bus-preferences:write",
+		"catalog.course:read",
+		"catalog.section:read",
+		"catalog.teacher:read",
+		"catalog.schedule:read",
+		"workspace.schedule:read",
+		"catalog.exam:read",
+		"workspace.exam:read",
+	}
+	if got := strings.Fields(oauthScope); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("OAuth scopes = %#v, want %#v", got, want)
+	}
+}
+
+func TestHasCurrentScopes(t *testing.T) {
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	manager := Manager{Store: db}
+
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: authTestNow.Add(time.Hour),
+		Scope: strings.ReplaceAll(oauthScope, "workspace.calendar-feed:read", ""),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := manager.HasCurrentScopes(ctx, ident); err != nil || current {
+		t.Fatalf("stale scope result = %v, err = %v", current, err)
+	}
+
+	cred, err := db.Credential(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cred.Scope = oauthScope
+	if err := db.SaveCredential(ctx, ident, *cred); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := manager.HasCurrentScopes(ctx, ident); err != nil || !current {
+		t.Fatalf("current scope result = %v, err = %v", current, err)
+	}
+}
+
 func TestDeviceLoginFlow(t *testing.T) {
 	var serverURL string
 	mux := http.NewServeMux()

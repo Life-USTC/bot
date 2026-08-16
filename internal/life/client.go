@@ -610,7 +610,7 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 	var out struct {
 		Homeworks []map[string]any `json:"homeworks"`
 	}
-	resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx)
+	resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx, nil)
 	if err := typedJSON(resp, err, "subscribed homeworks", &out); err != nil {
 		return nil, err
 	}
