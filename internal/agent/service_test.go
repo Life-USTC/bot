@@ -1237,6 +1237,58 @@ func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 	}
 }
 
+func TestHandleResponseFinalizesExpiredRunContext(t *testing.T) {
+	requestStarted := make(chan struct{})
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "timeout-user", ConversationType: "private", ConversationID: "timeout-user"}
+	client := &http.Client{Transport: blockingRoundTripper(func(r *http.Request) (*http.Response, error) {
+		close(requestStarted)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}
+	svc, err := New(context.Background(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: "http://model.test", Model: "test-model",
+	}, commands.Handler{Store: db}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), agentRunCleanupTimeout+100*time.Millisecond)
+	defer cancel()
+	result := make(chan struct {
+		response commands.Response
+		ok       bool
+	}, 1)
+	go func() {
+		response, ok := svc.HandleResponse(ctx, Input{Text: "等待超时", Identity: ident})
+		result <- struct {
+			response commands.Response
+			ok       bool
+		}{response: response, ok: ok}
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("model request did not start")
+	}
+	select {
+	case got := <-result:
+		if !got.ok || !strings.Contains(got.response.Text, "AI 响应超时") {
+			t.Fatalf("timed out response = %#v, ok = %v", got.response, got.ok)
+		}
+	case <-time.After(agentRunCleanupTimeout + 3*time.Second):
+		t.Fatal("timed out agent run did not return")
+	}
+	if interrupted, err := db.InterruptStartedAgentRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	} else if interrupted != 0 {
+		t.Fatalf("timed out run remained started: interrupted=%d", interrupted)
+	}
+}
+
 type blockingRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f blockingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
