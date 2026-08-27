@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"sync/atomic"
@@ -240,6 +241,38 @@ func TestFollowUpInjectorAppendsUserMessages(t *testing.T) {
 	}
 	if inbox.Len() != 0 {
 		t.Fatalf("inbox not drained: %d", inbox.Len())
+	}
+}
+
+func TestFollowUpInjectorStopsAfterRunDeadline(t *testing.T) {
+	inbox := newFollowUpInbox()
+	inbox.Push(Input{Text: "截止时间前补充"})
+	injector := newFollowUpInjector(inbox).(*followUpInjector)
+	budget := newRunBudget(time.Now().Add(-agentRunDeadline), newRunMetrics())
+	ctx := withRunBudget(context.Background(), budget)
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{schema.UserMessage("原始问题")}}
+	_, state2, err := injector.BeforeModelRewriteState(ctx, state, nil)
+	if !errors.Is(err, errAgentRunDeadline) {
+		t.Fatalf("deadline error = %v", err)
+	}
+	if len(state2.Messages) != 1 || inbox.Len() != 1 {
+		t.Fatalf("follow-up was injected after deadline: messages=%#v inbox=%d", state2.Messages, inbox.Len())
+	}
+}
+
+func TestFollowUpInjectorPropagatesCancellation(t *testing.T) {
+	inbox := newFollowUpInbox()
+	inbox.Push(Input{Text: "取消后的补充"})
+	injector := newFollowUpInjector(inbox).(*followUpInjector)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{schema.UserMessage("原始问题")}}
+	_, state2, err := injector.BeforeModelRewriteState(ctx, state, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation error = %v", err)
+	}
+	if len(state2.Messages) != 1 || inbox.Len() != 1 {
+		t.Fatalf("follow-up was injected after cancellation: messages=%#v inbox=%d", state2.Messages, inbox.Len())
 	}
 }
 

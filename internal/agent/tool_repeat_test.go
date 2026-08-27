@@ -49,3 +49,34 @@ func TestToolRepeatGuardResetAllowsNewFollowUpRound(t *testing.T) {
 		t.Fatalf("calls after reset = %d, want 2", calls)
 	}
 }
+
+func TestToolRepeatGuardStopsEquivalentFailingPlanAcrossRounds(t *testing.T) {
+	guard := newToolRepeatGuard()
+	endpoint := guard.invokableMiddleware(func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
+		return &compose.ToolOutput{Result: `{"ok":false,"error":{"type":"invalid_arguments"}}`}, nil
+	})
+	first := &compose.ToolInput{Name: "search_courses", Arguments: `{"query":"数学分析","limit":10}`}
+	if _, err := endpoint(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	guard.Reset()
+	second := &compose.ToolInput{Name: "search_courses", Arguments: `{ "limit": 10, "query": "数学分析" }`}
+	if _, err := endpoint(context.Background(), second); !errors.Is(err, errAgentNonProgress) {
+		t.Fatalf("equivalent failing plan error = %v", err)
+	}
+}
+
+func TestToolRepeatGuardAllowsChangedSuccessfulPlan(t *testing.T) {
+	guard := newToolRepeatGuard()
+	endpoint := guard.invokableMiddleware(func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
+		return &compose.ToolOutput{Result: `{"ok":true}`}, nil
+	})
+	input := &compose.ToolInput{Name: "search_courses", Arguments: `{"query":"数学分析"}`}
+	if _, err := endpoint(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	guard.Reset()
+	if _, err := endpoint(context.Background(), input); err != nil {
+		t.Fatalf("successful plan after reset = %v", err)
+	}
+}

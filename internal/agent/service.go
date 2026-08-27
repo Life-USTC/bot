@@ -153,24 +153,70 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 
 func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
 	runStarted := time.Now()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	inputText := strings.TrimSpace(input.Text)
 	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) || store.IsGroupConversation(input.Identity) {
 		return commands.Response{}, false
 	}
+	parentCtx := ctx
+	ctx, cancel := context.WithTimeout(parentCtx, agentRunDeadline)
+	defer cancel()
+	metrics := newRunMetrics()
+	budget := newRunBudget(runStarted, metrics)
+	ctx = withRunBudget(ctx, budget)
+	ctx = withRunMetrics(ctx, metrics)
 	model, provider, modelName := s.modelFor()
-	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
+	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	finishRun := func(status, reply string, runErr error) {
-		s.finishAgentRun(ctx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
+		runErr = normalizeAgentRunError(ctx, budget, runErr)
+		finishCtx := withRunMetrics(withUsageAccumulator(parentCtx, usage), metrics)
+		s.finishAgentRun(finishCtx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
 	}
-	if err := s.prepareInputImages(ctx, &input); err != nil {
+	if err := budget.contextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		reply := agentFailureReply(runID, err)
+		finishRun(store.AgentRunStatusFailed, reply, err)
+		return agentTextResponse(reply), true
+	}
+	if err := observeRunStage(ctx, "input_images", func() error {
+		return s.prepareInputImages(ctx, &input)
+	}); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		if isAgentBudgetError(err) {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
 		reply := imageFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	traceEnabled, err := s.toolTraceEnabled(ctx, input.Identity)
+	traceEnabled, err := observeRunStageValue(ctx, "tool_setup", func() (bool, error) {
+		return s.toolTraceEnabled(ctx, input.Identity)
+	})
 	if err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		if isAgentBudgetError(err) {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
 		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
@@ -179,8 +225,29 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
-	tools, mcpSession, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
+	toolSetup, err := observeRunStageValue(ctx, "tool_setup", func() (struct {
+		tools   []tool.BaseTool
+		session *botmcp.Session
+	}, error) {
+		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
+		return struct {
+			tools   []tool.BaseTool
+			session *botmcp.Session
+		}{tools: tools, session: session}, err
+	})
+	tools := toolSetup.tools
+	mcpSession := toolSetup.session
 	if err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		if isAgentBudgetError(err) {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := "需要先登录。发送：登录"
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
@@ -197,9 +264,31 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
 	}
-	if err := s.compactConversationHistory(ctx, input.Identity, model, runID); err != nil {
+	if err := observeRunStage(ctx, "history_compaction", func() error {
+		return s.compactConversationHistory(ctx, input.Identity, model, runID)
+	}); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		if isAgentBudgetError(err) {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
 		s.logf("compact conversation history failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
+	}
+	if err := budget.contextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		reply := agentFailureReply(runID, err)
+		finishRun(store.AgentRunStatusFailed, reply, err)
+		return agentTextResponse(reply), true
 	}
 	capture := newStateCapture()
 	repeatGuard := newToolRepeatGuard()
@@ -218,7 +307,21 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools,
 				UnknownToolsHandler: func(ctx context.Context, name, input string) (string, error) {
-					return fmt.Sprintf("未知工具：%s", name), nil
+					started := time.Now()
+					defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
+					unknownInput := &compose.ToolInput{Name: name, Arguments: input}
+					if err := repeatGuard.admit(unknownInput); err != nil {
+						return "", err
+					}
+					if err := admitToolCall(ctx); err != nil {
+						return "", err
+					}
+					recordToolCall(ctx)
+					result := fmt.Sprintf("未知工具：%s", name)
+					// An unknown tool cannot satisfy the plan; retain its canonical
+					// failure so a follow-up cannot retry it forever.
+					repeatGuard.recordFailure(unknownInput)
+					return result, nil
 				},
 				ToolCallMiddlewares: []compose.ToolMiddleware{{
 					Invokable:  repeatGuard.invokableMiddleware,
@@ -236,8 +339,15 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-	messages, err := s.messagesFor(ctx, input)
+	messages, err := observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
+		return s.messagesFor(ctx, input)
+	})
 	if err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
 		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
@@ -246,6 +356,16 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	const maxFollowUpContinues = 3
 	reply := ""
 	for continueRound := 0; ; continueRound++ {
+		if err := budget.contextError(ctx); err != nil {
+			err = normalizeAgentRunError(ctx, budget, err)
+			if errors.Is(err, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", err)
+				return commands.Response{}, false
+			}
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
 		repeatGuard.Reset()
 		iter := runner.Run(ctx, messages)
 		reply = ""
@@ -255,17 +375,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 				break
 			}
 			if event.Err != nil {
-				if errors.Is(event.Err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-					finishRun(store.AgentRunStatusIgnored, "", event.Err)
+				runErr := normalizeAgentRunError(ctx, budget, event.Err)
+				if errors.Is(runErr, context.Canceled) {
+					finishRun(store.AgentRunStatusIgnored, "", runErr)
 					return commands.Response{}, false
 				}
-				reply := agentFailureReply(runID, event.Err)
-				if isMCPAuthorizationError(event.Err) {
-					reply = s.mcpFailureReply(ctx, input.Identity, runID, event.Err)
+				reply := agentFailureReply(runID, runErr)
+				if isMCPAuthorizationError(runErr) {
+					reply = s.mcpFailureReply(ctx, input.Identity, runID, runErr)
 					finishRun(store.AgentRunStatusCompleted, reply, nil)
 					return agentTextResponse(reply), true
 				}
-				finishRun(store.AgentRunStatusFailed, reply, event.Err)
+				finishRun(store.AgentRunStatusFailed, reply, runErr)
 				return agentTextResponse(reply), true
 			}
 			msg, _, err := adk.GetMessage(event)
@@ -276,6 +397,16 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			if content != "" {
 				reply = content
 			}
+		}
+		if err := budget.contextError(ctx); err != nil {
+			err = normalizeAgentRunError(ctx, budget, err)
+			if errors.Is(err, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", err)
+				return commands.Response{}, false
+			}
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
 		}
 		followUps := input.FollowUps.Drain()
 		if len(followUps) == 0 {
@@ -291,9 +422,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		// the same conversation from captured state without sending an intermediate reply.
 		messages = append([]*schema.Message(nil), capture.messages...)
 		if len(messages) == 0 {
-			messages, err = s.messagesFor(ctx, input)
+			messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
+				return s.messagesFor(ctx, input)
+			})
 			if err != nil {
-				break
+				err = normalizeAgentRunError(ctx, budget, err)
+				if errors.Is(err, context.Canceled) {
+					finishRun(store.AgentRunStatusIgnored, "", err)
+					return commands.Response{}, false
+				}
+				reply := agentFailureReply(runID, err)
+				finishRun(store.AgentRunStatusFailed, reply, err)
+				return agentTextResponse(reply), true
 			}
 			if reply != "" {
 				messages = append(messages, schema.AssistantMessage(reply, nil))
@@ -307,11 +447,31 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		s.logf("llm follow-up continue: platform=%s conversation_type=%s conversation_id=%s followups=%d round=%d",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(followUps), continueRound+1)
 	}
+	if err := budget.contextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		reply := agentFailureReply(runID, err)
+		finishRun(store.AgentRunStatusFailed, reply, err)
+		return agentTextResponse(reply), true
+	}
 	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
 	response := s.responseFor(ctx, input, reply)
+	if err := budget.contextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, budget, err)
+		if errors.Is(err, context.Canceled) {
+			finishRun(store.AgentRunStatusIgnored, "", err)
+			return commands.Response{}, false
+		}
+		reply := agentFailureReply(runID, err)
+		finishRun(store.AgentRunStatusFailed, reply, err)
+		return agentTextResponse(reply), true
+	}
 	if response.Text == "" && len(response.Parts) == 0 {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
@@ -681,9 +841,18 @@ func isMCPAuthorizationError(err error) bool {
 
 func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Identity, status, reply string, err error, provider, model string, usage tokenUsage, duration time.Duration) {
 	spending := spendingFor(provider, model, usage)
-	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d",
+	metrics := runMetricsFromContext(ctx).snapshot()
+	if metrics.modelRequests > spending.ModelRequests {
+		spending.ModelRequests = metrics.modelRequests
+	}
+	failureClass := "none"
+	if err != nil {
+		failureClass = agentFailureClass(err)
+	}
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d compaction_ms=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_compaction_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d",
 		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
-		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds())
+		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds(), failureClass,
+		metrics.contextTokens, metrics.compactionMs, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_compaction"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"])
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}
@@ -998,7 +1167,15 @@ func compactHistoryText(text string) string {
 
 func agentFailureReply(runID int64, err error) string {
 	reply := "AI 助手出错，请稍后重试。"
-	if errors.Is(err, errRepeatedToolCall) {
+	if errors.Is(err, errAgentRunDeadline) {
+		reply = "AI 运行超过 90 秒，已停止。请缩小请求范围后重试。"
+	} else if errors.Is(err, errAgentContextBudget) {
+		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
+	} else if errors.Is(err, errAgentToolCallBudget) {
+		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
+	} else if errors.Is(err, errAgentNonProgress) {
+		reply = "AI 工具计划没有取得进展，已停止。请换一种说法或缩小请求范围后重试。"
+	} else if errors.Is(err, errRepeatedToolCall) {
 		reply = "AI 重复调用了相同工具，已停止。请换一种说法或缩小请求范围后重试。"
 	} else if isAgentIterationLimitError(err) {
 		reply = "AI 工具调用过多，已停止。请缩小请求范围后重试。"
@@ -1032,6 +1209,11 @@ type toolErrorLogger func(string, ...any)
 func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware {
 	return func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+			started := time.Now()
+			defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
+			if err := admitToolCall(ctx); err != nil {
+				return nil, err
+			}
 			recordToolCall(ctx)
 			out, err := next(ctx, input)
 			if err != nil {
@@ -1062,6 +1244,11 @@ func limitToolResult(result string) string {
 func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMiddleware {
 	return func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
+			started := time.Now()
+			defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
+			if err := admitToolCall(ctx); err != nil {
+				return nil, err
+			}
 			recordToolCall(ctx)
 			out, err := next(ctx, input)
 			if err != nil {

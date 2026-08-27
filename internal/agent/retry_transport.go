@@ -44,14 +44,20 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if !isChatCompletionRequest(req) {
 		return t.base.RoundTrip(req)
 	}
+	started := time.Now()
+	defer func() { recordRunStage(req.Context(), "model_request", time.Since(started)) }()
 	body, hasBody, err := reusableRequestBody(req)
 	if err != nil {
 		return nil, err
 	}
+	estimatedContextTokens := requestContextTokens(req, body, hasBody)
 	var lastErr error
 	for attempt := 1; attempt <= llmHTTPMaxAttempts; attempt++ {
 		attemptReq, err := cloneRequestForRetry(req, body, hasBody)
 		if err != nil {
+			return nil, err
+		}
+		if err := admitModelRequest(attemptReq.Context(), estimatedContextTokens); err != nil {
 			return nil, err
 		}
 		resp, err := t.base.RoundTrip(attemptReq)
@@ -75,6 +81,20 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 	}
 	return nil, lastErr
+}
+
+func requestContextTokens(req *http.Request, body []byte, hasBody bool) int64 {
+	if !hasBody && req != nil && req.GetBody != nil {
+		bodyReader, err := req.GetBody()
+		if err == nil {
+			body, _ = io.ReadAll(bodyReader)
+			_ = bodyReader.Close()
+		}
+	}
+	if len(body) == 0 {
+		return 1
+	}
+	return int64(estimateTextTokens(string(body)))
 }
 
 func reusableRequestBody(req *http.Request) ([]byte, bool, error) {

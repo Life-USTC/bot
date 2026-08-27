@@ -1174,6 +1174,64 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	}
 }
 
+func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
+	requestStarted := make(chan struct{})
+	requestCanceled := make(chan struct{})
+	client := &http.Client{Transport: blockingRoundTripper(func(r *http.Request) (*http.Response, error) {
+		close(requestStarted)
+		<-r.Context().Done()
+		close(requestCanceled)
+		return nil, r.Context().Err()
+	})}
+
+	svc, err := New(context.Background(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: "http://model.test", Model: "test-model",
+	}, commands.Handler{}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan struct {
+		response commands.Response
+		ok       bool
+	}, 1)
+	go func() {
+		response, ok := svc.HandleResponse(ctx, Input{
+			Text: "等待取消", Identity: store.Identity{ConversationType: "private"},
+		})
+		result <- struct {
+			response commands.Response
+			ok       bool
+		}{response: response, ok: ok}
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("model request did not start")
+	}
+	cancel()
+	select {
+	case <-requestCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("model request context was not canceled")
+	}
+	select {
+	case got := <-result:
+		if got.ok || got.response.Text != "" || got.response.Image != nil || got.response.Kind != "" || len(got.response.Parts) != 0 {
+			t.Fatalf("canceled response = %#v, ok = %v", got.response, got.ok)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled agent run did not return")
+	}
+}
+
+type blockingRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f blockingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func TestToolResultMiddlewareLimitsLargeResults(t *testing.T) {
 	accumulator := &usageAccumulator{}
 	next := func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {
