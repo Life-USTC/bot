@@ -2660,15 +2660,23 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
 		return commandError("通知设置保存失败：", err)
 	}
+	settings, err = h.Store.NotificationSettings(ctx, ident)
+	if err != nil {
+		return commandError("通知设置查不到：", err)
+	}
 	return formatNotificationSettings(settings)
 }
 
 func formatNotificationSettings(settings store.NotificationSettings) string {
-	return strings.Join([]string{
+	lines := []string{
 		"通知设置：",
 		"课前提醒：" + onOffText(settings.ClassesEnabled),
 		"作业提醒：" + onOffText(settings.HomeworkEnabled),
-	}, "\n")
+	}
+	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled) {
+		lines = append(lines, "状态：已暂停，请发送“登录”；登录成功后会自动恢复。")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args []string) string {

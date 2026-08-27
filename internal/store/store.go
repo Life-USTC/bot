@@ -116,6 +116,7 @@ type NotificationSettings struct {
 	Identity        Identity
 	ClassesEnabled  bool
 	HomeworkEnabled bool
+	ReauthRequired  bool
 }
 
 type AgentSettings struct {
@@ -325,6 +326,7 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
+	ReauthRequired   bool `gorm:"not null"`
 	UpdatedAt        time.Time
 }
 
@@ -755,7 +757,9 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 	if err != nil {
 		return err
 	}
-	return saveCredentialWithDB(s.db.WithContext(ctx), userID, cred, nowUTC())
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return saveCredentialWithDB(tx, userID, cred, nowUTC())
+	})
 }
 
 func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.Time) error {
@@ -765,7 +769,7 @@ func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.T
 		ExpiresAt: cred.ExpiresAt.UTC(), Scope: cred.Scope, Resource: cred.Resource,
 		UpdatedAt: now,
 	}
-	return db.Clauses(clause.OnConflict{
+	if err := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"client_id",
@@ -777,7 +781,12 @@ func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.T
 			"resource",
 			"updated_at",
 		}),
-	}).Create(&row).Error
+	}).Create(&row).Error; err != nil {
+		return err
+	}
+	return db.Model(&notificationSettingRow{}).
+		Where("user_id = ? AND reauth_required = ?", userID, true).
+		Updates(map[string]any{"reauth_required": false, "updated_at": now}).Error
 }
 
 func normalizeCredentialForSave(cred Credential) (Credential, error) {
@@ -831,7 +840,15 @@ func (s *Store) DeleteCredential(ctx context.Context, ident Identity) error {
 	if !ok {
 		return nil
 	}
-	return s.db.WithContext(ctx).Delete(&credentialRow{}, "user_id = ?", userID).Error
+	now := nowUTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&credentialRow{}, "user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		return tx.Model(&notificationSettingRow{}).
+			Where("user_id = ? AND (classes_enabled = ? OR homework_enabled = ?)", userID, true, true).
+			Updates(map[string]any{"reauth_required": true, "updated_at": now}).Error
+	})
 }
 
 func (s *Store) SaveLoginSession(ctx context.Context, ident Identity, session LoginSession) error {
@@ -1765,6 +1782,15 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 	if err != nil {
 		return err
 	}
+	enabled := settings.ClassesEnabled || settings.HomeworkEnabled
+	var credentialCount int64
+	if enabled {
+		if err := s.db.WithContext(ctx).Model(&credentialRow{}).
+			Where("user_id = ?", userID).
+			Count(&credentialCount).Error; err != nil {
+			return err
+		}
+	}
 	now := nowUTC()
 	row := notificationSettingRow{
 		UserID:           userID,
@@ -1774,6 +1800,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 		ConversationID:   settings.Identity.ConversationID,
 		ClassesEnabled:   settings.ClassesEnabled,
 		HomeworkEnabled:  settings.HomeworkEnabled,
+		ReauthRequired:   enabled && credentialCount == 0,
 		UpdatedAt:        now,
 	}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -1785,6 +1812,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 			"conversation_id",
 			"classes_enabled",
 			"homework_enabled",
+			"reauth_required",
 			"updated_at",
 		}),
 	}).Create(&row).Error
@@ -1807,8 +1835,8 @@ func normalizeNotificationSettingsForSave(settings NotificationSettings) (Notifi
 func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]NotificationSettings, error) {
 	var rows []notificationSettingRow
 	err := s.db.WithContext(ctx).
-		Where("(classes_enabled = ? OR homework_enabled = ?) AND conversation_type <> ? AND conversation_id <> ?",
-			true, true, "", "").
+		Where("(classes_enabled = ? OR homework_enabled = ?) AND reauth_required = ? AND conversation_type <> ? AND conversation_id <> ?",
+			true, true, false, "", "").
 		Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -1818,6 +1846,16 @@ func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]Notification
 		out = append(out, notificationSettingsFromRow(row, Identity{}))
 	}
 	return out, nil
+}
+
+func (s *Store) PauseNotificationsForReauth(ctx context.Context, ident Identity) error {
+	userID, ok, err := s.userID(ctx, ident)
+	if err != nil || !ok {
+		return err
+	}
+	return s.db.WithContext(ctx).Model(&notificationSettingRow{}).
+		Where("user_id = ?", userID).
+		Updates(map[string]any{"reauth_required": true, "updated_at": nowUTC()}).Error
 }
 
 func (s *Store) AgentSettings(ctx context.Context, ident Identity) (AgentSettings, error) {
@@ -1923,6 +1961,7 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		Identity:        ident,
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
+		ReauthRequired:  row.ReauthRequired,
 	}
 }
 

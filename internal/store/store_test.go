@@ -1449,6 +1449,11 @@ func TestNotificationSettings(t *testing.T) {
 
 	settings.ClassesEnabled = true
 	settings.HomeworkEnabled = true
+	if err := s.SaveCredential(ctx, ident, Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SaveNotificationSettings(ctx, settings); err != nil {
 		t.Fatal(err)
 	}
@@ -1476,6 +1481,12 @@ func TestSaveNotificationSettingsTrimsConversationIdentity(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveCredential(ctx, ident, Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SaveNotificationSettings(ctx, NotificationSettings{
 		Identity: Identity{
 			Platform:         " napcat ",
@@ -1494,6 +1505,57 @@ func TestSaveNotificationSettingsTrimsConversationIdentity(t *testing.T) {
 	want := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	if len(enabled) != 1 || enabled[0].Identity != want {
 		t.Fatalf("enabled = %#v", enabled)
+	}
+}
+
+func TestNotificationSettingsPauseUntilCredentialRestored(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := s.NotificationSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ReauthRequired || !settings.HomeworkEnabled {
+		t.Fatalf("settings without credential = %#v", settings)
+	}
+	if enabled, err := s.EnabledNotificationSettings(ctx); err != nil || len(enabled) != 0 {
+		t.Fatalf("enabled while paused = %#v, err = %v", enabled, err)
+	}
+
+	if err := s.SaveCredential(ctx, ident, Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = s.NotificationSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.ReauthRequired {
+		t.Fatalf("settings after login = %#v", settings)
+	}
+	if enabled, err := s.EnabledNotificationSettings(ctx); err != nil || len(enabled) != 1 {
+		t.Fatalf("enabled after login = %#v, err = %v", enabled, err)
+	}
+
+	if err := s.DeleteCredential(ctx, ident); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = s.NotificationSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ReauthRequired || !settings.HomeworkEnabled {
+		t.Fatalf("settings after logout = %#v", settings)
 	}
 }
 
