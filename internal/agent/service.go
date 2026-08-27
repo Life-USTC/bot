@@ -163,6 +163,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	parentCtx := ctx
 	ctx, cancel := context.WithTimeout(parentCtx, agentRunDeadline)
 	defer cancel()
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(parentCtx), agentRunCleanupTimeout)
+	defer cleanupCancel()
 	metrics := newRunMetrics()
 	budget := newRunBudget(runStarted, metrics)
 	ctx = withRunBudget(ctx, budget)
@@ -173,7 +175,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	runID := s.recordAgentRun(ctx, input, provider, modelName)
 	finishRun := func(status, reply string, runErr error) {
 		runErr = normalizeAgentRunError(ctx, budget, runErr)
-		finishCtx := withRunMetrics(withUsageAccumulator(parentCtx, usage), metrics)
+		finishCtx := withRunMetrics(withUsageAccumulator(cleanupCtx, usage), metrics)
 		s.finishAgentRun(finishCtx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
 	}
 	if err := budget.contextError(ctx); err != nil {

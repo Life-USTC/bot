@@ -13,6 +13,10 @@ const (
 	// runs that do not have an HTTP request context.
 	agentRunDeadline = 90 * time.Second
 
+	// Run finalization must still be able to close a started row when its
+	// caller cancels, but it must not turn cleanup into another unbounded run.
+	agentRunCleanupTimeout = 5 * time.Second
+
 	// Keep one bounded budget for prompt input plus the existing Kimi output
 	// ceiling. conversationCompactInputLimit is the largest provider input
 	// budget already used by history compaction; adding the known 8,192-token

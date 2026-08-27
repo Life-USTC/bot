@@ -1177,6 +1177,12 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 	requestStarted := make(chan struct{})
 	requestCanceled := make(chan struct{})
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "cancel-user", ConversationType: "private", ConversationID: "cancel-user"}
 	client := &http.Client{Transport: blockingRoundTripper(func(r *http.Request) (*http.Response, error) {
 		close(requestStarted)
 		<-r.Context().Done()
@@ -1186,7 +1192,7 @@ func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 
 	svc, err := New(context.Background(), Config{
 		Enabled: true, APIKey: "test-key", BaseURL: "http://model.test", Model: "test-model",
-	}, commands.Handler{}, client)
+	}, commands.Handler{Store: db}, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1198,7 +1204,7 @@ func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 	}, 1)
 	go func() {
 		response, ok := svc.HandleResponse(ctx, Input{
-			Text: "等待取消", Identity: store.Identity{ConversationType: "private"},
+			Text: "等待取消", Identity: ident,
 		})
 		result <- struct {
 			response commands.Response
@@ -1223,6 +1229,11 @@ func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("canceled agent run did not return")
+	}
+	if interrupted, err := db.InterruptStartedAgentRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	} else if interrupted != 0 {
+		t.Fatalf("canceled run remained started: interrupted=%d", interrupted)
 	}
 }
 
