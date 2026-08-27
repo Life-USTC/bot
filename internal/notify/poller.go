@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -36,6 +37,14 @@ type pollFailure struct {
 	count  int
 	nextAt time.Time
 }
+
+type notificationPollResult uint8
+
+const (
+	pollSucceeded notificationPollResult = iota
+	pollTransientFailure
+	pollReauthRequired
+)
 
 type Poller struct {
 	Life                 *life.Client
@@ -86,22 +95,29 @@ func (p *Poller) tick(ctx context.Context) {
 		if !p.shouldPoll(setting.Identity) {
 			continue
 		}
-		if p.notifyUser(ctx, setting) {
+		switch p.notifyUser(ctx, setting) {
+		case pollSucceeded:
 			p.clearPollFailure(setting.Identity)
-		} else {
+		case pollReauthRequired:
+			if err := p.Store.PauseNotificationsForReauth(ctx, setting.Identity); err != nil {
+				p.logf("pause notification reminders failed: %v", err)
+				p.notePollFailure(setting.Identity)
+				continue
+			}
+			p.clearPollFailure(setting.Identity)
+		case pollTransientFailure:
 			p.notePollFailure(setting.Identity)
 		}
 	}
 }
 
-func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) bool {
+func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) notificationPollResult {
 	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
-		return true
+		return pollSucceeded
 	}
 	token, err := p.Auth.AccessToken(ctx, settings.Identity)
 	if err != nil {
-		p.logf("notification token unavailable for %s: %v", settings.Identity.UserID, err)
-		return false
+		return p.resultForAuthError(ctx, settings.Identity, err)
 	}
 	now := p.now().In(lifedata.ChinaLocation())
 	if settings.ClassesEnabled {
@@ -111,11 +127,11 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			})
 			if err != nil {
 				p.logf("load notification overview failed: %v", err)
-				return false
+				return p.resultForAuthError(ctx, settings.Identity, err)
 			}
 			p.notifyClasses(ctx, settings.Identity, overviewItems(overview, "schedules"), now)
 			p.notifyHomeworks(ctx, settings.Identity, overviewItems(overview, "homeworks"), now)
-			return true
+			return pollSucceeded
 		}
 		dateFrom, dateTo := lifedata.DayRFC3339Range(now)
 		schedules, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
@@ -123,20 +139,35 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		})
 		if err != nil {
 			p.logf("load schedules for notification failed: %v", err)
-			return false
+			return p.resultForAuthError(ctx, settings.Identity, err)
 		}
 		p.notifyClasses(ctx, settings.Identity, schedules, now)
-		return true
+		return pollSucceeded
 	}
 	homeworks, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
 		return p.Life.SubscribedHomeworks(ctx, token)
 	})
 	if err != nil {
 		p.logf("load homework notifications failed: %v", err)
-		return false
+		return p.resultForAuthError(ctx, settings.Identity, err)
 	}
 	p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
-	return true
+	return pollSucceeded
+}
+
+func (p *Poller) resultForAuthError(ctx context.Context, ident store.Identity, err error) notificationPollResult {
+	if errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) {
+		return pollReauthRequired
+	}
+	credential, credentialErr := p.Store.Credential(ctx, ident)
+	if credentialErr != nil {
+		p.logf("check notification credential state failed: %v", credentialErr)
+		return pollTransientFailure
+	}
+	if credential == nil {
+		return pollReauthRequired
+	}
+	return pollTransientFailure
 }
 
 func (p *Poller) shouldPoll(ident store.Identity) bool {

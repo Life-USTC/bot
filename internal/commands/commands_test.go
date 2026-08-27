@@ -3384,7 +3384,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("nested notification settings reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知 课表 开", Identity: ident})
-	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") || !strings.Contains(reply, "已暂停") || !strings.Contains(reply, "登录") {
 		t.Fatalf("nested notification update reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业呃开", Identity: ident})

@@ -1,8 +1,10 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -248,6 +250,54 @@ func TestPollerBacksOffAfterNotificationAuthFailure(t *testing.T) {
 	poller.tick(ctx)
 	if requests <= requestsAfterFailure {
 		t.Fatalf("requests after backoff = %d, want more than %d", requests, requestsAfterFailure)
+	}
+}
+
+func TestPollerPausesWithoutCredentialAndResumesAfterLogin(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 8, 10, 9, 0, 0, 0, lifedata.ChinaLocation())
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/api/workspace/homeworks" {
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"homeworks":[]}`))
+	}))
+	defer server.Close()
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "sensitive-user", ConversationType: "private", ConversationID: "private-target"}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	poller := &Poller{
+		Life: life.NewClient(server.URL, server.Client()), Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store: db, Publisher: &fakePublisher{}, Now: func() time.Time { return now }, Logger: log.New(&logs, "", 0),
+	}
+
+	poller.tick(ctx)
+	poller.tick(ctx)
+	if requests != 0 {
+		t.Fatalf("requests while reauthentication required = %d", requests)
+	}
+	if strings.Contains(logs.String(), ident.UserID) || strings.Contains(logs.String(), "token unavailable") {
+		t.Fatalf("logs exposed identity or repeated credential warning: %q", logs.String())
+	}
+
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	poller.tick(ctx)
+	if requests != 1 {
+		t.Fatalf("requests after credential restoration = %d", requests)
 	}
 }
 
