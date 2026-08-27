@@ -65,6 +65,7 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
+	startedAt := time.Now()
 	input.Text = stripCQCodes(input.Text)
 	if isConfirmationOK(input.Text) {
 		if reply, ok := h.confirmPending(ctx, input); ok {
@@ -126,7 +127,11 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}
-	return Response{Text: reply, Image: h.imageResponseFor(cmd, reply), Kind: cmd.Name}, true
+	response := Response{Text: reply, Image: h.imageResponseFor(cmd, reply), Kind: cmd.Name}
+	if cmd.NaturalRoute != "" {
+		h.logf("natural command routed: route=%s outcome=handled latency_ms=%d", cmd.NaturalRoute, time.Since(startedAt).Milliseconds())
+	}
+	return response, true
 }
 
 func (h Handler) HandleImageDirective(ctx context.Context, input Input) (Response, bool) {
@@ -157,9 +162,10 @@ func imageDirectiveCommandAllowed(cmd parsedCommand) bool {
 }
 
 type parsedCommand struct {
-	Name string
-	Args []string
-	Raw  string
+	Name         string
+	Args         []string
+	Raw          string
+	NaturalRoute string
 }
 
 var scheduleAliases = []string{"schedule", "sched", "kb", "课表", "课标"}
@@ -587,9 +593,13 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
-		return parsedCommand{}, false
+		return parseNaturalScheduleIntent(raw)
 	}
-	return acceptedCommand(raw, name, args)
+	cmd, accepted := acceptedCommand(raw, name, args)
+	if accepted {
+		return cmd, true
+	}
+	return parseNaturalScheduleIntent(raw)
 }
 
 func helpCommand(raw string, args ...string) parsedCommand {
