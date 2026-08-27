@@ -82,6 +82,17 @@ func (i *followUpInjector) BeforeModelRewriteState(
 	state *adk.ChatModelAgentState,
 	_ *adk.ModelContext,
 ) (context.Context, *adk.ChatModelAgentState, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if budget := runBudgetFromContext(ctx); budget != nil {
+		if err := budget.contextError(ctx); err != nil {
+			return ctx, state, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return ctx, state, err
+	}
 	if i.inbox == nil || state == nil {
 		return ctx, state, nil
 	}

@@ -12,17 +12,25 @@ import (
 
 var errRepeatedToolCall = errors.New("agent repeated an identical tool call")
 
+const toolFailureRepeatLimit = 1
+
 // toolRepeatGuard stops an agent from executing the same logical call twice in
-// one model turn. It intentionally does not cache results: some tools mutate
+// one model turn and stops a failed logical plan from being retried in a later
+// follow-up round. It intentionally does not cache results: some tools mutate
 // state or send messages, and replaying a cached success would misrepresent
-// what happened. A new user follow-up resets the guard.
+// what happened. Reset only clears the current-turn duplicate guard; failure
+// history remains for the lifetime of this run.
 type toolRepeatGuard struct {
-	mu   sync.Mutex
-	seen map[string]struct{}
+	mu       sync.Mutex
+	seen     map[string]struct{}
+	failures map[string]int
 }
 
 func newToolRepeatGuard() *toolRepeatGuard {
-	return &toolRepeatGuard{seen: make(map[string]struct{})}
+	return &toolRepeatGuard{
+		seen:     make(map[string]struct{}),
+		failures: make(map[string]int),
+	}
 }
 
 func (g *toolRepeatGuard) Reset() {
@@ -33,31 +41,65 @@ func (g *toolRepeatGuard) Reset() {
 
 func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-		if g.repeated(input) {
-			return nil, repeatedToolCallError(input)
+		if err := g.admit(input); err != nil {
+			return nil, err
 		}
-		return next(ctx, input)
+		out, err := next(ctx, input)
+		g.recordResult(input, out, err)
+		return out, err
 	}
 }
 
 func (g *toolRepeatGuard) streamableMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
-		if g.repeated(input) {
-			return nil, repeatedToolCallError(input)
+		if err := g.admit(input); err != nil {
+			return nil, err
 		}
-		return next(ctx, input)
+		out, err := next(ctx, input)
+		g.recordStreamResult(input, out, err)
+		return out, err
 	}
 }
 
-func (g *toolRepeatGuard) repeated(input *compose.ToolInput) bool {
+func (g *toolRepeatGuard) admit(input *compose.ToolInput) error {
 	key := toolCallKey(input)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if _, ok := g.seen[key]; ok {
-		return true
+		return repeatedToolCallError(input)
+	}
+	if g.failures[key] >= toolFailureRepeatLimit {
+		return nonProgressingToolPlanError(input)
 	}
 	g.seen[key] = struct{}{}
-	return false
+	return nil
+}
+
+func (g *toolRepeatGuard) recordResult(input *compose.ToolInput, output *compose.ToolOutput, err error) {
+	key := toolCallKey(input)
+	if !toolResultFailed(outputResult(output), err) {
+		g.mu.Lock()
+		delete(g.failures, key)
+		g.mu.Unlock()
+		return
+	}
+	g.recordFailure(input)
+}
+
+func (g *toolRepeatGuard) recordStreamResult(input *compose.ToolInput, output *compose.StreamToolOutput, err error) {
+	// Stream readers are intentionally not consumed by the guard. MCP tools use
+	// the invokable endpoint; transport/cancellation errors still count as a
+	// failed plan for stream-only tools.
+	if err != nil {
+		g.recordFailure(input)
+	}
+}
+
+func (g *toolRepeatGuard) recordFailure(input *compose.ToolInput) {
+	key := toolCallKey(input)
+	g.mu.Lock()
+	g.failures[key]++
+	g.mu.Unlock()
 }
 
 func toolCallKey(input *compose.ToolInput) string {
@@ -89,4 +131,33 @@ func repeatedToolCallError(input *compose.ToolInput) error {
 		name = strings.TrimSpace(input.Name)
 	}
 	return errors.Join(errRepeatedToolCall, errors.New("tool: "+name))
+}
+
+func nonProgressingToolPlanError(input *compose.ToolInput) error {
+	name := "unknown"
+	if input != nil && strings.TrimSpace(input.Name) != "" {
+		name = strings.TrimSpace(input.Name)
+	}
+	return errors.Join(errAgentNonProgress, errors.New("tool: "+name))
+}
+
+func outputResult(output *compose.ToolOutput) string {
+	if output == nil {
+		return ""
+	}
+	return output.Result
+}
+
+func toolResultFailed(result string, err error) bool {
+	if err != nil {
+		return !errors.Is(err, errAgentToolCallBudget) &&
+			!errors.Is(err, errAgentRunDeadline) &&
+			!errors.Is(err, errAgentContextBudget) &&
+			!errors.Is(err, context.Canceled)
+	}
+	var payload struct {
+		OK *bool `json:"ok"`
+	}
+	return json.Unmarshal([]byte(strings.TrimSpace(result)), &payload) == nil &&
+		payload.OK != nil && !*payload.OK
 }
