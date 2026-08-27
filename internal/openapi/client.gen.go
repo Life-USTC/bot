@@ -1911,29 +1911,31 @@ type UnderscoreUnderscoreSchema0 struct {
 		IsUstcVerified bool    `json:"isUstcVerified"`
 		Name           *string `json:"name"`
 	} `json:"author"`
-	AuthorHidden bool      `json:"authorHidden"`
-	Body         string    `json:"body"`
-	CanDelete    bool      `json:"canDelete"`
-	CanEdit      bool      `json:"canEdit"`
-	CanModerate  bool      `json:"canModerate"`
-	CanReact     bool      `json:"canReact"`
-	CanReply     bool      `json:"canReply"`
-	CreatedAt    time.Time `json:"createdAt"`
-	Id           string    `json:"id"`
-	IsAnonymous  bool      `json:"isAnonymous"`
-	IsAuthor     bool      `json:"isAuthor"`
-	ParentId     *string   `json:"parentId"`
-	Reactions    []struct {
+	AuthorHidden          bool      `json:"authorHidden"`
+	Body                  string    `json:"body"`
+	CanDelete             bool      `json:"canDelete"`
+	CanEdit               bool      `json:"canEdit"`
+	CanModerate           bool      `json:"canModerate"`
+	CanReact              bool      `json:"canReact"`
+	CanReply              bool      `json:"canReply"`
+	CreatedAt             time.Time `json:"createdAt"`
+	Id                    string    `json:"id"`
+	IsAncestryPlaceholder *bool     `json:"isAncestryPlaceholder,omitempty"`
+	IsAnonymous           bool      `json:"isAnonymous"`
+	IsAuthor              bool      `json:"isAuthor"`
+	ParentId              *string   `json:"parentId"`
+	Reactions             []struct {
 		Count            int    `json:"count"`
 		Type             string `json:"type"`
 		ViewerHasReacted bool   `json:"viewerHasReacted"`
 	} `json:"reactions"`
-	RenderedBody string                        `json:"renderedBody"`
-	Replies      []UnderscoreUnderscoreSchema0 `json:"replies"`
-	RootId       *string                       `json:"rootId"`
-	Status       string                        `json:"status"`
-	UpdatedAt    time.Time                     `json:"updatedAt"`
-	Visibility   string                        `json:"visibility"`
+	RenderedBody      string                        `json:"renderedBody"`
+	Replies           []UnderscoreUnderscoreSchema0 `json:"replies"`
+	RepliesNextCursor *string                       `json:"repliesNextCursor"`
+	RootId            *string                       `json:"rootId"`
+	Status            string                        `json:"status"`
+	UpdatedAt         time.Time                     `json:"updatedAt"`
+	Visibility        string                        `json:"visibility"`
 }
 
 // UnderscoreUnderscoreSchema1 defines model for __schema1.
@@ -1954,29 +1956,31 @@ type UnderscoreUnderscoreSchema1 struct {
 		IsUstcVerified bool    `json:"isUstcVerified"`
 		Name           *string `json:"name"`
 	} `json:"author"`
-	AuthorHidden bool      `json:"authorHidden"`
-	Body         string    `json:"body"`
-	CanDelete    bool      `json:"canDelete"`
-	CanEdit      bool      `json:"canEdit"`
-	CanModerate  bool      `json:"canModerate"`
-	CanReact     bool      `json:"canReact"`
-	CanReply     bool      `json:"canReply"`
-	CreatedAt    time.Time `json:"createdAt"`
-	Id           string    `json:"id"`
-	IsAnonymous  bool      `json:"isAnonymous"`
-	IsAuthor     bool      `json:"isAuthor"`
-	ParentId     *string   `json:"parentId"`
-	Reactions    []struct {
+	AuthorHidden          bool      `json:"authorHidden"`
+	Body                  string    `json:"body"`
+	CanDelete             bool      `json:"canDelete"`
+	CanEdit               bool      `json:"canEdit"`
+	CanModerate           bool      `json:"canModerate"`
+	CanReact              bool      `json:"canReact"`
+	CanReply              bool      `json:"canReply"`
+	CreatedAt             time.Time `json:"createdAt"`
+	Id                    string    `json:"id"`
+	IsAncestryPlaceholder *bool     `json:"isAncestryPlaceholder,omitempty"`
+	IsAnonymous           bool      `json:"isAnonymous"`
+	IsAuthor              bool      `json:"isAuthor"`
+	ParentId              *string   `json:"parentId"`
+	Reactions             []struct {
 		Count            int    `json:"count"`
 		Type             string `json:"type"`
 		ViewerHasReacted bool   `json:"viewerHasReacted"`
 	} `json:"reactions"`
-	RenderedBody string                        `json:"renderedBody"`
-	Replies      []UnderscoreUnderscoreSchema1 `json:"replies"`
-	RootId       *string                       `json:"rootId"`
-	Status       string                        `json:"status"`
-	UpdatedAt    time.Time                     `json:"updatedAt"`
-	Visibility   string                        `json:"visibility"`
+	RenderedBody      string                        `json:"renderedBody"`
+	Replies           []UnderscoreUnderscoreSchema1 `json:"replies"`
+	RepliesNextCursor *string                       `json:"repliesNextCursor"`
+	RootId            *string                       `json:"rootId"`
+	Status            string                        `json:"status"`
+	UpdatedAt         time.Time                     `json:"updatedAt"`
+	Visibility        string                        `json:"visibility"`
 }
 
 // AccountClientActivityResponseSchema defines model for accountClientActivityResponseSchema.
@@ -4226,6 +4230,23 @@ type CommentReactionRequestSchema struct {
 
 // CommentReactionRequestSchemaType defines model for CommentReactionRequestSchema.Type.
 type CommentReactionRequestSchemaType string
+
+// CommentRepliesResponseSchema defines model for commentRepliesResponseSchema.
+type CommentRepliesResponseSchema struct {
+	NextCursor *string                       `json:"nextCursor"`
+	RootId     string                        `json:"rootId"`
+	Thread     []UnderscoreUnderscoreSchema1 `json:"thread"`
+	Viewer     struct {
+		Image               *string    `json:"image"`
+		IsAdmin             bool       `json:"isAdmin"`
+		IsAuthenticated     bool       `json:"isAuthenticated"`
+		IsSuspended         bool       `json:"isSuspended"`
+		Name                *string    `json:"name"`
+		SuspensionExpiresAt *time.Time `json:"suspensionExpiresAt"`
+		SuspensionReason    *string    `json:"suspensionReason"`
+		UserId              *string    `json:"userId"`
+	} `json:"viewer"`
+}
 
 // CommentThreadResponseSchema defines model for commentThreadResponseSchema.
 type CommentThreadResponseSchema struct {
@@ -7795,6 +7816,14 @@ type RemoveCommentReactionParams struct {
 // RemoveCommentReactionParamsType defines parameters for RemoveCommentReaction.
 type RemoveCommentReactionParamsType string
 
+// GetApiCommunityCommentsIdRepliesParams defines parameters for GetApiCommunityCommentsIdReplies.
+type GetApiCommunityCommentsIdRepliesParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
 // GetDescriptionParams defines parameters for GetDescription.
 type GetDescriptionParams struct {
 	TargetType  GetDescriptionParamsTargetType `form:"targetType" json:"targetType"`
@@ -11049,6 +11078,9 @@ type ClientInterface interface {
 
 	AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCommunityCommentsIdReplies request
+	GetApiCommunityCommentsIdReplies(ctx context.Context, id string, params *GetApiCommunityCommentsIdRepliesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetDescription request
 	GetDescription(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12180,6 +12212,18 @@ func (c *Client) AddCommentReactionWithBody(ctx context.Context, id string, cont
 
 func (c *Client) AddCommentReaction(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAddCommentReactionRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCommunityCommentsIdReplies(ctx context.Context, id string, params *GetApiCommunityCommentsIdRepliesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCommunityCommentsIdRepliesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -16692,6 +16736,79 @@ func NewAddCommentReactionRequestWithBody(server string, id string, contentType 
 	return req, nil
 }
 
+// NewGetApiCommunityCommentsIdRepliesRequest generates requests for GetApiCommunityCommentsIdReplies
+func NewGetApiCommunityCommentsIdRepliesRequest(server string, id string, params *GetApiCommunityCommentsIdRepliesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/community/comments/%s/replies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetDescriptionRequest generates requests for GetDescription
 func NewGetDescriptionRequest(server string, params *GetDescriptionParams) (*http.Request, error) {
 	var err error
@@ -19202,6 +19319,9 @@ type ClientWithResponsesInterface interface {
 
 	AddCommentReactionWithResponse(ctx context.Context, id string, body AddCommentReactionJSONRequestBody, reqEditors ...RequestEditorFn) (*AddCommentReactionResponse, error)
 
+	// GetApiCommunityCommentsIdRepliesWithResponse request
+	GetApiCommunityCommentsIdRepliesWithResponse(ctx context.Context, id string, params *GetApiCommunityCommentsIdRepliesParams, reqEditors ...RequestEditorFn) (*GetApiCommunityCommentsIdRepliesResponse, error)
+
 	// GetDescriptionWithResponse request
 	GetDescriptionWithResponse(ctx context.Context, params *GetDescriptionParams, reqEditors ...RequestEditorFn) (*GetDescriptionResponse, error)
 
@@ -21491,6 +21611,39 @@ func (r AddCommentReactionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AddCommentReactionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCommunityCommentsIdRepliesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommentRepliesResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCommunityCommentsIdRepliesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCommunityCommentsIdRepliesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCommunityCommentsIdRepliesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -23842,6 +23995,15 @@ func (c *ClientWithResponses) AddCommentReactionWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseAddCommentReactionResponse(rsp)
+}
+
+// GetApiCommunityCommentsIdRepliesWithResponse request returning *GetApiCommunityCommentsIdRepliesResponse
+func (c *ClientWithResponses) GetApiCommunityCommentsIdRepliesWithResponse(ctx context.Context, id string, params *GetApiCommunityCommentsIdRepliesParams, reqEditors ...RequestEditorFn) (*GetApiCommunityCommentsIdRepliesResponse, error) {
+	rsp, err := c.GetApiCommunityCommentsIdReplies(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCommunityCommentsIdRepliesResponse(rsp)
 }
 
 // GetDescriptionWithResponse request returning *GetDescriptionResponse
@@ -26776,6 +26938,53 @@ func ParseAddCommentReactionResponse(rsp *http.Response) (*AddCommentReactionRes
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCommunityCommentsIdRepliesResponse parses an HTTP response from a GetApiCommunityCommentsIdRepliesWithResponse call
+func ParseGetApiCommunityCommentsIdRepliesResponse(rsp *http.Response) (*GetApiCommunityCommentsIdRepliesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCommunityCommentsIdRepliesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommentRepliesResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
