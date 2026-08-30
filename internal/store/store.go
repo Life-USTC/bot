@@ -326,7 +326,7 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
-	ReauthRequired   bool `gorm:"not null"`
+	ReauthRequired   bool `gorm:"not null;default:false"`
 	UpdatedAt        time.Time
 }
 
