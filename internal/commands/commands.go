@@ -572,6 +572,9 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	if raw == "" {
 		return parsedCommand{}, false
 	}
+	if isNaturalCalendarLinkRequest(raw) {
+		return acceptedCommand(raw, "subscription", []string{"link"})
+	}
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
 		return parsedCommand{}, false
@@ -600,6 +603,21 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 		return cmd, true
 	}
 	return parseNaturalScheduleIntent(raw)
+}
+
+func isNaturalCalendarLinkRequest(raw string) bool {
+	compact := strings.Join(strings.Fields(commandToken(raw)), "")
+	hasCalendarTarget := strings.Contains(compact, "日历订阅链接") ||
+		(strings.Contains(compact, "课表") && strings.Contains(compact, "订阅链接"))
+	if !hasCalendarTarget {
+		return false
+	}
+	for _, request := range []string{"给我", "发我", "获取", "查看", "生成", "我要", "我想要", "请给", "请发", "怎么", "如何"} {
+		if strings.Contains(compact, request) {
+			return true
+		}
+	}
+	return false
 }
 
 func helpCommand(raw string, args ...string) parsedCommand {
