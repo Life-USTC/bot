@@ -36,7 +36,7 @@ func TestHasCalendarSubscriptionURL(t *testing.T) {
 func TestCalendarSubscriptionPromptUsesHostCommand(t *testing.T) {
 	instruction := currentInstructionAt(time.Now())
 	for _, expected := range []string{
-		"handled only by the host command 订阅 链接",
+		"handled only by execute_bot_command with command 订阅 链接",
 		"workspace_calendar_feed_get intentionally does not expose",
 		"Never create, infer, reconstruct",
 	} {

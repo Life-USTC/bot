@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const calendarURLGuardReply = "AI 助手不能生成日历订阅链接。请发送：订阅 链接"
+const calendarURLGuardReply = "日历订阅链接只能由系统安全发送，这次没有发送。请稍后直接再问我获取链接。"
 
 var (
 	errUnverifiedCalendarURL = errors.New("calendar subscription URLs must come from the host command")

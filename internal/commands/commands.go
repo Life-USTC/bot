@@ -124,6 +124,15 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 		}
 	}
+	if cmd.Name != "login" && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(reply) && store.IsPrivateConversation(input.Identity) {
+		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
+		if loginErr != nil {
+			h.logf("start resumable login failed: %v", loginErr)
+			reply = commandError("登录开始失败：", loginErr)
+		} else {
+			reply = loginResponse.Text
+		}
+	}
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}
@@ -3523,13 +3532,17 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
+	status := store.InteractionStatusHandled
+	if strings.HasPrefix(reply, "需要登录 Life @ USTC：") {
+		status = store.InteractionStatusWaitingAuth
+	}
 	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: cmd.Raw,
 		Command: cmd.Name,
 		Args:    joinedArgs(cmd.Args),
 		Handled: true,
 		Reply:   interactionReply(cmd, reply),
-		Status:  store.InteractionStatusHandled,
+		Status:  status,
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
 	}

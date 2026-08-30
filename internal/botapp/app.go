@@ -113,14 +113,66 @@ func (a *App) Process(ctx context.Context, inbound message.Inbound) {
 	a.finishAgent(ctx, inbound, reply, ok)
 }
 
+// ResumePendingRequest replays a claimed text request synchronously through
+// the same command-first flow used for a live inbound message. It returns only
+// after execution and delivery, so the durable claim is never completed merely
+// because an asynchronous dispatcher accepted the request into memory.
+func (a *App) ResumePendingRequest(ctx context.Context, pending store.PendingRequest) error {
+	if !store.HasConversationIdentity(pending.Identity) {
+		return errors.New("pending request identity is incomplete")
+	}
+	if !store.IsPrivateConversation(pending.Identity) {
+		return errors.New("pending request conversation is not private")
+	}
+	if strings.TrimSpace(pending.Text) == "" {
+		return errors.New("pending request text is empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	inbound := message.Inbound{
+		Actor: message.Actor{Platform: pending.Identity.Platform, UserID: pending.Identity.UserID},
+		Conversation: message.Conversation{
+			Platform: pending.Identity.Platform,
+			Type:     pending.Identity.ConversationType,
+			ID:       pending.Identity.ConversationID,
+		},
+		Text: pending.Text,
+	}
+	if reply, ok := a.commands.HandleResponse(ctx, commands.Input{
+		Text: inbound.Text, Identity: pending.Identity,
+	}); ok {
+		return a.deliverResponseChecked(ctx, inbound, reply)
+	}
+	if a.agent == nil {
+		return errors.New("agent is unavailable")
+	}
+	reply, ok := a.agent.HandleResponse(ctx, a.agentInput(inbound))
+	if !ok {
+		return errors.New("pending request was not handled")
+	}
+	status := store.InteractionStatusHandled
+	if reply.Kind == "login" {
+		status = store.InteractionStatusWaitingAuth
+	}
+	a.record(ctx, inbound, store.Interaction{
+		RawText: inbound.Text, Command: "agent", Handled: true, Reply: reply.Text, Status: status,
+	}, "agent_resume")
+	return a.deliverResponseChecked(ctx, inbound, reply)
+}
+
 func (a *App) finishAgent(ctx context.Context, inbound message.Inbound, reply commands.Response, ok bool) {
 	if !ok {
 		a.recordIgnored(ctx, inbound)
 		return
 	}
+	status := store.InteractionStatusHandled
+	if reply.Kind == "login" {
+		status = store.InteractionStatusWaitingAuth
+	}
 	a.record(ctx, inbound, store.Interaction{
 		RawText: inbound.Text, Command: "agent", Handled: true, Reply: reply.Text,
-		Status: store.InteractionStatusHandled,
+		Status: status,
 	}, "agent")
 	a.deliverResponse(ctx, inbound, reply)
 }
@@ -139,10 +191,26 @@ func (a *App) agentInput(inbound message.Inbound) agent.Input {
 			}
 			return fmt.Errorf("immediate delivery %s", outcome.State)
 		},
+		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
+			if err := a.deliverResponseChecked(ctx, inbound, response); err != nil {
+				return fmt.Errorf("deliver host command response: %w", err)
+			}
+			return nil
+		},
 	}
 }
 
 func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, response commands.Response) {
+	if err := a.deliverResponseChecked(ctx, inbound, response); err != nil {
+		a.logf("immediate reply failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			inbound.Conversation.Platform, inbound.Conversation.Type, inbound.Conversation.ID, err)
+	}
+}
+
+func (a *App) deliverResponseChecked(ctx context.Context, inbound message.Inbound, response commands.Response) error {
+	if response.Kind == commands.ResponseKindHostDelivered && response.Text == "" && response.Image == nil && len(response.Parts) == 0 {
+		return nil
+	}
 	parts := response.Parts
 	if len(parts) == 0 {
 		parts = []commands.Response{response}
@@ -151,13 +219,14 @@ func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, resp
 	for _, part := range parts {
 		outcome, attempts := a.deliverResponsePart(ctx, inbound, part, attempt)
 		attempt += attempts
-		if outcome.State != delivery.OutcomeAccepted {
-			a.logf("immediate reply failed: platform=%s conversation_type=%s conversation_id=%s state=%s code=%s error=%v",
-				inbound.Conversation.Platform, inbound.Conversation.Type, inbound.Conversation.ID,
-				outcome.State, outcome.Code, outcome.Err)
-			return
+		if outcome.State != delivery.OutcomeAccepted && outcome.State != delivery.OutcomeUnknown {
+			if outcome.Err != nil {
+				return outcome.Err
+			}
+			return fmt.Errorf("delivery state=%s code=%s", outcome.State, outcome.Code)
 		}
 	}
+	return nil
 }
 
 func (a *App) recordIgnored(ctx context.Context, inbound message.Inbound) {

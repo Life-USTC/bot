@@ -161,3 +161,96 @@ func TestLoginPollerRunsImmediateTick(t *testing.T) {
 		t.Fatalf("immediate records = %#v, err = %v", records, err)
 	}
 }
+
+func TestLoginPollerResumesClaimedRequestWithLoginIdentity(t *testing.T) {
+	server := approvedLoginServer(t)
+	defer server.Close()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if _, err := s.SavePendingRequest(ctx, ident, "查询明天课表", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute),
+		IntervalSeconds: 1, Status: string(store.LoginStatusPending),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var resumed store.PendingRequest
+	poller := LoginPoller{
+		Manager: &Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
+		Resume: func(_ context.Context, request store.PendingRequest) error {
+			resumed = request
+			return nil
+		},
+	}
+	poller.tick(ctx)
+	if resumed.Text != "查询明天课表" || resumed.Identity != ident || resumed.Status != store.PendingRequestStatusClaimed {
+		t.Fatalf("resumed request = %#v", resumed)
+	}
+	if active, err := s.ActivePendingRequest(ctx, ident); err != nil {
+		t.Fatal(err)
+	} else if active != nil {
+		t.Fatalf("completed request still active = %#v", active)
+	}
+}
+
+func TestLoginPollerRetriesFailedResumeAndSurvivesRestart(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ident := store.Identity{Platform: "qqbot", UserID: "resume", ConversationType: "private", ConversationID: "resume"}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour), Scope: oauthScope,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SavePendingRequest(ctx, ident, "查询作业", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	called := 0
+	poller := LoginPoller{
+		Manager: &Manager{Store: s},
+		Resume: func(context.Context, store.PendingRequest) error {
+			called++
+			if called == 1 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		},
+	}
+	poller.ResumePending(ctx)
+	failed, err := s.ActivePendingRequest(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed == nil || failed.Status != store.PendingRequestStatusFailed || failed.LastError == "" {
+		t.Fatalf("failed request = %#v", failed)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.Manager.Store = s
+	poller.ResumePending(ctx)
+	if called != 2 {
+		t.Fatalf("resume callback count = %d", called)
+	}
+	if active, err := s.ActivePendingRequest(ctx, ident); err != nil {
+		t.Fatal(err)
+	} else if active != nil {
+		t.Fatalf("request after successful retry = %#v", active)
+	}
+	_ = s.Close()
+}

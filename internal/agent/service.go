@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
@@ -65,6 +66,10 @@ type Input struct {
 	ImageURLs  []string
 	Identity   store.Identity
 	SendUpdate func(context.Context, store.Identity, string) error
+	// SendResponse lets a local tool hand an already formatted host response
+	// directly to the application. It is used for images and private values that
+	// must not pass through the model.
+	SendResponse func(context.Context, store.Identity, commands.Response) error
 
 	// FollowUps is set by the dispatcher for an in-flight run. Mid-run user
 	// messages are injected into the current agent state instead of starting a
@@ -227,11 +232,22 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
+	var hostResponseDelivered atomic.Bool
+	sendResponse := input.SendResponse
+	if sendResponse != nil {
+		sendResponse = func(ctx context.Context, ident store.Identity, response commands.Response) error {
+			if err := input.SendResponse(ctx, ident, response); err != nil {
+				return err
+			}
+			hostResponseDelivered.Store(true)
+			return nil
+		}
+	}
 	toolSetup, err := observeRunStageValue(ctx, "tool_setup", func() (struct {
 		tools   []tool.BaseTool
 		session *botmcp.Session
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
+		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, sendResponse)
 		return struct {
 			tools   []tool.BaseTool
 			session *botmcp.Session
@@ -251,12 +267,17 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return agentTextResponse(reply), true
 		}
 		if errors.Is(err, auth.ErrNotLoggedIn) {
-			reply := "需要先登录。发送：登录"
+			reply := s.beginLoginForInput(ctx, input)
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
-			return agentTextResponse(reply), true
+			return agentLoginResponse(reply), true
 		}
 		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
 		if isMCPAuthorizationError(err) {
+			if strings.HasPrefix(reply, "登录权限已失效。") {
+				reply = s.beginLoginForInput(ctx, input)
+				finishRun(store.AgentRunStatusCompleted, reply, nil)
+				return agentLoginResponse(reply), true
+			}
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
@@ -459,7 +480,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	if reply == "" {
+	if reply == "" || (hostResponseDelivered.Load() && isHostDeliveryToolResult(reply)) {
+		if hostResponseDelivered.Load() {
+			finishRun(store.AgentRunStatusCompleted, "", nil)
+			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
@@ -479,6 +504,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if response.Text == "" && len(response.Parts) == 0 {
+		if hostResponseDelivered.Load() {
+			finishRun(store.AgentRunStatusCompleted, "", nil)
+			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
@@ -486,8 +515,35 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	return response, true
 }
 
+func isHostDeliveryToolResult(reply string) bool {
+	var result commands.AgentCommandResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(reply)), &result); err != nil {
+		return false
+	}
+	return result.DeliveredByHost
+}
+
+func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
+	if strings.TrimSpace(input.Text) == "" {
+		return "需要登录后才能继续处理这张图片。图片无法安全暂存，请完成登录后重新发送图片。"
+	}
+	response, err := s.handler.BeginLoginForRequest(ctx, commands.Input{
+		Text: input.Text, Identity: input.Identity, SuppressLog: true,
+	})
+	if err != nil {
+		s.logf("start resumable agent login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
+		return "登录暂时无法开始，请稍后重试。"
+	}
+	return response.Text
+}
+
 func agentTextResponse(text string) commands.Response {
 	return commands.Response{Text: cleanQQReply(text), Kind: "agent"}
+}
+
+func agentLoginResponse(text string) commands.Response {
+	return commands.Response{Text: cleanQQReply(text), Kind: "login"}
 }
 
 func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
@@ -691,7 +747,17 @@ type resolveImageCommandInput struct {
 	Text string `json:"text" jsonschema_description:"Raw user text to map onto a validated ![](command) image directive"`
 }
 
-func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, *botmcp.Session, error) {
+type hostCommandInput struct {
+	Command string `json:"command" jsonschema_description:"Exactly one Bot command to execute, such as 订阅 链接, 通知 作业 开, 校车 偏好, or AI 工具 开"`
+}
+
+func (s *Service) toolsFor(
+	ctx context.Context,
+	ident store.Identity,
+	trace *toolTraceNotifier,
+	sendUpdate func(context.Context, store.Identity, string) error,
+	sendResponse func(context.Context, store.Identity, commands.Response) error,
+) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
 	var mcpSession *botmcp.Session
@@ -727,6 +793,32 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 			}
 			return nil, nil, err
 		}
+	}
+	tools, err = appendInferredTool(tools, "execute_bot_command", "Execute one existing Bot command on the user's behalf. Never ask the user to copy a command. Read-only commands run immediately. Mutations are stored for confirmation and require a real user reply of ok. Host-delivered images and private links never pass through the model.", trace, func(ctx context.Context, input hostCommandInput) (string, error) {
+		result, err := s.handler.ExecuteForAgent(ctx, commands.Input{Text: input.Command, Identity: ident, SuppressLog: true})
+		if err != nil {
+			return "", err
+		}
+		if result.DeliveredByHost {
+			if sendResponse == nil {
+				return "", errors.New("host response sender is unavailable")
+			}
+			if err := sendResponse(ctx, ident, result.Response); err != nil {
+				return "", err
+			}
+			result.Text = "结果已由宿主安全发送给用户。"
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+	})
+	if err != nil {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "lookup_bot_help", "Look up Bot command help for a topic (校车/课表/待办/作业/考试/日程/…). Use when unsure which ![](command) shape is valid.", trace, func(_ context.Context, input helpLookupInput) (string, error) {
 		return commands.LookupBotHelp(input.Topic), nil
@@ -777,7 +869,15 @@ func (s *Service) openMCPTools(ctx context.Context, ident store.Identity, trace 
 		_ = session.Close()
 		return nil, nil, err
 	}
-	einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
+	readOnlyTools := mcpTools[:0]
+	for _, mcpTool := range mcpTools {
+		if mcpTool.Annotations.ReadOnlyHint == nil || !*mcpTool.Annotations.ReadOnlyHint {
+			s.logf("MCP mutation tool hidden from agent: name=%s", mcpTool.Name)
+			continue
+		}
+		readOnlyTools = append(readOnlyTools, mcpTool)
+	}
+	einoTools, err := botmcp.ToEinoTools(readOnlyTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
 		result, err := session.Call(ctx, name, args)
 		if trace != nil {
 			trace.Notify(ctx, name, args, result, err)
@@ -832,7 +932,7 @@ func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, run
 					ident.Platform, ident.ConversationType, ident.ConversationID, logoutErr)
 			}
 		}
-		return "登录权限已失效。请发送：登录\n重新登录会申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
+		return "登录权限已失效。\n系统将重新申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
 	}
 	reply := "校园工具暂时不可用，请稍后重试。本次没有执行任何查询或操作。"
 	if runID > 0 {
@@ -1094,23 +1194,25 @@ Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
 You can answer questions about prior messages using the chat history provided in this run. If additional user messages appear later in this same run (follow-ups sent while tools were running), treat them as part of the current conversation and answer everything together in a single final reply. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
-For bus planning after a class or event, pass the class/event end time to get_next_bus.after (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
+For bus planning after a class or event, pass the class/event end time to catalog_bus_departure_next.atTime (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
 Course / section subscribe-by-name flow:
-1. Search with search_teachers / search_courses / search_sections using the teacher's name and course title the user gave.
+1. Search with catalog_teacher_search / catalog_course_search / catalog_section_search using the teacher's name and course title the user gave.
 2. Show a short candidate list (teacher, course, section code / JW ID) when matches are ambiguous.
-3. When the user confirms, call the subscribe / bulk_subscribe tool so the host prepares a confirmation command. Do not claim subscription succeeded until the user confirms with ok or the confirmation command.
-Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
-Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
+3. After the user chooses a section, call execute_bot_command with one 订阅 导入 command. The host will ask for confirmation; never ask the user to copy or send that command.
+Use execute_bot_command whenever an existing Bot command owns the capability, especially private calendar links, notification settings, Bot settings, and formatted read-only cards. Call the tool yourself; never tell the user to send or paste a Bot command.
+Notification settings: call execute_bot_command with 通知 课表/作业 开/关. Do not tell the user to open the website or send the command themselves.
+Host mutations returned by execute_bot_command are not executed immediately: the host stores one pending action and asks the user to reply ok. Do not claim the change is complete before the real user confirmation result. Never call execute_bot_command with ok; only an inbound user message may confirm.
+Only read-only MCP tools are exposed. If a requested mutation has no Bot-command equivalent, explain that it is not safely available in this chat and record concrete feedback; never improvise a write through GraphQL or another read tool.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
-Personal calendar subscription links are handled only by the host command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. If the user asks for such a link, tell them to send 订阅 链接. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+Personal calendar subscription links are handled only by execute_bot_command with command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
 When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.
-When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
+When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
 ` + imageDirectiveInstruction() + `
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`
+Authentication is handled by the host. If login is required, the host starts it and resumes the pending request after authorization. Never tell the user to send 登录 or repeat the original request.`
 }
 
 func imageDirectiveInstruction() string {

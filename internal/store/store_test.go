@@ -2106,3 +2106,200 @@ func TestPendingConfirmationSupersedesAndReadsLatest(t *testing.T) {
 		t.Fatalf("confirmed pending still active = %#v", pending)
 	}
 }
+
+func TestPendingRequestKeepsLatestPrivateTextAndSurvivesRestart(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	first, err := s.SavePendingRequest(ctx, ident, "查今天课表", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.SavePendingRequest(ctx, ident, "查明天课表", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("latest request created a second row: first=%d second=%d", first, second)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	pending, err := s.ActivePendingRequest(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending == nil || pending.Text != "查明天课表" || pending.Status != PendingRequestStatusPending {
+		t.Fatalf("pending after restart = %#v", pending)
+	}
+}
+
+func TestPendingRequestRejectsGroupsAndBlankText(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	if _, err := s.SavePendingRequest(ctx, Identity{
+		Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "g-1",
+	}, "查课表", time.Minute); err == nil {
+		t.Fatal("group pending request was accepted")
+	}
+	if _, err := s.SavePendingRequest(ctx, Identity{
+		Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42",
+	}, "  ", time.Minute); err == nil {
+		t.Fatal("blank pending request was accepted")
+	}
+}
+
+func TestPendingRequestClaimCompleteAndRetry(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	ident := Identity{Platform: "qqbot", UserID: "user-1", ConversationType: "private", ConversationID: "user-1"}
+	if _, err := s.SavePendingRequest(ctx, ident, "查询作业", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimPendingRequestAt(ctx, ident, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed == nil || claimed.Status != PendingRequestStatusClaimed || claimed.Attempts != 1 || claimed.ClaimToken == "" {
+		t.Fatalf("claimed = %#v", claimed)
+	}
+	if other, err := s.ClaimPendingRequestAt(ctx, ident, now); err != nil {
+		t.Fatal(err)
+	} else if other != nil {
+		t.Fatalf("request was claimed twice: %#v", other)
+	}
+	if done, err := s.CompletePendingRequest(ctx, claimed.ID, "wrong-token"); err != nil {
+		t.Fatal(err)
+	} else if done {
+		t.Fatal("wrong claim token completed request")
+	}
+	if failed, err := s.FailPendingRequest(ctx, claimed.ID, claimed.ClaimToken, "temporary dispatch error"); err != nil {
+		t.Fatal(err)
+	} else if !failed {
+		t.Fatal("failed transition did not update claimed request")
+	}
+	retry, err := s.ClaimPendingRequestAt(ctx, ident, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry == nil || retry.Attempts != 2 || retry.Text != claimed.Text {
+		t.Fatalf("retry claim = %#v", retry)
+	}
+	if completed, err := s.CompletePendingRequest(ctx, retry.ID, retry.ClaimToken); err != nil {
+		t.Fatal(err)
+	} else if !completed {
+		t.Fatal("valid claim did not complete request")
+	}
+	if active, err := s.ActivePendingRequest(ctx, ident); err != nil {
+		t.Fatal(err)
+	} else if active != nil {
+		t.Fatalf("completed request still active: %#v", active)
+	}
+}
+
+func TestPendingRequestExpiredAndStaleClaim(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "expired", ConversationType: "private", ConversationID: "expired"}
+	if _, err := s.SavePendingRequest(ctx, ident, "过期请求", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.WithContext(ctx).Model(&pendingRequestRow{}).
+		Where("platform = ? AND conversation_id = ?", ident.Platform, ident.ConversationID).
+		Update("expires_at", time.Date(2026, 8, 30, 11, 59, 0, 0, time.UTC)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if request, err := s.ClaimPendingRequestAt(ctx, ident, time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	} else if request != nil {
+		t.Fatalf("expired request was claimed: %#v", request)
+	}
+
+	ident = Identity{Platform: "napcat", UserID: "stale", ConversationType: "private", ConversationID: "stale"}
+	if _, err := s.SavePendingRequest(ctx, ident, "恢复请求", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	claimTime := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	first, err := s.ClaimPendingRequestAt(ctx, ident, claimTime)
+	if err != nil || first == nil {
+		t.Fatalf("first claim = %#v err=%v", first, err)
+	}
+	if next, err := s.ClaimPendingRequestAt(ctx, ident, claimTime.Add(PendingRequestClaimLease-time.Second)); err != nil {
+		t.Fatal(err)
+	} else if next != nil {
+		t.Fatalf("active claim was reclaimed too early: %#v", next)
+	}
+	second, err := s.ClaimPendingRequestAt(ctx, ident, claimTime.Add(PendingRequestClaimLease+time.Second))
+	if err != nil || second == nil || second.Attempts != 2 {
+		t.Fatalf("stale claim = %#v err=%v", second, err)
+	}
+}
+
+func TestPendingRequestClaimsOnlyOnceConcurrently(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	firstStore, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = firstStore.Close() }()
+	secondStore, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = secondStore.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "race", ConversationType: "private", ConversationID: "race"}
+	if _, err := firstStore.SavePendingRequest(ctx, ident, "并发恢复", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		request *PendingRequest
+		err     error
+	}
+	results := make(chan result, 2)
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	go func() {
+		request, err := firstStore.ClaimPendingRequestAt(ctx, ident, now)
+		results <- result{request: request, err: err}
+	}()
+	go func() {
+		request, err := secondStore.ClaimPendingRequestAt(ctx, ident, now)
+		results <- result{request: request, err: err}
+	}()
+	var claimed int
+	for range 2 {
+		item := <-results
+		if item.err != nil {
+			t.Fatal(item.err)
+		}
+		if item.request != nil {
+			claimed++
+		}
+	}
+	if claimed != 1 {
+		t.Fatalf("concurrent claim count = %d", claimed)
+	}
+}

@@ -18,6 +18,11 @@ type Response struct {
 	Parts []Response
 }
 
+// ResponseKindHostDelivered marks a response whose user-visible content was
+// already sent by the host while an Agent tool was running. Callers must treat
+// it as handled without attempting a second delivery.
+const ResponseKindHostDelivered = "host_delivered"
+
 func textResponse(text string) Response {
 	return Response{Text: text}
 }

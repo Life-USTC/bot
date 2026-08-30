@@ -317,6 +317,7 @@ func TestAgentToolConstruction(t *testing.T) {
 		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
 	}
 	assertAgentToolNames(t, svc,
+		"execute_bot_command",
 		"get_current_semester",
 		"get_current_time",
 		"list_my_homeworks",
@@ -330,6 +331,7 @@ func TestAgentToolConstruction(t *testing.T) {
 
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
+		"execute_bot_command",
 		"get_current_time",
 		"lookup_bot_help",
 		"resolve_image_command",
@@ -345,6 +347,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
+		"execute_bot_command",
 		"get_current_time",
 		"lookup_bot_help",
 		"record_bot_feedback",
@@ -361,15 +364,25 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device", UserCode: "ABCD", VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	svc := &Service{
 		enabled:   true,
-		handler:   commands.Handler{Store: db},
+		handler:   commands.Handler{Store: db, Auth: &auth.Manager{Store: db}},
 		auth:      &auth.Manager{Store: db},
 		mcpClient: botmcp.New("http://127.0.0.1:1/api/mcp", http.DefaultClient),
 	}
 	reply, ok := svc.Handle(context.Background(), Input{Text: "帮我看看作业", Identity: ident})
-	if !ok || reply != "需要先登录。发送：登录" {
+	if !ok || !strings.Contains(reply, "完成后我会自动继续") || strings.Contains(reply, "发送：登录") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	pending, err := db.ActivePendingRequest(context.Background(), ident)
+	if err != nil || pending == nil || pending.Text != "帮我看看作业" {
+		t.Fatalf("pending = %#v, err = %v", pending, err)
 	}
 }
 
@@ -405,18 +418,23 @@ func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device", UserCode: "ABCD", VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var logs bytes.Buffer
 	svc := &Service{
 		enabled:   true,
-		handler:   commands.Handler{Store: db},
+		handler:   commands.Handler{Store: db, Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db}},
 		auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		mcpClient: botmcp.New(server.URL+"/api/mcp", server.Client()),
 		logger:    log.New(&logs, "", 0),
 	}
 
 	reply, ok := svc.Handle(context.Background(), Input{Identity: ident, Text: "查询课表"})
-	if !ok || !strings.Contains(reply, "请发送：登录") ||
-		!strings.Contains(reply, "正确权限") || !strings.Contains(reply, "本次没有执行") {
+	if !ok || strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "完成后我会自动继续") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	if !strings.Contains(logs.String(), "MCP tools unavailable") || !strings.Contains(logs.String(), "invalid_target") {
@@ -443,8 +461,9 @@ func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *te
 	currentScopes := strings.Join([]string{
 		"openid", "profile", "email", "offline_access", "account.profile:read", "account.client-activity:read",
 		"workspace.todo:read", "workspace.todo:write", "workspace.homework:read", "workspace.homework:write",
-		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read",
+		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read", "workspace.calendar:read",
 		"community.comment:read", "community.comment:write", "community.description:read", "community.description:write",
+		"community.user:read", "community.section-homework:read", "community.section-homework:write",
 		"workspace.upload:read", "workspace.upload:write", "workspace.overview:read", "workspace.link-pin:read", "workspace.link-pin:write",
 		"catalog.bus:read", "workspace.bus-preferences:read", "workspace.bus-preferences:write",
 		"catalog.course:read", "catalog.section:read", "catalog.teacher:read", "catalog.schedule:read", "workspace.schedule:read",
@@ -469,7 +488,7 @@ func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
 	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,8 +516,11 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func()) {
 		mcpgo.NewTool("list_my_homeworks", mcpgo.WithDescription("List my homeworks.")),
 		mcpgo.NewTool("search_courses", mcpgo.WithDescription("Search courses.")),
 		mcpgo.NewTool("get_current_semester", mcpgo.WithDescription("Get current semester.")),
+		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
+		readOnly := tool.Name != "delete_my_homework"
+		tool.Annotations.ReadOnlyHint = &readOnly
 		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			return mcpgo.NewToolResultText(`{"ok":true}`), nil
 		})
@@ -779,7 +801,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if strings.Contains(instruction, "Current local time is") {
 		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
-	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
+	if !strings.Contains(instruction, "prepare and confirm them one at a time") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
@@ -1171,6 +1193,88 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	}
 	if total.ModelRequests != 2 || total.ToolCalls != 1 {
 		t.Fatalf("spending = %#v", total)
+	}
+}
+
+func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var authServerURL string
+	authMux := http.NewServeMux()
+	authMux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"device_authorization_endpoint": authServerURL + "/device",
+			"token_endpoint":                authServerURL + "/token",
+			"registration_endpoint":         authServerURL + "/register",
+		})
+	})
+	authMux.HandleFunc("/register", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
+	})
+	authMux.HandleFunc("/device", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"device_code": "device", "user_code": "USER-CODE",
+			"verification_uri": authServerURL + "/verify", "expires_in": 300, "interval": 5,
+		})
+	})
+	authServer := httptest.NewServer(authMux)
+	defer authServer.Close()
+	authServerURL = authServer.URL
+	manager := &auth.Manager{Server: authServer.URL, HTTPClient: authServer.Client(), Store: db}
+
+	var modelRequests atomic.Int32
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		request := modelRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if request == 1 {
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-host-tool","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"call-host","type":"function","function":{"name":"execute_bot_command","arguments":"{\"command\":\"登录\"}"}
+				}]},"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+			}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-empty","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}
+		}`))
+	}))
+	defer modelServer.Close()
+
+	svc, err := New(ctx, Config{
+		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model",
+	}, commands.Handler{Auth: manager, Store: db}, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	var deliveries atomic.Int32
+	response, ok := svc.HandleResponse(ctx, Input{
+		Text: "帮我登录", Identity: ident,
+		SendResponse: func(_ context.Context, got store.Identity, delivered commands.Response) error {
+			if got != ident || delivered.Kind != "login" || !strings.Contains(delivered.Text, "USER-CODE") {
+				t.Fatalf("host response identity=%#v response=%#v", got, delivered)
+			}
+			deliveries.Add(1)
+			return nil
+		},
+	})
+	if !ok || response.Kind != commands.ResponseKindHostDelivered || response.Text != "" {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if got := deliveries.Load(); got != 1 {
+		t.Fatalf("host deliveries = %d, want 1", got)
+	}
+	if got := modelRequests.Load(); got != 2 {
+		t.Fatalf("model requests = %d, want 2", got)
 	}
 }
 

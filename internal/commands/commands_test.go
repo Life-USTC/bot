@@ -3352,8 +3352,14 @@ func TestSubscriptionCalendarLinkRecoversFromStaleScope(t *testing.T) {
 		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
 		ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL, Scope: "openid workspace.subscription:read",
 	})
+	if err := handler.Store.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode: "device", UserCode: "ABCD", VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	reply, ok := handler.Handle(ctx, Input{Text: "订阅 链接", Identity: ident})
-	if !ok || !strings.Contains(reply, "未获得私有日历链接权限") || !strings.Contains(reply, "请发送：登录") {
+	if !ok || strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "完成后我会自动继续") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	if credential, err := handler.Store.Credential(ctx, ident); err != nil || credential != nil {
