@@ -124,6 +124,15 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
 		}
 	}
+	if cmd.Name != "login" && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(reply) && store.IsPrivateConversation(input.Identity) {
+		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
+		if loginErr != nil {
+			h.logf("start resumable login failed: %v", loginErr)
+			reply = commandError("登录开始失败：", loginErr)
+		} else {
+			reply = loginResponse.Text
+		}
+	}
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}

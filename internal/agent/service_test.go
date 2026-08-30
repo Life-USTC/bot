@@ -364,15 +364,25 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device", UserCode: "ABCD", VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	svc := &Service{
 		enabled:   true,
-		handler:   commands.Handler{Store: db},
+		handler:   commands.Handler{Store: db, Auth: &auth.Manager{Store: db}},
 		auth:      &auth.Manager{Store: db},
 		mcpClient: botmcp.New("http://127.0.0.1:1/api/mcp", http.DefaultClient),
 	}
 	reply, ok := svc.Handle(context.Background(), Input{Text: "帮我看看作业", Identity: ident})
-	if !ok || reply != "需要先登录。发送：登录" {
+	if !ok || !strings.Contains(reply, "完成后我会自动继续") || strings.Contains(reply, "发送：登录") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	pending, err := db.ActivePendingRequest(context.Background(), ident)
+	if err != nil || pending == nil || pending.Text != "帮我看看作业" {
+		t.Fatalf("pending = %#v, err = %v", pending, err)
 	}
 }
 
@@ -408,18 +418,23 @@ func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SaveLoginSession(context.Background(), ident, store.LoginSession{
+		DeviceCode: "device", UserCode: "ABCD", VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var logs bytes.Buffer
 	svc := &Service{
 		enabled:   true,
-		handler:   commands.Handler{Store: db},
+		handler:   commands.Handler{Store: db, Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db}},
 		auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		mcpClient: botmcp.New(server.URL+"/api/mcp", server.Client()),
 		logger:    log.New(&logs, "", 0),
 	}
 
 	reply, ok := svc.Handle(context.Background(), Input{Identity: ident, Text: "查询课表"})
-	if !ok || !strings.Contains(reply, "请发送：登录") ||
-		!strings.Contains(reply, "正确权限") || !strings.Contains(reply, "本次没有执行") {
+	if !ok || strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "完成后我会自动继续") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	if !strings.Contains(logs.String(), "MCP tools unavailable") || !strings.Contains(logs.String(), "invalid_target") {

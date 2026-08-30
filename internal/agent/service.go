@@ -255,12 +255,15 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return agentTextResponse(reply), true
 		}
 		if errors.Is(err, auth.ErrNotLoggedIn) {
-			reply := "需要先登录。发送：登录"
+			reply := s.beginLoginForInput(ctx, input)
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
 		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
 		if isMCPAuthorizationError(err) {
+			if strings.HasPrefix(reply, "登录权限已失效。") {
+				reply = s.beginLoginForInput(ctx, input)
+			}
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
@@ -488,6 +491,21 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
+}
+
+func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
+	if strings.TrimSpace(input.Text) == "" {
+		return "需要登录后才能继续处理这张图片。图片无法安全暂存，请完成登录后重新发送图片。"
+	}
+	response, err := s.handler.BeginLoginForRequest(ctx, commands.Input{
+		Text: input.Text, Identity: input.Identity, SuppressLog: true,
+	})
+	if err != nil {
+		s.logf("start resumable agent login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
+		return "登录暂时无法开始，请稍后重试。"
+	}
+	return response.Text
 }
 
 func agentTextResponse(text string) commands.Response {
@@ -872,7 +890,7 @@ func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, run
 					ident.Platform, ident.ConversationType, ident.ConversationID, logoutErr)
 			}
 		}
-		return "登录权限已失效。请发送：登录\n重新登录会申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
+		return "登录权限已失效。\n系统将重新申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
 	}
 	reply := "校园工具暂时不可用，请稍后重试。本次没有执行任何查询或操作。"
 	if runID > 0 {
