@@ -1835,6 +1835,50 @@ func TestOpenMigratesLegacyAgentRunsWithExistingRows(t *testing.T) {
 	}
 }
 
+func TestOpenMigratesNotificationSettingsWithExistingRows(t *testing.T) {
+	path := t.TempDir() + "/bot.db"
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE notification_settings (
+			user_id INTEGER PRIMARY KEY,
+			platform TEXT NOT NULL,
+			external_user_id TEXT NOT NULL,
+			conversation_type TEXT,
+			conversation_id TEXT,
+			classes_enabled numeric NOT NULL,
+			homework_enabled numeric NOT NULL,
+			updated_at datetime
+		);
+		INSERT INTO notification_settings (
+			user_id, platform, external_user_id, conversation_type,
+			conversation_id, classes_enabled, homework_enabled
+		) VALUES (1, 'napcat', '42', 'private', '42', 1, 1);
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var row notificationSettingRow
+	if err := s.db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.ReauthRequired {
+		t.Fatalf("migrated row = %#v", row)
+	}
+}
+
 func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
