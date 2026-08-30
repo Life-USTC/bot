@@ -3532,13 +3532,17 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
+	status := store.InteractionStatusHandled
+	if strings.HasPrefix(reply, "需要登录 Life @ USTC：") {
+		status = store.InteractionStatusWaitingAuth
+	}
 	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
 		RawText: cmd.Raw,
 		Command: cmd.Name,
 		Args:    joinedArgs(cmd.Args),
 		Handled: true,
 		Reply:   interactionReply(cmd, reply),
-		Status:  store.InteractionStatusHandled,
+		Status:  status,
 	}); err != nil {
 		h.logf("record command interaction failed: %v", err)
 	}

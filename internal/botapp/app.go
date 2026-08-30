@@ -148,9 +148,13 @@ func (a *App) finishAgent(ctx context.Context, inbound message.Inbound, reply co
 		a.recordIgnored(ctx, inbound)
 		return
 	}
+	status := store.InteractionStatusHandled
+	if reply.Kind == "login" {
+		status = store.InteractionStatusWaitingAuth
+	}
 	a.record(ctx, inbound, store.Interaction{
 		RawText: inbound.Text, Command: "agent", Handled: true, Reply: reply.Text,
-		Status: store.InteractionStatusHandled,
+		Status: status,
 	}, "agent")
 	a.deliverResponse(ctx, inbound, reply)
 }

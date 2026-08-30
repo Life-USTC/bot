@@ -101,10 +101,11 @@ const (
 	InteractionDirectionInbound  = "inbound"
 	InteractionDirectionOutbound = "outbound"
 
-	InteractionStatusHandled  = "handled"
-	InteractionStatusIgnored  = "ignored"
-	InteractionStatusAccepted = "accepted"
-	InteractionStatusUnknown  = "unknown"
+	InteractionStatusHandled     = "handled"
+	InteractionStatusWaitingAuth = "waiting_auth"
+	InteractionStatusIgnored     = "ignored"
+	InteractionStatusAccepted    = "accepted"
+	InteractionStatusUnknown     = "unknown"
 	// InteractionStatusSent is retained for existing records and callers.
 	InteractionStatusSent   = "sent"
 	InteractionStatusFailed = "failed"

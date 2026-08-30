@@ -37,4 +37,11 @@ func TestCommandAutomaticallyReusesLoginAndSavesOriginalRequest(t *testing.T) {
 	if pending == nil || pending.Text != "订阅 链接" {
 		t.Fatalf("pending = %#v", pending)
 	}
+	recent, err := db.RecentHandledInteractions(context.Background(), ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 0 {
+		t.Fatalf("waiting-auth request leaked into model history: %#v", recent)
+	}
 }

@@ -257,12 +257,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := s.beginLoginForInput(ctx, input)
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
-			return agentTextResponse(reply), true
+			return agentLoginResponse(reply), true
 		}
 		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
 		if isMCPAuthorizationError(err) {
 			if strings.HasPrefix(reply, "登录权限已失效。") {
 				reply = s.beginLoginForInput(ctx, input)
+				finishRun(store.AgentRunStatusCompleted, reply, nil)
+				return agentLoginResponse(reply), true
 			}
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
@@ -510,6 +512,10 @@ func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
 
 func agentTextResponse(text string) commands.Response {
 	return commands.Response{Text: cleanQQReply(text), Kind: "agent"}
+}
+
+func agentLoginResponse(text string) commands.Response {
+	return commands.Response{Text: cleanQQReply(text), Kind: "login"}
 }
 
 func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
