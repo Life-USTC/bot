@@ -208,6 +208,9 @@ func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, resp
 }
 
 func (a *App) deliverResponseChecked(ctx context.Context, inbound message.Inbound, response commands.Response) error {
+	if response.Kind == commands.ResponseKindHostDelivered && response.Text == "" && response.Image == nil && len(response.Parts) == 0 {
+		return nil
+	}
 	parts := response.Parts
 	if len(parts) == 0 {
 		parts = []commands.Response{response}

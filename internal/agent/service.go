@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
@@ -231,11 +232,22 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if traceEnabled {
 		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
 	}
+	var hostResponseDelivered atomic.Bool
+	sendResponse := input.SendResponse
+	if sendResponse != nil {
+		sendResponse = func(ctx context.Context, ident store.Identity, response commands.Response) error {
+			if err := input.SendResponse(ctx, ident, response); err != nil {
+				return err
+			}
+			hostResponseDelivered.Store(true)
+			return nil
+		}
+	}
 	toolSetup, err := observeRunStageValue(ctx, "tool_setup", func() (struct {
 		tools   []tool.BaseTool
 		session *botmcp.Session
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, input.SendResponse)
+		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, sendResponse)
 		return struct {
 			tools   []tool.BaseTool
 			session *botmcp.Session
@@ -468,7 +480,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	if reply == "" {
+	if reply == "" || (hostResponseDelivered.Load() && isHostDeliveryToolResult(reply)) {
+		if hostResponseDelivered.Load() {
+			finishRun(store.AgentRunStatusCompleted, "", nil)
+			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
@@ -488,11 +504,23 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if response.Text == "" && len(response.Parts) == 0 {
+		if hostResponseDelivered.Load() {
+			finishRun(store.AgentRunStatusCompleted, "", nil)
+			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
+}
+
+func isHostDeliveryToolResult(reply string) bool {
+	var result commands.AgentCommandResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(reply)), &result); err != nil {
+		return false
+	}
+	return result.DeliveredByHost
 }
 
 func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {

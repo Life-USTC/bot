@@ -160,6 +160,34 @@ func TestIgnoredInboundIsRecordedOnceWithoutDelivery(t *testing.T) {
 	}
 }
 
+func TestResumedHostDeliveredResponseCompletesWithoutDuplicateDelivery(t *testing.T) {
+	deliverer := &deliverySpy{}
+	recorder := &recorderSpy{}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent: agentFunc(func(ctx context.Context, input agent.Input) (commands.Response, bool) {
+			if err := input.SendResponse(ctx, input.Identity, commands.Response{Text: "private-link", Kind: "subscription"}); err != nil {
+				t.Fatalf("host delivery: %v", err)
+			}
+			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+		}),
+		Delivery: deliverer, Recorder: recorder,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	err = app.ResumePendingRequest(context.Background(), store.PendingRequest{Identity: ident, Text: "给我日历订阅链接"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deliverer.messages) != 1 || deliverer.messages[0].Content.Text != "private-link" {
+		t.Fatalf("deliveries = %#v", deliverer.messages)
+	}
+}
+
 func TestResumePendingRequestWaitsForExecutionAndDelivery(t *testing.T) {
 	dispatcher := &dispatcherSpy{}
 	deliverer := &deliverySpy{}
