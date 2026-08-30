@@ -68,3 +68,13 @@ func TestExecuteForAgentMarksPrivateCalendarLinkForHostDelivery(t *testing.T) {
 		t.Fatal("private calendar link must bypass the model")
 	}
 }
+
+func TestExecuteForAgentKeepsLoginCredentialsOutOfModelResult(t *testing.T) {
+	cmd, ok := (Handler{}).parse("登录")
+	if !ok {
+		t.Fatal("login command did not parse")
+	}
+	if !agentCommandRequiresHostDelivery(cmd, Response{Text: "验证码：SECRET"}) {
+		t.Fatal("login response must bypass the model")
+	}
+}

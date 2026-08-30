@@ -516,8 +516,11 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func()) {
 		mcpgo.NewTool("list_my_homeworks", mcpgo.WithDescription("List my homeworks.")),
 		mcpgo.NewTool("search_courses", mcpgo.WithDescription("Search courses.")),
 		mcpgo.NewTool("get_current_semester", mcpgo.WithDescription("Get current semester.")),
+		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
+		readOnly := tool.Name != "delete_my_homework"
+		tool.Annotations.ReadOnlyHint = &readOnly
 		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			return mcpgo.NewToolResultText(`{"ok":true}`), nil
 		})

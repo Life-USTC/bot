@@ -113,11 +113,10 @@ func (a *App) Process(ctx context.Context, inbound message.Inbound) {
 	a.finishAgent(ctx, inbound, reply, ok)
 }
 
-// ResumePendingRequest replays a claimed text request through the same
-// command-first and dispatcher-backed path used for a live inbound message.
-// Pending requests intentionally have no source message or images, so the
-// resumed request is delivered as a fresh private message to its original
-// conversation.
+// ResumePendingRequest replays a claimed text request synchronously through
+// the same command-first flow used for a live inbound message. It returns only
+// after execution and delivery, so the durable claim is never completed merely
+// because an asynchronous dispatcher accepted the request into memory.
 func (a *App) ResumePendingRequest(ctx context.Context, pending store.PendingRequest) error {
 	if !store.HasConversationIdentity(pending.Identity) {
 		return errors.New("pending request identity is incomplete")
@@ -131,7 +130,7 @@ func (a *App) ResumePendingRequest(ctx context.Context, pending store.PendingReq
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	a.Process(ctx, message.Inbound{
+	inbound := message.Inbound{
 		Actor: message.Actor{Platform: pending.Identity.Platform, UserID: pending.Identity.UserID},
 		Conversation: message.Conversation{
 			Platform: pending.Identity.Platform,
@@ -139,8 +138,27 @@ func (a *App) ResumePendingRequest(ctx context.Context, pending store.PendingReq
 			ID:       pending.Identity.ConversationID,
 		},
 		Text: pending.Text,
-	})
-	return nil
+	}
+	if reply, ok := a.commands.HandleResponse(ctx, commands.Input{
+		Text: inbound.Text, Identity: pending.Identity,
+	}); ok {
+		return a.deliverResponseChecked(ctx, inbound, reply)
+	}
+	if a.agent == nil {
+		return errors.New("agent is unavailable")
+	}
+	reply, ok := a.agent.HandleResponse(ctx, a.agentInput(inbound))
+	if !ok {
+		return errors.New("pending request was not handled")
+	}
+	status := store.InteractionStatusHandled
+	if reply.Kind == "login" {
+		status = store.InteractionStatusWaitingAuth
+	}
+	a.record(ctx, inbound, store.Interaction{
+		RawText: inbound.Text, Command: "agent", Handled: true, Reply: reply.Text, Status: status,
+	}, "agent_resume")
+	return a.deliverResponseChecked(ctx, inbound, reply)
 }
 
 func (a *App) finishAgent(ctx context.Context, inbound message.Inbound, reply commands.Response, ok bool) {
@@ -198,7 +216,7 @@ func (a *App) deliverResponseChecked(ctx context.Context, inbound message.Inboun
 	for _, part := range parts {
 		outcome, attempts := a.deliverResponsePart(ctx, inbound, part, attempt)
 		attempt += attempts
-		if outcome.State != delivery.OutcomeAccepted {
+		if outcome.State != delivery.OutcomeAccepted && outcome.State != delivery.OutcomeUnknown {
 			if outcome.Err != nil {
 				return outcome.Err
 			}

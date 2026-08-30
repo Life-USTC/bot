@@ -89,6 +89,9 @@ func agentCommandRequiresHostDelivery(cmd parsedCommand, response Response) bool
 	if response.Image != nil || len(response.Parts) > 0 {
 		return true
 	}
+	if cmd.Name == "login" {
+		return true
+	}
 	return cmd.Name == "subscription" && firstArgIs(cmd.Args, "link")
 }
 

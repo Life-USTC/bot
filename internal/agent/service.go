@@ -841,7 +841,15 @@ func (s *Service) openMCPTools(ctx context.Context, ident store.Identity, trace 
 		_ = session.Close()
 		return nil, nil, err
 	}
-	einoTools, err := botmcp.ToEinoTools(mcpTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
+	readOnlyTools := mcpTools[:0]
+	for _, mcpTool := range mcpTools {
+		if mcpTool.Annotations.ReadOnlyHint == nil || !*mcpTool.Annotations.ReadOnlyHint {
+			s.logf("MCP mutation tool hidden from agent: name=%s", mcpTool.Name)
+			continue
+		}
+		readOnlyTools = append(readOnlyTools, mcpTool)
+	}
+	einoTools, err := botmcp.ToEinoTools(readOnlyTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
 		result, err := session.Call(ctx, name, args)
 		if trace != nil {
 			trace.Notify(ctx, name, args, result, err)
@@ -1166,7 +1174,7 @@ Course / section subscribe-by-name flow:
 Use execute_bot_command whenever an existing Bot command owns the capability, especially private calendar links, notification settings, Bot settings, and formatted read-only cards. Call the tool yourself; never tell the user to send or paste a Bot command.
 Notification settings: call execute_bot_command with 通知 课表/作业 开/关. Do not tell the user to open the website or send the command themselves.
 Host mutations returned by execute_bot_command are not executed immediately: the host stores one pending action and asks the user to reply ok. Do not claim the change is complete before the real user confirmation result. Never call execute_bot_command with ok; only an inbound user message may confirm.
-For MCP mutation tools without a Bot-command equivalent, describe the exact change and wait for explicit user confirmation before calling the mutation tool.
+Only read-only MCP tools are exposed. If a requested mutation has no Bot-command equivalent, explain that it is not safely available in this chat and record concrete feedback; never improvise a write through GraphQL or another read tool.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
 Personal calendar subscription links are handled only by execute_bot_command with command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
 When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.

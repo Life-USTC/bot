@@ -160,14 +160,18 @@ func TestIgnoredInboundIsRecordedOnceWithoutDelivery(t *testing.T) {
 	}
 }
 
-func TestResumePendingRequestUsesNormalCommandDispatcherPath(t *testing.T) {
+func TestResumePendingRequestWaitsForExecutionAndDelivery(t *testing.T) {
 	dispatcher := &dispatcherSpy{}
 	deliverer := &deliverySpy{}
+	var resumed agent.Input
 	app, err := New(Config{
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
 			return commands.Response{}, false
 		}),
-		Agent:      agentFunc(func(context.Context, agent.Input) (commands.Response, bool) { return commands.Response{}, false }),
+		Agent: agentFunc(func(_ context.Context, input agent.Input) (commands.Response, bool) {
+			resumed = input
+			return commands.Response{Text: "明天没有课。", Kind: "agent"}, true
+		}),
 		Dispatcher: dispatcher,
 		Delivery:   deliverer,
 	})
@@ -181,17 +185,17 @@ func TestResumePendingRequestUsesNormalCommandDispatcherPath(t *testing.T) {
 	if err := app.ResumePendingRequest(context.Background(), pending); err != nil {
 		t.Fatal(err)
 	}
-	if dispatcher.called != 1 {
+	if dispatcher.called != 0 {
 		t.Fatalf("dispatcher calls = %d", dispatcher.called)
 	}
-	if dispatcher.input.Text != pending.Text || dispatcher.input.Identity != pending.Identity {
-		t.Fatalf("dispatched input = %#v", dispatcher.input)
+	if resumed.Text != pending.Text || resumed.Identity != pending.Identity {
+		t.Fatalf("resumed input = %#v", resumed)
 	}
-	if len(dispatcher.input.ImageURLs) != 0 {
-		t.Fatalf("resumed request unexpectedly included images: %#v", dispatcher.input.ImageURLs)
+	if len(resumed.ImageURLs) != 0 {
+		t.Fatalf("resumed request unexpectedly included images: %#v", resumed.ImageURLs)
 	}
-	if len(deliverer.messages) != 0 {
-		t.Fatalf("resumed request bypassed dispatcher: %#v", deliverer.messages)
+	if len(deliverer.messages) != 1 || deliverer.messages[0].Content.Text != "明天没有课。" {
+		t.Fatalf("resumed delivery = %#v", deliverer.messages)
 	}
 }
 
