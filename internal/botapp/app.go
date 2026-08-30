@@ -139,10 +139,23 @@ func (a *App) agentInput(inbound message.Inbound) agent.Input {
 			}
 			return fmt.Errorf("immediate delivery %s", outcome.State)
 		},
+		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
+			if err := a.deliverResponseChecked(ctx, inbound, response); err != nil {
+				return fmt.Errorf("deliver host command response: %w", err)
+			}
+			return nil
+		},
 	}
 }
 
 func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, response commands.Response) {
+	if err := a.deliverResponseChecked(ctx, inbound, response); err != nil {
+		a.logf("immediate reply failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+			inbound.Conversation.Platform, inbound.Conversation.Type, inbound.Conversation.ID, err)
+	}
+}
+
+func (a *App) deliverResponseChecked(ctx context.Context, inbound message.Inbound, response commands.Response) error {
 	parts := response.Parts
 	if len(parts) == 0 {
 		parts = []commands.Response{response}
@@ -152,12 +165,13 @@ func (a *App) deliverResponse(ctx context.Context, inbound message.Inbound, resp
 		outcome, attempts := a.deliverResponsePart(ctx, inbound, part, attempt)
 		attempt += attempts
 		if outcome.State != delivery.OutcomeAccepted {
-			a.logf("immediate reply failed: platform=%s conversation_type=%s conversation_id=%s state=%s code=%s error=%v",
-				inbound.Conversation.Platform, inbound.Conversation.Type, inbound.Conversation.ID,
-				outcome.State, outcome.Code, outcome.Err)
-			return
+			if outcome.Err != nil {
+				return outcome.Err
+			}
+			return fmt.Errorf("delivery state=%s code=%s", outcome.State, outcome.Code)
 		}
 	}
+	return nil
 }
 
 func (a *App) recordIgnored(ctx context.Context, inbound message.Inbound) {

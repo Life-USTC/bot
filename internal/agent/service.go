@@ -65,6 +65,10 @@ type Input struct {
 	ImageURLs  []string
 	Identity   store.Identity
 	SendUpdate func(context.Context, store.Identity, string) error
+	// SendResponse lets a local tool hand an already formatted host response
+	// directly to the application. It is used for images and private values that
+	// must not pass through the model.
+	SendResponse func(context.Context, store.Identity, commands.Response) error
 
 	// FollowUps is set by the dispatcher for an in-flight run. Mid-run user
 	// messages are injected into the current agent state instead of starting a
@@ -231,7 +235,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		tools   []tool.BaseTool
 		session *botmcp.Session
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate)
+		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, input.SendResponse)
 		return struct {
 			tools   []tool.BaseTool
 			session *botmcp.Session
@@ -691,7 +695,17 @@ type resolveImageCommandInput struct {
 	Text string `json:"text" jsonschema_description:"Raw user text to map onto a validated ![](command) image directive"`
 }
 
-func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *toolTraceNotifier, sendUpdate func(context.Context, store.Identity, string) error) ([]tool.BaseTool, *botmcp.Session, error) {
+type hostCommandInput struct {
+	Command string `json:"command" jsonschema_description:"Exactly one Bot command to execute, such as 订阅 链接, 通知 作业 开, 校车 偏好, or AI 工具 开"`
+}
+
+func (s *Service) toolsFor(
+	ctx context.Context,
+	ident store.Identity,
+	trace *toolTraceNotifier,
+	sendUpdate func(context.Context, store.Identity, string) error,
+	sendResponse func(context.Context, store.Identity, commands.Response) error,
+) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
 	var mcpSession *botmcp.Session
@@ -727,6 +741,32 @@ func (s *Service) toolsFor(ctx context.Context, ident store.Identity, trace *too
 			}
 			return nil, nil, err
 		}
+	}
+	tools, err = appendInferredTool(tools, "execute_bot_command", "Execute one existing Bot command on the user's behalf. Never ask the user to copy a command. Read-only commands run immediately. Mutations are stored for confirmation and require a real user reply of ok. Host-delivered images and private links never pass through the model.", trace, func(ctx context.Context, input hostCommandInput) (string, error) {
+		result, err := s.handler.ExecuteForAgent(ctx, commands.Input{Text: input.Command, Identity: ident, SuppressLog: true})
+		if err != nil {
+			return "", err
+		}
+		if result.DeliveredByHost {
+			if sendResponse == nil {
+				return "", errors.New("host response sender is unavailable")
+			}
+			if err := sendResponse(ctx, ident, result.Response); err != nil {
+				return "", err
+			}
+			result.Text = "结果已由宿主安全发送给用户。"
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+	})
+	if err != nil {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "lookup_bot_help", "Look up Bot command help for a topic (校车/课表/待办/作业/考试/日程/…). Use when unsure which ![](command) shape is valid.", trace, func(_ context.Context, input helpLookupInput) (string, error) {
 		return commands.LookupBotHelp(input.Topic), nil
@@ -1094,23 +1134,25 @@ Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
 You can answer questions about prior messages using the chat history provided in this run. If additional user messages appear later in this same run (follow-ups sent while tools were running), treat them as part of the current conversation and answer everything together in a single final reply. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
-For bus planning after a class or event, pass the class/event end time to get_next_bus.after (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
+For bus planning after a class or event, pass the class/event end time to catalog_bus_departure_next.atTime (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
 Course / section subscribe-by-name flow:
-1. Search with search_teachers / search_courses / search_sections using the teacher's name and course title the user gave.
+1. Search with catalog_teacher_search / catalog_course_search / catalog_section_search using the teacher's name and course title the user gave.
 2. Show a short candidate list (teacher, course, section code / JW ID) when matches are ambiguous.
-3. When the user confirms, call the subscribe / bulk_subscribe tool so the host prepares a confirmation command. Do not claim subscription succeeded until the user confirms with ok or the confirmation command.
-Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
-Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
+3. After the user chooses a section, call execute_bot_command with one 订阅 导入 command. The host will ask for confirmation; never ask the user to copy or send that command.
+Use execute_bot_command whenever an existing Bot command owns the capability, especially private calendar links, notification settings, Bot settings, and formatted read-only cards. Call the tool yourself; never tell the user to send or paste a Bot command.
+Notification settings: call execute_bot_command with 通知 课表/作业 开/关. Do not tell the user to open the website or send the command themselves.
+Host mutations returned by execute_bot_command are not executed immediately: the host stores one pending action and asks the user to reply ok. Do not claim the change is complete before the real user confirmation result. Never call execute_bot_command with ok; only an inbound user message may confirm.
+For MCP mutation tools without a Bot-command equivalent, describe the exact change and wait for explicit user confirmation before calling the mutation tool.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
-Personal calendar subscription links are handled only by the host command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. If the user asks for such a link, tell them to send 订阅 链接. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+Personal calendar subscription links are handled only by execute_bot_command with command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
 When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.
-When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
+When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
 ` + imageDirectiveInstruction() + `
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
-When a tool returns login-required text, tell the user to log in with 登录.`
+Authentication is handled by the host. If login is required, the host starts it and resumes the pending request after authorization. Never tell the user to send 登录 or repeat the original request.`
 }
 
 func imageDirectiveInstruction() string {

@@ -317,6 +317,7 @@ func TestAgentToolConstruction(t *testing.T) {
 		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
 	}
 	assertAgentToolNames(t, svc,
+		"execute_bot_command",
 		"get_current_semester",
 		"get_current_time",
 		"list_my_homeworks",
@@ -330,6 +331,7 @@ func TestAgentToolConstruction(t *testing.T) {
 
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
+		"execute_bot_command",
 		"get_current_time",
 		"lookup_bot_help",
 		"resolve_image_command",
@@ -345,6 +347,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
+		"execute_bot_command",
 		"get_current_time",
 		"lookup_bot_help",
 		"record_bot_feedback",
@@ -443,8 +446,9 @@ func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *te
 	currentScopes := strings.Join([]string{
 		"openid", "profile", "email", "offline_access", "account.profile:read", "account.client-activity:read",
 		"workspace.todo:read", "workspace.todo:write", "workspace.homework:read", "workspace.homework:write",
-		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read",
+		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read", "workspace.calendar:read",
 		"community.comment:read", "community.comment:write", "community.description:read", "community.description:write",
+		"community.user:read", "community.section-homework:read", "community.section-homework:write",
 		"workspace.upload:read", "workspace.upload:write", "workspace.overview:read", "workspace.link-pin:read", "workspace.link-pin:write",
 		"catalog.bus:read", "workspace.bus-preferences:read", "workspace.bus-preferences:write",
 		"catalog.course:read", "catalog.section:read", "catalog.teacher:read", "catalog.schedule:read", "workspace.schedule:read",
@@ -469,7 +473,7 @@ func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
 	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +783,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if strings.Contains(instruction, "Current local time is") {
 		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
-	if !strings.Contains(instruction, "one command per QQ message") || !strings.Contains(instruction, "Avoid emojis") {
+	if !strings.Contains(instruction, "prepare and confirm them one at a time") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
