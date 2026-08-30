@@ -113,6 +113,36 @@ func (a *App) Process(ctx context.Context, inbound message.Inbound) {
 	a.finishAgent(ctx, inbound, reply, ok)
 }
 
+// ResumePendingRequest replays a claimed text request through the same
+// command-first and dispatcher-backed path used for a live inbound message.
+// Pending requests intentionally have no source message or images, so the
+// resumed request is delivered as a fresh private message to its original
+// conversation.
+func (a *App) ResumePendingRequest(ctx context.Context, pending store.PendingRequest) error {
+	if !store.HasConversationIdentity(pending.Identity) {
+		return errors.New("pending request identity is incomplete")
+	}
+	if !store.IsPrivateConversation(pending.Identity) {
+		return errors.New("pending request conversation is not private")
+	}
+	if strings.TrimSpace(pending.Text) == "" {
+		return errors.New("pending request text is empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.Process(ctx, message.Inbound{
+		Actor: message.Actor{Platform: pending.Identity.Platform, UserID: pending.Identity.UserID},
+		Conversation: message.Conversation{
+			Platform: pending.Identity.Platform,
+			Type:     pending.Identity.ConversationType,
+			ID:       pending.Identity.ConversationID,
+		},
+		Text: pending.Text,
+	})
+	return nil
+}
+
 func (a *App) finishAgent(ctx context.Context, inbound message.Inbound, reply commands.Response, ok bool) {
 	if !ok {
 		a.recordIgnored(ctx, inbound)

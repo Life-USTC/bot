@@ -245,6 +245,7 @@ func main() {
 		loginPoller := &auth.LoginPoller{
 			Manager: authManager,
 			Logger:  logger,
+			Resume:  app.ResumePendingRequest,
 		}
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")

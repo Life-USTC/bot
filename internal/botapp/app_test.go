@@ -26,6 +26,18 @@ func (fn agentFunc) HandleResponse(ctx context.Context, input agent.Input) (comm
 	return fn(ctx, input)
 }
 
+type dispatcherSpy struct {
+	input    agent.Input
+	callback agent.DispatchCallback
+	called   int
+}
+
+func (s *dispatcherSpy) Submit(input agent.Input, callback agent.DispatchCallback) {
+	s.input = input
+	s.callback = callback
+	s.called++
+}
+
 type deliverySpy struct {
 	messages []message.Outbound
 	outcomes []delivery.Outcome
@@ -145,6 +157,59 @@ func TestIgnoredInboundIsRecordedOnceWithoutDelivery(t *testing.T) {
 	app.Process(context.Background(), privateInbound("qqbot", "u-1", "unknown"))
 	if len(deliverer.messages) != 0 || len(recorder.entries) != 1 || recorder.entries[0].interaction.Status != store.InteractionStatusIgnored {
 		t.Fatalf("deliveries=%d interactions=%#v", len(deliverer.messages), recorder.entries)
+	}
+}
+
+func TestResumePendingRequestUsesNormalCommandDispatcherPath(t *testing.T) {
+	dispatcher := &dispatcherSpy{}
+	deliverer := &deliverySpy{}
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent:      agentFunc(func(context.Context, agent.Input) (commands.Response, bool) { return commands.Response{}, false }),
+		Dispatcher: dispatcher,
+		Delivery:   deliverer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := store.PendingRequest{
+		Identity: store.Identity{Platform: " napcat ", UserID: " 42 ", ConversationType: "private", ConversationID: "42"},
+		Text:     "  查询明天课表  ",
+	}
+	if err := app.ResumePendingRequest(context.Background(), pending); err != nil {
+		t.Fatal(err)
+	}
+	if dispatcher.called != 1 {
+		t.Fatalf("dispatcher calls = %d", dispatcher.called)
+	}
+	if dispatcher.input.Text != pending.Text || dispatcher.input.Identity != pending.Identity {
+		t.Fatalf("dispatched input = %#v", dispatcher.input)
+	}
+	if len(dispatcher.input.ImageURLs) != 0 {
+		t.Fatalf("resumed request unexpectedly included images: %#v", dispatcher.input.ImageURLs)
+	}
+	if len(deliverer.messages) != 0 {
+		t.Fatalf("resumed request bypassed dispatcher: %#v", deliverer.messages)
+	}
+}
+
+func TestResumePendingRequestRejectsNonPrivateOrIncompleteRequests(t *testing.T) {
+	app, err := New(Config{
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) { return commands.Response{}, false }),
+		Delivery: &deliverySpy{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pending := range []store.PendingRequest{
+		{Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "g"}, Text: "查询"},
+		{Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}},
+	} {
+		if err := app.ResumePendingRequest(context.Background(), pending); err == nil {
+			t.Fatalf("invalid pending request accepted: %#v", pending)
+		}
 	}
 }
 
