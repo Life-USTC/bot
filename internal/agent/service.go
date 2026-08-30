@@ -463,6 +463,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
+	if hasCalendarSubscriptionURL(reply) {
+		s.logf("agent reply blocked: id=%d reason=unverified_calendar_url", runID)
+		reply = calendarURLGuardReply
+	}
 	response := s.responseFor(ctx, input, reply)
 	if err := budget.contextError(ctx); err != nil {
 		err = normalizeAgentRunError(ctx, budget, err)
@@ -913,6 +917,9 @@ func sendMessagePart(ctx context.Context, ident store.Identity, send func(contex
 	if strings.TrimSpace(content) == "" {
 		return "", errors.New("message content is required")
 	}
+	if hasCalendarSubscriptionURL(content) {
+		return "", errUnverifiedCalendarURL
+	}
 	if err := send(ctx, ident, content); err != nil {
 		return "", err
 	}
@@ -1095,6 +1102,7 @@ Course / section subscribe-by-name flow:
 Notification settings: use the notification-settings tool (or prepare 通知 课表/作业 开/关). Do not tell the user they must open the website for class/homework reminders.
 Tools that create, update, delete, complete, subscribe, or change notification settings only prepare confirmation commands. Do not claim those changes are done until the user replies ok or sends the confirmation command.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
+Personal calendar subscription links are handled only by the host command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. If the user asks for such a link, tell them to send 订阅 链接. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
 When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.
 When multiple confirmation commands are needed, tell the user to confirm one at a time with ok, or send exactly one command per QQ message. Do not ask the user to paste multiple commands in one message.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.

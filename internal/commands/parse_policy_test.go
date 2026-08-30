@@ -36,31 +36,40 @@ func TestNaturalLanguageFallsThroughToAgent(t *testing.T) {
 func TestFixedPatternsStillParse(t *testing.T) {
 	handler := Handler{}
 	tests := map[string]string{
-		"提醒 课表 开":     "notify",
-		"通知 作业 关":     "notify",
-		"设置 通知 课表 开":  "notify",
-		"反馈 校车时间需要整理": "feedback",
-		"今日课表":        "schedule",
-		"明日课表":        "schedule",
-		"课表 今天":       "schedule",
-		"今天 课表":       "schedule",
-		"待办":          "todo",
-		"td 写报告":      "todo",
-		"作业":          "homework",
-		"作业 done 1":   "homework",
-		"校车":          "bus",
-		"xc 东区 西区":    "bus",
-		"课程 数学分析":     "course",
-		"老师 程艺":       "teacher",
-		"AI 工具 开":     "agent",
-		"帮助":          "help",
-		"/help":       "help",
+		"提醒 课表 开":      "notify",
+		"通知 作业 关":      "notify",
+		"设置 通知 课表 开":   "notify",
+		"反馈 校车时间需要整理":  "feedback",
+		"今日课表":         "schedule",
+		"明日课表":         "schedule",
+		"课表 今天":        "schedule",
+		"今天 课表":        "schedule",
+		"待办":           "todo",
+		"td 写报告":       "todo",
+		"作业":           "homework",
+		"作业 done 1":    "homework",
+		"校车":           "bus",
+		"xc 东区 西区":     "bus",
+		"课程 数学分析":      "course",
+		"老师 程艺":        "teacher",
+		"AI 工具 开":      "agent",
+		"给我26秋课表的订阅链接": "subscription",
+		"请给我日历订阅链接":    "subscription",
+		"帮助":           "help",
+		"/help":        "help",
 	}
 	for text, want := range tests {
 		cmd, ok := handler.parse(text)
 		if !ok || cmd.Name != want {
 			t.Fatalf("%q parsed as %#v ok=%v, want %q", text, cmd, ok, want)
 		}
+	}
+}
+
+func TestNaturalCalendarLinkRequestUsesHostCommand(t *testing.T) {
+	cmd, ok := (Handler{}).parse("给我26秋课表的日历订阅链接")
+	if !ok || cmd.Name != "subscription" || len(cmd.Args) != 1 || cmd.Args[0] != "link" {
+		t.Fatalf("parsed as %#v, ok=%v", cmd, ok)
 	}
 }
 
