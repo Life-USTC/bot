@@ -18,12 +18,12 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
-func parseGroupBus(text string) (Invocation, bool) {
+func parseGroupBusResult(text string) ParseResult {
 	raw := stripCQCodes(text)
 	if raw == "" || !containsBusKeyword(raw) {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
-	return commandResult(raw, "bus", busArgsFromText(raw)), true
+	return acceptedCommandResult(raw, "bus", busArgsFromText(raw))
 }
 
 var naturalBusAmbiguousMarkers = []string{
@@ -31,10 +31,10 @@ var naturalBusAmbiguousMarkers = []string{
 	"查不到", "没查到", "不对", "错误",
 }
 
-func parseNaturalBusIntent(raw string) (Invocation, bool) {
+func parseNaturalBusIntent(raw string) ParseResult {
 	text := stripCQCodes(raw)
 	if text == "" || strings.HasPrefix(text, "/") || !containsBusKeyword(text) || containsAny(strings.ToLower(text), naturalBusAmbiguousMarkers) {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
 	query := false
@@ -46,11 +46,11 @@ func parseNaturalBusIntent(raw string) (Invocation, bool) {
 	}
 	args := busArgsFromText(text)
 	if !query && len(args) == 0 {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
-	invocation := commandResult(raw, "bus", args)
-	invocation.NaturalRoute = "bus"
-	return invocation, true
+	result := acceptedCommandResult(raw, "bus", args)
+	result.Invocation.NaturalRoute = "bus"
+	return result
 }
 
 func containsBusKeyword(text string) bool {

@@ -138,20 +138,37 @@ func settingsTopic(token string) string {
 	}
 }
 
-func acceptedCommand(raw, name string, args []string) (Invocation, bool) {
+func acceptedCommandResult(raw, name string, args []string) ParseResult {
 	if name == "" {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	descriptor, ok := descriptorForID(name)
 	if !ok {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	args = copyArgs(args)
 	if descriptor.Normalize != nil {
 		args = descriptor.Normalize(args)
 	}
+	result := ParseResult{
+		Status: ParseStatusValid,
+		Invocation: Invocation{
+			Capability: descriptor,
+			Name:       string(descriptor.ID),
+			Args:       args,
+			Raw:        raw,
+		},
+	}
 	if !descriptor.Accepts(args) {
+		result.Status = ParseStatusInvalid
+	}
+	return result
+}
+
+func acceptedCommand(raw, name string, args []string) (Invocation, bool) {
+	result := acceptedCommandResult(raw, name, args)
+	if !result.Valid() {
 		return Invocation{}, false
 	}
-	return Invocation{Capability: descriptor, Name: string(descriptor.ID), Args: args, Raw: raw}, true
+	return result.Invocation, true
 }
