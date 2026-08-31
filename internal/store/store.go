@@ -602,6 +602,8 @@ func (s *Store) migrate() error {
 		&outgoingMessageRow{},
 		&pendingConfirmationRow{},
 		&pendingRequestRow{},
+		&conversationJobSequenceRow{},
+		&conversationJobRow{},
 		&publicCommandCacheRow{},
 	); err != nil {
 		return err
