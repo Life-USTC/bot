@@ -600,7 +600,7 @@ type hostCapabilityInput struct {
 
 func hostCapabilityToolDescription() string {
 	var description strings.Builder
-	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. The host resolves argument-specific policy. A state-changing call may return confirmation_required and resumes only after a real user reply. Host-only results are delivered without exposing private values to the model. For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities:\n")
+	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. Every result includes ok and one status: success means the host completed the capability; invalid_input means correct arguments using usage; forbidden means explain the audience restriction; confirmation_required means wait for the real user's confirmation and do not claim it ran; auth_required means the host has sent private login instructions and will resume the pending request, so do not expose, repeat, or request any verification code; not_found means the capability ID is unavailable. Treat ok:false as a failed tool call: correct the request or explain the safe text, and do not announce success. Host-only results are delivered without exposing private values to the model. For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities:\n")
 	for _, descriptor := range commands.CapabilityDescriptors() {
 		fmt.Fprintf(&description, "- %s: %s", descriptor.ID, strings.TrimSpace(descriptor.Help.Summary))
 		if len(descriptor.Help.Examples) > 0 {
@@ -642,14 +642,17 @@ func (s *Service) toolsFor(
 	var err error
 	var mcpSession *botmcp.Session
 	if s.mcpClient != nil && s.auth != nil {
-		var mcpTools []tool.BaseTool
-		mcpTools, mcpSession, err = s.openMCPTools(ctx, ident, trace)
-		if err != nil {
+		mcpTools, session, mcpErr := s.openMCPTools(ctx, ident, trace)
+		if mcpErr != nil {
 			s.logf("MCP tools unavailable: platform=%s conversation_type=%s conversation_id=%s error=%v",
-				ident.Platform, ident.ConversationType, ident.ConversationID, err)
-			return nil, nil, err
+				ident.Platform, ident.ConversationType, ident.ConversationID, mcpErr)
+			if session != nil {
+				_ = session.Close()
+			}
+		} else {
+			mcpSession = session
+			tools = append(tools, mcpTools...)
 		}
-		tools = append(tools, mcpTools...)
 	}
 
 	if s.handler.Store != nil {
