@@ -319,10 +319,13 @@ func TestCoordinatorNaturalCalendarLinkRequestDeliversUsablePrivateURL(t *testin
 		t.Fatalf("outbox records = %#v", records)
 	}
 	reply := records[0].Message.Content.Text
-	for _, want := range []string{calendarURL, "使用方法：复制链接", "通过 URL 添加/订阅日历", "自动更新", "不是 CalDAV 账户地址"} {
+	for _, want := range []string{calendarURL, "使用方法：复制链接", "通过 URL 添加/订阅日历", "iCalendar", "自动更新"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
+	}
+	if strings.Contains(strings.ToLower(reply), "caldav") {
+		t.Fatalf("reply contains obsolete CalDAV wording: %q", reply)
 	}
 }
 

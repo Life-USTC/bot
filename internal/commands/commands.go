@@ -2204,13 +2204,13 @@ func subscriptionHelp() string {
 		"订阅用法：",
 		"订阅：查看当前教学班订阅",
 		"订阅 链接：查看私有日历订阅链接",
-		"链接可在日历应用的“通过 URL 订阅/网络日历”中添加，并自动同步更新",
+		"这是 iCalendar 链接，可在日历应用的“通过 URL 订阅/网络日历”中添加，并自动同步更新",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 	}, "\n")
 }
 
-const calendarSubscriptionHint = "提示：想把已订阅的课表和考试同步到日历应用，可私聊发送“订阅 链接”，再选择“通过 URL 订阅/网络日历”添加；这是 iCalendar 订阅源，不是 CalDAV 账户。"
+const calendarSubscriptionHint = "提示：想把已订阅的课表和考试同步到日历应用，可私聊发送“订阅 链接”获取 iCalendar 链接，再选择“通过 URL 订阅/网络日历”添加。"
 
 func withCalendarSubscriptionHint(reply string) string {
 	reply = strings.TrimSpace(reply)
@@ -2247,9 +2247,8 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 	return strings.Join([]string{
 		"日历订阅链接：",
 		calendarURL,
-		"使用方法：复制链接，在日历应用中选择“通过 URL 添加/订阅日历（网络日历）”，粘贴并保存。",
-		"订阅会自动更新，不需要反复导入。",
-		"如果应用把入口放在 CalDAV/账户设置附近，仍请选择 URL/网络日历订阅，不要添加为 CalDAV 账户；此链接不是 CalDAV 账户地址。",
+		"使用方法：复制链接，在日历应用中选择“通过 URL 添加/订阅日历（iCalendar）”，粘贴并保存。",
+		"iCalendar 订阅会自动更新，不需要反复导入。",
 		"链接包含私密凭证，请勿公开或转发。",
 	}, "\n")
 }
