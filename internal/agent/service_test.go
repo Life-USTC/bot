@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -25,6 +26,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
+	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -686,6 +688,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 		t.Fatalf("currentTimeMessageAt = %q", got)
 	}
 	instruction := currentInstructionAt(now)
+	if !strings.HasPrefix(instruction, "You are Presto,") || strings.Contains(strings.ToLower(instruction), "signal_bot") {
+		t.Fatalf("instruction identity = %q", instruction)
+	}
 	if strings.Contains(instruction, "Current local time is") {
 		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
@@ -707,6 +712,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
+	if !strings.Contains(instruction, "personal iCalendar subscription URL") || !strings.Contains(instruction, "not a CalDAV account") {
+		t.Fatalf("instruction lacks accurate calendar subscription guidance: %q", instruction)
+	}
 	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
 		if strings.Contains(instruction, obsolete) {
 			t.Fatalf("instruction retained obsolete protocol %q: %q", obsolete, instruction)
@@ -714,10 +722,82 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 }
 
+func TestHostCapabilityToolDeliversPrivateCalendarURLWithoutModelExposure(t *testing.T) {
+	ctx := context.Background()
+	calendarURL := "https://life.example/api/calendar-feeds/user-1:private-token.ics"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		_, _ = fmt.Fprintf(w, `{"subscription":{"calendarUrl":%q}}`, calendarURL)
+	}))
+	t.Cleanup(server.Close)
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	authManager := &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db}
+	svc := &Service{handler: commands.Handler{
+		Life: life.NewClient(server.URL, server.Client()), Auth: authManager, Store: db,
+	}, auth: authManager}
+
+	var delivered commands.Response
+	tools, session, err := svc.toolsFor(ctx, ident, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+		delivered = response
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != nil {
+		t.Cleanup(func() { _ = session.Close() })
+	}
+	var hostTool einotool.InvokableTool
+	for _, candidate := range tools {
+		info, infoErr := candidate.Info(ctx)
+		if infoErr != nil {
+			t.Fatal(infoErr)
+		}
+		if info.Name == "invoke_bot_capability" {
+			var ok bool
+			hostTool, ok = candidate.(einotool.InvokableTool)
+			if !ok {
+				t.Fatalf("host capability tool is not invokable: %T", candidate)
+			}
+			break
+		}
+	}
+	if hostTool == nil {
+		t.Fatal("invoke_bot_capability tool is missing")
+	}
+	result, err := hostTool.InvokableRun(ctx, `{"capability":"subscription","arguments":["link"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(delivered.Text, calendarURL) || !strings.Contains(delivered.Text, "通过 URL 添加/订阅日历") {
+		t.Fatalf("delivered response = %#v", delivered)
+	}
+	if strings.Contains(result, calendarURL) || !strings.Contains(result, `"deliveredByHost":true`) {
+		t.Fatalf("model-facing tool result = %q", result)
+	}
+}
+
 func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *testing.T) {
 	description := hostCapabilityToolDescription()
 	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
 		t.Fatalf("description lacks structured subscription call: %q", description)
+	}
+	if !strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "no MCP tool can provide that private URL") {
+		t.Fatalf("description lacks private calendar URL routing rule: %q", description)
 	}
 	if strings.Contains(description, "confirmation=never") || strings.Contains(description, "订阅 链接") {
 		t.Fatalf("description exposes misleading policy or command syntax: %q", description)

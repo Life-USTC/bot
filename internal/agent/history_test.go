@@ -7,6 +7,12 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
+func TestConversationSummaryPromptIdentifiesPresto(t *testing.T) {
+	if !strings.Contains(conversationSummarySystemMessage, "for Presto") || strings.Contains(strings.ToLower(conversationSummarySystemMessage), "signal_bot") {
+		t.Fatalf("summary prompt identity = %q", conversationSummarySystemMessage)
+	}
+}
+
 func TestPruneHistoryNoise(t *testing.T) {
 	in := strings.Join([]string{
 		"工具调用：search_courses {}",

@@ -288,6 +288,9 @@ func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
 		if trimmed == "" {
 			continue
 		}
+		if trimmed == calendarSubscriptionHint {
+			continue
+		}
 		if day, ok := weeklyScheduleGridDay(trimmed, len(days)); ok {
 			days = append(days, day)
 			currentDay = len(days) - 1
