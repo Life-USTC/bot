@@ -502,8 +502,8 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 }
 
 func usageCapabilityHasDetailExample(id CapabilityID) bool {
-	for _, usage := range CapabilityUsages() {
-		for _, example := range append(append([]CapabilityUsageExample{}, usage.Examples...), usage.Shortcuts...) {
+	for _, descriptor := range CapabilityDescriptors() {
+		for _, example := range append(append([]CapabilityUsageExample{}, descriptor.Help.Examples...), descriptor.Help.Shortcuts...) {
 			if example.Capability == id {
 				return true
 			}

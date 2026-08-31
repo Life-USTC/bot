@@ -33,12 +33,20 @@ func TestParseCommandDistinguishesValidInvalidAndUnknown(t *testing.T) {
 }
 
 func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
-	response, ok := (Handler{}).HandleResponse(context.Background(), Input{
-		Text:     "课表 someday",
-		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
-	})
-	if !ok || !strings.Contains(response.Text, "课表 帮助：") {
-		t.Fatalf("response = %#v, ok = %v; want schedule usage", response, ok)
+	for _, input := range []string{
+		"课表 someday",
+		"校车 火星",
+		"校车 周六 nonsense",
+		"课程 查看 not-an-id",
+		"教学班 课表 12345 bad-date 2026-09-30",
+	} {
+		response, ok := (Handler{}).HandleResponse(context.Background(), Input{
+			Text:     input,
+			Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
+		})
+		if !ok || !strings.Contains(response.Text, "帮助：") {
+			t.Fatalf("input = %q response = %#v, ok = %v; want capability usage", input, response, ok)
+		}
 	}
 }
 

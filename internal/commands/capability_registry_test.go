@@ -30,9 +30,17 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 			t.Errorf("%s has incomplete help metadata: %#v", descriptor.ID, descriptor.Help)
 		}
 
-		invocation, ok := ParseInvocation(string(descriptor.ID))
+		invocation, ok := NewInvocation(descriptor.ID, nil)
+		if !ok {
+			for _, example := range descriptor.Help.Examples {
+				if example.Capability == descriptor.ID {
+					invocation, ok = example.Invocation()
+					break
+				}
+			}
+		}
 		if !ok || invocation.Capability == nil || invocation.Capability.ID != descriptor.ID {
-			t.Errorf("canonical form %q parsed as %#v, ok=%v", descriptor.ID, invocation, ok)
+			t.Errorf("capability %q has no valid invocation example: %#v, ok=%v", descriptor.ID, invocation, ok)
 			continue
 		}
 		if got, want := invocation.Policy(), descriptor.PolicyFor(invocation); got != want {

@@ -7,10 +7,10 @@ import "strings"
 // are the normalized form an integration can invoke directly. Keeping both in
 // one value prevents Agent integrations from having to parse help text.
 type CapabilityUsageExample struct {
-	Command     string
-	Description string
-	Capability  CapabilityID
-	Arguments   []string
+	Command     string       `json:"command"`
+	Description string       `json:"description"`
+	Capability  CapabilityID `json:"capability"`
+	Arguments   []string     `json:"arguments"`
 }
 
 // HelpExample is kept as the name used by HelpMetadata while sharing the
@@ -21,14 +21,10 @@ type HelpExample = CapabilityUsageExample
 // command usage. It is derived from CapabilityDescriptor; it is not a second
 // command registry.
 type CapabilityUsage struct {
-	ID        CapabilityID
-	Forms     []string
-	Topic     string
-	Title     string
-	Summary   string
-	Overview  bool
-	Examples  []CapabilityUsageExample
-	Shortcuts []CapabilityUsageExample
+	ID       CapabilityID
+	Group    string
+	Summary  string
+	Examples []CapabilityUsageExample
 }
 
 // Invocation returns the validated structured invocation represented by an
@@ -45,14 +41,10 @@ func (e CapabilityUsageExample) Invocation() (Invocation, bool) {
 // so callers cannot mutate the registry through the returned value.
 func (d CapabilityDescriptor) Usage() CapabilityUsage {
 	return CapabilityUsage{
-		ID:        d.ID,
-		Forms:     append([]string(nil), d.Forms...),
-		Topic:     d.Help.Topic,
-		Title:     d.Help.Title,
-		Summary:   d.Help.Summary,
-		Overview:  d.Help.Overview,
-		Examples:  copyUsageExamples(d.Help.Examples),
-		Shortcuts: copyUsageExamples(d.Help.Shortcuts),
+		ID:       d.ID,
+		Group:    d.Help.Topic,
+		Summary:  d.Help.Summary,
+		Examples: copyUsageExamples(d.Help.Examples),
 	}
 }
 
@@ -75,28 +67,13 @@ func CapabilityUsageFor(id CapabilityID) (CapabilityUsage, bool) {
 	return descriptor.Usage(), true
 }
 
-// CapabilityUsageHint returns the canonical usage hint for an ID. Unknown IDs
-// return an empty string so invalid-input callers can append their own context.
-func CapabilityUsageHint(id CapabilityID) string {
+// CapabilityUsageExamples returns executable suggestions for invalid input.
+func CapabilityUsageExamples(id CapabilityID) []CapabilityUsageExample {
 	usage, ok := CapabilityUsageFor(id)
 	if !ok {
-		return ""
+		return nil
 	}
-	return usage.UsageHint()
-}
-
-// UsageHint is a compact, user-facing hint suitable for invalid-input
-// responses. It is derived from the same examples rendered by help.
-func (u CapabilityUsage) UsageHint() string {
-	for _, example := range u.Examples {
-		if command := strings.TrimSpace(example.Command); command != "" {
-			return "用法：" + command
-		}
-	}
-	if u.Title != "" {
-		return "用法：帮助 " + u.Title
-	}
-	return ""
+	return usage.Examples
 }
 
 func copyUsageExamples(examples []CapabilityUsageExample) []CapabilityUsageExample {

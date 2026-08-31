@@ -642,14 +642,14 @@ func TestBusQueryArgsSupportsServiceDaysAndDates(t *testing.T) {
 			if strings.Join(args, " ") != "太湖路园区 东区" {
 				t.Fatalf("args = %#v", args)
 			}
-			if options.ServiceDay != want.wantDay || !options.ExplicitSchedule || !options.ShowDeparted || options.QueryError != "" {
+			if len(options.Schedules) != 1 || options.Schedules[0].ServiceDay != want.wantDay || !options.ShowDeparted || options.QueryError != "" {
 				t.Fatalf("options = %#v", options)
 			}
 			if want.wantDate == "" {
-				if !options.Now.IsZero() {
-					t.Fatalf("options.Now = %v, want zero", options.Now)
+				if !options.Schedules[0].Date.IsZero() {
+					t.Fatalf("schedule date = %v, want zero", options.Schedules[0].Date)
 				}
-			} else if got := options.Now.Format("2006-01-02"); got != want.wantDate {
+			} else if got := options.Schedules[0].Date.Format("2006-01-02"); got != want.wantDate {
 				t.Fatalf("date = %s, want %s", got, want.wantDate)
 			}
 		})
@@ -660,7 +660,7 @@ func TestBusQueryArgsSupportsWeekendAndRejectsIncompatibleOrInvalidDates(t *test
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
 	for _, args := range [][]string{{"周末"}, {"周六", "周日"}} {
 		_, options := busQueryArgs(args, now)
-		if options.QueryError != "" || options.ServiceDay != "saturday" || len(options.AdditionalSchedules) != 1 || options.AdditionalSchedules[0].ServiceDay != "sunday" {
+		if options.QueryError != "" || len(options.Schedules) != 2 || options.Schedules[0].ServiceDay != "saturday" || options.Schedules[1].ServiceDay != "sunday" {
 			t.Fatalf("args %v options = %#v", args, options)
 		}
 	}

@@ -703,7 +703,7 @@ func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
 	if parsed, err := time.ParseInLocation("2006/1/2", value, loc); err == nil {
 		return parsed, true
 	}
-	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "/", "-", ".", "-").Replace(value)
+	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "号", "", "/", "-", ".", "-").Replace(value)
 	parts := strings.Split(normalized, "-")
 	year := base.Year()
 	if len(parts) == 3 {

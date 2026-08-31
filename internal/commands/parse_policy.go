@@ -81,22 +81,65 @@ func busCommandArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIsHelp(args) {
 		return true
 	}
-	if firstArgIn(args, "偏好", "设置", "已发车", "南区", "全部", "我的路线", "help", "查询") {
-		return true
+	if busPreferenceArgs(args) {
+		return busPreferenceArgsAcceptable(args)
 	}
-	if len(busCampusesFromArgs(args)) > 0 {
-		return true
+	routeArgs, options := busQueryArgs(args, time.Now())
+	if options.QueryError != "" {
+		return false
 	}
+	return busRouteArgsAcceptable(routeArgs)
+}
+
+func busRouteArgsAcceptable(args []string) bool {
 	for _, arg := range args {
-		if _, recognized, _ := parseBusScheduleSelectors(arg, time.Now()); recognized {
-			return true
+		if knownCampusName(arg) {
+			continue
 		}
 		switch normToken(arg) {
-		case "after", "之后", "已发车", "全部", "all", "from", "to", "到", "去", "往":
-			return true
+		case "from", "to", "从", "到", "去", "往":
+			continue
+		default:
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func busPreferenceArgsAcceptable(args []string) bool {
+	args = copyArgs(args)
+	if firstArgIn(args, "preference", "preferences", "pref", "prefs", "偏好", "默认") {
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return true
+	}
+	switch normToken(args[0]) {
+	case "set", "设置":
+		args = args[1:]
+		if _, ok := parseBusShowSouth(args); ok && len(removeBusShowSouthArgs(args)) == 0 {
+			return true
+		}
+		if _, ok := parseBusShowDeparted(args); ok && len(removeBusShowDepartedArgs(args)) == 0 {
+			return true
+		}
+		args = removeBusShowDepartedArgs(args)
+		if len(busCampusesFromArgs(args)) != 2 {
+			return false
+		}
+		for _, arg := range args {
+			if !knownCampusName(arg) {
+				return false
+			}
+		}
+		return true
+	case "show-departed", "departed", "已发车", "已出发":
+		return len(args) == 1 || len(args) == 2 && busBoolArg(args[1])
+	case "南区", "南区校车", "show-south", "south-campus":
+		return len(args) == 2 && busBoolArg(args[1])
+	default:
+		return false
+	}
 }
 
 func subscriptionArgsAcceptable(args []string) bool {
@@ -109,6 +152,28 @@ func subscriptionArgsAcceptable(args []string) bool {
 	default:
 		return len(extractSectionCodes(joinedArgs(args))) > 0
 	}
+}
+
+func positiveIDArgs(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	_, ok := parseIntArg(args[0])
+	return ok
+}
+
+func sectionScheduleArgsAcceptable(args []string) bool {
+	if len(args) != 3 || !positiveIDArgs(args[:1]) {
+		return false
+	}
+	from, fromOK := parseScheduleDateToken(args[1], time.Now())
+	to, toOK := parseScheduleDateToken(args[2], time.Now())
+	return fromOK && toOK && !to.Before(from)
+}
+
+func sectionPagedIDArgsAcceptable(args []string) bool {
+	remaining, _, err := extractListPage(args)
+	return err == nil && positiveIDArgs(remaining)
 }
 
 func examArgsAcceptable(args []string) bool {

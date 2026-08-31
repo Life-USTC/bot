@@ -701,22 +701,19 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "invoke the host bus capability") || !strings.Contains(instruction, `["周六", "周日"]`) || !strings.Contains(instruction, "Never silently substitute today's timetable") || strings.Contains(instruction, "catalog_bus_departure_next.atTime (HH:MM") {
-		t.Fatalf("instruction lacks deterministic bus-date routing: %q", instruction)
+	if !strings.Contains(instruction, "Preserve every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") || !strings.Contains(instruction, "never replace a requested value with a default") {
+		t.Fatalf("instruction lacks universal argument-preservation rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "For course subscription by name") {
-		t.Fatalf("instruction lacks subscribe-by-name flow: %q", instruction)
-	}
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") {
+	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") || !strings.Contains(instruction, "suggestedCalls") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
-	if !strings.Contains(instruction, "personal iCalendar subscription URL") || strings.Contains(strings.ToLower(instruction), "caldav") {
+	if !strings.Contains(strings.ToLower(instruction), "personal icalendar subscription url") || strings.Contains(strings.ToLower(instruction), "caldav") {
 		t.Fatalf("instruction lacks accurate calendar subscription guidance: %q", instruction)
 	}
 	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
@@ -860,6 +857,12 @@ func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *t
 	description := hostCapabilityToolDescription()
 	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
 		t.Fatalf("description lacks structured subscription call: %q", description)
+	}
+	if !strings.Contains(description, `{"capability":"course_by_jw_id","arguments":["12345"]}`) || !strings.Contains(description, `{"capability":"section_schedules","arguments":["12345","2026-09-01","2026-09-30"]}`) {
+		t.Fatalf("description lacks exact structured identifier/date calls: %q", description)
+	}
+	if !strings.Contains(description, `{"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]}`) {
+		t.Fatalf("description lacks exact dated bus call: %q", description)
 	}
 	if !strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "no MCP tool can provide that private URL") {
 		t.Fatalf("description lacks private calendar URL routing rule: %q", description)

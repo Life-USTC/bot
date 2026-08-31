@@ -30,8 +30,13 @@ func TestExecuteCapabilityForAgentReturnsActionableInputStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if invalid.OK || invalid.Status != AgentCommandStatusInvalidInput {
+	if invalid.OK || invalid.Status != AgentCommandStatusInvalidInput || len(invalid.SuggestedCalls) == 0 {
 		t.Fatalf("invalid result = %#v", invalid)
+	}
+	for _, suggestion := range invalid.SuggestedCalls {
+		if suggestion.Capability == "" || suggestion.Arguments == nil {
+			t.Fatalf("unstructured suggestion = %#v", suggestion)
+		}
 	}
 
 	missing, err := (Handler{}).ExecuteCapabilityForAgent(context.Background(), Input{}, CapabilityID("does_not_exist"), nil)

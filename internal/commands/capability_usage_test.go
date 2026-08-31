@@ -8,7 +8,7 @@ import (
 
 func TestCapabilityUsageExamplesAreStructuredAndInvokable(t *testing.T) {
 	for _, usage := range CapabilityUsages() {
-		for _, example := range append(append([]CapabilityUsageExample{}, usage.Examples...), usage.Shortcuts...) {
+		for _, example := range usage.Examples {
 			if example.Capability == "" {
 				t.Errorf("%s example %q has no capability", usage.ID, example.Command)
 			}
@@ -33,11 +33,8 @@ func TestCapabilityUsageIsDerivedFromDescriptor(t *testing.T) {
 		if !ok {
 			t.Fatalf("usage missing for %s", descriptor.ID)
 		}
-		if usage.ID != descriptor.ID || usage.Topic != descriptor.Help.Topic || usage.Title != descriptor.Help.Title || usage.Summary != descriptor.Help.Summary {
+		if usage.ID != descriptor.ID || usage.Summary != descriptor.Help.Summary {
 			t.Errorf("usage for %s diverges from descriptor: %#v", descriptor.ID, usage)
-		}
-		if got := usage.UsageHint(); len(descriptor.Help.Examples) > 0 && got == "" {
-			t.Errorf("usage for %s has examples but no usage hint", descriptor.ID)
 		}
 	}
 }
@@ -47,16 +44,16 @@ func TestPlaceholderUsageExamplesCarryStructuredArguments(t *testing.T) {
 		capability CapabilityID
 		arguments  []string
 	}{
-		"反馈 <你的建议>":                    {CapabilityFeedback, []string{"<你的建议>"}},
-		"课程 搜索 培养层次ID <ID>":            {CapabilityCourseSearch, []string{"education_level_id", "<ID>"}},
-		"课程 搜索 类别ID <ID>":              {CapabilityCourseSearch, []string{"category_id", "<ID>"}},
-		"课程 查看 <JW ID>":                {CapabilityCourseByJWID, []string{"<JW ID>"}},
-		"教学班 查看 <JW ID>":               {CapabilitySectionByJWID, []string{"<JW ID>"}},
-		"老师 查看 <ID>":                   {CapabilityTeacherByID, []string{"<ID>"}},
-		"订阅 删除 <JW ID>":                {CapabilityUnsubscribeSectionByJWID, []string{"<JW ID>"}},
-		"教学班 课表 <JW ID> <开始日期> <结束日期>": {CapabilitySectionSchedules, []string{"<JW ID>", "<开始日期>", "<结束日期>"}},
-		"教学班 考试 <JW ID>":               {CapabilitySectionExams, []string{"<JW ID>"}},
-		"教学班 作业 <JW ID>":               {CapabilitySectionHomeworks, []string{"<JW ID>"}},
+		"反馈 <你的建议>":                    {CapabilityFeedback, []string{"请增加这个功能"}},
+		"课程 搜索 培养层次ID <ID>":            {CapabilityCourseSearch, []string{"education_level_id", "1"}},
+		"课程 搜索 类别ID <ID>":              {CapabilityCourseSearch, []string{"category_id", "1"}},
+		"课程 查看 <JW ID>":                {CapabilityCourseByJWID, []string{"12345"}},
+		"教学班 查看 <JW ID>":               {CapabilitySectionByJWID, []string{"12345"}},
+		"老师 查看 <ID>":                   {CapabilityTeacherByID, []string{"12345"}},
+		"订阅 删除 <JW ID>":                {CapabilityUnsubscribeSectionByJWID, []string{"12345"}},
+		"教学班 课表 <JW ID> <开始日期> <结束日期>": {CapabilitySectionSchedules, []string{"12345", "2026-09-01", "2026-09-30"}},
+		"教学班 考试 <JW ID>":               {CapabilitySectionExams, []string{"12345"}},
+		"教学班 作业 <JW ID>":               {CapabilitySectionHomeworks, []string{"12345"}},
 	}
 	for _, usage := range CapabilityUsages() {
 		for _, example := range usage.Examples {

@@ -19,14 +19,15 @@ const (
 // command. Response is retained for application-layer delivery of images and
 // private values; it is deliberately excluded from model-facing JSON.
 type AgentCommandResult struct {
-	OK                   bool     `json:"ok"`
-	Status               string   `json:"status"`
-	Command              string   `json:"command,omitempty"`
-	Kind                 string   `json:"kind,omitempty"`
-	Text                 string   `json:"text,omitempty"`
-	ConfirmationRequired bool     `json:"confirmationRequired,omitempty"`
-	DeliveredByHost      bool     `json:"deliveredByHost,omitempty"`
-	Response             Response `json:"-"`
+	OK                   bool                     `json:"ok"`
+	Status               string                   `json:"status"`
+	Command              string                   `json:"command,omitempty"`
+	Kind                 string                   `json:"kind,omitempty"`
+	Text                 string                   `json:"text,omitempty"`
+	SuggestedCalls       []CapabilityUsageExample `json:"suggestedCalls,omitempty"`
+	ConfirmationRequired bool                     `json:"confirmationRequired,omitempty"`
+	DeliveredByHost      bool                     `json:"deliveredByHost,omitempty"`
+	Response             Response                 `json:"-"`
 }
 
 // ExecuteCapabilityForAgent executes one validated structured capability.
@@ -44,9 +45,10 @@ func (h Handler) ExecuteCapabilityForAgent(ctx context.Context, input Input, id 
 	invocation, ok := NewInvocation(id, args)
 	if !ok {
 		return AgentCommandResult{
-			Status: AgentCommandStatusInvalidInput,
-			Kind:   string(id),
-			Text:   "能力参数无效。请按工具描述中的 arguments 传参。",
+			Status:         AgentCommandStatusInvalidInput,
+			Kind:           string(id),
+			Text:           "能力参数无效。请使用 suggestedCalls 中的 capability 和 arguments 修正调用。",
+			SuggestedCalls: CapabilityUsageExamples(id),
 		}, nil
 	}
 	return h.executeInvocationForAgent(ctx, input, invocation)
