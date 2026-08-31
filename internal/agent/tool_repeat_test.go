@@ -66,6 +66,15 @@ func TestToolRepeatGuardStopsEquivalentFailingPlanAcrossRounds(t *testing.T) {
 	}
 }
 
+func TestToolResultFailedRecognizesHostCapabilityFailure(t *testing.T) {
+	if !toolResultFailed(`{"ok":false,"status":"invalid_input","text":"参数无效"}`, nil) {
+		t.Fatal("host ok:false result should count as a failed plan")
+	}
+	if toolResultFailed(`{"ok":true,"status":"success"}`, nil) {
+		t.Fatal("host ok:true result should not count as a failed plan")
+	}
+}
+
 func TestToolRepeatGuardAllowsChangedSuccessfulPlan(t *testing.T) {
 	guard := newToolRepeatGuard()
 	endpoint := guard.invokableMiddleware(func(context.Context, *compose.ToolInput) (*compose.ToolOutput, error) {

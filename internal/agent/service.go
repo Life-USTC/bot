@@ -600,29 +600,20 @@ type hostCapabilityInput struct {
 
 func hostCapabilityToolDescription() string {
 	var description strings.Builder
-	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. The host resolves argument-specific policy. A state-changing call may return confirmation_required and resumes only after a real user reply. Host-only results are delivered without exposing private values to the model. For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities:\n")
-	for _, descriptor := range commands.CapabilityDescriptors() {
-		fmt.Fprintf(&description, "- %s: %s", descriptor.ID, strings.TrimSpace(descriptor.Help.Summary))
-		if len(descriptor.Help.Examples) > 0 {
+	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. Every result includes ok and one status: success means the host completed the capability; invalid_input means correct arguments using suggestedCalls; forbidden means explain the audience restriction; confirmation_required means wait for the real user's confirmation and do not claim it ran; auth_required means the host has sent private login instructions and will resume the pending request, so do not expose, repeat, or request any verification code; not_found means the capability ID is unavailable. Treat ok:false as a failed tool call: correct the request or explain the safe text, and do not announce success. Host-only results are delivered without exposing private values to the model. For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities (group, ID, exact calls):\n")
+	for _, usage := range commands.CapabilityUsages() {
+		fmt.Fprintf(&description, "- [%s] %s: %s", usage.Group, usage.ID, strings.TrimSpace(usage.Summary))
+		if len(usage.Examples) > 0 {
 			description.WriteString(" Calls: ")
-			written := 0
-			for _, example := range descriptor.Help.Examples {
-				invocation, ok := commands.ParseInvocation(example.Command)
-				if !ok || invocation.ID() != descriptor.ID {
-					continue
-				}
-				raw, err := json.Marshal(hostCapabilityInput{Capability: string(invocation.ID()), Arguments: invocation.Args})
+			for i, example := range usage.Examples {
+				raw, err := json.Marshal(hostCapabilityInput{Capability: string(example.Capability), Arguments: example.Arguments})
 				if err != nil {
 					continue
 				}
-				if written > 0 {
+				if i > 0 {
 					description.WriteString("; ")
 				}
 				description.Write(raw)
-				written++
-				if written == 3 {
-					break
-				}
 			}
 		}
 		description.WriteByte('\n')
@@ -642,14 +633,17 @@ func (s *Service) toolsFor(
 	var err error
 	var mcpSession *botmcp.Session
 	if s.mcpClient != nil && s.auth != nil {
-		var mcpTools []tool.BaseTool
-		mcpTools, mcpSession, err = s.openMCPTools(ctx, ident, trace)
-		if err != nil {
+		mcpTools, session, mcpErr := s.openMCPTools(ctx, ident, trace)
+		if mcpErr != nil {
 			s.logf("MCP tools unavailable: platform=%s conversation_type=%s conversation_id=%s error=%v",
-				ident.Platform, ident.ConversationType, ident.ConversationID, err)
-			return nil, nil, err
+				ident.Platform, ident.ConversationType, ident.ConversationID, mcpErr)
+			if session != nil {
+				_ = session.Close()
+			}
+		} else {
+			mcpSession = session
+			tools = append(tools, mcpTools...)
 		}
-		tools = append(tools, mcpTools...)
 	}
 
 	if s.handler.Store != nil {
@@ -1057,15 +1051,11 @@ Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
 You can answer questions about prior messages using the chat history provided in this run. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
-For shuttle-bus timetable or departure requests, invoke the host bus capability instead of assembling an answer from multiple MCP bus tools. Preserve the user's temporal wording in the arguments, such as ["周六"], ["周六", "周日"], ["周日", "东区", "西区"], ["2026-09-05", "东区", "西区"], or ["after", "14:30", "东区", "西区"]; the host resolves relative weekdays and dates in Asia/Shanghai. Never silently substitute today's timetable for a requested day, and never claim that bus data was found before the capability returns it.
-The host capability registry is the source of truth for Bot actions. Use invoke_bot_capability with a capability ID and argument array whenever it covers the request. Call it yourself; never ask the user to type, paste, or resend a command.
-Read capabilities run immediately. A state-changing capability may return confirmation_required; when it does, wait for the user's real ok reply and never invoke ok yourself. Do not claim completion before a success result.
-For course subscription by name, use catalog search tools to resolve an unambiguous section first, then invoke the subscription capability with import arguments. Show candidates only when the choice is genuinely ambiguous.
-Only read-only MCP tools are exposed. If a requested mutation has no host capability, explain that it is unavailable and record concrete feedback; never improvise a write through another tool.
-Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
-Personal calendar subscription links are handled only by the subscription capability with the link argument; call it directly for any iCalendar/link request instead of using another tool. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
-When schedule or calendar results would be useful outside QQ, briefly remind the user that “订阅 链接” provides a personal iCalendar subscription URL. Tell them to add it through their calendar app's “subscribe by URL” or equivalent network-calendar entry. Avoid repeating this reminder when the same turn already includes it.
-When a tool result reports failure, use its safe message to correct arguments and retry when possible. Otherwise explain the problem briefly; never repeat raw or internal errors.
+The host capability registry is the source of truth for Bot actions. Use invoke_bot_capability whenever it covers the request, following its structured examples exactly. Preserve every user constraint in arguments, including dates, times, filters, targets, and direction; never replace a requested value with a default. Call tools yourself instead of asking the user to type, paste, or repeat a command.
+Treat the host result as authoritative: only ok:true with status success means completion. For invalid_input, use suggestedCalls to correct an unambiguous call; for confirmation_required, wait for the user's real ok; for auth_required, the host has sent login details and will resume automatically. Never claim completion before success.
+MCP tools are read-only supplements. Prefer a host capability whenever both layers cover the request. If no capability supports a requested mutation, explain that it is unavailable and record concrete feedback; never improvise a write through another tool.
+Personal iCalendar subscription URLs are handled only by the subscription capability with the link argument; call it directly for any calendar-link request instead of using another tool. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run. On failure, use the safe result text or structured suggestions; never repeat raw or internal errors.
 When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.

@@ -495,10 +495,21 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 		} else if _, ok := helpTopicTitles[descriptor.Help.Topic]; !ok {
 			t.Errorf("command %q maps to untitled topic %q", name, descriptor.Help.Topic)
 		}
-		if !detailCovered[name] {
+		if !detailCovered[name] && !usageCapabilityHasDetailExample(descriptor.ID) {
 			t.Errorf("command %q is missing detail help", name)
 		}
 	}
+}
+
+func usageCapabilityHasDetailExample(id CapabilityID) bool {
+	for _, descriptor := range CapabilityDescriptors() {
+		for _, example := range append(append([]CapabilityUsageExample{}, descriptor.Help.Examples...), descriptor.Help.Shortcuts...) {
+			if example.Capability == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestIsHelpToken(t *testing.T) {
@@ -3188,8 +3199,8 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("missing state reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 校车", Identity: ident})
-	if ok {
-		t.Fatalf("unknown notify kind should fall through, reply = %q", reply)
+	if !ok || !strings.Contains(reply, "设置 帮助：") {
+		t.Fatalf("unknown notify kind should return usage, reply = %q, ok = %v", reply, ok)
 	}
 
 	paddedIdent := ident
@@ -3230,8 +3241,8 @@ func TestAgentSettingsCommand(t *testing.T) {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 maybe", Identity: ident})
-	if ok {
-		t.Fatalf("invalid agent args should fall through, reply = %q", reply)
+	if !ok || !strings.Contains(reply, "AI 帮助：") {
+		t.Fatalf("invalid agent args should return usage, reply = %q, ok = %v", reply, ok)
 	}
 	groupIdent := ident
 	groupIdent.ConversationType = "group"

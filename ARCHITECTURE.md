@@ -15,6 +15,25 @@ not import NapCat or QQ Bot implementations.
 5. A platform delivery adapter is selected by an exact platform key and is the
    only component that converts `message.Conversation` into a protocol target.
 
+## Command contract
+
+`internal/commands` owns one capability descriptor registry. Each descriptor
+defines its stable ID, user-facing forms, argument validation, policy,
+executor, result exposure, and help metadata.
+
+- `ParseCommand` has three outcomes: valid capability, invalid arguments, or
+  unknown text. Invalid known commands return usage and never fall through to
+  the LLM.
+- Help and Agent calls share `CapabilityUsageExample`. Its display command and
+  normalized `capability`/`arguments` pair cannot drift independently.
+- Direct commands, natural-language routes, group routes, and Agent calls all
+  pass through the descriptor's normalizer and validator.
+- Agent capability results use one envelope: `ok`, `status`, safe `text`, and
+  optional executable `suggestedCalls`. Authentication and private host-only
+  values are delivered by the Coordinator, not exposed to the model.
+- MCP tools supplement local capabilities. Failure to initialize MCP never
+  removes the host capability tool.
+
 `message.Actor` identifies the user who caused an event. A
 `message.Conversation` is a delivery address. They must not be treated as the
 same identity, especially in groups.

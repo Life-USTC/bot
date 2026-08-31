@@ -110,15 +110,10 @@ type CapabilityPolicy struct {
 	Confirmation ConfirmationPolicy
 }
 
-// HelpExample is a documented command form shown in topic help.
-type HelpExample struct {
-	Command     string
-	Description string
-}
-
-// HelpMetadata is the complete help contract owned by a descriptor. Overview
+// HelpMetadata is the complete usage contract owned by a descriptor. Overview
 // marks one descriptor per visible top-level family; Shortcuts are rendered in
-// the dedicated shortcut topic.
+// the dedicated shortcut topic. Each example also carries its normalized
+// capability and arguments for non-text integrations.
 type HelpMetadata struct {
 	Topic     string
 	Title     string
@@ -381,6 +376,13 @@ func example(command, description string) HelpExample {
 	return HelpExample{Command: command, Description: description}
 }
 
+func exampleFor(capability CapabilityID, command, description string, args ...string) HelpExample {
+	return HelpExample{
+		Command: command, Description: description, Capability: capability,
+		Arguments: append([]string{}, args...),
+	}
+}
+
 var capabilityDescriptors []CapabilityDescriptor
 
 func init() {
@@ -416,7 +418,7 @@ func init() {
 		}, agentSettingsPolicy, helpMeta("advanced", "AI", "管理 AI 工具调用展示", true, []HelpExample{example("AI 工具", "查看当前工具调用提示设置"), example("AI 工具 开", "回答时显示 LLM 工具调用提示"), example("AI 工具 关", "回答时隐藏 LLM 工具调用提示"), example("设置 工具调用", "等同于「AI 工具」"), example("设置 工具调用 开", "等同于「AI 工具 开」"), example("设置 工具调用 关", "等同于「AI 工具 关」")}, nil)),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{Audience: AudienceAny}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
-		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{example("反馈 <你的建议>", "向管理员提交反馈")}, nil)),
+		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),
 		descriptor(CapabilityPing, []string{"ping"}, CapabilityRequirements{Life: true, Audience: AudiencePrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			if err := h.Life.Health(ctx); err != nil {
 				return "Life @ USTC API unavailable: " + err.Error()
@@ -455,40 +457,40 @@ func init() {
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("semester", "学期", "查看当前学期和学期列表", false, []HelpExample{example("学期 列表", "列出最近 20 个学期"), example("学期 列表 10", "指定返回数量")}, nil)),
 		descriptor(CapabilityCourseSearch, []string{"course_search", "课程搜索"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, allowEffect(), ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCoursesWithFilters(ctx, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 搜索 数学分析", "搜索课程"), example("课程 搜索 培养层次ID <ID>", "按培养层次筛选"), example("课程 搜索 类别ID <ID>", "按课程类别筛选"), example("课程 查看 <JW ID>", "按 JW ID 查看详情")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 搜索 数学分析", "搜索课程"), exampleFor(CapabilityCourseSearch, "课程 搜索 培养层次ID <ID>", "按培养层次筛选", "education_level_id", "1"), exampleFor(CapabilityCourseSearch, "课程 搜索 类别ID <ID>", "按课程类别筛选", "category_id", "1"), exampleFor(CapabilityCourseByJWID, "课程 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
 		descriptor(CapabilitySectionSearch, []string{"section_search", "教学班搜索"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchSectionsWithFilters(ctx, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 搜索 高等数学", "搜索教学班"), example("教学班 查看 <JW ID>", "按 JW ID 查看详情")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 搜索 高等数学", "搜索教学班"), exampleFor(CapabilitySectionByJWID, "教学班 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
 		descriptor(CapabilityTeacherSearch, []string{"teacher_search", "老师搜索"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchTeachersWithFilters(ctx, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", false, []HelpExample{example("老师 搜索 张", "搜索老师"), example("老师 查看 <ID>", "按 ID 查看详情")}, nil)),
-		descriptor(CapabilityCourseByJWID, []string{"course_by_jw_id", "课程编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", false, []HelpExample{example("老师 搜索 张", "搜索老师"), exampleFor(CapabilityTeacherByID, "老师 查看 <ID>", "按 ID 查看详情", "12345")}, nil)),
+		descriptor(CapabilityCourseByJWID, []string{"course_by_jw_id", "课程编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.getCourseByJwID(ctx, joinedArgs(args))
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 查看 <JW ID>", "按 JW ID 查看详情")}, nil)),
-		descriptor(CapabilitySectionByJWID, []string{"section_by_jw_id", "教学班编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{exampleFor(CapabilityCourseByJWID, "课程 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
+		descriptor(CapabilitySectionByJWID, []string{"section_by_jw_id", "教学班编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.getSectionByJwID(ctx, joinedArgs(args))
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 查看 <JW ID>", "按 JW ID 查看详情")}, nil)),
-		descriptor(CapabilityTeacherByID, []string{"teacher_by_id", "老师编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionByJWID, "教学班 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
+		descriptor(CapabilityTeacherByID, []string{"teacher_by_id", "老师编号"}, CapabilityRequirements{Life: true, Audience: AudienceGroupReadOnly, PublicCache: true}, EffectRead, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.getTeacherByID(ctx, joinedArgs(args))
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", false, []HelpExample{example("老师 查看 <ID>", "按 ID 查看详情")}, nil)),
-		descriptor(CapabilityBusRoutes, []string{"bus_routes", "校车路线"}, CapabilityRequirements{Life: true, Audience: AudiencePrivate, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", false, []HelpExample{exampleFor(CapabilityTeacherByID, "老师 查看 <ID>", "按 ID 查看详情", "12345")}, nil)),
+		descriptor(CapabilityBusRoutes, []string{"bus_routes", "校车路线"}, CapabilityRequirements{Life: true, Audience: AudienceAny, PublicCache: true}, EffectRead, ExposureModel, busRouteArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.busRoutes(ctx, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudiencePrivate) }, helpMeta("bus", "校车", "查询班次、路线与设置偏好", false, []HelpExample{example("校车 路线", "列出全部校车路线")}, nil)),
-		descriptor(CapabilityUnsubscribeSectionByJWID, []string{"unsubscribe_section_by_jw_id", "退订教学班"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudiencePrivate}, EffectDestructive, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceAny) }, helpMeta("bus", "校车", "查询班次、路线与设置偏好", false, []HelpExample{example("校车 路线", "列出全部校车路线")}, nil)),
+		descriptor(CapabilityUnsubscribeSectionByJWID, []string{"unsubscribe_section_by_jw_id", "退订教学班"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudiencePrivate}, EffectDestructive, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.unsubscribeSectionByJwID(ctx, ident, joinedArgs(args))
-		}, func(inv Invocation) CapabilityPolicy { return privateWritePolicy(inv, EffectDestructive) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{example("订阅 删除 <JW ID>", "按 JW ID 退订教学班")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return privateWritePolicy(inv, EffectDestructive) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{exampleFor(CapabilityUnsubscribeSectionByJWID, "订阅 删除 <JW ID>", "按 JW ID 退订教学班", "12345")}, nil)),
 		descriptor(CapabilityMySubscribedSections, []string{"my_subscribed_sections", "我的订阅"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
 			return h.mySubscribedSections(ctx, ident)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{example("订阅 列表", "查看已订阅教学班")}, nil)),
-		descriptor(CapabilitySectionSchedules, []string{"section_schedules", "教学班课表"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+		descriptor(CapabilitySectionSchedules, []string{"section_schedules", "教学班课表"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, sectionScheduleArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.sectionSchedules(ctx, ident, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 课表 <JW ID> <开始日期> <结束日期>", "查看日期范围内的课表")}, nil)),
-		descriptor(CapabilitySectionExams, []string{"section_exams", "教学班考试"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionSchedules, "教学班 课表 <JW ID> <开始日期> <结束日期>", "查看日期范围内的课表", "12345", "2026-09-01", "2026-09-30")}, nil)),
+		descriptor(CapabilitySectionExams, []string{"section_exams", "教学班考试"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, sectionPagedIDArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.sectionExams(ctx, ident, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 考试 <JW ID>", "查看指定教学班考试，每页 30 条")}, nil)),
-		descriptor(CapabilitySectionHomeworks, []string{"section_homeworks", "教学班作业"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionExams, "教学班 考试 <JW ID>", "查看指定教学班考试，每页 30 条", "12345")}, nil)),
+		descriptor(CapabilitySectionHomeworks, []string{"section_homeworks", "教学班作业"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, sectionPagedIDArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.sectionHomeworks(ctx, ident, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 作业 <JW ID>", "查看指定教学班作业，每页 30 条")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionHomeworks, "教学班 作业 <JW ID>", "查看指定教学班作业，每页 30 条", "12345")}, nil)),
 		descriptor(CapabilityOverview, []string{"overview", "概览"}, CapabilityRequirements{Life: true, OAuth: true, Audience: AudienceGroupReadOnly}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
 			return h.myDashboard(ctx, ident)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 概览", "汇总待办、作业和考试")}, []HelpExample{example("概览", "相当于“日程 概览")})),
@@ -498,6 +500,7 @@ func init() {
 			return h.upcomingDeadlines(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, AudienceGroupReadOnly) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 截止", "查看未来 7 天的截止事项"), example("日程 截止 14", "指定未来天数")}, []HelpExample{example("近期截止 14", "相当于“日程 截止 14")})),
 	}
+	bindCapabilityUsage(capabilityDescriptors)
 }
 
 func init() {
@@ -529,8 +532,8 @@ func CapabilityDescriptors() []CapabilityDescriptor {
 	for i, descriptor := range capabilityDescriptors {
 		result[i] = descriptor
 		result[i].Forms = append([]string(nil), descriptor.Forms...)
-		result[i].Help.Examples = append([]HelpExample(nil), descriptor.Help.Examples...)
-		result[i].Help.Shortcuts = append([]HelpExample(nil), descriptor.Help.Shortcuts...)
+		result[i].Help.Examples = copyUsageExamples(descriptor.Help.Examples)
+		result[i].Help.Shortcuts = copyUsageExamples(descriptor.Help.Shortcuts)
 	}
 	return result
 }
@@ -543,8 +546,8 @@ func CapabilityDescriptorFor(id CapabilityID) (CapabilityDescriptor, bool) {
 		}
 		copy := descriptor
 		copy.Forms = append([]string(nil), descriptor.Forms...)
-		copy.Help.Examples = append([]HelpExample(nil), descriptor.Help.Examples...)
-		copy.Help.Shortcuts = append([]HelpExample(nil), descriptor.Help.Shortcuts...)
+		copy.Help.Examples = copyUsageExamples(descriptor.Help.Examples)
+		copy.Help.Shortcuts = copyUsageExamples(descriptor.Help.Shortcuts)
 		return copy, true
 	}
 	return CapabilityDescriptor{}, false
@@ -586,7 +589,7 @@ func renderHelpWithoutParser(args []string) string {
 	if topic, ok := helpTopicAliases[key]; ok {
 		return formatHelpTopic(topic)
 	}
-	if topic, ok := internalHelpTopics[key]; ok {
+	if topic := capabilityTopic(key); topic != "" {
 		return formatHelpTopic(topic)
 	}
 	if descriptor, ok := descriptorForForm(key); ok {

@@ -39,6 +39,34 @@ type Input struct {
 	BotMentioned bool
 }
 
+// ParseStatus is the outcome of parsing one user message. A recognized
+// command with invalid arguments is deliberately distinct from unknown text:
+// the former must receive a command usage response instead of falling through
+// to the Agent.
+type ParseStatus string
+
+const (
+	ParseStatusUnknown ParseStatus = "unknown"
+	ParseStatusValid   ParseStatus = "recognized_valid"
+	ParseStatusInvalid ParseStatus = "recognized_invalid"
+)
+
+// ParseResult is the normalized command parse contract. Invocation is
+// populated for both valid and invalid recognized commands so callers can use
+// its descriptor to render policy-aware help.
+type ParseResult struct {
+	Status     ParseStatus
+	Invocation Invocation
+}
+
+func (r ParseResult) Valid() bool {
+	return r.Status == ParseStatusValid
+}
+
+func (r ParseResult) Recognized() bool {
+	return r.Status != ParseStatusUnknown
+}
+
 func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 	response, ok := h.HandleResponse(ctx, input)
 	return response.Text, ok
@@ -47,13 +75,14 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
 	startedAt := time.Now()
 	input.Text = stripCQCodes(input.Text)
-	cmd, ok := h.parse(input.Text)
-	if !ok && store.IsGroupConversation(input.Identity) {
-		cmd, ok = parseGroupBus(input.Text)
+	parsed := h.parseResult(input.Text)
+	if parsed.Status == ParseStatusUnknown && store.IsGroupConversation(input.Identity) {
+		parsed = parseGroupBusResult(input.Text)
 	}
-	if !ok {
+	if parsed.Status == ParseStatusUnknown {
 		return Response{}, false
 	}
+	cmd := parsed.Invocation
 	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(cmd) {
 		if !input.BotMentioned {
 			return Response{}, false
@@ -64,6 +93,17 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 			h.recordInteraction(ctx, input.Identity, cmd, reply)
 		}
 		return textResponse(reply), true
+	}
+	if parsed.Status == ParseStatusInvalid {
+		reply := h.help(cmd.Name)
+		if strings.TrimSpace(reply) == "" {
+			reply = "命令参数无效。发送“帮助”查看可用命令。"
+		}
+		if !input.SuppressLog {
+			h.recordState(ctx, input.Identity, cmd)
+			h.recordInteraction(ctx, input.Identity, cmd, reply)
+		}
+		return Response{Text: reply, Kind: cmd.Name}, true
 	}
 	if h.hasAdditionalCommandLine(input.Text) {
 		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
@@ -163,29 +203,37 @@ func (h Handler) groupCommandAllowed(cmd Invocation) bool {
 }
 
 func (h Handler) parse(text string) (Invocation, bool) {
-	raw := strings.TrimSpace(text)
-	if raw == "" {
+	result := h.parseResult(text)
+	if !result.Valid() {
 		return Invocation{}, false
 	}
+	return result.Invocation, true
+}
+
+func (h Handler) parseResult(text string) ParseResult {
+	raw := strings.TrimSpace(text)
+	if raw == "" {
+		return ParseResult{Status: ParseStatusUnknown}
+	}
 	if isNaturalCalendarLinkRequest(raw) {
-		return acceptedCommand(raw, "subscription", []string{"link"})
+		return acceptedCommandResult(raw, "subscription", []string{"link"})
 	}
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	if isHelpToken(fields[0]) {
-		return helpCommand(raw, fields[1:]...), true
+		return acceptedCommandResult(raw, string(CapabilityHelp), fields[1:])
 	}
 
 	if name, args, ok := normalizeHierarchicalCommand(commandToken(fields[0]), fields[1:]); ok {
-		return acceptedCommand(raw, name, args)
+		return acceptedCommandResult(raw, name, args)
 	}
 
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		if name, args, ok := normalizeJoinedCommand(joined, fields[2:]); ok {
-			return acceptedCommand(raw, name, args)
+			return acceptedCommandResult(raw, name, args)
 		}
 	}
 
@@ -193,18 +241,24 @@ func (h Handler) parse(text string) (Invocation, bool) {
 	if name == "" {
 		return parseNaturalReadIntent(raw)
 	}
-	cmd, accepted := acceptedCommand(raw, name, args)
-	if accepted {
-		return cmd, true
+	result := acceptedCommandResult(raw, name, args)
+	if result.Recognized() {
+		return result
 	}
 	return parseNaturalReadIntent(raw)
 }
 
-func parseNaturalReadIntent(raw string) (Invocation, bool) {
-	if invocation, ok := parseNaturalScheduleIntent(raw); ok {
-		return invocation, true
+func parseNaturalReadIntent(raw string) ParseResult {
+	if result := parseNaturalScheduleIntent(raw); result.Recognized() {
+		return result
 	}
 	return parseNaturalBusIntent(raw)
+}
+
+// ParseCommand exposes the same tri-state parser used by Handler execution to
+// integrations that need to persist or inspect a normalized invocation.
+func ParseCommand(text string) ParseResult {
+	return Handler{}.parseResult(text)
 }
 
 // ParseInvocation is the direct command parser used by integrations that need
@@ -240,19 +294,6 @@ func isNaturalCalendarLinkRequest(raw string) bool {
 		}
 	}
 	return compact == "订阅url" || compact == "订阅地址" || compact == "订阅链接" || strings.Contains(compact, "给我订阅url")
-}
-
-func helpCommand(raw string, args ...string) Invocation {
-	descriptor, _ := descriptorForID(string(CapabilityHelp))
-	return Invocation{Capability: descriptor, Name: string(CapabilityHelp), Args: args, Raw: raw}
-}
-
-func commandResult(raw, name string, args []string) Invocation {
-	descriptor, _ := descriptorForID(name)
-	if descriptor != nil && descriptor.Normalize != nil {
-		args = descriptor.Normalize(args)
-	}
-	return Invocation{Capability: descriptor, Name: name, Args: args, Raw: raw}
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
@@ -626,7 +667,7 @@ func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
 	if parsed, err := time.ParseInLocation("2006/1/2", value, loc); err == nil {
 		return parsed, true
 	}
-	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "/", "-", ".", "-").Replace(value)
+	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "号", "", "/", "-", ".", "-").Replace(value)
 	parts := strings.Split(normalized, "-")
 	year := base.Year()
 	if len(parts) == 3 {

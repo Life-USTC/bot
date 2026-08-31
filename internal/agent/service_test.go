@@ -250,7 +250,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	)
 }
 
-func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
+func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -265,18 +265,22 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &Service{
-		enabled:   true,
 		handler:   commands.Handler{Store: db, Auth: &auth.Manager{Store: db}},
 		auth:      &auth.Manager{Store: db},
 		mcpClient: botmcp.New("http://127.0.0.1:1/api/mcp", http.DefaultClient),
 	}
-	reply, ok := svc.Handle(context.Background(), Input{Text: "帮我看看作业", Identity: ident})
-	if !ok || !strings.Contains(reply, "完成后我会自动继续") || strings.Contains(reply, "发送：登录") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	var logs bytes.Buffer
+	svc.logger = log.New(&logs, "", 0)
+	names := agentToolNames(t, svc)
+	if !names["invoke_bot_capability"] {
+		t.Fatalf("host capability tool is missing: %#v", names)
+	}
+	if !strings.Contains(logs.String(), "MCP tools unavailable") {
+		t.Fatalf("MCP failure was not logged: %q", logs.String())
 	}
 }
 
-func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) {
+func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -323,15 +327,12 @@ func TestHandlePromptsReauthorizationWhenMCPResourceIsNotApproved(t *testing.T) 
 		logger:    log.New(&logs, "", 0),
 	}
 
-	reply, ok := svc.Handle(context.Background(), Input{Identity: ident, Text: "查询课表"})
-	if !ok || strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "完成后我会自动继续") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	names := agentToolNames(t, svc)
+	if !names["invoke_bot_capability"] {
+		t.Fatalf("host capability tool is missing: %#v", names)
 	}
 	if !strings.Contains(logs.String(), "MCP tools unavailable") || !strings.Contains(logs.String(), "invalid_target") {
 		t.Fatalf("logs = %q", logs.String())
-	}
-	if !strings.Contains(logs.String(), "status=completed") || strings.Contains(logs.String(), "agent run failed") {
-		t.Fatalf("handled authorization failure should complete without agent failure: %q", logs.String())
 	}
 	credential, err := db.Credential(context.Background(), ident)
 	if err != nil || credential != nil {
@@ -700,22 +701,19 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "invoke the host bus capability") || !strings.Contains(instruction, `["周六", "周日"]`) || !strings.Contains(instruction, "Never silently substitute today's timetable") || strings.Contains(instruction, "catalog_bus_departure_next.atTime (HH:MM") {
-		t.Fatalf("instruction lacks deterministic bus-date routing: %q", instruction)
+	if !strings.Contains(instruction, "Preserve every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") || !strings.Contains(instruction, "never replace a requested value with a default") {
+		t.Fatalf("instruction lacks universal argument-preservation rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "For course subscription by name") {
-		t.Fatalf("instruction lacks subscribe-by-name flow: %q", instruction)
-	}
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") {
+	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") || !strings.Contains(instruction, "suggestedCalls") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
-	if !strings.Contains(instruction, "personal iCalendar subscription URL") || strings.Contains(strings.ToLower(instruction), "caldav") {
+	if !strings.Contains(strings.ToLower(instruction), "personal icalendar subscription url") || strings.Contains(strings.ToLower(instruction), "caldav") {
 		t.Fatalf("instruction lacks accurate calendar subscription guidance: %q", instruction)
 	}
 	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
@@ -789,8 +787,69 @@ func TestHostCapabilityToolDeliversPrivateCalendarURLWithoutModelExposure(t *tes
 	if !strings.Contains(delivered.Text, calendarURL) || !strings.Contains(delivered.Text, "通过 URL 添加/订阅日历") {
 		t.Fatalf("delivered response = %#v", delivered)
 	}
-	if strings.Contains(result, calendarURL) || !strings.Contains(result, `"deliveredByHost":true`) {
+	if strings.Contains(result, calendarURL) || !strings.Contains(result, `"ok":true`) || !strings.Contains(result, `"status":"success"`) || !strings.Contains(result, `"deliveredByHost":true`) {
 		t.Fatalf("model-facing tool result = %q", result)
+	}
+}
+
+func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
+	ctx := context.Background()
+	const userCode = "ABCD-SECRET"
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := db.SaveLoginSession(ctx, ident, store.LoginSession{
+		DeviceCode: "device", UserCode: userCode, VerificationURI: "https://login.example/device",
+		ClientID: "client", ExpiresAt: time.Now().Add(10 * time.Minute), IntervalSeconds: 5, Status: "pending",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	authManager := &auth.Manager{Store: db}
+	svc := &Service{handler: commands.Handler{
+		Life: life.NewClient("http://life.invalid", nil), Auth: authManager, Store: db,
+	}, auth: authManager}
+
+	var delivered commands.Response
+	tools, session, err := svc.toolsFor(ctx, ident, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+		delivered = response
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != nil {
+		t.Cleanup(func() { _ = session.Close() })
+	}
+	var hostTool einotool.InvokableTool
+	for _, candidate := range tools {
+		info, infoErr := candidate.Info(ctx)
+		if infoErr != nil {
+			t.Fatal(infoErr)
+		}
+		if info.Name == "invoke_bot_capability" {
+			var ok bool
+			hostTool, ok = candidate.(einotool.InvokableTool)
+			if !ok {
+				t.Fatalf("host capability tool is not invokable: %T", candidate)
+			}
+			break
+		}
+	}
+	if hostTool == nil {
+		t.Fatal("invoke_bot_capability tool is missing")
+	}
+	result, err := hostTool.InvokableRun(ctx, `{"capability":"schedule","arguments":[]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delivered.Kind != commands.ResponseKindAuthWait || !strings.Contains(delivered.Text, userCode) {
+		t.Fatalf("delivered auth response = %#v", delivered)
+	}
+	if strings.Contains(result, userCode) || strings.Contains(result, "login.example") || !strings.Contains(result, `"ok":false`) || !strings.Contains(result, `"status":"auth_required"`) {
+		t.Fatalf("model-facing auth result = %q", result)
 	}
 }
 
@@ -799,8 +858,22 @@ func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *t
 	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
 		t.Fatalf("description lacks structured subscription call: %q", description)
 	}
+	if !strings.Contains(description, `{"capability":"course_by_jw_id","arguments":["12345"]}`) || !strings.Contains(description, `{"capability":"section_schedules","arguments":["12345","2026-09-01","2026-09-30"]}`) {
+		t.Fatalf("description lacks exact structured identifier/date calls: %q", description)
+	}
+	if !strings.Contains(description, `{"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]}`) {
+		t.Fatalf("description lacks exact dated bus call: %q", description)
+	}
 	if !strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "no MCP tool can provide that private URL") {
 		t.Fatalf("description lacks private calendar URL routing rule: %q", description)
+	}
+	for _, status := range []string{"ok", "success", "invalid_input", "forbidden", "confirmation_required", "auth_required", "not_found", "ok:false"} {
+		if !strings.Contains(description, status) {
+			t.Fatalf("description lacks status guidance %q: %q", status, description)
+		}
+	}
+	if !strings.Contains(description, "never ask the user to type or copy a command") || !strings.Contains(description, "do not expose, repeat, or request any verification code") {
+		t.Fatalf("description lacks host/auth workflow: %q", description)
 	}
 	if strings.Contains(description, "confirmation=never") || strings.Contains(description, "订阅 链接") {
 		t.Fatalf("description exposes misleading policy or command syntax: %q", description)

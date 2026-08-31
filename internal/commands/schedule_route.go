@@ -19,11 +19,11 @@ var ambiguousScheduleMarkers = []string{
 
 // parseNaturalScheduleIntent only accepts a narrow read-only grammar, then
 // delegates target normalization to the canonical schedule command parser.
-func parseNaturalScheduleIntent(raw string) (Invocation, bool) {
+func parseNaturalScheduleIntent(raw string) ParseResult {
 	text := strings.Join(strings.Fields(strings.TrimSpace(raw)), "")
 	text = strings.Trim(text, "，,。！？!?；;")
 	if text == "" || containsAny(text, ambiguousScheduleMarkers) {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	text = trimFirstPrefix(text, naturalSchedulePrefixes)
 	text = strings.TrimPrefix(text, "我")
@@ -37,25 +37,25 @@ func parseNaturalScheduleIntent(raw string) (Invocation, bool) {
 	}
 
 	if strings.Count(text, "课表") != 1 {
-		return Invocation{}, false
+		return ParseResult{Status: ParseStatusUnknown}
 	}
 	text = strings.ReplaceAll(text, "的课表", "课表")
 	return routedScheduleCommand(raw, text)
 }
 
-func routedScheduleCommand(raw, compact string) (Invocation, bool) {
+func routedScheduleCommand(raw, compact string) ParseResult {
 	if compact == "课表" {
-		invocation := commandResult(raw, "schedule", nil)
-		invocation.NaturalRoute = "schedule"
-		return invocation, true
+		result := acceptedCommandResult(raw, "schedule", nil)
+		result.Invocation.NaturalRoute = "schedule"
+		return result
 	}
 	name, args, ok := normalizeJoinedCommand(compact, nil)
-	if !ok || name != "schedule" || !scheduleArgsAcceptable(args) {
-		return Invocation{}, false
+	if !ok || name != "schedule" {
+		return ParseResult{Status: ParseStatusUnknown}
 	}
-	invocation := commandResult(raw, name, args)
-	invocation.NaturalRoute = "schedule"
-	return invocation, true
+	result := acceptedCommandResult(raw, name, args)
+	result.Invocation.NaturalRoute = "schedule"
+	return result
 }
 
 func trimFirstPrefix(value string, prefixes []string) string {
