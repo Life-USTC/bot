@@ -411,7 +411,7 @@ func TestShortcutAndLegacyHelpResolveToCanonicalTopics(t *testing.T) {
 	}
 }
 
-func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
+func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 	overviewCount := map[string]int{}
 	for _, section := range helpOverviewSections() {
 		if strings.TrimSpace(section.title) == "" || len(section.rows) == 0 {
@@ -485,15 +485,18 @@ func TestHelpOverviewAndDetailsCoverEveryCommandSpec(t *testing.T) {
 			t.Errorf("topic %q is missing detail help", topic)
 		}
 	}
-	for _, spec := range CommandSpecs() {
-		topic, ok := internalHelpTopics[spec.Name]
-		if !ok {
-			t.Errorf("command %q is not assigned to a canonical topic", spec.Name)
-		} else if _, ok := helpTopicTitles[topic]; !ok {
-			t.Errorf("command %q maps to untitled topic %q", spec.Name, topic)
+	for _, descriptor := range CapabilityDescriptors() {
+		if descriptor.ID == CapabilityHelp {
+			continue
 		}
-		if !detailCovered[spec.Name] {
-			t.Errorf("command %q is missing detail help", spec.Name)
+		name := string(descriptor.ID)
+		if descriptor.Help.Topic == "" {
+			t.Errorf("command %q is not assigned to a canonical topic", name)
+		} else if _, ok := helpTopicTitles[descriptor.Help.Topic]; !ok {
+			t.Errorf("command %q maps to untitled topic %q", name, descriptor.Help.Topic)
+		}
+		if !detailCovered[name] {
+			t.Errorf("command %q is missing detail help", name)
 		}
 	}
 }
@@ -529,179 +532,6 @@ func TestFriendlyError(t *testing.T) {
 	}
 	if got := commandError("课表查不到：", errors.New("server exploded")); got != "课表查不到：server exploded" {
 		t.Fatalf("commandError = %q", got)
-	}
-}
-
-func TestCommandSpecsAreUsable(t *testing.T) {
-	seen := map[string]bool{}
-	aliases := map[string]string{}
-	handler := Handler{}
-	lifeCommands := map[string]bool{
-		"account":                      true,
-		"todo":                         true,
-		"homework":                     true,
-		"calendar":                     true,
-		"subscription":                 true,
-		"ping":                         true,
-		"status":                       true,
-		"semester":                     true,
-		"course":                       true,
-		"section":                      true,
-		"teacher":                      true,
-		"bus":                          true,
-		"schedule":                     true,
-		"nextclass":                    true,
-		"exam":                         true,
-		"list_semesters":               true,
-		"course_search":                true,
-		"section_search":               true,
-		"teacher_search":               true,
-		"course_by_jw_id":              true,
-		"section_by_jw_id":             true,
-		"teacher_by_id":                true,
-		"bus_routes":                   true,
-		"unsubscribe_section_by_jw_id": true,
-		"my_subscribed_sections":       true,
-		"section_schedules":            true,
-		"section_exams":                true,
-		"section_homeworks":            true,
-		"overview":                     true,
-		"upcoming_deadlines":           true,
-	}
-	storeCommands := map[string]bool{
-		"notify": true,
-		"agent":  true,
-	}
-	authCommands := map[string]bool{
-		"login":                        true,
-		"logout":                       true,
-		"account":                      true,
-		"todo":                         true,
-		"homework":                     true,
-		"calendar":                     true,
-		"subscription":                 true,
-		"schedule":                     true,
-		"nextclass":                    true,
-		"exam":                         true,
-		"unsubscribe_section_by_jw_id": true,
-		"my_subscribed_sections":       true,
-		"section_schedules":            true,
-		"section_exams":                true,
-		"section_homeworks":            true,
-		"overview":                     true,
-		"upcoming_deadlines":           true,
-	}
-	helpCommands := map[string]bool{
-		"login":        true,
-		"todo":         true,
-		"homework":     true,
-		"subscription": true,
-		"notify":       true,
-		"settings":     true,
-		"agent":        true,
-		"bus":          true,
-		"schedule":     true,
-		"feedback":     true,
-	}
-	publicCacheCommands := map[string]bool{
-		"semester":         true,
-		"course":           true,
-		"section":          true,
-		"teacher":          true,
-		"list_semesters":   true,
-		"course_search":    true,
-		"section_search":   true,
-		"teacher_search":   true,
-		"course_by_jw_id":  true,
-		"section_by_jw_id": true,
-		"teacher_by_id":    true,
-		"bus_routes":       true,
-	}
-	for _, spec := range CommandSpecs() {
-		if spec.Name == "" {
-			t.Fatal("command spec has empty name")
-		}
-		if spec.Run == nil {
-			t.Fatalf("command %q has nil Run", spec.Name)
-		}
-		if len(spec.Aliases) == 0 {
-			t.Fatalf("command %q has no aliases", spec.Name)
-		}
-		if seen[spec.Name] {
-			t.Fatalf("duplicate command spec %q", spec.Name)
-		}
-		if spec.NeedsLife != lifeCommands[spec.Name] {
-			t.Fatalf("command %q NeedsLife = %v", spec.Name, spec.NeedsLife)
-		}
-		if spec.NeedsStore != storeCommands[spec.Name] {
-			t.Fatalf("command %q NeedsStore = %v", spec.Name, spec.NeedsStore)
-		}
-		if spec.NeedsAuth != authCommands[spec.Name] {
-			t.Fatalf("command %q NeedsAuth = %v", spec.Name, spec.NeedsAuth)
-		}
-		if spec.HasHelp != helpCommands[spec.Name] {
-			t.Fatalf("command %q HasHelp = %v", spec.Name, spec.HasHelp)
-		}
-		if spec.PublicCache != publicCacheCommands[spec.Name] {
-			t.Fatalf("command %q PublicCache = %v", spec.Name, spec.PublicCache)
-		}
-		seen[spec.Name] = true
-		for _, alias := range spec.Aliases {
-			key := normToken(alias)
-			if owner, ok := aliases[key]; ok {
-				t.Fatalf("alias %q for %q already belongs to %q", alias, spec.Name, owner)
-			}
-			aliases[key] = spec.Name
-			name, _ := normalizeCommand(alias, nil)
-			if key == "日程" || key == "账户" || key == "课程" || key == "教学班" || key == "班级" || key == "老师" || key == "教师" {
-				if name != "help" {
-					t.Fatalf("canonical root %q normalized to %q, want help", alias, name)
-				}
-				continue
-			}
-			if name != spec.Name {
-				t.Fatalf("alias %q normalized to %q, want %q", alias, name, spec.Name)
-			}
-		}
-		if spec.Name == "schedule" {
-			for _, alias := range spec.Aliases {
-				parsed, ok := handler.parse(alias + "今天")
-				if !ok || parsed.Name != "schedule" || strings.Join(parsed.Args, " ") != "today" {
-					t.Fatalf("schedule alias %q attached day parsed as %#v, ok = %v", alias, parsed, ok)
-				}
-			}
-		}
-	}
-	for _, name := range []string{"todo", "homework", "schedule", "notify", "bus", "teacher", "exam"} {
-		if !seen[name] {
-			t.Fatalf("missing command spec %q", name)
-		}
-	}
-}
-
-func TestCommandSpecsReturnsIsolatedSlices(t *testing.T) {
-	specs := CommandSpecs()
-	if len(specs) == 0 {
-		t.Fatal("missing command specs")
-	}
-	aliasIndex := -1
-	for i, spec := range specs {
-		if len(spec.Aliases) > 0 && aliasIndex == -1 {
-			aliasIndex = i
-		}
-	}
-	if aliasIndex == -1 {
-		t.Fatal("missing command spec aliases")
-	}
-
-	aliasName := specs[aliasIndex].Name
-	specs[aliasIndex].Aliases[0] = "mutated"
-
-	handler := Handler{}
-	fresh := CommandSpecs()
-	parsed, ok := handler.parse(fresh[aliasIndex].Aliases[0])
-	if !ok || parsed.Name != aliasName {
-		t.Fatalf("alias command parsed as %q, ok = %v, want %q", parsed.Name, ok, aliasName)
 	}
 }
 
@@ -913,42 +743,6 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
-func TestHandleOKConfirmsPendingCommand(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	var gotBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	_, err := handler.Store.SavePendingConfirmation(ctx, ident, "td 写报告", "agent", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reply, ok := handler.Handle(ctx, Input{Text: "OK", Identity: ident})
-	if !ok {
-		t.Fatal("ok confirmation was not handled")
-	}
-	if gotBody["title"] != "写报告" || !strings.Contains(reply, "已加待办：写报告") {
-		t.Fatalf("body = %#v, reply = %q", gotBody, reply)
-	}
-	pending, err := handler.Store.ActivePendingConfirmation(ctx, ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending != nil {
-		t.Fatalf("pending confirmation still active = %#v", pending)
-	}
-}
-
 func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -1003,6 +797,7 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	var serverURL string
+	deviceRequests := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -1015,6 +810,7 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
 	})
 	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		deviceRequests++
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code":               "device",
 			"user_code":                 "USER-CODE",
@@ -1039,12 +835,19 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
 		Store: s,
 	}
-	reply, ok := handler.Handle(ctx, Input{Text: "登录", Identity: ident})
+	response, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
 	if !ok {
 		t.Fatal("login was not handled")
 	}
-	if !strings.Contains(reply, "系统将自动检查登录状态") {
-		t.Fatalf("reply = %q", reply)
+	if !strings.Contains(response.Text, "系统将自动检查登录状态") || response.Kind != ResponseKindAuthWait {
+		t.Fatalf("response = %#v", response)
+	}
+	retried, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
+	if !ok || retried.Text != response.Text || retried.Kind != ResponseKindAuthWait {
+		t.Fatalf("retried response = %#v, ok = %v", retried, ok)
+	}
+	if deviceRequests != 1 {
+		t.Fatalf("device authorization requests = %d, want 1", deviceRequests)
 	}
 }
 
@@ -1063,6 +866,33 @@ func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
 		if !ok || reply != "暂无进行中的登录。发送：登录" {
 			t.Fatalf("%q reply = %q, ok = %v", text, reply, ok)
 		}
+	}
+}
+
+func TestLoginCompletesWithoutStartingAnotherSessionWhenAlreadyAuthorized(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := Handler{Auth: &auth.Manager{Store: s}}
+	response, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
+	if !ok {
+		t.Fatal("login was not handled")
+	}
+	if response.Text != "已登录 Life @ USTC。" || response.Kind != string(CapabilityLogin) {
+		t.Fatalf("response = %#v", response)
+	}
+	if session, err := s.ActiveLoginSession(ctx, ident); err != nil || session != nil {
+		t.Fatalf("active login session = %#v, err = %v", session, err)
 	}
 }
 
@@ -1136,102 +966,6 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	assertResponseImageRenders(t, response.Image)
 }
 
-func TestHandleImageDirectiveAllowsRenderableReadOnlyCommand(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{
-			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
-			"trips":[
-				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]},
-				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]}
-			]
-		}`))
-	}))
-	defer server.Close()
-	handler := Handler{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		EnableImageResponses: true,
-	}
-	response, ok := handler.HandleImageDirective(context.Background(), Input{
-		Text:     "校车 东区 西区",
-		Identity: testIdentity(),
-	})
-	if !ok || response.Image == nil || response.Kind != "bus" {
-		t.Fatalf("response = %#v, ok = %v", response, ok)
-	}
-}
-
-func TestHandleImageDirectiveRejectsMutatingCommand(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
-	response, ok := handler.HandleImageDirective(context.Background(), Input{
-		Text:     "待办 添加 写报告",
-		Identity: testIdentity(),
-	})
-	if ok || response.Text != "" || response.Image != nil || response.Kind != "" || len(response.Parts) != 0 {
-		t.Fatalf("response = %#v, ok = %v", response, ok)
-	}
-}
-
-func TestDocumentedImageDirectiveFormsAreAllowed(t *testing.T) {
-	handler := Handler{}
-	examples := []string{
-		"校车",
-		"校车 查询 全部",
-		"校车 查询 我的路线",
-		"校车 查询 东区 西区",
-		"校车 查询 东区 西区 之后 14:00 已发车",
-		"课表",
-		"课表 本周",
-		"课表 下周",
-		"课表 第3周",
-		"课表 05.06",
-		"课表 7.20周",
-		"课表 2026-05-06",
-		"课表 2026/5/6",
-		"课表 2026.05.06",
-		"课表 2026年5月6日",
-		"课表 单日 今天",
-		"课表 单日 明天",
-		"今日课表",
-		"明日课表",
-		"今天课表",
-		"明天课表",
-		"课表 下一节",
-		"下一节课",
-		"待办",
-		"待办 列表 全部",
-		"待办 列表 未完成",
-		"待办 列表 已完成",
-		"待办 列表 未完成 优先级 高 截止前 2026-06-10 截止后 2026-06-01 第2页",
-		"作业",
-		"作业 列表 未完成",
-		"作业 列表 全部 学期ID 12 学期JWID 123 第2页",
-		"考试",
-		"考试 第2页",
-		"概览",
-		"日程 概览",
-		"近期截止",
-		"近期截止 14",
-		"日程 截止",
-		"日程 截止 14",
-		"教学班 作业 654",
-		"教学班 作业 654 第2页",
-		"教学班 考试 321",
-		"教学班 考试 321 第2页",
-		"教学班作业 654",
-		"教学班考试 321 第2页",
-	}
-	for _, example := range examples {
-		cmd, ok := handler.parse(example)
-		if !ok {
-			t.Errorf("%q was not parsed", example)
-			continue
-		}
-		if !imageDirectiveCommandAllowed(cmd) {
-			t.Errorf("%q parsed as %#v but is not image-directive safe", example, cmd)
-		}
-	}
-}
-
 func TestSubcommandHelpUsesImage(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
@@ -1284,7 +1018,7 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := "𝟶𝟽-𝟶𝟾 课表：\n𝟷. \t𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷 𝟶𝟿:𝟻𝟶"
 
-	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
+	img := handler.imageResponseFor(Invocation{Name: "schedule"}, text)
 	if img == nil {
 		t.Fatal("image = nil")
 	}
@@ -1305,20 +1039,20 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 func TestImageResponseRejectsFailuresAndEmptyResults(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	tests := []struct {
-		cmd  parsedCommand
+		cmd  Invocation
 		text string
 	}{
-		{cmd: parsedCommand{Name: "schedule"}, text: "学期查不到：server exploded"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "学期周次查不到：timeout"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "该学期缺少起止日期，暂时无法生成整学期课表。"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "2026年春季学期没有查到已关注课程。"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "日期格式不太对。可以发：课表 6.23"},
-		{cmd: parsedCommand{Name: "schedule"}, text: "没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。"},
-		{cmd: parsedCommand{Name: "overview"}, text: "登录权限已失效。请发送：登录"},
-		{cmd: parsedCommand{Name: "homework"}, text: "作业查不到：upstream unavailable"},
-		{cmd: parsedCommand{Name: "homework"}, text: "页码必须是大于 0 的整数。例如：第2页"},
-		{cmd: parsedCommand{Name: "exam"}, text: "考试只有 1 页。发送「考试 第1页」查看最后一页。"},
+		{cmd: Invocation{Name: "schedule"}, text: "学期查不到：server exploded"},
+		{cmd: Invocation{Name: "schedule"}, text: "学期周次查不到：timeout"},
+		{cmd: Invocation{Name: "schedule"}, text: "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。"},
+		{cmd: Invocation{Name: "schedule"}, text: "该学期缺少起止日期，暂时无法生成整学期课表。"},
+		{cmd: Invocation{Name: "schedule"}, text: "2026年春季学期没有查到已关注课程。"},
+		{cmd: Invocation{Name: "schedule"}, text: "日期格式不太对。可以发：课表 6.23"},
+		{cmd: Invocation{Name: "schedule"}, text: "没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。"},
+		{cmd: Invocation{Name: "overview"}, text: "登录权限已失效。请发送：登录"},
+		{cmd: Invocation{Name: "homework"}, text: "作业查不到：upstream unavailable"},
+		{cmd: Invocation{Name: "homework"}, text: "页码必须是大于 0 的整数。例如：第2页"},
+		{cmd: Invocation{Name: "exam"}, text: "考试只有 1 页。发送「考试 第1页」查看最后一页。"},
 	}
 	for _, test := range tests {
 		if image := handler.imageResponseFor(test.cmd, test.text); image != nil {
@@ -1335,7 +1069,7 @@ func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
 		"高新区 GT-B112\t14:00-15:35\tComputer Networks",
 	}, "\n")
 
-	img := handler.imageResponseFor(parsedCommand{Name: "schedule", Args: []string{"today"}}, text)
+	img := handler.imageResponseFor(Invocation{Name: "schedule", Args: []string{"today"}}, text)
 	if img == nil || img.Grid == nil {
 		t.Fatalf("image = %#v", img)
 	}
@@ -1378,7 +1112,7 @@ func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 		"先研院 1A201\t19:30-21:05\tMachine Learning",
 	}, "\n")
 
-	img := handler.imageResponseFor(parsedCommand{Name: "schedule"}, text)
+	img := handler.imageResponseFor(Invocation{Name: "schedule"}, text)
 	if img == nil || img.Grid == nil {
 		t.Fatalf("image = %#v", img)
 	}
@@ -1451,7 +1185,7 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 
 func TestTodoImageUsesTable(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
-	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t截止 07-16 18:00\t写报告\n2.\t\t买咖啡")
+	img := handler.imageResponseFor(Invocation{Name: "todo"}, "待办：\n1.\t截止 07-16 18:00\t写报告\n2.\t\t买咖啡")
 	if img == nil || !strings.Contains(img.RichText, "| # | 截止 | 待办 |") ||
 		!strings.Contains(img.RichText, "| 1 | 07-16 18:00 | 写报告 |") ||
 		!strings.Contains(img.RichText, "| 2 |  | 买咖啡 |") {
@@ -1461,7 +1195,7 @@ func TestTodoImageUsesTable(t *testing.T) {
 
 func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
-	img := handler.imageResponseFor(parsedCommand{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
+	img := handler.imageResponseFor(Invocation{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
 	if img == nil || !strings.Contains(img.RichText, "|  |  | ...and 4 more |") {
 		t.Fatalf("rich text = %q", img.RichText)
 	}
@@ -1470,7 +1204,7 @@ func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 func TestTodoImageKeepsPaginationNoticeInTable(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	img := handler.imageResponseFor(
-		parsedCommand{Name: "todo", Args: []string{"list", "第2页"}},
+		Invocation{Name: "todo", Args: []string{"list", "第2页"}},
 		"待办：\n31.\t\t写报告\n第 2/3 页 · 上一页：待办 列表 第1页 · 下一页：待办 列表 第3页",
 	)
 	if img == nil || !strings.Contains(img.RichText, "| 31 |  | 写报告 |") ||
@@ -1491,7 +1225,7 @@ func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 		"2.\t截止 07-18 23:59\t数学分析\t习题课作业",
 	}, "\n")
 
-	img := handler.imageResponseFor(parsedCommand{Name: "homework"}, text)
+	img := handler.imageResponseFor(Invocation{Name: "homework"}, text)
 	if img == nil || img.Kind != "homework" || img.Title != "作业" {
 		t.Fatalf("image = %#v", img)
 	}
@@ -1505,7 +1239,7 @@ func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 		}
 	}
 
-	for _, cmd := range []parsedCommand{
+	for _, cmd := range []Invocation{
 		{Name: "homework", Args: []string{"done", "1"}},
 		{Name: "homework", Args: []string{"undo", "1"}},
 	} {
@@ -1513,21 +1247,21 @@ func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 			t.Fatalf("non-list image = %#v, want nil", got)
 		}
 	}
-	helpImage := handler.imageResponseFor(parsedCommand{Name: "homework", Args: []string{"help"}}, "作业用法：\n作业：查看作业")
+	helpImage := handler.imageResponseFor(Invocation{Name: "homework", Args: []string{"help"}}, "作业用法：\n作业：查看作业")
 	if helpImage == nil || helpImage.Kind != "help" {
 		t.Fatalf("help image = %#v", helpImage)
 	}
 	for _, reply := range []string{"没有未完成作业。", "作业查不到：server exploded"} {
-		if got := handler.imageResponseFor(parsedCommand{Name: "homework"}, reply); got != nil {
+		if got := handler.imageResponseFor(Invocation{Name: "homework"}, reply); got != nil {
 			t.Fatalf("empty/error image = %#v, want nil", got)
 		}
 	}
-	sectionImage := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, "作业：\n1.\t截止 07-18 23:59\t\tProblem Set 1")
+	sectionImage := handler.imageResponseFor(Invocation{Name: "section_homeworks"}, "作业：\n1.\t截止 07-18 23:59\t\tProblem Set 1")
 	if sectionImage == nil || !strings.Contains(sectionImage.RichText, "| 1 | 07-18 23:59 |  | Problem Set 1 |") {
 		t.Fatalf("section homework image = %#v", sectionImage)
 	}
 	for _, reply := range []string{"需要提供教学班 JW ID。", "该教学班没有作业。"} {
-		if got := handler.imageResponseFor(parsedCommand{Name: "section_homeworks"}, reply); got != nil {
+		if got := handler.imageResponseFor(Invocation{Name: "section_homeworks"}, reply); got != nil {
 			t.Fatalf("section empty/error image = %#v, want nil", got)
 		}
 	}
@@ -1538,7 +1272,7 @@ func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
 	text := "考试：\n1.\t07-20\t14:30-16:30\t数学分析\tMATH1001.01\t闭卷\t3A101"
 
 	for _, name := range []string{"exam", "section_exams"} {
-		img := handler.imageResponseFor(parsedCommand{Name: name}, text)
+		img := handler.imageResponseFor(Invocation{Name: name}, text)
 		if img == nil || img.Kind != "exam" || img.Title != "考试" {
 			t.Fatalf("%s image = %#v", name, img)
 		}
@@ -1550,12 +1284,12 @@ func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
 	}
 
 	for _, reply := range []string{"没有订阅课程考试。", "该教学班没有考试。", "考试查不到：server exploded"} {
-		if got := handler.imageResponseFor(parsedCommand{Name: "exam"}, reply); got != nil {
+		if got := handler.imageResponseFor(Invocation{Name: "exam"}, reply); got != nil {
 			t.Fatalf("empty/error image = %#v, want nil", got)
 		}
 	}
 	for _, reply := range []string{"需要提供教学班 JW ID。", "教学班查不到：server exploded"} {
-		if got := handler.imageResponseFor(parsedCommand{Name: "section_exams"}, reply); got != nil {
+		if got := handler.imageResponseFor(Invocation{Name: "section_exams"}, reply); got != nil {
 			t.Fatalf("section error image = %#v, want nil", got)
 		}
 	}
@@ -1565,7 +1299,7 @@ func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := "下一节课：\n西区 3A204\t09:50-11:25\t数据库系统"
 
-	img := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, text)
+	img := handler.imageResponseFor(Invocation{Name: "nextclass"}, text)
 	if img == nil || img.Kind != "nextclass" || img.Title != "下一节课" {
 		t.Fatalf("image = %#v", img)
 	}
@@ -1576,7 +1310,7 @@ func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
 	assertResponseImageRenders(t, img)
 
 	for _, reply := range []string{"接下来一周没查到课。", "下一节课查不到：server exploded"} {
-		if got := handler.imageResponseFor(parsedCommand{Name: "nextclass"}, reply); got != nil {
+		if got := handler.imageResponseFor(Invocation{Name: "nextclass"}, reply); got != nil {
 			t.Fatalf("empty/error image = %#v, want nil", got)
 		}
 	}
@@ -1603,7 +1337,7 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		"09:20  09:35",
 	}, "\n")
 
-	img := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区", "西区"}}, text)
+	img := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text)
 	if img == nil {
 		t.Fatal("image = nil, want bus image")
 	}
@@ -1621,18 +1355,18 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 	}
 
 	for name, tc := range map[string]struct {
-		cmd  parsedCommand
+		cmd  Invocation
 		text string
 	}{
-		"preference": {cmd: parsedCommand{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
-		"no service": {cmd: parsedCommand{Name: "bus"}, text: "今天后面没查到校车。"},
-		"error":      {cmd: parsedCommand{Name: "bus"}, text: "校车查不到：server exploded"},
+		"preference": {cmd: Invocation{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
+		"no service": {cmd: Invocation{Name: "bus"}, text: "今天后面没查到校车。"},
+		"error":      {cmd: Invocation{Name: "bus"}, text: "校车查不到：server exploded"},
 	} {
 		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
 			t.Fatalf("%s image = %#v, want nil", name, got)
 		}
 	}
-	helpImage := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"help"}}, busHelp())
+	helpImage := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"help"}}, busHelp())
 	if helpImage == nil || helpImage.Kind != "help" {
 		t.Fatalf("help image = %#v", helpImage)
 	}
@@ -1645,7 +1379,7 @@ func TestBusImagePreservesEmptyIntermediateStopCells(t *testing.T) {
 		"06:50\t07:00\t　　\t07:40",
 	}, "\n")
 
-	img := handler.imageResponseFor(parsedCommand{Name: "bus"}, text)
+	img := handler.imageResponseFor(Invocation{Name: "bus"}, text)
 	if img == nil || !strings.Contains(img.RichText, "| 06:50 | 07:00 |  | 07:40 |") {
 		t.Fatalf("rich text = %q", img.RichText)
 	}
@@ -1658,12 +1392,12 @@ func TestBusImageEmphasizesOnlyBothQueriedEndpoints(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := "东区\t西区\t先研院\t高新区\n06:50\t07:00\t07:20\t07:40"
 
-	queried := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区", "西区"}}, text)
+	queried := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text)
 	if queried == nil || !strings.Contains(queried.RichText, "| **东区** | **西区** | 先研院 | 高新区 |") {
 		t.Fatalf("queried rich text = %q", queried.RichText)
 	}
 
-	oneEndpoint := handler.imageResponseFor(parsedCommand{Name: "bus", Args: []string{"东区"}}, text)
+	oneEndpoint := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区"}}, text)
 	if oneEndpoint == nil || strings.Contains(oneEndpoint.RichText, "**") {
 		t.Fatalf("one-endpoint rich text = %q", oneEndpoint.RichText)
 	}
@@ -1808,7 +1542,7 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "代办 完成 1,2,3,4", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "待办 完成 1,2,3,4", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
@@ -1996,7 +1730,7 @@ func TestHandleFeedbackWorksInGroup(t *testing.T) {
 			return botfeedback.Result{ID: 1, AdminIntents: 1}, nil
 		}),
 	}
-	reply, ok := handler.Handle(ctx, Input{Text: "fb 群里也可以反馈", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "反馈 群里也可以反馈", Identity: ident})
 	if !ok || reply != "已收到反馈，会转给维护者。" || !called {
 		t.Fatalf("reply = %q, ok = %v, called = %v", reply, ok, called)
 	}
@@ -3693,38 +3427,6 @@ func TestFilterSchedulesForDayDropsAdjacentDates(t *testing.T) {
 	}
 }
 
-func TestNormalizeCommandAliases(t *testing.T) {
-	tests := map[string]string{
-		"待办": "todo",
-		"代办": "todo",
-		"td": "todo",
-		"校车": "bus",
-		"xc": "bus",
-		"日程": "help",
-		"rc": "calendar",
-		"kb": "schedule",
-		"老师": "help",
-		"js": "teacher",
-		"考试": "exam",
-		"ks": "exam",
-		"状态": "status",
-		"zt": "status",
-		"设置": "settings",
-		"反馈": "feedback",
-		"fb": "feedback",
-	}
-	handler := Handler{}
-	for text, want := range tests {
-		cmd, ok := handler.parse(text)
-		if !ok {
-			t.Fatalf("%q was not parsed", text)
-		}
-		if cmd.Name != want {
-			t.Fatalf("%q parsed as %q, want %q", text, cmd.Name, want)
-		}
-	}
-}
-
 func TestCanonicalCommandHierarchy(t *testing.T) {
 	handler := Handler{}
 	tests := []struct {
@@ -3787,33 +3489,6 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		cmd, ok := handler.parse(tt.text)
 		if !ok || cmd.Name != tt.name || joinedArgs(cmd.Args) != tt.args {
 			t.Errorf("%q parsed as %#v, ok = %v; want name=%q args=%q", tt.text, cmd, ok, tt.name, tt.args)
-		}
-	}
-}
-
-func TestLegacyCommandsRemainCompatibleWithCanonicalHierarchy(t *testing.T) {
-	handler := Handler{}
-	tests := []struct {
-		text string
-		name string
-	}{
-		{text: "课程搜索 keyword 数学分析", name: "course_search"},
-		{text: "课程编号 123", name: "course_by_jw_id"},
-		{text: "教学班搜索 keyword 高等数学", name: "section_search"},
-		{text: "教学班课表 123 2026-07-01 2026-07-07", name: "section_schedules"},
-		{text: "老师搜索 keyword 张", name: "teacher_search"},
-		{text: "学期列表 10", name: "list_semesters"},
-		{text: "我的订阅", name: "my_subscribed_sections"},
-		{text: "退订教学班 999", name: "unsubscribe_section_by_jw_id"},
-		{text: "校车路线 从 东区 到 西区", name: "bus_routes"},
-		{text: "通知 课表 开", name: "notify"},
-		{text: "AI 工具 开", name: "agent"},
-		{text: "待办 写报告", name: "todo"},
-	}
-	for _, tt := range tests {
-		cmd, ok := handler.parse(tt.text)
-		if !ok || cmd.Name != tt.name {
-			t.Errorf("%q parsed as %#v, ok = %v; want %q", tt.text, cmd, ok, tt.name)
 		}
 	}
 }
@@ -3914,54 +3589,6 @@ func TestNormalizeScheduleArgsSupportsSemesterTargets(t *testing.T) {
 	}
 }
 
-func TestNormalizeSubscriptionImportAliases(t *testing.T) {
-	handler := Handler{}
-	for _, text := range []string{
-		"订阅 导入 CONT5103P.01",
-		"订阅 批量 CONT5103P.01",
-		"订阅 添加 CONT5103P.01",
-		"订阅 新增 CONT5103P.01",
-		"订阅 + CONT5103P.01",
-		"sub add CONT5103P.01",
-	} {
-		cmd, ok := handler.parse(text)
-		if !ok {
-			t.Fatalf("%q was not parsed", text)
-		}
-		if cmd.Name != "subscription" || strings.Join(cmd.Args, " ") != "import CONT5103P.01" {
-			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
-		}
-	}
-}
-
-func TestNormalizeTodoActionAliases(t *testing.T) {
-	tests := map[string][]string{
-		"td + 买咖啡":         {"add", "买咖啡"},
-		"待办 添加 写报告":        {"add", "写报告"},
-		"代办 新增 写报告":        {"add", "写报告"},
-		"todo create task": {"add", "task"},
-		"td 完成 1":          {"done", "1"},
-		"待办 好了 1":          {"done", "1"},
-		"todo finish 1":    {"done", "1"},
-		"td x 1":           {"done", "1"},
-		"td 撤销 1":          {"undo", "1"},
-		"td 删除 1":          {"delete", "1"},
-		"td 修改 1 title x":  {"update", "1", "title", "x"},
-		"td 全部":            {"all"},
-		"td 已完成":           {"completed"},
-	}
-	handler := Handler{}
-	for text, wantArgs := range tests {
-		cmd, ok := handler.parse(text)
-		if !ok {
-			t.Fatalf("%q was not parsed", text)
-		}
-		if cmd.Name != "todo" || strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
-			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
-		}
-	}
-}
-
 func TestParseSlashCommandAliases(t *testing.T) {
 	tests := map[string]struct {
 		name string
@@ -4014,49 +3641,6 @@ func TestNormalizeHomeworkActionAliases(t *testing.T) {
 		}
 		if cmd.Name != "homework" || strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
 			t.Fatalf("%q parsed as name=%q args=%#v", text, cmd.Name, cmd.Args)
-		}
-	}
-}
-
-func TestNormalizeScheduleTypos(t *testing.T) {
-	tests := map[string][]string{
-		"课标":                {},
-		"today kb":          {"today"},
-		"todaykb":           {"today"},
-		"kb today":          {"today"},
-		"今天 课表":             {"today"},
-		"今天课标":              {"today"},
-		"今日课表":              {"today"},
-		"今日课标":              {"today"},
-		"单日课表":              {"today"},
-		"单日 课表":             {"today"},
-		"课表今天":              {"today"},
-		"kb今天":              {"today"},
-		"tomorrow schedule": {"tomorrow"},
-		"tomorrowsched":     {"tomorrow"},
-		"sched tomorrow":    {"tomorrow"},
-		"明天 课表":             {"tomorrow"},
-		"明天课标":              {"tomorrow"},
-		"明日课标":              {"tomorrow"},
-		"课表明天":              {"tomorrow"},
-		"明日kb":              {"tomorrow"},
-		"课表 6.23":           {"week-date:6.23"},
-		"课表 05.06":          {"week-date:05.06"},
-		"课表 2022.05.03":     {"week-date:2022.05.03"},
-		"6.23 课表":           {"week-date:6.23"},
-		"课表6月23日":           {"week-date:6月23日"},
-	}
-	handler := Handler{}
-	for text, wantArgs := range tests {
-		cmd, ok := handler.parse(text)
-		if !ok {
-			t.Fatalf("%q was not parsed", text)
-		}
-		if cmd.Name != "schedule" {
-			t.Fatalf("%q parsed as %q, want schedule", text, cmd.Name)
-		}
-		if strings.Join(cmd.Args, " ") != strings.Join(wantArgs, " ") {
-			t.Fatalf("%q args = %#v, want %#v", text, cmd.Args, wantArgs)
 		}
 	}
 }
@@ -4189,7 +3773,7 @@ func TestRecordInteractionUsesJoinedArgs(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	handler := Handler{Store: s}
-	handler.recordInteraction(ctx, ident, parsedCommand{
+	handler.recordInteraction(ctx, ident, Invocation{
 		Name: "todo",
 		Args: []string{" done ", " 1 "},
 		Raw:  "td done 1",
@@ -4568,7 +4152,7 @@ func TestFormatDashboardUsesTotalsAndPointsToFullLists(t *testing.T) {
 			t.Fatalf("reply missing %q: %q", want, plain)
 		}
 	}
-	image := (Handler{EnableImageResponses: true}).imageResponseFor(parsedCommand{Name: "overview"}, reply)
+	image := (Handler{EnableImageResponses: true}).imageResponseFor(Invocation{Name: "overview"}, reply)
 	if image == nil || !strings.Contains(textutil.PlainMonospace(image.RichText), "|  |  | 另有 12 条") {
 		t.Fatalf("overview image = %#v", image)
 	}

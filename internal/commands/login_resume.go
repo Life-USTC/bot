@@ -8,24 +8,14 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-// BeginLoginForRequest persists the original text before starting (or reusing)
-// device login. The login poller replays that text through BotApp after the
-// credential is committed.
+// BeginLoginForRequest starts or reuses device login for the current durable
+// conversation job. The coordinator owns the original request and moves that
+// same job to waiting_auth after this response is persisted.
 func (h Handler) BeginLoginForRequest(ctx context.Context, input Input) (Response, error) {
 	if h.Auth == nil || h.Auth.Store == nil {
 		return Response{}, errors.New("login is unavailable")
 	}
-	text := strings.TrimSpace(input.Text)
-	if text == "" {
-		return Response{}, errors.New("pending login request is empty")
-	}
-	stateStore := h.Store
-	if stateStore == nil {
-		stateStore = h.Auth.Store
-	}
-	if _, err := stateStore.SavePendingRequest(ctx, input.Identity, text, store.PendingRequestTTL); err != nil {
-		return Response{}, err
-	}
+	stateStore := h.Auth.Store
 	session, err := stateStore.ActiveLoginSession(ctx, input.Identity)
 	if err != nil {
 		return Response{}, err
@@ -39,7 +29,7 @@ func (h Handler) BeginLoginForRequest(ctx context.Context, input Input) (Respons
 			return Response{}, err
 		}
 	}
-	return Response{Text: loginResumeInstructions(*session), Kind: "login"}, nil
+	return Response{Text: loginResumeInstructions(*session), Kind: ResponseKindAuthWait}, nil
 }
 
 func loginResumeInstructions(session store.LoginSession) string {

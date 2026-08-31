@@ -11,7 +11,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestCommandAutomaticallyReusesLoginAndSavesOriginalRequest(t *testing.T) {
+func TestCommandAutomaticallyReusesLoginWithoutOwningRequestState(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -26,16 +26,9 @@ func TestCommandAutomaticallyReusesLoginAndSavesOriginalRequest(t *testing.T) {
 	}
 	handler := Handler{Life: &life.Client{}, Auth: &auth.Manager{Store: db}, Store: db}
 
-	reply, ok := handler.Handle(context.Background(), Input{Text: "订阅 链接", Identity: ident})
-	if !ok || !strings.Contains(reply, "完成后我会自动继续") || strings.Contains(reply, "发送：登录") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	pending, err := db.ActivePendingRequest(context.Background(), ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending == nil || pending.Text != "订阅 链接" {
-		t.Fatalf("pending = %#v", pending)
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "订阅 链接", Identity: ident})
+	if !ok || response.Kind != ResponseKindAuthWait || !strings.Contains(response.Text, "完成后我会自动继续") || strings.Contains(response.Text, "发送：登录") {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
 	recent, err := db.RecentHandledInteractions(context.Background(), ident, 10)
 	if err != nil {

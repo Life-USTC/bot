@@ -33,11 +33,11 @@ func TestHasCalendarSubscriptionURL(t *testing.T) {
 	}
 }
 
-func TestCalendarSubscriptionPromptUsesHostCommand(t *testing.T) {
+func TestCalendarSubscriptionPromptUsesHostCapability(t *testing.T) {
 	instruction := currentInstructionAt(time.Now())
 	for _, expected := range []string{
-		"handled only by execute_bot_command with command 订阅 链接",
-		"workspace_calendar_feed_get intentionally does not expose",
+		"subscription capability with the link argument",
+		"invoke_bot_capability",
 		"Never create, infer, reconstruct",
 	} {
 		if !strings.Contains(instruction, expected) {

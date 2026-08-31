@@ -226,20 +226,13 @@ func pruneHistoryNoiseWithToolResults(text string, preserveToolResults bool) str
 			continue
 		}
 		if skipForward {
-			if _, matched := parseImageDirective(trimmed); matched {
-				skipForward = false
-			} else if strings.Contains(trimmed, ":") {
+			if strings.Contains(trimmed, ":") {
 				continue
 			} else {
 				skipForward = false
 			}
 		}
-		if command, matched := parseImageDirective(trimmed); matched {
-			if command == "" {
-				kept = append(kept, "[图片卡片]")
-			} else {
-				kept = append(kept, "[图片卡片:"+command+"]")
-			}
+		if strings.HasPrefix(trimmed, "![](") && strings.HasSuffix(trimmed, ")") {
 			continue
 		}
 		kept = append(kept, line)

@@ -24,7 +24,7 @@ func TestPruneHistoryNoise(t *testing.T) {
 			t.Fatalf("noise remained %q in %q", unwanted, got)
 		}
 	}
-	for _, want := range []string{"[合并转发]", "[图片卡片:校车 东区 西区]", "建议提前到站"} {
+	for _, want := range []string{"[合并转发]", "建议提前到站"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in %q", want, got)
 		}

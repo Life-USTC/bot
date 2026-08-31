@@ -18,17 +18,14 @@ type Response struct {
 	Parts []Response
 }
 
-// ResponseKindHostDelivered marks a response whose user-visible content was
-// already sent by the host while an Agent tool was running. Callers must treat
-// it as handled without attempting a second delivery.
-const ResponseKindHostDelivered = "host_delivered"
+const ResponseKindAuthWait = "auth_wait"
 
 func textResponse(text string) Response {
 	return Response{Text: text}
 }
 
 // helpImageTopic returns the help topic to render as an image for this command, if any.
-func helpImageTopic(cmd parsedCommand) (string, bool) {
+func helpImageTopic(cmd Invocation) (string, bool) {
 	if firstArgIsHelp(cmd.Args) {
 		if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
 			return topic, true
@@ -51,7 +48,7 @@ func helpImageTopic(cmd parsedCommand) (string, bool) {
 	return "", false
 }
 
-func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Image {
+func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image {
 	if !h.EnableImageResponses || strings.TrimSpace(text) == "" {
 		return nil
 	}

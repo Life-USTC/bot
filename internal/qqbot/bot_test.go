@@ -47,9 +47,21 @@ func TestQQBotDelegatesInboundWithSeparateGroupActor(t *testing.T) {
 	}
 }
 
-func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentService *agent.Service, dispatcher *agent.Dispatcher, recorder botapp.Recorder) {
+func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentService *agent.Service, recorder botapp.Recorder) {
 	t.Helper()
-	deliverer, err := delivery.New(nil, NewDeliveryAdapter(bot))
+	db := handler.Store
+	if db == nil {
+		db, _ = recorder.(*store.Store)
+	}
+	if db == nil {
+		var err error
+		db, err = store.Open(t.TempDir() + "/bot.db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+	}
+	deliverer, err := delivery.New(db, NewDeliveryAdapter(bot))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,18 +69,18 @@ func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentSer
 	if agentService != nil {
 		agentHandler = agentService
 	}
-	var messageDispatcher botapp.Dispatcher
-	if dispatcher != nil {
-		messageDispatcher = dispatcher
-	}
-	app, err := botapp.New(botapp.Config{
-		Commands: handler, Agent: agentHandler, Dispatcher: messageDispatcher, Delivery: deliverer,
-		Recorder: recorder, Logger: bot.Logger,
+	app, err := botapp.NewCoordinator(botapp.CoordinatorConfig{
+		Jobs: db, Commands: handler, Agent: agentHandler, Outputs: deliverer,
+		Recorder: recorder, Logger: bot.Logger, PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	bot.App = app
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go app.Run(ctx)
+	go (&delivery.Worker{Service: deliverer, Interval: time.Millisecond}).Run(ctx)
 }
 
 func TestSendToReturnsPlatformAcceptance(t *testing.T) {
@@ -198,62 +210,6 @@ func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
 	}
 }
 
-func TestDispatchMessageBatchesAgentMessages(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var modelRequests atomic.Int32
-	var sent sendMessageRequest
-	sentCh := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
-			modelRequests.Add(1)
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-batch","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"合并完成"},"finish_reason":"stop"}],
-				"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
-			}`))
-		case r.URL.Path == "/v2/users/user-openid/messages":
-			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
-				t.Error(err)
-				return
-			}
-			sentCh <- struct{}{}
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
-		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
-			http.Error(w, "unexpected path", http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-	agentService, err := agent.New(ctx, agent.Config{
-		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-	}, commands.Handler{}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	bot := &Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}
-	dispatcher := agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
-		Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
-	})
-	configureTestApp(t, bot, commands.Handler{}, agentService, dispatcher, nil)
-	ident := store.Identity{Platform: "qqbot", UserID: "user-openid", ConversationType: "private", ConversationID: "user-openid"}
-	bot.processInbound(ctx, &incomingMessage{ID: "first-id", Type: "C2C_MESSAGE_CREATE", Text: "第一条", Identity: ident})
-	bot.processInbound(ctx, &incomingMessage{ID: "second-id", Type: "C2C_MESSAGE_CREATE", Text: "补充说明", Identity: ident})
-
-	select {
-	case <-sentCh:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for batched QQ reply")
-	}
-	if modelRequests.Load() != 1 {
-		t.Fatalf("model requests = %d", modelRequests.Load())
-	}
-	if sent.MsgID != "second-id" || sent.Content != "合并完成" {
-		t.Fatalf("sent = %#v", sent)
-	}
-}
-
 func TestQQMediaCacheCoalescesConcurrentUploads(t *testing.T) {
 	var uploads atomic.Int32
 	uploadStarted := make(chan struct{})
@@ -330,6 +286,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	defer func() { _ = db.Close() }()
 
 	var gotBody sendMessageRequest
+	gotBodyCh := make(chan sendMessageRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/app/getAppAccessToken":
@@ -341,6 +298,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
+			gotBodyCh <- gotBody
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -355,7 +313,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, db)
 	data := json.RawMessage(`{
 		"id":"message-id",
 		"content":"/help",
@@ -368,6 +326,11 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 		T:  "C2C_MESSAGE_CREATE",
 		D:  data,
 	})
+	select {
+	case gotBody = <-gotBodyCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for durable C2C reply")
+	}
 
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
@@ -432,7 +395,7 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, db)
 	body := `{
 		"op":0,
 		"id":"event-id",
@@ -478,6 +441,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 
 	acked := false
 	var gotBody sendMessageRequest
+	gotBodyCh := make(chan sendMessageRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/app/getAppAccessToken":
@@ -501,6 +465,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
+			gotBodyCh <- gotBody
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -515,7 +480,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
 	}
-	configureTestApp(t, bot, commands.Handler{Store: db}, nil, nil, db)
+	configureTestApp(t, bot, commands.Handler{Store: db}, nil, db)
 	bot.handleDispatch(context.Background(), gatewayPayload{
 		ID: "payload-id",
 		Op: opDispatch,
@@ -529,6 +494,11 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 			"data":{"resolved":{"button_data":"/help"}}
 		}`),
 	})
+	select {
+	case gotBody = <-gotBodyCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for durable interaction reply")
+	}
 
 	if !acked {
 		t.Fatal("interaction was not acknowledged")

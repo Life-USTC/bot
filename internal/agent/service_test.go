@@ -25,7 +25,6 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
-	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -66,107 +65,6 @@ func TestAgentIgnoresBlankMessages(t *testing.T) {
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
-}
-
-func TestResponseForExpandsImageDirectivesInOrder(t *testing.T) {
-	svc := newImageDirectiveTestService(t)
-	response := svc.responseFor(context.Background(), Input{
-		Identity: store.Identity{
-			Platform:         "napcat",
-			UserID:           "42",
-			ConversationType: "private",
-			ConversationID:   "42",
-		},
-	}, "先看图：\n\n![](校车 东区 西区)\n\n建议提前到站。")
-
-	if len(response.Parts) != 3 {
-		t.Fatalf("parts = %#v", response.Parts)
-	}
-	if response.Parts[0].Text != "先看图：" {
-		t.Fatalf("first part = %#v", response.Parts[0])
-	}
-	if response.Parts[1].Image == nil || response.Parts[1].Kind != "bus" {
-		t.Fatalf("image part = %#v", response.Parts[1])
-	}
-	if response.Parts[2].Text != "建议提前到站。" {
-		t.Fatalf("last part = %#v", response.Parts[2])
-	}
-	if !strings.Contains(response.Text, "![](校车 东区 西区)") {
-		t.Fatalf("history text = %q", response.Text)
-	}
-}
-
-func TestResponseForRejectsMutationAndLimitsImageDirectives(t *testing.T) {
-	svc := newImageDirectiveTestService(t)
-	lines := []string{"开始", "![](待办 添加 不应执行)"}
-	for i := 0; i < maxImageDirectives+1; i++ {
-		lines = append(lines, "![](校车 东区 西区)")
-	}
-	lines = append(lines, "结束")
-	response := svc.responseFor(context.Background(), Input{
-		Identity: store.Identity{
-			Platform:         "napcat",
-			UserID:           "42",
-			ConversationType: "private",
-			ConversationID:   "42",
-		},
-	}, strings.Join(lines, "\n"))
-
-	if len(response.Parts) != maxImageDirectives+2 {
-		t.Fatalf("parts = %#v", response.Parts)
-	}
-	imageCount := 0
-	for _, part := range response.Parts {
-		if part.Image != nil {
-			imageCount++
-		}
-		if strings.Contains(part.Text, "不应执行") || strings.Contains(part.Text, "![](") {
-			t.Fatalf("unsafe directive leaked into part %#v", part)
-		}
-	}
-	if imageCount != maxImageDirectives {
-		t.Fatalf("image count = %d, parts = %#v", imageCount, response.Parts)
-	}
-	if got := strings.Count(response.Text, "![](校车 东区 西区)"); got != maxImageDirectives {
-		t.Fatalf("history directive count = %d, want %d: %q", got, maxImageDirectives, response.Text)
-	}
-}
-
-func TestResponseForAcceptsLegacyImageAnnotation(t *testing.T) {
-	svc := newImageDirectiveTestService(t)
-	response := svc.responseFor(context.Background(), Input{
-		Identity: store.Identity{
-			Platform:         "napcat",
-			UserID:           "42",
-			ConversationType: "private",
-			ConversationID:   "42",
-		},
-	}, "[已发送图片：校车 东区 西区]")
-
-	if len(response.Parts) != 1 || response.Parts[0].Image == nil {
-		t.Fatalf("parts = %#v", response.Parts)
-	}
-	if response.Text != "![](校车 东区 西区)" {
-		t.Fatalf("history text = %q", response.Text)
-	}
-}
-
-func newImageDirectiveTestService(t *testing.T) *Service {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{
-			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
-			"trips":[
-				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]},
-				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]}
-			]
-		}`))
-	}))
-	t.Cleanup(server.Close)
-	return &Service{handler: commands.Handler{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		EnableImageResponses: true,
-	}}
 }
 
 func TestNewNormalizesModelCredentials(t *testing.T) {
@@ -317,13 +215,11 @@ func TestAgentToolConstruction(t *testing.T) {
 		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
 	}
 	assertAgentToolNames(t, svc,
-		"execute_bot_command",
 		"get_current_semester",
 		"get_current_time",
+		"invoke_bot_capability",
 		"list_my_homeworks",
-		"lookup_bot_help",
 		"record_bot_feedback",
-		"resolve_image_command",
 		"send_message_part",
 		"search_courses",
 	)
@@ -331,10 +227,8 @@ func TestAgentToolConstruction(t *testing.T) {
 
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
-		"execute_bot_command",
 		"get_current_time",
-		"lookup_bot_help",
-		"resolve_image_command",
+		"invoke_bot_capability",
 		"send_message_part",
 	)
 }
@@ -347,11 +241,9 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
-		"execute_bot_command",
 		"get_current_time",
-		"lookup_bot_help",
+		"invoke_bot_capability",
 		"record_bot_feedback",
-		"resolve_image_command",
 		"send_message_part",
 	)
 }
@@ -379,10 +271,6 @@ func TestHandlePromptsLoginWhenMCPTokenMissing(t *testing.T) {
 	reply, ok := svc.Handle(context.Background(), Input{Text: "帮我看看作业", Identity: ident})
 	if !ok || !strings.Contains(reply, "完成后我会自动继续") || strings.Contains(reply, "发送：登录") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	pending, err := db.ActivePendingRequest(context.Background(), ident)
-	if err != nil || pending == nil || pending.Text != "帮我看看作业" {
-		t.Fatalf("pending = %#v, err = %v", pending, err)
 	}
 }
 
@@ -488,7 +376,7 @@ func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
 	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -810,37 +698,29 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "Course / section subscribe-by-name flow") {
+	if !strings.Contains(instruction, "For course subscription by name") {
 		t.Fatalf("instruction lacks subscribe-by-name flow: %q", instruction)
-	}
-	if !strings.Contains(instruction, "follow-ups sent while tools were running") {
-		t.Fatalf("instruction lacks multi-paragraph follow-up rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "ok=false") || !strings.Contains(instruction, "must never produce a directive") {
-		t.Fatalf("instruction does not forbid images for failed tool results: %q", instruction)
+	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") {
+		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
-	for _, want := range []string{
-		"Image rendering protocol:",
-		"Image-only rewrite",
-		"resolve_image_command",
-		"lookup_bot_help",
-		"![](校车 查询 东区 西区)",
-		"![](今日课表)",
-		"![](下一节课)",
-		"![](待办)",
-		"![](作业)",
-		"![](考试)",
-		"![](概览)",
-		"![](近期截止 14)",
-		"第N周 is current semester only",
-		"reply with ONLY that ![](command) line",
-	} {
-		if !strings.Contains(instruction, want) {
-			t.Fatalf("instruction lacks image rendering guidance %q: %q", want, instruction)
+	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
+		if strings.Contains(instruction, obsolete) {
+			t.Fatalf("instruction retained obsolete protocol %q: %q", obsolete, instruction)
 		}
+	}
+}
+
+func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *testing.T) {
+	description := hostCapabilityToolDescription()
+	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
+		t.Fatalf("description lacks structured subscription call: %q", description)
+	}
+	if strings.Contains(description, "confirmation=never") || strings.Contains(description, "订阅 链接") {
+		t.Fatalf("description exposes misleading policy or command syntax: %q", description)
 	}
 }
 
@@ -878,7 +758,7 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 		t.Fatalf("message count = %d", len(messages))
 	}
 	if messages[0].Content != "你好" ||
-		messages[1].Content != "你好！\n![](课表 2026-09-04)\n有什么可以帮你的吗？" ||
+		messages[1].Content != "你好！\n[已发送图片：课表 2026-09-04]\n有什么可以帮你的吗？" ||
 		!strings.Contains(messages[2].Content, "我上面说了什么？") ||
 		!strings.HasPrefix(messages[2].Content, "现在是 ") {
 		t.Fatalf("messages = %#v", messages)
@@ -1235,7 +1115,7 @@ func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpt
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-host-tool","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-host","type":"function","function":{"name":"execute_bot_command","arguments":"{\"command\":\"登录\"}"}
+					"id":"call-host","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"login\",\"arguments\":[]}"}
 				}]},"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
 			}`))
@@ -1260,14 +1140,14 @@ func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpt
 	response, ok := svc.HandleResponse(ctx, Input{
 		Text: "帮我登录", Identity: ident,
 		SendResponse: func(_ context.Context, got store.Identity, delivered commands.Response) error {
-			if got != ident || delivered.Kind != "login" || !strings.Contains(delivered.Text, "USER-CODE") {
+			if got != ident || delivered.Kind != commands.ResponseKindAuthWait || !strings.Contains(delivered.Text, "USER-CODE") {
 				t.Fatalf("host response identity=%#v response=%#v", got, delivered)
 			}
 			deliveries.Add(1)
 			return nil
 		},
 	})
-	if !ok || response.Kind != commands.ResponseKindHostDelivered || response.Text != "" {
+	if !ok || response.Text != "" || response.Image != nil || response.Kind != "" || len(response.Parts) != 0 {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
 	if got := deliveries.Load(); got != 1 {

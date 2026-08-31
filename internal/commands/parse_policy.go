@@ -4,41 +4,6 @@ import (
 	"strings"
 )
 
-// commandArgsAcceptable enforces closed command schemas so free-form
-// natural language falls through to the agent.
-func commandArgsAcceptable(name string, args []string) bool {
-	switch name {
-	case "notify":
-		return notifyArgsAcceptable(args)
-	case "calendar", "overview", "account", "ping", "logout", "nextclass", "status", "semester":
-		return !hasArgs(args) || firstArgIsHelp(args)
-	case "list_semesters":
-		if !hasArgs(args) || firstArgIsHelp(args) || isListPageToken(args[0]) {
-			return true
-		}
-		_, ok := parseIntArg(args[0])
-		return ok
-	case "agent":
-		return agentArgsAcceptable(args)
-	case "homework":
-		return homeworkArgsAcceptable(args)
-	case "schedule":
-		return scheduleArgsAcceptable(args)
-	case "bus":
-		return busCommandArgsAcceptable(args)
-	case "subscription":
-		return subscriptionArgsAcceptable(args)
-	case "login":
-		return !hasArgs(args) || firstArgIsHelp(args) || firstArgIn(args, "status")
-	case "settings":
-		return settingsArgsAcceptable(args)
-	case "exam":
-		return examArgsAcceptable(args)
-	default:
-		return true
-	}
-}
-
 func notifyArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIn(args, "status", "help") {
 		return true
@@ -169,12 +134,20 @@ func settingsTopic(token string) string {
 	}
 }
 
-func acceptedCommand(raw, name string, args []string) (parsedCommand, bool) {
+func acceptedCommand(raw, name string, args []string) (Invocation, bool) {
 	if name == "" {
-		return parsedCommand{}, false
+		return Invocation{}, false
 	}
-	if !commandArgsAcceptable(name, args) {
-		return parsedCommand{}, false
+	descriptor, ok := descriptorForID(name)
+	if !ok {
+		return Invocation{}, false
 	}
-	return commandResult(raw, name, args), true
+	args = copyArgs(args)
+	if descriptor.Normalize != nil {
+		args = descriptor.Normalize(args)
+	}
+	if !descriptor.Accepts(args) {
+		return Invocation{}, false
+	}
+	return Invocation{Capability: descriptor, Name: string(descriptor.ID), Args: args, Raw: raw}, true
 }
