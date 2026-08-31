@@ -2,6 +2,7 @@ package commands
 
 import (
 	"strings"
+	"time"
 )
 
 func notifyArgsAcceptable(args []string) bool {
@@ -87,6 +88,9 @@ func busCommandArgsAcceptable(args []string) bool {
 		return true
 	}
 	for _, arg := range args {
+		if _, recognized, _ := parseBusScheduleSelector(arg, time.Now()); recognized {
+			return true
+		}
 		switch normToken(arg) {
 		case "after", "之后", "已发车", "全部", "all", "from", "to", "到", "去", "往":
 			return true

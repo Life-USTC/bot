@@ -61,7 +61,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 					{"campusName":"北区"},
 					{"campusName":"西区","time":"23:59"}
 				]},
-				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[
+				{"routeId":1,"dayType":"saturday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[
 					{"campusName":"东区","time":"23:59"},
 					{"campusName":"北区"},
 					{"campusName":"西区","time":"23:59"}
@@ -619,6 +619,80 @@ func TestBusQueryArgsSupportsAfterTime(t *testing.T) {
 	}
 }
 
+func TestBusQueryArgsSupportsServiceDaysAndDates(t *testing.T) {
+	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
+	tests := map[string]struct {
+		wantDay  string
+		wantDate string
+	}{
+		"周六":         {wantDay: "saturday"},
+		"星期天":        {wantDay: "sunday"},
+		"周一-周五":      {wantDay: "weekday"},
+		"周三":         {wantDay: "weekday"},
+		"周中":         {wantDay: "weekday"},
+		"工作日":        {wantDay: "weekday"},
+		"2026-09-05": {wantDay: "saturday", wantDate: "2026-09-05"},
+		"2026年9月6日":  {wantDay: "sunday", wantDate: "2026-09-06"},
+		"9月7号":       {wantDay: "weekday", wantDate: "2026-09-07"},
+		"明天":         {wantDay: "weekday", wantDate: "2026-09-01"},
+	}
+	for selector, want := range tests {
+		t.Run(selector, func(t *testing.T) {
+			args, options := busQueryArgs([]string{"太湖路园区", "东区", selector}, now)
+			if strings.Join(args, " ") != "太湖路园区 东区" {
+				t.Fatalf("args = %#v", args)
+			}
+			if options.ServiceDay != want.wantDay || !options.ExplicitSchedule || !options.ShowDeparted || options.QueryError != "" {
+				t.Fatalf("options = %#v", options)
+			}
+			if want.wantDate == "" {
+				if !options.Now.IsZero() {
+					t.Fatalf("options.Now = %v, want zero", options.Now)
+				}
+			} else if got := options.Now.Format("2006-01-02"); got != want.wantDate {
+				t.Fatalf("date = %s, want %s", got, want.wantDate)
+			}
+		})
+	}
+}
+
+func TestBusQueryArgsRejectsAmbiguousOrInvalidDates(t *testing.T) {
+	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
+	for _, args := range [][]string{{"周末"}, {"周六", "周日"}, {"2026-02-30"}} {
+		_, options := busQueryArgs(args, now)
+		if options.QueryError == "" {
+			t.Fatalf("args %v did not produce an error: %#v", args, options)
+		}
+	}
+}
+
+func TestNextBusItemsSeparatesWeekdaySaturdayAndSunday(t *testing.T) {
+	data := map[string]any{
+		"routes": []any{map[string]any{
+			"id": float64(13),
+			"stops": []any{
+				map[string]any{"campus": map[string]any{"nameCn": "太湖路园区"}},
+				map[string]any{"campus": map[string]any{"nameCn": "东区"}},
+			},
+		}},
+		"trips": []any{
+			map[string]any{"routeId": float64(13), "dayType": "weekday", "departureTime": "09:10", "departureMinutes": float64(550), "arrivalTime": "09:40"},
+			map[string]any{"routeId": float64(13), "dayType": "saturday", "departureTime": "07:10", "departureMinutes": float64(430), "arrivalTime": "07:40"},
+			map[string]any{"routeId": float64(13), "dayType": "sunday", "departureTime": "11:30", "departureMinutes": float64(690), "arrivalTime": "12:00"},
+		},
+	}
+	now := time.Date(2026, 8, 31, 20, 0, 0, 0, lifedata.ChinaLocation())
+	for selector, wantTime := range map[string]string{"工作日": "09:10", "周六": "07:10", "周日": "11:30", "2026-09-05": "07:10", "2026-09-06": "11:30"} {
+		t.Run(selector, func(t *testing.T) {
+			args, options := busQueryArgs([]string{"太湖路园区", "东区", selector}, now)
+			items := nextBusItemsWithOptions(data, args, now, options)
+			if len(items) != 1 || items[0].DepartureTime != wantTime {
+				t.Fatalf("items = %#v, options = %#v", items, options)
+			}
+		})
+	}
+}
+
 func TestNextBusItemsUsesAfterTimeOption(t *testing.T) {
 	data := map[string]any{
 		"routes": []any{
@@ -990,13 +1064,36 @@ func TestBusArgsFromTextAcceptsEnglishCampusAliases(t *testing.T) {
 		"bus from gx to north":                     {"高新区", "北区"},
 		"bus to west campus":                       {"到", "西区"},
 		"校车到西区":                                    {"到", "西区"},
-		"bus to northeast tomorrow":                {},
+		"bus to northeast tomorrow":                {"tomorrow"},
 		"bus from northeast to north":              {"北区"},
 	}
 	for text, want := range tests {
 		got := busArgsFromText(text)
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Fatalf("%q args = %#v, want %#v", text, got, want)
+		}
+	}
+}
+
+func TestBusArgsFromTextSupportsTaihuAndScheduleSelectors(t *testing.T) {
+	tests := map[string][]string{
+		"周六太湖路园区到东区校车":                                {"周六", "太湖路园区", "东区"},
+		"2026-09-06 东区到太湖路校区班车":                       {"2026-09-06", "东区", "太湖路园区"},
+		"bus from taihu campus to east campus sunday": {"太湖路园区", "东区", "sunday"},
+	}
+	for text, want := range tests {
+		got := busArgsFromText(text)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Fatalf("%q args = %#v, want %#v", text, got, want)
+		}
+	}
+}
+
+func TestParseInvocationAcceptsBusScheduleOnly(t *testing.T) {
+	for _, text := range []string{"校车 周六", "校车 周日", "校车 工作日", "校车 周中", "校车 周一-周五", "校车 2026-09-05"} {
+		invocation, ok := ParseInvocation(text)
+		if !ok || invocation.Name != "bus" {
+			t.Fatalf("ParseInvocation(%q) = %#v, %v", text, invocation, ok)
 		}
 	}
 }
