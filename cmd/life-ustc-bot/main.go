@@ -145,22 +145,20 @@ func main() {
 		_ = healthServer.Shutdown(shutdownCtx)
 	}()
 	logger.Printf("Health server listening on %s", cfg.HealthAddr)
-	var agentDispatcher *agent.Dispatcher
-	if agentService.Enabled() {
-		agentDispatcher = agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{Logger: logger})
-	}
-	app, err := botapp.New(botapp.Config{
-		Commands:   handler,
-		Agent:      agentService,
-		Dispatcher: agentDispatcher,
-		Delivery:   deliveryService,
-		Recorder:   stateStore,
-		Renderer:   renderer,
-		Logger:     logger,
+	app, err := botapp.NewCoordinator(botapp.CoordinatorConfig{
+		Jobs:     stateStore,
+		Commands: handler,
+		Agent:    agentService,
+		Outputs:  deliveryService,
+		Recorder: stateStore,
+		Renderer: renderer,
+		Logger:   logger,
 	})
 	if err != nil {
 		logger.Fatalf("create bot application: %v", err)
 	}
+	go app.Run(ctx)
+	logger.Printf("Conversation job coordinator started")
 
 	if cfg.EnableNapCatBridge && cfg.NapCatWSURL != "" {
 		napcatBridge = &napcat.Bridge{
@@ -245,7 +243,6 @@ func main() {
 		loginPoller := &auth.LoginPoller{
 			Manager: authManager,
 			Logger:  logger,
-			Resume:  app.ResumePendingRequest,
 		}
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")

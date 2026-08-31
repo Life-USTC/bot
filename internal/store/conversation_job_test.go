@@ -23,7 +23,7 @@ func TestConversationJobEnqueueIsIdempotentAndSequencesPerConversation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created || first.ID <= 0 || first.Sequence != 1 || first.State != ConversationJobStateQueued {
+	if !created || first.ID <= 0 || first.Sequence != 1 || first.Revision != 1 || first.State != ConversationJobStateQueued {
 		t.Fatalf("first enqueue = %#v, created=%v", first, created)
 	}
 	if first.Input.Text != "查课表" || first.Invocation.Name != "schedule" || first.InputJSON == "" || first.InvocationJSON == "" {
@@ -126,7 +126,7 @@ func TestConversationJobFIFOAndLeaseCAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed == nil || claimed.ID != first.ID || claimed.Attempts != 2 {
+	if claimed == nil || claimed.ID != first.ID || claimed.Revision != 2 || claimed.Attempts != 2 {
 		t.Fatalf("unblocked first claim = %#v", claimed)
 	}
 	if ok, err := s.CompleteConversationJob(ctx, first.ID, claimed.LeaseToken); err != nil {
@@ -228,7 +228,7 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	for job := range consumed {
 		confirmations = append(confirmations, job)
 	}
-	if len(confirmations) != 1 || confirmations[0].ID != confirmation.ID || confirmations[0].State != ConversationJobStateQueued {
+	if len(confirmations) != 1 || confirmations[0].ID != confirmation.ID || confirmations[0].Revision != 2 || confirmations[0].State != ConversationJobStateQueued {
 		t.Fatalf("confirmation consumes = %#v", confirmations)
 	}
 	if got := mustGetConversationJob(t, s, confirmation.ID); got.WaitReason != ConversationJobWaitReasonNone {
@@ -242,7 +242,7 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	if err := s.UnblockConversationJobsAfterAuth(ctx, ident, now); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustGetConversationJob(t, s, auth.ID); got.State != ConversationJobStateQueued || got.WaitReason != ConversationJobWaitReasonNone {
+	if got := mustGetConversationJob(t, s, auth.ID); got.State != ConversationJobStateQueued || got.Revision != 2 || got.WaitReason != ConversationJobWaitReasonNone {
 		t.Fatalf("auth release = %#v", got)
 	}
 	if err := s.UnblockConversationJobsAfterAuth(ctx, ident, now); err != nil {
@@ -299,14 +299,14 @@ func TestConversationJobInputResumeLeaseRecoveryExpiryAndTerminalProtection(t *t
 	if err := s.RecoverConversationJobLeases(ctx, recoveryAt, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustGetConversationJob(t, s, running.ID); got.State != ConversationJobStateRetryWait || got.LeaseToken != "" || got.LastError == "" {
+	if got := mustGetConversationJob(t, s, running.ID); got.State != ConversationJobStateRetryWait || got.Revision != 1 || got.LeaseToken != "" || got.LastError == "" {
 		t.Fatalf("recovered job = %#v", got)
 	}
 	claimed, err = s.ClaimConversationJob(ctx, ident, recoveryAt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed == nil || claimed.ID != running.ID || claimed.Attempts != 2 {
+	if claimed == nil || claimed.ID != running.ID || claimed.Revision != 1 || claimed.Attempts != 2 {
 		t.Fatalf("reclaimed job = %#v", claimed)
 	}
 	if ok, err := s.CompleteConversationJob(ctx, claimed.ID, claimed.LeaseToken); err != nil {

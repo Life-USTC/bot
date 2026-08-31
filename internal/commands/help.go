@@ -32,13 +32,14 @@ func generatedHelpOverviewSections() []helpSection {
 		if len(descriptor.Help.Examples) > 0 {
 			command = strings.Fields(descriptor.Help.Examples[0].Command)[0]
 		}
-		if descriptor.ID == CapabilityTodo {
+		switch descriptor.ID {
+		case CapabilityTodo:
 			command = "待办（td）"
-		} else if descriptor.ID == CapabilityHomework {
+		case CapabilityHomework:
 			command = "作业（hw）"
-		} else if descriptor.ID == CapabilityExam {
+		case CapabilityExam:
 			command = "考试（ks）"
-		} else if descriptor.ID == CapabilityBus {
+		case CapabilityBus:
 			command = "校车（xc）"
 		}
 		row := helpRow{

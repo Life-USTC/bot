@@ -3,6 +3,7 @@ package napcat
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,6 +122,7 @@ type messageEvent struct {
 	UserID      int64  `json:"user_id"`
 	SelfID      int64  `json:"self_id"`
 	Time        int64  `json:"time"`
+	MessageID   int64  `json:"message_id"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
 	forwardImageURLs   []string
@@ -364,10 +366,28 @@ func (e messageEvent) inbound() message.Inbound {
 	return message.Inbound{
 		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID},
 		Conversation: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
-		Source:       message.ReplyRef{TransportID: e.reverseTransportID},
+		Source:       message.ReplyRef{MessageID: napcatEventMessageID(e.MessageID), EventID: e.sourceEventID(), TransportID: e.reverseTransportID},
 		Text:         e.RawMessage, ImageURLs: e.imageURLs(),
 		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
 	}
+}
+
+func napcatEventMessageID(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func (e messageEvent) sourceEventID() string {
+	if e.MessageID != 0 {
+		return "napcat:" + strconv.FormatInt(e.MessageID, 10)
+	}
+	// Older NapCat events may omit message_id. Hash the immutable event fields
+	// so reconnect/replay is still idempotent without using a connection ID.
+	value := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%s", e.PostType, e.MessageType, e.GroupID, e.UserID, e.Time, e.RawMessage)
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("napcat:%x", sum[:16])
 }
 
 func (e messageEvent) imageURLs() []string {

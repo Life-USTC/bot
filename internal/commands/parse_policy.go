@@ -4,16 +4,6 @@ import (
 	"strings"
 )
 
-// commandArgsAcceptable enforces closed command schemas so free-form
-// natural language falls through to the agent.
-func commandArgsAcceptable(name string, args []string) bool {
-	descriptor, ok := descriptorForID(name)
-	if !ok || descriptor.Input == nil {
-		return false
-	}
-	return descriptor.Input(args)
-}
-
 func notifyArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIn(args, "status", "help") {
 		return true

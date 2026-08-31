@@ -743,42 +743,6 @@ func TestHandleTodoAddCasual(t *testing.T) {
 	}
 }
 
-func TestHandleOKConfirmsPendingCommand(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	var gotBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodPost {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	_, err := handler.Store.SavePendingConfirmation(ctx, ident, "td 写报告", "agent", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reply, ok := handler.Handle(ctx, Input{Text: "OK", Identity: ident})
-	if !ok {
-		t.Fatal("ok confirmation was not handled")
-	}
-	if gotBody["title"] != "写报告" || !strings.Contains(reply, "已加待办：写报告") {
-		t.Fatalf("body = %#v, reply = %q", gotBody, reply)
-	}
-	pending, err := handler.Store.ActivePendingConfirmation(ctx, ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending != nil {
-		t.Fatalf("pending confirmation still active = %#v", pending)
-	}
-}
-
 func TestHandleTodoAddUsesRefreshedToken(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -833,6 +797,7 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	var serverURL string
+	deviceRequests := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -845,6 +810,7 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"client_id": "client"})
 	})
 	mux.HandleFunc("/device", func(w http.ResponseWriter, r *http.Request) {
+		deviceRequests++
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code":               "device",
 			"user_code":                 "USER-CODE",
@@ -869,12 +835,19 @@ func TestLoginMentionsAutomaticPoll(t *testing.T) {
 		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: s},
 		Store: s,
 	}
-	reply, ok := handler.Handle(ctx, Input{Text: "登录", Identity: ident})
+	response, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
 	if !ok {
 		t.Fatal("login was not handled")
 	}
-	if !strings.Contains(reply, "系统将自动检查登录状态") {
-		t.Fatalf("reply = %q", reply)
+	if !strings.Contains(response.Text, "系统将自动检查登录状态") || response.Kind != ResponseKindAuthWait {
+		t.Fatalf("response = %#v", response)
+	}
+	retried, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
+	if !ok || retried.Text != response.Text || retried.Kind != ResponseKindAuthWait {
+		t.Fatalf("retried response = %#v, ok = %v", retried, ok)
+	}
+	if deviceRequests != 1 {
+		t.Fatalf("device authorization requests = %d, want 1", deviceRequests)
 	}
 }
 
@@ -893,6 +866,33 @@ func TestLoginStatusAliasesPollExistingSession(t *testing.T) {
 		if !ok || reply != "暂无进行中的登录。发送：登录" {
 			t.Fatalf("%q reply = %q, ok = %v", text, reply, ok)
 		}
+	}
+}
+
+func TestLoginCompletesWithoutStartingAnotherSessionWhenAlreadyAuthorized(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := Handler{Auth: &auth.Manager{Store: s}}
+	response, ok := handler.HandleResponse(ctx, Input{Text: "登录", Identity: ident})
+	if !ok {
+		t.Fatal("login was not handled")
+	}
+	if response.Text != "已登录 Life @ USTC。" || response.Kind != string(CapabilityLogin) {
+		t.Fatalf("response = %#v", response)
+	}
+	if session, err := s.ActiveLoginSession(ctx, ident); err != nil || session != nil {
+		t.Fatalf("active login session = %#v, err = %v", session, err)
 	}
 }
 
@@ -964,102 +964,6 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		}
 	}
 	assertResponseImageRenders(t, response.Image)
-}
-
-func TestHandleImageDirectiveAllowsRenderableReadOnlyCommand(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{
-			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
-			"trips":[
-				{"routeId":1,"dayType":"weekday","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]},
-				{"routeId":1,"dayType":"weekend","departureTime":"23:59","departureMinutes":1439,"arrivalTime":"23:59","stopTimes":[{"campusName":"东区","time":"23:59"},{"campusName":"西区","time":"23:59"}]}
-			]
-		}`))
-	}))
-	defer server.Close()
-	handler := Handler{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		EnableImageResponses: true,
-	}
-	response, ok := handler.HandleImageDirective(context.Background(), Input{
-		Text:     "校车 东区 西区",
-		Identity: testIdentity(),
-	})
-	if !ok || response.Image == nil || response.Kind != "bus" {
-		t.Fatalf("response = %#v, ok = %v", response, ok)
-	}
-}
-
-func TestHandleImageDirectiveRejectsMutatingCommand(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
-	response, ok := handler.HandleImageDirective(context.Background(), Input{
-		Text:     "待办 添加 写报告",
-		Identity: testIdentity(),
-	})
-	if ok || response.Text != "" || response.Image != nil || response.Kind != "" || len(response.Parts) != 0 {
-		t.Fatalf("response = %#v, ok = %v", response, ok)
-	}
-}
-
-func TestDocumentedImageDirectiveFormsAreAllowed(t *testing.T) {
-	handler := Handler{}
-	examples := []string{
-		"校车",
-		"校车 查询 全部",
-		"校车 查询 我的路线",
-		"校车 查询 东区 西区",
-		"校车 查询 东区 西区 之后 14:00 已发车",
-		"课表",
-		"课表 本周",
-		"课表 下周",
-		"课表 第3周",
-		"课表 05.06",
-		"课表 7.20周",
-		"课表 2026-05-06",
-		"课表 2026/5/6",
-		"课表 2026.05.06",
-		"课表 2026年5月6日",
-		"课表 单日 今天",
-		"课表 单日 明天",
-		"今日课表",
-		"明日课表",
-		"今天课表",
-		"明天课表",
-		"课表 下一节",
-		"下一节课",
-		"待办",
-		"待办 列表 全部",
-		"待办 列表 未完成",
-		"待办 列表 已完成",
-		"待办 列表 未完成 优先级 高 截止前 2026-06-10 截止后 2026-06-01 第2页",
-		"作业",
-		"作业 列表 未完成",
-		"作业 列表 全部 学期ID 12 学期JWID 123 第2页",
-		"考试",
-		"考试 第2页",
-		"概览",
-		"日程 概览",
-		"近期截止",
-		"近期截止 14",
-		"日程 截止",
-		"日程 截止 14",
-		"教学班 作业 654",
-		"教学班 作业 654 第2页",
-		"教学班 考试 321",
-		"教学班 考试 321 第2页",
-		"教学班作业 654",
-		"教学班考试 321 第2页",
-	}
-	for _, example := range examples {
-		cmd, ok := handler.parse(example)
-		if !ok {
-			t.Errorf("%q was not parsed", example)
-			continue
-		}
-		if !imageDirectiveCommandAllowed(cmd) {
-			t.Errorf("%q parsed as %#v but is not image-directive safe", example, cmd)
-		}
-	}
 }
 
 func TestSubcommandHelpUsesImage(t *testing.T) {

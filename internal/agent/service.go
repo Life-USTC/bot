@@ -70,11 +70,9 @@ type Input struct {
 	// directly to the application. It is used for images and private values that
 	// must not pass through the model.
 	SendResponse func(context.Context, store.Identity, commands.Response) error
-
-	// FollowUps is set by the dispatcher for an in-flight run. Mid-run user
-	// messages are injected into the current agent state instead of starting a
-	// second reply.
-	FollowUps *followUpInbox
+	// WaitForConfirmation records the host invocation that must be resumed by
+	// a real inbound user confirmation. The agent cannot call it with "ok".
+	WaitForConfirmation func(context.Context, store.Identity, string) error
 
 	imageDataURLs []string
 }
@@ -247,7 +245,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		tools   []tool.BaseTool
 		session *botmcp.Session
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, sendResponse)
+		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, sendResponse, input.WaitForConfirmation)
 		return struct {
 			tools   []tool.BaseTool
 			session *botmcp.Session
@@ -313,12 +311,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	capture := newStateCapture()
 	repeatGuard := newToolRepeatGuard()
-	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer(), capture}
-	if input.FollowUps != nil {
-		handlers = append(handlers, newFollowUpInjector(input.FollowUps))
-	}
+	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer()}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "life_ustc_assistant",
 		Description:   "Life @ USTC QQ assistant",
@@ -376,99 +370,37 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 
-	const maxFollowUpContinues = 3
 	reply := ""
-	for continueRound := 0; ; continueRound++ {
-		if err := budget.contextError(ctx); err != nil {
-			err = normalizeAgentRunError(ctx, budget, err)
-			if errors.Is(err, context.Canceled) {
-				finishRun(store.AgentRunStatusIgnored, "", err)
-				return commands.Response{}, false
-			}
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
-		}
-		repeatGuard.Reset()
-		iter := runner.Run(ctx, messages)
-		reply = ""
-		for {
-			event, ok := iter.Next()
-			if !ok {
-				break
-			}
-			if event.Err != nil {
-				runErr := normalizeAgentRunError(ctx, budget, event.Err)
-				if errors.Is(runErr, context.Canceled) {
-					finishRun(store.AgentRunStatusIgnored, "", runErr)
-					return commands.Response{}, false
-				}
-				reply := agentFailureReply(runID, runErr)
-				if isMCPAuthorizationError(runErr) {
-					reply = s.mcpFailureReply(ctx, input.Identity, runID, runErr)
-					finishRun(store.AgentRunStatusCompleted, reply, nil)
-					return agentTextResponse(reply), true
-				}
-				finishRun(store.AgentRunStatusFailed, reply, runErr)
-				return agentTextResponse(reply), true
-			}
-			msg, _, err := adk.GetMessage(event)
-			if err != nil || msg == nil {
-				continue
-			}
-			content := strings.TrimSpace(msg.Content)
-			if content != "" {
-				reply = content
-			}
-		}
-		if err := budget.contextError(ctx); err != nil {
-			err = normalizeAgentRunError(ctx, budget, err)
-			if errors.Is(err, context.Canceled) {
-				finishRun(store.AgentRunStatusIgnored, "", err)
-				return commands.Response{}, false
-			}
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
-		}
-		followUps := input.FollowUps.Drain()
-		if len(followUps) == 0 {
+	repeatGuard.Reset()
+	iter := runner.Run(ctx, messages)
+	for {
+		event, ok := iter.Next()
+		if !ok {
 			break
 		}
-		if continueRound >= maxFollowUpContinues {
-			for _, followUp := range followUps {
-				input.FollowUps.Push(followUp)
+		if event.Err != nil {
+			runErr := normalizeAgentRunError(ctx, budget, event.Err)
+			if errors.Is(runErr, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", runErr)
+				return commands.Response{}, false
 			}
-			break
-		}
-		// Late follow-ups arrived after the model finished this turn: continue
-		// the same conversation from captured state without sending an intermediate reply.
-		messages = append([]*schema.Message(nil), capture.messages...)
-		if len(messages) == 0 {
-			messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
-				return s.messagesFor(ctx, input)
-			})
-			if err != nil {
-				err = normalizeAgentRunError(ctx, budget, err)
-				if errors.Is(err, context.Canceled) {
-					finishRun(store.AgentRunStatusIgnored, "", err)
-					return commands.Response{}, false
-				}
-				reply := agentFailureReply(runID, err)
-				finishRun(store.AgentRunStatusFailed, reply, err)
+			reply := agentFailureReply(runID, runErr)
+			if isMCPAuthorizationError(runErr) {
+				reply = s.mcpFailureReply(ctx, input.Identity, runID, runErr)
+				finishRun(store.AgentRunStatusCompleted, reply, nil)
 				return agentTextResponse(reply), true
 			}
-			if reply != "" {
-				messages = append(messages, schema.AssistantMessage(reply, nil))
-			}
+			finishRun(store.AgentRunStatusFailed, reply, runErr)
+			return agentTextResponse(reply), true
 		}
-		for _, followUp := range followUps {
-			if msg := followUpUserMessage(followUp); msg != nil {
-				messages = append(messages, msg)
-			}
+		msg, _, err := adk.GetMessage(event)
+		if err != nil || msg == nil {
+			continue
 		}
-		s.logf("llm follow-up continue: platform=%s conversation_type=%s conversation_id=%s followups=%d round=%d",
-			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(followUps), continueRound+1)
+		content := strings.TrimSpace(msg.Content)
+		if content != "" {
+			reply = content
+		}
 	}
 	if err := budget.contextError(ctx); err != nil {
 		err = normalizeAgentRunError(ctx, budget, err)
@@ -483,7 +415,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if reply == "" || (hostResponseDelivered.Load() && isHostDeliveryToolResult(reply)) {
 		if hostResponseDelivered.Load() {
 			finishRun(store.AgentRunStatusCompleted, "", nil)
-			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+			return commands.Response{}, true
 		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
@@ -506,7 +438,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if response.Text == "" && len(response.Parts) == 0 {
 		if hostResponseDelivered.Load() {
 			finishRun(store.AgentRunStatusCompleted, "", nil)
-			return commands.Response{Kind: commands.ResponseKindHostDelivered}, true
+			return commands.Response{}, true
 		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
@@ -524,9 +456,6 @@ func isHostDeliveryToolResult(reply string) bool {
 }
 
 func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
-	if strings.TrimSpace(input.Text) == "" {
-		return "需要登录后才能继续处理这张图片。图片无法安全暂存，请完成登录后重新发送图片。"
-	}
 	response, err := s.handler.BeginLoginForRequest(ctx, commands.Input{
 		Text: input.Text, Identity: input.Identity, SuppressLog: true,
 	})
@@ -543,87 +472,17 @@ func agentTextResponse(text string) commands.Response {
 }
 
 func agentLoginResponse(text string) commands.Response {
-	return commands.Response{Text: cleanQQReply(text), Kind: "login"}
+	return commands.Response{Text: cleanQQReply(text), Kind: commands.ResponseKindAuthWait}
 }
 
 func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
-	lines := strings.Split(reply, "\n")
-	parts := make([]commands.Response, 0, maxImageDirectives*2+1)
-	pendingText := make([]string, 0, len(lines))
-	history := make([]string, 0, len(lines))
-	directiveCount := 0
-
-	flushText := func() {
-		text := cleanQQReply(strings.Join(pendingText, "\n"))
-		pendingText = pendingText[:0]
-		if text != "" {
-			parts = append(parts, commands.Response{Text: text, Kind: "agent"})
-		}
-	}
-
-	for _, line := range lines {
-		command, matched := parseImageDirective(line)
-		if !matched {
-			pendingText = append(pendingText, line)
-			history = append(history, line)
-			continue
-		}
-		if command == "" || len([]rune(command)) > maxImageDirectiveCommandRunes || directiveCount >= maxImageDirectives {
-			continue
-		}
-		response, ok := s.handler.HandleImageDirective(ctx, commands.Input{
-			Text:        command,
-			Identity:    input.Identity,
-			SuppressLog: true,
-		})
-		if !ok {
-			continue
-		}
-		flushText()
-		directiveCount++
-		if response.Image != nil {
-			history = append(history, imageDirective(command))
-		} else if fallback := strings.TrimSpace(response.Text); fallback != "" {
-			history = append(history, fallback)
-		}
-		if response.Text != "" || response.Image != nil {
-			parts = append(parts, response)
-		}
-	}
-	flushText()
-
-	historyText := cleanQQReply(strings.Join(history, "\n"))
-	if directiveCount == 0 {
-		return commands.Response{Text: historyText, Kind: "agent"}
-	}
-	return commands.Response{Text: historyText, Kind: "agent", Parts: parts}
-}
-
-func parseImageDirective(line string) (string, bool) {
-	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, "![](") && strings.HasSuffix(line, ")") {
-		return strings.TrimSpace(line[len("![](") : len(line)-1]), true
-	}
-	const legacyPrefix = "[已发送图片："
-	if strings.HasPrefix(line, legacyPrefix) && strings.HasSuffix(line, "]") {
-		return strings.TrimSpace(line[len(legacyPrefix) : len(line)-1]), true
-	}
-	return "", false
-}
-
-func imageDirective(command string) string {
-	return "![](" + strings.TrimSpace(command) + ")"
+	_ = ctx
+	_ = input
+	return commands.Response{Text: cleanQQReply(reply), Kind: "agent"}
 }
 
 func normalizeAgentHistoryReply(reply string) string {
-	lines := strings.Split(reply, "\n")
-	for i, line := range lines {
-		command, matched := parseImageDirective(line)
-		if matched && command != "" && len([]rune(command)) <= maxImageDirectiveCommandRunes {
-			lines[i] = imageDirective(command)
-		}
-	}
-	return strings.Join(lines, "\n")
+	return cleanQQReply(reply)
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -739,16 +598,41 @@ func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (b
 	return settings.ExposeToolCalls, nil
 }
 
-type helpLookupInput struct {
-	Topic string `json:"topic,omitempty" jsonschema_description:"Help topic such as 校车, 课表, 待办, 作业, 考试, 日程. Empty returns the overview."`
+type hostCapabilityInput struct {
+	Capability string   `json:"capability" jsonschema_description:"Stable capability ID listed in the tool description"`
+	Arguments  []string `json:"arguments,omitempty" jsonschema_description:"Capability arguments only; do not repeat the capability name"`
 }
 
-type resolveImageCommandInput struct {
-	Text string `json:"text" jsonschema_description:"Raw user text to map onto a validated ![](command) image directive"`
-}
-
-type hostCommandInput struct {
-	Command string `json:"command" jsonschema_description:"Exactly one Bot command to execute, such as 订阅 链接, 通知 作业 开, 校车 偏好, or AI 工具 开"`
+func hostCapabilityToolDescription() string {
+	var description strings.Builder
+	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. The host resolves argument-specific policy. A state-changing call may return confirmation_required and resumes only after a real user reply. Host-only results are delivered without exposing private values to the model. Available capabilities:\n")
+	for _, descriptor := range commands.CapabilityDescriptors() {
+		fmt.Fprintf(&description, "- %s: %s", descriptor.ID, strings.TrimSpace(descriptor.Help.Summary))
+		if len(descriptor.Help.Examples) > 0 {
+			description.WriteString(" Calls: ")
+			written := 0
+			for _, example := range descriptor.Help.Examples {
+				invocation, ok := commands.ParseInvocation(example.Command)
+				if !ok || invocation.ID() != descriptor.ID {
+					continue
+				}
+				raw, err := json.Marshal(hostCapabilityInput{Capability: string(invocation.ID()), Arguments: invocation.Args})
+				if err != nil {
+					continue
+				}
+				if written > 0 {
+					description.WriteString("; ")
+				}
+				description.Write(raw)
+				written++
+				if written == 3 {
+					break
+				}
+			}
+		}
+		description.WriteByte('\n')
+	}
+	return strings.TrimSpace(description.String())
 }
 
 func (s *Service) toolsFor(
@@ -757,6 +641,7 @@ func (s *Service) toolsFor(
 	trace *toolTraceNotifier,
 	sendUpdate func(context.Context, store.Identity, string) error,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
+	waitForConfirmation func(context.Context, store.Identity, string) error,
 ) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
@@ -794,8 +679,8 @@ func (s *Service) toolsFor(
 			return nil, nil, err
 		}
 	}
-	tools, err = appendInferredTool(tools, "execute_bot_command", "Execute one existing Bot command on the user's behalf. Never ask the user to copy a command. Read-only commands run immediately. Mutations are stored for confirmation and require a real user reply of ok. Host-delivered images and private links never pass through the model.", trace, func(ctx context.Context, input hostCommandInput) (string, error) {
-		result, err := s.handler.ExecuteForAgent(ctx, commands.Input{Text: input.Command, Identity: ident, SuppressLog: true})
+	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(), trace, func(ctx context.Context, input hostCapabilityInput) (string, error) {
+		result, err := s.handler.ExecuteCapabilityForAgent(ctx, commands.Input{Identity: ident, SuppressLog: true}, commands.CapabilityID(input.Capability), input.Arguments)
 		if err != nil {
 			return "", err
 		}
@@ -808,30 +693,15 @@ func (s *Service) toolsFor(
 			}
 			result.Text = "结果已由宿主安全发送给用户。"
 		}
+		if result.ConfirmationRequired {
+			if waitForConfirmation == nil {
+				return "", errors.New("confirmation coordinator is unavailable")
+			}
+			if err := waitForConfirmation(ctx, ident, result.Command); err != nil {
+				return "", err
+			}
+		}
 		raw, err := json.Marshal(result)
-		if err != nil {
-			return "", err
-		}
-		return string(raw), nil
-	})
-	if err != nil {
-		if mcpSession != nil {
-			_ = mcpSession.Close()
-		}
-		return nil, nil, err
-	}
-	tools, err = appendInferredTool(tools, "lookup_bot_help", "Look up Bot command help for a topic (校车/课表/待办/作业/考试/日程/…). Use when unsure which ![](command) shape is valid.", trace, func(_ context.Context, input helpLookupInput) (string, error) {
-		return commands.LookupBotHelp(input.Topic), nil
-	})
-	if err != nil {
-		if mcpSession != nil {
-			_ = mcpSession.Close()
-		}
-		return nil, nil, err
-	}
-	tools, err = appendInferredTool(tools, "resolve_image_command", "Map messy user text (missing spaces, glued campuses like 校车东西区) to a host-validated ![](command). When directive is set, reply with only that line.", trace, func(_ context.Context, input resolveImageCommandInput) (string, error) {
-		resolved := commands.ResolveImageCommand(input.Text)
-		raw, err := json.Marshal(resolved)
 		if err != nil {
 			return "", err
 		}
@@ -1176,8 +1046,6 @@ const maxHistoryTextRunes = 1200
 const maxToolResultRunes = 6000
 const agentToolHistoryTokenLimit int64 = 32_000
 const agentToolHistoryRetention = 2
-const maxImageDirectives = 10
-const maxImageDirectiveCommandRunes = 200
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
@@ -1193,46 +1061,21 @@ QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), 
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts instead of guessing.
 Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
-You can answer questions about prior messages using the chat history provided in this run. If additional user messages appear later in this same run (follow-ups sent while tools were running), treat them as part of the current conversation and answer everything together in a single final reply. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
+You can answer questions about prior messages using the chat history provided in this run. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
 For bus planning after a class or event, pass the class/event end time to catalog_bus_departure_next.atTime (HH:MM or RFC3339) so results are after that time on the relevant day—not only early-morning trips.
-Course / section subscribe-by-name flow:
-1. Search with catalog_teacher_search / catalog_course_search / catalog_section_search using the teacher's name and course title the user gave.
-2. Show a short candidate list (teacher, course, section code / JW ID) when matches are ambiguous.
-3. After the user chooses a section, call execute_bot_command with one 订阅 导入 command. The host will ask for confirmation; never ask the user to copy or send that command.
-Use execute_bot_command whenever an existing Bot command owns the capability, especially private calendar links, notification settings, Bot settings, and formatted read-only cards. Call the tool yourself; never tell the user to send or paste a Bot command.
-Notification settings: call execute_bot_command with 通知 课表/作业 开/关. Do not tell the user to open the website or send the command themselves.
-Host mutations returned by execute_bot_command are not executed immediately: the host stores one pending action and asks the user to reply ok. Do not claim the change is complete before the real user confirmation result. Never call execute_bot_command with ok; only an inbound user message may confirm.
-Only read-only MCP tools are exposed. If a requested mutation has no Bot-command equivalent, explain that it is not safely available in this chat and record concrete feedback; never improvise a write through GraphQL or another read tool.
+The host capability registry is the source of truth for Bot actions. Use invoke_bot_capability with a capability ID and argument array whenever it covers the request. Call it yourself; never ask the user to type, paste, or resend a command.
+Read capabilities run immediately. A state-changing capability may return confirmation_required; when it does, wait for the user's real ok reply and never invoke ok yourself. Do not claim completion before a success result.
+For course subscription by name, use catalog search tools to resolve an unambiguous section first, then invoke the subscription capability with import arguments. Show candidates only when the choice is genuinely ambiguous.
+Only read-only MCP tools are exposed. If a requested mutation has no host capability, explain that it is unavailable and record concrete feedback; never improvise a write through another tool.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
-Personal calendar subscription links are handled only by execute_bot_command with command 订阅 链接. workspace_calendar_feed_get intentionally does not expose the private calendar URL. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
-When a tool result has ok=false, use its safe error message to correct the arguments and retry when possible. Otherwise explain the problem briefly in plain text. Never repeat raw/internal errors or produce an image directive for a failed tool result.
+Personal calendar subscription links are handled only by the subscription capability with the link argument. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+When a tool result reports failure, use its safe message to correct arguments and retry when possible. Otherwise explain the problem briefly; never repeat raw or internal errors.
 When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
-` + imageDirectiveInstruction() + `
 Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
 For group chats, this agent is disabled by the host application.
 Authentication is handled by the host. If login is required, the host starts it and resumes the pending request after authorization. Never tell the user to send 登录 or repeat the original request.`
-}
-
-func imageDirectiveInstruction() string {
-	return `Image rendering protocol:
-The host replaces a standalone ![](command) line with a rendered read-only Bot card. Text before/after the directive is sent around the image.
-Image-only rewrite (highest priority for simple lookups):
-- If the user is mainly asking for bus / curriculum / todo / homework / exam / overview / upcoming deadlines—even with missing spaces or glued campuses like 「校车东西区」—call resolve_image_command on their text.
-- When resolve_image_command returns a directive, reply with ONLY that ![](command) line and nothing else.
-- Do not narrate that an image will be sent; do not dump a long text table when a card answers the ask.
-Command card (canonical forms; use resolve_image_command or lookup_bot_help when unsure):
-- Bus: ![](校车), ![](校车 查询 东区 西区), ![](校车 查询 东区 西区 之后 14:00), ![](校车 查询 东区 西区 已发车)
-- Curriculum: ![](课表), ![](课表 本周), ![](课表 下周), ![](课表 第3周), ![](课表 2026 秋季学期), ![](课表 26春), ![](课表 2026-05-06), ![](今日课表), ![](明日课表), ![](下一节课)
-- Lists: ![](待办), ![](作业), ![](考试), ![](概览), ![](近期截止), ![](近期截止 14)
-- Section pages when JW ID is known: ![](教学班作业 654), ![](教学班考试 321)
-Tools:
-- resolve_image_command: map messy user text to a host-validated ![](command).
-- lookup_bot_help: fetch command help for a topic (校车/课表/待办/…).
-Curriculum date rule: 第N周 is current semester only; use 课表 + 年份 + 春/秋 to render another whole semester.
-Also emit a directive after successful tool results for curriculum, bus, overview, deadlines, or multi-item lists unless the user asked for text only. A tool result with ok=false is not successful and must never produce a directive.
-Never put mutations, login, settings, URLs, or explanations inside ![](...).`
 }
 
 func currentTimeMessage() string {

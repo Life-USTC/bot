@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -47,9 +46,21 @@ func TestNapCatDelegatesInboundWithSeparateGroupActor(t *testing.T) {
 	}
 }
 
-func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, agentService *agent.Service, dispatcher *agent.Dispatcher, recorder botapp.Recorder) {
+func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, agentService *agent.Service, recorder botapp.Recorder) {
 	t.Helper()
-	deliverer, err := delivery.New(nil, NewDeliveryAdapter(bridge))
+	db := handler.Store
+	if db == nil {
+		db, _ = recorder.(*store.Store)
+	}
+	if db == nil {
+		var err error
+		db, err = store.Open(t.TempDir() + "/bot.db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+	}
+	deliverer, err := delivery.New(db, NewDeliveryAdapter(bridge))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,18 +68,18 @@ func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, ag
 	if agentService != nil {
 		agentHandler = agentService
 	}
-	var messageDispatcher botapp.Dispatcher
-	if dispatcher != nil {
-		messageDispatcher = dispatcher
-	}
-	app, err := botapp.New(botapp.Config{
-		Commands: handler, Agent: agentHandler, Dispatcher: messageDispatcher, Delivery: deliverer,
-		Recorder: recorder, Logger: bridge.Logger,
+	app, err := botapp.NewCoordinator(botapp.CoordinatorConfig{
+		Jobs: db, Commands: handler, Agent: agentHandler, Outputs: deliverer,
+		Recorder: recorder, Logger: bridge.Logger, PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	bridge.App = app
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go app.Run(ctx)
+	go (&delivery.Worker{Service: deliverer, Interval: time.Millisecond}).Run(ctx)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -243,7 +254,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	bridge := &Bridge{Logger: log.New(&logs, "", 0)}
 	configureTestApp(t, bridge, commands.Handler{
 		Life: life.NewClient(lifeServer.URL, lifeServer.Client()),
-	}, nil, nil, nil)
+	}, nil, nil)
 	upgrader := websocket.Upgrader{}
 	handled := make(chan struct{})
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -306,78 +317,9 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	}
 }
 
-func TestDispatchMessageBatchesAgentMessages(t *testing.T) {
+func TestCoordinatorProcessesCommandsWithoutAgentDelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var modelRequests atomic.Int32
-	var requestBody map[string]any
-	replies := make(chan string, 1)
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/send_private_msg" {
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Error(err)
-				return
-			}
-			replies <- fmt.Sprint(body["message"])
-			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":1}}`))
-			return
-		}
-		modelRequests.Add(1)
-		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-			t.Error(err)
-			return
-		}
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl-batch","object":"chat.completion","created":0,"model":"test-model",
-			"choices":[{"index":0,"message":{"role":"assistant","content":"合并完成"},"finish_reason":"stop"}],
-			"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
-		}`))
-	}))
-	defer modelServer.Close()
-	agentService, err := agent.New(ctx, agent.Config{
-		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model",
-	}, commands.Handler{}, modelServer.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	bridge := &Bridge{APIURL: modelServer.URL, HTTPClient: modelServer.Client()}
-	dispatcher := agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
-		Debounce: 15 * time.Millisecond, MaxWait: 50 * time.Millisecond,
-	})
-	configureTestApp(t, bridge, commands.Handler{}, agentService, dispatcher, nil)
-	bridge.processInbound(ctx, messageEvent{PostType: "message", MessageType: "private", RawMessage: "第一条", UserID: 42})
-	bridge.processInbound(ctx, messageEvent{PostType: "message", MessageType: "private", RawMessage: "补充说明", UserID: 42})
-
-	select {
-	case reply := <-replies:
-		if reply != "合并完成" {
-			t.Fatalf("reply = %q", reply)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for batched reply")
-	}
-	if modelRequests.Load() != 1 {
-		t.Fatalf("model requests = %d", modelRequests.Load())
-	}
-	select {
-	case extra := <-replies:
-		t.Fatalf("unexpected extra reply: %q", extra)
-	case <-time.After(40 * time.Millisecond):
-	}
-	encoded, _ := json.Marshal(requestBody["messages"])
-	if !bytes.Contains(encoded, []byte("第一条\\n\\n补充说明")) {
-		t.Fatalf("model messages = %s", encoded)
-	}
-}
-
-func TestDispatchMessageBypassesAgentQueueForCommands(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	agentService, err := agent.New(ctx, agent.Config{Enabled: false}, commands.Handler{}, http.DefaultClient)
-	if err != nil {
-		t.Fatal(err)
-	}
 	replied := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		replied <- struct{}{}
@@ -385,10 +327,7 @@ func TestDispatchMessageBypassesAgentQueueForCommands(t *testing.T) {
 	}))
 	defer server.Close()
 	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
-	dispatcher := agent.NewDispatcher(ctx, agentService, agent.DispatcherConfig{
-		Debounce: 200 * time.Millisecond, MaxWait: 300 * time.Millisecond,
-	})
-	configureTestApp(t, bridge, commands.Handler{}, agentService, dispatcher, nil)
+	configureTestApp(t, bridge, commands.Handler{}, nil, nil)
 	bridge.processInbound(ctx, messageEvent{
 		PostType: "message", MessageType: "private", RawMessage: "帮助", UserID: 42,
 	})
@@ -411,7 +350,7 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 	bridge := &Bridge{}
 	configureTestApp(t, bridge, commands.Handler{
 		Life: life.NewClient(lifeServer.URL, lifeServer.Client()),
-	}, nil, nil, nil)
+	}, nil, nil)
 	upgrader := websocket.Upgrader{}
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -645,16 +584,24 @@ func TestHandleMessageRecordsIgnored(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	bridge := &Bridge{}
-	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, nil, db)
+	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, db)
 	bridge.processInbound(context.Background(), messageEvent{
 		PostType:    "message",
 		MessageType: "private",
 		RawMessage:  "not a command",
 		UserID:      456,
 	})
-	count, err := db.InteractionCount(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	var count int64
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		count, err = db.InteractionCount(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if count == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 	if count != 1 {
 		t.Fatalf("interaction count = %d", count)
@@ -686,13 +633,13 @@ func TestInvalidInboundIsRejectedBeforeRecording(t *testing.T) {
 	bridge := &Bridge{
 		Logger: log.New(&logs, "", 0),
 	}
-	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, nil, db)
+	configureTestApp(t, bridge, commands.Handler{Store: db}, nil, db)
 	bridge.processInbound(context.Background(), messageEvent{
 		PostType:   "message",
 		RawMessage: "not a command",
 		UserID:     456,
 	})
-	if !strings.Contains(logs.String(), "reject inbound message: inbound conversation is incomplete") {
+	if !strings.Contains(logs.String(), "enqueue inbound job failed:") || !strings.Contains(logs.String(), "inbound conversation is incomplete") {
 		t.Fatalf("logs = %q", logs.String())
 	}
 }

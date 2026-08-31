@@ -2,13 +2,9 @@ package commands
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"github.com/Life-USTC/Bot/internal/store"
 )
-
-const agentConfirmationTTL = 15 * time.Minute
 
 // AgentCommandResult is the host-authoritative result of an Agent-requested
 // command. Response is retained for application-layer delivery of images and
@@ -23,21 +19,17 @@ type AgentCommandResult struct {
 	Response             Response `json:"-"`
 }
 
-// ExecuteForAgent parses and executes one host command without feeding it back
-// through App.Process. Mutation confirmation and result exposure are resolved
-// from the invocation's descriptor policy.
-func (h Handler) ExecuteForAgent(ctx context.Context, input Input) (AgentCommandResult, error) {
-	input.Text = stripCQCodes(input.Text)
-	if isConfirmationOK(input.Text) {
-		return AgentCommandResult{Status: "forbidden", Text: "Agent 不能代替用户确认操作；请等待用户回复 ok。"}, nil
-	}
-	invocation, ok := h.parse(input.Text)
+// ExecuteCapabilityForAgent executes one validated structured capability.
+// This is the Agent boundary; command strings remain a user-facing syntax.
+func (h Handler) ExecuteCapabilityForAgent(ctx context.Context, input Input, id CapabilityID, args []string) (AgentCommandResult, error) {
+	invocation, ok := NewInvocation(id, args)
 	if !ok {
-		return AgentCommandResult{Status: "not_found", Text: "宿主无法识别这条命令。"}, nil
+		return AgentCommandResult{Status: "invalid_arguments", Kind: string(id), Text: "能力参数无效。"}, nil
 	}
-	if h.hasAdditionalCommandLine(input.Text) {
-		return AgentCommandResult{Status: "forbidden", Text: "一次只能执行一条宿主命令。"}, nil
-	}
+	return h.executeInvocationForAgent(ctx, input, invocation)
+}
+
+func (h Handler) executeInvocationForAgent(ctx context.Context, input Input, invocation Invocation) (AgentCommandResult, error) {
 	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(invocation) {
 		return AgentCommandResult{
 			Status: "forbidden", Command: canonicalAgentCommand(invocation),
@@ -47,12 +39,6 @@ func (h Handler) ExecuteForAgent(ctx context.Context, input Input) (AgentCommand
 	command := canonicalAgentCommand(invocation)
 	policy := invocation.Capability.PolicyFor(invocation)
 	if policy.Confirmation == ConfirmUser {
-		if h.Store == nil {
-			return AgentCommandResult{}, errors.New("confirmation store is unavailable")
-		}
-		if _, err := h.Store.SavePendingConfirmation(ctx, input.Identity, command, "agent", agentConfirmationTTL); err != nil {
-			return AgentCommandResult{}, err
-		}
 		return AgentCommandResult{
 			Status:               "confirmation_required",
 			Command:              command,

@@ -100,6 +100,7 @@ type ConversationJob struct {
 	InvocationJSON string
 	LeaseToken     string
 	ClaimedAt      *time.Time
+	Revision       int
 	Attempts       int
 	MaxAttempts    int
 	RetryAt        time.Time
@@ -165,6 +166,7 @@ type conversationJobRow struct {
 	InvocationJSON   string     `gorm:"not null"`
 	LeaseToken       string     `gorm:"index"`
 	ClaimedAt        *time.Time `gorm:"index"`
+	Revision         int        `gorm:"not null;default:1"`
 	Attempts         int        `gorm:"not null;default:0"`
 	MaxAttempts      int        `gorm:"not null;default:0"`
 	RetryAt          *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:2"`
@@ -199,6 +201,8 @@ func (conversationJobSequenceRow) TableName() string {
 // EnqueueConversationJob inserts a job once for its source event. The bool is
 // true only when a row was inserted; a duplicate returns the original row.
 func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJobEnqueue) (ConversationJob, bool, error) {
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
 	if err := validateConversationIdentity(input.Identity); err != nil {
 		return ConversationJob{}, false, err
 	}
@@ -317,6 +321,7 @@ func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJo
 			WaitReason:       string(waitReason),
 			InputJSON:        inputJSON,
 			InvocationJSON:   invocationJSON,
+			Revision:         1,
 			Attempts:         0,
 			MaxAttempts:      input.MaxAttempts,
 			RetryAt:          conversationJobTimePtr(input.RetryAt),
@@ -372,6 +377,8 @@ func (s *Store) GetConversationJob(ctx context.Context, id int64) (*Conversation
 // The optional timestamp exists for deterministic callers and tests; omitted
 // calls use the store clock.
 func (s *Store) ClaimConversationJob(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
 	if err := validateConversationIdentity(ident); err != nil {
 		return nil, err
 	}
@@ -416,6 +423,8 @@ func (s *Store) ClaimNextConversationJob(ctx context.Context, at ...time.Time) (
 // most one job at a time can be claimed from any given conversation because a
 // later sequence is blocked by an earlier non-terminal state.
 func (s *Store) ClaimConversationJobs(ctx context.Context, now time.Time, limit int) ([]ConversationJob, error) {
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -660,6 +669,8 @@ func (s *Store) ResolveUnknownConversationJob(ctx context.Context, id int64, sta
 // confirmation in a conversation. Exactly one concurrent caller can move it
 // back to queued; subsequent calls return nil.
 func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
 	if err := validateConversationIdentity(ident); err != nil {
 		return nil, err
 	}
@@ -683,6 +694,7 @@ func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Id
 				"state":       string(ConversationJobStateQueued),
 				"wait_reason": "",
 				"retry_at":    nil,
+				"revision":    gorm.Expr("revision + 1"),
 				"updated_at":  now,
 			})
 		if result.Error != nil {
@@ -719,13 +731,38 @@ func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Iden
 			"state":       string(ConversationJobStateQueued),
 			"wait_reason": "",
 			"retry_at":    nil,
+			"revision":    gorm.Expr("revision + 1"),
 			"updated_at":  now,
 		}).Error
 }
 
-// UnblockConversationJobs is the short form used by an auth completion hook.
-func (s *Store) UnblockConversationJobs(ctx context.Context, ident Identity, at ...time.Time) error {
-	return s.UnblockConversationJobsAfterAuth(ctx, ident, at...)
+// UnblockAuthorizedConversationJobs repairs the small crash window between a
+// successful credential commit and the auth poller's wake-up call. A pending
+// login session deliberately blocks an older credential from releasing work.
+func (s *Store) UnblockAuthorizedConversationJobs(ctx context.Context, now time.Time) error {
+	now = normalizeStoreTime(now)
+	return s.db.WithContext(ctx).Exec(`
+		UPDATE conversation_jobs
+		SET state = ?, wait_reason = '', retry_at = NULL, revision = revision + 1, updated_at = ?
+		WHERE state = ?
+		  AND (expires_at IS NULL OR expires_at > ?)
+		  AND EXISTS (
+			SELECT 1 FROM credentials
+			WHERE credentials.user_id = conversation_jobs.user_id
+			  AND credentials.expires_at > ?
+		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM login_sessions
+			WHERE login_sessions.user_id = conversation_jobs.user_id
+			  AND login_sessions.platform = conversation_jobs.platform
+			  AND login_sessions.conversation_type = conversation_jobs.conversation_type
+			  AND login_sessions.conversation_id = conversation_jobs.conversation_id
+			  AND login_sessions.status = ?
+		  )`,
+		string(ConversationJobStateQueued), now,
+		string(ConversationJobStateWaitingAuth), now, now,
+		string(LoginStatusPending),
+	).Error
 }
 
 // ResumeConversationJobInput stores a user-provided input and queues a job
@@ -747,6 +784,7 @@ func (s *Store) ResumeConversationJobInput(ctx context.Context, id int64, input 
 			"wait_reason": "",
 			"input_json":  inputJSON,
 			"retry_at":    nil,
+			"revision":    gorm.Expr("revision + 1"),
 			"updated_at":  now,
 		})
 	if result.Error != nil {
@@ -872,6 +910,7 @@ func conversationJobFromRow(row conversationJobRow) (ConversationJob, error) {
 		InvocationJSON: row.InvocationJSON,
 		LeaseToken:     row.LeaseToken,
 		ClaimedAt:      conversationJobTimePtrValue(row.ClaimedAt),
+		Revision:       row.Revision,
 		Attempts:       row.Attempts,
 		MaxAttempts:    row.MaxAttempts,
 		RetryAt:        conversationJobTimeValue(row.RetryAt),

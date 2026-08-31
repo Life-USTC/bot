@@ -47,11 +47,6 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
 	startedAt := time.Now()
 	input.Text = stripCQCodes(input.Text)
-	if isConfirmationOK(input.Text) {
-		if reply, ok := h.confirmPending(ctx, input); ok {
-			return textResponse(reply), true
-		}
-	}
 	cmd, ok := h.parse(input.Text)
 	if !ok && store.IsGroupConversation(input.Identity) {
 		cmd, ok = parseGroupBus(input.Text)
@@ -113,12 +108,19 @@ func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocat
 		return Response{Text: "存储未配置。", Kind: cmd.Name}, true
 	}
 	var response Response
+	responseKind := cmd.Name
 	if descriptor.Requirements.PublicCache && h.PublicCache != nil {
 		response = Response{Text: h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
 			return descriptor.Execute(h, ctx, input.Identity, cmd).Text
 		}), Kind: cmd.Name}
 	} else {
 		response = descriptor.Execute(h, ctx, input.Identity, cmd)
+	}
+	if cmd.Name == string(CapabilityLogin) && !firstArgIsHelp(cmd.Args) {
+		session, sessionErr := h.Auth.Store.ActiveLoginSession(ctx, input.Identity)
+		if sessionErr == nil && session != nil {
+			responseKind = ResponseKindAuthWait
+		}
 	}
 	if descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(response.Text) && store.IsPrivateConversation(input.Identity) {
 		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
@@ -127,38 +129,14 @@ func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocat
 			response.Text = commandError("登录开始失败：", loginErr)
 		} else {
 			response.Text = loginResponse.Text
+			responseKind = ResponseKindAuthWait
 		}
 	}
-	response.Kind = cmd.Name
-	response.Image = h.imageResponseFor(cmd, response.Text)
+	response.Kind = responseKind
+	if responseKind != ResponseKindAuthWait {
+		response.Image = h.imageResponseFor(cmd, response.Text)
+	}
 	return response, true
-}
-
-func (h Handler) HandleImageDirective(ctx context.Context, input Input) (Response, bool) {
-	cmd, ok := h.parse(input.Text)
-	if !ok || !imageDirectiveCommandAllowed(cmd) {
-		return Response{}, false
-	}
-	input.SuppressLog = true
-	return h.HandleResponse(ctx, input)
-}
-
-func imageDirectiveCommandAllowed(cmd Invocation) bool {
-	if firstArgIsHelp(cmd.Args) {
-		return false
-	}
-	switch cmd.Name {
-	case "schedule", "section_homeworks", "exam", "section_exams", "nextclass", "overview", "upcoming_deadlines":
-		return true
-	case "todo":
-		return todoImageArgs(cmd.Args)
-	case "homework":
-		return homeworkImageArgs(cmd.Args)
-	case "bus":
-		return !busPreferenceArgs(cmd.Args)
-	default:
-		return false
-	}
 }
 
 const (
@@ -1061,9 +1039,18 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 		}
 		return result.Message
 	}
-	session, err := h.Auth.BeginDeviceLogin(ctx, ident)
+	if _, err := h.Auth.AccessToken(ctx, ident); err == nil {
+		return "已登录 Life @ USTC。"
+	}
+	session, err := h.Auth.Store.ActiveLoginSession(ctx, ident)
 	if err != nil {
-		return commandError("登录开始失败：", err)
+		return commandError("登录状态查不到：", err)
+	}
+	if session == nil {
+		session, err = h.Auth.BeginDeviceLogin(ctx, ident)
+		if err != nil {
+			return commandError("登录开始失败：", err)
+		}
 	}
 	link := session.VerificationURIComplete
 	if link == "" {
@@ -3151,48 +3138,6 @@ func interactionReply(cmd Invocation, reply string) string {
 		return "[私有日历订阅链接已发送]"
 	}
 	return reply
-}
-
-func isConfirmationOK(text string) bool {
-	return strings.EqualFold(strings.TrimSpace(text), "ok")
-}
-
-func (h Handler) confirmPending(ctx context.Context, input Input) (string, bool) {
-	if h.Store == nil || !store.HasConversationIdentity(input.Identity) {
-		return "", false
-	}
-	pending, err := h.Store.ActivePendingConfirmation(ctx, input.Identity)
-	if err != nil {
-		reply := commandError("确认读取失败：", err)
-		if !input.SuppressLog {
-			h.recordInteraction(ctx, input.Identity, Invocation{Name: "confirm", Raw: strings.TrimSpace(input.Text)}, reply)
-		}
-		return reply, true
-	}
-	if pending == nil {
-		return "", false
-	}
-	reply, handled := h.Handle(ctx, Input{
-		Text:        pending.Command,
-		Identity:    input.Identity,
-		SuppressLog: true,
-	})
-	status := store.PendingConfirmationStatusConfirmed
-	if !handled {
-		status = store.PendingConfirmationStatusFailed
-		reply = "确认命令无法执行：" + pending.Command
-	}
-	if err := h.Store.MarkPendingConfirmation(ctx, pending.ID, status); err != nil {
-		h.logf("mark pending confirmation failed: %v", err)
-	}
-	if !input.SuppressLog {
-		h.recordInteraction(ctx, input.Identity, Invocation{
-			Name: "confirm",
-			Args: []string{pending.Command},
-			Raw:  strings.TrimSpace(input.Text),
-		}, reply)
-	}
-	return reply, true
 }
 
 func (h Handler) logf(format string, args ...any) {

@@ -129,7 +129,7 @@ type HelpMetadata struct {
 }
 
 // Invocation is the normalized result of parsing one command. Name is the
-// canonical ID string used by existing conversation/audit storage; Capability
+// canonical ID string used by durable conversation/audit storage; Capability
 // points at the descriptor that owns all requirements and execution policy.
 type Invocation struct {
 	Capability   *CapabilityDescriptor
@@ -172,7 +172,7 @@ type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocatio
 // called after the descriptor policy has been resolved.
 type CapabilityPresenter func(Invocation, Response, CapabilityPolicy) AgentPresentation
 
-// AgentPresentation is the result exposure decision for ExecuteForAgent.
+// AgentPresentation is the result exposure decision for structured Agent invocations.
 type AgentPresentation struct {
 	Text            string
 	DeliveredByHost bool
@@ -244,10 +244,11 @@ func textExecutor(run func(Handler, context.Context, store.Identity, []string) s
 
 func defaultCapabilityPresenter(inv Invocation, response Response, policy CapabilityPolicy) AgentPresentation {
 	presentation := AgentPresentation{Response: response, Text: response.Text}
-	if policy.Exposure == ExposureHostOnly {
+	switch policy.Exposure {
+	case ExposureHostOnly:
 		presentation.Text = ""
 		presentation.DeliveredByHost = true
-	} else if policy.Exposure == ExposureRedacted {
+	case ExposureRedacted:
 		presentation.Text = "结果已由宿主安全处理。"
 	}
 	if response.Image != nil || len(response.Parts) > 0 {
@@ -547,6 +548,12 @@ func CapabilityDescriptorFor(id CapabilityID) (CapabilityDescriptor, bool) {
 		return copy, true
 	}
 	return CapabilityDescriptor{}, false
+}
+
+// NewInvocation validates structured agent arguments against the same
+// descriptor policy used by direct command parsing.
+func NewInvocation(id CapabilityID, args []string) (Invocation, bool) {
+	return acceptedCommand("", string(id), args)
 }
 
 func descriptorForID(name string) (*CapabilityDescriptor, bool) {

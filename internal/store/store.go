@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -101,14 +100,14 @@ const (
 	InteractionDirectionInbound  = "inbound"
 	InteractionDirectionOutbound = "outbound"
 
-	InteractionStatusHandled     = "handled"
-	InteractionStatusWaitingAuth = "waiting_auth"
-	InteractionStatusIgnored     = "ignored"
-	InteractionStatusAccepted    = "accepted"
-	InteractionStatusUnknown     = "unknown"
-	// InteractionStatusSent is retained for existing records and callers.
-	InteractionStatusSent   = "sent"
-	InteractionStatusFailed = "failed"
+	InteractionStatusHandled             = "handled"
+	InteractionStatusWaitingAuth         = "waiting_auth"
+	InteractionStatusWaitingConfirmation = "waiting_confirmation"
+	InteractionStatusIgnored             = "ignored"
+	InteractionStatusAccepted            = "accepted"
+	InteractionStatusUnknown             = "unknown"
+	InteractionStatusSent                = "sent"
+	InteractionStatusFailed              = "failed"
 
 	DeliveryMethodMediaUpload = "media_upload"
 	DeliveryMethodMediaCache  = "media_cache"
@@ -187,35 +186,6 @@ type FeedbackRecord struct {
 	ResolvedAt *time.Time
 }
 
-type PendingConfirmation struct {
-	ID        int64
-	Identity  Identity
-	Command   string
-	Source    string
-	Status    string
-	ExpiresAt time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-// PendingRequest is a text-only user request that is waiting for a successful
-// login before it can be routed through the normal bot application flow.
-// ClaimToken is only populated while the request is claimed by a worker and
-// must be supplied when completing or failing the request.
-type PendingRequest struct {
-	ID         int64
-	Identity   Identity
-	Text       string
-	Status     string
-	Attempts   int
-	ClaimToken string
-	ClaimedAt  *time.Time
-	LastError  string
-	ExpiresAt  time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-}
-
 type PublicCommandCacheEntry struct {
 	Version   string
 	Command   string
@@ -235,28 +205,11 @@ const (
 
 	FeedbackStatusOpen     = "open"
 	FeedbackStatusResolved = "resolved"
-
-	PendingConfirmationStatusPending    = "pending"
-	PendingConfirmationStatusConfirmed  = "confirmed"
-	PendingConfirmationStatusSuperseded = "superseded"
-	PendingConfirmationStatusFailed     = "failed"
-	PendingConfirmationStatusExpired    = "expired"
-
-	PendingRequestStatusPending   = "pending"
-	PendingRequestStatusClaimed   = "claimed"
-	PendingRequestStatusCompleted = "completed"
-	PendingRequestStatusFailed    = "failed"
-
-	// PendingRequestTTL is intentionally longer than the normal device-login
-	// flow so users do not lose a request while completing authorization.
-	PendingRequestTTL = 15 * time.Minute
-	// PendingRequestClaimLease lets another process reclaim a request after a
-	// crash between claim and completion.
-	PendingRequestClaimLease = 2 * time.Minute
 )
 
 type Store struct {
-	db *gorm.DB
+	db                *gorm.DB
+	conversationJobMu sync.Mutex
 }
 
 type userRow struct {
@@ -485,47 +438,6 @@ func (feedbackRecordRow) TableName() string {
 	return "feedback_records"
 }
 
-type pendingConfirmationRow struct {
-	ID               int64  `gorm:"primaryKey"`
-	UserID           int64  `gorm:"not null;index"`
-	Platform         string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
-	ExternalUserID   string `gorm:"not null"`
-	ConversationType string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
-	ConversationID   string `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
-	Command          string `gorm:"not null"`
-	Source           string
-	Status           string    `gorm:"not null;index:idx_pending_confirmations_conversation_status"`
-	ExpiresAt        time.Time `gorm:"not null;index"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-}
-
-func (pendingConfirmationRow) TableName() string {
-	return "pending_confirmations"
-}
-
-type pendingRequestRow struct {
-	ID               int64  `gorm:"primaryKey"`
-	UserID           int64  `gorm:"not null;index"`
-	Platform         string `gorm:"not null;uniqueIndex:idx_pending_requests_conversation,priority:1"`
-	ExternalUserID   string `gorm:"not null"`
-	ConversationType string `gorm:"not null;uniqueIndex:idx_pending_requests_conversation,priority:2"`
-	ConversationID   string `gorm:"not null;uniqueIndex:idx_pending_requests_conversation,priority:3"`
-	Text             string `gorm:"not null"`
-	Status           string `gorm:"not null;index:idx_pending_requests_status_expiry"`
-	Attempts         int    `gorm:"not null;default:0"`
-	ClaimToken       string
-	ClaimedAt        *time.Time
-	LastError        string
-	ExpiresAt        time.Time `gorm:"not null;index:idx_pending_requests_status_expiry"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-}
-
-func (pendingRequestRow) TableName() string {
-	return "pending_requests"
-}
-
 type publicCommandCacheRow struct {
 	ID        int64     `gorm:"primaryKey"`
 	Version   string    `gorm:"not null;uniqueIndex:idx_public_command_cache_key,priority:1"`
@@ -600,8 +512,6 @@ func (s *Store) migrate() error {
 		&conversationSummaryRow{},
 		&feedbackRecordRow{},
 		&outgoingMessageRow{},
-		&pendingConfirmationRow{},
-		&pendingRequestRow{},
 		&conversationJobSequenceRow{},
 		&conversationJobRow{},
 		&publicCommandCacheRow{},
@@ -1712,418 +1622,11 @@ func (s *Store) FeedbackCount(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-func (s *Store) SavePendingConfirmation(ctx context.Context, ident Identity, command, source string, ttl time.Duration) (int64, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return 0, err
-	}
-	ident = normalizeIdentity(ident)
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return 0, errors.New("pending confirmation command is empty")
-	}
-	if ttl <= 0 {
-		ttl = 15 * time.Minute
-	}
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return 0, err
-	}
-	now := nowUTC()
-	var id int64
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&pendingConfirmationRow{}).
-			Where("user_id = ? AND conversation_type = ? AND conversation_id = ? AND status = ?",
-				userID, ident.ConversationType, ident.ConversationID, PendingConfirmationStatusPending).
-			Updates(map[string]any{
-				"status":     PendingConfirmationStatusSuperseded,
-				"updated_at": now,
-			}).Error; err != nil {
-			return err
-		}
-		row := pendingConfirmationRow{
-			UserID:           userID,
-			Platform:         ident.Platform,
-			ExternalUserID:   ident.UserID,
-			ConversationType: ident.ConversationType,
-			ConversationID:   ident.ConversationID,
-			Command:          command,
-			Source:           strings.TrimSpace(source),
-			Status:           PendingConfirmationStatusPending,
-			ExpiresAt:        now.Add(ttl),
-			CreatedAt:        now,
-			UpdatedAt:        now,
-		}
-		if err := tx.Create(&row).Error; err != nil {
-			return err
-		}
-		id = row.ID
-		return nil
-	})
-	return id, err
-}
-
-func (s *Store) ActivePendingConfirmation(ctx context.Context, ident Identity) (*PendingConfirmation, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return nil, err
-	}
-	ident = normalizeIdentity(ident)
-	userID, ok, err := s.userID(ctx, ident)
-	if err != nil || !ok {
-		return nil, err
-	}
-	now := nowUTC()
-	var row pendingConfirmationRow
-	err = s.db.WithContext(ctx).
-		Where("user_id = ? AND conversation_type = ? AND conversation_id = ? AND status = ? AND expires_at > ?",
-			userID, ident.ConversationType, ident.ConversationID, PendingConfirmationStatusPending, now).
-		Order("id DESC").
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &PendingConfirmation{
-		ID:        row.ID,
-		Identity:  ident,
-		Command:   row.Command,
-		Source:    row.Source,
-		Status:    row.Status,
-		ExpiresAt: row.ExpiresAt,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
-	}, nil
-}
-
-func (s *Store) MarkPendingConfirmation(ctx context.Context, id int64, status string) error {
-	if id <= 0 {
-		return nil
-	}
-	status = textutil.LowerTrim(status)
-	if status == "" {
-		return errors.New("pending confirmation status is empty")
-	}
-	return s.db.WithContext(ctx).Model(&pendingConfirmationRow{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"status":     status,
-			"updated_at": nowUTC(),
-		}).Error
-}
-
-// SavePendingRequest stores the latest text request for a private
-// conversation. Saving a new request supersedes any in-flight request for the
-// same conversation, which keeps the durable queue bounded at one item per
-// private chat.
-func (s *Store) SavePendingRequest(ctx context.Context, ident Identity, text string, ttl time.Duration) (int64, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return 0, err
-	}
-	ident = normalizeIdentity(ident)
-	if !IsPrivateConversation(ident) {
-		return 0, errors.New("pending request only supports private conversations")
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return 0, errors.New("pending request text is empty")
-	}
-	if ttl <= 0 {
-		ttl = PendingRequestTTL
-	}
-	userID, err := s.EnsureUser(ctx, ident)
-	if err != nil {
-		return 0, err
-	}
-	now := nowUTC()
-	row := pendingRequestRow{
-		UserID:           userID,
-		Platform:         ident.Platform,
-		ExternalUserID:   ident.UserID,
-		ConversationType: ident.ConversationType,
-		ConversationID:   ident.ConversationID,
-		Text:             text,
-		Status:           PendingRequestStatusPending,
-		ExpiresAt:        now.Add(ttl).UTC(),
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "platform"},
-			{Name: "conversation_type"},
-			{Name: "conversation_id"},
-		},
-		DoUpdates: clause.Assignments(map[string]any{
-			"user_id":          row.UserID,
-			"external_user_id": row.ExternalUserID,
-			"text":             row.Text,
-			"status":           row.Status,
-			"attempts":         0,
-			"claim_token":      "",
-			"claimed_at":       nil,
-			"last_error":       "",
-			"expires_at":       row.ExpiresAt,
-			"created_at":       row.CreatedAt,
-			"updated_at":       row.UpdatedAt,
-		}),
-	}).Create(&row).Error; err != nil {
-		return 0, err
-	}
-	if row.ID > 0 {
-		return row.ID, nil
-	}
-	var saved pendingRequestRow
-	if err := s.db.WithContext(ctx).
-		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID).
-		First(&saved).Error; err != nil {
-		return 0, err
-	}
-	return saved.ID, nil
-}
-
-// ActivePendingRequest returns the current non-terminal request for a private
-// conversation. Expired requests are never returned.
-func (s *Store) ActivePendingRequest(ctx context.Context, ident Identity) (*PendingRequest, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return nil, err
-	}
-	ident = normalizeIdentity(ident)
-	if !IsPrivateConversation(ident) {
-		return nil, errors.New("pending request only supports private conversations")
-	}
-	now := nowUTC()
-	var row pendingRequestRow
-	err := s.db.WithContext(ctx).
-		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND status IN ? AND expires_at > ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID,
-			[]string{PendingRequestStatusPending, PendingRequestStatusClaimed, PendingRequestStatusFailed}, now.UTC()).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return pendingRequestFromRow(row), nil
-}
-
-// PendingRequests lists requests that can be claimed by a worker. It is
-// deliberately read-only; ClaimPendingRequest/ClaimPendingRequests perform
-// the atomic state transition afterwards.
-func (s *Store) PendingRequests(ctx context.Context, now time.Time, limit int) ([]PendingRequest, error) {
-	now = normalizeStoreTime(now)
-	if limit <= 0 {
-		limit = 100
-	}
-	var rows []pendingRequestRow
-	err := s.db.WithContext(ctx).
-		Where("expires_at > ? AND (status IN ? OR (status = ? AND (claimed_at IS NULL OR claimed_at <= ?)))",
-			now.UTC(), []string{PendingRequestStatusPending, PendingRequestStatusFailed}, PendingRequestStatusClaimed,
-			now.Add(-PendingRequestClaimLease).UTC()).
-		Order("id ASC").Limit(limit).Find(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	requests := make([]PendingRequest, 0, len(rows))
-	for _, row := range rows {
-		requests = append(requests, *pendingRequestFromRow(row))
-	}
-	return requests, nil
-}
-
-// ClaimPendingRequest atomically claims the current request for one private
-// conversation. A nil result means there is no unexpired request or another
-// worker already owns the claim.
-func (s *Store) ClaimPendingRequest(ctx context.Context, ident Identity) (*PendingRequest, error) {
-	return s.ClaimPendingRequestAt(ctx, ident, nowUTC())
-}
-
-// ClaimPendingRequestAt is the clock-injectable form used by tests and by
-// callers that already have a consistent timestamp for a polling cycle.
-func (s *Store) ClaimPendingRequestAt(ctx context.Context, ident Identity, now time.Time) (*PendingRequest, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return nil, err
-	}
-	ident = normalizeIdentity(ident)
-	if !IsPrivateConversation(ident) {
-		return nil, errors.New("pending request only supports private conversations")
-	}
-	userID, ok, err := s.userID(ctx, ident)
-	if err != nil || !ok {
-		return nil, err
-	}
-	return s.claimPendingRequestByIdentity(ctx, userID, ident, normalizeStoreTime(now))
-}
-
-// ClaimPendingRequests atomically claims up to limit requests across private
-// conversations. It is used on process startup to resume work that survived a
-// restart after authorization had already completed.
-func (s *Store) ClaimPendingRequests(ctx context.Context, now time.Time, limit int) ([]PendingRequest, error) {
-	now = normalizeStoreTime(now)
-	candidates, err := s.PendingRequests(ctx, now, limit)
-	if err != nil {
-		return nil, err
-	}
-	claimed := make([]PendingRequest, 0, len(candidates))
-	for _, candidate := range candidates {
-		userID, ok, err := s.userID(ctx, candidate.Identity)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		request, err := s.claimPendingRequestByID(ctx, userID, candidate.ID, now)
-		if err != nil {
-			return nil, err
-		}
-		if request != nil {
-			claimed = append(claimed, *request)
-		}
-	}
-	return claimed, nil
-}
-
-func (s *Store) claimPendingRequestByIdentity(ctx context.Context, userID int64, ident Identity, now time.Time) (*PendingRequest, error) {
-	token, err := pendingRequestClaimToken()
-	if err != nil {
-		return nil, err
-	}
-	claimedAt := now.UTC()
-	result := s.db.WithContext(ctx).Model(&pendingRequestRow{}).
-		Where("user_id = ? AND platform = ? AND conversation_type = ? AND conversation_id = ? AND expires_at > ? AND (status IN ? OR (status = ? AND (claimed_at IS NULL OR claimed_at <= ?)))",
-			userID, ident.Platform, ident.ConversationType, ident.ConversationID, now.UTC(),
-			[]string{PendingRequestStatusPending, PendingRequestStatusFailed}, PendingRequestStatusClaimed,
-			now.Add(-PendingRequestClaimLease).UTC()).
-		Updates(map[string]any{
-			"status":      PendingRequestStatusClaimed,
-			"attempts":    gorm.Expr("attempts + 1"),
-			"claim_token": token,
-			"claimed_at":  claimedAt,
-			"updated_at":  now.UTC(),
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	var row pendingRequestRow
-	if err := s.db.WithContext(ctx).Where("user_id = ? AND claim_token = ?", userID, token).First(&row).Error; err != nil {
-		return nil, err
-	}
-	return pendingRequestFromRow(row), nil
-}
-
-func (s *Store) claimPendingRequestByID(ctx context.Context, userID, id int64, now time.Time) (*PendingRequest, error) {
-	token, err := pendingRequestClaimToken()
-	if err != nil {
-		return nil, err
-	}
-	claimedAt := now.UTC()
-	result := s.db.WithContext(ctx).Model(&pendingRequestRow{}).
-		Where("id = ? AND user_id = ? AND expires_at > ? AND (status IN ? OR (status = ? AND (claimed_at IS NULL OR claimed_at <= ?)))",
-			id, userID, now.UTC(), []string{PendingRequestStatusPending, PendingRequestStatusFailed}, PendingRequestStatusClaimed,
-			now.Add(-PendingRequestClaimLease).UTC()).
-		Updates(map[string]any{
-			"status":      PendingRequestStatusClaimed,
-			"attempts":    gorm.Expr("attempts + 1"),
-			"claim_token": token,
-			"claimed_at":  claimedAt,
-			"updated_at":  now.UTC(),
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, nil
-	}
-	var row pendingRequestRow
-	if err := s.db.WithContext(ctx).Where("id = ? AND claim_token = ?", id, token).First(&row).Error; err != nil {
-		return nil, err
-	}
-	return pendingRequestFromRow(row), nil
-}
-
-// CompletePendingRequest marks a claimed request as completed. The boolean is
-// false when the claim was superseded, expired, or already finalized.
-func (s *Store) CompletePendingRequest(ctx context.Context, id int64, claimToken string) (bool, error) {
-	return s.transitionPendingRequest(ctx, id, claimToken, PendingRequestStatusCompleted, "")
-}
-
-// FailPendingRequest releases a claim into a retryable failed state. A later
-// polling cycle may claim it again while its TTL remains valid.
-func (s *Store) FailPendingRequest(ctx context.Context, id int64, claimToken, reason string) (bool, error) {
-	reason = strings.TrimSpace(reason)
-	if len([]rune(reason)) > 1000 {
-		reason = string([]rune(reason)[:1000])
-	}
-	return s.transitionPendingRequest(ctx, id, claimToken, PendingRequestStatusFailed, reason)
-}
-
-func (s *Store) transitionPendingRequest(ctx context.Context, id int64, claimToken, status, reason string) (bool, error) {
-	if id <= 0 {
-		return false, errors.New("pending request id is invalid")
-	}
-	claimToken = strings.TrimSpace(claimToken)
-	if claimToken == "" {
-		return false, errors.New("pending request claim token is empty")
-	}
-	if status != PendingRequestStatusCompleted && status != PendingRequestStatusFailed {
-		return false, fmt.Errorf("invalid pending request terminal status %q", status)
-	}
-	updates := map[string]any{
-		"status":      status,
-		"claim_token": "",
-		"claimed_at":  nil,
-		"last_error":  reason,
-		"updated_at":  nowUTC(),
-	}
-	result := s.db.WithContext(ctx).Model(&pendingRequestRow{}).
-		Where("id = ? AND status = ? AND claim_token = ?", id, PendingRequestStatusClaimed, claimToken).
-		Updates(updates)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
-func pendingRequestFromRow(row pendingRequestRow) *PendingRequest {
-	return &PendingRequest{
-		ID: row.ID,
-		Identity: Identity{
-			Platform:         row.Platform,
-			UserID:           row.ExternalUserID,
-			ConversationType: row.ConversationType,
-			ConversationID:   row.ConversationID,
-		},
-		Text:       row.Text,
-		Status:     row.Status,
-		Attempts:   row.Attempts,
-		ClaimToken: row.ClaimToken,
-		ClaimedAt:  row.ClaimedAt,
-		LastError:  row.LastError,
-		ExpiresAt:  row.ExpiresAt,
-		CreatedAt:  row.CreatedAt,
-		UpdatedAt:  row.UpdatedAt,
-	}
-}
-
 func normalizeStoreTime(now time.Time) time.Time {
 	if now.IsZero() {
 		return nowUTC()
 	}
 	return now.UTC()
-}
-
-func pendingRequestClaimToken() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("generate pending request claim token: %w", err)
-	}
-	return hex.EncodeToString(raw[:]), nil
 }
 
 func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (NotificationSettings, error) {
