@@ -218,7 +218,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
-		"校车（xc）\t查询班次、路线与设置偏好",
+		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
 		"设置\t管理通知等偏好",
 		"AI\t管理 AI 工具调用展示",
 	} {
@@ -947,7 +947,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 日程 | 今日安排、综合概览与近期截止 |",
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
-		"| 校车（xc） | 查询班次、路线与设置偏好 |",
+		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
 		"| 设置 | 管理通知等偏好 |",
 		"| AI | 管理 AI 工具调用展示 |",
 	} {
