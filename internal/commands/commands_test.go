@@ -3083,13 +3083,16 @@ func TestSubscriptionCalendarLink(t *testing.T) {
 		"https://example.test/calendar/private-token.ics",
 		"使用方法：复制链接",
 		"通过 URL 添加/订阅日历",
+		"iCalendar",
 		"自动更新",
-		"不是 CalDAV 账户地址",
 		"请勿公开",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
 		}
+	}
+	if strings.Contains(strings.ToLower(reply), "caldav") {
+		t.Fatalf("reply contains obsolete CalDAV wording: %q", reply)
 	}
 	recent, err := handler.Store.RecentHandledInteractions(ctx, ident, 1)
 	if err != nil {

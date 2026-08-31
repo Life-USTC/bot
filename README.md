@@ -56,3 +56,18 @@ make sync-openapi generate \
   OPENAPI_SOURCE=../server/public/openapi.generated.json \
   OPENAPI_SERVER_SHA=<40-character-server-commit>
 ```
+
+### 本地完整 E2E
+
+仓库旁存在 `../server` checkout 时，可以启动隔离的 PostgreSQL、真实本地
+Life@USTC Worker、Bot 进程和 NapCat 协议测试端，完整验证设备登录、原请求自动恢复、
+iCalendar 私有链接投递及 `.ics` feed：
+
+```sh
+make dev-e2e
+```
+
+脚本使用独立的 Compose project、数据库和临时目录，不读取 Bot 的 `.env`，也不会连接
+QQ 或生产服务。其他目录或端口可通过 `LIFE_USTC_SERVER_DIR`、
+`DEV_E2E_SERVER_PORT`、`DEV_E2E_POSTGRES_PORT` 和 `DEV_E2E_INSPECTOR_PORT`
+覆盖。

@@ -4,10 +4,13 @@ BUILD_FLAGS ?=
 BUILD_OUTPUT ?=
 BUILD_PACKAGE ?= ./...
 
-.PHONY: build generate sync-openapi check-openapi-provenance check-openapi-source print-openapi-commit
+.PHONY: build dev-e2e generate sync-openapi check-openapi-provenance check-openapi-source print-openapi-commit
 
 build: check-openapi-provenance generate
 	go build $(BUILD_FLAGS) $(if $(BUILD_OUTPUT),-o $(BUILD_OUTPUT)) $(BUILD_PACKAGE)
+
+dev-e2e:
+	./scripts/dev-e2e.sh
 
 generate:
 	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.json

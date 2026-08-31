@@ -712,7 +712,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
-	if !strings.Contains(instruction, "personal iCalendar subscription URL") || !strings.Contains(instruction, "not a CalDAV account") {
+	if !strings.Contains(instruction, "personal iCalendar subscription URL") || strings.Contains(strings.ToLower(instruction), "caldav") {
 		t.Fatalf("instruction lacks accurate calendar subscription guidance: %q", instruction)
 	}
 	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
