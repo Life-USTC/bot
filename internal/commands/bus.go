@@ -45,7 +45,7 @@ func parseNaturalBusIntent(raw string) ParseResult {
 		}
 	}
 	args := busArgsFromText(text)
-	if !query && len(args) == 0 {
+	if !query || len(args) == 0 {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	result := acceptedCommandResult(raw, "bus", args)

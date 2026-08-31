@@ -216,24 +216,24 @@ func (h Handler) parseResult(text string) ParseResult {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	if isNaturalCalendarLinkRequest(raw) {
-		return directCommandResult(raw, "subscription", []string{"link"})
+		return acceptedCommandResult(raw, "subscription", []string{"link"})
 	}
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	if isHelpToken(fields[0]) {
-		return directCommandResult(raw, string(CapabilityHelp), fields[1:])
+		return acceptedCommandResult(raw, string(CapabilityHelp), fields[1:])
 	}
 
 	if name, args, ok := normalizeHierarchicalCommand(commandToken(fields[0]), fields[1:]); ok {
-		return directCommandResult(raw, name, args)
+		return acceptedCommandResult(raw, name, args)
 	}
 
 	if len(fields) >= 2 {
 		joined := fields[0] + fields[1]
 		if name, args, ok := normalizeJoinedCommand(joined, fields[2:]); ok {
-			return directCommandResult(raw, name, args)
+			return acceptedCommandResult(raw, name, args)
 		}
 	}
 
@@ -241,7 +241,7 @@ func (h Handler) parseResult(text string) ParseResult {
 	if name == "" {
 		return parseNaturalReadIntent(raw)
 	}
-	result := directCommandResult(raw, name, args)
+	result := acceptedCommandResult(raw, name, args)
 	if result.Recognized() {
 		return result
 	}
@@ -259,42 +259,6 @@ func parseNaturalReadIntent(raw string) ParseResult {
 // integrations that need to persist or inspect a normalized invocation.
 func ParseCommand(text string) ParseResult {
 	return Handler{}.parseResult(text)
-}
-
-func directCommandResult(raw, name string, args []string) ParseResult {
-	result := acceptedCommandResult(raw, name, args)
-	if result.Status == ParseStatusInvalid && looksLikeNaturalLanguage(raw) {
-		return ParseResult{Status: ParseStatusUnknown}
-	}
-	return result
-}
-
-var naturalLanguageMarkers = []string{
-	"我", "帮", "想", "规划", "研究", "意见", "有点", "一下", "看看", "建议", "安排", "啥", "上面",
-}
-
-func looksLikeNaturalLanguage(raw string) bool {
-	fields := strings.Fields(raw)
-	if len(fields) < 2 || strings.HasPrefix(fields[0], "/") {
-		return false
-	}
-	text := strings.Join(fields[1:], "")
-	for _, marker := range naturalLanguageMarkers {
-		if strings.Contains(text, marker) {
-			return true
-		}
-	}
-	for _, marker := range ambiguousScheduleMarkers {
-		if strings.Contains(text, marker) {
-			return true
-		}
-	}
-	for _, marker := range naturalBusAmbiguousMarkers {
-		if strings.Contains(text, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 // ParseInvocation is the direct command parser used by integrations that need

@@ -39,6 +39,8 @@ func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 		"校车 周六 nonsense",
 		"课程 查看 not-an-id",
 		"教学班 课表 12345 bad-date 2026-09-30",
+		"作业 帮我看看还有啥",
+		"AI 帮我规划行程",
 	} {
 		response, ok := (Handler{}).HandleResponse(context.Background(), Input{
 			Text:     input,
@@ -74,16 +76,13 @@ func TestUnknownNaturalLanguageRemainsUnknown(t *testing.T) {
 		"反馈校车时间需要进一步整理",
 		"建议你改进校车显示",
 		"意见很大啊",
-		"通知课表开",
-		"提醒 我周三研究清楚",
 		"安排 一下明天行程",
 		"我 明天有课吗",
-		"作业 帮我看看还有啥",
-		"AI 帮我规划行程",
-		"校车 我明天怎么走",
 		"工具 都有哪些",
 		"个人 信息",
 		"车 怎么坐去东区",
+		"查一下火星校车",
+		"帮我查校车",
 		"push 一下",
 		"p 通不通",
 	} {
