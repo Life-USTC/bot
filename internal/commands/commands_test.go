@@ -1353,6 +1353,14 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 	if !strings.Contains(img.AltText, "09:10") || !strings.Contains(img.AltText, "西区") {
 		t.Fatalf("alt text = %q", img.AltText)
 	}
+	dateText := "查询日期：2026-09-05（周六）\n" + text
+	dateImage := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"周六", "东区", "西区"}}, dateText)
+	if dateImage == nil || dateImage.Title != "校车 · 2026-09-05（周六）" || !strings.HasPrefix(dateImage.RichText, "# 校车 · 2026-09-05（周六）\n\n") || strings.Contains(dateImage.RichText, "查询日期") {
+		t.Fatalf("date image = %#v", dateImage)
+	}
+	if image := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"周末"}}, dateText+"\n\n"+dateText); image != nil {
+		t.Fatalf("multi-date image = %#v, want nil", image)
+	}
 
 	for name, tc := range map[string]struct {
 		cmd  Invocation

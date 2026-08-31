@@ -625,8 +625,8 @@ func TestBusQueryArgsSupportsServiceDaysAndDates(t *testing.T) {
 		wantDay  string
 		wantDate string
 	}{
-		"周六":         {wantDay: "saturday"},
-		"星期天":        {wantDay: "sunday"},
+		"周六":         {wantDay: "saturday", wantDate: "2026-09-05"},
+		"星期天":        {wantDay: "sunday", wantDate: "2026-09-06"},
 		"周一-周五":      {wantDay: "weekday"},
 		"周三":         {wantDay: "weekday"},
 		"周中":         {wantDay: "weekday"},
@@ -656,13 +656,62 @@ func TestBusQueryArgsSupportsServiceDaysAndDates(t *testing.T) {
 	}
 }
 
-func TestBusQueryArgsRejectsAmbiguousOrInvalidDates(t *testing.T) {
+func TestBusQueryArgsSupportsWeekendAndRejectsIncompatibleOrInvalidDates(t *testing.T) {
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
-	for _, args := range [][]string{{"周末"}, {"周六", "周日"}, {"2026-02-30"}} {
+	for _, args := range [][]string{{"周末"}, {"周六", "周日"}} {
+		_, options := busQueryArgs(args, now)
+		if options.QueryError != "" || options.ServiceDay != "saturday" || len(options.AdditionalSchedules) != 1 || options.AdditionalSchedules[0].ServiceDay != "sunday" {
+			t.Fatalf("args %v options = %#v", args, options)
+		}
+	}
+	for _, args := range [][]string{{"周六", "周一"}, {"2026-02-30"}} {
 		_, options := busQueryArgs(args, now)
 		if options.QueryError == "" {
 			t.Fatalf("args %v did not produce an error: %#v", args, options)
 		}
+	}
+}
+
+func TestBusAtReturnsSaturdayAndSundayAsSeparateDatedSections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[
+				{"routeId":1,"dayType":"weekday","departureTime":"07:00","departureMinutes":420,"arrivalTime":"07:15"},
+				{"routeId":1,"dayType":"saturday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:15"},
+				{"routeId":1,"dayType":"sunday","departureTime":"09:00","departureMinutes":540,"arrivalTime":"09:15"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
+	reply := handler.busAt(context.Background(), store.Identity{}, []string{"周六", "周日", "东区", "西区"}, now)
+	for _, want := range []string{"查询日期：2026-09-05（周六）", "𝟶𝟾:𝟶𝟶", "查询日期：2026-09-06（周日）", "𝟶𝟿:𝟶𝟶"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
+	}
+	if strings.Contains(reply, "𝟶𝟽:𝟶𝟶") {
+		t.Fatalf("reply contains weekday trip: %q", reply)
+	}
+
+	weekday := handler.busAt(context.Background(), store.Identity{}, []string{"2026-09-07", "东区", "西区"}, now)
+	if !strings.Contains(weekday, "查询日期：2026-09-07（周一）") || !strings.Contains(weekday, "𝟶𝟽:𝟶𝟶") {
+		t.Fatalf("weekday reply = %q", weekday)
+	}
+}
+
+func TestBusAtSpecificDateLabelsNoService(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"routes":[],"trips":[]}`))
+	}))
+	defer server.Close()
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
+	if reply := handler.busAt(context.Background(), store.Identity{}, []string{"周日"}, now); reply != "查询日期：2026-09-06（周日）\n没有查到校车。" {
+		t.Fatalf("reply = %q", reply)
 	}
 }
 

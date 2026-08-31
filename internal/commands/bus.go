@@ -26,6 +26,33 @@ func parseGroupBus(text string) (Invocation, bool) {
 	return commandResult(raw, "bus", busArgsFromText(raw)), true
 }
 
+var naturalBusAmbiguousMarkers = []string{
+	"为什么", "怎么", "如何", "解释", "比较", "推荐", "设置", "偏好", "提醒", "添加", "修改", "删除", "问题", "bug",
+	"查不到", "没查到", "不对", "错误",
+}
+
+func parseNaturalBusIntent(raw string) (Invocation, bool) {
+	text := stripCQCodes(raw)
+	if text == "" || strings.HasPrefix(text, "/") || !containsBusKeyword(text) || containsAny(strings.ToLower(text), naturalBusAmbiguousMarkers) {
+		return Invocation{}, false
+	}
+	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
+	query := false
+	for _, marker := range []string{"查", "看", "几点", "什么时候", "哪班", "班次", "还有", "最早", "最晚", "下一班"} {
+		if strings.Contains(compact, marker) {
+			query = true
+			break
+		}
+	}
+	args := busArgsFromText(text)
+	if !query && len(args) == 0 {
+		return Invocation{}, false
+	}
+	invocation := commandResult(raw, "bus", args)
+	invocation.NaturalRoute = "bus"
+	return invocation, true
+}
+
 func containsBusKeyword(text string) bool {
 	lower := strings.ToLower(text)
 	if strings.Contains(lower, "校车") || strings.Contains(lower, "班车") {
@@ -230,6 +257,23 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			routeArgs = nil
 		}
 	}
+	if len(options.AdditionalSchedules) == 0 {
+		return h.busReplyForOptions(ctx, ident, data, routeArgs, now, options)
+	}
+	selections := append([]busScheduleSelection{{ServiceDay: options.ServiceDay, Date: options.Now, Label: options.DateLabel}}, options.AdditionalSchedules...)
+	replies := make([]string, 0, len(selections))
+	for _, selection := range selections {
+		selectionOptions := options
+		selectionOptions.ServiceDay = selection.ServiceDay
+		selectionOptions.Now = selection.Date
+		selectionOptions.DateLabel = selection.Label
+		selectionOptions.AdditionalSchedules = nil
+		replies = append(replies, h.busReplyForOptions(ctx, ident, data, routeArgs, now, selectionOptions))
+	}
+	return strings.Join(replies, "\n\n")
+}
+
+func (h Handler) busReplyForOptions(ctx context.Context, ident store.Identity, data map[string]any, routeArgs []string, now time.Time, options busQueryOptions) string {
 	var items []busItem
 	if options.ExplicitRoute {
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
@@ -245,7 +289,10 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	}
 	if len(items) == 0 {
 		if options.ExplicitSchedule {
-			return "没查到符合指定日期或服务日的校车。"
+			if options.DateLabel != "" {
+				return "查询日期：" + options.DateLabel + "\n没有查到校车。"
+			}
+			return "没查到符合指定服务日的校车。"
 		}
 		return "今天后面没查到校车。"
 	}
@@ -257,7 +304,11 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			items = projectBusItemsToCampuses(items, campuses[:2])
 		}
 	}
-	return strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
+	reply := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
+	if options.DateLabel != "" {
+		reply = "查询日期：" + options.DateLabel + "\n" + reply
+	}
+	return reply
 }
 
 func busHelp() string {
@@ -265,6 +316,7 @@ func busHelp() string {
 		"可以直接发：",
 		"校车",
 		"校车 全部",
+		"校车 周六 周日",
 		"校车 周六 东区 太湖路园区",
 		"校车 周日 太湖路园区 东区",
 		"校车 工作日 东区 西区",
@@ -368,9 +420,9 @@ func busPreferenceArgs(args []string) bool {
 func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 	queryArgs := make([]string, 0, len(args))
 	options := busQueryOptions{}
-	var selectedDate time.Time
+	selections := make([]busScheduleSelection, 0, 2)
 	for _, arg := range args {
-		selection, recognized, err := parseBusScheduleSelector(arg, now)
+		parsed, recognized, err := parseBusScheduleSelectors(arg, now)
 		if !recognized {
 			queryArgs = append(queryArgs, arg)
 			continue
@@ -379,21 +431,26 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 			options.QueryError = err
 			continue
 		}
-		if options.ServiceDay != "" && options.ServiceDay != selection.ServiceDay {
-			options.QueryError = "一次只能查询一种校车服务日。"
-			continue
+		selections = append(selections, parsed...)
+	}
+	selections = deduplicateBusScheduleSelections(selections)
+	if len(selections) > 1 {
+		if !isSaturdaySundaySelections(selections) {
+			options.QueryError = "一次只能查询一个日期；周六和周日可以一起查询。"
+		} else if aligned, ok := alignRelativeSaturdaySundaySelections(selections, now); ok {
+			selections = aligned
+		} else {
+			options.QueryError = "一起查询的周六和周日必须属于同一个周末。"
 		}
+	}
+	if len(selections) > 0 {
+		selection := selections[0]
 		options.ServiceDay = selection.ServiceDay
+		options.Now = selection.Date
+		options.DateLabel = selection.Label
+		options.AdditionalSchedules = append([]busScheduleSelection(nil), selections[1:]...)
 		options.ExplicitSchedule = true
 		options.ShowDeparted = true
-		if !selection.Date.IsZero() {
-			if !selectedDate.IsZero() && !sameCalendarDate(selectedDate, selection.Date) {
-				options.QueryError = "一次只能查询一个日期。"
-				continue
-			}
-			selectedDate = selection.Date
-			options.Now = selection.Date
-		}
 	}
 
 	out := make([]string, 0, len(queryArgs))
@@ -439,13 +496,34 @@ func busQueryArgs(args []string, now time.Time) ([]string, busQueryOptions) {
 		}
 		out = append(out, queryArgs[i])
 	}
+	if options.After && len(options.AdditionalSchedules) > 0 {
+		options.QueryError = "一次只能为一个日期指定“之后”时间。"
+	}
 	options.ExplicitRoute = len(busCampusesFromArgs(out)) >= 2
 	return out, options
 }
 
 type busScheduleSelection struct {
-	ServiceDay string
-	Date       time.Time
+	ServiceDay      string
+	Date            time.Time
+	Label           string
+	RelativeWeekday bool
+}
+
+func parseBusScheduleSelectors(value string, now time.Time) ([]busScheduleSelection, bool, string) {
+	switch normToken(value) {
+	case "周末", "weekend":
+		saturday := nextBusWeekdayDate(now, time.Saturday)
+		return []busScheduleSelection{
+			newBusScheduleSelection(saturday),
+			newBusScheduleSelection(saturday.AddDate(0, 0, 1)),
+		}, true, ""
+	}
+	selection, recognized, err := parseBusScheduleSelector(value, now)
+	if !recognized || err != "" {
+		return nil, recognized, err
+	}
+	return []busScheduleSelection{selection}, true, ""
 }
 
 func parseBusScheduleSelector(value string, now time.Time) (busScheduleSelection, bool, string) {
@@ -453,21 +531,23 @@ func parseBusScheduleSelector(value string, now time.Time) (busScheduleSelection
 	loc := lifedata.ChinaLocation()
 	now = now.In(loc)
 	switch value {
-	case "周末", "weekend":
-		return busScheduleSelection{}, true, "周六和周日的校车时刻不同，请指定周六或周日。"
 	case "今天", "today":
 		date := dateAtMidnight(now)
-		return busScheduleSelection{ServiceDay: busServiceDay(date), Date: date}, true, ""
+		return newBusScheduleSelection(date), true, ""
 	case "明天", "tomorrow":
 		date := dateAtMidnight(now).AddDate(0, 0, 1)
-		return busScheduleSelection{ServiceDay: busServiceDay(date), Date: date}, true, ""
+		return newBusScheduleSelection(date), true, ""
 	case "后天":
 		date := dateAtMidnight(now).AddDate(0, 0, 2)
-		return busScheduleSelection{ServiceDay: busServiceDay(date), Date: date}, true, ""
+		return newBusScheduleSelection(date), true, ""
 	case "周六", "星期六", "礼拜六", "saturday":
-		return busScheduleSelection{ServiceDay: "saturday"}, true, ""
+		selection := newBusScheduleSelection(nextBusWeekdayDate(now, time.Saturday))
+		selection.RelativeWeekday = true
+		return selection, true, ""
 	case "周日", "周天", "星期日", "星期天", "礼拜日", "礼拜天", "sunday":
-		return busScheduleSelection{ServiceDay: "sunday"}, true, ""
+		selection := newBusScheduleSelection(nextBusWeekdayDate(now, time.Sunday))
+		selection.RelativeWeekday = true
+		return selection, true, ""
 	case "周一", "周二", "周三", "周四", "周五",
 		"星期一", "星期二", "星期三", "星期四", "星期五",
 		"礼拜一", "礼拜二", "礼拜三", "礼拜四", "礼拜五",
@@ -502,7 +582,71 @@ func parsedBusDate(yearText, monthText, dayText string, now time.Time) (busSched
 	if date.Year() != year || int(date.Month()) != month || date.Day() != day {
 		return busScheduleSelection{}, true, "校车查询日期不存在。"
 	}
-	return busScheduleSelection{ServiceDay: busServiceDay(date), Date: date}, true, ""
+	return newBusScheduleSelection(date), true, ""
+}
+
+func newBusScheduleSelection(date time.Time) busScheduleSelection {
+	date = dateAtMidnight(date)
+	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+	return busScheduleSelection{
+		ServiceDay: busServiceDay(date),
+		Date:       date,
+		Label:      date.Format("2006-01-02") + "（" + weekdays[date.Weekday()] + "）",
+	}
+}
+
+func nextBusWeekdayDate(now time.Time, weekday time.Weekday) time.Time {
+	today := dateAtMidnight(now)
+	days := (int(weekday) - int(today.Weekday()) + 7) % 7
+	return today.AddDate(0, 0, days)
+}
+
+func deduplicateBusScheduleSelections(selections []busScheduleSelection) []busScheduleSelection {
+	out := make([]busScheduleSelection, 0, len(selections))
+	seen := make(map[string]bool, len(selections))
+	for _, selection := range selections {
+		key := selection.ServiceDay + "\x00" + selection.Date.Format("2006-01-02")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, selection)
+	}
+	return out
+}
+
+func isSaturdaySundaySelections(selections []busScheduleSelection) bool {
+	if len(selections) != 2 {
+		return false
+	}
+	return (selections[0].ServiceDay == "saturday" && selections[1].ServiceDay == "sunday") ||
+		(selections[0].ServiceDay == "sunday" && selections[1].ServiceDay == "saturday")
+}
+
+func alignRelativeSaturdaySundaySelections(selections []busScheduleSelection, now time.Time) ([]busScheduleSelection, bool) {
+	var saturday, sunday busScheduleSelection
+	for _, selection := range selections {
+		if selection.ServiceDay == "saturday" {
+			saturday = selection
+		} else {
+			sunday = selection
+		}
+	}
+	if !saturday.Date.IsZero() && !sunday.Date.IsZero() && sameCalendarDate(saturday.Date.AddDate(0, 0, 1), sunday.Date) {
+		return selections, true
+	}
+	if saturday.RelativeWeekday && sunday.RelativeWeekday {
+		saturday = newBusScheduleSelection(nextBusWeekdayDate(now, time.Saturday))
+		sunday = newBusScheduleSelection(saturday.Date.AddDate(0, 0, 1))
+		saturday.RelativeWeekday = true
+		sunday.RelativeWeekday = true
+	} else {
+		return nil, false
+	}
+	if selections[0].ServiceDay == "sunday" {
+		return []busScheduleSelection{sunday, saturday}, true
+	}
+	return []busScheduleSelection{saturday, sunday}, true
 }
 
 func busServiceDay(date time.Time) string {
@@ -789,16 +933,18 @@ type busStop struct {
 }
 
 type busQueryOptions struct {
-	ShowDeparted       bool
-	Now                time.Time
-	After              bool
-	UsePreferredRoute  bool
-	ExplicitRoute      bool
-	BidirectionalRoute bool
-	ShowAll            bool
-	ServiceDay         string
-	ExplicitSchedule   bool
-	QueryError         string
+	ShowDeparted        bool
+	Now                 time.Time
+	After               bool
+	UsePreferredRoute   bool
+	ExplicitRoute       bool
+	BidirectionalRoute  bool
+	ShowAll             bool
+	ServiceDay          string
+	DateLabel           string
+	AdditionalSchedules []busScheduleSelection
+	ExplicitSchedule    bool
+	QueryError          string
 }
 
 func nextBusItems(data map[string]any, args []string, now time.Time) []busItem {

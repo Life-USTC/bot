@@ -63,3 +63,25 @@ func TestNaturalScheduleRouteIsHandledWithoutRawPromptLogging(t *testing.T) {
 		t.Fatalf("routing metrics contain raw prompt: %q", logs.String())
 	}
 }
+
+func TestNaturalBusIntentRoutesDatesWithoutAgent(t *testing.T) {
+	tests := map[string]string{
+		"能查一下周六、周日的校车吗？":  "周六 周日",
+		"帮我看明天东区到西区的校车":   "明天 东区 西区",
+		"查一下2026-09-05校车": "2026-09-05",
+	}
+	for input, want := range tests {
+		cmd, ok := (Handler{}).parse(input)
+		if !ok || cmd.Name != "bus" || joinedArgs(cmd.Args) != want || cmd.NaturalRoute != "bus" {
+			t.Errorf("%q parsed as %#v, ok=%v; want bus %q", input, cmd, ok, want)
+		}
+	}
+}
+
+func TestNaturalBusIntentLeavesDiagnosticQuestionsForAgent(t *testing.T) {
+	for _, input := range []string{"为什么周六校车查不到", "周六校车查不到", "校车怎么设置偏好", "解释一下校车路线为什么变了"} {
+		if cmd, ok := (Handler{}).parse(input); ok {
+			t.Errorf("diagnostic %q parsed as %#v", input, cmd)
+		}
+	}
+}

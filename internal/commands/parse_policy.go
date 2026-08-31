@@ -88,7 +88,7 @@ func busCommandArgsAcceptable(args []string) bool {
 		return true
 	}
 	for _, arg := range args {
-		if _, recognized, _ := parseBusScheduleSelector(arg, time.Now()); recognized {
+		if _, recognized, _ := parseBusScheduleSelectors(arg, time.Now()); recognized {
 			return true
 		}
 		switch normToken(arg) {

@@ -700,6 +700,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
+	if !strings.Contains(instruction, "invoke the host bus capability") || !strings.Contains(instruction, `["周六", "周日"]`) || !strings.Contains(instruction, "Never silently substitute today's timetable") || strings.Contains(instruction, "catalog_bus_departure_next.atTime (HH:MM") {
+		t.Fatalf("instruction lacks deterministic bus-date routing: %q", instruction)
+	}
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
 		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
