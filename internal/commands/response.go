@@ -28,7 +28,7 @@ func textResponse(text string) Response {
 }
 
 // helpImageTopic returns the help topic to render as an image for this command, if any.
-func helpImageTopic(cmd parsedCommand) (string, bool) {
+func helpImageTopic(cmd Invocation) (string, bool) {
 	if firstArgIsHelp(cmd.Args) {
 		if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
 			return topic, true
@@ -51,7 +51,7 @@ func helpImageTopic(cmd parsedCommand) (string, bool) {
 	return "", false
 }
 
-func (h Handler) imageResponseFor(cmd parsedCommand, text string) *responses.Image {
+func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image {
 	if !h.EnableImageResponses || strings.TrimSpace(text) == "" {
 		return nil
 	}

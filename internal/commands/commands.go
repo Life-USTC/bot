@@ -32,26 +32,6 @@ type Handler struct {
 	PublicCache            *PublicCommandCache
 }
 
-type CommandSpec struct {
-	Name        string
-	Aliases     []string
-	HasHelp     bool
-	NeedsLife   bool
-	NeedsStore  bool
-	NeedsAuth   bool
-	PublicCache bool
-	Normalize   func([]string) []string
-	Run         func(Handler, context.Context, store.Identity, []string) string
-}
-
-func CommandSpecs() []CommandSpec {
-	specs := append([]CommandSpec(nil), commandSpecs...)
-	for i := range specs {
-		specs[i].Aliases = append([]string(nil), specs[i].Aliases...)
-	}
-	return specs
-}
-
 type Input struct {
 	Text         string
 	Identity     store.Identity
@@ -101,45 +81,56 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)
 	}
-	var reply string
-	if cmd.Name == "help" {
-		reply = h.help(cmd.Args...)
-	} else {
-		spec, ok := commandSpec(cmd.Name)
-		if !ok || spec.Run == nil {
-			reply = h.help()
-		} else if firstArgIsHelp(cmd.Args) {
-			reply = h.help(cmd.Name)
-		} else if spec.NeedsLife && h.Life == nil {
-			reply = "Life @ USTC API unavailable: not configured."
-		} else if spec.NeedsAuth && (h.Auth == nil || h.Auth.Store == nil) {
-			reply = "登录未配置。"
-		} else if spec.NeedsStore && h.Store == nil {
-			reply = "存储未配置。"
-		} else if spec.PublicCache && h.PublicCache != nil {
-			reply = h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
-				return spec.Run(h, ctx, input.Identity, cmd.Args)
-			})
-		} else {
-			reply = spec.Run(h, ctx, input.Identity, cmd.Args)
-		}
+	response, handled := h.executeInvocation(ctx, input, cmd)
+	if !handled {
+		return Response{}, false
 	}
-	if cmd.Name != "login" && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(reply) && store.IsPrivateConversation(input.Identity) {
-		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
-		if loginErr != nil {
-			h.logf("start resumable login failed: %v", loginErr)
-			reply = commandError("登录开始失败：", loginErr)
-		} else {
-			reply = loginResponse.Text
-		}
-	}
+	reply := response.Text
 	if !input.SuppressLog {
 		h.recordInteraction(ctx, input.Identity, cmd, reply)
 	}
-	response := Response{Text: reply, Image: h.imageResponseFor(cmd, reply), Kind: cmd.Name}
 	if cmd.NaturalRoute != "" {
 		h.logf("natural command routed: route=%s outcome=handled latency_ms=%d", cmd.NaturalRoute, time.Since(startedAt).Milliseconds())
 	}
+	return response, true
+}
+
+func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocation) (Response, bool) {
+	descriptor := cmd.Capability
+	if descriptor == nil || descriptor.Execute == nil {
+		return Response{}, false
+	}
+	if cmd.Name != string(CapabilityHelp) && firstArgIsHelp(cmd.Args) {
+		return Response{Text: h.help(cmd.Name), Image: h.imageResponseFor(cmd, h.help(cmd.Name)), Kind: cmd.Name}, true
+	}
+	if descriptor.Requirements.Life && h.Life == nil {
+		return Response{Text: "Life @ USTC API unavailable: not configured.", Kind: cmd.Name}, true
+	}
+	if descriptor.Requirements.OAuth && (h.Auth == nil || h.Auth.Store == nil) {
+		return Response{Text: "登录未配置。", Kind: cmd.Name}, true
+	}
+	if descriptor.Requirements.Store && h.Store == nil {
+		return Response{Text: "存储未配置。", Kind: cmd.Name}, true
+	}
+	var response Response
+	if descriptor.Requirements.PublicCache && h.PublicCache != nil {
+		response = Response{Text: h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
+			return descriptor.Execute(h, ctx, input.Identity, cmd).Text
+		}), Kind: cmd.Name}
+	} else {
+		response = descriptor.Execute(h, ctx, input.Identity, cmd)
+	}
+	if descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(response.Text) && store.IsPrivateConversation(input.Identity) {
+		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
+		if loginErr != nil {
+			h.logf("start resumable login failed: %v", loginErr)
+			response.Text = commandError("登录开始失败：", loginErr)
+		} else {
+			response.Text = loginResponse.Text
+		}
+	}
+	response.Kind = cmd.Name
+	response.Image = h.imageResponseFor(cmd, response.Text)
 	return response, true
 }
 
@@ -152,7 +143,7 @@ func (h Handler) HandleImageDirective(ctx context.Context, input Input) (Respons
 	return h.HandleResponse(ctx, input)
 }
 
-func imageDirectiveCommandAllowed(cmd parsedCommand) bool {
+func imageDirectiveCommandAllowed(cmd Invocation) bool {
 	if firstArgIsHelp(cmd.Args) {
 		return false
 	}
@@ -170,15 +161,6 @@ func imageDirectiveCommandAllowed(cmd parsedCommand) bool {
 	}
 }
 
-type parsedCommand struct {
-	Name         string
-	Args         []string
-	Raw          string
-	NaturalRoute string
-}
-
-var scheduleAliases = []string{"schedule", "sched", "kb", "课表", "课标"}
-
 const (
 	feedbackContextLimit     = 3
 	feedbackContextLookback  = 12
@@ -187,406 +169,32 @@ const (
 
 var feedbackEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 
-func (h Handler) groupCommandAllowed(cmd parsedCommand) bool {
-	if groupCommandAlwaysAllowed(cmd.Name) {
-		return true
-	}
-	// Bare help/menu is always available in groups; topic help stays behind the personal opt-in.
-	if cmd.Name == "help" && len(cmd.Args) == 0 {
-		return true
-	}
-	if !h.AllowGroupPersonalInfo {
+func (h Handler) groupCommandAllowed(cmd Invocation) bool {
+	if cmd.Capability == nil {
 		return false
 	}
-	return groupReadOnlyCommandAllowed(cmd)
-}
-
-func groupCommandAlwaysAllowed(name string) bool {
-	return name == "bus" || name == "feedback"
-}
-
-func groupReadOnlyCommandAllowed(cmd parsedCommand) bool {
-	switch cmd.Name {
-	case "help", "settings", "account", "calendar", "overview", "status", "semester", "course", "section", "teacher", "schedule", "nextclass", "exam":
+	policy := cmd.Capability.PolicyFor(cmd)
+	switch policy.Audience {
+	case AudienceAny:
 		return true
-	case "todo":
-		return groupTodoReadOnlyArgs(cmd.Args)
-	case "homework":
-		return groupHomeworkReadOnlyArgs(cmd.Args)
-	case "subscription":
-		return !hasArgs(cmd.Args) || firstArgIs(cmd.Args, "help")
+	case AudienceGroupReadOnly:
+		return h.AllowGroupPersonalInfo && policy.Effect == EffectRead
 	default:
 		return false
 	}
 }
 
-func groupTodoReadOnlyArgs(args []string) bool {
-	if !hasArgs(args) {
-		return true
-	}
-	switch args[0] {
-	case "help", "list", "all", "pending", "completed":
-		return true
-	default:
-		_, ok := normalizeTodoPriority(args[0])
-		return ok
-	}
-}
-
-func groupHomeworkReadOnlyArgs(args []string) bool {
-	if !hasArgs(args) {
-		return true
-	}
-	return !firstArgIn(args, "done", "undo")
-}
-
-var commandSpecs = []CommandSpec{
-	{
-		Name:      "login",
-		Aliases:   []string{"login", "登录", "dl"},
-		HasHelp:   true,
-		NeedsAuth: true,
-		Normalize: normalizeLoginArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.login(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "logout",
-		Aliases:   []string{"logout", "退出", "登出"},
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.logout(ctx, ident)
-		},
-	},
-	{
-		Name:      "account",
-		Aliases:   []string{"account", "账户", "我的", "profile"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.me(ctx, ident)
-		},
-	},
-	{
-		Name:      "todo",
-		Aliases:   []string{"todo", "td", "待办", "代办", "todo待办"},
-		HasHelp:   true,
-		NeedsLife: true,
-		NeedsAuth: true,
-		Normalize: normalizeTodoArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.todo(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "homework",
-		Aliases:   []string{"homework", "hw", "作业"},
-		HasHelp:   true,
-		NeedsLife: true,
-		NeedsAuth: true,
-		Normalize: normalizeHomeworkArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.homework(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "calendar",
-		Aliases:   []string{"calendar", "today", "rc", "jr", "ddl", "deadline", "deadlines", "日程", "今日", "今天", "日程安排"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.overview(ctx, ident)
-		},
-	},
-	{
-		Name:      "subscription",
-		Aliases:   []string{"订阅", "课程订阅", "sub", "subs", "subscription"},
-		HasHelp:   true,
-		NeedsLife: true,
-		NeedsAuth: true,
-		Normalize: normalizeSubscriptionArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.subscription(ctx, ident, args)
-		},
-	},
-	{
-		Name:       "notify",
-		Aliases:    []string{"notify", "提醒", "通知", "推送"},
-		HasHelp:    true,
-		NeedsStore: true,
-		Normalize:  normalizeNotifyArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.notify(ctx, ident, args)
-		},
-	},
-	{
-		Name:    "settings",
-		Aliases: []string{"settings", "setting", "设置"},
-		HasHelp: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.settings(ctx, ident, args)
-		},
-	},
-	{
-		Name:       "agent",
-		Aliases:    []string{"agent", "ai", "llm", "tools", "ai工具"},
-		HasHelp:    true,
-		NeedsStore: true,
-		Normalize:  normalizeAgentArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.agentSettings(ctx, ident, args)
-		},
-	},
-	{
-		Name:    "feedback",
-		Aliases: []string{"feedback", "fb", "反馈"},
-		HasHelp: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.feedback(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "ping",
-		Aliases:   []string{"ping"},
-		NeedsLife: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			if err := h.Life.Health(ctx); err != nil {
-				return "Life @ USTC API unavailable: " + err.Error()
-			}
-			return "Life @ USTC API is reachable."
-		},
-	},
-	{
-		Name:      "status",
-		Aliases:   []string{"status", "zt", "状态"},
-		NeedsLife: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.status(ctx, ident)
-		},
-	},
-	{
-		Name:        "semester",
-		Aliases:     []string{"semester", "term", "学期", "xq"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.currentSemester(ctx)
-		},
-	},
-	{
-		Name:        "course",
-		Aliases:     []string{"course", "kc", "课程"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchCourses(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:        "section",
-		Aliases:     []string{"section", "class", "bj", "教学班", "班级"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchSections(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:        "teacher",
-		Aliases:     []string{"teacher", "teachers", "ls", "js", "老师", "教师"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchTeachers(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:      "bus",
-		Aliases:   []string{"bus", "xc", "校车"},
-		HasHelp:   true,
-		NeedsLife: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.bus(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "schedule",
-		Aliases:   scheduleAliases,
-		HasHelp:   true,
-		NeedsLife: true,
-		NeedsAuth: true,
-		Normalize: normalizeScheduleArgs,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.curriculum(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "nextclass",
-		Aliases:   []string{"nextclass", "next", "下一节", "下节课", "下一节课"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.nextClass(ctx, ident)
-		},
-	},
-	{
-		Name:      "exam",
-		Aliases:   []string{"exam", "exams", "ks", "考试"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.exams(ctx, ident, args)
-		},
-	},
-	{
-		Name:        "list_semesters",
-		Aliases:     []string{"list_semesters", "学期列表"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.listSemesters(ctx, args)
-		},
-	},
-	{
-		Name:        "course_search",
-		Aliases:     []string{"course_search", "课程搜索"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchCoursesWithFilters(ctx, args)
-		},
-	},
-	{
-		Name:        "section_search",
-		Aliases:     []string{"section_search", "教学班搜索"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchSectionsWithFilters(ctx, args)
-		},
-	},
-	{
-		Name:        "teacher_search",
-		Aliases:     []string{"teacher_search", "老师搜索"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.searchTeachersWithFilters(ctx, args)
-		},
-	},
-	{
-		Name:        "course_by_jw_id",
-		Aliases:     []string{"course_by_jw_id", "课程编号"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.getCourseByJwID(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:        "section_by_jw_id",
-		Aliases:     []string{"section_by_jw_id", "教学班编号"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.getSectionByJwID(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:        "teacher_by_id",
-		Aliases:     []string{"teacher_by_id", "老师编号"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.getTeacherByID(ctx, joinedArgs(args))
-		},
-	},
-	{
-		Name:        "bus_routes",
-		Aliases:     []string{"bus_routes", "校车路线"},
-		NeedsLife:   true,
-		PublicCache: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.busRoutes(ctx, args)
-		},
-	},
-	{
-		Name:      "unsubscribe_section_by_jw_id",
-		Aliases:   []string{"unsubscribe_section_by_jw_id", "退订教学班"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.unsubscribeSectionByJwID(ctx, ident, joinedArgs(args))
-		},
-	},
-	{
-		Name:      "my_subscribed_sections",
-		Aliases:   []string{"my_subscribed_sections", "我的订阅"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.mySubscribedSections(ctx, ident)
-		},
-	},
-	{
-		Name:      "section_schedules",
-		Aliases:   []string{"section_schedules", "教学班课表"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.sectionSchedules(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "section_exams",
-		Aliases:   []string{"section_exams", "教学班考试"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.sectionExams(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "section_homeworks",
-		Aliases:   []string{"section_homeworks", "教学班作业"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.sectionHomeworks(ctx, ident, args)
-		},
-	},
-	{
-		Name:      "overview",
-		Aliases:   []string{"overview", "概览"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.myDashboard(ctx, ident)
-		},
-	},
-	{
-		Name:      "upcoming_deadlines",
-		Aliases:   []string{"upcoming_deadlines", "近期截止"},
-		NeedsLife: true,
-		NeedsAuth: true,
-		Run: func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.upcomingDeadlines(ctx, ident, args)
-		},
-	},
-}
-
-func (h Handler) parse(text string) (parsedCommand, bool) {
+func (h Handler) parse(text string) (Invocation, bool) {
 	raw := strings.TrimSpace(text)
 	if raw == "" {
-		return parsedCommand{}, false
+		return Invocation{}, false
 	}
 	if isNaturalCalendarLinkRequest(raw) {
 		return acceptedCommand(raw, "subscription", []string{"link"})
 	}
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
-		return parsedCommand{}, false
+		return Invocation{}, false
 	}
 	if isHelpToken(fields[0]) {
 		return helpCommand(raw, fields[1:]...), true
@@ -614,6 +222,12 @@ func (h Handler) parse(text string) (parsedCommand, bool) {
 	return parseNaturalScheduleIntent(raw)
 }
 
+// ParseInvocation is the direct command parser used by integrations that need
+// the normalized capability and its policy without executing it.
+func ParseInvocation(text string) (Invocation, bool) {
+	return Handler{}.parse(text)
+}
+
 func isNaturalCalendarLinkRequest(raw string) bool {
 	compact := strings.Join(strings.Fields(commandToken(raw)), "")
 	hasCalendarTarget := strings.Contains(compact, "日历订阅链接") ||
@@ -629,12 +243,17 @@ func isNaturalCalendarLinkRequest(raw string) bool {
 	return false
 }
 
-func helpCommand(raw string, args ...string) parsedCommand {
-	return parsedCommand{Name: "help", Args: args, Raw: raw}
+func helpCommand(raw string, args ...string) Invocation {
+	descriptor, _ := descriptorForID(string(CapabilityHelp))
+	return Invocation{Capability: descriptor, Name: string(CapabilityHelp), Args: args, Raw: raw}
 }
 
-func commandResult(raw, name string, args []string) parsedCommand {
-	return parsedCommand{Name: name, Args: args, Raw: raw}
+func commandResult(raw, name string, args []string) Invocation {
+	descriptor, _ := descriptorForID(name)
+	if descriptor != nil && descriptor.Normalize != nil {
+		args = descriptor.Normalize(args)
+	}
+	return Invocation{Capability: descriptor, Name: name, Args: args, Raw: raw}
 }
 
 func normalizeCommand(name string, args []string) (string, []string) {
@@ -648,16 +267,8 @@ func normalizeCommand(name string, args []string) (string, []string) {
 	if normalized, normalizedArgs, ok := normalizeJoinedCommand(name, args); ok {
 		return normalized, normalizedArgs
 	}
-	for _, spec := range commandSpecs {
-		for _, alias := range spec.Aliases {
-			if key != commandToken(alias) {
-				continue
-			}
-			if spec.Normalize != nil {
-				args = spec.Normalize(args)
-			}
-			return spec.Name, args
-		}
+	if descriptor, ok := descriptorForForm(key); ok {
+		return string(descriptor.ID), args
 	}
 	return "", args
 }
@@ -874,22 +485,9 @@ func translateCommandFields(args []string, aliases map[string]string) []string {
 	return out
 }
 
-func commandSpec(name string) (CommandSpec, bool) {
-	for _, spec := range commandSpecs {
-		if spec.Name == name {
-			return spec, true
-		}
-	}
-	return CommandSpec{}, false
-}
-
 func canonicalCommandAlias(name string) (string, bool) {
-	for _, spec := range commandSpecs {
-		for _, alias := range spec.Aliases {
-			if commandToken(alias) == name {
-				return spec.Name, true
-			}
-		}
+	if descriptor, ok := descriptorForForm(name); ok {
+		return string(descriptor.ID), true
 	}
 	return "", false
 }
@@ -917,7 +515,7 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 }
 
 func joinedScheduleDay(key string) (string, bool) {
-	for _, scheduleToken := range scheduleAliases {
+	for _, scheduleToken := range []string{"schedule", "课表", "kb"} {
 		if strings.HasPrefix(key, scheduleToken) {
 			if day, ok := normalizeScheduleDay(key[len(scheduleToken):]); ok {
 				return day, true
@@ -3519,7 +3117,7 @@ func (h Handler) loginRequired() string {
 	return "需要先登录。发送：登录"
 }
 
-func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd parsedCommand) {
+func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd Invocation) {
 	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
@@ -3528,7 +3126,7 @@ func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd pars
 	}
 }
 
-func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd parsedCommand, reply string) {
+func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd Invocation, reply string) {
 	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
@@ -3548,7 +3146,7 @@ func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cm
 	}
 }
 
-func interactionReply(cmd parsedCommand, reply string) string {
+func interactionReply(cmd Invocation, reply string) string {
 	if cmd.Name == "subscription" && firstArgIs(cmd.Args, "link") && strings.HasPrefix(reply, "日历订阅链接：\n") {
 		return "[私有日历订阅链接已发送]"
 	}
@@ -3567,7 +3165,7 @@ func (h Handler) confirmPending(ctx context.Context, input Input) (string, bool)
 	if err != nil {
 		reply := commandError("确认读取失败：", err)
 		if !input.SuppressLog {
-			h.recordInteraction(ctx, input.Identity, parsedCommand{Name: "confirm", Raw: strings.TrimSpace(input.Text)}, reply)
+			h.recordInteraction(ctx, input.Identity, Invocation{Name: "confirm", Raw: strings.TrimSpace(input.Text)}, reply)
 		}
 		return reply, true
 	}
@@ -3588,7 +3186,7 @@ func (h Handler) confirmPending(ctx context.Context, input Input) (string, bool)
 		h.logf("mark pending confirmation failed: %v", err)
 	}
 	if !input.SuppressLog {
-		h.recordInteraction(ctx, input.Identity, parsedCommand{
+		h.recordInteraction(ctx, input.Identity, Invocation{
 			Name: "confirm",
 			Args: []string{pending.Command},
 			Raw:  strings.TrimSpace(input.Text),

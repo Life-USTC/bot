@@ -18,10 +18,10 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
-func parseGroupBus(text string) (parsedCommand, bool) {
+func parseGroupBus(text string) (Invocation, bool) {
 	raw := stripCQCodes(text)
 	if raw == "" || !containsBusKeyword(raw) {
-		return parsedCommand{}, false
+		return Invocation{}, false
 	}
 	return commandResult(raw, "bus", busArgsFromText(raw)), true
 }
