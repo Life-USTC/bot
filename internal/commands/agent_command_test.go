@@ -25,6 +25,34 @@ func TestExecuteCapabilityForAgentRunsReadOnlyHostCapability(t *testing.T) {
 	}
 }
 
+func TestExecuteCapabilityForAgentEnforcesSharedDataScope(t *testing.T) {
+	ident := store.Identity{
+		Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100",
+	}
+	public, err := (Handler{}).ExecuteCapabilityForAgent(t.Context(), Input{Identity: ident}, CapabilityHelp, []string{"校车"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !public.OK || public.Status != AgentCommandStatusSuccess {
+		t.Fatalf("public result = %#v", public)
+	}
+	for _, test := range []struct {
+		id   CapabilityID
+		args []string
+	}{
+		{id: CapabilitySchedule},
+		{id: CapabilityBus, args: []string{"偏好"}},
+	} {
+		result, err := (Handler{}).ExecuteCapabilityForAgent(t.Context(), Input{Identity: ident}, test.id, test.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.OK || result.Status != AgentCommandStatusForbidden {
+			t.Fatalf("private result for %s = %#v", test.id, result)
+		}
+	}
+}
+
 func TestExecuteCapabilityForAgentReturnsActionableInputStatuses(t *testing.T) {
 	invalid, err := (Handler{}).ExecuteCapabilityForAgent(context.Background(), Input{}, CapabilityBus, []string{"not-a-day"})
 	if err != nil {

@@ -250,6 +250,54 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	}
 }
 
+func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	expires := now.Add(time.Hour)
+	first := Identity{Platform: "napcat", UserID: "41", ConversationType: "group", ConversationID: "100"}
+	second := first
+	second.UserID = "42"
+
+	waiting := enqueueConversationJobTest(t, s, first, "actor-one-confirm", ConversationJobEnqueue{
+		State: ConversationJobStateWaitingConfirmation, ExpiresAt: expires,
+	})
+	queued := enqueueConversationJobTest(t, s, second, "actor-two-command", ConversationJobEnqueue{ExpiresAt: expires})
+
+	claimed, err := s.ClaimNextConversationJob(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed == nil || claimed.ID != queued.ID {
+		t.Fatalf("second actor was blocked by first actor: %#v", claimed)
+	}
+	if ok, err := s.CompleteConversationJob(ctx, claimed.ID, claimed.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete second actor job: ok=%v err=%v", ok, err)
+	}
+
+	consumed, err := s.ConsumeConversationJobConfirmation(ctx, second, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if consumed != nil {
+		t.Fatalf("second actor consumed first actor confirmation: %#v", consumed)
+	}
+	consumed, err = s.ConsumeConversationJobConfirmation(ctx, first, now)
+	if err != nil || consumed == nil || consumed.ID != waiting.ID {
+		t.Fatalf("first actor confirmation = %#v err=%v", consumed, err)
+	}
+
+	auth := enqueueConversationJobTest(t, s, first, "actor-one-auth", ConversationJobEnqueue{
+		State: ConversationJobStateWaitingAuth, ExpiresAt: expires,
+	})
+	if err := s.UnblockConversationJobsAfterAuth(ctx, second, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetConversationJob(t, s, auth.ID); got.State != ConversationJobStateWaitingAuth {
+		t.Fatalf("second actor released first actor auth wait: %#v", got)
+	}
+}
+
 func TestConversationJobInputResumeLeaseRecoveryExpiryAndTerminalProtection(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()

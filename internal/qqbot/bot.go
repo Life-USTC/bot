@@ -115,15 +115,18 @@ type readyData struct {
 }
 
 type messageData struct {
-	ID          string           `json:"id"`
-	Content     string           `json:"content"`
-	Timestamp   string           `json:"timestamp"`
-	GroupOpenID string           `json:"group_openid"`
-	GroupID     string           `json:"group_id"`
-	ChannelID   string           `json:"channel_id"`
-	GuildID     string           `json:"guild_id"`
-	Author      messageAuthor    `json:"author"`
-	Attachments []map[string]any `json:"attachments"`
+	ID               string           `json:"id"`
+	Content          string           `json:"content"`
+	Timestamp        string           `json:"timestamp"`
+	GroupOpenID      string           `json:"group_openid"`
+	GroupID          string           `json:"group_id"`
+	ChannelID        string           `json:"channel_id"`
+	GuildID          string           `json:"guild_id"`
+	Author           messageAuthor    `json:"author"`
+	Attachments      []map[string]any `json:"attachments"`
+	MessageReference struct {
+		MessageID string `json:"message_id"`
+	} `json:"message_reference"`
 }
 
 type interactionData struct {
@@ -159,6 +162,7 @@ type messageAuthor struct {
 type incomingMessage struct {
 	ID        string
 	EventID   string
+	ReplyToID string
 	Type      string
 	Text      string
 	ImageURLs []string
@@ -169,13 +173,18 @@ func (m *incomingMessage) inbound() message.Inbound {
 	if m == nil {
 		return message.Inbound{}
 	}
+	var replyTo *message.ReplyRef
+	if strings.TrimSpace(m.ReplyToID) != "" {
+		replyTo = &message.ReplyRef{MessageID: strings.TrimSpace(m.ReplyToID)}
+	}
 	return message.Inbound{
 		Actor: message.Actor{Platform: m.Identity.Platform, UserID: m.Identity.UserID},
 		Conversation: message.Conversation{
 			Platform: m.Identity.Platform, Type: m.Identity.ConversationType, ID: m.Identity.ConversationID,
 		},
-		Source: message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
-		Text:   m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		Source:  message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
+		ReplyTo: replyTo,
+		Text:    m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
 		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
 	}
 }
@@ -597,10 +606,11 @@ func (b *Bot) interactionFromPayload(payload gatewayPayload) (*incomingMessage, 
 		return nil, err
 	}
 	return &incomingMessage{
-		EventID:  eventID,
-		Type:     fmt.Sprintf("interaction:%d", data.Type),
-		Text:     b.cleanContent(text),
-		Identity: ident,
+		EventID:   eventID,
+		ReplyToID: strings.TrimSpace(data.Data.Resolved.MessageID),
+		Type:      fmt.Sprintf("interaction:%d", data.Type),
+		Text:      b.cleanContent(text),
+		Identity:  ident,
 	}, nil
 }
 
@@ -673,6 +683,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 		return nil, err
 	}
 	messageID := textutil.FirstNonEmpty(data.ID, payload.ID)
+	replyToID := strings.TrimSpace(data.MessageReference.MessageID)
 	text := b.cleanContent(data.Content)
 	imageURLs := attachmentImageURLs(data.Attachments)
 	switch payload.T {
@@ -683,6 +694,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 		}
 		return &incomingMessage{
 			ID:        messageID,
+			ReplyToID: replyToID,
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
@@ -704,6 +716,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 		}
 		return &incomingMessage{
 			ID:        messageID,
+			ReplyToID: replyToID,
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
@@ -724,6 +737,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 		}
 		return &incomingMessage{
 			ID:        messageID,
+			ReplyToID: replyToID,
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
@@ -744,6 +758,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 		}
 		return &incomingMessage{
 			ID:        messageID,
+			ReplyToID: replyToID,
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
@@ -801,7 +816,7 @@ func attachmentImageURLs(attachments []map[string]any) []string {
 }
 
 func qqBotOutgoingMessage(ident store.Identity, message string) string {
-	if !store.IsGroupConversation(ident) {
+	if !store.IsSharedConversation(ident) {
 		return message
 	}
 	return "\n\n" + strings.TrimLeft(message, "\r\n")

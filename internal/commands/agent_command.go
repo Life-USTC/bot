@@ -55,7 +55,7 @@ func (h Handler) ExecuteCapabilityForAgent(ctx context.Context, input Input, id 
 }
 
 func (h Handler) executeInvocationForAgent(ctx context.Context, input Input, invocation Invocation) (AgentCommandResult, error) {
-	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(invocation) {
+	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
 		return AgentCommandResult{
 			OK: false, Status: AgentCommandStatusForbidden, Command: canonicalAgentCommand(invocation),
 			Kind: invocation.Name, Text: "此功能只能在私聊使用。",

@@ -674,12 +674,34 @@ func HasConversationIdentity(ident Identity) bool {
 	return HasUserIdentity(ident) && HasConversationTarget(ident)
 }
 
-func IsGroupConversation(ident Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "group")
+// ConversationSurface is the product-level privacy boundary. Transport names
+// stay at the adapters; policy code only needs to know whether participants
+// share the conversation.
+type ConversationSurface string
+
+const (
+	ConversationSurfaceUnknown ConversationSurface = "unknown"
+	ConversationSurfaceDirect  ConversationSurface = "direct"
+	ConversationSurfaceShared  ConversationSurface = "shared"
+)
+
+func SurfaceForConversation(ident Identity) ConversationSurface {
+	switch textutil.LowerTrim(ident.ConversationType) {
+	case "private", "guild_private":
+		return ConversationSurfaceDirect
+	case "group", "channel":
+		return ConversationSurfaceShared
+	default:
+		return ConversationSurfaceUnknown
+	}
 }
 
-func IsPrivateConversation(ident Identity) bool {
-	return textutil.TrimEqualFold(ident.ConversationType, "private")
+func IsDirectConversation(ident Identity) bool {
+	return SurfaceForConversation(ident) == ConversationSurfaceDirect
+}
+
+func IsSharedConversation(ident Identity) bool {
+	return SurfaceForConversation(ident) == ConversationSurfaceShared
 }
 
 func validateIdentity(ident Identity) error {
@@ -1420,6 +1442,42 @@ func (s *Store) CreateFeedbackWithOutbounds(
 
 func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
 	return enqueueWithDB(s.db.WithContext(ctx), outbound, nowUTC())
+}
+
+// ResolveResponseContext verifies that a referenced platform message is an
+// accepted Bot output in the same conversation. A non-nil empty context still
+// means the user replied to Presto; public invocations additionally carry the
+// arguments needed for deterministic follow-up handling.
+func (s *Store) ResolveResponseContext(ctx context.Context, conversation message.Conversation, platformMessageID string) (*message.ResponseContext, error) {
+	platform := strings.ToLower(strings.TrimSpace(conversation.Platform))
+	conversationType := strings.ToLower(strings.TrimSpace(conversation.Type))
+	conversationID := strings.TrimSpace(conversation.ID)
+	platformMessageID = strings.TrimSpace(platformMessageID)
+	if platform == "" || conversationType == "" || conversationID == "" || platformMessageID == "" {
+		return nil, nil
+	}
+	var row outgoingMessageRow
+	err := s.db.WithContext(ctx).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND platform_message_id = ? AND status = ?",
+			platform, conversationType, conversationID, platformMessageID, string(delivery.StatusAccepted)).
+		Order("id DESC").First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	record, err := outgoingMessageRecord(row)
+	if err != nil {
+		return nil, err
+	}
+	if record.Message.Context == nil {
+		return &message.ResponseContext{}, nil
+	}
+	return &message.ResponseContext{
+		Capability: strings.TrimSpace(record.Message.Context.Capability),
+		Arguments:  append([]string(nil), record.Message.Context.Arguments...),
+	}, nil
 }
 
 func enqueueWithDB(db *gorm.DB, outbound message.Outbound, now time.Time) (delivery.Record, bool, error) {

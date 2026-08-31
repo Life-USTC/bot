@@ -7,13 +7,30 @@ not import NapCat or QQ Bot implementations.
 ## Message flow
 
 1. A platform adapter translates a protocol event into `message.Inbound`.
-2. `botapp` selects commands or the agent and records the interaction once.
-3. Interactive replies use `delivery.Service.DeliverNow` because the user is
-   waiting and the source event supplies the reply context.
-4. Background business features create `message.Outbound` records in the
-   SQLite outbox. The delivery worker owns retry, expiry, and recovery.
+2. `routing.Decide` classifies the conversation surface and activation before
+   persistence. Ambient shared-chat text is discarded here.
+3. `botapp` persists the structured route and invocation, then executes that
+   exact decision from the durable job. It does not reparse or fall back.
+4. All replies become `message.Outbound` records in the SQLite outbox. The
+   delivery worker owns retry, expiry, and recovery.
 5. A platform delivery adapter is selected by an exact platform key and is the
    only component that converts `message.Conversation` into a protocol target.
+
+## Shared-conversation routing
+
+- A strict public command or a high-confidence public natural query activates
+  Presto without an @. Matching consumes the whole supported grammar; keyword
+  containment is never an activation rule.
+- A mention, verified reply to an accepted Bot message, or platform
+  interaction activates broader Agent handling.
+- User-private capabilities never execute in groups or channels. An explicit
+  private command receives a private-chat redirect; unaddressed private natural
+  language is ignored.
+- Replies may carry a structured public `ResponseContext`. A verified reply
+  can apply a narrow deterministic follow-up such as changing only a bus date.
+- NapCat receives ambient group traffic and therefore uses the full gate. QQ's
+  official group event source normally supplies only addressed messages, but
+  both transports use the same router.
 
 ## Command contract
 
@@ -28,6 +45,8 @@ executor, result exposure, and help metadata.
   normalized `capability`/`arguments` pair cannot drift independently.
 - Direct commands, natural-language routes, group routes, and Agent calls all
   pass through the descriptor's normalizer and validator.
+- Capability policy separates `public` from `user_private`; read-only personal
+  data is never treated as group-safe.
 - Agent capability results use one envelope: `ok`, `status`, safe `text`, and
   optional executable `suggestedCalls`. Authentication and private host-only
   values are delivered by the Coordinator, not exposed to the model.
@@ -42,8 +61,8 @@ same identity, especially in groups.
 
 - Login owns `pending`, `approved`, `expired`, `denied`, `invalid`, and
   `superseded`. Delivery failures never change login state.
-- A pending confirmation belongs to one conversation and is consumed,
-  cancelled, or expired independently of other conversations for the user.
+- A pending confirmation belongs to one actor's conversation lane and is
+  consumed, cancelled, or expired independently of other group members.
 - Agent runs own `started`, `completed`, `failed`, `ignored`, and
   `interrupted`. Startup closes runs left open by a previous process.
 - Delivery owns `pending`, `delivering`, `accepted`, `retry_wait`, `rejected`,
@@ -71,6 +90,7 @@ configuration or data, not state machines.
 ## Module responsibilities
 
 - `internal/message`: protocol-neutral value types only.
+- `internal/routing`: pure activation, privacy, and command/Agent selection.
 - `internal/botapp`: inbound use-case orchestration.
 - `internal/commands`, `internal/agent`: user-facing business behavior.
 - `internal/auth`, `internal/feedback`, `internal/notify`: scoped feature

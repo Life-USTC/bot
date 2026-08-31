@@ -8,94 +8,92 @@ import (
 )
 
 type Config struct {
-	LifeServer             string
-	HealthAddr             string
-	NapCatAPIURL           string
-	NapCatAccessToken      string
-	NapCatWSURL            string
-	NapCatReverseAddr      string
-	NapCatReversePath      string
-	QQBotAppID             string
-	QQBotAppSecret         string
-	QQBotToken             string
-	QQBotID                string
-	QQBotAPIBaseURL        string
-	QQBotTokenURL          string
-	QQBotGatewayURL        string
-	QQBotWebhookAddr       string
-	QQBotWebhookPath       string
-	QQBotIntents           uint64
-	DBPath                 string
-	BuildVersion           string
-	PublicCommandCacheTTL  time.Duration
-	HTTPClientTimeout      time.Duration
-	EnableNapCatBridge     bool
-	EnableQQBot            bool
-	EnableQQBotGateway     bool
-	EnableQQBotWebhook     bool
-	EnableAgent            bool
-	EnableImageResponses   bool
-	AllowGroupPersonalInfo bool
-	PublicBaseURL          string
-	MediaAddr              string
-	ImageFontPath          string
-	MediaTTL               time.Duration
-	LLMAPIKey              string
-	LLMBaseURL             string
-	LLMModel               string
-	LLMTimeout             time.Duration
-	PremiumAPIKey          string
-	PremiumBaseURL         string
-	PremiumModel           string
-	FeedbackAdminPlatform  string
-	FeedbackAdminUsers     []string
-	FeedbackAdminGroups    []string
+	LifeServer            string
+	HealthAddr            string
+	NapCatAPIURL          string
+	NapCatAccessToken     string
+	NapCatWSURL           string
+	NapCatReverseAddr     string
+	NapCatReversePath     string
+	QQBotAppID            string
+	QQBotAppSecret        string
+	QQBotToken            string
+	QQBotID               string
+	QQBotAPIBaseURL       string
+	QQBotTokenURL         string
+	QQBotGatewayURL       string
+	QQBotWebhookAddr      string
+	QQBotWebhookPath      string
+	QQBotIntents          uint64
+	DBPath                string
+	BuildVersion          string
+	PublicCommandCacheTTL time.Duration
+	HTTPClientTimeout     time.Duration
+	EnableNapCatBridge    bool
+	EnableQQBot           bool
+	EnableQQBotGateway    bool
+	EnableQQBotWebhook    bool
+	EnableAgent           bool
+	EnableImageResponses  bool
+	PublicBaseURL         string
+	MediaAddr             string
+	ImageFontPath         string
+	MediaTTL              time.Duration
+	LLMAPIKey             string
+	LLMBaseURL            string
+	LLMModel              string
+	LLMTimeout            time.Duration
+	PremiumAPIKey         string
+	PremiumBaseURL        string
+	PremiumModel          string
+	FeedbackAdminPlatform string
+	FeedbackAdminUsers    []string
+	FeedbackAdminGroups   []string
 }
 
 func FromEnv() Config {
 	return Config{
-		LifeServer:             envTrimRight("LIFE_USTC_SERVER", "http://localhost:3000", "/"),
-		HealthAddr:             envString("BOT_HEALTH_ADDR", "127.0.0.1:2282"),
-		NapCatAPIURL:           envTrimRight("NAPCAT_API_URL", "", "/"),
-		NapCatAccessToken:      envOptionalString("NAPCAT_ACCESS_TOKEN"),
-		NapCatWSURL:            envOptionalString("NAPCAT_WS_URL"),
-		NapCatReverseAddr:      envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
-		NapCatReversePath:      envPath("NAPCAT_REVERSE_PATH", "/ws"),
-		QQBotAppID:             envOptionalString("QQ_BOT_APPID"),
-		QQBotAppSecret:         envOptionalString("QQ_BOT_APPSECRET"),
-		QQBotToken:             envOptionalString("QQ_BOT_TOKEN"),
-		QQBotID:                envOptionalString("QQ_BOT_ID"),
-		QQBotAPIBaseURL:        envTrimRight("QQ_BOT_API_BASE_URL", "https://api.sgroup.qq.com", "/"),
-		QQBotTokenURL:          envString("QQ_BOT_TOKEN_URL", "https://bots.qq.com/app/getAppAccessToken"),
-		QQBotGatewayURL:        envOptionalString("QQ_BOT_GATEWAY_URL"),
-		QQBotWebhookAddr:       envString("QQ_BOT_WEBHOOK_ADDR", "0.0.0.0:2290"),
-		QQBotWebhookPath:       envPath("QQ_BOT_WEBHOOK_PATH", "/qqbot"),
-		QQBotIntents:           envUint64("QQ_BOT_INTENTS", 1<<12|1<<25|1<<26|1<<30),
-		DBPath:                 envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
-		BuildVersion:           envString("BOT_BUILD_VERSION", "dev"),
-		PublicCommandCacheTTL:  time.Duration(envPositiveInt("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", 300)) * time.Second,
-		HTTPClientTimeout:      time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 60)) * time.Second,
-		EnableNapCatBridge:     envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
-		EnableQQBot:            envBool("BOT_ENABLE_QQ_BOT", hasQQBotCredentials()),
-		EnableQQBotGateway:     envBool("BOT_ENABLE_QQ_BOT_GATEWAY", true),
-		EnableQQBotWebhook:     envBool("BOT_ENABLE_QQ_BOT_WEBHOOK", hasQQBotWebhookCredentials()),
-		EnableAgent:            envBool("BOT_ENABLE_AGENT", false),
-		EnableImageResponses:   envBool("BOT_ENABLE_IMAGE_RESPONSES", false),
-		AllowGroupPersonalInfo: envBool("BOT_ALLOW_GROUP_PERSONAL_INFO", false),
-		PublicBaseURL:          envTrimRight("BOT_PUBLIC_BASE_URL", "", "/"),
-		MediaAddr:              envString("BOT_MEDIA_ADDR", "127.0.0.1:2281"),
-		ImageFontPath:          envOptionalString("BOT_IMAGE_FONT_PATH"),
-		MediaTTL:               time.Duration(envPositiveInt("BOT_MEDIA_TTL_SECONDS", 300)) * time.Second,
-		LLMAPIKey:              envOptionalString("OPENAI_API_KEY"),
-		LLMBaseURL:             envOptionalString("OPENAI_BASE_URL"),
-		LLMModel:               envString("BOT_LLM_MODEL", "gpt-4o-mini"),
-		LLMTimeout:             time.Duration(envPositiveInt("BOT_LLM_TIMEOUT_SECONDS", 60)) * time.Second,
-		PremiumAPIKey:          envOptionalString("PREMIUM_MODEL_API_KEY"),
-		PremiumBaseURL:         envTrimRight("PREMIUM_MODEL_BASE_URL", "https://api.moonshot.cn/v1", "/"),
-		PremiumModel:           envString("PREMIUM_MODEL", "kimi-k3"),
-		FeedbackAdminPlatform:  envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
-		FeedbackAdminUsers:     envList("BOT_FEEDBACK_ADMIN_USERS"),
-		FeedbackAdminGroups:    envList("BOT_FEEDBACK_ADMIN_GROUPS"),
+		LifeServer:            envTrimRight("LIFE_USTC_SERVER", "http://localhost:3000", "/"),
+		HealthAddr:            envString("BOT_HEALTH_ADDR", "127.0.0.1:2282"),
+		NapCatAPIURL:          envTrimRight("NAPCAT_API_URL", "", "/"),
+		NapCatAccessToken:     envOptionalString("NAPCAT_ACCESS_TOKEN"),
+		NapCatWSURL:           envOptionalString("NAPCAT_WS_URL"),
+		NapCatReverseAddr:     envString("NAPCAT_REVERSE_ADDR", "0.0.0.0:2280"),
+		NapCatReversePath:     envPath("NAPCAT_REVERSE_PATH", "/ws"),
+		QQBotAppID:            envOptionalString("QQ_BOT_APPID"),
+		QQBotAppSecret:        envOptionalString("QQ_BOT_APPSECRET"),
+		QQBotToken:            envOptionalString("QQ_BOT_TOKEN"),
+		QQBotID:               envOptionalString("QQ_BOT_ID"),
+		QQBotAPIBaseURL:       envTrimRight("QQ_BOT_API_BASE_URL", "https://api.sgroup.qq.com", "/"),
+		QQBotTokenURL:         envString("QQ_BOT_TOKEN_URL", "https://bots.qq.com/app/getAppAccessToken"),
+		QQBotGatewayURL:       envOptionalString("QQ_BOT_GATEWAY_URL"),
+		QQBotWebhookAddr:      envString("QQ_BOT_WEBHOOK_ADDR", "0.0.0.0:2290"),
+		QQBotWebhookPath:      envPath("QQ_BOT_WEBHOOK_PATH", "/qqbot"),
+		QQBotIntents:          envUint64("QQ_BOT_INTENTS", 1<<12|1<<25|1<<26|1<<30),
+		DBPath:                envString("BOT_DB_PATH", ".run/life-ustc-bot.db"),
+		BuildVersion:          envString("BOT_BUILD_VERSION", "dev"),
+		PublicCommandCacheTTL: time.Duration(envPositiveInt("BOT_PUBLIC_COMMAND_CACHE_TTL_SECONDS", 300)) * time.Second,
+		HTTPClientTimeout:     time.Duration(envPositiveInt("BOT_HTTP_TIMEOUT_SECONDS", 60)) * time.Second,
+		EnableNapCatBridge:    envBool("BOT_ENABLE_NAPCAT_BRIDGE", true),
+		EnableQQBot:           envBool("BOT_ENABLE_QQ_BOT", hasQQBotCredentials()),
+		EnableQQBotGateway:    envBool("BOT_ENABLE_QQ_BOT_GATEWAY", true),
+		EnableQQBotWebhook:    envBool("BOT_ENABLE_QQ_BOT_WEBHOOK", hasQQBotWebhookCredentials()),
+		EnableAgent:           envBool("BOT_ENABLE_AGENT", false),
+		EnableImageResponses:  envBool("BOT_ENABLE_IMAGE_RESPONSES", false),
+		PublicBaseURL:         envTrimRight("BOT_PUBLIC_BASE_URL", "", "/"),
+		MediaAddr:             envString("BOT_MEDIA_ADDR", "127.0.0.1:2281"),
+		ImageFontPath:         envOptionalString("BOT_IMAGE_FONT_PATH"),
+		MediaTTL:              time.Duration(envPositiveInt("BOT_MEDIA_TTL_SECONDS", 300)) * time.Second,
+		LLMAPIKey:             envOptionalString("OPENAI_API_KEY"),
+		LLMBaseURL:            envOptionalString("OPENAI_BASE_URL"),
+		LLMModel:              envString("BOT_LLM_MODEL", "gpt-4o-mini"),
+		LLMTimeout:            time.Duration(envPositiveInt("BOT_LLM_TIMEOUT_SECONDS", 60)) * time.Second,
+		PremiumAPIKey:         envOptionalString("PREMIUM_MODEL_API_KEY"),
+		PremiumBaseURL:        envTrimRight("PREMIUM_MODEL_BASE_URL", "https://api.moonshot.cn/v1", "/"),
+		PremiumModel:          envString("PREMIUM_MODEL", "kimi-k3"),
+		FeedbackAdminPlatform: envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
+		FeedbackAdminUsers:    envList("BOT_FEEDBACK_ADMIN_USERS"),
+		FeedbackAdminGroups:   envList("BOT_FEEDBACK_ADMIN_GROUPS"),
 	}
 }
 

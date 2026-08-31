@@ -27,9 +27,19 @@ type Inbound struct {
 	Actor        Actor
 	Conversation Conversation
 	Source       ReplyRef
+	ReplyTo      *ReplyRef
 	Text         string
 	ImageURLs    []string
 	BotMentioned bool
+}
+
+// ResponseContext marks a verified Bot message. Public command responses also
+// carry the structured invocation so a reply can apply a small deterministic
+// follow-up without replaying the surrounding group conversation through an
+// LLM.
+type ResponseContext struct {
+	Capability string   `json:"capability"`
+	Arguments  []string `json:"arguments,omitempty"`
 }
 
 // Attachment contains immutable, delivery-ready media. Rendering belongs to
@@ -50,6 +60,7 @@ type Outbound struct {
 	Kind      string
 	Target    Conversation
 	ReplyTo   *ReplyRef
+	Context   *ResponseContext
 	Content   Content
 	DedupeKey string
 	ExpiresAt time.Time

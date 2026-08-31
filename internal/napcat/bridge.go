@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -340,12 +341,13 @@ func messageMentionsBot(raw string, selfID int64) bool {
 	if selfID <= 0 {
 		return false
 	}
-	lower := strings.ToLower(raw)
-	if strings.Contains(lower, "[cq:at,qq=all]") {
-		return true
+	target := strconv.FormatInt(selfID, 10)
+	for _, value := range cqAttrValues(strings.ToLower(raw), "[cq:at,", "qq=") {
+		if value == target {
+			return true
+		}
 	}
-	target := fmt.Sprintf("[cq:at,qq=%d]", selfID)
-	return strings.Contains(lower, target)
+	return false
 }
 
 func (e messageEvent) identity() store.Identity {
@@ -363,13 +365,42 @@ func (e messageEvent) identity() store.Identity {
 
 func (e messageEvent) inbound() message.Inbound {
 	ident := e.identity()
+	var replyTo *message.ReplyRef
+	if messageID := napcatReplyMessageID(e.Message, e.RawMessage); messageID != "" {
+		replyTo = &message.ReplyRef{MessageID: messageID}
+	}
 	return message.Inbound{
 		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID},
 		Conversation: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
 		Source:       message.ReplyRef{MessageID: napcatEventMessageID(e.MessageID), EventID: e.sourceEventID(), TransportID: e.reverseTransportID},
-		Text:         e.RawMessage, ImageURLs: e.imageURLs(),
+		ReplyTo:      replyTo,
+		Text:         cleanNapCatMessageText(e.RawMessage), ImageURLs: e.imageURLs(),
 		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
 	}
+}
+
+var napcatCQCodeRE = regexp.MustCompile(`(?i)\[CQ:[^\]]+\]`)
+
+func cleanNapCatMessageText(raw string) string {
+	return strings.TrimSpace(napcatCQCodeRE.ReplaceAllString(raw, " "))
+}
+
+func napcatReplyMessageID(value any, raw string) string {
+	for _, rawSegment := range messageSegments(value) {
+		segment, ok := rawSegment.(map[string]any)
+		if !ok || !strings.EqualFold(strings.TrimSpace(fmt.Sprint(segment["type"])), "reply") {
+			continue
+		}
+		data, _ := segment["data"].(map[string]any)
+		if id := stringField(data, "id"); id != "" {
+			return id
+		}
+	}
+	values := cqAttrValues(raw, "[CQ:reply,", "id=")
+	if len(values) > 0 {
+		return strings.TrimSpace(values[0])
+	}
+	return ""
 }
 
 func napcatEventMessageID(id int64) string {

@@ -149,15 +149,6 @@ func TestFromEnvUsesPremiumModelDefaults(t *testing.T) {
 	}
 }
 
-func TestFromEnvParsesAllowGroupPersonalInfo(t *testing.T) {
-	t.Setenv("BOT_ALLOW_GROUP_PERSONAL_INFO", "true")
-
-	cfg := FromEnv()
-	if !cfg.AllowGroupPersonalInfo {
-		t.Fatal("AllowGroupPersonalInfo = false, want true")
-	}
-}
-
 func TestFromEnvParsesImageResponseConfig(t *testing.T) {
 	t.Setenv("BOT_ENABLE_IMAGE_RESPONSES", "true")
 	t.Setenv("BOT_PUBLIC_BASE_URL", " https://bot.example/// ")

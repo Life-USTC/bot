@@ -367,17 +367,26 @@ func TestIdentityCompletenessHelpersTrimFields(t *testing.T) {
 	if !HasConversationIdentity(full) {
 		t.Fatal("HasConversationIdentity rejected padded full identity")
 	}
-	if !IsPrivateConversation(full) {
-		t.Fatal("IsPrivateConversation rejected padded private conversation type")
+	if !IsDirectConversation(full) {
+		t.Fatal("IsDirectConversation rejected padded private conversation type")
 	}
-	if !IsGroupConversation(Identity{ConversationType: " GROUP "}) {
-		t.Fatal("IsGroupConversation rejected padded group conversation type")
+	if !IsSharedConversation(Identity{ConversationType: " GROUP "}) {
+		t.Fatal("IsSharedConversation rejected padded group conversation type")
 	}
-	if IsPrivateConversation(Identity{ConversationType: "group"}) {
-		t.Fatal("IsPrivateConversation accepted group conversation type")
+	if IsDirectConversation(Identity{ConversationType: "group"}) {
+		t.Fatal("IsDirectConversation accepted group conversation type")
 	}
-	if IsGroupConversation(Identity{ConversationType: "private"}) {
-		t.Fatal("IsGroupConversation accepted private conversation type")
+	if IsSharedConversation(Identity{ConversationType: "private"}) {
+		t.Fatal("IsSharedConversation accepted private conversation type")
+	}
+	if !IsDirectConversation(Identity{ConversationType: "guild_private"}) {
+		t.Fatal("IsDirectConversation rejected guild direct message")
+	}
+	if !IsSharedConversation(Identity{ConversationType: "channel"}) {
+		t.Fatal("IsSharedConversation rejected channel")
+	}
+	if got := SurfaceForConversation(Identity{ConversationType: "unsupported"}); got != ConversationSurfaceUnknown {
+		t.Fatalf("unsupported surface = %q", got)
 	}
 	if HasUserIdentity(Identity{Platform: "napcat", UserID: " "}) {
 		t.Fatal("HasUserIdentity accepted blank user id")

@@ -59,7 +59,9 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 
 func qqIdentityFromConversation(target message.Conversation) (store.Identity, error) {
 	conversationType := strings.ToLower(strings.TrimSpace(target.Type))
-	if conversationType != "private" && conversationType != "group" {
+	switch conversationType {
+	case "private", "group", "channel", "guild_private":
+	default:
 		return store.Identity{}, fmt.Errorf("qqbot does not support conversation type %q", target.Type)
 	}
 	id := strings.TrimSpace(target.ID)
@@ -67,7 +69,7 @@ func qqIdentityFromConversation(target message.Conversation) (store.Identity, er
 		return store.Identity{}, errors.New("qqbot conversation ID is empty")
 	}
 	ident := store.Identity{Platform: deliveryPlatform, ConversationType: conversationType, ConversationID: id}
-	if conversationType == "private" {
+	if conversationType == "private" || conversationType == "guild_private" {
 		ident.UserID = id
 	}
 	return ident, nil

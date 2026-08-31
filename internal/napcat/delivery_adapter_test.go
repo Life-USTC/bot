@@ -78,6 +78,33 @@ func TestDeliveryAdapterContractMapsGroupAndURLAttachment(t *testing.T) {
 	}
 }
 
+func TestDeliveryAdapterSendsActualNapCatReplySegment(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":9}}`))
+	}))
+	defer server.Close()
+
+	outcome := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client()}).Deliver(t.Context(), message.Outbound{
+		Target:  message.Conversation{Platform: "napcat", Type: "group", ID: "100"},
+		ReplyTo: &message.ReplyRef{MessageID: "456"},
+		Content: message.Content{Text: "查询结果"},
+	})
+	if outcome.State != delivery.OutcomeAccepted {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	segments, ok := body["message"].([]any)
+	if !ok || len(segments) != 2 {
+		t.Fatalf("message = %#v", body["message"])
+	}
+	reply := segments[0].(map[string]any)
+	data := reply["data"].(map[string]any)
+	if reply["type"] != "reply" || data["id"] != "456" {
+		t.Fatalf("reply segment = %#v", reply)
+	}
+}
+
 func TestDeliveryAdapterErrorClassification(t *testing.T) {
 	tests := []struct {
 		name    string

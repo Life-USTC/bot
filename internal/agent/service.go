@@ -160,7 +160,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		ctx = context.Background()
 	}
 	inputText := strings.TrimSpace(input.Text)
-	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) || store.IsGroupConversation(input.Identity) {
+	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) {
 		return commands.Response{}, false
 	}
 	parentCtx := ctx
@@ -583,6 +583,9 @@ func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any, 
 }
 
 func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (bool, error) {
+	if store.IsSharedConversation(ident) {
+		return false, nil
+	}
 	if s.handler.Store == nil {
 		return false, nil
 	}
@@ -598,22 +601,37 @@ type hostCapabilityInput struct {
 	Arguments  []string `json:"arguments,omitempty" jsonschema_description:"Capability arguments only; do not repeat the capability name"`
 }
 
-func hostCapabilityToolDescription() string {
+func hostCapabilityToolDescription(shared bool) string {
 	var description strings.Builder
-	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. Every result includes ok and one status: success means the host completed the capability; invalid_input means correct arguments using suggestedCalls; forbidden means explain the audience restriction; confirmation_required means wait for the real user's confirmation and do not claim it ran; auth_required means the host has sent private login instructions and will resume the pending request, so do not expose, repeat, or request any verification code; not_found means the capability ID is unavailable. Treat ok:false as a failed tool call: correct the request or explain the safe text, and do not announce success. Host-only results are delivered without exposing private values to the model. For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities (group, ID, exact calls):\n")
+	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. Every result includes ok and one status: success means the host completed the capability; invalid_input means correct arguments using suggestedCalls; forbidden means explain the audience restriction; confirmation_required means wait for the real user's confirmation and do not claim it ran; auth_required means the host has sent private login instructions and will resume the pending request, so do not expose, repeat, or request any verification code; not_found means the capability ID is unavailable. Treat ok:false as a failed tool call: correct the request or explain the safe text, and do not announce success. Host-only results are delivered without exposing private values to the model. ")
+	if shared {
+		description.WriteString("This is a shared conversation: only the public capabilities listed below are available. Ask the user to continue in a private chat for any personal request. ")
+	} else {
+		description.WriteString("For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. ")
+	}
+	description.WriteString("Available capabilities (group, ID, exact calls):\n")
 	for _, usage := range commands.CapabilityUsages() {
+		descriptor, ok := commands.CapabilityDescriptorFor(usage.ID)
+		if !ok || (shared && descriptor.Requirements.DataScope != commands.DataScopePublic) {
+			continue
+		}
 		fmt.Fprintf(&description, "- [%s] %s: %s", usage.Group, usage.ID, strings.TrimSpace(usage.Summary))
 		if len(usage.Examples) > 0 {
 			description.WriteString(" Calls: ")
-			for i, example := range usage.Examples {
+			written := 0
+			for _, example := range usage.Examples {
+				if invocation, valid := example.Invocation(); !valid || (shared && invocation.Policy().DataScope != commands.DataScopePublic) {
+					continue
+				}
 				raw, err := json.Marshal(hostCapabilityInput{Capability: string(example.Capability), Arguments: example.Arguments})
 				if err != nil {
 					continue
 				}
-				if i > 0 {
+				if written > 0 {
 					description.WriteString("; ")
 				}
 				description.Write(raw)
+				written++
 			}
 		}
 		description.WriteByte('\n')
@@ -632,7 +650,7 @@ func (s *Service) toolsFor(
 	tools := make([]tool.BaseTool, 0)
 	var err error
 	var mcpSession *botmcp.Session
-	if s.mcpClient != nil && s.auth != nil {
+	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
 		mcpTools, session, mcpErr := s.openMCPTools(ctx, ident, trace)
 		if mcpErr != nil {
 			s.logf("MCP tools unavailable: platform=%s conversation_type=%s conversation_id=%s error=%v",
@@ -668,7 +686,7 @@ func (s *Service) toolsFor(
 			return nil, nil, err
 		}
 	}
-	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(), trace, func(ctx context.Context, input hostCapabilityInput) (string, error) {
+	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), trace, func(ctx context.Context, input hostCapabilityInput) (string, error) {
 		result, err := s.handler.ExecuteCapabilityForAgent(ctx, commands.Input{Identity: ident, SuppressLog: true}, commands.CapabilityID(input.Capability), input.Arguments)
 		if err != nil {
 			return "", err
@@ -1059,8 +1077,8 @@ Never claim that any lookup, mutation, message, or feedback succeeded unless the
 When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
-Do not expose private profile, homework, todo, or curriculum data unless the user asks in this private chat.
-For group chats, this agent is disabled by the host application.
+Do not expose private profile, homework, todo, curriculum, subscription, authentication, or settings data unless the user asks in a direct chat.
+In a group or channel, answer only the addressed public request. Use only public host capabilities, never request or reveal personal data, and ask the user to continue in a private chat when the request is personal.
 Authentication is handled by the host. If login is required, the host starts it and resumes the pending request after authorization. Never tell the user to send 登录 or repeat the original request.`
 }
 

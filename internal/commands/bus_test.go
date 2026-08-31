@@ -97,7 +97,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 
 	groupInput.Text = "td"
 	reply, ok = handler.Handle(context.Background(), groupInput)
-	if ok || reply != "" {
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
 		t.Fatalf("group personal command reply = %q, ok = %v", reply, ok)
 	}
 

@@ -22,21 +22,19 @@ import (
 )
 
 type Handler struct {
-	Life                   *life.Client
-	Auth                   *auth.Manager
-	Store                  *store.Store
-	Logger                 *log.Logger
-	Feedback               feedback.Recorder
-	AllowGroupPersonalInfo bool
-	EnableImageResponses   bool
-	PublicCache            *PublicCommandCache
+	Life                 *life.Client
+	Auth                 *auth.Manager
+	Store                *store.Store
+	Logger               *log.Logger
+	Feedback             feedback.Recorder
+	EnableImageResponses bool
+	PublicCache          *PublicCommandCache
 }
 
 type Input struct {
-	Text         string
-	Identity     store.Identity
-	SuppressLog  bool
-	BotMentioned bool
+	Text        string
+	Identity    store.Identity
+	SuppressLog bool
 }
 
 // ParseStatus is the outcome of parsing one user message. A recognized
@@ -73,21 +71,36 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
-	startedAt := time.Now()
 	input.Text = stripCQCodes(input.Text)
 	parsed := h.parseResult(input.Text)
-	if parsed.Status == ParseStatusUnknown && store.IsGroupConversation(input.Identity) {
-		parsed = parseGroupBusResult(input.Text)
+	return h.handleParsedResponse(ctx, input, parsed, time.Now())
+}
+
+// HandleInvocationResponse executes the structured invocation selected by the
+// routing layer. It is the durable-job entry point and avoids reparsing text or
+// applying transport-specific fallbacks during execution.
+func (h Handler) HandleInvocationResponse(ctx context.Context, input Input, invocation Invocation) (Response, bool) {
+	invocation, ok := withDescriptor(invocation)
+	if !ok {
+		return Response{}, false
 	}
+	status := ParseStatusValid
+	if !invocation.Capability.Accepts(invocation.Args) {
+		status = ParseStatusInvalid
+	}
+	if strings.TrimSpace(input.Text) == "" {
+		input.Text = invocation.CanonicalCommand()
+	}
+	return h.handleParsedResponse(ctx, input, ParseResult{Status: status, Invocation: invocation}, time.Now())
+}
+
+func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed ParseResult, startedAt time.Time) (Response, bool) {
 	if parsed.Status == ParseStatusUnknown {
 		return Response{}, false
 	}
 	cmd := parsed.Invocation
-	if store.IsGroupConversation(input.Identity) && !h.groupCommandAllowed(cmd) {
-		if !input.BotMentioned {
-			return Response{}, false
-		}
-		reply := "此功能请私聊使用。"
+	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(cmd) {
+		reply := "此功能涉及个人数据，请私聊 Presto 使用。"
 		if !input.SuppressLog {
 			h.recordState(ctx, input.Identity, cmd)
 			h.recordInteraction(ctx, input.Identity, cmd, reply)
@@ -162,7 +175,7 @@ func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocat
 			responseKind = ResponseKindAuthWait
 		}
 	}
-	if descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(response.Text) && store.IsPrivateConversation(input.Identity) {
+	if descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(response.Text) && store.IsDirectConversation(input.Identity) {
 		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
 		if loginErr != nil {
 			h.logf("start resumable login failed: %v", loginErr)
@@ -187,19 +200,12 @@ const (
 
 var feedbackEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 
-func (h Handler) groupCommandAllowed(cmd Invocation) bool {
+func sharedCommandAllowed(cmd Invocation) bool {
 	if cmd.Capability == nil {
 		return false
 	}
 	policy := cmd.Capability.PolicyFor(cmd)
-	switch policy.Audience {
-	case AudienceAny:
-		return true
-	case AudienceGroupReadOnly:
-		return h.AllowGroupPersonalInfo && policy.Effect == EffectRead
-	default:
-		return false
-	}
+	return policy.DataScope == DataScopePublic
 }
 
 func (h Handler) parse(text string) (Invocation, bool) {
@@ -211,12 +217,14 @@ func (h Handler) parse(text string) (Invocation, bool) {
 }
 
 func (h Handler) parseResult(text string) ParseResult {
-	raw := strings.TrimSpace(text)
+	raw := strings.TrimSpace(stripCQCodes(text))
 	if raw == "" {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	if isNaturalCalendarLinkRequest(raw) {
-		return acceptedCommandResult(raw, "subscription", []string{"link"})
+		result := acceptedCommandResult(raw, "subscription", []string{"link"})
+		result.Invocation.NaturalRoute = "calendar_link"
+		return result
 	}
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
@@ -2269,7 +2277,7 @@ func withCalendarSubscriptionHint(reply string) string {
 }
 
 func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Identity) string {
-	if !store.IsPrivateConversation(ident) {
+	if !store.IsDirectConversation(ident) {
 		return "订阅链接只能在私聊里查看。"
 	}
 	token, ok := h.accessToken(ctx, ident)
@@ -2331,7 +2339,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if h.Store == nil {
 		return "存储未配置。"
 	}
-	if !store.IsPrivateConversation(ident) {
+	if !store.IsDirectConversation(ident) {
 		return "通知只能在私聊里设置。"
 	}
 	settings, err := h.Store.NotificationSettings(ctx, ident)
@@ -2391,7 +2399,7 @@ func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args [
 	if h.Store == nil {
 		return "存储未配置。"
 	}
-	if !store.IsPrivateConversation(ident) {
+	if !store.IsDirectConversation(ident) {
 		return "AI 工具设置只能在私聊里设置。"
 	}
 	settings, err := h.Store.AgentSettings(ctx, ident)
@@ -3891,21 +3899,14 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 	return reply
 }
 
-func (h Handler) status(ctx context.Context, ident store.Identity) string {
+func (h Handler) status(ctx context.Context) string {
 	api := "OK"
 	if err := h.Life.Health(ctx); err != nil {
 		api = friendlyError(err)
 	}
-	login := "未登录"
-	if h.Auth != nil {
-		if _, err := h.Auth.AccessToken(ctx, ident); err == nil {
-			login = "已登录"
-		}
-	}
 	return strings.Join([]string{
 		"状态：",
 		"Life @ USTC：" + api,
-		"登录：" + login,
 	}, "\n")
 }
 
