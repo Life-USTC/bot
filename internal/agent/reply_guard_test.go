@@ -33,6 +33,23 @@ func TestHasCalendarSubscriptionURL(t *testing.T) {
 	}
 }
 
+func TestClaimsCalendarSubscriptionDelivered(t *testing.T) {
+	tests := []struct {
+		text string
+		want bool
+	}{
+		{text: "[私有日历订阅链接已发送]", want: true},
+		{text: "iCal 链接已经发给你了", want: true},
+		{text: "可以发送日历链接", want: false},
+		{text: "课表已经发送", want: false},
+	}
+	for _, test := range tests {
+		if got := claimsCalendarSubscriptionDelivered(test.text); got != test.want {
+			t.Errorf("claimsCalendarSubscriptionDelivered(%q) = %v, want %v", test.text, got, test.want)
+		}
+	}
+}
+
 func TestCalendarSubscriptionPromptUsesHostCapability(t *testing.T) {
 	instruction := currentInstructionAt(time.Now())
 	for _, expected := range []string{
@@ -94,6 +111,34 @@ func TestHandleResponseBlocksModelGeneratedCalendarURL(t *testing.T) {
 		t.Fatalf("response = %#v, handled = %v", response, handled)
 	}
 	if !strings.Contains(logs.String(), "reason=unverified_calendar_url") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+func TestHandleResponseBlocksUnverifiedCalendarDeliveryClaim(t *testing.T) {
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-test","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"[私有日历订阅链接已发送]"},"finish_reason":"stop"}]
+		}`))
+	}))
+	t.Cleanup(modelServer.Close)
+
+	var logs bytes.Buffer
+	svc, err := New(context.Background(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model", Logger: log.New(&logs, "", 0),
+	}, commands.Handler{}, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, handled := svc.HandleResponse(context.Background(), Input{
+		Text:     "把链接再发一次",
+		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
+	})
+	if !handled || response.Text != calendarURLGuardReply {
+		t.Fatalf("response = %#v, handled = %v", response, handled)
+	}
+	if !strings.Contains(logs.String(), "reason=unverified_calendar_delivery_claim") {
 		t.Fatalf("logs = %q", logs.String())
 	}
 }

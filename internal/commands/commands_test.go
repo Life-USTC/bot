@@ -3043,6 +3043,26 @@ func TestSubscriptionHelpDoesNotList(t *testing.T) {
 	}
 }
 
+func TestNaturalCalendarLinkRequestsUseHostSubscriptionCapability(t *testing.T) {
+	for _, text := range []string{
+		"能再给我发一下日历的链接吗",
+		"发我 iCal 链接",
+		"日历订阅地址",
+		"怎么把课表添加到日历",
+		"给我订阅 URL",
+	} {
+		invocation, ok := ParseInvocation(text)
+		if !ok || invocation.ID() != CapabilitySubscription || strings.Join(invocation.Args, " ") != "link" {
+			t.Errorf("ParseInvocation(%q) = %#v, %v", text, invocation, ok)
+		}
+	}
+	for _, text := range []string{"课程详情链接", "这个链接是日历吗", "给我发一下课表"} {
+		if invocation, ok := ParseInvocation(text); ok && invocation.ID() == CapabilitySubscription && strings.Join(invocation.Args, " ") == "link" {
+			t.Errorf("ParseInvocation(%q) unexpectedly routed to calendar link", text)
+		}
+	}
+}
+
 func TestSubscriptionCalendarLink(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -3059,8 +3079,17 @@ func TestSubscriptionCalendarLink(t *testing.T) {
 	if !ok {
 		t.Fatal("command was not handled")
 	}
-	if !strings.Contains(reply, "https://example.test/calendar/private-token.ics") || !strings.Contains(reply, "请勿公开") {
-		t.Fatalf("reply = %q", reply)
+	for _, want := range []string{
+		"https://example.test/calendar/private-token.ics",
+		"使用方法：复制链接",
+		"通过 URL 添加/订阅日历",
+		"自动更新",
+		"不是 CalDAV 账户地址",
+		"请勿公开",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
 	recent, err := handler.Store.RecentHandledInteractions(ctx, ident, 1)
 	if err != nil {
@@ -3092,7 +3121,7 @@ func TestSubscriptionCalendarLinkRecoversFromStaleScope(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	reply, ok := handler.Handle(ctx, Input{Text: "订阅 链接", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "能再给我发一下日历的链接吗", Identity: ident})
 	if !ok || strings.Contains(reply, "请发送：登录") || !strings.Contains(reply, "完成后我会自动继续") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
@@ -4172,6 +4201,20 @@ func TestFormatOverviewPointsToCompleteList(t *testing.T) {
 	}
 	if strings.Contains(reply, "Todo 4") || strings.Contains(reply, "...and") {
 		t.Fatalf("reply contains inaccessible preview content: %q", reply)
+	}
+}
+
+func TestCalendarSubscriptionHintAppearsForScheduleResults(t *testing.T) {
+	reply := formatOverview(chinaNow(), []map[string]any{{
+		"startTime": "09:50", "endTime": "11:25",
+		"section": map[string]any{"course": map[string]any{"namePrimary": "数据库系统"}},
+	}}, nil, nil, nil)
+	if !strings.Contains(reply, calendarSubscriptionHint) {
+		t.Fatalf("schedule overview missing calendar hint: %q", reply)
+	}
+	withoutSchedule := formatOverview(chinaNow(), nil, []map[string]any{{"title": "写报告"}}, nil, nil)
+	if strings.Contains(withoutSchedule, calendarSubscriptionHint) {
+		t.Fatalf("non-calendar overview should not include calendar hint: %q", withoutSchedule)
 	}
 }
 

@@ -3,11 +3,16 @@ package botapp
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/agent"
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -262,6 +267,62 @@ func TestCoordinatorHostOnlyResponseIsQueuedOnce(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].Message.Content.Text != "private-link" {
 		t.Fatalf("outbox records = %#v", records)
+	}
+}
+
+func TestCoordinatorNaturalCalendarLinkRequestDeliversUsablePrivateURL(t *testing.T) {
+	ctx := context.Background()
+	db := newCoordinatorStore(t)
+	const calendarURL = "https://calendar.example/private-token.ics"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/workspace/subscriptions/current" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"calendarUrl":"` + calendarURL + `"}}`))
+	}))
+	defer server.Close()
+
+	identity := identityForInbound(jobInbound("identity", "ignored"))
+	if err := db.SaveCredential(ctx, identity, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := commands.Handler{
+		Life:  life.NewClient(server.URL, server.Client()),
+		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store: db,
+	}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := jobInbound("event-natural-calendar-link", "能再给我发一下日历的链接吗")
+	if err := coordinator.Enqueue(ctx, inbound); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	if job.Invocation.Name != string(commands.CapabilitySubscription) || job.Invocation.Command != "subscription link" {
+		t.Fatalf("invocation = %#v", job.Invocation)
+	}
+	coordinator.execute(ctx, job)
+
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("outbox records = %#v", records)
+	}
+	reply := records[0].Message.Content.Text
+	for _, want := range []string{calendarURL, "使用方法：复制链接", "通过 URL 添加/订阅日历", "自动更新", "不是 CalDAV 账户地址"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply missing %q: %q", want, reply)
+		}
 	}
 }
 

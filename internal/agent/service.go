@@ -314,8 +314,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	repeatGuard := newToolRepeatGuard()
 	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer()}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "life_ustc_assistant",
-		Description:   "Life @ USTC QQ assistant",
+		Name:          "presto_assistant",
+		Description:   "Presto, a Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
 		Model:         model,
 		MaxIterations: agentMaxIterations,
@@ -412,16 +412,19 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	if reply == "" || (hostResponseDelivered.Load() && isHostDeliveryToolResult(reply)) {
-		if hostResponseDelivered.Load() {
-			finishRun(store.AgentRunStatusCompleted, "", nil)
-			return commands.Response{}, true
-		}
+	if hostResponseDelivered.Load() {
+		finishRun(store.AgentRunStatusCompleted, "", nil)
+		return commands.Response{}, true
+	}
+	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
 	if hasCalendarSubscriptionURL(reply) {
 		s.logf("agent reply blocked: id=%d reason=unverified_calendar_url", runID)
+		reply = calendarURLGuardReply
+	} else if claimsCalendarSubscriptionDelivered(reply) {
+		s.logf("agent reply blocked: id=%d reason=unverified_calendar_delivery_claim", runID)
 		reply = calendarURLGuardReply
 	}
 	response := s.responseFor(ctx, input, reply)
@@ -445,14 +448,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
-}
-
-func isHostDeliveryToolResult(reply string) bool {
-	var result commands.AgentCommandResult
-	if err := json.Unmarshal([]byte(strings.TrimSpace(reply)), &result); err != nil {
-		return false
-	}
-	return result.DeliveredByHost
 }
 
 func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
@@ -605,7 +600,7 @@ type hostCapabilityInput struct {
 
 func hostCapabilityToolDescription() string {
 	var description strings.Builder
-	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. The host resolves argument-specific policy. A state-changing call may return confirmation_required and resumes only after a real user reply. Host-only results are delivered without exposing private values to the model. Available capabilities:\n")
+	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. The host resolves argument-specific policy. A state-changing call may return confirmation_required and resumes only after a real user reply. Host-only results are delivered without exposing private values to the model. For a personal calendar/iCal subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. Available capabilities:\n")
 	for _, descriptor := range commands.CapabilityDescriptors() {
 		fmt.Fprintf(&description, "- %s: %s", descriptor.ID, strings.TrimSpace(descriptor.Help.Summary))
 		if len(descriptor.Help.Examples) > 0 {
@@ -1055,7 +1050,7 @@ func currentInstruction() string {
 
 func currentInstructionAt(now time.Time) string {
 	_ = now // kept for tests/call sites; wall-clock time is injected per-turn, not here (prompt-cache stable).
-	return `You are SiGNAL_BOT, a casual Life @ USTC assistant in QQ.
+	return `You are Presto, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
@@ -1068,7 +1063,8 @@ Read capabilities run immediately. A state-changing capability may return confir
 For course subscription by name, use catalog search tools to resolve an unambiguous section first, then invoke the subscription capability with import arguments. Show candidates only when the choice is genuinely ambiguous.
 Only read-only MCP tools are exposed. If a requested mutation has no host capability, explain that it is unavailable and record concrete feedback; never improvise a write through another tool.
 Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run.
-Personal calendar subscription links are handled only by the subscription capability with the link argument. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+Personal calendar subscription links are handled only by the subscription capability with the link argument; call it directly for any iCal/link request instead of using another tool. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
+When schedule or calendar results would be useful outside QQ, briefly remind the user that “订阅 链接” provides a personal iCalendar subscription URL. Tell them to add it through their calendar app's “subscribe by URL” or equivalent network-calendar entry; this is an iCalendar feed, not a CalDAV account. Avoid repeating this reminder when the same turn already includes it.
 When a tool result reports failure, use its safe message to correct arguments and retry when possible. Otherwise explain the problem briefly; never repeat raw or internal errors.
 When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.

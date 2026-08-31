@@ -207,18 +207,32 @@ func ParseInvocation(text string) (Invocation, bool) {
 }
 
 func isNaturalCalendarLinkRequest(raw string) bool {
-	compact := strings.Join(strings.Fields(commandToken(raw)), "")
-	hasCalendarTarget := strings.Contains(compact, "日历订阅链接") ||
-		(strings.Contains(compact, "课表") && strings.Contains(compact, "订阅链接"))
-	if !hasCalendarTarget {
-		return false
-	}
-	for _, request := range []string{"给我", "发我", "获取", "查看", "生成", "我要", "我想要", "请给", "请发", "怎么", "如何"} {
-		if strings.Contains(compact, request) {
-			return true
+	compact := strings.ToLower(strings.Join(strings.Fields(commandToken(raw)), ""))
+	hasCalendar := strings.Contains(compact, "日历") || strings.Contains(compact, "ical")
+	hasLink := strings.Contains(compact, "链接") || strings.Contains(compact, "地址") || strings.Contains(compact, "url")
+	if hasCalendar && hasLink {
+		for _, request := range []string{"给我", "发我", "发一下", "再发", "请发", "请给", "获取", "查看", "生成", "我要", "我想要", "怎么", "如何"} {
+			if strings.Contains(compact, request) {
+				return true
+			}
+		}
+		for _, noun := range []string{"日历链接", "日历订阅链接", "日历订阅地址", "ical链接", "ical地址"} {
+			if compact == noun {
+				return true
+			}
 		}
 	}
-	return false
+	if strings.Contains(compact, "课表") && (strings.Contains(compact, "订阅链接") || strings.Contains(compact, "订阅地址")) {
+		return true
+	}
+	if strings.Contains(compact, "课表") && hasCalendar {
+		for _, action := range []string{"添加", "导入", "同步", "订阅", "放到", "加到"} {
+			if strings.Contains(compact, action) {
+				return true
+			}
+		}
+	}
+	return compact == "订阅url" || compact == "订阅地址" || compact == "订阅链接" || strings.Contains(compact, "给我订阅url")
 }
 
 func helpCommand(raw string, args ...string) Invocation {
@@ -1753,7 +1767,11 @@ func formatOverview(now time.Time, schedules []map[string]any, todos []map[strin
 	if len(lines) == 1 {
 		return lines[0] + "\n暂无安排。"
 	}
-	return strings.Join(lines, "\n")
+	reply := strings.Join(lines, "\n")
+	if len(schedules) > 0 || len(exams) > 0 {
+		return withCalendarSubscriptionHint(reply)
+	}
+	return reply
 }
 
 func appendOverviewSection[T any](lines []string, title string, items []T, format func(T) string, command string) []string {
@@ -2186,9 +2204,20 @@ func subscriptionHelp() string {
 		"订阅用法：",
 		"订阅：查看当前教学班订阅",
 		"订阅 链接：查看私有日历订阅链接",
+		"链接可在日历应用的“通过 URL 订阅/网络日历”中添加，并自动同步更新",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 	}, "\n")
+}
+
+const calendarSubscriptionHint = "提示：想把已订阅的课表和考试同步到日历应用，可私聊发送“订阅 链接”，再选择“通过 URL 订阅/网络日历”添加；这是 iCalendar 订阅源，不是 CalDAV 账户。"
+
+func withCalendarSubscriptionHint(reply string) string {
+	reply = strings.TrimSpace(reply)
+	if reply == "" || strings.Contains(reply, calendarSubscriptionHint) {
+		return reply
+	}
+	return reply + "\n\n" + calendarSubscriptionHint
 }
 
 func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Identity) string {
@@ -2215,7 +2244,14 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 		}
 		return "当前订阅没有可用的私有日历链接。"
 	}
-	return "日历订阅链接：\n" + calendarURL + "\n请勿公开或转发此链接。"
+	return strings.Join([]string{
+		"日历订阅链接：",
+		calendarURL,
+		"使用方法：复制链接，在日历应用中选择“通过 URL 添加/订阅日历（网络日历）”，粘贴并保存。",
+		"订阅会自动更新，不需要反复导入。",
+		"如果应用把入口放在 CalDAV/账户设置附近，仍请选择 URL/网络日历订阅，不要添加为 CalDAV 账户；此链接不是 CalDAV 账户地址。",
+		"链接包含私密凭证，请勿公开或转发。",
+	}, "\n")
 }
 
 func (h Handler) settings(ctx context.Context, ident store.Identity, args []string) string {
@@ -2370,7 +2406,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 			lines = append(lines, formatSection(section))
 		}
 	}
-	return strings.Join(lines, "\n")
+	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
 }
 
 type subscriptionSemesterGroup struct {
@@ -2479,7 +2515,7 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 			lines = append(lines, "- "+textutil.MonospaceASCII(code))
 		}
 	}
-	return strings.Join(lines, "\n")
+	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
 }
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
@@ -2615,7 +2651,7 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		lifedata.SortSchedulesByStart(daySchedules)
 		lines = append(lines, formatScheduleDay(weekdays[day.Weekday()]+" "+day.Format("01-02"), daySchedules)...)
 	}
-	return strings.Join(lines, "\n")
+	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
 }
 
 type semesterScheduleEntry struct {
@@ -2656,7 +2692,7 @@ func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, t
 	if len(entries) == 0 {
 		return name + "没有查到已关注课程。"
 	}
-	return formatSemesterSchedule(name, entries)
+	return withCalendarSubscriptionHint(formatSemesterSchedule(name, entries))
 }
 
 func (h Handler) matchScheduleSemester(ctx context.Context, target string) (map[string]any, error) {
@@ -3528,7 +3564,7 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
 	}
-	return strings.Join(lines, "\n")
+	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
 }
 
 func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []string) string {
