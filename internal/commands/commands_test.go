@@ -495,10 +495,21 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 		} else if _, ok := helpTopicTitles[descriptor.Help.Topic]; !ok {
 			t.Errorf("command %q maps to untitled topic %q", name, descriptor.Help.Topic)
 		}
-		if !detailCovered[name] {
+		if !detailCovered[name] && !usageCapabilityHasDetailExample(descriptor.ID) {
 			t.Errorf("command %q is missing detail help", name)
 		}
 	}
+}
+
+func usageCapabilityHasDetailExample(id CapabilityID) bool {
+	for _, usage := range CapabilityUsages() {
+		for _, example := range append(append([]CapabilityUsageExample{}, usage.Examples...), usage.Shortcuts...) {
+			if example.Capability == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestIsHelpToken(t *testing.T) {

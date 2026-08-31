@@ -58,6 +58,7 @@ func generatedHelpOverviewSections() []helpSection {
 func generatedHelpDetailSections() []helpSection {
 	sections := []helpSection{{title: "快捷入口", rows: nil}}
 	seenTopics := map[string]int{}
+	seenCommands := map[string]map[string]bool{}
 	for _, descriptor := range capabilityDescriptors {
 		for _, shortcut := range descriptor.Help.Shortcuts {
 			sections[0].rows = append(sections[0].rows, helpRow{
@@ -73,8 +74,14 @@ func generatedHelpDetailSections() []helpSection {
 			sections = append(sections, helpSection{title: descriptor.Help.Title})
 			index = len(sections) - 1
 			seenTopics[descriptor.Help.Topic] = index
+			seenCommands[descriptor.Help.Topic] = map[string]bool{}
 		}
 		for _, example := range descriptor.Help.Examples {
+			command := strings.TrimSpace(example.Command)
+			if seenCommands[descriptor.Help.Topic][command] {
+				continue
+			}
+			seenCommands[descriptor.Help.Topic][command] = true
 			sections[index].rows = append(sections[index].rows, helpRow{
 				topic: descriptor.Help.Topic, commandName: string(descriptor.ID),
 				command: example.Command, description: example.Description,
@@ -210,45 +217,6 @@ var helpTopicAliases = map[string]string{
 	"feedback":     "feedback",
 }
 
-var internalHelpTopics = map[string]string{
-	"calendar":                     "agenda",
-	"overview":                     "agenda",
-	"upcoming_deadlines":           "agenda",
-	"schedule":                     "schedule",
-	"nextclass":                    "schedule",
-	"todo":                         "todo",
-	"homework":                     "homework",
-	"exam":                         "exam",
-	"course":                       "course",
-	"course_search":                "course",
-	"course_by_jw_id":              "course",
-	"section":                      "section",
-	"section_search":               "section",
-	"section_by_jw_id":             "section",
-	"section_schedules":            "section",
-	"section_exams":                "section",
-	"section_homeworks":            "section",
-	"teacher":                      "teacher",
-	"teacher_search":               "teacher",
-	"teacher_by_id":                "teacher",
-	"semester":                     "semester",
-	"list_semesters":               "semester",
-	"subscription":                 "subscription",
-	"my_subscribed_sections":       "subscription",
-	"unsubscribe_section_by_jw_id": "subscription",
-	"bus":                          "bus",
-	"bus_routes":                   "bus",
-	"login":                        "account",
-	"logout":                       "account",
-	"account":                      "account",
-	"settings":                     "settings",
-	"notify":                       "settings",
-	"agent":                        "advanced",
-	"status":                       "system",
-	"ping":                         "system",
-	"feedback":                     "feedback",
-}
-
 func helpTopicCommand(args []string) string {
 	if len(args) == 0 {
 		return ""
@@ -261,10 +229,18 @@ func helpTopicCommand(args []string) string {
 		return key
 	}
 	if name, _, ok := normalizeJoinedCommand(args[0], args[1:]); ok {
-		return internalHelpTopics[name]
+		return capabilityTopic(name)
 	}
 	name, _ := normalizeCommand(args[0], args[1:])
-	return internalHelpTopics[name]
+	return capabilityTopic(name)
+}
+
+func capabilityTopic(name string) string {
+	descriptor, ok := descriptorForID(name)
+	if !ok {
+		return ""
+	}
+	return descriptor.Help.Topic
 }
 
 var helpTopicTitles = map[string]string{
