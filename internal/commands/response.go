@@ -113,9 +113,17 @@ func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image 
 		if busPreferenceArgs(cmd.Args) {
 			return nil
 		}
+		if strings.Count(text, "查询日期：") > 1 {
+			return nil
+		}
 		title := "校车"
 		body := busImageRenderText(text)
-		return responses.NewRichTextImage("bus", busRichText(title, body, parseBusRouteArgs(cmd.Args)), body)
+		renderBody := body
+		if first, rest, found := strings.Cut(body, "\n"); found && strings.HasPrefix(first, "查询日期：") {
+			title += " · " + strings.TrimPrefix(first, "查询日期：")
+			renderBody = rest
+		}
+		return responses.NewRichTextImage("bus", busRichText(title, renderBody, parseBusRouteArgs(cmd.Args)), body)
 	default:
 		return nil
 	}

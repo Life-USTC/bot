@@ -191,13 +191,20 @@ func (h Handler) parse(text string) (Invocation, bool) {
 
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
-		return parseNaturalScheduleIntent(raw)
+		return parseNaturalReadIntent(raw)
 	}
 	cmd, accepted := acceptedCommand(raw, name, args)
 	if accepted {
 		return cmd, true
 	}
-	return parseNaturalScheduleIntent(raw)
+	return parseNaturalReadIntent(raw)
+}
+
+func parseNaturalReadIntent(raw string) (Invocation, bool) {
+	if invocation, ok := parseNaturalScheduleIntent(raw); ok {
+		return invocation, true
+	}
+	return parseNaturalBusIntent(raw)
 }
 
 // ParseInvocation is the direct command parser used by integrations that need
