@@ -373,9 +373,9 @@ func (s *Store) GetConversationJob(ctx context.Context, id int64) (*Conversation
 	return &job, nil
 }
 
-// ClaimConversationJob claims the oldest eligible job for one conversation.
-// The optional timestamp exists for deterministic callers and tests; omitted
-// calls use the store clock.
+// ClaimConversationJob claims the oldest eligible job for one actor's lane in
+// a conversation. The optional timestamp exists for deterministic callers and
+// tests; omitted calls use the store clock.
 func (s *Store) ClaimConversationJob(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
 	s.conversationJobMu.Lock()
 	defer s.conversationJobMu.Unlock()
@@ -391,8 +391,8 @@ func (s *Store) ClaimConversationJob(ctx context.Context, ident Identity, at ...
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row conversationJobRow
 		query := eligibleConversationJobs(tx, now).
-			Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
-				ident.Platform, ident.ConversationType, ident.ConversationID).
+			Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ?",
+				ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID).
 			Order("sequence ASC").Limit(1)
 		if err := query.First(&row).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
@@ -420,8 +420,7 @@ func (s *Store) ClaimNextConversationJob(ctx context.Context, at ...time.Time) (
 }
 
 // ClaimConversationJobs atomically claims up to limit FIFO-eligible jobs. At
-// most one job at a time can be claimed from any given conversation because a
-// later sequence is blocked by an earlier non-terminal state.
+// most one job at a time can be claimed from an actor's conversation lane.
 func (s *Store) ClaimConversationJobs(ctx context.Context, now time.Time, limit int) ([]ConversationJob, error) {
 	s.conversationJobMu.Lock()
 	defer s.conversationJobMu.Unlock()
@@ -468,6 +467,7 @@ func eligibleConversationJobs(db *gorm.DB, now time.Time) *gorm.DB {
 			WHERE earlier.platform = conversation_jobs.platform
 			  AND earlier.conversation_type = conversation_jobs.conversation_type
 			  AND earlier.conversation_id = conversation_jobs.conversation_id
+			  AND earlier.external_user_id = conversation_jobs.external_user_id
 			  AND earlier.sequence < conversation_jobs.sequence
 			  AND earlier.state IN ?
 		)`, conversationJobStateStrings(conversationJobBlockingStates))
@@ -490,6 +490,7 @@ func claimConversationJobRow(tx *gorm.DB, id int64, now time.Time) (*Conversatio
 			WHERE earlier.platform = conversation_jobs.platform
 			  AND earlier.conversation_type = conversation_jobs.conversation_type
 			  AND earlier.conversation_id = conversation_jobs.conversation_id
+			  AND earlier.external_user_id = conversation_jobs.external_user_id
 			  AND earlier.sequence < conversation_jobs.sequence
 			  AND earlier.state IN ?
 		)`, conversationJobStateStrings(conversationJobBlockingStates)).
@@ -666,8 +667,8 @@ func (s *Store) ResolveUnknownConversationJob(ctx context.Context, id int64, sta
 }
 
 // ConsumeConversationJobConfirmation atomically consumes the oldest pending
-// confirmation in a conversation. Exactly one concurrent caller can move it
-// back to queued; subsequent calls return nil.
+// confirmation for one actor in a conversation. Exactly one concurrent caller
+// can move it back to queued; subsequent calls return nil.
 func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
 	s.conversationJobMu.Lock()
 	defer s.conversationJobMu.Unlock()
@@ -679,8 +680,8 @@ func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Id
 	var consumed *ConversationJob
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row conversationJobRow
-		err := tx.Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND state = ? AND expires_at > ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, string(ConversationJobStateWaitingConfirmation), now).
+		err := tx.Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ? AND expires_at > ?",
+			ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, string(ConversationJobStateWaitingConfirmation), now).
 			Order("sequence ASC").First(&row).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
@@ -717,7 +718,7 @@ func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Id
 }
 
 // UnblockConversationJobsAfterAuth releases every unexpired auth-waiting job
-// for a conversation. FIFO still serializes their subsequent claims.
+// for one actor's conversation lane. FIFO still serializes subsequent claims.
 func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Identity, at ...time.Time) error {
 	if err := validateConversationIdentity(ident); err != nil {
 		return err
@@ -725,8 +726,8 @@ func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Iden
 	ident = normalizeIdentity(ident)
 	now := claimConversationJobTime(at)
 	return s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND state = ? AND expires_at > ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, string(ConversationJobStateWaitingAuth), now).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ? AND expires_at > ?",
+			ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, string(ConversationJobStateWaitingAuth), now).
 		Updates(map[string]any{
 			"state":       string(ConversationJobStateQueued),
 			"wait_reason": "",

@@ -545,7 +545,8 @@ func TestMessageFromPayloadNormalizesGroupIdentityAndMention(t *testing.T) {
 			"id":"message-id",
 			"content":" <@!bot-id> 校车 ",
 			"group_openid":"group-openid",
-			"author":{"member_openid":"member-openid"}
+			"author":{"member_openid":"member-openid"},
+			"message_reference":{"message_id":"bot-message-id"}
 		}`),
 	})
 	if err != nil {
@@ -562,6 +563,9 @@ func TestMessageFromPayloadNormalizesGroupIdentityAndMention(t *testing.T) {
 	}
 	if message.Identity != want {
 		t.Fatalf("identity = %#v", message.Identity)
+	}
+	if inbound := message.inbound(); inbound.ReplyTo == nil || inbound.ReplyTo.MessageID != "bot-message-id" {
+		t.Fatalf("reply reference = %#v", inbound.ReplyTo)
 	}
 }
 

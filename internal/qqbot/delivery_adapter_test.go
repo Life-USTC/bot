@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -42,6 +43,29 @@ func TestDeliveryAdapterContractMapsGroupTargetAndReply(t *testing.T) {
 	}
 	if body.Content != "\n\nhello" || body.MsgID != "source" || body.EventID != "event" || body.MsgSeq != 3 {
 		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestDeliveryAdapterSupportsQQChannelAndGuildDirectTargets(t *testing.T) {
+	paths := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "q-1"})
+	}))
+	defer server.Close()
+	adapter := NewDeliveryAdapter(&Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()})
+	for _, target := range []message.Conversation{
+		{Platform: "qqbot", Type: "channel", ID: "channel-1"},
+		{Platform: "qqbot", Type: "guild_private", ID: "guild-1"},
+	} {
+		outcome := adapter.Deliver(t.Context(), message.Outbound{Target: target, Content: message.Content{Text: "hello"}})
+		if outcome.State != delivery.OutcomeAccepted {
+			t.Fatalf("target=%#v outcome=%#v", target, outcome)
+		}
+	}
+	want := []string{"/channels/channel-1/messages", "/dms/guild-1/messages"}
+	if !slices.Equal(paths, want) {
+		t.Fatalf("paths = %#v, want %#v", paths, want)
 	}
 }
 

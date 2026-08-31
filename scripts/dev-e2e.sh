@@ -106,7 +106,7 @@ echo "[4/6] Building the Bot and protocol E2E runner"
 go build -buildvcs=false -o "$run_dir/life-ustc-bot" ./cmd/life-ustc-bot
 go build -buildvcs=false -o "$run_dir/life-ustc-bot-dev-e2e" ./cmd/life-ustc-bot-dev-e2e
 
-echo "[5/6] Running message -> OAuth -> resume -> iCalendar delivery E2E"
+echo "[5/6] Running private resume/iCalendar and shared-chat routing E2E"
 "$run_dir/life-ustc-bot-dev-e2e" \
 	-bot "$run_dir/life-ustc-bot" \
 	-server "$server_origin" \

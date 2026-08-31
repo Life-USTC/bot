@@ -104,14 +104,13 @@ func main() {
 	}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
-		Life:                   lifeClient,
-		Auth:                   authManager,
-		Store:                  stateStore,
-		Logger:                 logger,
-		Feedback:               feedbackService,
-		AllowGroupPersonalInfo: cfg.AllowGroupPersonalInfo,
-		EnableImageResponses:   cfg.EnableImageResponses && mediaStore != nil,
-		PublicCache:            publicCommandCache,
+		Life:                 lifeClient,
+		Auth:                 authManager,
+		Store:                stateStore,
+		Logger:               logger,
+		Feedback:             feedbackService,
+		EnableImageResponses: cfg.EnableImageResponses && mediaStore != nil,
+		PublicCache:          publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled:        cfg.EnableAgent,
@@ -150,6 +149,7 @@ func main() {
 		Commands: handler,
 		Agent:    agentService,
 		Outputs:  deliveryService,
+		Replies:  stateStore,
 		Recorder: stateStore,
 		Renderer: renderer,
 		Logger:   logger,

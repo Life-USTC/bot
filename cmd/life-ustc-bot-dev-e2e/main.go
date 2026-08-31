@@ -123,6 +123,35 @@ func run(opts options) error {
 	}
 	fmt.Println("  original request resumed without another user command")
 	fmt.Println("  private iCalendar URL was delivered and returned a valid VCALENDAR feed")
+
+	if err := conn.WriteJSON(groupMessageEvent(2001, "今天校车好挤")); err != nil {
+		return fmt.Errorf("send ambient group message: %w", err)
+	}
+	if err := conn.WriteJSON(groupMessageEvent(2002, "校车 西区 高新区")); err != nil {
+		return fmt.Errorf("send public group query: %w", err)
+	}
+	publicReply, err := napcat.WaitForActionMessage(ctx, conn, "send_group_msg", func(message napCatMessage) bool {
+		return strings.TrimSpace(message.Text) != ""
+	})
+	if err != nil {
+		return fmt.Errorf("wait for public group response: %w", err)
+	}
+	if publicReply.ReplyTo != "2002" {
+		return fmt.Errorf("ambient group text activated Presto: response replied to %q, want public query 2002", publicReply.ReplyTo)
+	}
+	if err := conn.WriteJSON(groupMessageEvent(2003, "课表")); err != nil {
+		return fmt.Errorf("send private group command: %w", err)
+	}
+	privateRedirect, err := napcat.WaitForActionMessage(ctx, conn, "send_group_msg", func(message napCatMessage) bool {
+		return strings.Contains(message.Text, "请私聊 Presto")
+	})
+	if err != nil {
+		return fmt.Errorf("wait for private-chat redirect: %w", err)
+	}
+	if privateRedirect.ReplyTo != "2003" {
+		return fmt.Errorf("private-chat redirect replied to %q, want 2003", privateRedirect.ReplyTo)
+	}
+	fmt.Println("  ambient group text was ignored; public query and private redirect worked without @")
 	return nil
 }
 
@@ -275,24 +304,36 @@ type napCatAction struct {
 	Echo   json.RawMessage            `json:"echo"`
 }
 
+type napCatMessage struct {
+	Text    string
+	ReplyTo string
+}
+
 func (h *napCatHarness) WaitForMessage(ctx context.Context, conn *websocket.Conn, accept func(string) bool) (string, error) {
+	message, err := h.WaitForActionMessage(ctx, conn, "send_private_msg", func(message napCatMessage) bool {
+		return accept(message.Text)
+	})
+	return message.Text, err
+}
+
+func (h *napCatHarness) WaitForActionMessage(ctx context.Context, conn *websocket.Conn, action string, accept func(napCatMessage) bool) (napCatMessage, error) {
 	for {
 		if deadline, ok := ctx.Deadline(); ok {
 			_ = conn.SetReadDeadline(deadline)
 		}
 		var frame napCatAction
 		if err := conn.ReadJSON(&frame); err != nil {
-			return "", err
+			return napCatMessage{}, err
 		}
 		if err := h.acknowledge(conn, frame); err != nil {
-			return "", err
+			return napCatMessage{}, err
 		}
-		if frame.Action != "send_private_msg" {
+		if frame.Action != action {
 			continue
 		}
-		text := decodeNapCatMessage(frame.Params["message"])
-		if accept(text) {
-			return text, nil
+		message := decodeNapCatMessage(frame.Params["message"])
+		if accept(message) {
+			return message, nil
 		}
 	}
 }
@@ -307,12 +348,33 @@ func (h *napCatHarness) acknowledge(conn *websocket.Conn, frame napCatAction) er
 	})
 }
 
-func decodeNapCatMessage(raw json.RawMessage) string {
+func decodeNapCatMessage(raw json.RawMessage) napCatMessage {
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
-		return text
+		return napCatMessage{Text: text}
 	}
-	return string(raw)
+	var segments []struct {
+		Type string `json:"type"`
+		Data struct {
+			Text string `json:"text"`
+			ID   string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &segments) != nil {
+		return napCatMessage{}
+	}
+	message := napCatMessage{}
+	var builder strings.Builder
+	for _, segment := range segments {
+		switch segment.Type {
+		case "reply":
+			message.ReplyTo = strings.TrimSpace(segment.Data.ID)
+		case "text":
+			builder.WriteString(segment.Data.Text)
+		}
+	}
+	message.Text = builder.String()
+	return message
 }
 
 func privateMessageEvent(text string) map[string]any {
@@ -320,6 +382,15 @@ func privateMessageEvent(text string) map[string]any {
 		"time": time.Now().Unix(), "self_id": 10000, "post_type": "message",
 		"message_type": "private", "sub_type": "friend", "message_id": 1001,
 		"user_id": 42, "message": text, "raw_message": text, "font": 0,
+		"sender": map[string]any{"user_id": 42, "nickname": "Dev User"},
+	}
+}
+
+func groupMessageEvent(messageID int64, text string) map[string]any {
+	return map[string]any{
+		"time": time.Now().Unix(), "self_id": 10000, "post_type": "message",
+		"message_type": "group", "sub_type": "normal", "message_id": messageID,
+		"user_id": 42, "group_id": 100, "message": text, "raw_message": text, "font": 0,
 		"sender": map[string]any{"user_id": 42, "nickname": "Dev User"},
 	}
 }

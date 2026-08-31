@@ -2,7 +2,9 @@ package botapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,15 +14,17 @@ import (
 	"github.com/Life-USTC/Bot/internal/agent"
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/routing"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
 type commandFunc func(context.Context, commands.Input) (commands.Response, bool)
 
-func (fn commandFunc) HandleResponse(ctx context.Context, input commands.Input) (commands.Response, bool) {
+func (fn commandFunc) HandleInvocationResponse(ctx context.Context, input commands.Input, _ commands.Invocation) (commands.Response, bool) {
 	return fn(ctx, input)
 }
 
@@ -50,6 +54,15 @@ func jobInbound(eventID, text string) message.Inbound {
 	return message.Inbound{
 		Actor:        message.Actor{Platform: "napcat", UserID: "42"},
 		Conversation: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
+		Source:       message.ReplyRef{EventID: eventID, MessageID: "message-" + eventID},
+		Text:         text,
+	}
+}
+
+func groupJobInbound(eventID, userID, text string) message.Inbound {
+	return message.Inbound{
+		Actor:        message.Actor{Platform: "napcat", UserID: userID},
+		Conversation: message.Conversation{Platform: "napcat", Type: "group", ID: "100"},
 		Source:       message.ReplyRef{EventID: eventID, MessageID: "message-" + eventID},
 		Text:         text,
 	}
@@ -109,6 +122,145 @@ func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 	got := records[0].Message
 	if got.Content.Text != "pong" || got.DedupeKey != "conversation-job:1:revision:1:part:0" || got.ReplyTo == nil || got.ReplyTo.EventID != "event-1" {
 		t.Fatalf("outbound = %#v", got)
+	}
+}
+
+func TestCoordinatorFiltersAmbientGroupTextBeforePersistence(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			t.Fatal("ambient group text reached command execution")
+			return commands.Response{}, false
+		}),
+		Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
+			t.Fatal("ambient group text reached Agent execution")
+			return commands.Response{}, false
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, text := range []string{"今天校车好挤", "大家周六坐校车去聚餐", "周六校车还有调整通知"} {
+		if err := coordinator.Enqueue(t.Context(), groupJobInbound(fmt.Sprintf("ambient-%d", i), "42", text)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job, err := db.ClaimNextConversationJob(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job != nil {
+		t.Fatalf("ambient group job persisted: %#v", job)
+	}
+
+	if err := coordinator.Enqueue(t.Context(), groupJobInbound("public-bus", "42", "校车 西区 高新区")); err != nil {
+		t.Fatal(err)
+	}
+	claimed := claimOnlyConversationJob(t, db)
+	if claimed.Invocation.Name != string(commands.CapabilityBus) || claimed.Invocation.Command != "bus 西区 高新区" {
+		t.Fatalf("public group invocation = %#v", claimed.Invocation)
+	}
+}
+
+func TestCoordinatorResolvesAcceptedBotReplyIntoBusFollowUp(t *testing.T) {
+	db := newCoordinatorStore(t)
+	ctx := t.Context()
+	conversation := message.Conversation{Platform: "napcat", Type: "group", ID: "100"}
+	_, created, err := db.Enqueue(ctx, message.Outbound{
+		Kind:   "bus",
+		Target: conversation,
+		Context: &message.ResponseContext{
+			Capability: string(commands.CapabilityBus),
+			Arguments:  []string{"周六", "西区", "高新区"},
+		},
+		Content:   message.Content{Text: "周六校车"},
+		DedupeKey: "reply-context-source",
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue source output: created=%v err=%v", created, err)
+	}
+	due, err := db.ClaimDue(ctx, time.Now().UTC(), 1)
+	if err != nil || len(due) != 1 {
+		t.Fatalf("claim source output: records=%#v err=%v", due, err)
+	}
+	if err := db.Complete(ctx, due[0].ID, delivery.Outcome{
+		State: delivery.OutcomeAccepted,
+		Receipt: message.Receipt{
+			PlatformMessageID: "bot-message-1",
+			AcceptedAt:        time.Now().UTC(),
+		},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db, Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}), Outputs: db, Replies: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := groupJobInbound("follow-up", "77", "周日呢")
+	inbound.ReplyTo = &message.ReplyRef{MessageID: "bot-message-1"}
+	if err := coordinator.Enqueue(ctx, inbound); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	if job.Invocation.Name != string(commands.CapabilityBus) || job.Invocation.Command != "bus 西区 高新区 周日" {
+		t.Fatalf("follow-up invocation = %#v", job.Invocation)
+	}
+}
+
+func TestCoordinatorTreatsReplyToAcceptedAgentOutputAsAddressed(t *testing.T) {
+	db := newCoordinatorStore(t)
+	ctx := t.Context()
+	conversation := message.Conversation{Platform: "napcat", Type: "group", ID: "100"}
+	_, created, err := db.Enqueue(ctx, message.Outbound{
+		Kind:      "agent",
+		Target:    conversation,
+		Content:   message.Content{Text: "公开信息说明"},
+		DedupeKey: "agent-reply-source",
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue source output: created=%v err=%v", created, err)
+	}
+	due, err := db.ClaimDue(ctx, time.Now().UTC(), 1)
+	if err != nil || len(due) != 1 {
+		t.Fatalf("claim source output: records=%#v err=%v", due, err)
+	}
+	if err := db.Complete(ctx, due[0].ID, delivery.Outcome{
+		State: delivery.OutcomeAccepted,
+		Receipt: message.Receipt{
+			PlatformMessageID: "bot-agent-message-1",
+			AcceptedAt:        time.Now().UTC(),
+		},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db, Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}), Outputs: db, Replies: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := groupJobInbound("agent-follow-up", "77", "这个结果是什么意思")
+	inbound.ReplyTo = &message.ReplyRef{MessageID: "bot-agent-message-1"}
+	if err := coordinator.Enqueue(ctx, inbound); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	var payload conversationJobPayload
+	if err := json.Unmarshal(job.Input.Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Route != routing.ActionAgent || payload.Activation != routing.ActivationReply {
+		t.Fatalf("payload = %#v", payload)
 	}
 }
 

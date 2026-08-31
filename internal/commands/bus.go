@@ -18,17 +18,21 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
-func parseGroupBusResult(text string) ParseResult {
-	raw := stripCQCodes(text)
-	if raw == "" || !containsBusKeyword(raw) {
-		return ParseResult{Status: ParseStatusUnknown}
-	}
-	return acceptedCommandResult(raw, "bus", busArgsFromText(raw))
-}
-
 var naturalBusAmbiguousMarkers = []string{
 	"为什么", "怎么", "如何", "解释", "比较", "推荐", "设置", "偏好", "提醒", "添加", "修改", "删除", "问题", "bug",
 	"查不到", "没查到", "不对", "错误",
+}
+
+var naturalBusQueryPrefixes = []string{
+	"麻烦帮我查一下", "麻烦帮我看一下", "可以帮我查一下", "可以帮我看一下",
+	"能不能帮我查", "能不能查一下", "能帮我查一下", "能查一下",
+	"请帮我查一下", "请帮我看一下", "帮我查一下", "帮我看一下",
+	"麻烦查一下", "麻烦看一下", "请查一下", "请看一下",
+	"请帮我查", "请帮我看", "帮我查", "帮我看", "查询", "查一下", "看一下", "查", "看",
+}
+
+var naturalBusQuestionSuffixes = []string{
+	"还有没有", "还有吗", "还有么", "是几点", "几点", "什么时候", "是哪班", "哪班", "班次", "最早", "最晚", "下一班",
 }
 
 func parseNaturalBusIntent(raw string) ParseResult {
@@ -36,21 +40,92 @@ func parseNaturalBusIntent(raw string) ParseResult {
 	if text == "" || strings.HasPrefix(text, "/") || !containsBusKeyword(text) || containsAny(strings.ToLower(text), naturalBusAmbiguousMarkers) {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
-	query := false
-	for _, marker := range []string{"查", "看", "几点", "什么时候", "哪班", "班次", "还有", "最早", "最晚", "下一班"} {
-		if strings.Contains(compact, marker) {
-			query = true
-			break
-		}
-	}
 	args := busArgsFromText(text)
-	if !query || len(args) == 0 {
+	if len(args) == 0 || !strictNaturalBusQuery(text) {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	result := acceptedCommandResult(raw, "bus", args)
 	result.Invocation.NaturalRoute = "bus"
 	return result
+}
+
+func strictNaturalBusQuery(text string) bool {
+	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
+	compact = strings.Trim(compact, "，,。！？!?；;")
+	query := false
+	for _, prefix := range naturalBusQueryPrefixes {
+		if strings.HasPrefix(compact, prefix) {
+			compact = strings.TrimPrefix(compact, prefix)
+			query = true
+			break
+		}
+	}
+	for _, suffix := range naturalBusQuestionSuffixes {
+		for _, ending := range []string{suffix, suffix + "呢", suffix + "呀", suffix + "？", suffix + "?"} {
+			if strings.HasSuffix(compact, ending) {
+				compact = strings.TrimSuffix(compact, ending)
+				query = true
+				break
+			}
+		}
+		if query && !containsAny(compact, naturalBusQuestionSuffixes) {
+			break
+		}
+	}
+	if !query {
+		return false
+	}
+
+	compact = busScheduleSelectorRE.ReplaceAllString(compact, "")
+	for _, alias := range campusAliases() {
+		compact = strings.ReplaceAll(compact, strings.ToLower(strings.Join(strings.Fields(alias), "")), "")
+	}
+	for _, token := range []string{
+		"校车", "班车", "bus", "xc", "开往", "出发", "从", "到", "至", "去", "往", "的", "有", "请", "我", "给", "一下", "和", "、", "，", ",", "。", "！", "!", "？", "?", "吗", "呢", "呀", "吧",
+	} {
+		compact = strings.ReplaceAll(compact, token, "")
+	}
+	return compact == ""
+}
+
+// ParsePublicFollowUp applies a narrow, deterministic reply to an earlier
+// public invocation. The first supported follow-up is the common bus-date
+// refinement: replying “周日呢” retains the route and replaces the date.
+func ParsePublicFollowUp(base Invocation, text string) (Invocation, bool) {
+	base, ok := withDescriptor(base)
+	if !ok || base.Policy().DataScope != DataScopePublic || base.ID() != CapabilityBus {
+		return Invocation{}, false
+	}
+	compact := strings.ToLower(strings.Join(strings.Fields(stripCQCodes(text)), ""))
+	compact = strings.Trim(compact, "，,。！？!?；;")
+	for _, prefix := range []string{"那", "那么", "那就"} {
+		compact = strings.TrimPrefix(compact, prefix)
+	}
+	for _, suffix := range []string{"呢", "呀", "吗", "吧"} {
+		compact = strings.TrimSuffix(compact, suffix)
+	}
+	matches := busScheduleSelectorRE.FindAllString(compact, -1)
+	if len(matches) == 0 {
+		return Invocation{}, false
+	}
+	remainder := busScheduleSelectorRE.ReplaceAllString(compact, "")
+	remainder = strings.NewReplacer("和", "", "、", "", "，", "", ",", "").Replace(remainder)
+	if remainder != "" {
+		return Invocation{}, false
+	}
+	args := make([]string, 0, len(base.Args)+len(matches))
+	for _, arg := range base.Args {
+		if !busScheduleSelectorRE.MatchString(strings.ToLower(strings.TrimSpace(arg))) {
+			args = append(args, arg)
+		}
+	}
+	args = append(args, matches...)
+	invocation, ok := NewInvocation(CapabilityBus, args)
+	if !ok {
+		return Invocation{}, false
+	}
+	invocation.NaturalRoute = "bus_follow_up"
+	return invocation, true
 }
 
 func containsBusKeyword(text string) bool {
@@ -229,7 +304,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		return queryOptions.QueryError
 	}
 	options := queryOptions
-	if !store.IsGroupConversation(ident) {
+	if !store.IsSharedConversation(ident) {
 		preferences, ok := h.currentBusPreferences(ctx, ident)
 		if ok {
 			if options.ExplicitRoute && len(options.Schedules) == 0 {
@@ -327,7 +402,7 @@ func busHelp() string {
 }
 
 func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data map[string]any, args []string) string {
-	if store.IsGroupConversation(ident) {
+	if store.IsSharedConversation(ident) {
 		return "群聊只能查校车；偏好请私聊设置。"
 	}
 	token, ok := h.accessToken(ctx, ident)

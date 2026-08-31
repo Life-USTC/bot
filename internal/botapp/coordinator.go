@@ -15,6 +15,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/routing"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -25,7 +26,7 @@ const (
 )
 
 type CommandHandler interface {
-	HandleResponse(context.Context, commands.Input) (commands.Response, bool)
+	HandleInvocationResponse(context.Context, commands.Input, commands.Invocation) (commands.Response, bool)
 }
 
 type AgentHandler interface {
@@ -76,11 +77,16 @@ type OutputSink interface {
 	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
 }
 
+type ReplyContextResolver interface {
+	ResolveResponseContext(context.Context, message.Conversation, string) (*message.ResponseContext, error)
+}
+
 type CoordinatorConfig struct {
 	Jobs               JobRepository
 	Commands           CommandHandler
 	Agent              AgentHandler
 	Outputs            OutputSink
+	Replies            ReplyContextResolver
 	Recorder           Recorder
 	Renderer           Renderer
 	ImageRenderTimeout time.Duration
@@ -97,6 +103,7 @@ type Coordinator struct {
 	commands           CommandHandler
 	agent              AgentHandler
 	outputs            OutputSink
+	replies            ReplyContextResolver
 	recorder           Recorder
 	renderer           Renderer
 	imageRenderTimeout time.Duration
@@ -107,7 +114,9 @@ type Coordinator struct {
 }
 
 type conversationJobPayload struct {
-	Inbound message.Inbound `json:"inbound"`
+	Inbound    message.Inbound    `json:"inbound"`
+	Route      routing.Action     `json:"route"`
+	Activation routing.Activation `json:"activation"`
 }
 
 func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
@@ -129,7 +138,7 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 		batchSize = defaultJobBatchSize
 	}
 	return &Coordinator{
-		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs,
+		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
 		recorder: config.Recorder, renderer: config.Renderer,
 		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
 		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
@@ -166,14 +175,30 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			return nil
 		}
 	}
-	payload, err := json.Marshal(conversationJobPayload{Inbound: inbound})
+	var replyContext *message.ResponseContext
+	if inbound.ReplyTo != nil && c.replies != nil {
+		resolved, err := c.replies.ResolveResponseContext(ctx, inbound.Conversation, inbound.ReplyTo.MessageID)
+		if err != nil {
+			return fmt.Errorf("resolve replied Bot message: %w", err)
+		}
+		replyContext = resolved
+	}
+	decision := routing.Decide(inbound, replyContext)
+	if decision.Action == routing.ActionIgnore {
+		return nil
+	}
+	payload, err := json.Marshal(conversationJobPayload{
+		Inbound: inbound, Route: decision.Action, Activation: decision.Activation,
+	})
 	if err != nil {
 		return fmt.Errorf("encode conversation job: %w", err)
 	}
 	var invocation store.ConversationJobInvocation
-	if parsed, ok := commands.ParseInvocation(inbound.Text); ok {
+	if decision.Invocation.Capability != nil {
 		invocation = store.ConversationJobInvocation{
-			Name: parsed.Name, Command: parsed.CanonicalCommand(), Args: append([]string(nil), parsed.Args...),
+			Name:    decision.Invocation.Name,
+			Command: decision.Invocation.CanonicalCommand(),
+			Args:    append([]string(nil), decision.Invocation.Args...),
 		}
 	}
 	_, created, err := c.jobs.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
@@ -276,9 +301,20 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		part = next
 		return err
 	}
-	if reply, ok := c.commands.HandleResponse(ctx, commands.Input{
-		Text: commandText, Identity: job.Identity, BotMentioned: inbound.BotMentioned, SuppressLog: true,
-	}); ok {
+	commandRoute := strings.TrimSpace(job.Invocation.Command) != "" || payload.Route == routing.ActionCommand
+	if commandRoute {
+		invocation, restored := commands.RestoreInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
+		if !restored {
+			c.fail(ctx, job, fmt.Errorf("restore routed capability %q", job.Invocation.Name))
+			return
+		}
+		reply, ok := c.commands.HandleInvocationResponse(ctx, commands.Input{
+			Text: commandText, Identity: job.Identity, SuppressLog: true,
+		}, invocation)
+		if !ok {
+			c.fail(ctx, job, errors.New("routed command was not handled"))
+			return
+		}
 		if err := enqueue(ctx, reply); err != nil {
 			c.fail(ctx, job, err)
 			return
@@ -292,6 +328,10 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		}
 		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
 		c.complete(ctx, job)
+		return
+	}
+	if payload.Route != routing.ActionAgent {
+		c.fail(ctx, job, fmt.Errorf("unsupported persisted route %q", payload.Route))
 		return
 	}
 	if c.agent == nil {
@@ -440,6 +480,7 @@ func (c *Coordinator) enqueueResponse(ctx context.Context, job store.Conversatio
 		replyTo.Sequence = part + 1
 		_, created, err := c.outputs.Enqueue(ctx, message.Outbound{
 			Kind: item.Kind, Target: inbound.Conversation, ReplyTo: &replyTo, Content: content,
+			Context:   responseContextForJob(job),
 			DedupeKey: fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, part),
 		})
 		if err != nil {
@@ -459,6 +500,17 @@ func (c *Coordinator) enqueueResponse(ctx context.Context, job store.Conversatio
 		part++
 	}
 	return part, nil
+}
+
+func responseContextForJob(job store.ConversationJob) *message.ResponseContext {
+	invocation, ok := commands.NewInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
+	if !ok || invocation.Policy().DataScope != commands.DataScopePublic {
+		return nil
+	}
+	return &message.ResponseContext{
+		Capability: string(invocation.ID()),
+		Arguments:  append([]string(nil), invocation.Args...),
+	}
 }
 
 func (c *Coordinator) recordJob(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, status string) {

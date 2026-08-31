@@ -46,6 +46,46 @@ func TestNapCatDelegatesInboundWithSeparateGroupActor(t *testing.T) {
 	}
 }
 
+func TestNapCatInboundCapturesReplyWithoutTreatingAtAllAsBotMention(t *testing.T) {
+	event := messageEvent{
+		MessageType: "group", GroupID: 99, UserID: 7, SelfID: 123,
+		RawMessage: "[CQ:reply,id=456][CQ:at,qq=all] 周日呢",
+		Message: []any{
+			map[string]any{"type": "reply", "data": map[string]any{"id": "456"}},
+			map[string]any{"type": "text", "data": map[string]any{"text": "周日呢"}},
+		},
+	}
+	inbound := event.inbound()
+	if inbound.ReplyTo == nil || inbound.ReplyTo.MessageID != "456" {
+		t.Fatalf("reply reference = %#v", inbound.ReplyTo)
+	}
+	if inbound.Text != "周日呢" {
+		t.Fatalf("clean message text = %q", inbound.Text)
+	}
+	if inbound.BotMentioned {
+		t.Fatal("@all was treated as a direct Bot mention")
+	}
+}
+
+func TestMessageMentionsBotMatchesOnlyTheBotAccount(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "bot", raw: "[CQ:at,qq=123] 校车", want: true},
+		{name: "bot with metadata", raw: "[CQ:at,qq=123,name=Presto] 校车", want: true},
+		{name: "another member", raw: "[CQ:at,qq=456] 校车"},
+		{name: "everyone", raw: "[CQ:at,qq=all] 校车"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := messageMentionsBot(test.raw, 123); got != test.want {
+				t.Fatalf("messageMentionsBot(%q) = %v, want %v", test.raw, got, test.want)
+			}
+		})
+	}
+}
+
 func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, agentService *agent.Service, recorder botapp.Recorder) {
 	t.Helper()
 	db := handler.Store
@@ -70,7 +110,7 @@ func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, ag
 	}
 	app, err := botapp.NewCoordinator(botapp.CoordinatorConfig{
 		Jobs: db, Commands: handler, Agent: agentHandler, Outputs: deliverer,
-		Recorder: recorder, Logger: bridge.Logger, PollInterval: time.Millisecond,
+		Replies: db, Recorder: recorder, Logger: bridge.Logger, PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +333,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
+	if !strings.Contains(plainTextFromMessage(params["message"]), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
 	}
 	if err := conn.WriteJSON(map[string]any{
@@ -398,7 +438,7 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if !strings.Contains(params["message"].(string), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
+	if !strings.Contains(plainTextFromMessage(params["message"]), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("message = %q", params["message"])
 	}
 	if err := conn1.WriteJSON(map[string]any{

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Life-USTC/Bot/internal/store"
@@ -78,9 +79,8 @@ func TestGroupAtHelpParsesAfterCQStrip(t *testing.T) {
 	group := store.Identity{Platform: "napcat", UserID: "1", ConversationType: "group", ConversationID: "9"}
 
 	reply, ok := handler.Handle(t.Context(), Input{
-		Text:         "[CQ:at,qq=3889719924] /help",
-		Identity:     group,
-		BotMentioned: true,
+		Text:     "[CQ:at,qq=3889719924] /help",
+		Identity: group,
 	})
 	if !ok || reply == "" {
 		t.Fatalf("group @help reply=%q ok=%v", reply, ok)
@@ -90,25 +90,23 @@ func TestGroupAtHelpParsesAfterCQStrip(t *testing.T) {
 		Text:     "课表",
 		Identity: group,
 	})
-	if ok || reply != "" {
-		t.Fatalf("group 课表 without @ should be silent, reply=%q ok=%v", reply, ok)
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
+		t.Fatalf("shared capability guard reply=%q ok=%v", reply, ok)
 	}
 
 	reply, ok = handler.Handle(t.Context(), Input{
-		Text:         "[CQ:at,qq=3889719924] 课表",
-		Identity:     group,
-		BotMentioned: true,
+		Text:     "[CQ:at,qq=3889719924] 课表",
+		Identity: group,
 	})
-	if !ok || reply != "此功能请私聊使用。" {
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
 		t.Fatalf("group @课表 reply=%q ok=%v", reply, ok)
 	}
 
 	reply, ok = handler.Handle(t.Context(), Input{
-		Text:         "[CQ:at,qq=3889719924] 课表 help",
-		Identity:     group,
-		BotMentioned: true,
+		Text:     "[CQ:at,qq=3889719924] 课表 help",
+		Identity: group,
 	})
-	if !ok || reply != "此功能请私聊使用。" {
+	if !ok || !strings.Contains(reply, "课表 帮助：") {
 		t.Fatalf("group @课表 help reply=%q ok=%v", reply, ok)
 	}
 }

@@ -89,7 +89,7 @@ func (p *Poller) tick(ctx context.Context) {
 		return
 	}
 	for _, setting := range settings {
-		if !store.IsPrivateConversation(setting.Identity) {
+		if !store.IsDirectConversation(setting.Identity) {
 			continue
 		}
 		if !p.shouldPoll(setting.Identity) {

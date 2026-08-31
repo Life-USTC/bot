@@ -39,14 +39,14 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 		return napcatRejected("invalid_target", err)
 	}
 
-	payload := any(outbound.Content.Text)
+	imageURL := ""
 	if attachment := outbound.Content.Attachment; attachment != nil {
-		imageURL, err := a.imageURL(attachment)
+		imageURL, err = a.imageURL(attachment)
 		if err != nil {
 			return napcatRejected("invalid_attachment", err)
 		}
-		payload = napcatDeliveryMessage(outbound.Content.Text, imageURL)
 	}
+	payload := napcatDeliveryMessage(outbound.Content.Text, imageURL, outbound.ReplyTo)
 	conn, writeMu := a.bridge.reverseConnForReply(outbound.ReplyTo)
 	var acceptance store.MessageAcceptance
 	if conn != nil {
@@ -89,12 +89,21 @@ func (a *DeliveryAdapter) imageURL(attachment *message.Attachment) (string, erro
 	return a.bridge.MediaStore.PutPNG(attachment.Data)
 }
 
-func napcatDeliveryMessage(text, imageURL string) []map[string]any {
-	segments := make([]map[string]any, 0, 2)
+func napcatDeliveryMessage(text, imageURL string, replyTo *message.ReplyRef) []map[string]any {
+	segments := make([]map[string]any, 0, 3)
+	if replyTo != nil && strings.TrimSpace(replyTo.MessageID) != "" {
+		segments = append(segments, map[string]any{
+			"type": "reply",
+			"data": map[string]any{"id": strings.TrimSpace(replyTo.MessageID)},
+		})
+	}
 	if text = strings.TrimSpace(text); text != "" {
 		segments = append(segments, map[string]any{"type": "text", "data": map[string]any{"text": text}})
 	}
-	return append(segments, napcatImageMessage(imageURL)...)
+	if strings.TrimSpace(imageURL) != "" {
+		segments = append(segments, napcatImageMessage(imageURL)...)
+	}
+	return segments
 }
 
 func classifyNapCatDeliveryError(err error) delivery.Outcome {

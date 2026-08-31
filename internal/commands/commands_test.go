@@ -635,7 +635,7 @@ func TestStatusWithAuthWithoutStoreDoesNotPanic(t *testing.T) {
 		Auth: &auth.Manager{},
 	}
 	reply, ok := handler.Handle(context.Background(), Input{Text: "状态", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "登录：未登录") {
+	if !ok || !strings.Contains(reply, "Life @ USTC：OK") || strings.Contains(reply, "登录：") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
@@ -1775,34 +1775,31 @@ func TestHandleFeedbackWithoutServiceReportsUnavailable(t *testing.T) {
 	}
 }
 
-func TestHandleGroupPersonalInfoRequiresOptIn(t *testing.T) {
+func TestSharedConversationNeverExecutesUserPrivateCapability(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	ident.ConversationType = "group"
 	ident.ConversationID = "3001"
 
 	reply, ok := Handler{}.Handle(ctx, Input{
-		Text:     "课表 help",
+		Text:     "课表",
 		Identity: ident,
 	})
-	if ok || reply != "" {
-		t.Fatalf("default group personal reply = %q, ok = %v", reply, ok)
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
+		t.Fatalf("group personal reply = %q, ok = %v", reply, ok)
 	}
 
-	reply, ok = Handler{AllowGroupPersonalInfo: true}.Handle(ctx, Input{
-		Text:     "课表 help",
-		Identity: ident,
-	})
-	if !ok || !strings.Contains(reply, "课表 帮助") {
-		t.Fatalf("enabled group schedule reply = %q, ok = %v", reply, ok)
-	}
-
-	reply, ok = Handler{AllowGroupPersonalInfo: true}.Handle(ctx, Input{
+	reply, ok = Handler{}.Handle(ctx, Input{
 		Text:     "td add 写报告",
 		Identity: ident,
 	})
-	if ok || reply != "" {
-		t.Fatalf("enabled group todo write reply = %q, ok = %v", reply, ok)
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
+		t.Fatalf("group private mutation reply = %q, ok = %v", reply, ok)
+	}
+
+	reply, ok = Handler{}.Handle(ctx, Input{Text: "校车 偏好", Identity: ident})
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
+		t.Fatalf("group private preference reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -3247,7 +3244,7 @@ func TestAgentSettingsCommand(t *testing.T) {
 	groupIdent := ident
 	groupIdent.ConversationType = "group"
 	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 开", Identity: groupIdent})
-	if ok || reply != "" {
+	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
 		t.Fatalf("group reply = %q, ok = %v", reply, ok)
 	}
 }

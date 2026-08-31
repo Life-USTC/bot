@@ -45,16 +45,48 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 	}
 }
 
-func TestAgentIgnoresGroupMessages(t *testing.T) {
-	svc := &Service{enabled: true}
-	for _, conversationType := range []string{"group", " group ", "GROUP"} {
-		reply, ok := svc.Handle(context.Background(), Input{
-			Text:     "帮我看看今天有什么课",
-			Identity: store.Identity{ConversationType: conversationType},
-		})
-		if ok || reply != "" {
-			t.Fatalf("conversationType %q reply = %q, ok = %v", conversationType, reply, ok)
+func TestGroupAgentOnlyAdvertisesPublicCapabilities(t *testing.T) {
+	description := hostCapabilityToolDescription(true)
+	for _, public := range []string{" bus:", " course:", " teacher:"} {
+		if !strings.Contains(description, public) {
+			t.Fatalf("group description lacks public capability %q: %q", public, description)
 		}
+	}
+	for _, private := range []string{" subscription:", " schedule:", " todo:", " account:"} {
+		if strings.Contains(description, private) {
+			t.Fatalf("group description exposes private capability %q: %q", private, description)
+		}
+	}
+	if strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "shared conversation") {
+		t.Fatalf("group description contains private workflow or lacks shared boundary: %q", description)
+	}
+}
+
+func TestAgentHandlesRouterActivatedGroupRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-group",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"这是公开信息。"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+	svc, err := New(t.Context(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(t.Context(), Input{
+		Text: "介绍一下这个公开服务",
+		Identity: store.Identity{
+			Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100",
+		},
+	})
+	if !ok || response.Text != "这是公开信息。" {
+		t.Fatalf("response = %#v, ok=%v", response, ok)
 	}
 }
 
@@ -854,7 +886,7 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 }
 
 func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *testing.T) {
-	description := hostCapabilityToolDescription()
+	description := hostCapabilityToolDescription(false)
 	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
 		t.Fatalf("description lacks structured subscription call: %q", description)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -34,6 +35,19 @@ func TestPrivateMessageEventPreservesNaturalRequest(t *testing.T) {
 	event := privateMessageEvent(testMessage)
 	if event["post_type"] != "message" || event["message_type"] != "private" || event["raw_message"] != testMessage {
 		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestDecodeNapCatMessageSegments(t *testing.T) {
+	raw, err := json.Marshal([]map[string]any{
+		{"type": "reply", "data": map[string]any{"id": "1001"}},
+		{"type": "text", "data": map[string]any{"text": "日历订阅链接：\nhttp://localhost/feed.ics"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decodeNapCatMessage(raw); got.Text != "日历订阅链接：\nhttp://localhost/feed.ics" || got.ReplyTo != "1001" {
+		t.Fatalf("decoded message = %#v", got)
 	}
 }
 
