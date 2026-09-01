@@ -24,9 +24,11 @@ import (
 	"github.com/Life-USTC/Bot/internal/qqbot"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 func main() {
+	log.SetOutput(textutil.RedactingLogWriter(os.Stderr))
 	cfg := config.FromEnv()
 	if len(os.Args) == 2 && os.Args[1] == "migrate" {
 		if err := migrateDatabase(cfg.DBPath); err != nil {
@@ -44,7 +46,7 @@ func main() {
 		}
 		return
 	}
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	logger := log.New(textutil.RedactingLogWriter(os.Stdout), "", log.LstdFlags)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = 16
 	httpClient := &http.Client{
