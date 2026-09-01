@@ -48,9 +48,9 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 					Function: schema.FunctionCall{Name: call.Name, Arguments: call.Arguments},
 				})
 			}
-			parts := outputMessageParts(event.Parts)
-			if strings.TrimSpace(event.Content) != "" || len(calls) > 0 || len(parts) > 0 {
-				message := schema.AssistantMessage(event.Content, calls)
+			content, parts := providerAssistantOutput(event.Content, event.Parts)
+			if strings.TrimSpace(content) != "" || len(calls) > 0 || len(parts) > 0 {
+				message := schema.AssistantMessage(content, calls)
 				message.Name = event.Name
 				message.AssistantGenMultiContent = parts
 				messages = append(messages, message)
@@ -87,23 +87,35 @@ func inputMessageParts(parts []store.ConversationMessagePart) []schema.MessageIn
 	return result
 }
 
-func outputMessageParts(parts []store.ConversationMessagePart) []schema.MessageOutputPart {
+// providerAssistantOutput retains every persisted text byte while excluding
+// assistant output modalities the configured OpenAI-compatible adapter cannot
+// encode. In particular, that adapter rejects assistant image parts and
+// ignores Content whenever AssistantGenMultiContent is present. Unsupported
+// parts remain in the private event store; they are simply not replayed to the
+// provider on resume.
+func providerAssistantOutput(content string, persisted []store.ConversationMessagePart) (string, []schema.MessageOutputPart) {
+	parts := assistantTextOutputParts(persisted)
+	if len(parts) == 0 {
+		return content, nil
+	}
+	var combined strings.Builder
+	for _, part := range parts {
+		combined.WriteString(part.Text)
+	}
+	if content != "" && combined.String() == content {
+		return content, nil
+	}
+	if content != "" {
+		parts = append([]schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: content}}, parts...)
+	}
+	return "", parts
+}
+
+func assistantTextOutputParts(parts []store.ConversationMessagePart) []schema.MessageOutputPart {
 	result := make([]schema.MessageOutputPart, 0, len(parts))
 	for _, part := range parts {
-		switch part.Type {
-		case string(schema.ChatMessagePartTypeText):
+		if part.Type == string(schema.ChatMessagePartTypeText) {
 			result = append(result, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: part.Text})
-		case string(schema.ChatMessagePartTypeImageURL):
-			image := &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{MIMEType: part.MIMEType}}
-			if part.Base64Data != "" {
-				data := part.Base64Data
-				image.Base64Data = &data
-			}
-			if part.URL != "" {
-				url := part.URL
-				image.URL = &url
-			}
-			result = append(result, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: image})
 		}
 	}
 	return result

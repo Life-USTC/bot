@@ -56,6 +56,15 @@ func (p *LoginPoller) tick(ctx context.Context) {
 			continue
 		}
 		if result.Authorized {
+			current, scopeErr := p.Manager.HasCurrentScopes(ctx, ident)
+			if scopeErr != nil {
+				p.logf("verify OAuth scopes after login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+					ident.Platform, ident.ConversationType, ident.ConversationID, scopeErr)
+				continue
+			}
+			if !current {
+				continue
+			}
 			if err := p.Manager.Store.UnblockConversationJobsAfterAuth(ctx, session.Identity); err != nil {
 				p.logf("unblock conversation jobs after login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 					session.Identity.Platform, session.Identity.ConversationType, session.Identity.ConversationID, err)

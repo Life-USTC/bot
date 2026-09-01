@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -152,7 +155,36 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after a successful startup migration.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
+
+var requiredSchemaModels = []any{
+	&userRow{},
+	&credentialRow{},
+	&loginSessionRow{},
+	&conversationStateRow{},
+	&interactionRow{},
+	&notificationSettingRow{},
+	&busSettingRow{},
+	&agentRunRow{},
+	&feedbackRecordRow{},
+	&outgoingMessageRow{},
+	&conversationJobSequenceRow{},
+	&conversationJobRow{},
+	&publicCommandCacheRow{},
+	&conversationEventRow{},
+	&agentCheckpointRow{},
+	&capabilityExecutionRow{},
+}
+
+var obsoleteSchemaTables = []string{
+	"conversation_summaries",
+	"pending_confirmations",
+	"pending_requests",
+	"notification_deliveries",
+	"agent_settings",
+}
+
+var obsoleteFeedbackColumns = []string{"sent_to_admin", "sent_at", "resolved"}
 
 type AgentSpending struct {
 	PromptTokens     int64
@@ -435,6 +467,18 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	// SQLite has one writer. A larger in-process pool lets a deferred
+	// transaction read on one connection while another connection commits,
+	// after which SQLite must reject the first connection's write upgrade with
+	// SQLITE_BUSY_SNAPSHOT; busy_timeout cannot make that snapshot valid again.
+	// Serialize this process at the pool boundary and retain busy_timeout for
+	// coordination with external readers/writers such as deployment backup.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		_ = s.Close()
@@ -469,6 +513,9 @@ func (s *Store) VerifySchema() error {
 	if version != CurrentSchemaVersion {
 		return fmt.Errorf("unsupported sqlite schema version %d (want %d)", version, CurrentSchemaVersion)
 	}
+	if err := verifySchemaShape(s.db); err != nil {
+		return err
+	}
 	var integrity string
 	if err := s.db.Raw("PRAGMA integrity_check").Scan(&integrity).Error; err != nil {
 		return fmt.Errorf("run sqlite integrity check: %w", err)
@@ -491,10 +538,17 @@ func (s *Store) migrateSchema() error {
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		return fmt.Errorf("read schema version: %w", err)
 	}
-	if version > CurrentSchemaVersion {
-		return fmt.Errorf("database schema version %d is newer than supported version %d", version, CurrentSchemaVersion)
+	switch version {
+	case CurrentSchemaVersion:
+		return verifySchemaShape(s.db)
+	case 0:
+		// Version zero is the only production schema accepted by this one-way
+		// release. Intermediate versions are deliberately unsupported: there is
+		// one canonical shape, not a ladder of compatibility migrations.
+	default:
+		return fmt.Errorf("unsupported database schema version %d (accepted: 0 or %d)", version, CurrentSchemaVersion)
 	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(
 			&userRow{},
 			&credentialRow{},
@@ -515,10 +569,7 @@ func (s *Store) migrateSchema() error {
 		); err != nil {
 			return fmt.Errorf("migrate schema tables: %w", err)
 		}
-		if version == CurrentSchemaVersion {
-			return nil
-		}
-		for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+		for _, column := range obsoleteFeedbackColumns {
 			if tx.Migrator().HasColumn("feedback_records", column) {
 				if err := tx.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
 					return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
@@ -538,13 +589,7 @@ func (s *Store) migrateSchema() error {
 		// Generated semantic summaries are not evidence and must never be fed
 		// back to the model. The immutable deployment backup remains the audit
 		// copy of this removed data.
-		for _, table := range []string{
-			"conversation_summaries",
-			"pending_confirmations",
-			"pending_requests",
-			"notification_deliveries",
-			"agent_settings",
-		} {
+		for _, table := range obsoleteSchemaTables {
 			if tx.Migrator().HasTable(table) {
 				if err := tx.Migrator().DropTable(table); err != nil {
 					return fmt.Errorf("drop obsolete table %s: %w", table, err)
@@ -555,7 +600,111 @@ func (s *Store) migrateSchema() error {
 			return fmt.Errorf("write schema version: %w", err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	return verifySchemaShape(s.db)
+}
+
+func verifySchemaShape(db *gorm.DB) error {
+	for _, model := range requiredSchemaModels {
+		if err := verifyModelSchema(db, model); err != nil {
+			return err
+		}
+	}
+	for _, table := range obsoleteSchemaTables {
+		if db.Migrator().HasTable(table) {
+			return fmt.Errorf("sqlite schema still contains obsolete table %s", table)
+		}
+	}
+	for _, column := range obsoleteFeedbackColumns {
+		if db.Migrator().HasColumn("feedback_records", column) {
+			return fmt.Errorf("sqlite schema still contains obsolete column feedback_records.%s", column)
+		}
+	}
+	return nil
+}
+
+func verifyModelSchema(db *gorm.DB, model any) error {
+	statement := &gorm.Statement{DB: db}
+	if err := statement.Parse(model); err != nil {
+		return fmt.Errorf("parse required sqlite model: %w", err)
+	}
+	table := statement.Schema.Table
+	if !db.Migrator().HasTable(model) {
+		return fmt.Errorf("sqlite schema is missing required table %s", table)
+	}
+	for _, field := range statement.Schema.Fields {
+		if field.DBName == "" {
+			continue
+		}
+		if !db.Migrator().HasColumn(model, field.DBName) {
+			return fmt.Errorf("sqlite schema is missing required column %s.%s", table, field.DBName)
+		}
+	}
+	for _, index := range statement.Schema.ParseIndexes() {
+		columns := make([]string, 0, len(index.Fields))
+		for _, field := range index.Fields {
+			if field.Expression != "" || field.DBName == "" {
+				return fmt.Errorf("sqlite schema verification does not support expression index %s on %s", index.Name, table)
+			}
+			columns = append(columns, field.DBName)
+		}
+		if err := verifySQLiteIndex(db, table, index.Name, strings.EqualFold(index.Class, "UNIQUE"), columns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func verifySQLiteIndex(db *gorm.DB, table, name string, unique bool, columns []string) error {
+	type indexListRow struct {
+		Name    string `gorm:"column:name"`
+		Unique  int    `gorm:"column:unique"`
+		Partial int    `gorm:"column:partial"`
+	}
+	var indexes []indexListRow
+	if err := db.Raw("PRAGMA index_list(" + quoteSQLiteIdentifier(table) + ")").Scan(&indexes).Error; err != nil {
+		return fmt.Errorf("inspect sqlite indexes on %s: %w", table, err)
+	}
+	found := false
+	for _, index := range indexes {
+		if index.Name != name {
+			continue
+		}
+		found = true
+		if (index.Unique != 0) != unique {
+			return fmt.Errorf("sqlite index %s on %s has wrong uniqueness", name, table)
+		}
+		if index.Partial != 0 {
+			return fmt.Errorf("sqlite index %s on %s is unexpectedly partial", name, table)
+		}
+		break
+	}
+	if !found {
+		return fmt.Errorf("sqlite schema is missing required index %s on %s", name, table)
+	}
+	type indexInfoRow struct {
+		Sequence int    `gorm:"column:seqno"`
+		Name     string `gorm:"column:name"`
+	}
+	var fields []indexInfoRow
+	if err := db.Raw("PRAGMA index_info(" + quoteSQLiteIdentifier(name) + ")").Scan(&fields).Error; err != nil {
+		return fmt.Errorf("inspect sqlite index %s on %s: %w", name, table, err)
+	}
+	sort.Slice(fields, func(i, j int) bool { return fields[i].Sequence < fields[j].Sequence })
+	actual := make([]string, 0, len(fields))
+	for _, field := range fields {
+		actual = append(actual, field.Name)
+	}
+	if !slices.Equal(actual, columns) {
+		return fmt.Errorf("sqlite index %s on %s has columns %v, want %v", name, table, actual, columns)
+	}
+	return nil
+}
+
+func quoteSQLiteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
@@ -1516,7 +1665,15 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		for i := range rows {
 			row := &rows[i]
 			result := tx.Model(&outgoingMessageRow{}).
-				Where("id = ? AND status IN ?", row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}).
+				Where(`id = ? AND status IN ? AND NOT EXISTS (
+					SELECT 1 FROM outgoing_messages AS earlier
+					WHERE earlier.id < outgoing_messages.id
+					AND earlier.platform = outgoing_messages.platform
+					AND earlier.conversation_type = outgoing_messages.conversation_type
+					AND earlier.conversation_id = outgoing_messages.conversation_id
+					AND earlier.kind = 'agent_progress'
+					AND earlier.status = ?
+				)`, row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, string(delivery.StatusDelivering)).
 				Updates(map[string]any{
 					"status":             string(delivery.StatusDelivering),
 					"attempts":           gorm.Expr("attempts + 1"),
@@ -1541,6 +1698,57 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		return nil
 	})
 	return records, err
+}
+
+// ReadyToDeliver is the last durable gate before an adapter call. It expires a
+// progress row when the corresponding job already produced a user-facing
+// output. A progress call that already passed this gate remains ordered ahead
+// of later messages for the same conversation by ClaimDue.
+func (s *Store) ReadyToDeliver(ctx context.Context, id int64) (bool, error) {
+	if id <= 0 {
+		return false, errors.New("outgoing message id must be positive")
+	}
+	ready := false
+	now := nowUTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row outgoingMessageRow
+		err := tx.Select("id", "kind", "dedupe_key", "status").Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if row.Kind != "agent_progress" {
+			ready = true
+			return nil
+		}
+		jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey)
+		if !ok {
+			return fmt.Errorf("agent progress %d has an invalid dedupe key", row.ID)
+		}
+		var job conversationJobRow
+		err = tx.Select("state").Where("id = ?", jobID).First(&job).Error
+		if err == nil && (job.State == string(ConversationJobStateRunning) || job.State == string(ConversationJobStateRetryWait)) {
+			ready = true
+			return nil
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		result := tx.Model(&outgoingMessageRow{}).
+			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+			Updates(map[string]any{
+				"status":             string(delivery.StatusExpired),
+				"next_attempt_at":    nil,
+				"attempt_started_at": nil,
+				"error_code":         "superseded",
+				"error_message":      "superseded by conversation job output",
+				"updated_at":         now,
+			})
+		return result.Error
+	})
+	return ready, err
 }
 
 func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome, nextAttemptAt time.Time) error {
@@ -1587,16 +1795,52 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 		}
 		updates["accepted_at"] = acceptedAt
 	}
-	result := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
-		Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row outgoingMessageRow
+		if err := tx.Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("outgoing message %d is not delivering", id)
+			}
+			return err
+		}
+		if status == delivery.StatusRetryWait && row.Kind == "agent_progress" {
+			if jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey); ok {
+				var job conversationJobRow
+				err := tx.Select("state").Where("id = ?", jobID).First(&job).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil &&
+					job.State != string(ConversationJobStateRunning) && job.State != string(ConversationJobStateRetryWait)) {
+					updates["status"] = string(delivery.StatusExpired)
+					updates["next_attempt_at"] = nil
+					updates["error_code"] = "superseded"
+					updates["error_message"] = "superseded by conversation job output"
+				} else if err != nil {
+					return err
+				}
+			}
+		}
+		result := tx.Model(&outgoingMessageRow{}).
+			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("outgoing message %d is not delivering", id)
+		}
+		return nil
+	})
+}
+
+func conversationJobIDFromProgressKey(key string) (int64, bool) {
+	const prefix = "conversation-job:"
+	const suffix = ":progress"
+	key = strings.TrimSpace(key)
+	if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) {
+		return 0, false
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("outgoing message %d is not delivering", id)
-	}
-	return nil
+	value := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
+	id, err := strconv.ParseInt(value, 10, 64)
+	return id, err == nil && id > 0
 }
 
 func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {

@@ -3,6 +3,7 @@ package commands
 import (
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // CapabilitySearchOptions controls the registry-backed documentation search.
@@ -135,25 +136,79 @@ func capabilityDocumentationScore(query string, queryTokens []string, documentat
 			score += 5000
 		case strings.Contains(form, query):
 			score += 3000
+		case containsHan(form) && strings.Contains(query, form):
+			score += 2500
 		}
 	}
+	matchedToken := false
 	for _, token := range queryTokens {
 		if token == "" {
 			continue
 		}
 		if strings.Contains(joined, token) {
 			score += 1000
+			matchedToken = true
 			if strings.Contains(strings.ToLower(string(documentation.ID)), token) {
 				score += 300
 			}
 			continue
 		}
-		return 0, false
+		if containsHan(token) {
+			matches := hanBigramMatches(token, joined)
+			if matches > 0 {
+				score += matches * 500
+				matchedToken = true
+			}
+			// Natural Chinese searches often have no word boundaries and include
+			// polite or action words. Rank on the meaningful overlapping terms
+			// instead of requiring the entire sentence to occur verbatim.
+			continue
+		}
+		// Search queries commonly contain several synonyms in both languages.
+		// Treat them as ranking hints; requiring every hint would discard the
+		// correct command whenever one synonym is absent from its documentation.
+		continue
 	}
-	if score == 0 {
+	if score == 0 || (!matchedToken && query != strings.ToLower(string(documentation.ID))) {
 		return 0, false
 	}
 	return score, true
+}
+
+func containsHan(value string) bool {
+	for _, r := range value {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func hanBigramMatches(value, corpus string) int {
+	runes := make([]rune, 0, len(value))
+	for _, r := range value {
+		if unicode.Is(unicode.Han, r) {
+			runes = append(runes, r)
+		} else {
+			runes = append(runes, 0)
+		}
+	}
+	seen := make(map[string]struct{})
+	matches := 0
+	for index := 1; index < len(runes); index++ {
+		if runes[index-1] == 0 || runes[index] == 0 {
+			continue
+		}
+		bigram := string(runes[index-1 : index+1])
+		if _, found := seen[bigram]; found {
+			continue
+		}
+		seen[bigram] = struct{}{}
+		if strings.Contains(corpus, bigram) {
+			matches++
+		}
+	}
+	return matches
 }
 
 func capabilityDocumentationSearchFields(documentation CapabilityDocumentation, shared bool) []string {

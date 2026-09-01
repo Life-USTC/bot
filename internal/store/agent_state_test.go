@@ -84,15 +84,11 @@ func TestAgentCheckpointClaimRejectsStaleWorkersAndTransfersOnResume(t *testing.
 	if err := firstBound.Set(ctx, checkpointID, []byte("first")); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.TransitionConversationJob(ctx, first.ID, first.LeaseToken, ConversationJobTransition{
-		State: ConversationJobStateWaitingInput, WaitReason: ConversationJobWaitReasonInput,
-	}); err != nil || !ok {
-		t.Fatalf("pause first claim: ok=%v err=%v", ok, err)
+	recoveredAt := first.ClaimedAt.Add(time.Minute)
+	if err := s.RecoverConversationJobLeases(ctx, recoveredAt, time.Nanosecond); err != nil {
+		t.Fatalf("recover first claim: %v", err)
 	}
-	if ok, err := s.ResumeConversationJobInput(ctx, first.ID, ConversationJobInput{Text: "resume"}); err != nil || !ok {
-		t.Fatalf("resume input: ok=%v err=%v", ok, err)
-	}
-	second, err := s.ClaimConversationJob(ctx, ident)
+	second, err := s.ClaimConversationJob(ctx, ident, recoveredAt)
 	if err != nil || second == nil {
 		t.Fatalf("second claim: job=%#v err=%v", second, err)
 	}
@@ -129,6 +125,117 @@ func TestAgentCheckpointClaimRejectsStaleWorkersAndTransfersOnResume(t *testing.
 	}
 	if err := firstBound.Set(ctx, checkpointID, []byte("recreate")); !errors.Is(err, ErrAgentCheckpointClaimMismatch) {
 		t.Fatalf("stale recreation error = %v", err)
+	}
+}
+
+func TestRecoveredCheckpointCanOnlyBeDeletedByTerminalizingLease(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := t.Context()
+	ident := Identity{Platform: "napcat", UserID: "checkpoint-terminal-lease", ConversationType: "private", ConversationID: "checkpoint-terminal-lease"}
+	job, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "checkpoint-terminal-lease", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || first == nil {
+		t.Fatalf("first claim=%#v err=%v", first, err)
+	}
+	firstBound, err := s.AgentCheckpoints().Bind(AgentCheckpointClaim{JobID: job.ID, Revision: first.Revision, LeaseToken: first.LeaseToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const checkpointID = "conversation-job:terminal-lease-race"
+	if err := firstBound.Set(ctx, checkpointID, []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	recoveredAt := first.ClaimedAt.Add(time.Minute)
+	if err := s.RecoverConversationJobLeases(ctx, recoveredAt, time.Nanosecond); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.ClaimConversationJob(ctx, ident, recoveredAt)
+	if err != nil || second == nil {
+		t.Fatalf("second claim=%#v err=%v", second, err)
+	}
+	secondBound, err := s.AgentCheckpoints().Bind(AgentCheckpointClaim{JobID: job.ID, Revision: second.Revision, LeaseToken: second.LeaseToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The recovered worker finishes before reading/adopting the old payload.
+	if ok, err := s.CompleteConversationJob(ctx, second.ID, second.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete recovered job ok=%v err=%v", ok, err)
+	}
+	if err := firstBound.Delete(ctx, checkpointID); !errors.Is(err, ErrAgentCheckpointClaimMismatch) {
+		t.Fatalf("stale lease deleted recovered checkpoint: %v", err)
+	}
+	if err := secondBound.Delete(ctx, checkpointID); err != nil {
+		t.Fatalf("terminalizing lease could not delete predecessor checkpoint: %v", err)
+	}
+}
+
+func TestExternalJobTerminationDeletesPrivateCheckpoint(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		terminate func(*Store, context.Context, ConversationJob, time.Time) error
+	}{
+		{
+			name: "cancel",
+			terminate: func(s *Store, ctx context.Context, job ConversationJob, _ time.Time) error {
+				cancelled, err := s.CancelConversationJob(ctx, job.ID, "用户取消")
+				if err == nil && !cancelled {
+					return errors.New("job was not cancelled")
+				}
+				return err
+			},
+		},
+		{
+			name: "expire",
+			terminate: func(s *Store, ctx context.Context, _ ConversationJob, expiresAt time.Time) error {
+				return s.ExpireConversationJobs(ctx, expiresAt.Add(time.Second))
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, err := Open(t.TempDir() + "/bot.db")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = s.Close() }()
+			ctx := t.Context()
+			expiresAt := time.Now().UTC().Add(time.Minute)
+			ident := Identity{Platform: "napcat", UserID: "checkpoint-" + test.name, ConversationType: "private", ConversationID: "checkpoint-" + test.name}
+			job, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+				Identity: ident, SourceEventID: "checkpoint-" + test.name, ExpiresAt: expiresAt,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := s.ClaimConversationJob(ctx, ident)
+			if err != nil || claimed == nil {
+				t.Fatalf("claim=%#v err=%v", claimed, err)
+			}
+			bound, err := s.AgentCheckpoints().Bind(AgentCheckpointClaim{
+				JobID: claimed.ID, Revision: claimed.Revision, LeaseToken: claimed.LeaseToken,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkpointID := "conversation-job:external-" + test.name
+			if err := bound.Set(ctx, checkpointID, []byte("private transcript")); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.terminate(s, ctx, job, expiresAt); err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := s.AgentCheckpoints().Get(ctx, checkpointID); err != nil || found {
+				t.Fatalf("checkpoint survived %s: found=%v err=%v", test.name, found, err)
+			}
+		})
 	}
 }
 
@@ -171,10 +278,11 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	if err != nil || claimed == nil {
 		t.Fatalf("claim released job: %#v err=%v", claimed, err)
 	}
-	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, claimed.ID, claimed.LeaseToken); err != nil || !execute {
+	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, claimed.ID, claimed.LeaseToken)
+	if err != nil || !execute {
 		t.Fatalf("claim approved operation: execute=%v err=%v", execute, err)
 	}
-	if _, err := s.FinishCapabilityExecution(ctx, first.ID, "已订阅", nil); err != nil {
+	if _, err := s.FinishCapabilityExecution(ctx, first.ID, claimedExecution.LeaseToken, "已订阅", nil); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := s.TransitionConversationJob(ctx, claimed.ID, claimed.LeaseToken, ConversationJobTransition{
@@ -290,6 +398,153 @@ func TestSchemaMigrationRejectsFutureVersionBeforeChangingTables(t *testing.T) {
 	}
 }
 
+func TestSchemaMigrationRejectsIntermediateVersionBeforeChangingTables(t *testing.T) {
+	path := t.TempDir() + "/intermediate.db"
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA user_version = 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if opened, err := Open(path); err == nil {
+		_ = opened.Close()
+		t.Fatal("intermediate schema version was accepted")
+	}
+	db, err = sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("intermediate database was modified before rejection")
+	}
+}
+
+func TestCurrentSchemaRejectsMalformedOrObsoleteShape(t *testing.T) {
+	t.Run("missing required tables", func(t *testing.T) {
+		path := t.TempDir() + "/missing.db"
+		db, err := sql.Open("sqlite3", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("malformed current schema was accepted")
+		}
+	})
+
+	t.Run("obsolete table", func(t *testing.T) {
+		path := t.TempDir() + "/obsolete.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("CREATE TABLE conversation_summaries (id integer primary key)").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("obsolete current schema was silently repaired")
+		}
+	})
+
+	t.Run("missing required index", func(t *testing.T) {
+		path := t.TempDir() + "/missing-index.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("DROP INDEX idx_outgoing_messages_dedupe_key").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("current schema missing an idempotency index was silently repaired")
+		}
+	})
+
+	t.Run("missing runtime column", func(t *testing.T) {
+		path := t.TempDir() + "/missing-column.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("ALTER TABLE outgoing_messages DROP COLUMN payload_json").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("current schema missing a runtime column was silently repaired")
+		}
+	})
+
+	t.Run("wrong index definition", func(t *testing.T) {
+		path := t.TempDir() + "/wrong-index.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("DROP INDEX idx_outgoing_messages_dedupe_key").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("CREATE INDEX idx_outgoing_messages_dedupe_key ON outgoing_messages (dedupe_key)").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("current schema with a non-unique idempotency index was accepted")
+		}
+	})
+
+	t.Run("partial unique index", func(t *testing.T) {
+		path := t.TempDir() + "/partial-index.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("DROP INDEX idx_outgoing_messages_dedupe_key").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("CREATE UNIQUE INDEX idx_outgoing_messages_dedupe_key ON outgoing_messages (dedupe_key) WHERE status = 'accepted'").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("current schema with a partial idempotency index was accepted")
+		}
+	})
+}
+
 func TestFinishCapabilityExecutionRequiresRunningState(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -309,7 +564,7 @@ func TestFinishCapabilityExecutionRequiresRunningState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.FinishCapabilityExecution(context.Background(), execution.ID, "", errors.New("should not run")); err == nil {
+	if _, err := s.FinishCapabilityExecution(context.Background(), execution.ID, "not-running", "", errors.New("should not run")); err == nil {
 		t.Fatal("awaiting confirmation execution was finalized")
 	}
 }
@@ -347,7 +602,7 @@ func TestCapabilityExecutionWaitsForAuthWithoutLosingApproval(t *testing.T) {
 	if err != nil || !execute || execution.State != CapabilityExecutionRunning {
 		t.Fatalf("initial claim: execution=%#v claimed=%v err=%v", execution, execute, err)
 	}
-	execution, err = s.DeferCapabilityExecutionForAuth(ctx, execution.ID)
+	execution, err = s.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken)
 	if err != nil || execution.State != CapabilityExecutionWaitingAuth || execution.StartedAt != nil {
 		t.Fatalf("defer for auth: execution=%#v err=%v", execution, err)
 	}

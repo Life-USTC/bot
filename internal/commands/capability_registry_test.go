@@ -20,7 +20,7 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 		if descriptor.Effect != EffectRead && descriptor.Effect != EffectWrite && descriptor.Effect != EffectDestructive {
 			t.Errorf("%s has invalid default effect %q", descriptor.ID, descriptor.Effect)
 		}
-		if descriptor.Exposure != ExposureModel && descriptor.Exposure != ExposureRedacted && descriptor.Exposure != ExposureHostOnly {
+		if descriptor.Exposure != ExposureModel && descriptor.Exposure != ExposureHostOnly {
 			t.Errorf("%s has invalid default exposure %q", descriptor.ID, descriptor.Exposure)
 		}
 		if descriptor.Requirements.DataScope == "" {

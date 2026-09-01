@@ -116,7 +116,7 @@ func (s *Service) invokeHostCapability(
 	}
 	executions, _, err := s.handler.Store.PrepareCapabilityExecutions(ctx, prepares)
 	if err != nil {
-		return "", err
+		return "", markDurableAgentStateError("prepare capability confirmations", err)
 	}
 	for _, execution := range executions {
 		state.ExecutionIDs = append(state.ExecutionIDs, execution.ID)
@@ -149,7 +149,7 @@ func (s *Service) executeUnconfirmedHostCapability(
 			Effect: string(invocation.Policy().Effect), Receipt: commands.ReceiptForInvocation(invocation),
 		})
 		if err != nil {
-			return "", "", false, err
+			return "", "", false, markDurableAgentStateError("prepare capability execution", err)
 		}
 		executionID = execution.ID
 		if !created && execution.State != store.CapabilityExecutionApproved && execution.State != store.CapabilityExecutionWaitingAuth && execution.State != store.CapabilityExecutionRunning {
@@ -158,18 +158,18 @@ func (s *Service) executeUnconfirmedHostCapability(
 		if execution.State != store.CapabilityExecutionRunning {
 			claimed, execute, err := s.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, jobID, store.ConversationJobLeaseFromContext(ctx, jobID))
 			if err != nil {
-				return "", executionID, false, err
+				return "", executionID, false, markDurableAgentStateError("claim capability execution", err)
 			}
 			if !execute {
 				if claimed.State == store.CapabilityExecutionRunning && !capabilityExecutionIsRead(claimed) && capabilityExecutionHasStaleLease(ctx, claimed) {
-					if err := s.handler.Store.MarkCapabilityExecutionUnknown(ctx, claimed.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
-						return "", executionID, false, err
-					}
-					execution, _, err = s.handler.Store.CapabilityExecution(ctx, claimed.ID)
+					current, marked, err := markStaleCapabilityExecutionUnknown(ctx, s.handler.Store, claimed)
 					if err != nil {
 						return "", executionID, false, err
 					}
-					return capabilityExecutionModelResult(execution), execution.ID, false, nil
+					if !marked && !capabilityExecutionTerminal(current.State) {
+						return "", executionID, false, errors.New("capability execution ownership changed while marking an interrupted mutation")
+					}
+					return capabilityExecutionModelResult(current), current.ID, false, nil
 				}
 				if capabilityExecutionTerminal(claimed.State) {
 					return capabilityExecutionModelResult(claimed), executionID, false, nil
@@ -180,18 +180,31 @@ func (s *Service) executeUnconfirmedHostCapability(
 				return "", executionID, false, errors.New("capability execution claim was lost while the operation is still running")
 			}
 			execution = claimed
-		} else if !created && capabilityExecutionIsRead(execution) && !capabilityExecutionHasStaleLease(ctx, execution) {
-			return "", executionID, false, errors.New("capability execution is already running")
+		} else if !created && capabilityExecutionIsRead(execution) {
+			if !capabilityExecutionHasStaleLease(ctx, execution) {
+				return "", executionID, false, errors.New("capability execution is already running")
+			}
+			claimed, execute, err := s.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, jobID, store.ConversationJobLeaseFromContext(ctx, jobID))
+			if err != nil {
+				return "", executionID, false, markDurableAgentStateError("recover capability read", err)
+			}
+			if !execute {
+				if capabilityExecutionTerminal(claimed.State) {
+					return capabilityExecutionModelResult(claimed), claimed.ID, false, nil
+				}
+				return "", executionID, false, errors.New("capability read ownership changed before recovery")
+			}
+			execution = claimed
 		} else if !capabilityExecutionIsRead(execution) {
 			if capabilityExecutionHasStaleLease(ctx, execution) {
-				if err := s.handler.Store.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
-					return "", executionID, false, err
-				}
-				execution, _, err = s.handler.Store.CapabilityExecution(ctx, execution.ID)
+				current, marked, err := markStaleCapabilityExecutionUnknown(ctx, s.handler.Store, execution)
 				if err != nil {
 					return "", executionID, false, err
 				}
-				return capabilityExecutionModelResult(execution), execution.ID, false, nil
+				if !marked && !capabilityExecutionTerminal(current.State) {
+					return "", executionID, false, errors.New("capability execution ownership changed while marking an interrupted mutation")
+				}
+				return capabilityExecutionModelResult(current), current.ID, false, nil
 			}
 			return "", executionID, false, errors.New("capability execution is already running")
 		}
@@ -199,7 +212,9 @@ func (s *Service) executeUnconfirmedHostCapability(
 	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
 	if err != nil {
 		if tracked {
-			_, _ = s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
+			if _, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err); finishErr != nil {
+				return "", executionID, false, markDurableAgentStateError("record capability failure", finishErr)
+			}
 		}
 		return "", executionID, false, err
 	}
@@ -212,8 +227,8 @@ func (s *Service) executeUnconfirmedHostCapability(
 			text, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
 			return text, "", false, deliveryErr
 		}
-		if _, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID); err != nil {
-			return "", executionID, false, err
+		if _, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken); err != nil {
+			return "", executionID, false, markDurableAgentStateError("defer capability for authentication", err)
 		}
 		if _, err := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse); err != nil {
 			return "", executionID, false, err
@@ -224,17 +239,21 @@ func (s *Service) executeUnconfirmedHostCapability(
 	if deliveryErr != nil {
 		if tracked {
 			if capabilityOutcomeIsUnknown(outcome) {
-				_, _ = s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, text, "capability returned an unknown outcome")
+				if _, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome"); finishErr != nil {
+					return "", executionID, false, markDurableAgentStateError("record unknown capability outcome", finishErr)
+				}
 			} else {
-				_, _ = s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", deliveryErr)
+				if _, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", deliveryErr); finishErr != nil {
+					return "", executionID, false, markDurableAgentStateError("record capability delivery failure", finishErr)
+				}
 			}
 		}
 		return "", executionID, false, deliveryErr
 	}
 	if tracked {
 		if capabilityOutcomeIsUnknown(outcome) {
-			if _, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, text, "capability returned an unknown outcome"); err != nil {
-				return "", executionID, false, err
+			if _, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome"); err != nil {
+				return "", executionID, false, markDurableAgentStateError("record unknown capability outcome", err)
 			}
 			return text, executionID, false, nil
 		}
@@ -242,8 +261,8 @@ func (s *Service) executeUnconfirmedHostCapability(
 		if outcome.Status != commands.CapabilityOutcomeSuccess {
 			outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 		}
-		if _, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, text, outcomeErr); err != nil {
-			return "", executionID, false, err
+		if _, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, text, outcomeErr); err != nil {
+			return "", executionID, false, markDurableAgentStateError("finish capability execution", err)
 		}
 	}
 	return text, executionID, false, nil
@@ -273,7 +292,7 @@ func (s *Service) resumeHostCapability(
 	for _, executionID := range state.ExecutionIDs {
 		execution, found, err := s.handler.Store.CapabilityExecution(ctx, executionID)
 		if err != nil {
-			return "", err
+			return "", markDurableAgentStateError("read capability execution", err)
 		}
 		if !found {
 			return "", fmt.Errorf("capability execution %s is missing", executionID)
@@ -285,24 +304,18 @@ func (s *Service) resumeHostCapability(
 		case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
 			claimed, execute, err := s.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, execution.JobID, store.ConversationJobLeaseFromContext(ctx, execution.JobID))
 			if err != nil {
-				return "", err
+				return "", markDurableAgentStateError("claim approved capability", err)
 			}
 			if !execute {
-				if claimed.State == store.CapabilityExecutionRunning && capabilityExecutionIsRead(claimed) && capabilityExecutionHasStaleLease(ctx, claimed) {
-					var waiting bool
-					execution, waiting, err = s.executeApprovedCapability(ctx, claimed, ident, sendResponse)
+				if claimed.State == store.CapabilityExecutionRunning && !capabilityExecutionIsRead(claimed) && capabilityExecutionHasStaleLease(ctx, claimed) {
+					current, marked, err := markStaleCapabilityExecutionUnknown(ctx, s.handler.Store, claimed)
 					if err != nil {
 						return "", err
 					}
-					authWait = authWait || waiting
-				} else if claimed.State == store.CapabilityExecutionRunning && !capabilityExecutionIsRead(claimed) && capabilityExecutionHasStaleLease(ctx, claimed) {
-					if err := s.handler.Store.MarkCapabilityExecutionUnknown(ctx, claimed.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
-						return "", err
+					if !marked && !capabilityExecutionTerminal(current.State) {
+						return "", errors.New("capability execution ownership changed while marking an interrupted mutation")
 					}
-					execution, _, err = s.handler.Store.CapabilityExecution(ctx, claimed.ID)
-					if err != nil {
-						return "", err
-					}
+					execution = current
 				} else if claimed.State == store.CapabilityExecutionWaitingAuth {
 					execution = claimed
 					authWait = true
@@ -321,20 +334,32 @@ func (s *Service) resumeHostCapability(
 			authWait = authWait || waiting
 		case store.CapabilityExecutionRunning:
 			if capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(ctx, execution) {
+				claimed, execute, claimErr := s.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, execution.JobID, store.ConversationJobLeaseFromContext(ctx, execution.JobID))
+				if claimErr != nil {
+					return "", markDurableAgentStateError("recover approved capability read", claimErr)
+				}
+				if !execute {
+					if capabilityExecutionTerminal(claimed.State) {
+						execution = claimed
+						break
+					}
+					return "", errors.New("capability read ownership changed before recovery")
+				}
 				var waiting bool
-				execution, waiting, err = s.executeApprovedCapability(ctx, execution, ident, sendResponse)
+				execution, waiting, err = s.executeApprovedCapability(ctx, claimed, ident, sendResponse)
 				if err != nil {
 					return "", err
 				}
 				authWait = authWait || waiting
 			} else if !capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(ctx, execution) {
-				if err := s.handler.Store.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
-					return "", err
+				current, marked, markErr := markStaleCapabilityExecutionUnknown(ctx, s.handler.Store, execution)
+				if markErr != nil {
+					return "", markErr
 				}
-				execution, _, err = s.handler.Store.CapabilityExecution(ctx, execution.ID)
-				if err != nil {
-					return "", err
+				if !marked && !capabilityExecutionTerminal(current.State) {
+					return "", errors.New("capability execution ownership changed while marking an interrupted mutation")
 				}
+				execution = current
 			} else {
 				return "", fmt.Errorf("capability execution %s is still running", execution.ID)
 			}
@@ -363,7 +388,7 @@ func capabilityJobIDForExecutions(ctx context.Context, db *store.Store, ids []st
 	for _, id := range ids {
 		execution, found, err := db.CapabilityExecution(ctx, id)
 		if err != nil {
-			return 0, err
+			return 0, markDurableAgentStateError("locate capability job", err)
 		}
 		if found {
 			return execution.JobID, nil
@@ -382,7 +407,7 @@ func ensureCapabilityJobLease(ctx context.Context, db *store.Store, jobID int64)
 	}
 	job, err := db.GetConversationJob(ctx, jobID)
 	if err != nil {
-		return ctx, err
+		return ctx, markDurableAgentStateError("read capability job lease", err)
 	}
 	if job == nil {
 		return ctx, fmt.Errorf("capability execution job %d is missing", jobID)
@@ -400,13 +425,21 @@ func capabilityExecutionIsRead(execution store.CapabilityExecution) bool {
 func capabilityExecutionHasStaleLease(ctx context.Context, execution store.CapabilityExecution) bool {
 	owner := strings.TrimSpace(execution.LeaseToken)
 	current := strings.TrimSpace(store.ConversationJobLeaseFromContext(ctx, execution.JobID))
-	return owner != "" && owner != current
+	return current != "" && owner != current
 }
 
-const capabilityOutcomeUnknown commands.CapabilityOutcomeStatus = "unknown"
+func markStaleCapabilityExecutionUnknown(ctx context.Context, db *store.Store, execution store.CapabilityExecution) (store.CapabilityExecution, bool, error) {
+	if db == nil {
+		return store.CapabilityExecution{}, false, errors.New("capability execution store is unavailable")
+	}
+	current, marked, err := db.MarkStaleCapabilityExecutionUnknown(ctx, execution.ID, execution.JobID,
+		store.ConversationJobLeaseFromContext(ctx, execution.JobID),
+		"进程中断，外部操作结果未知；系统没有自动重试")
+	return current, marked, markDurableAgentStateError("record interrupted mutation outcome", err)
+}
 
 func capabilityOutcomeIsUnknown(outcome commands.CapabilityOutcome) bool {
-	return outcome.Status == capabilityOutcomeUnknown
+	return outcome.Status == commands.CapabilityOutcomeUnknown
 }
 
 func capabilityExecutionDiagnostic(status commands.CapabilityOutcomeStatus) error {
@@ -436,8 +469,8 @@ func (s *Service) executeApprovedCapability(
 	invocation, valid := commands.RestoreInvocation(commands.CapabilityID(execution.Capability), execution.Arguments)
 	if !valid {
 		runErr := errors.New("宿主无法恢复已确认的操作")
-		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
-		return finished, false, err
+		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
+		return finished, false, markDurableAgentStateError("record invalid confirmed capability", err)
 	}
 	description := commands.CapabilityInvocationDescription{
 		Invocation: invocation, Policy: invocation.Policy(), ConfirmationRequired: invocation.Policy().Confirmation == commands.ConfirmUser,
@@ -445,8 +478,8 @@ func (s *Service) executeApprovedCapability(
 	}
 	outcome, err := s.handler.ExecuteApprovedInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, description)
 	if err != nil {
-		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
-		return finished, false, finishErr
+		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
+		return finished, false, markDurableAgentStateError("record approved capability failure", finishErr)
 	}
 	if outcome.Status != commands.CapabilityOutcomeSuccess && outcome.Status != commands.CapabilityOutcomeAuthRequired {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
@@ -454,9 +487,9 @@ func (s *Service) executeApprovedCapability(
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
 	text := strings.TrimSpace(presentation.Text)
 	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
-		deferred, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID)
+		deferred, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken)
 		if err != nil {
-			return deferred, false, err
+			return deferred, false, markDurableAgentStateError("defer approved capability for authentication", err)
 		}
 		if presentation.DeliveredByHost {
 			if sendResponse == nil {
@@ -471,31 +504,28 @@ func (s *Service) executeApprovedCapability(
 	if presentation.DeliveredByHost {
 		if sendResponse == nil {
 			runErr := errors.New("host response sender is unavailable")
-			finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
-			return finished, false, err
+			finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
+			return finished, false, markDurableAgentStateError("record missing host response sender", err)
 		}
 		if err := sendResponse(ctx, ident, presentation.Response); err != nil {
 			if capabilityOutcomeIsUnknown(outcome) {
-				finished, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, text, "capability returned an unknown outcome")
-				return finished, false, finishErr
+				finished, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
+				return finished, false, markDurableAgentStateError("record unknown approved capability outcome", finishErr)
 			}
-			finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
-			return finished, false, finishErr
-		}
-		if text == "" {
-			text = "结果已由宿主发送给用户。"
+			finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
+			return finished, false, markDurableAgentStateError("record approved capability delivery failure", finishErr)
 		}
 	}
 	if capabilityOutcomeIsUnknown(outcome) {
-		finished, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, text, "capability returned an unknown outcome")
-		return finished, false, err
+		finished, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
+		return finished, false, markDurableAgentStateError("record unknown approved capability outcome", err)
 	}
 	var outcomeErr error
 	if outcome.Status != commands.CapabilityOutcomeSuccess {
 		outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 	}
-	finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, text, outcomeErr)
-	return finished, false, err
+	finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, text, outcomeErr)
+	return finished, false, markDurableAgentStateError("finish approved capability execution", err)
 }
 
 func deliverCapabilityPresentation(
@@ -514,22 +544,36 @@ func deliverCapabilityPresentation(
 	if err := sendResponse(ctx, ident, presentation.Response); err != nil {
 		return "", err
 	}
-	if text == "" {
-		text = "结果已由宿主发送给用户。"
-	}
 	return text, nil
 }
 
 func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
 	switch execution.State {
-	case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
-		return strings.TrimSpace(execution.Result)
-	case store.CapabilityExecutionDenied, store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
+	case store.CapabilityExecutionSucceeded:
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "操作已完成，但没有返回内容。"
+	case store.CapabilityExecutionFailed:
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "操作失败，未返回可用结果。"
+	case store.CapabilityExecutionUnknown:
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "操作结果未知，系统没有自动重试。"
+	case store.CapabilityExecutionDenied:
 		reason := strings.TrimSpace(execution.Error)
 		if reason == "" {
 			reason = "用户拒绝执行"
 		}
 		return reason
+	case store.CapabilityExecutionCancelled:
+		return "操作已取消"
+	case store.CapabilityExecutionExpired:
+		return "操作已过期"
 	case store.CapabilityExecutionRunning:
 		return ""
 	default:

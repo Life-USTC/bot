@@ -78,6 +78,7 @@ type Input struct {
 
 	imageDataURLs []string
 	runState      *RunState
+	runErr        *error
 }
 
 type RunState string
@@ -87,12 +88,14 @@ const (
 	RunStateInterrupted RunState = "interrupted"
 	RunStateWaitingAuth RunState = "waiting_auth"
 	RunStateIgnored     RunState = "ignored"
+	RunStateFailed      RunState = "failed"
 )
 
 type Result struct {
 	Response commands.Response
 	Handled  bool
 	State    RunState
+	Err      error
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
@@ -176,18 +179,35 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 // HandleResponse remains the response-level API used by focused callers.
 func (s *Service) Run(ctx context.Context, input Input) Result {
 	state := RunStateCompleted
+	var runErr error
 	input.runState = &state
+	input.runErr = &runErr
 	response, handled := s.HandleResponse(ctx, input)
-	if !handled && state != RunStateInterrupted {
+	if !handled && state != RunStateInterrupted && state != RunStateFailed {
 		state = RunStateIgnored
 	}
-	return Result{Response: response, Handled: handled, State: state}
+	return Result{Response: response, Handled: handled, State: state, Err: runErr}
+}
+
+func markAgentInfrastructureFailure(input Input, err error) {
+	if err == nil || input.JobID <= 0 {
+		return
+	}
+	if input.runState != nil {
+		*input.runState = RunStateFailed
+	}
+	if input.runErr != nil {
+		*input.runErr = err
+	}
 }
 
 func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
 	runStarted := time.Now()
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if input.JobID > 0 && strings.TrimSpace(input.JobLeaseToken) != "" {
+		ctx = store.WithConversationJobLease(ctx, input.JobID, input.JobLeaseToken)
 	}
 	inputText := strings.TrimSpace(input.Text)
 	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) {
@@ -201,7 +221,9 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if s.handler.Store != nil && input.JobID > 0 {
 		prior, err := s.handler.Store.AgentJobSpending(ctx, input.JobID)
 		if err != nil {
-			return agentTextResponse(agentFailureReply(0, fmt.Errorf("read prior agent budget: %w", err))), true
+			err = fmt.Errorf("read prior agent budget: %w", err)
+			markAgentInfrastructureFailure(input, err)
+			return agentTextResponse(agentFailureReply(0, err)), true
 		}
 		priorModelAttempts = prior.ModelRequests
 	}
@@ -211,7 +233,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	model, provider, modelName := s.modelFor()
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
-	runID := s.recordAgentRun(ctx, input, provider, modelName)
+	runID, runRecordErr := s.recordAgentRun(ctx, input, provider, modelName)
+	if runRecordErr != nil && input.JobID > 0 {
+		runRecordErr = fmt.Errorf("persist durable agent run: %w", runRecordErr)
+		markAgentInfrastructureFailure(input, runRecordErr)
+		return commands.Response{}, true
+	}
 	if runID > 0 && s.handler.Store != nil {
 		budget.reserveModelAttempt = func(attemptCtx context.Context) (bool, error) {
 			return s.handler.Store.ReserveAgentModelAttempt(attemptCtx, runID, input.JobID, int64(agentRunMaxModelAttempts))
@@ -378,6 +405,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			// create a checkpoint. Continue without persistence only for callers
 			// that are not running a durable conversation job.
 			if input.JobID > 0 {
+				markAgentInfrastructureFailure(input, bindErr)
 				reply := agentFailureReply(runID, bindErr)
 				finishRun(store.AgentRunStatusFailed, reply, bindErr)
 				return agentTextResponse(reply), true
@@ -391,6 +419,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if checkpointStore != nil {
 		_, resume, err = checkpointStore.Get(ctx, checkpointID)
 		if err != nil {
+			markAgentInfrastructureFailure(input, err)
 			reply := agentFailureReply(runID, err)
 			finishRun(store.AgentRunStatusFailed, reply, err)
 			return agentTextResponse(reply), true
@@ -402,10 +431,16 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	} else {
 		var messages []*schema.Message
 		err = s.persistCurrentUserEvent(ctx, input)
+		if err != nil {
+			markAgentInfrastructureFailure(input, err)
+		}
 		if err == nil {
 			messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
 				return s.messagesFor(ctx, input)
 			})
+			if err != nil {
+				markAgentInfrastructureFailure(input, err)
+			}
 		}
 		if err == nil {
 			options := make([]adk.AgentRunOption, 0, 1)
@@ -420,6 +455,9 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
+		}
+		if isDurableAgentStateError(err) {
+			markAgentInfrastructureFailure(input, err)
 		}
 		reply := agentFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
@@ -438,6 +476,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			if errors.Is(runErr, context.Canceled) {
 				finishRun(store.AgentRunStatusIgnored, "", runErr)
 				return commands.Response{}, false
+			}
+			if isDurableAgentStateError(runErr) {
+				markAgentInfrastructureFailure(input, runErr)
+				reply := agentFailureReply(runID, runErr)
+				finishRun(store.AgentRunStatusFailed, reply, runErr)
+				return agentTextResponse(reply), true
 			}
 			if errors.Is(runErr, auth.ErrNotLoggedIn) {
 				reply = s.beginLoginForInput(ctx, input)
@@ -473,6 +517,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			continue
 		}
 		if err := s.persistAgentMessage(ctx, input, msg); err != nil {
+			markAgentInfrastructureFailure(input, err)
 			reply := agentFailureReply(runID, err)
 			finishRun(store.AgentRunStatusFailed, reply, err)
 			return agentTextResponse(reply), true
@@ -647,7 +692,7 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 	}
 	content := strings.TrimSpace(input.Text)
 	_, _, err := s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
-		Identity: input.Identity, JobID: input.JobID,
+		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
 		Type:      store.ConversationEventUser, Content: content,
 		Parts: currentUserMessageParts(input),
@@ -681,7 +726,8 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 		return nil
 	}
 	event := store.ConversationEvent{
-		Identity: input.Identity, JobID: input.JobID, Content: message.Content, Name: message.Name,
+		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
+		Content: message.Content, Name: message.Name,
 		ToolCallID: message.ToolCallID, ToolName: message.ToolName,
 		Parts: messagePartsForPersistence(message),
 	}
@@ -920,9 +966,18 @@ func (s *Service) toolsFor(
 	return tools, mcpSession, nil
 }
 
-func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) int64 {
-	if s.handler.Store == nil || !store.HasConversationIdentity(input.Identity) {
-		return 0
+func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) (int64, error) {
+	if s.handler.Store == nil {
+		if input.JobID > 0 {
+			return 0, errors.New("durable agent run store is unavailable")
+		}
+		return 0, nil
+	}
+	if !store.HasConversationIdentity(input.Identity) {
+		if input.JobID > 0 {
+			return 0, errors.New("durable agent run identity is incomplete")
+		}
+		return 0, nil
 	}
 	rawText := strings.TrimSpace(input.Text)
 	if rawText == "" && len(input.ImageURLs) > 0 {
@@ -938,11 +993,11 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 	if err != nil {
 		s.logf("record agent run failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
-		return 0
+		return 0, err
 	}
 	s.logf("llm run started: id=%d provider=%s model=%s platform=%s conversation_type=%s conversation_id=%s images=%d",
 		id, provider, model, input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, len(input.ImageURLs))
-	return id
+	return id, nil
 }
 
 func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, runID int64, err error) string {
@@ -1257,7 +1312,7 @@ func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware 
 			out, err := next(ctx, input)
 			if err != nil {
 				if logf != nil {
-					logf("agent tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
+					logf("agent tool call failed: name=%s call_id=%s error=%s", input.Name, input.CallID, textutil.SafeLogError(err))
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
 					toolOutcomesFromContext(ctx).markError(input.CallID)
@@ -1282,7 +1337,7 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 			out, err := next(ctx, input)
 			if err != nil {
 				if logf != nil {
-					logf("agent streaming tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
+					logf("agent streaming tool call failed: name=%s call_id=%s error=%s", input.Name, input.CallID, textutil.SafeLogError(err))
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
 					toolOutcomesFromContext(ctx).markError(input.CallID)
@@ -1312,6 +1367,6 @@ func isTimeoutError(err error) bool {
 
 func (s *Service) logf(format string, args ...any) {
 	if s != nil && s.logger != nil {
-		s.logger.Printf(format, args...)
+		s.logger.Print(textutil.SafeLogText(fmt.Sprintf(format, args...)))
 	}
 }

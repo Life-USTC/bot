@@ -107,6 +107,11 @@ func (s *Store) CommitConversationJobOutput(ctx context.Context, commit Conversa
 	if err != nil {
 		return nil, err
 	}
+	if conversationJobStateIsTerminal(commit.Transition.State) {
+		updates["terminal_lease_token"] = commit.LeaseToken
+	} else {
+		updates["terminal_lease_token"] = ""
+	}
 	now := nowUTC()
 	updates["updated_at"] = now
 	receiptIDs := uniqueNonEmptyStrings(commit.ReceiptIDs)
@@ -116,13 +121,31 @@ func (s *Store) CommitConversationJobOutput(ctx context.Context, commit Conversa
 	defer s.conversationJobMu.Unlock()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&conversationJobRow{}).
-			Where("id = ? AND state = ? AND lease_token = ?", commit.JobID, string(ConversationJobStateRunning), commit.LeaseToken).
+			Where("id = ? AND state = ? AND lease_token = ? AND (expires_at IS NULL OR expires_at > ?)",
+				commit.JobID, string(ConversationJobStateRunning), commit.LeaseToken, now).
 			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
 			return errors.New("conversation job output commit lost its lease")
+		}
+		if err := finalizeCapabilityExecutionsForJobTransition(tx, commit.JobID, commit.LeaseToken, commit.Transition, now); err != nil {
+			return err
+		}
+		if err := tx.Model(&outgoingMessageRow{}).
+			Where("dedupe_key = ? AND status IN ?", fmt.Sprintf("conversation-job:%d:progress", commit.JobID), []string{
+				string(delivery.StatusPending), string(delivery.StatusRetryWait),
+			}).
+			Updates(map[string]any{
+				"status":             string(delivery.StatusExpired),
+				"next_attempt_at":    nil,
+				"attempt_started_at": nil,
+				"error_code":         "superseded",
+				"error_message":      "superseded by conversation job output",
+				"updated_at":         now,
+			}).Error; err != nil {
+			return err
 		}
 		for _, outbound := range commit.Messages {
 			record, created, err := enqueueWithDB(tx, outbound, now)

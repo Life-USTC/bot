@@ -4249,7 +4249,7 @@ func friendlyError(err error) string {
 	if errors.As(err, &urlErr) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return "网络请求失败，等会儿再试"
 	}
-	return text
+	return "服务暂时不可用，请稍后再试"
 }
 
 func mutationResultUnknown(err error) bool {

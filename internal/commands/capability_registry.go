@@ -75,7 +75,6 @@ type ResultExposure string
 
 const (
 	ExposureModel    ResultExposure = "model"
-	ExposureRedacted ResultExposure = "redacted"
 	ExposureHostOnly ResultExposure = "host_only"
 )
 
@@ -260,8 +259,6 @@ func defaultCapabilityPresenter(inv Invocation, response Response, policy Capabi
 	case ExposureHostOnly:
 		presentation.Text = ""
 		presentation.DeliveredByHost = true
-	case ExposureRedacted:
-		presentation.Text = "结果已由宿主安全处理。"
 	}
 	if response.Image != nil || len(response.Parts) > 0 {
 		presentation.DeliveredByHost = true

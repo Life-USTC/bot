@@ -66,7 +66,7 @@ func TestConversationEventMessagesDropsIncompleteLeadingToolExchange(t *testing.
 	}
 }
 
-func TestConversationEventMessagesRoundTripsSupportedMultimodalParts(t *testing.T) {
+func TestConversationEventMessagesReplaysProviderCompatibleParts(t *testing.T) {
 	inputURL := "data:image/png;base64,AAAA"
 	outputURL := "https://cdn.example/image.png"
 	events := []store.ConversationEvent{
@@ -92,11 +92,25 @@ func TestConversationEventMessagesRoundTripsSupportedMultimodalParts(t *testing.
 	if image == nil || image.URL == nil || *image.URL != inputURL || image.Detail != schema.ImageURLDetailHigh || image.MIMEType != "image/png" {
 		t.Fatalf("input image = %#v", image)
 	}
-	if messages[1].Content != "图中有一只猫。" || len(messages[1].AssistantGenMultiContent) != 1 {
+	if messages[1].Content != "图中有一只猫。" || len(messages[1].AssistantGenMultiContent) != 0 {
 		t.Fatalf("assistant parts = %#v", messages[1])
 	}
-	output := messages[1].AssistantGenMultiContent[0].Image
-	if output == nil || output.URL == nil || *output.URL != outputURL {
-		t.Fatalf("output image = %#v", output)
+	if strings.Contains(messages[1].Content, outputURL) {
+		t.Fatalf("unsupported assistant image leaked into provider transcript: %#v", messages[1])
+	}
+}
+
+func TestProviderAssistantOutputPreservesContentAndDistinctTextParts(t *testing.T) {
+	content, parts := providerAssistantOutput("主文本", []store.ConversationMessagePart{
+		{Type: "text", Text: "补充文本"},
+		{Type: "image_url", URL: "https://private.example/output.png"},
+	})
+	if content != "" || len(parts) != 2 || parts[0].Text != "主文本" || parts[1].Text != "补充文本" {
+		t.Fatalf("provider output: content=%q parts=%#v", content, parts)
+	}
+	for _, part := range parts {
+		if part.Type != schema.ChatMessagePartTypeText || part.Image != nil {
+			t.Fatalf("unsupported output part = %#v", part)
+		}
 	}
 }

@@ -232,9 +232,9 @@ func normalizeCapabilityExecutionPrepare(input CapabilityExecutionPrepare) (prep
 	if input.RequiresConfirmation {
 		state = CapabilityExecutionAwaitingConfirmation
 	} else if strings.EqualFold(input.Effect, "read") {
-		// Read-only calls predate the lease-gated mutation path used by the
-		// lazy campus session. They are still owned by the creator, while
-		// every mutation remains approved until its explicit lease claim.
+		if input.LeaseToken == "" {
+			return preparedCapabilityExecution{}, errors.New("running read capability requires a conversation job lease")
+		}
 		state = CapabilityExecutionRunning
 		startedAt = &now
 	}
@@ -424,7 +424,9 @@ func (s *Store) ClaimCapabilityExecutionForJob(ctx context.Context, id string, j
 			return err
 		}
 		result := tx.Model(&capabilityExecutionRow{}).
-			Where("id = ? AND job_id = ? AND state IN ?", id, jobID, []string{string(CapabilityExecutionApproved), string(CapabilityExecutionWaitingAuth)}).
+			Where("id = ? AND job_id = ? AND (state IN ? OR (state = ? AND LOWER(effect) = LOWER(?) AND COALESCE(lease_token, '') <> ?))",
+				id, jobID, []string{string(CapabilityExecutionApproved), string(CapabilityExecutionWaitingAuth)},
+				string(CapabilityExecutionRunning), "read", leaseToken).
 			Where(`EXISTS (
 				SELECT 1 FROM conversation_jobs job
 				WHERE job.id = capability_executions.job_id
@@ -450,14 +452,19 @@ func (s *Store) ClaimCapabilityExecutionForJob(ctx context.Context, id string, j
 // DeferCapabilityExecutionForAuth records that no external effect completed
 // because authentication is required. The owning job can safely wait for the
 // auth poller and claim this exact operation again after authorization.
-func (s *Store) DeferCapabilityExecutionForAuth(ctx context.Context, id string) (CapabilityExecution, error) {
+func (s *Store) DeferCapabilityExecutionForAuth(ctx context.Context, id, leaseToken string) (CapabilityExecution, error) {
 	id = strings.TrimSpace(id)
+	leaseToken = strings.TrimSpace(leaseToken)
 	if id == "" {
 		return CapabilityExecution{}, errors.New("capability execution id is empty")
 	}
+	if leaseToken == "" {
+		return CapabilityExecution{}, errors.New("capability execution lease token is empty")
+	}
 	now := nowUTC()
 	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
+		Where("id = ? AND state = ? AND lease_token = ?", id, string(CapabilityExecutionRunning), leaseToken).
+		Where(currentCapabilityJobLeasePredicate, string(ConversationJobStateRunning), leaseToken, now).
 		Updates(map[string]any{
 			"state": string(CapabilityExecutionWaitingAuth), "started_at": nil,
 			"lease_token": "", "result": "", "error": "", "updated_at": now,
@@ -472,10 +479,14 @@ func (s *Store) DeferCapabilityExecutionForAuth(ctx context.Context, id string) 
 	return execution, err
 }
 
-func (s *Store) FinishCapabilityExecution(ctx context.Context, id string, resultText string, runErr error) (CapabilityExecution, error) {
+func (s *Store) FinishCapabilityExecution(ctx context.Context, id, leaseToken, resultText string, runErr error) (CapabilityExecution, error) {
 	id = strings.TrimSpace(id)
+	leaseToken = strings.TrimSpace(leaseToken)
 	if id == "" {
 		return CapabilityExecution{}, errors.New("capability execution id is empty")
+	}
+	if leaseToken == "" {
+		return CapabilityExecution{}, errors.New("capability execution lease token is empty")
 	}
 	now := nowUTC()
 	state := CapabilityExecutionSucceeded
@@ -485,7 +496,8 @@ func (s *Store) FinishCapabilityExecution(ctx context.Context, id string, result
 		errorText = strings.TrimSpace(runErr.Error())
 	}
 	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
+		Where("id = ? AND state = ? AND lease_token = ?", id, string(CapabilityExecutionRunning), leaseToken).
+		Where(currentCapabilityJobLeasePredicate, string(ConversationJobStateRunning), leaseToken, now).
 		Updates(map[string]any{
 			"state": string(state), "result": resultText, "error": errorText,
 			"finished_at": now, "updated_at": now,
@@ -503,14 +515,19 @@ func (s *Store) FinishCapabilityExecution(ctx context.Context, id string, result
 // FinishCapabilityExecutionUnknown records a typed ambiguous domain outcome.
 // The descriptor-owned result is retained for replay; reason is diagnostic
 // metadata and is never the model-facing evidence.
-func (s *Store) FinishCapabilityExecutionUnknown(ctx context.Context, id, resultText, reason string) (CapabilityExecution, error) {
+func (s *Store) FinishCapabilityExecutionUnknown(ctx context.Context, id, leaseToken, resultText, reason string) (CapabilityExecution, error) {
 	id = strings.TrimSpace(id)
+	leaseToken = strings.TrimSpace(leaseToken)
 	if id == "" {
 		return CapabilityExecution{}, errors.New("capability execution id is empty")
 	}
+	if leaseToken == "" {
+		return CapabilityExecution{}, errors.New("capability execution lease token is empty")
+	}
 	now := nowUTC()
 	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
+		Where("id = ? AND state = ? AND lease_token = ?", id, string(CapabilityExecutionRunning), leaseToken).
+		Where(currentCapabilityJobLeasePredicate, string(ConversationJobStateRunning), leaseToken, now).
 		Updates(map[string]any{
 			"state": string(CapabilityExecutionUnknown), "result": resultText, "error": strings.TrimSpace(reason),
 			"finished_at": now, "updated_at": now,
@@ -525,28 +542,88 @@ func (s *Store) FinishCapabilityExecutionUnknown(ctx context.Context, id, result
 	return execution, err
 }
 
-func (s *Store) MarkCapabilityExecutionUnknown(ctx context.Context, id, reason string) error {
+// MarkStaleCapabilityExecutionUnknown lets the current job owner resolve a
+// mutation left running by an older lease. The job-lease predicate prevents
+// that older worker from marking a newer worker's active operation unknown.
+func (s *Store) MarkStaleCapabilityExecutionUnknown(ctx context.Context, id string, jobID int64, currentLeaseToken, reason string) (CapabilityExecution, bool, error) {
 	id = strings.TrimSpace(id)
+	currentLeaseToken = strings.TrimSpace(currentLeaseToken)
+	if id == "" {
+		return CapabilityExecution{}, false, errors.New("capability execution id is empty")
+	}
+	if jobID <= 0 {
+		return CapabilityExecution{}, false, errors.New("capability execution job id is invalid")
+	}
+	if currentLeaseToken == "" {
+		return CapabilityExecution{}, false, errors.New("conversation job lease token is empty")
+	}
+	now := nowUTC()
+	var execution CapabilityExecution
+	marked := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&capabilityExecutionRow{}).
+			Where("id = ? AND job_id = ? AND state = ? AND LOWER(effect) <> LOWER(?) AND COALESCE(lease_token, '') <> ?",
+				id, jobID, string(CapabilityExecutionRunning), "read", currentLeaseToken).
+			Where(`EXISTS (
+				SELECT 1 FROM conversation_jobs job
+				WHERE job.id = capability_executions.job_id
+				  AND job.state = ?
+				  AND job.lease_token = ?
+				  AND (job.expires_at IS NULL OR job.expires_at > ?)
+			)`, string(ConversationJobStateRunning), currentLeaseToken, now).
+			Updates(map[string]any{
+				"state": string(CapabilityExecutionUnknown), "error": strings.TrimSpace(reason),
+				"finished_at": now, "updated_at": now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		marked = result.RowsAffected == 1
+		var row capabilityExecutionRow
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+		var err error
+		execution, err = capabilityExecutionFromRow(row)
+		return err
+	})
+	return execution, marked, err
+}
+
+func (s *Store) UpdateCapabilityExecutionReceipt(ctx context.Context, id, leaseToken string, receipt CapabilityReceipt) error {
+	id = strings.TrimSpace(id)
+	leaseToken = strings.TrimSpace(leaseToken)
 	if id == "" {
 		return errors.New("capability execution id is empty")
 	}
-	now := nowUTC()
-	return s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
-		Updates(map[string]any{
-			"state": string(CapabilityExecutionUnknown), "error": strings.TrimSpace(reason),
-			"finished_at": now, "updated_at": now,
-		}).Error
-}
-
-func (s *Store) UpdateCapabilityExecutionReceipt(ctx context.Context, id string, receipt CapabilityReceipt) error {
+	if leaseToken == "" {
+		return errors.New("capability execution lease token is empty")
+	}
 	receiptJSON, err := json.Marshal(receipt)
 	if err != nil {
 		return fmt.Errorf("encode capability receipt: %w", err)
 	}
-	return s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).Where("id = ?", strings.TrimSpace(id)).
-		Updates(map[string]any{"receipt_json": string(receiptJSON), "updated_at": nowUTC()}).Error
+	now := nowUTC()
+	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
+		Where("id = ? AND state = ? AND lease_token = ?", id, string(CapabilityExecutionRunning), leaseToken).
+		Where(currentCapabilityJobLeasePredicate, string(ConversationJobStateRunning), leaseToken, now).
+		Updates(map[string]any{"receipt_json": string(receiptJSON), "updated_at": now})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("capability execution lease is not current")
+	}
+	return nil
 }
+
+const currentCapabilityJobLeasePredicate = `EXISTS (
+	SELECT 1 FROM conversation_jobs job
+	WHERE job.id = capability_executions.job_id
+	  AND job.state = ?
+	  AND job.lease_token = ?
+	  AND (job.expires_at IS NULL OR job.expires_at > ?)
+)`
 
 func capabilityExecutionFromRow(row capabilityExecutionRow) (CapabilityExecution, error) {
 	var arguments []string

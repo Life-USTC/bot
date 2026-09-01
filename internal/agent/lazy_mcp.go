@@ -185,61 +185,97 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		return "", botmcp.NewRecoverableToolError(name, "the requested read-only campus tool was not found")
 	}
 
-	execution, tracked, err := s.prepareExecution(ctx, name, input.Arguments)
+	execution, tracked, execute, err := s.prepareExecution(ctx, name, input.Arguments)
 	if err != nil {
 		return "", err
 	}
-	if tracked && execution.State != store.CapabilityExecutionRunning {
-		return existingCampusToolResult(execution), nil
+	if tracked {
+		currentLease := store.ConversationJobLeaseFromContext(ctx, execution.JobID)
+		if execution.State == store.CapabilityExecutionRunning && execution.LeaseToken != currentLease {
+			claimed, claimedForExecution, claimErr := s.service.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, execution.JobID, currentLease)
+			if claimErr != nil {
+				return "", markDurableAgentStateError("recover campus read", claimErr)
+			}
+			if !claimedForExecution {
+				if capabilityExecutionTerminal(claimed.State) {
+					return existingCampusToolResult(claimed), nil
+				}
+				return "", errors.New("campus read ownership changed before recovery")
+			}
+			execution = claimed
+			execute = true
+		}
+		if execution.State != store.CapabilityExecutionRunning {
+			return existingCampusToolResult(execution), nil
+		}
+		if !execute {
+			return "", errors.New("campus read is already running under the current job lease")
+		}
 	}
 	result, callErr := s.session.Call(ctx, name, input.Arguments)
 	if tracked {
 		receipt := execution.Receipt
 		receipt.Subject = campusReceiptSubject(name, input.Arguments, result)
 		if receipt.Subject != execution.Receipt.Subject {
-			if err := s.service.handler.Store.UpdateCapabilityExecutionReceipt(ctx, execution.ID, receipt); err != nil {
-				return "", err
+			if err := s.service.handler.Store.UpdateCapabilityExecutionReceipt(ctx, execution.ID, execution.LeaseToken, receipt); err != nil {
+				return "", markDurableAgentStateError("update campus read receipt", err)
 			}
 		}
 		storedErr := callErr
 		if safe, ok := botmcp.ModelToolErrorResult(callErr); ok {
 			storedErr = errors.New(safe)
 		}
-		if _, err := s.service.handler.Store.FinishCapabilityExecution(ctx, execution.ID, result, storedErr); err != nil {
-			return "", err
+		if _, err := s.service.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, result, storedErr); err != nil {
+			return "", markDurableAgentStateError("finish campus read", err)
 		}
 	}
 	return result, callErr
 }
 
-func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, error) {
+func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, bool, error) {
 	if s.service == nil || s.service.handler.Store == nil || s.jobID <= 0 {
-		return store.CapabilityExecution{}, false, nil
+		return store.CapabilityExecution{}, false, true, nil
 	}
+	leaseCtx, err := ensureCapabilityJobLease(ctx, s.service.handler.Store, s.jobID)
+	if err != nil {
+		return store.CapabilityExecution{}, false, false, err
+	}
+	ctx = leaseCtx
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
-		return store.CapabilityExecution{}, false, err
+		return store.CapabilityExecution{}, false, false, err
 	}
 	callID := strings.TrimSpace(compose.GetToolCallID(ctx))
 	if callID == "" {
 		digest := sha256.Sum256(append([]byte(name+"\x00"), encoded...))
 		callID = fmt.Sprintf("%x", digest[:12])
 	}
-	execution, _, err := s.service.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
-		Identity: s.identity, JobID: s.jobID,
+	execution, created, err := s.service.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: s.identity, JobID: s.jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, s.jobID),
 		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + callID,
 		ToolCallID: callID, Capability: "mcp:" + name, Arguments: []string{string(encoded)}, Effect: string(commands.EffectRead),
 		Receipt: store.CapabilityReceipt{Action: "查询", Resource: campusReceiptResource(name), Subject: campusReceiptSubject(name, arguments, "")},
 	})
-	return execution, true, err
+	return execution, true, created, markDurableAgentStateError("prepare campus read", err)
 }
 
 func existingCampusToolResult(execution store.CapabilityExecution) string {
 	switch execution.State {
 	case store.CapabilityExecutionSucceeded:
-		return execution.Result
-	case store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
-		return execution.Error
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "校园查询已完成，但没有返回内容。"
+	case store.CapabilityExecutionFailed:
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "校园查询失败，未返回可用结果。"
+	case store.CapabilityExecutionUnknown:
+		if result := strings.TrimSpace(execution.Result); result != "" {
+			return result
+		}
+		return "校园查询结果未知，系统没有自动重试。"
 	default:
 		return "the campus query has not completed"
 	}

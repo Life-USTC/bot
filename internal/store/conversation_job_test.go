@@ -2,12 +2,76 @@ package store
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
 )
+
+func TestConversationJobOutputCommitRequiresLiveLeaseAndTerminalOperations(t *testing.T) {
+	t.Run("nonterminal operation", func(t *testing.T) {
+		s := openConversationJobTestStore(t)
+		ctx := t.Context()
+		ident := conversationJobTestIdentity()
+		now := time.Now().UTC()
+		job := enqueueConversationJobTest(t, s, ident, "output-terminal-barrier", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+		claimed, err := s.ClaimConversationJob(ctx, ident, now)
+		if err != nil || claimed == nil {
+			t.Fatalf("claim=%#v err=%v", claimed, err)
+		}
+		if _, _, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+			Identity: ident, JobID: job.ID, LeaseToken: claimed.LeaseToken, DedupeKey: "output-terminal-read",
+			Capability: "course", Effect: "read",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+			JobID: job.ID, LeaseToken: claimed.LeaseToken,
+			Messages: []message.Outbound{{
+				Kind: "agent", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+				Content: message.Content{Text: "premature"}, DedupeKey: "output-terminal-final",
+			}},
+			Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+		})
+		if !errors.Is(err, ErrConversationJobHasNonterminalOperations) {
+			t.Fatalf("output commit bypassed operation barrier: %v", err)
+		}
+		if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateRunning {
+			t.Fatalf("failed output transaction changed job=%#v", got)
+		}
+		var count int64
+		if err := s.db.Model(&outgoingMessageRow{}).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("failed output transaction rows=%d err=%v", count, err)
+		}
+	})
+
+	t.Run("expired lease", func(t *testing.T) {
+		s := openConversationJobTestStore(t)
+		ctx := t.Context()
+		ident := conversationJobTestIdentity()
+		claimAt := time.Now().UTC()
+		job := enqueueConversationJobTest(t, s, ident, "output-expired-lease", ConversationJobEnqueue{ExpiresAt: claimAt.Add(time.Hour)})
+		claimed, err := s.ClaimConversationJob(ctx, ident, claimAt)
+		if err != nil || claimed == nil {
+			t.Fatalf("claim=%#v err=%v", claimed, err)
+		}
+		if err := s.db.Model(&conversationJobRow{}).Where("id = ?", job.ID).Update("expires_at", claimAt.Add(-time.Second)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+			JobID: job.ID, LeaseToken: claimed.LeaseToken,
+			Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+		}); err == nil {
+			t.Fatal("expired job committed output before expiry poller")
+		}
+		if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateRunning {
+			t.Fatalf("expired output attempt changed job=%#v", got)
+		}
+	})
+}
 
 func TestConversationJobEnqueueIsIdempotentAndSequencesPerConversation(t *testing.T) {
 	s := openConversationJobTestStore(t)
@@ -474,6 +538,159 @@ func TestConversationJobProgressAndFinalOutputRaceIsLeaseSerialized(t *testing.T
 	}
 	if progressCount > 1 || finalCount != 1 {
 		t.Fatalf("raced output rows=%#v", rows)
+	}
+	for _, row := range rows {
+		if row.DedupeKey == "conversation-job:1:progress" && row.Status != string(delivery.StatusExpired) {
+			t.Fatalf("pending progress was not superseded: %#v", row)
+		}
+	}
+	claimedOutputs, err := s.ClaimDue(ctx, time.Now().UTC().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimedOutputs) != 1 || claimedOutputs[0].Message.DedupeKey != final.DedupeKey {
+		t.Fatalf("claimable outputs after final=%#v", claimedOutputs)
+	}
+}
+
+func TestConversationJobDeliveringProgressRetryIsSupersededByFinalOutput(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "progress-delivering-final", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	progress := message.Outbound{
+		Kind: "agent_progress", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "稍等一下"},
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: progress,
+	}); err != nil || !created {
+		t.Fatalf("enqueue progress created=%v err=%v", created, err)
+	}
+	due, err := s.ClaimDue(ctx, now.Add(time.Minute), 1)
+	if err != nil || len(due) != 1 || due[0].Message.Kind != "agent_progress" {
+		t.Fatalf("claimed progress=%#v err=%v", due, err)
+	}
+	final := message.Outbound{
+		Kind: "agent", Target: progress.Target, Content: message.Content{Text: "最终回复"},
+		DedupeKey: "conversation-job:1:revision:1:part:0",
+	}
+	if _, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{final},
+		Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Complete(ctx, due[0].ID, delivery.Outcome{
+		State: delivery.OutcomeRetryable, Code: "temporary", Err: context.DeadlineExceeded,
+	}, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var progressRow outgoingMessageRow
+	if err := s.db.WithContext(ctx).Where("id = ?", due[0].ID).First(&progressRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if progressRow.Status != string(delivery.StatusExpired) || progressRow.ErrorCode != "superseded" || progressRow.NextAttemptAt != nil {
+		t.Fatalf("superseded progress=%#v", progressRow)
+	}
+	due, err = s.ClaimDue(ctx, now.Add(2*time.Hour), 10)
+	if err != nil || len(due) != 1 || due[0].Message.DedupeKey != final.DedupeKey {
+		t.Fatalf("claimable outputs after retry=%#v err=%v", due, err)
+	}
+}
+
+func TestConversationJobProgressIsGatedImmediatelyBeforeDelivery(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "progress-ready-gate", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	progress := message.Outbound{
+		Kind: "agent_progress", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "稍等一下"},
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: progress,
+	}); err != nil || !created {
+		t.Fatalf("enqueue progress created=%v err=%v", created, err)
+	}
+	due, err := s.ClaimDue(ctx, now.Add(time.Minute), 1)
+	if err != nil || len(due) != 1 {
+		t.Fatalf("claim progress=%#v err=%v", due, err)
+	}
+	final := message.Outbound{
+		Kind: "agent", Target: progress.Target, Content: message.Content{Text: "最终回复"},
+		DedupeKey: "conversation-job:1:revision:1:part:0",
+	}
+	if _, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{final},
+		Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := s.ReadyToDeliver(ctx, due[0].ID); err != nil || ready {
+		t.Fatalf("superseded progress ready=%v err=%v", ready, err)
+	}
+	finalDue, err := s.ClaimDue(ctx, now.Add(2*time.Minute), 10)
+	if err != nil || len(finalDue) != 1 || finalDue[0].Message.DedupeKey != final.DedupeKey {
+		t.Fatalf("final output after progress gate=%#v err=%v", finalDue, err)
+	}
+}
+
+func TestConversationJobProgressThatPassedDeliveryGateStaysOrderedBeforeFinal(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "progress-send-order", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	progress := message.Outbound{
+		Kind: "agent_progress", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "稍等一下"},
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: progress,
+	}); err != nil || !created {
+		t.Fatalf("enqueue progress created=%v err=%v", created, err)
+	}
+	due, err := s.ClaimDue(ctx, now.Add(time.Minute), 1)
+	if err != nil || len(due) != 1 {
+		t.Fatalf("claim progress=%#v err=%v", due, err)
+	}
+	if ready, err := s.ReadyToDeliver(ctx, due[0].ID); err != nil || !ready {
+		t.Fatalf("live progress ready=%v err=%v", ready, err)
+	}
+	final := message.Outbound{
+		Kind: "agent", Target: progress.Target, Content: message.Content{Text: "最终回复"},
+		DedupeKey: "conversation-job:1:revision:1:part:0",
+	}
+	if _, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{final},
+		Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if finalDue, err := s.ClaimDue(ctx, now.Add(2*time.Minute), 10); err != nil || len(finalDue) != 0 {
+		t.Fatalf("final overtook in-flight progress=%#v err=%v", finalDue, err)
+	}
+	if err := s.Complete(ctx, due[0].ID, delivery.Outcome{State: delivery.OutcomeAccepted}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	finalDue, err := s.ClaimDue(ctx, now.Add(2*time.Minute), 10)
+	if err != nil || len(finalDue) != 1 || finalDue[0].Message.DedupeKey != final.DedupeKey {
+		t.Fatalf("ordered final output=%#v err=%v", finalDue, err)
 	}
 }
 

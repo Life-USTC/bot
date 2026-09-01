@@ -48,18 +48,20 @@ type ConversationMessagePart struct {
 }
 
 type ConversationEvent struct {
-	ID         int64
-	Identity   Identity
-	JobID      int64
-	DedupeKey  string
-	Type       ConversationEventType
-	Content    string
-	Name       string
-	ToolCallID string
-	ToolName   string
-	ToolCalls  []ConversationToolCall
-	Parts      []ConversationMessagePart
-	CreatedAt  time.Time
+	ID            int64
+	Identity      Identity
+	JobID         int64
+	JobRevision   int
+	JobLeaseToken string
+	DedupeKey     string
+	Type          ConversationEventType
+	Content       string
+	Name          string
+	ToolCallID    string
+	ToolName      string
+	ToolCalls     []ConversationToolCall
+	Parts         []ConversationMessagePart
+	CreatedAt     time.Time
 }
 
 type conversationEventRow struct {
@@ -99,6 +101,10 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 	if !validConversationEventType(event.Type) {
 		return ConversationEvent{}, false, fmt.Errorf("invalid conversation event type %q", event.Type)
 	}
+	event.JobLeaseToken = strings.TrimSpace(event.JobLeaseToken)
+	if event.JobID > 0 && (event.JobRevision <= 0 || event.JobLeaseToken == "") {
+		return ConversationEvent{}, false, errors.New("conversation event job claim is incomplete")
+	}
 	toolCallsJSON, err := json.Marshal(event.ToolCalls)
 	if err != nil {
 		return ConversationEvent{}, false, fmt.Errorf("encode conversation tool calls: %w", err)
@@ -125,17 +131,33 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 		ToolCallID: strings.TrimSpace(event.ToolCallID), ToolName: strings.TrimSpace(event.ToolName),
 		ToolCallsJSON: string(toolCallsJSON), PartsJSON: string(partsJSON), CreatedAt: createdAt,
 	}
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
-	if result.Error != nil {
-		return ConversationEvent{}, false, result.Error
-	}
-	created := result.RowsAffected == 1
-	if !created {
-		if err := s.db.WithContext(ctx).
-			Where("platform = ? AND dedupe_key = ?", event.Identity.Platform, event.DedupeKey).
-			First(&row).Error; err != nil {
-			return ConversationEvent{}, false, err
+	created := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if event.JobID > 0 {
+			result := tx.Model(&conversationJobRow{}).
+				Where("id = ? AND platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ? AND revision = ? AND lease_token = ?",
+					event.JobID, event.Identity.Platform, event.Identity.ConversationType, event.Identity.ConversationID, event.Identity.UserID,
+					string(ConversationJobStateRunning), event.JobRevision, event.JobLeaseToken).
+				UpdateColumn("updated_at", gorm.Expr("updated_at"))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("conversation event job claim does not match")
+			}
 		}
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+		if result.Error != nil {
+			return result.Error
+		}
+		created = result.RowsAffected == 1
+		if !created {
+			return tx.Where("platform = ? AND dedupe_key = ?", event.Identity.Platform, event.DedupeKey).First(&row).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return ConversationEvent{}, false, err
 	}
 	saved, err := conversationEventFromRow(row)
 	return saved, created, err

@@ -17,13 +17,15 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/routing"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const (
-	defaultJobPollInterval    = 250 * time.Millisecond
-	defaultJobBatchSize       = 4
-	defaultImageRenderTimeout = 5 * time.Second
-	defaultProgressDelay      = 2500 * time.Millisecond
+	defaultJobPollInterval     = 250 * time.Millisecond
+	defaultJobRecoveryInterval = time.Second
+	defaultJobBatchSize        = 4
+	defaultImageRenderTimeout  = 5 * time.Second
+	defaultProgressDelay       = 2500 * time.Millisecond
 )
 
 type CommandHandler interface {
@@ -34,7 +36,7 @@ type CommandHandler interface {
 
 type AgentHandler interface {
 	Run(context.Context, agent.Input) agent.Result
-	Acknowledge(context.Context, int64) error
+	Acknowledge(context.Context, int64, int, string) error
 }
 
 type Recorder interface {
@@ -71,13 +73,15 @@ type JobRepository interface {
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
 	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
 	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
+	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
 	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
-	ClaimCapabilityExecution(context.Context, string) (store.CapabilityExecution, bool, error)
-	DeferCapabilityExecutionForAuth(context.Context, string) (store.CapabilityExecution, error)
-	FinishCapabilityExecution(context.Context, string, string, error) (store.CapabilityExecution, error)
-	MarkCapabilityExecutionUnknown(context.Context, string, string) error
-	UpdateCapabilityExecutionReceipt(context.Context, string, store.CapabilityReceipt) error
+	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)
+	DeferCapabilityExecutionForAuth(context.Context, string, string) (store.CapabilityExecution, error)
+	FinishCapabilityExecution(context.Context, string, string, string, error) (store.CapabilityExecution, error)
+	FinishCapabilityExecutionUnknown(context.Context, string, string, string, string) (store.CapabilityExecution, error)
+	MarkStaleCapabilityExecutionUnknown(context.Context, string, int64, string, string) (store.CapabilityExecution, bool, error)
+	UpdateCapabilityExecutionReceipt(context.Context, string, string, store.CapabilityReceipt) error
 	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
 	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
 	RetryConversationJob(context.Context, int64, string, string) (bool, error)
@@ -126,6 +130,7 @@ type Coordinator struct {
 	progressDelay      time.Duration
 	pollInterval       time.Duration
 	batchSize          int
+	nextRecoveryAt     time.Time
 	logger             *log.Logger
 	wake               chan struct{}
 }
@@ -136,31 +141,31 @@ type conversationJobPayload struct {
 	Activation routing.Activation `json:"activation"`
 }
 
-// conversationOutputPersistenceError distinguishes an output-boundary
-// failure from a domain or tool failure. The former must leave the job
-// retryable because the operation state and outbox transaction are the source
-// of truth for a later idempotent attempt.
-type conversationOutputPersistenceError struct {
+// conversationPersistenceError distinguishes a durable state/output failure
+// from a domain or tool failure. Persistence failures must leave the job
+// retryable because capability state, transcript events, and the outbox are
+// the source of truth for a later idempotent attempt.
+type conversationPersistenceError struct {
 	err error
 }
 
-func (e conversationOutputPersistenceError) Error() string {
-	return fmt.Sprintf("persist conversation output: %v", e.err)
+func (e conversationPersistenceError) Error() string {
+	return fmt.Sprintf("persist conversation state: %v", e.err)
 }
 
-func (e conversationOutputPersistenceError) Unwrap() error {
+func (e conversationPersistenceError) Unwrap() error {
 	return e.err
 }
 
-func markConversationOutputPersistenceError(err error) error {
+func markConversationPersistenceError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return conversationOutputPersistenceError{err: err}
+	return conversationPersistenceError{err: err}
 }
 
-func isConversationOutputPersistenceError(err error) bool {
-	var target conversationOutputPersistenceError
+func isConversationPersistenceError(err error) bool {
+	var target conversationPersistenceError
 	return errors.As(err, &target)
 }
 
@@ -316,8 +321,11 @@ func (c *Coordinator) Run(ctx context.Context) {
 
 func (c *Coordinator) tick(ctx context.Context) {
 	now := time.Now().UTC()
-	if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
-		c.logf("recover conversation jobs failed: %v", err)
+	if c.nextRecoveryAt.IsZero() || !now.Before(c.nextRecoveryAt) {
+		c.nextRecoveryAt = now.Add(defaultJobRecoveryInterval)
+		if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
+			c.logf("recover conversation jobs failed: %v", err)
+		}
 	}
 	if err := c.jobs.ExpireConversationJobs(ctx, now); err != nil {
 		c.logf("expire conversation jobs failed: %v", err)
@@ -343,6 +351,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 	}
+	ctx = store.WithConversationJobLease(ctx, job.ID, job.LeaseToken)
 	payload, err := decodeConversationJobPayload(job)
 	if err != nil {
 		c.fail(ctx, job, err)
@@ -416,6 +425,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	var hostResponses []commands.Response
 	result := c.agent.Run(ctx, agent.Input{
 		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
+		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
 			_ = ctx
 			outputMu.Lock()
@@ -427,10 +437,18 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 			return nil
 		},
 	})
+	if result.State == agent.RunStateFailed || result.Err != nil {
+		cause := result.Err
+		if cause == nil {
+			cause = errors.New("agent run failed before producing a durable result")
+		}
+		c.fail(ctx, job, markConversationPersistenceError(cause))
+		return
+	}
 	if !result.Handled {
 		c.recordIgnoredJob(ctx, job, inbound)
 		if c.complete(ctx, job) {
-			c.acknowledgeAgent(ctx, job.ID)
+			c.acknowledgeAgent(ctx, job)
 		}
 		return
 	}
@@ -489,7 +507,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		c.fail(ctx, job, err)
 		return
 	}
-	c.acknowledgeAgent(ctx, job.ID)
+	c.acknowledgeAgent(ctx, job)
 	c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
 }
 
@@ -538,24 +556,24 @@ func (c *Coordinator) complete(ctx context.Context, job store.ConversationJob) b
 	return err == nil && ok
 }
 
-func (c *Coordinator) acknowledgeAgent(ctx context.Context, jobID int64) {
+func (c *Coordinator) acknowledgeAgent(ctx context.Context, job store.ConversationJob) {
 	if c.agent == nil {
 		return
 	}
-	if err := c.agent.Acknowledge(ctx, jobID); err != nil {
-		c.logf("acknowledge agent checkpoint for conversation job %d failed: %v", jobID, err)
+	if err := c.agent.Acknowledge(ctx, job.ID, job.Revision, job.LeaseToken); err != nil {
+		c.logf("acknowledge agent checkpoint for conversation job %d failed: %v", job.ID, err)
 	}
 }
 
 func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause error) {
-	if isConversationOutputPersistenceError(cause) {
+	if isConversationPersistenceError(cause) {
 		ok, err := c.jobs.RetryConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
 		if err != nil {
-			c.logf("retry conversation job %d after output persistence failure failed: %v", job.ID, err)
+			c.logf("retry conversation job %d after persistence failure failed: %v", job.ID, err)
 		} else if !ok {
-			c.logf("retry conversation job %d after output persistence failure lost lease", job.ID)
+			c.logf("retry conversation job %d after persistence failure lost lease", job.ID)
 		} else {
-			c.logf("conversation job %d output persistence failed; moved to retry_wait: %v", job.ID, cause)
+			c.logf("conversation job %d persistence failed; moved to retry_wait: %v", job.ID, cause)
 		}
 		return
 	}
@@ -564,6 +582,8 @@ func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause
 		c.logf("fail conversation job %d failed: %v", job.ID, err)
 	} else if !ok {
 		c.logf("fail conversation job %d lost lease", job.ID)
+	} else {
+		c.acknowledgeAgent(ctx, job)
 	}
 	c.logf("conversation job %d failed: %v", job.ID, cause)
 }
@@ -609,14 +629,14 @@ func (c *Coordinator) commitResponse(
 ) (int, error) {
 	messages, next, err := c.responseOutbounds(ctx, job, inbound, response, start)
 	if err != nil {
-		return start, markConversationOutputPersistenceError(err)
+		return start, markConversationPersistenceError(err)
 	}
 	committed, err := c.jobs.CommitConversationJobOutput(ctx, store.ConversationJobOutputCommit{
 		JobID: job.ID, LeaseToken: job.LeaseToken, Messages: messages,
 		ReceiptIDs: receiptIDs, Transition: transition,
 	})
 	if err != nil {
-		return start, markConversationOutputPersistenceError(err)
+		return start, markConversationPersistenceError(err)
 	}
 	for index, output := range committed {
 		if output.Created && index < len(messages) {
@@ -755,7 +775,7 @@ func (c *Coordinator) renderAttachment(ctx context.Context, image *responses.Ima
 
 func (c *Coordinator) logf(format string, args ...any) {
 	if c != nil && c.logger != nil {
-		c.logger.Printf(format, args...)
+		c.logger.Print(textutil.SafeLogText(fmt.Sprintf(format, args...)))
 	}
 }
 

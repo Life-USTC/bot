@@ -65,7 +65,7 @@ func (fn agentFunc) Run(ctx context.Context, input agent.Input) agent.Result {
 	return agent.Result{Response: response, Handled: handled, State: agent.RunStateCompleted}
 }
 
-func (fn agentFunc) Acknowledge(context.Context, int64) error { return nil }
+func (fn agentFunc) Acknowledge(context.Context, int64, int, string) error { return nil }
 
 type agentResultFunc func(context.Context, agent.Input) agent.Result
 
@@ -73,7 +73,7 @@ func (fn agentResultFunc) Run(ctx context.Context, input agent.Input) agent.Resu
 	return fn(ctx, input)
 }
 
-func (fn agentResultFunc) Acknowledge(context.Context, int64) error { return nil }
+func (fn agentResultFunc) Acknowledge(context.Context, int64, int, string) error { return nil }
 
 type rendererFunc func(*responses.Image) ([]byte, int, int, error)
 
@@ -104,6 +104,84 @@ type receiptReadFaultStore struct {
 	*store.Store
 	mu       sync.Mutex
 	failures int
+}
+
+type capabilityReadFaultStore struct {
+	*store.Store
+	mu     sync.Mutex
+	calls  int
+	failOn int
+}
+
+type capabilityWriteFaultStore struct {
+	*store.Store
+	mu        sync.Mutex
+	operation string
+	failures  int
+}
+
+func (s *capabilityWriteFaultStore) take(operation string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.operation != operation || s.failures <= 0 {
+		return false
+	}
+	s.failures--
+	return true
+}
+
+func (s *capabilityWriteFaultStore) UpdateCapabilityExecutionReceipt(ctx context.Context, id, lease string, receipt store.CapabilityReceipt) error {
+	if s.take("receipt") {
+		return errors.New("injected receipt persistence failure")
+	}
+	return s.Store.UpdateCapabilityExecutionReceipt(ctx, id, lease, receipt)
+}
+
+func (s *capabilityWriteFaultStore) DeferCapabilityExecutionForAuth(ctx context.Context, id, lease string) (store.CapabilityExecution, error) {
+	if s.take("auth") {
+		return store.CapabilityExecution{}, errors.New("injected auth deferral persistence failure")
+	}
+	return s.Store.DeferCapabilityExecutionForAuth(ctx, id, lease)
+}
+
+func (s *capabilityWriteFaultStore) FinishCapabilityExecution(ctx context.Context, id, lease, result string, outcome error) (store.CapabilityExecution, error) {
+	if s.take("finish") {
+		return store.CapabilityExecution{}, errors.New("injected capability finalization persistence failure")
+	}
+	return s.Store.FinishCapabilityExecution(ctx, id, lease, result, outcome)
+}
+
+type fixedOutcomeCommand struct {
+	outcome commands.CapabilityOutcome
+	calls   int
+}
+
+func (h *fixedOutcomeCommand) DescribeCapabilityInvocations(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) ([]commands.CapabilityInvocationDescription, error) {
+	invocation, ok := commands.NewInvocation(id, args)
+	if !ok {
+		return nil, errors.New("invalid test capability")
+	}
+	return []commands.CapabilityInvocationDescription{{Invocation: invocation, Policy: invocation.Policy()}}, nil
+}
+
+func (h *fixedOutcomeCommand) ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error) {
+	h.calls++
+	return h.outcome, nil
+}
+
+func (h *fixedOutcomeCommand) ExecuteApprovedInvocation(ctx context.Context, input commands.Input, description commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error) {
+	return h.ExecuteCapability(ctx, input, description.Invocation.ID(), description.Invocation.Args)
+}
+
+func (s *capabilityReadFaultStore) CapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
+	s.mu.Lock()
+	s.calls++
+	inject := s.calls == s.failOn
+	s.mu.Unlock()
+	if inject {
+		return nil, errors.New("injected capability loading failure")
+	}
+	return s.Store.CapabilityExecutionsForJob(ctx, jobID)
 }
 
 func (s *receiptReadFaultStore) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
@@ -401,7 +479,7 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 			}
 			if execute {
 				mutations++
-				execution, err = db.FinishCapabilityExecution(ctx, execution.ID, "已开启", nil)
+				execution, err = db.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "已开启", nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -670,6 +748,161 @@ func TestCoordinatorReceiptLoadingFailureRetriesAwaitingConfirmation(t *testing.
 	}
 }
 
+func TestCoordinatorCapabilityLoadingFailureRetriesWithoutLosingOperationState(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		failOn                int
+		wantExecutionsOnRetry int
+	}{
+		{name: "route read", failOn: 1, wantExecutionsOnRetry: 0},
+		{name: "final assembly read", failOn: 2, wantExecutionsOnRetry: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := newCoordinatorStore(t)
+			jobs := &capabilityReadFaultStore{Store: db, failOn: test.failOn}
+			coordinator, err := NewCoordinator(CoordinatorConfig{
+				Jobs: jobs,
+				Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+					return commands.Response{Text: "pong", Kind: "ping"}, true
+				}),
+				Outputs: db,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			if err := coordinator.Enqueue(ctx, jobInbound("capability-read-"+test.name, "ping")); err != nil {
+				t.Fatal(err)
+			}
+			job := claimOnlyConversationJob(t, db)
+			coordinator.execute(ctx, job)
+			saved, err := db.GetConversationJob(ctx, job.ID)
+			if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait {
+				t.Fatalf("read failure terminalized job: job=%#v err=%v", saved, err)
+			}
+			executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+			if err != nil || len(executions) != test.wantExecutionsOnRetry {
+				t.Fatalf("operation state after read failure=%#v err=%v", executions, err)
+			}
+			if len(executions) == 1 && executions[0].State != store.CapabilityExecutionSucceeded {
+				t.Fatalf("finished operation changed state: %#v", executions[0])
+			}
+
+			coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+			saved, err = db.GetConversationJob(ctx, job.ID)
+			if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+				t.Fatalf("retry did not complete: job=%#v err=%v", saved, err)
+			}
+			executions, err = db.CapabilityExecutionsForJob(ctx, job.ID)
+			if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+				t.Fatalf("operation was not recovered exactly once: %#v err=%v", executions, err)
+			}
+		})
+	}
+}
+
+func TestCoordinatorRetriesCapabilityPersistenceBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		operation string
+		outcome   commands.CapabilityOutcome
+		wantState store.ConversationJobState
+		wantOp    store.CapabilityExecutionState
+	}{
+		{
+			name: "receipt update", operation: "receipt",
+			outcome: commands.CapabilityOutcome{
+				Status:   commands.CapabilityOutcomeSuccess,
+				Response: commands.Response{Text: "pong", Kind: "ping"},
+				Receipt:  &store.CapabilityReceipt{Action: "查询", Resource: "状态", Subject: "服务可用"},
+			},
+			wantState: store.ConversationJobStateCompleted, wantOp: store.CapabilityExecutionSucceeded,
+		},
+		{
+			name: "authorization deferral", operation: "auth",
+			outcome: commands.CapabilityOutcome{
+				Status:   commands.CapabilityOutcomeAuthRequired,
+				Response: commands.Response{Text: "请先登录", Kind: commands.ResponseKindAuthWait},
+			},
+			wantState: store.ConversationJobStateWaitingAuth, wantOp: store.CapabilityExecutionWaitingAuth,
+		},
+		{
+			name: "execution finalization", operation: "finish",
+			outcome: commands.CapabilityOutcome{
+				Status:   commands.CapabilityOutcomeSuccess,
+				Response: commands.Response{Text: "pong", Kind: "ping"},
+			},
+			wantState: store.ConversationJobStateCompleted, wantOp: store.CapabilityExecutionSucceeded,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := newCoordinatorStore(t)
+			jobs := &capabilityWriteFaultStore{Store: db, operation: test.operation, failures: 1}
+			handler := &fixedOutcomeCommand{outcome: test.outcome}
+			coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: jobs, Commands: handler, Outputs: db})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			if err := coordinator.Enqueue(ctx, jobInbound("capability-write-"+test.operation, "ping")); err != nil {
+				t.Fatal(err)
+			}
+			job := claimOnlyConversationJob(t, db)
+			coordinator.execute(ctx, job)
+			saved, err := db.GetConversationJob(ctx, job.ID)
+			if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait {
+				t.Fatalf("persistence failure terminalized job: job=%#v err=%v", saved, err)
+			}
+			executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+			if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionRunning {
+				t.Fatalf("operation did not remain resumable: executions=%#v err=%v", executions, err)
+			}
+
+			coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+			saved, err = db.GetConversationJob(ctx, job.ID)
+			if err != nil || saved == nil || saved.State != test.wantState {
+				t.Fatalf("retry state: job=%#v err=%v", saved, err)
+			}
+			executions, err = db.CapabilityExecutionsForJob(ctx, job.ID)
+			if err != nil || len(executions) != 1 || executions[0].State != test.wantOp {
+				t.Fatalf("retry operation state=%#v err=%v", executions, err)
+			}
+			if handler.calls != 2 {
+				t.Fatalf("read capability calls=%d want=2", handler.calls)
+			}
+		})
+	}
+}
+
+func TestCoordinatorRetriesAgentInfrastructureFailure(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent: agentResultFunc(func(context.Context, agent.Input) agent.Result {
+			return agent.Result{Handled: true, State: agent.RunStateFailed, Err: errors.New("agent run row unavailable")}
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(t.Context(), jobInbound("agent-infrastructure-retry", "帮我看看")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(t.Context(), job)
+	saved, err := db.GetConversationJob(t.Context(), job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait {
+		t.Fatalf("agent infrastructure failure was not retryable: job=%#v err=%v", saved, err)
+	}
+	if records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10); err != nil || len(records) != 0 {
+		t.Fatalf("agent infrastructure failure produced output=%#v err=%v", records, err)
+	}
+}
+
 func TestCoordinatorRecoversRunningLeaseDuringLiveRun(t *testing.T) {
 	db := newCoordinatorStore(t)
 	jobs := &periodicRecoveryStore{Store: db}
@@ -683,7 +916,7 @@ func TestCoordinatorRecoversRunningLeaseDuringLiveRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := coordinator.Enqueue(ctx, jobInbound("periodic-recovery", "ping")); err != nil {
 		t.Fatal(err)
@@ -772,11 +1005,38 @@ func TestCoordinatorSendsOneProgressMessageOnlyWhenAgentIsSlow(t *testing.T) {
 			if err := coordinator.Enqueue(t.Context(), jobInbound("progress-"+test.name, "请仔细想想这个问题")); err != nil {
 				t.Fatal(err)
 			}
-			coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
-			records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
+			job := claimOnlyConversationJob(t, db)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				coordinator.execute(t.Context(), job)
+			}()
+			records := make([]delivery.Record, 0, 2)
+			if test.delay > 0 {
+				deadline := time.Now().Add(test.delay)
+				for len(records) == 0 && time.Now().Before(deadline) {
+					due, claimErr := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 1)
+					if claimErr != nil {
+						t.Fatal(claimErr)
+					}
+					records = append(records, due...)
+					if len(records) == 0 {
+						time.Sleep(time.Millisecond)
+					}
+				}
+				if len(records) != 1 || records[0].Message.Kind != "agent_progress" {
+					t.Fatalf("live progress records=%#v", records)
+				}
+				if err := db.Complete(t.Context(), records[0].ID, delivery.Outcome{State: delivery.OutcomeAccepted}, time.Time{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			<-done
+			finalRecords, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
 			if err != nil {
 				t.Fatal(err)
 			}
+			records = append(records, finalRecords...)
 			texts := make([]string, 0, len(records))
 			keys := make([]string, 0, len(records))
 			for _, record := range records {

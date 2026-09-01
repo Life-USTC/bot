@@ -194,7 +194,7 @@ func TestPublicCommandCacheRejectsIncompleteEntries(t *testing.T) {
 	}
 }
 
-func TestOpenConfiguresBusyTimeout(t *testing.T) {
+func TestOpenConfiguresSerializedSQLitePoolAndBusyTimeout(t *testing.T) {
 	path := t.TempDir() + "/bot.db"
 	s, err := Open(path)
 	if err != nil {
@@ -208,6 +208,13 @@ func TestOpenConfiguresBusyTimeout(t *testing.T) {
 	}
 	if timeout != 5000 {
 		t.Fatalf("busy_timeout = %d, want 5000", timeout)
+	}
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max := sqlDB.Stats().MaxOpenConnections; max != 1 {
+		t.Fatalf("max open SQLite connections = %d, want 1", max)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("database was not created at %q: %v", path, err)
@@ -1908,10 +1915,10 @@ func TestConversationEventsPreserveTypedTranscriptAndDedupe(t *testing.T) {
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	inputs := []ConversationEvent{
-		{Identity: ident, JobID: 7, DedupeKey: "job:7:user", Type: ConversationEventUser, Content: "订阅数学分析"},
-		{Identity: ident, JobID: 7, DedupeKey: "job:7:assistant:call-1", Type: ConversationEventAssistant, ToolCalls: []ConversationToolCall{{ID: "call-1", Name: "invoke_bot_capability", Arguments: `{"capability":"subscription"}`}}},
-		{Identity: ident, JobID: 7, DedupeKey: "job:7:tool:call-1", Type: ConversationEventToolResult, ToolCallID: "call-1", ToolName: "invoke_bot_capability", Content: "已订阅数学分析"},
-		{Identity: ident, JobID: 7, DedupeKey: "job:7:assistant:final", Type: ConversationEventAssistant, Content: "已经订阅好了。"},
+		{Identity: ident, DedupeKey: "job:7:user", Type: ConversationEventUser, Content: "订阅数学分析"},
+		{Identity: ident, DedupeKey: "job:7:assistant:call-1", Type: ConversationEventAssistant, ToolCalls: []ConversationToolCall{{ID: "call-1", Name: "invoke_bot_capability", Arguments: `{"capability":"subscription"}`}}},
+		{Identity: ident, DedupeKey: "job:7:tool:call-1", Type: ConversationEventToolResult, ToolCallID: "call-1", ToolName: "invoke_bot_capability", Content: "已订阅数学分析"},
+		{Identity: ident, DedupeKey: "job:7:assistant:final", Type: ConversationEventAssistant, Content: "已经订阅好了。"},
 	}
 	for _, input := range inputs {
 		if _, created, err := s.AppendConversationEvent(ctx, input); err != nil || !created {
@@ -1930,12 +1937,61 @@ func TestConversationEventsPreserveTypedTranscriptAndDedupe(t *testing.T) {
 	}
 }
 
+func TestConversationEventsRequireCurrentJobLease(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "event-lease", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	first, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || first == nil {
+		t.Fatalf("first claim=%#v err=%v", first, err)
+	}
+	firstEvent := ConversationEvent{
+		Identity: ident, JobID: job.ID, JobRevision: first.Revision, JobLeaseToken: first.LeaseToken,
+		DedupeKey: "event-lease:first", Type: ConversationEventUser, Content: "first",
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, firstEvent); err != nil || !created {
+		t.Fatalf("first event created=%v err=%v", created, err)
+	}
+	recoveredAt := first.ClaimedAt.Add(time.Minute)
+	if err := s.RecoverConversationJobLeases(ctx, recoveredAt, time.Nanosecond); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.ClaimConversationJob(ctx, ident, recoveredAt)
+	if err != nil || second == nil {
+		t.Fatalf("second claim=%#v err=%v", second, err)
+	}
+	stale := firstEvent
+	stale.DedupeKey = "event-lease:stale"
+	stale.Type = ConversationEventAssistant
+	stale.Content = "stale assistant output"
+	if _, created, err := s.AppendConversationEvent(ctx, stale); err == nil || created {
+		t.Fatalf("stale transcript event created=%v err=%v", created, err)
+	}
+	current := stale
+	current.JobRevision = second.Revision
+	current.JobLeaseToken = second.LeaseToken
+	current.DedupeKey = "event-lease:current"
+	current.Content = "current assistant output"
+	if _, created, err := s.AppendConversationEvent(ctx, current); err != nil || !created {
+		t.Fatalf("current transcript event created=%v err=%v", created, err)
+	}
+	if ok, err := s.CompleteConversationJob(ctx, second.ID, second.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete job ok=%v err=%v", ok, err)
+	}
+	current.DedupeKey = "event-lease:late"
+	if _, created, err := s.AppendConversationEvent(ctx, current); err == nil || created {
+		t.Fatalf("late terminal transcript event created=%v err=%v", created, err)
+	}
+}
+
 func TestConversationEventsPersistSupportedMultimodalParts(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()
 	ident := conversationJobTestIdentity()
 	event := ConversationEvent{
-		Identity: ident, JobID: 7, DedupeKey: "job:7:image", Type: ConversationEventUser,
+		Identity: ident, DedupeKey: "job:7:image", Type: ConversationEventUser,
 		Content: "看图", Parts: []ConversationMessagePart{
 			{Type: "text", Text: "看图"},
 			{Type: "image_url", URL: "data:image/png;base64,AAAA", Reference: "https://source.example/image.png", Detail: "auto", MIMEType: "image/png"},
@@ -1957,7 +2013,7 @@ func TestConversationEventsRejectOversizedMessageParts(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()
 	event := ConversationEvent{
-		Identity: conversationJobTestIdentity(), JobID: 7, DedupeKey: "job:7:oversized", Type: ConversationEventAssistant,
+		Identity: conversationJobTestIdentity(), DedupeKey: "job:7:oversized", Type: ConversationEventAssistant,
 		Parts: []ConversationMessagePart{{Type: "text", Text: strings.Repeat("x", maxConversationMessagePartsJSONBytes)}},
 	}
 	if _, created, err := s.AppendConversationEvent(ctx, event); err == nil || created {

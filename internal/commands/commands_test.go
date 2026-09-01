@@ -495,10 +495,10 @@ func TestFriendlyError(t *testing.T) {
 	if got := friendlyError(life.HTTPError{Method: http.MethodPost, Path: "/private?token=secret", StatusCode: http.StatusBadGateway, Body: "access_token=secret"}); got != "服务返回错误（HTTP 502）" {
 		t.Fatalf("HTTP friendlyError leaked diagnostics: %q", got)
 	}
-	if got := friendlyError(errors.New("server exploded")); got != "server exploded" {
-		t.Fatalf("passthrough friendlyError = %q", got)
+	if got := friendlyError(errors.New("server exploded at /private/token")); got != "服务暂时不可用，请稍后再试" {
+		t.Fatalf("sanitized friendlyError = %q", got)
 	}
-	if got := commandError("课表查不到：", errors.New("server exploded")); got != "课表查不到：server exploded" {
+	if got := commandError("课表查不到：", errors.New("server exploded")); got != "课表查不到：服务暂时不可用，请稍后再试" {
 		t.Fatalf("commandError = %q", got)
 	}
 }

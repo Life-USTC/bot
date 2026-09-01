@@ -195,10 +195,9 @@ func (s *BoundAgentCheckpointStore) Set(ctx context.Context, checkpointID string
 	})
 }
 
-// Delete removes a checkpoint only when its stored claim matches this bound
-// worker and the job has reached a terminal state at the same revision. The
-// old lease token is intentionally matched against the checkpoint row: the
-// conversation job clears its active lease as part of terminal transition.
+// Delete removes a checkpoint only when this exact lease terminalized the job.
+// A recovered worker may delete the predecessor checkpoint without first
+// adopting it; the predecessor cannot delete after the recovered lease wins.
 func (s *BoundAgentCheckpointStore) Delete(ctx context.Context, checkpointID string) error {
 	if s == nil || s.store == nil {
 		return errors.New("agent checkpoint store is unavailable")
@@ -216,12 +215,12 @@ func (s *BoundAgentCheckpointStore) Delete(ctx context.Context, checkpointID str
 		if err != nil {
 			return err
 		}
-		if !s.rowMatchesClaim(row) {
+		if row.JobID != s.claim.JobID || row.Revision != s.claim.Revision {
 			return ErrAgentCheckpointClaimMismatch
 		}
 		result := tx.Model(&conversationJobRow{}).
-			Where("id = ? AND revision = ? AND state IN ?",
-				s.claim.JobID, s.claim.Revision, conversationJobStateStrings([]ConversationJobState{
+			Where("id = ? AND revision = ? AND terminal_lease_token = ? AND state IN ?",
+				s.claim.JobID, s.claim.Revision, s.claim.LeaseToken, conversationJobStateStrings([]ConversationJobState{
 					ConversationJobStateCompleted, ConversationJobStateFailed,
 					ConversationJobStateExpired, ConversationJobStateCancelled,
 				})).UpdateColumn("updated_at", gorm.Expr("updated_at"))
@@ -231,14 +230,22 @@ func (s *BoundAgentCheckpointStore) Delete(ctx context.Context, checkpointID str
 		if result.RowsAffected != 1 {
 			return ErrAgentCheckpointClaimMismatch
 		}
-		result = tx.Where("id = ? AND job_id = ? AND revision = ? AND lease_token = ?",
-			checkpointID, s.claim.JobID, s.claim.Revision, s.claim.LeaseToken).Delete(&agentCheckpointRow{})
+		result = tx.Where("id = ? AND job_id = ? AND revision = ?",
+			checkpointID, s.claim.JobID, s.claim.Revision).Delete(&agentCheckpointRow{})
 		return result.Error
 	})
 }
 
 func (s *BoundAgentCheckpointStore) rowMatchesClaim(row agentCheckpointRow) bool {
 	return row.JobID == s.claim.JobID && row.Revision == s.claim.Revision && row.LeaseToken == s.claim.LeaseToken
+}
+
+func deleteAgentCheckpointsForJobs(tx *gorm.DB, jobIDs []int64) error {
+	jobIDs = uniqueInt64s(jobIDs)
+	if len(jobIDs) == 0 {
+		return nil
+	}
+	return tx.Where("job_id IN ?", jobIDs).Delete(&agentCheckpointRow{}).Error
 }
 
 func normalizeAgentCheckpointID(checkpointID string) (string, error) {

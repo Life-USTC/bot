@@ -173,29 +173,32 @@ var conversationJobClaimableStates = []ConversationJobState{
 	ConversationJobStateRetryWait,
 }
 
+var ErrConversationJobHasNonterminalOperations = errors.New("conversation job has nonterminal capability executions")
+
 type conversationJobRow struct {
-	ID               int64      `gorm:"primaryKey"`
-	UserID           int64      `gorm:"not null;index"`
-	Platform         string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:1;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:1;index:idx_conversation_jobs_conversation_state,priority:1"`
-	ExternalUserID   string     `gorm:"not null"`
-	ConversationType string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:2;index:idx_conversation_jobs_conversation_state,priority:2"`
-	ConversationID   string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:3;index:idx_conversation_jobs_conversation_state,priority:3"`
-	Sequence         int64      `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:4;index"`
-	SourceEventID    string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:2"`
-	State            string     `gorm:"not null;index:idx_conversation_jobs_state_expiry,priority:1;index:idx_conversation_jobs_conversation_state,priority:4"`
-	WaitReason       string     `gorm:"not null;default:''"`
-	InputJSON        string     `gorm:"not null"`
-	InvocationJSON   string     `gorm:"not null"`
-	LeaseToken       string     `gorm:"index"`
-	ClaimedAt        *time.Time `gorm:"index"`
-	Revision         int        `gorm:"not null;default:1"`
-	Attempts         int        `gorm:"not null;default:0"`
-	MaxAttempts      int        `gorm:"not null;default:0"`
-	RetryAt          *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:2"`
-	ExpiresAt        *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:3"`
-	LastError        string
-	CreatedAt        time.Time `gorm:"index"`
-	UpdatedAt        time.Time
+	ID                 int64      `gorm:"primaryKey"`
+	UserID             int64      `gorm:"not null;index"`
+	Platform           string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:1;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:1;index:idx_conversation_jobs_conversation_state,priority:1"`
+	ExternalUserID     string     `gorm:"not null"`
+	ConversationType   string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:2;index:idx_conversation_jobs_conversation_state,priority:2"`
+	ConversationID     string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:3;index:idx_conversation_jobs_conversation_state,priority:3"`
+	Sequence           int64      `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:4;index"`
+	SourceEventID      string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:2"`
+	State              string     `gorm:"not null;index:idx_conversation_jobs_state_expiry,priority:1;index:idx_conversation_jobs_conversation_state,priority:4"`
+	WaitReason         string     `gorm:"not null;default:''"`
+	InputJSON          string     `gorm:"not null"`
+	InvocationJSON     string     `gorm:"not null"`
+	LeaseToken         string     `gorm:"index"`
+	TerminalLeaseToken string     `gorm:"not null;default:''"`
+	ClaimedAt          *time.Time `gorm:"index"`
+	Revision           int        `gorm:"not null;default:1"`
+	Attempts           int        `gorm:"not null;default:0"`
+	MaxAttempts        int        `gorm:"not null;default:0"`
+	RetryAt            *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:2"`
+	ExpiresAt          *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:3"`
+	LastError          string
+	CreatedAt          time.Time `gorm:"index"`
+	UpdatedAt          time.Time
 }
 
 func (conversationJobRow) TableName() string {
@@ -541,12 +544,13 @@ func claimConversationJobRow(tx *gorm.DB, id int64, now time.Time) (*Conversatio
 			  AND earlier.state IN ?
 		)`, conversationJobStateStrings(conversationJobBlockingStates)).
 		Updates(map[string]any{
-			"state":       string(ConversationJobStateRunning),
-			"wait_reason": "",
-			"attempts":    gorm.Expr("attempts + 1"),
-			"lease_token": token,
-			"claimed_at":  claimedAt,
-			"updated_at":  now,
+			"state":                string(ConversationJobStateRunning),
+			"wait_reason":          "",
+			"attempts":             gorm.Expr("attempts + 1"),
+			"lease_token":          token,
+			"terminal_lease_token": "",
+			"claimed_at":           claimedAt,
+			"updated_at":           now,
 		})
 	if result.Error != nil {
 		return nil, result.Error
@@ -583,14 +587,31 @@ func (s *Store) TransitionConversationJob(ctx context.Context, id int64, leaseTo
 	if err != nil {
 		return false, err
 	}
-	updates["updated_at"] = nowUTC()
-	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("id = ? AND state = ? AND lease_token = ?", id, string(ConversationJobStateRunning), leaseToken).
-		Updates(updates)
-	if result.Error != nil {
-		return false, result.Error
+	if conversationJobStateIsTerminal(transition.State) {
+		updates["terminal_lease_token"] = leaseToken
+	} else {
+		updates["terminal_lease_token"] = ""
 	}
-	return result.RowsAffected == 1, nil
+	now := nowUTC()
+	updates["updated_at"] = now
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	transitioned := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&conversationJobRow{}).
+			Where("id = ? AND state = ? AND lease_token = ? AND (expires_at IS NULL OR expires_at > ?)",
+				id, string(ConversationJobStateRunning), leaseToken, now).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		transitioned = true
+		return finalizeCapabilityExecutionsForJobTransition(tx, id, leaseToken, transition, now)
+	})
+	return transitioned && err == nil, err
 }
 
 // CompleteConversationJob resolves a running claim successfully.
@@ -640,7 +661,10 @@ func (s *Store) CancelConversationJob(ctx context.Context, id int64, reason stri
 		if !cancelled {
 			return nil
 		}
-		return terminalizeCapabilityExecutionsForJobs(tx, []int64{id}, CapabilityExecutionCancelled, reason, now)
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{id}, CapabilityExecutionCancelled, reason, now); err != nil {
+			return err
+		}
+		return deleteAgentCheckpointsForJobs(tx, []int64{id})
 	})
 	return cancelled, err
 }
@@ -683,6 +707,67 @@ func markRunningCapabilityExecutionsUnknown(tx *gorm.DB, jobIDs []int64, reason 
 			"finished_at": now,
 			"updated_at":  now,
 		}).Error
+}
+
+func finalizeCapabilityExecutionsForJobTransition(
+	tx *gorm.DB,
+	jobID int64,
+	leaseToken string,
+	transition ConversationJobTransition,
+	now time.Time,
+) error {
+	if !conversationJobStateIsTerminal(transition.State) {
+		return nil
+	}
+	reason := trimConversationJobError(transition.LastError)
+	switch transition.State {
+	case ConversationJobStateCompleted:
+		if reason == "" {
+			reason = "worker lease changed before the operation reached a recorded outcome"
+		}
+		if err := tx.Model(&capabilityExecutionRow{}).
+			Where("job_id = ? AND state = ? AND LOWER(effect) <> LOWER(?) AND COALESCE(lease_token, '') <> ?",
+				jobID, string(CapabilityExecutionRunning), "read", leaseToken).
+			Updates(map[string]any{
+				"state": string(CapabilityExecutionUnknown), "error": reason,
+				"finished_at": now, "updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+	case ConversationJobStateFailed:
+		if reason == "" {
+			reason = "conversation job failed"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionFailed, reason, now); err != nil {
+			return err
+		}
+	case ConversationJobStateExpired:
+		if reason == "" {
+			reason = "conversation job expired"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionExpired, reason, now); err != nil {
+			return err
+		}
+	case ConversationJobStateCancelled:
+		if reason == "" {
+			reason = "conversation job cancelled"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionCancelled, reason, now); err != nil {
+			return err
+		}
+	}
+	var nonterminal int64
+	if err := tx.Model(&capabilityExecutionRow{}).
+		Where("job_id = ? AND state NOT IN ?", jobID, []string{
+			string(CapabilityExecutionSucceeded), string(CapabilityExecutionFailed), string(CapabilityExecutionUnknown),
+			string(CapabilityExecutionDenied), string(CapabilityExecutionCancelled), string(CapabilityExecutionExpired),
+		}).Count(&nonterminal).Error; err != nil {
+		return err
+	}
+	if nonterminal != 0 {
+		return ErrConversationJobHasNonterminalOperations
+	}
+	return nil
 }
 
 func uniqueInt64s(values []int64) []int64 {
@@ -770,35 +855,6 @@ func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Iden
 			"revision":    gorm.Expr("revision + 1"),
 			"updated_at":  now,
 		}).Error
-}
-
-// UnblockAuthorizedConversationJobs repairs the small crash window between a
-// successful credential commit and the auth poller's wake-up call. A pending
-// login session deliberately blocks an older credential from releasing work.
-func (s *Store) UnblockAuthorizedConversationJobs(ctx context.Context, now time.Time) error {
-	now = normalizeStoreTime(now)
-	return s.db.WithContext(ctx).Exec(`
-		UPDATE conversation_jobs
-		SET state = ?, wait_reason = '', retry_at = NULL, revision = revision + 1, updated_at = ?
-		WHERE state = ?
-		  AND (expires_at IS NULL OR expires_at > ?)
-		  AND EXISTS (
-			SELECT 1 FROM credentials
-			WHERE credentials.user_id = conversation_jobs.user_id
-			  AND credentials.expires_at > ?
-		  )
-		  AND NOT EXISTS (
-			SELECT 1 FROM login_sessions
-			WHERE login_sessions.user_id = conversation_jobs.user_id
-			  AND login_sessions.platform = conversation_jobs.platform
-			  AND login_sessions.conversation_type = conversation_jobs.conversation_type
-			  AND login_sessions.conversation_id = conversation_jobs.conversation_id
-			  AND login_sessions.status = ?
-		  )`,
-		string(ConversationJobStateQueued), now,
-		string(ConversationJobStateWaitingAuth), now, now,
-		string(LoginStatusPending),
-	).Error
 }
 
 // RecoverConversationJobLeases moves stale running jobs into retry_wait. The
@@ -894,7 +950,10 @@ func (s *Store) ExpireConversationJobs(ctx context.Context, now time.Time) error
 		if len(ids) == 0 {
 			return nil
 		}
-		return terminalizeCapabilityExecutionsForJobs(tx, ids, CapabilityExecutionExpired, "conversation job expired", now)
+		if err := terminalizeCapabilityExecutionsForJobs(tx, ids, CapabilityExecutionExpired, "conversation job expired", now); err != nil {
+			return err
+		}
+		return deleteAgentCheckpointsForJobs(tx, ids)
 	})
 }
 
@@ -929,6 +988,15 @@ func validConversationJobState(state ConversationJobState) bool {
 		ConversationJobStateFailed,
 		ConversationJobStateExpired,
 		ConversationJobStateCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func conversationJobStateIsTerminal(state ConversationJobState) bool {
+	switch state {
+	case ConversationJobStateCompleted, ConversationJobStateFailed, ConversationJobStateExpired, ConversationJobStateCancelled:
 		return true
 	default:
 		return false

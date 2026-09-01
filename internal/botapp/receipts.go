@@ -19,7 +19,7 @@ type executionReceipts struct {
 func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, includeOnePending bool) (executionReceipts, error) {
 	executions, err := c.jobs.UnsentCapabilityExecutionsForJob(ctx, jobID)
 	if err != nil {
-		return executionReceipts{}, markConversationOutputPersistenceError(err)
+		return executionReceipts{}, markConversationPersistenceError(err)
 	}
 	result := executionReceipts{}
 	seen := make(map[string]bool)
@@ -60,7 +60,8 @@ func formatExecutionReceipt(execution store.CapabilityExecution) (string, bool) 
 		return "#待确认" + action + resource + "{" + subject + "}", true
 	case store.CapabilityExecutionSucceeded:
 		return "#已" + action + resource + "{" + subject + "}", true
-	case store.CapabilityExecutionDenied, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
+	case store.CapabilityExecutionDenied, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown,
+		store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
 		reason := receiptFailureReason(execution)
 		return "#" + action + resource + "失败{" + subject + "：" + reason + "}", true
 	default:
@@ -83,6 +84,10 @@ func receiptFailureReason(execution store.CapabilityExecution) string {
 		if reason == "" {
 			reason = "操作没有完成"
 		}
+	case store.CapabilityExecutionCancelled:
+		reason = "操作已取消"
+	case store.CapabilityExecutionExpired:
+		reason = "操作已过期"
 	default:
 		reason = "操作没有完成"
 	}

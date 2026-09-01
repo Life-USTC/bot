@@ -20,7 +20,7 @@ func TestTypedOutcomeUsesExplicitDomainMarkers(t *testing.T) {
 	result := textExecutor(func(h Handler, _ context.Context, _ store.Identity, _ []string) string {
 		return h.commandError("领域失败：", errors.New("backend unavailable"))
 	})(Handler{execution: &capabilityExecutionState{}}, ctx, store.Identity{}, invocation)
-	if result.Status != CapabilityOutcomeFailed || result.Response.Text != "领域失败：backend unavailable" {
+	if result.Status != CapabilityOutcomeFailed || result.Response.Text != "领域失败：服务暂时不可用，请稍后再试" {
 		t.Fatalf("explicit failure = %#v", result)
 	}
 
@@ -107,6 +107,28 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 	}
 	if policy := bus.Policy(); policy.Effect != EffectWrite || policy.Confirmation != ConfirmUser || policy.DataScope != DataScopeUserPrivate {
 		t.Fatalf("bus mutation metadata = %#v", policy)
+	}
+}
+
+func TestCapabilitySearchUnderstandsUnsegmentedChineseIntent(t *testing.T) {
+	docs := SearchCapabilityDocumentation("请帮我打开作业通知", CapabilitySearchOptions{})
+	if len(docs) == 0 || docs[0].ID != CapabilityNotify {
+		t.Fatalf("notification search = %#v", docs)
+	}
+
+	docs = SearchCapabilityDocumentation("我想取消课程订阅", CapabilitySearchOptions{})
+	if len(docs) == 0 || docs[0].ID != CapabilitySubscription {
+		t.Fatalf("subscription search = %#v", docs)
+	}
+
+	docs = SearchCapabilityDocumentation("打开 作业通知 查看 作业 通知 USTC", CapabilitySearchOptions{})
+	if len(docs) == 0 || docs[0].ID != CapabilityNotify {
+		t.Fatalf("multi-hint notification search = %#v", docs)
+	}
+
+	docs = SearchCapabilityDocumentation("作业通知 订阅 提醒 开启 打开 通知设置 homework notification subscribe enable", CapabilitySearchOptions{})
+	if len(docs) == 0 || docs[0].ID != CapabilityNotify {
+		t.Fatalf("bilingual synonym search = %#v", docs)
 	}
 }
 

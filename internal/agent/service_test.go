@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,128 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 	})
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestEmptyTerminalCapabilityResultsRemainExplicitEvidence(t *testing.T) {
+	for _, test := range []struct {
+		state store.CapabilityExecutionState
+		want  string
+	}{
+		{state: store.CapabilityExecutionSucceeded, want: "操作已完成，但没有返回内容。"},
+		{state: store.CapabilityExecutionFailed, want: "操作失败，未返回可用结果。"},
+		{state: store.CapabilityExecutionUnknown, want: "操作结果未知，系统没有自动重试。"},
+	} {
+		if got := capabilityExecutionModelResult(store.CapabilityExecution{State: test.state}); got != test.want {
+			t.Fatalf("state %s evidence=%q want=%q", test.state, got, test.want)
+		}
+	}
+	if got := existingCampusToolResult(store.CapabilityExecution{State: store.CapabilityExecutionUnknown}); got != "校园查询结果未知，系统没有自动重试。" {
+		t.Fatalf("empty campus unknown evidence=%q", got)
+	}
+}
+
+func TestDurableAgentRunRejectsMissingPersistenceIdentityBeforeModelCall(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	svc := &Service{enabled: true, handler: commands.Handler{Store: db}}
+	result := svc.Run(t.Context(), Input{Text: "hello", JobID: 1})
+	if result.State != RunStateFailed || result.Err == nil || !result.Handled {
+		t.Fatalf("durable run without persistence identity=%#v", result)
+	}
+}
+
+func TestDurableAgentRunRetriesWhenPriorAttemptBudgetCannotBeRead(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := store.Identity{Platform: "napcat", UserID: "budget-read", ConversationType: "private", ConversationID: "budget-read"}
+	job, _, err := db.EnqueueConversationJob(t.Context(), store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "budget-read", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{enabled: true, handler: commands.Handler{Store: db}}
+	result := svc.Run(t.Context(), Input{Text: "hello", Identity: ident, JobID: job.ID})
+	if result.State != RunStateFailed || result.Err == nil || !result.Handled {
+		t.Fatalf("durable run with unreadable attempt budget=%#v", result)
+	}
+}
+
+func TestAgentCapabilityPersistenceFailureMarksRunRetryable(t *testing.T) {
+	ctx := t.Context()
+	path := t.TempDir() + "/bot.db"
+	db, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	breaker, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = breaker.Close() }()
+
+	ident := store.Identity{Platform: "napcat", UserID: "agent-persistence", ConversationType: "private", ConversationID: "agent-persistence"}
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "agent-persistence", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim=%#v err=%v", claimed, err)
+	}
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		if _, err := breaker.ExecContext(ctx, "DROP TABLE capability_executions"); err != nil {
+			t.Errorf("break capability persistence: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-persistence","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+				"id":"call-persistence","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"ping\",\"arguments\":[]}"
+			}}]},"finish_reason":"tool_calls"}],
+			"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+		}`))
+	}))
+	defer server.Close()
+
+	var logs bytes.Buffer
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model", Logger: log.New(&logs, "", 0)},
+		commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := svc.Run(ctx, Input{
+		Text: "ping", Identity: ident, JobID: job.ID,
+		JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
+	})
+	if !result.Handled || result.State != RunStateFailed || result.Err == nil {
+		t.Fatalf("agent persistence result=%#v logs=%q", result, logs.String())
+	}
+	if !isDurableAgentStateError(result.Err) {
+		t.Fatalf("agent persistence error was not classified: %T %v", result.Err, result.Err)
+	}
+	if strings.Contains(result.Response.Text, "capability_executions") || strings.Contains(result.Response.Text, "database") {
+		t.Fatalf("persistence diagnostic exposed to user: %q", result.Response.Text)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("model requests=%d want=1", requests.Load())
 	}
 }
 
@@ -302,9 +425,14 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimed, err := db.ClaimConversationJob(context.Background(), ident)
+	if err != nil || claimed == nil || claimed.ID != job.ID {
+		t.Fatalf("claim MCP job=%#v err=%v", claimed, err)
+	}
+	trackedCtx := store.WithConversationJobLease(context.Background(), job.ID, claimed.LeaseToken)
 	tracked := newLazyMCPSession(svc, ident, job.ID)
 	defer func() { _ = tracked.Close() }()
-	if _, err := tracked.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err != nil {
+	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err != nil {
 		t.Fatal(err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID)
@@ -314,6 +442,30 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Receipt.Action != "查询" ||
 		executions[0].Receipt.Resource != "课程" || executions[0].Receipt.Subject != "math" {
 		t.Fatalf("MCP execution receipt = %#v", executions[0])
+	}
+	if ok, err := db.CompleteConversationJob(context.Background(), job.ID, claimed.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete first MCP job ok=%v err=%v", ok, err)
+	}
+
+	secondJob, _, err := db.EnqueueConversationJob(context.Background(), store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "lazy-mcp-same-lease", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondClaim, err := db.ClaimConversationJob(context.Background(), ident)
+	if err != nil || secondClaim == nil || secondClaim.ID != secondJob.ID {
+		t.Fatalf("claim second MCP job=%#v err=%v", secondClaim, err)
+	}
+	secondCtx := store.WithConversationJobLease(context.Background(), secondJob.ID, secondClaim.LeaseToken)
+	secondSession := newLazyMCPSession(svc, ident, secondJob.ID)
+	defer func() { _ = secondSession.Close() }()
+	prepared, trackedExecution, execute, err := secondSession.prepareExecution(secondCtx, "search_courses", map[string]any{"query": "math"})
+	if err != nil || !trackedExecution || !execute || prepared.State != store.CapabilityExecutionRunning {
+		t.Fatalf("prepare same-lease MCP read=%#v tracked=%v execute=%v err=%v", prepared, trackedExecution, execute, err)
+	}
+	if _, err := secondSession.call(secondCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("same-live MCP read was replayed: %v", err)
 	}
 }
 
@@ -959,9 +1111,14 @@ func TestMessagesForDoesNotDuplicatePersistedCurrentJobEvent(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("enqueue: job=%#v created=%v err=%v", job, created, err)
 	}
+	claimed, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim: job=%#v err=%v", claimed, err)
+	}
 	event := store.ConversationEvent{
-		Identity: ident, JobID: job.ID, DedupeKey: fmt.Sprintf("conversation-job:%d:user", job.ID),
-		Type: store.ConversationEventUser, Content: "同一个问题",
+		Identity: ident, JobID: job.ID, JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
+		DedupeKey: fmt.Sprintf("conversation-job:%d:user", job.ID),
+		Type:      store.ConversationEventUser, Content: "同一个问题",
 		Parts: []store.ConversationMessagePart{{Type: "text", Text: "现在是 2026-09-02 12:00，Asia/Shanghai。\n\n同一个问题"}},
 	}
 	if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
@@ -1424,14 +1581,15 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
-	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+	var runLog bytes.Buffer
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model", Logger: log.New(&runLog, "", 0)},
 		commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	input := claimAgentInput(t, db, ident, Input{Text: "打开两种通知", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
-		t.Fatalf("first run = %#v", first)
+		t.Fatalf("first run = %#v\nlog:\n%s", first, runLog.String())
 	}
 	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
 		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
@@ -1827,6 +1985,19 @@ func TestFinishAgentRunLogsErrors(t *testing.T) {
 	}
 }
 
+func TestServiceLogsRedactPrivateMCPDiagnostics(t *testing.T) {
+	var logs bytes.Buffer
+	svc := &Service{logger: log.New(&logs, "", 0)}
+	svc.logf("agent tool call failed: %v", errors.New("POST https://private.example/mcp?token=secret-token: connection refused"))
+	got := logs.String()
+	if strings.Contains(got, "private.example") || strings.Contains(got, "secret-token") {
+		t.Fatalf("private MCP diagnostic leaked to logs: %q", got)
+	}
+	if !strings.Contains(got, "<url>") {
+		t.Fatalf("redacted URL marker missing: %q", got)
+	}
+}
+
 func TestFinishAgentRunLogsUsageAndTotals(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
@@ -1837,7 +2008,10 @@ func TestFinishAgentRunLogsUsageAndTotals(t *testing.T) {
 	var logs bytes.Buffer
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	svc := &Service{logger: log.New(&logs, "", 0), handler: commands.Handler{Store: db}}
-	id := svc.recordAgentRun(ctx, Input{Text: "hello", Identity: ident}, "kimi", "kimi-k3")
+	id, err := svc.recordAgentRun(ctx, Input{Text: "hello", Identity: ident}, "kimi", "kimi-k3")
+	if err != nil {
+		t.Fatal(err)
+	}
 	svc.finishAgentRun(ctx, id, ident, store.AgentRunStatusCompleted, "ok", nil, "kimi", "kimi-k3", tokenUsage{
 		PromptTokens: 100, CachedTokens: 10, CacheMissTokens: 90, CompletionTokens: 20,
 		TotalTokens: 120, ModelRequests: 2, ToolCalls: 1,

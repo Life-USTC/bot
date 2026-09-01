@@ -691,7 +691,7 @@ if not os.path.isfile(database_path) or os.path.islink(database_path):
 connection = sqlite3.connect(database_path, timeout=30)
 try:
     version = connection.execute("PRAGMA user_version").fetchone()[0]
-    if version != 1:
+    if version != 2:
         raise RuntimeError(f"unexpected SQLite user_version: {version}")
     integrity = connection.execute("PRAGMA integrity_check").fetchone()
     if not integrity or integrity[0] != "ok":
