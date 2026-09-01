@@ -80,6 +80,8 @@ type JobRepository interface {
 	UpdateCapabilityExecutionReceipt(context.Context, string, store.CapabilityReceipt) error
 	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
 	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
+	RetryConversationJob(context.Context, int64, string, string) (bool, error)
+	EnqueueConversationJobProgress(context.Context, store.ConversationJobProgressEnqueue) (delivery.Record, bool, error)
 	RecoverConversationJobLeases(context.Context, time.Time, ...time.Duration) error
 	ExpireConversationJobs(context.Context, time.Time) error
 }
@@ -132,6 +134,34 @@ type conversationJobPayload struct {
 	Inbound    message.Inbound    `json:"inbound"`
 	Route      routing.Action     `json:"route"`
 	Activation routing.Activation `json:"activation"`
+}
+
+// conversationOutputPersistenceError distinguishes an output-boundary
+// failure from a domain or tool failure. The former must leave the job
+// retryable because the operation state and outbox transaction are the source
+// of truth for a later idempotent attempt.
+type conversationOutputPersistenceError struct {
+	err error
+}
+
+func (e conversationOutputPersistenceError) Error() string {
+	return fmt.Sprintf("persist conversation output: %v", e.err)
+}
+
+func (e conversationOutputPersistenceError) Unwrap() error {
+	return e.err
+}
+
+func markConversationOutputPersistenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return conversationOutputPersistenceError{err: err}
+}
+
+func isConversationOutputPersistenceError(err error) bool {
+	var target conversationOutputPersistenceError
+	return errors.As(err, &target)
 }
 
 func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
@@ -269,10 +299,6 @@ func (c *Coordinator) Run(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	now := time.Now().UTC()
-	if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
-		c.logf("recover conversation jobs failed: %v", err)
-	}
 	c.tick(ctx)
 	ticker := time.NewTicker(c.pollInterval)
 	defer ticker.Stop()
@@ -290,6 +316,9 @@ func (c *Coordinator) Run(ctx context.Context) {
 
 func (c *Coordinator) tick(ctx context.Context) {
 	now := time.Now().UTC()
+	if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
+		c.logf("recover conversation jobs failed: %v", err)
+	}
 	if err := c.jobs.ExpireConversationJobs(ctx, now); err != nil {
 		c.logf("expire conversation jobs failed: %v", err)
 		return
@@ -306,6 +335,14 @@ func (c *Coordinator) tick(ctx context.Context) {
 }
 
 func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if deadline := conversationJobRunDeadline(job); !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
 	payload, err := decodeConversationJobPayload(job)
 	if err != nil {
 		c.fail(ctx, job, err)
@@ -336,15 +373,18 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		select {
 		case <-progressStop:
 			return
+		case <-ctx.Done():
+			return
 		case <-timer.C:
 			outputMu.Lock()
 			defer outputMu.Unlock()
 			if visibleOutput {
 				return
 			}
-			if _, err := c.enqueueResponse(ctx, job, inbound, commands.Response{Text: "稍等一下", Kind: "agent_progress"}, part); err != nil {
+			next, err := c.enqueueResponse(ctx, job, inbound, commands.Response{Text: "稍等一下", Kind: "agent_progress"}, part)
+			if err != nil {
 				c.logf("enqueue progress for conversation job %d failed: %v", job.ID, err)
-			} else {
+			} else if next != part {
 				visibleOutput = true
 			}
 		}
@@ -453,6 +493,17 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
 }
 
+func conversationJobRunDeadline(job store.ConversationJob) time.Time {
+	deadline := job.ExpiresAt
+	if job.ClaimedAt != nil && !job.ClaimedAt.IsZero() {
+		leaseDeadline := job.ClaimedAt.Add(store.ConversationJobLease)
+		if deadline.IsZero() || leaseDeadline.Before(deadline) {
+			deadline = leaseDeadline
+		}
+	}
+	return deadline
+}
+
 func persistedInvocation(command string) store.ConversationJobInvocation {
 	result := store.ConversationJobInvocation{Command: strings.TrimSpace(command)}
 	if parsed, ok := commands.ParseInvocation(command); ok {
@@ -497,6 +548,17 @@ func (c *Coordinator) acknowledgeAgent(ctx context.Context, jobID int64) {
 }
 
 func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause error) {
+	if isConversationOutputPersistenceError(cause) {
+		ok, err := c.jobs.RetryConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
+		if err != nil {
+			c.logf("retry conversation job %d after output persistence failure failed: %v", job.ID, err)
+		} else if !ok {
+			c.logf("retry conversation job %d after output persistence failure lost lease", job.ID)
+		} else {
+			c.logf("conversation job %d output persistence failed; moved to retry_wait: %v", job.ID, cause)
+		}
+		return
+	}
 	ok, err := c.jobs.FailConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
 	if err != nil {
 		c.logf("fail conversation job %d failed: %v", job.ID, err)
@@ -512,6 +574,19 @@ func (c *Coordinator) enqueueResponse(ctx context.Context, job store.Conversatio
 		return start, err
 	}
 	for index, outbound := range messages {
+		if outbound.Kind == "agent_progress" {
+			_, created, err := c.jobs.EnqueueConversationJobProgress(ctx, store.ConversationJobProgressEnqueue{
+				JobID: job.ID, LeaseToken: job.LeaseToken, Message: outbound,
+			})
+			if err != nil {
+				return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
+			}
+			if !created {
+				return start, nil
+			}
+			c.recordOutbound(ctx, job, outbound)
+			continue
+		}
 		_, created, err := c.outputs.Enqueue(ctx, outbound)
 		if err != nil {
 			return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
@@ -534,14 +609,14 @@ func (c *Coordinator) commitResponse(
 ) (int, error) {
 	messages, next, err := c.responseOutbounds(ctx, job, inbound, response, start)
 	if err != nil {
-		return start, err
+		return start, markConversationOutputPersistenceError(err)
 	}
 	committed, err := c.jobs.CommitConversationJobOutput(ctx, store.ConversationJobOutputCommit{
 		JobID: job.ID, LeaseToken: job.LeaseToken, Messages: messages,
 		ReceiptIDs: receiptIDs, Transition: transition,
 	})
 	if err != nil {
-		return start, err
+		return start, markConversationOutputPersistenceError(err)
 	}
 	for index, output := range committed {
 		if output.Created && index < len(messages) {
@@ -569,9 +644,6 @@ func (c *Coordinator) responseOutbounds(ctx context.Context, job store.Conversat
 		replyTo := inbound.Source
 		replyTo.Sequence = part + 1
 		dedupeKey := fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, part)
-		if item.Kind == "agent_progress" {
-			dedupeKey = fmt.Sprintf("conversation-job:%d:progress", job.ID)
-		}
 		messages = append(messages, message.Outbound{
 			Kind: item.Kind, Target: inbound.Conversation, ReplyTo: &replyTo, Content: content,
 			Context:   responseContextForJob(job),

@@ -354,6 +354,129 @@ func TestConversationJobOutputCommitRollsBackJobReceiptAndOutboxTogether(t *test
 	}
 }
 
+func TestConversationJobProgressRequiresCurrentLeaseAndUsesOneReservedKey(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "progress-lease", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil || claimed.ID != job.ID {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	inbound := message.Outbound{
+		Kind: "agent_progress", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "稍等一下"}, DedupeKey: "caller-key-must-not-win",
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: "stale-token", Message: inbound,
+	}); err != nil {
+		t.Fatal(err)
+	} else if created {
+		t.Fatal("stale worker enqueued progress")
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: inbound,
+	}); err != nil || !created {
+		t.Fatalf("current worker progress created=%v err=%v", created, err)
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: inbound,
+	}); err != nil {
+		t.Fatal(err)
+	} else if created {
+		t.Fatal("progress was not idempotent")
+	}
+	if ok, err := s.CompleteConversationJob(ctx, job.ID, claimed.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete job ok=%v err=%v", ok, err)
+	}
+	if _, created, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: inbound,
+	}); err != nil {
+		t.Fatal(err)
+	} else if created {
+		t.Fatal("late progress enqueued after final output")
+	}
+
+	var rows []outgoingMessageRow
+	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].DedupeKey != "conversation-job:1:progress" {
+		t.Fatalf("progress rows=%#v", rows)
+	}
+}
+
+func TestConversationJobProgressAndFinalOutputRaceIsLeaseSerialized(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "progress-final-race", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	progress := message.Outbound{
+		Kind: "agent_progress", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "稍等一下"},
+	}
+	final := message.Outbound{
+		Kind: "agent", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "最终回复"}, DedupeKey: "conversation-job:1:revision:1:part:0",
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	progressErr := make(chan error, 1)
+	finalErr := make(chan error, 1)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, _, err := s.EnqueueConversationJobProgress(ctx, ConversationJobProgressEnqueue{
+			JobID: job.ID, LeaseToken: claimed.LeaseToken, Message: progress,
+		})
+		progressErr <- err
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+			JobID: claimed.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{final},
+			Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
+		})
+		finalErr <- err
+	}()
+	close(start)
+	wg.Wait()
+	if err := <-progressErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finalErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateCompleted {
+		t.Fatalf("raced final job=%#v", got)
+	}
+	var rows []outgoingMessageRow
+	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	progressCount := 0
+	finalCount := 0
+	for _, row := range rows {
+		switch row.DedupeKey {
+		case "conversation-job:1:progress":
+			progressCount++
+		case "conversation-job:1:revision:1:part:0":
+			finalCount++
+		}
+	}
+	if progressCount > 1 || finalCount != 1 {
+		t.Fatalf("raced output rows=%#v", rows)
+	}
+}
+
 func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()

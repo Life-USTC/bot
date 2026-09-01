@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,6 +79,48 @@ type rendererFunc func(*responses.Image) ([]byte, int, int, error)
 
 func (fn rendererFunc) RenderPNG(image *responses.Image) ([]byte, int, int, error) {
 	return fn(image)
+}
+
+type outputCommitFaultStore struct {
+	*store.Store
+	mu       sync.Mutex
+	failures int
+}
+
+func (s *outputCommitFaultStore) CommitConversationJobOutput(ctx context.Context, commit store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error) {
+	s.mu.Lock()
+	inject := s.failures > 0
+	if inject {
+		s.failures--
+	}
+	s.mu.Unlock()
+	if inject {
+		commit.Messages = append(commit.Messages, message.Outbound{DedupeKey: "injected-invalid-output"})
+	}
+	return s.Store.CommitConversationJobOutput(ctx, commit)
+}
+
+type periodicRecoveryStore struct {
+	*store.Store
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *periodicRecoveryStore) RecoverConversationJobLeases(ctx context.Context, now time.Time, _ ...time.Duration) error {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	if call == 1 {
+		return nil
+	}
+	return s.Store.RecoverConversationJobLeases(ctx, now, time.Nanosecond)
+}
+
+func (s *periodicRecoveryStore) recoveryCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
 }
 
 func newCoordinatorStore(t *testing.T) *store.Store {
@@ -449,6 +492,151 @@ func TestCoordinatorLeaseRetryReusesOutputRevision(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" {
 		t.Fatalf("outbox records = %#v", records)
+	}
+}
+
+func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &outputCommitFaultStore{Store: db, failures: 1}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: jobs,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "pong", Kind: "ping"}, true
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := coordinator.Enqueue(ctx, jobInbound("output-commit-retry", "ping")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateRetryWait || saved.LastError == "" {
+		t.Fatalf("failed output commit terminalized job: %#v", saved)
+	}
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil {
+		t.Fatal(err)
+	} else if len(records) != 0 {
+		t.Fatalf("rolled-back output records = %#v", records)
+	}
+
+	retried := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, retried)
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("retried job = %#v", saved)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "pong" {
+		t.Fatalf("retried output records=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorOutputCommitFailureLeavesConfirmationResumable(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &outputCommitFaultStore{Store: db, failures: 1}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: jobs,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "已执行", Kind: "settings"}, true
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	inbound := jobInbound("confirmation-output-retry", "通知 作业 开")
+	if err := coordinator.Enqueue(ctx, inbound); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateRetryWait {
+		t.Fatalf("confirmation output failure did not enter retry: %#v", saved)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation || executions[0].ReceiptState != "" {
+		t.Fatalf("confirmation operation after rollback=%#v err=%v", executions, err)
+	}
+
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
+		t.Fatalf("confirmation was not resumed: %#v", saved)
+	}
+	if err := coordinator.Enqueue(ctx, jobInbound("confirmation-output-retry-ok", "ok")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("approved confirmation job = %#v", saved)
+	}
+	if executions, err = db.CapabilityExecutionsForJob(ctx, job.ID); err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("confirmation operation was not executed once: %#v err=%v", executions, err)
+	}
+}
+
+func TestCoordinatorRecoversRunningLeaseDuringLiveRun(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &periodicRecoveryStore{Store: db}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: jobs,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "recovered", Kind: "ping"}, true
+		}),
+		Outputs: db, PollInterval: 5 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := coordinator.Enqueue(ctx, jobInbound("periodic-recovery", "ping")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	go coordinator.Run(ctx)
+
+	var saved *store.ConversationJob
+	for ctx.Err() == nil {
+		saved, err = db.GetConversationJob(ctx, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved != nil && saved.State == store.ConversationJobStateCompleted {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("periodic recovery did not requeue stuck job: %#v", saved)
+	}
+	if calls := jobs.recoveryCalls(); calls < 2 {
+		t.Fatalf("recovery only ran at startup: calls=%d", calls)
 	}
 }
 

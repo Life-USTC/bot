@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Life-USTC/Bot/internal/delivery"
@@ -24,6 +25,71 @@ type ConversationJobOutputCommit struct {
 type ConversationJobCommittedOutput struct {
 	Record  delivery.Record
 	Created bool
+}
+
+// ConversationJobProgressEnqueue is the lease-checked input for the single
+// best-effort progress message belonging to a running conversation job. The
+// store owns the idempotency key so progress can never share the key space of
+// a final response.
+type ConversationJobProgressEnqueue struct {
+	JobID      int64
+	LeaseToken string
+	Message    message.Outbound
+}
+
+// RetryConversationJob releases a running lease into durable retry_wait. It
+// deliberately changes no operation rows: a later attempt resumes from the
+// authoritative capability state and reuses the same output dedupe keys.
+func (s *Store) RetryConversationJob(ctx context.Context, id int64, leaseToken, reason string) (bool, error) {
+	return s.TransitionConversationJob(ctx, id, leaseToken, ConversationJobTransition{
+		State:     ConversationJobStateRetryWait,
+		RetryAt:   nowUTC(),
+		LastError: reason,
+	})
+}
+
+// EnqueueConversationJobProgress atomically checks that the supplied lease is
+// still current before inserting the one progress outbox row. A false result
+// means the worker lost its lease or the job already resolved; in either case
+// no message is inserted.
+func (s *Store) EnqueueConversationJobProgress(ctx context.Context, input ConversationJobProgressEnqueue) (delivery.Record, bool, error) {
+	if input.JobID <= 0 {
+		return delivery.Record{}, false, errors.New("conversation job id is invalid")
+	}
+	input.LeaseToken = strings.TrimSpace(input.LeaseToken)
+	if input.LeaseToken == "" {
+		return delivery.Record{}, false, errors.New("conversation job lease token is empty")
+	}
+	input.Message.DedupeKey = fmt.Sprintf("conversation-job:%d:progress", input.JobID)
+	now := nowUTC()
+
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+
+	var record delivery.Record
+	var created bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The matched update acquires SQLite's writer lock before the outbox
+		// insert. This serializes progress with the final-output transaction even
+		// when two Store instances share the same database.
+		result := tx.Model(&conversationJobRow{}).
+			Where("id = ? AND state = ? AND lease_token = ? AND expires_at > ?",
+				input.JobID, string(ConversationJobStateRunning), input.LeaseToken, now).
+			Updates(map[string]any{"updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		var err error
+		record, created, err = enqueueWithDB(tx, input.Message, now)
+		return err
+	})
+	if err != nil {
+		return delivery.Record{}, false, err
+	}
+	return record, created, nil
 }
 
 func (s *Store) CommitConversationJobOutput(ctx context.Context, commit ConversationJobOutputCommit) ([]ConversationJobCommittedOutput, error) {
