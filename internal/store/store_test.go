@@ -1128,6 +1128,9 @@ func TestOpenClosesObsoleteFailedNotificationWithoutReplay(t *testing.T) {
 	if err := s.db.Model(&loginSessionRow{}).Where("device_code = ?", "device").Update("status", "notify_failed").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := s.db.Exec("PRAGMA user_version = 0").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -1936,7 +1939,7 @@ func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 	}
 }
 
-func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
+func TestConversationEventsPreserveTypedTranscriptAndDedupe(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1945,47 +1948,26 @@ func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	for _, text := range []string{"first", "second", "third"} {
-		if err := s.RecordInteraction(ctx, ident, Interaction{
-			RawText: text, Handled: true, Reply: text + "-reply", Status: InteractionStatusHandled,
-		}); err != nil {
-			t.Fatal(err)
+	inputs := []ConversationEvent{
+		{Identity: ident, JobID: 7, DedupeKey: "job:7:user", Type: ConversationEventUser, Content: "订阅数学分析"},
+		{Identity: ident, JobID: 7, DedupeKey: "job:7:assistant:call-1", Type: ConversationEventAssistant, ToolCalls: []ConversationToolCall{{ID: "call-1", Name: "invoke_bot_capability", Arguments: `{"capability":"subscription"}`}}},
+		{Identity: ident, JobID: 7, DedupeKey: "job:7:tool:call-1", Type: ConversationEventToolResult, ToolCallID: "call-1", ToolName: "invoke_bot_capability", Content: "已订阅数学分析"},
+		{Identity: ident, JobID: 7, DedupeKey: "job:7:assistant:final", Type: ConversationEventAssistant, Content: "已经订阅好了。"},
+	}
+	for _, input := range inputs {
+		if _, created, err := s.AppendConversationEvent(ctx, input); err != nil || !created {
+			t.Fatalf("append event: created=%v err=%v", created, err)
 		}
 	}
-	all, err := s.HandledInteractionsAfter(ctx, ident, 0)
+	if _, created, err := s.AppendConversationEvent(ctx, inputs[2]); err != nil || created {
+		t.Fatalf("duplicate tool event: created=%v err=%v", created, err)
+	}
+	events, err := s.RecentConversationEvents(ctx, ident, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 3 || all[0].ID <= 0 || all[0].RawText != "first" || all[2].RawText != "third" {
-		t.Fatalf("interactions = %#v", all)
-	}
-	if err := s.SaveConversationSummary(ctx, ConversationSummary{
-		Identity: ident, Summary: "first two turns", ThroughInteractionID: all[1].ID,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	got, found, err := s.ConversationSummary(ctx, ident)
-	if err != nil || !found {
-		t.Fatalf("summary found = %v, err = %v", found, err)
-	}
-	if got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
-		t.Fatalf("summary = %#v", got)
-	}
-	if err := s.SaveConversationSummary(ctx, ConversationSummary{
-		Identity: ident, Summary: "stale", ThroughInteractionID: all[0].ID,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	got, found, err = s.ConversationSummary(ctx, ident)
-	if err != nil || !found || got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
-		t.Fatalf("summary regressed = %#v, found = %v, err = %v", got, found, err)
-	}
-	remaining, err := s.RecentHandledInteractionsAfter(ctx, ident, got.ThroughInteractionID, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(remaining) != 1 || remaining[0].RawText != "third" {
-		t.Fatalf("remaining = %#v", remaining)
+	if len(events) != 4 || events[0].Type != ConversationEventUser || events[1].ToolCalls[0].ID != "call-1" || events[2].Type != ConversationEventToolResult || events[3].Content != "已经订阅好了。" {
+		t.Fatalf("events = %#v", events)
 	}
 }
 
@@ -2047,6 +2029,7 @@ func TestOpenDropsObsoleteFeedbackDeliveryColumns(t *testing.T) {
 		"ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0",
 		"ALTER TABLE feedback_records ADD COLUMN sent_at datetime",
 		"ALTER TABLE feedback_records ADD COLUMN resolved numeric NOT NULL DEFAULT 0",
+		"PRAGMA user_version = 0",
 	} {
 		if err := s.db.Exec(statement).Error; err != nil {
 			t.Fatal(err)

@@ -165,14 +165,6 @@ type AgentSpending struct {
 	Currency         string
 }
 
-type ConversationSummary struct {
-	Identity             Identity
-	Summary              string
-	ThroughInteractionID int64
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-}
-
 type FeedbackRecord struct {
 	ID         int64
 	Identity   Identity
@@ -375,21 +367,6 @@ func (agentRunRow) TableName() string {
 	return "agent_runs"
 }
 
-type conversationSummaryRow struct {
-	ID                   int64  `gorm:"primaryKey"`
-	Platform             string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	ConversationType     string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	ConversationID       string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	Summary              string `gorm:"not null"`
-	ThroughInteractionID int64  `gorm:"not null;default:0"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-}
-
-func (conversationSummaryRow) TableName() string {
-	return "conversation_summaries"
-}
-
 type feedbackRecordRow struct {
 	ID               int64  `gorm:"primaryKey"`
 	UserID           int64  `gorm:"not null;index"`
@@ -509,31 +486,64 @@ func (s *Store) migrate() error {
 		&agentSettingRow{},
 		&busSettingRow{},
 		&agentRunRow{},
-		&conversationSummaryRow{},
 		&feedbackRecordRow{},
 		&outgoingMessageRow{},
 		&conversationJobSequenceRow{},
 		&conversationJobRow{},
 		&publicCommandCacheRow{},
+		&conversationEventRow{},
+		&agentCheckpointRow{},
+		&capabilityExecutionRow{},
 	); err != nil {
 		return err
 	}
-	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
-		if s.db.Migrator().HasColumn("feedback_records", column) {
-			if err := s.db.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
-				return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+	return s.migrateSchema()
+}
+
+const currentSchemaVersion = 1
+
+func (s *Store) migrateSchema() error {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	if version > currentSchemaVersion {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", version, currentSchemaVersion)
+	}
+	if version == currentSchemaVersion {
+		return nil
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
+			if tx.Migrator().HasColumn("feedback_records", column) {
+				if err := tx.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
+					return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+				}
 			}
 		}
-	}
-	// notify_failed mixed delivery state into the login domain. Credentials were
-	// already saved for these sessions, so close them without replaying a stale
-	// completion notification.
-	if err := s.db.Model(&loginSessionRow{}).
-		Where("status = ?", "notify_failed").
-		Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
-		return fmt.Errorf("normalize obsolete login status: %w", err)
-	}
-	return nil
+		// notify_failed mixed delivery state into the login domain. Credentials
+		// were already saved, so close it without replaying stale delivery.
+		if err := tx.Model(&loginSessionRow{}).
+			Where("status = ?", "notify_failed").
+			Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
+			return fmt.Errorf("normalize obsolete login status: %w", err)
+		}
+		if err := migrateLegacyConversationEvents(tx); err != nil {
+			return fmt.Errorf("migrate conversation events: %w", err)
+		}
+		// Generated semantic summaries are not evidence and must never be fed
+		// back to the model. The immutable deployment backup remains the audit
+		// copy of this removed data.
+		if tx.Migrator().HasTable("conversation_summaries") {
+			if err := tx.Migrator().DropTable("conversation_summaries"); err != nil {
+				return fmt.Errorf("drop obsolete conversation summaries: %w", err)
+			}
+		}
+		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)).Error; err != nil {
+			return fmt.Errorf("write schema version: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
@@ -1182,67 +1192,6 @@ func (s *Store) handledInteractions(ctx context.Context, ident Identity, afterID
 		}
 	}
 	return out, nil
-}
-
-func (s *Store) ConversationSummary(ctx context.Context, ident Identity) (ConversationSummary, bool, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return ConversationSummary{}, false, err
-	}
-	ident = normalizeIdentity(ident)
-	var row conversationSummaryRow
-	err := s.db.WithContext(ctx).
-		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ConversationSummary{}, false, nil
-	}
-	if err != nil {
-		return ConversationSummary{}, false, err
-	}
-	return ConversationSummary{
-		Identity:             ident,
-		Summary:              row.Summary,
-		ThroughInteractionID: row.ThroughInteractionID,
-		CreatedAt:            row.CreatedAt,
-		UpdatedAt:            row.UpdatedAt,
-	}, true, nil
-}
-
-func (s *Store) SaveConversationSummary(ctx context.Context, summary ConversationSummary) error {
-	if err := validateConversationIdentity(summary.Identity); err != nil {
-		return err
-	}
-	ident := normalizeIdentity(summary.Identity)
-	text := strings.TrimSpace(summary.Summary)
-	if text == "" || summary.ThroughInteractionID <= 0 {
-		return errors.New("conversation summary and checkpoint are required")
-	}
-	now := nowUTC()
-	row := conversationSummaryRow{
-		Platform:             ident.Platform,
-		ConversationType:     ident.ConversationType,
-		ConversationID:       ident.ConversationID,
-		Summary:              text,
-		ThroughInteractionID: summary.ThroughInteractionID,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "platform"},
-			{Name: "conversation_type"},
-			{Name: "conversation_id"},
-		},
-		DoUpdates: clause.Assignments(map[string]any{
-			"summary":                row.Summary,
-			"through_interaction_id": row.ThroughInteractionID,
-			"updated_at":             row.UpdatedAt,
-		}),
-		Where: clause.Where{Exprs: []clause.Expression{
-			clause.Expr{SQL: "excluded.through_interaction_id > conversation_summaries.through_interaction_id"},
-		}},
-	}).Create(&row).Error
 }
 
 func dereferenceTime(value *time.Time) time.Time {
