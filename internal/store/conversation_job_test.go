@@ -189,7 +189,7 @@ func TestConversationJobConcurrentClaimsAreExclusive(t *testing.T) {
 	}
 }
 
-func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
+func TestCapabilityConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()
 	ident := conversationJobTestIdentity()
@@ -199,16 +199,24 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 		State:     ConversationJobStateWaitingConfirmation,
 		ExpiresAt: expires,
 	})
+	operation, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: confirmation.ID, DedupeKey: "confirm-once", Capability: "logout",
+		Effect: "destructive", RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare confirmation: created=%v err=%v", created, err)
+	}
 
 	const consumers = 10
 	var wg sync.WaitGroup
 	consumed := make(chan *ConversationJob, consumers)
+	resolved := make(chan *CapabilityExecution, consumers)
 	errs := make(chan error, consumers)
 	for range consumers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			job, err := s.ConsumeConversationJobConfirmation(ctx, ident, now)
+			execution, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now)
 			if err != nil {
 				errs <- err
 				return
@@ -216,10 +224,14 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 			if job != nil {
 				consumed <- job
 			}
+			if execution != nil {
+				resolved <- execution
+			}
 		}()
 	}
 	wg.Wait()
 	close(consumed)
+	close(resolved)
 	close(errs)
 	for err := range errs {
 		t.Fatal(err)
@@ -230,6 +242,13 @@ func TestConversationJobConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	}
 	if len(confirmations) != 1 || confirmations[0].ID != confirmation.ID || confirmations[0].Revision != 2 || confirmations[0].State != ConversationJobStateQueued {
 		t.Fatalf("confirmation consumes = %#v", confirmations)
+	}
+	var operations []*CapabilityExecution
+	for execution := range resolved {
+		operations = append(operations, execution)
+	}
+	if len(operations) != 1 || operations[0].ID != operation.ID || operations[0].State != CapabilityExecutionApproved {
+		t.Fatalf("confirmation resolutions = %#v", operations)
 	}
 	if got := mustGetConversationJob(t, s, confirmation.ID); got.WaitReason != ConversationJobWaitReasonNone {
 		t.Fatalf("consumed confirmation wait reason = %q", got.WaitReason)
@@ -262,6 +281,12 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	waiting := enqueueConversationJobTest(t, s, first, "actor-one-confirm", ConversationJobEnqueue{
 		State: ConversationJobStateWaitingConfirmation, ExpiresAt: expires,
 	})
+	if _, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: first, JobID: waiting.ID, DedupeKey: "actor-one-confirm", Capability: "logout",
+		Effect: "destructive", RequiresConfirmation: true,
+	}); err != nil || !created {
+		t.Fatalf("prepare actor confirmation: created=%v err=%v", created, err)
+	}
 	queued := enqueueConversationJobTest(t, s, second, "actor-two-command", ConversationJobEnqueue{ExpiresAt: expires})
 
 	claimed, err := s.ClaimNextConversationJob(ctx, now)
@@ -275,14 +300,14 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 		t.Fatalf("complete second actor job: ok=%v err=%v", ok, err)
 	}
 
-	consumed, err := s.ConsumeConversationJobConfirmation(ctx, second, now)
+	_, consumed, err := s.ResolveCapabilityConfirmation(ctx, second, CapabilityConfirmationDecision{Approved: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if consumed != nil {
 		t.Fatalf("second actor consumed first actor confirmation: %#v", consumed)
 	}
-	consumed, err = s.ConsumeConversationJobConfirmation(ctx, first, now)
+	_, consumed, err = s.ResolveCapabilityConfirmation(ctx, first, CapabilityConfirmationDecision{Approved: true}, now)
 	if err != nil || consumed == nil || consumed.ID != waiting.ID {
 		t.Fatalf("first actor confirmation = %#v err=%v", consumed, err)
 	}

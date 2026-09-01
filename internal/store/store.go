@@ -478,27 +478,6 @@ func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
 	}
-	if err := s.db.AutoMigrate(
-		&userRow{},
-		&credentialRow{},
-		&loginSessionRow{},
-		&conversationStateRow{},
-		&interactionRow{},
-		&notificationSettingRow{},
-		&agentSettingRow{},
-		&busSettingRow{},
-		&agentRunRow{},
-		&feedbackRecordRow{},
-		&outgoingMessageRow{},
-		&conversationJobSequenceRow{},
-		&conversationJobRow{},
-		&publicCommandCacheRow{},
-		&conversationEventRow{},
-		&agentCheckpointRow{},
-		&capabilityExecutionRow{},
-	); err != nil {
-		return err
-	}
 	return s.migrateSchema()
 }
 
@@ -512,10 +491,31 @@ func (s *Store) migrateSchema() error {
 	if version > currentSchemaVersion {
 		return fmt.Errorf("database schema version %d is newer than supported version %d", version, currentSchemaVersion)
 	}
-	if version == currentSchemaVersion {
-		return nil
-	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(
+			&userRow{},
+			&credentialRow{},
+			&loginSessionRow{},
+			&conversationStateRow{},
+			&interactionRow{},
+			&notificationSettingRow{},
+			&agentSettingRow{},
+			&busSettingRow{},
+			&agentRunRow{},
+			&feedbackRecordRow{},
+			&outgoingMessageRow{},
+			&conversationJobSequenceRow{},
+			&conversationJobRow{},
+			&publicCommandCacheRow{},
+			&conversationEventRow{},
+			&agentCheckpointRow{},
+			&capabilityExecutionRow{},
+		); err != nil {
+			return fmt.Errorf("migrate schema tables: %w", err)
+		}
+		if version == currentSchemaVersion {
+			return nil
+		}
 		for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
 			if tx.Migrator().HasColumn("feedback_records", column) {
 				if err := tx.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
@@ -536,9 +536,16 @@ func (s *Store) migrateSchema() error {
 		// Generated semantic summaries are not evidence and must never be fed
 		// back to the model. The immutable deployment backup remains the audit
 		// copy of this removed data.
-		if tx.Migrator().HasTable("conversation_summaries") {
-			if err := tx.Migrator().DropTable("conversation_summaries"); err != nil {
-				return fmt.Errorf("drop obsolete conversation summaries: %w", err)
+		for _, table := range []string{
+			"conversation_summaries",
+			"pending_confirmations",
+			"pending_requests",
+			"notification_deliveries",
+		} {
+			if tx.Migrator().HasTable(table) {
+				if err := tx.Migrator().DropTable(table); err != nil {
+					return fmt.Errorf("drop obsolete table %s: %w", table, err)
+				}
 			}
 		}
 		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)).Error; err != nil {

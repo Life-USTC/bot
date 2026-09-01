@@ -450,6 +450,52 @@ func TestCoordinatorHostOnlyResponseIsQueuedOnce(t *testing.T) {
 	}
 }
 
+func TestCoordinatorSendsOneProgressMessageOnlyWhenAgentIsSlow(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		delay     time.Duration
+		wantTexts []string
+	}{
+		{name: "slow", delay: 30 * time.Millisecond, wantTexts: []string{"稍等一下", "最终回复"}},
+		{name: "fast", delay: 0, wantTexts: []string{"最终回复"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := newCoordinatorStore(t)
+			coordinator, err := NewCoordinator(CoordinatorConfig{
+				Jobs: db,
+				Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+					return commands.Response{}, false
+				}),
+				Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
+					if test.delay > 0 {
+						time.Sleep(test.delay)
+					}
+					return commands.Response{Text: "最终回复", Kind: "agent"}, true
+				}),
+				Outputs: db, ProgressDelay: 5 * time.Millisecond,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := coordinator.Enqueue(t.Context(), jobInbound("progress-"+test.name, "请仔细想想这个问题")); err != nil {
+				t.Fatal(err)
+			}
+			coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+			records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			texts := make([]string, 0, len(records))
+			for _, record := range records {
+				texts = append(texts, record.Message.Content.Text)
+			}
+			if fmt.Sprint(texts) != fmt.Sprint(test.wantTexts) {
+				t.Fatalf("outbound texts=%#v want=%#v", texts, test.wantTexts)
+			}
+		})
+	}
+}
+
 func TestCoordinatorNaturalCalendarLinkRequestDeliversUsablePrivateURL(t *testing.T) {
 	ctx := context.Background()
 	db := newCoordinatorStore(t)

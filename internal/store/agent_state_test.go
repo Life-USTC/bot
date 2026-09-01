@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -124,6 +125,9 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 		"PRAGMA user_version = 0",
 		`CREATE TABLE conversation_summaries (id integer primary key, platform text, conversation_type text, conversation_id text, summary text, through_interaction_id integer, created_at datetime, updated_at datetime)`,
 		`INSERT INTO conversation_summaries(platform, conversation_type, conversation_id, summary, through_interaction_id) VALUES ('napcat','private','42','模型生成的错误摘要',1)`,
+		`CREATE TABLE pending_confirmations (id integer primary key)`,
+		`CREATE TABLE pending_requests (id integer primary key)`,
+		`CREATE TABLE notification_deliveries (id integer primary key)`,
 		"DELETE FROM conversation_events",
 	} {
 		if _, err := db.Exec(statement); err != nil {
@@ -146,8 +150,10 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 	if len(events) != 2 || events[0].Content != "原始问题" || events[1].Content != "原始回答" {
 		t.Fatalf("migrated events = %#v", events)
 	}
-	if s.db.Migrator().HasTable("conversation_summaries") {
-		t.Fatal("semantic summary table survived migration")
+	for _, table := range []string{"conversation_summaries", "pending_confirmations", "pending_requests", "notification_deliveries"} {
+		if s.db.Migrator().HasTable(table) {
+			t.Fatalf("obsolete table %s survived migration", table)
+		}
 	}
 	var version int
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
@@ -155,6 +161,37 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 	}
 	if version != currentSchemaVersion {
 		t.Fatalf("schema version = %d", version)
+	}
+}
+
+func TestSchemaMigrationRejectsFutureVersionBeforeChangingTables(t *testing.T) {
+	path := t.TempDir() + "/future.db"
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if opened, err := Open(path); err == nil {
+		_ = opened.Close()
+		t.Fatal("future schema version was accepted")
+	}
+	db, err = sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("future database was modified before rejection")
 	}
 }
 

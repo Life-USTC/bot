@@ -139,8 +139,7 @@ func TestSessionCallClassifiesMCPErrorResultAsRecoverable(t *testing.T) {
 		t.Fatalf("result = %q, err = %v", result, err)
 	}
 	modelResult, ok := ModelToolErrorResult(err)
-	if !ok || !strings.Contains(modelResult, `"ok":false`) ||
-		!strings.Contains(modelResult, "write did not happen") || !strings.Contains(modelResult, "不要生成图片指令") {
+	if !ok || modelResult != "write did not happen" {
 		t.Fatalf("modelResult = %q, ok = %v", modelResult, ok)
 	}
 }

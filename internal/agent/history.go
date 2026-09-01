@@ -12,12 +12,17 @@ import (
 const (
 	conversationEventLimit        = 80
 	conversationCompactInputLimit = 128_000
+	conversationHistoryTokenLimit = 48_000
 )
 
 // conversationEventMessages restores exact role-bearing history. It never
 // turns host receipts, approval state, or generated summaries into user text.
 func conversationEventMessages(events []store.ConversationEvent) []*schema.Message {
-	events = completeConversationEventWindow(events)
+	events = exactConversationEventWindow(events, conversationHistoryTokenLimit)
+	return messagesFromConversationEvents(events)
+}
+
+func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.Message {
 	messages := make([]*schema.Message, 0, len(events))
 	for _, event := range events {
 		switch event.Type {
@@ -49,6 +54,29 @@ func conversationEventMessages(events []store.ConversationEvent) []*schema.Messa
 	return messages
 }
 
+// exactConversationEventWindow bounds history only by removing complete old
+// user turns. It never rewrites a tool result or inserts synthetic text into
+// the transcript sent to the model.
+func exactConversationEventWindow(events []store.ConversationEvent, tokenLimit int) []store.ConversationEvent {
+	events = completeConversationEventWindow(events)
+	if len(events) == 0 || tokenLimit <= 0 {
+		return events
+	}
+	latestUser := 0
+	for index, event := range events {
+		if event.Type != store.ConversationEventUser {
+			continue
+		}
+		latestUser = index
+		if estimateMessagesTokens(messagesFromConversationEvents(events[index:])) <= tokenLimit {
+			return events[index:]
+		}
+	}
+	// A single recent turn may itself exceed the history target. Keep it exact;
+	// the run-wide provider budget remains the final hard limit.
+	return events[latestUser:]
+}
+
 // A bounded tail may begin halfway through a tool exchange, which providers
 // reject. Start at the first retained user event so every restored tool result
 // has its assistant call in the same window.
@@ -72,6 +100,29 @@ func estimateTextTokens(text string) int {
 		}
 	}
 	return (ascii+3)/4 + other
+}
+
+func estimateMessagesTokens(messages []*schema.Message) int {
+	tokens := 0
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		tokens += estimateTextTokens(string(message.Role))
+		tokens += estimateTextTokens(message.Content)
+		tokens += estimateTextTokens(message.ReasoningContent)
+		for _, call := range message.ToolCalls {
+			tokens += estimateTextTokens(call.Function.Name)
+			tokens += estimateTextTokens(call.Function.Arguments)
+		}
+		for _, part := range message.UserInputMultiContent {
+			tokens += estimateTextTokens(part.Text)
+		}
+		for _, part := range message.AssistantGenMultiContent {
+			tokens += estimateTextTokens(part.Text)
+		}
+	}
+	return tokens
 }
 
 func limitRunes(text string, limit int) string {

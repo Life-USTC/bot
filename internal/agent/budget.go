@@ -19,9 +19,9 @@ const (
 	agentRunCleanupTimeout = 5 * time.Second
 
 	// Keep one bounded budget for logical prompt input plus the existing Kimi
-	// output ceiling. conversationCompactInputLimit is the largest provider
-	// input budget already used by history compaction; physical retries reuse
-	// their logical request's reservation instead of consuming it again.
+	// output ceiling. conversationCompactInputLimit is the hard provider input
+	// budget; physical retries reuse their logical request's reservation instead
+	// of consuming it again.
 	agentRunTokenBudget      int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
 	agentRunMaxToolCalls           = 12
 	agentRunMaxModelAttempts       = 5
@@ -45,14 +45,12 @@ type runMetrics struct {
 
 	stageMilliseconds map[string]int64
 	contextTokens     int64
-	compactionMs      int64
 	modelRequests     int64
 	toolCalls         int64
 }
 
 type runMetricsSnapshot struct {
 	contextTokens     int64
-	compactionMs      int64
 	modelRequests     int64
 	toolCalls         int64
 	stageMilliseconds map[string]int64
@@ -112,15 +110,6 @@ func (m *runMetrics) recordToolCall() {
 	m.mu.Unlock()
 }
 
-func (m *runMetrics) recordCompaction(duration time.Duration) {
-	if m == nil {
-		return
-	}
-	m.mu.Lock()
-	m.compactionMs += duration.Milliseconds()
-	m.mu.Unlock()
-}
-
 func (m *runMetrics) snapshot() runMetricsSnapshot {
 	if m == nil {
 		return runMetricsSnapshot{}
@@ -133,7 +122,6 @@ func (m *runMetrics) snapshot() runMetricsSnapshot {
 	}
 	return runMetricsSnapshot{
 		contextTokens:     m.contextTokens,
-		compactionMs:      m.compactionMs,
 		modelRequests:     m.modelRequests,
 		toolCalls:         m.toolCalls,
 		stageMilliseconds: stages,
@@ -333,12 +321,6 @@ func admitToolCall(ctx context.Context) error {
 func recordRunStage(ctx context.Context, stage string, duration time.Duration) {
 	if metrics := runMetricsFromContext(ctx); metrics != nil {
 		metrics.addStage(stage, duration)
-	}
-}
-
-func recordRunCompaction(ctx context.Context, duration time.Duration) {
-	if metrics := runMetricsFromContext(ctx); metrics != nil {
-		metrics.recordCompaction(duration)
 	}
 }
 

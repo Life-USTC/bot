@@ -280,12 +280,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	toolSetup, err := observeRunStageValue(ctx, "tool_setup", func() (struct {
 		tools   []tool.BaseTool
-		session *botmcp.Session
+		session *lazyMCPSession
 	}, error) {
 		tools, session, err := s.toolsFor(ctx, input.Identity, input.JobID, trace, input.SendUpdate, sendResponse)
 		return struct {
 			tools   []tool.BaseTool
-			session *botmcp.Session
+			session *lazyMCPSession
 		}{tools: tools, session: session}, err
 	})
 	tools := toolSetup.tools
@@ -332,15 +332,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
+	ctx = withToolOutcomes(ctx, newToolOutcomeRegistry())
 	repeatGuard := newToolRepeatGuard()
-	handlers := []adk.ChatModelAgentMiddleware{newToolHistoryReducer()}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "presto_assistant",
 		Description:   "Presto, a Life @ USTC QQ assistant",
 		Instruction:   currentInstruction(),
 		Model:         model,
 		MaxIterations: agentMaxIterations,
-		Handlers:      handlers,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools,
@@ -356,6 +355,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					}
 					recordToolCall(ctx)
 					result := fmt.Sprintf("未知工具：%s", name)
+					toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 					// An unknown tool cannot satisfy the plan; retain its canonical
 					// failure so a follow-up cannot retry it forever.
 					repeatGuard.recordFailure(unknownInput)
@@ -434,12 +434,24 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 				finishRun(store.AgentRunStatusIgnored, "", runErr)
 				return commands.Response{}, false
 			}
+			if errors.Is(runErr, auth.ErrNotLoggedIn) {
+				reply = s.beginLoginForInput(ctx, input)
+				finishRun(store.AgentRunStatusCompleted, reply, nil)
+				return agentLoginResponse(reply), true
+			}
 			reply := agentFailureReply(runID, runErr)
 			if isMCPAuthorizationError(runErr) {
 				reply = s.mcpFailureReply(ctx, input.Identity, runID, runErr)
+				if strings.HasPrefix(reply, "登录权限已失效。") {
+					reply = s.beginLoginForInput(ctx, input)
+					finishRun(store.AgentRunStatusCompleted, reply, nil)
+					return agentLoginResponse(reply), true
+				}
+				s.deleteAgentCheckpoint(ctx, checkpointID)
 				finishRun(store.AgentRunStatusCompleted, reply, nil)
 				return agentTextResponse(reply), true
 			}
+			s.deleteAgentCheckpoint(ctx, checkpointID)
 			finishRun(store.AgentRunStatusFailed, reply, runErr)
 			return agentTextResponse(reply), true
 		}
@@ -638,6 +650,9 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 }
 
 func (s *Service) toolEventType(ctx context.Context, jobID int64, toolCallID string) store.ConversationEventType {
+	if toolOutcomesFromContext(ctx).isError(toolCallID) {
+		return store.ConversationEventToolError
+	}
 	executions, err := s.handler.Store.CapabilityExecutionsForJob(ctx, jobID)
 	if err != nil {
 		s.logf("classify tool transcript event failed: job_id=%d error=%v", jobID, err)
@@ -788,21 +803,16 @@ func (s *Service) toolsFor(
 	trace *toolTraceNotifier,
 	sendUpdate func(context.Context, store.Identity, string) error,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
-) ([]tool.BaseTool, *botmcp.Session, error) {
+) ([]tool.BaseTool, *lazyMCPSession, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
-	var mcpSession *botmcp.Session
+	var mcpSession *lazyMCPSession
 	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
-		mcpTools, session, mcpErr := s.openMCPTools(ctx, ident, trace)
-		if mcpErr != nil {
-			s.logf("MCP tools unavailable: platform=%s conversation_type=%s conversation_id=%s error=%v",
-				ident.Platform, ident.ConversationType, ident.ConversationID, mcpErr)
-			if session != nil {
-				_ = session.Close()
-			}
-		} else {
-			mcpSession = session
-			tools = append(tools, mcpTools...)
+		mcpSession = newLazyMCPSession(s, ident, jobID, trace)
+		tools, err = mcpSession.appendTools(tools)
+		if err != nil {
+			_ = mcpSession.Close()
+			return nil, nil, err
 		}
 	}
 
@@ -847,42 +857,6 @@ func (s *Service) toolsFor(
 		return nil, nil, err
 	}
 	return tools, mcpSession, nil
-}
-
-func (s *Service) openMCPTools(ctx context.Context, ident store.Identity, trace *toolTraceNotifier) ([]tool.BaseTool, *botmcp.Session, error) {
-	token, err := s.auth.MCPAccessToken(ctx, ident)
-	if err != nil {
-		return nil, nil, fmt.Errorf("get MCP access token: %w", err)
-	}
-	session, err := s.mcpClient.OpenSession(ctx, token)
-	if err != nil {
-		return nil, nil, err
-	}
-	mcpTools, err := session.Tools(ctx)
-	if err != nil {
-		_ = session.Close()
-		return nil, nil, err
-	}
-	readOnlyTools := mcpTools[:0]
-	for _, mcpTool := range mcpTools {
-		if mcpTool.Annotations.ReadOnlyHint == nil || !*mcpTool.Annotations.ReadOnlyHint {
-			s.logf("MCP mutation tool hidden from agent: name=%s", mcpTool.Name)
-			continue
-		}
-		readOnlyTools = append(readOnlyTools, mcpTool)
-	}
-	einoTools, err := botmcp.ToEinoTools(readOnlyTools, func(ctx context.Context, name string, args map[string]any) (string, error) {
-		result, err := session.Call(ctx, name, args)
-		if trace != nil {
-			trace.Notify(ctx, name, args, result, err)
-		}
-		return result, err
-	})
-	if err != nil {
-		_ = session.Close()
-		return nil, nil, err
-	}
-	return einoTools, session, nil
 }
 
 func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) int64 {
@@ -950,10 +924,10 @@ func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Iden
 	if err != nil {
 		failureClass = agentFailureClass(err)
 	}
-	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d compaction_ms=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_compaction_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d",
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d",
 		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
 		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds(), failureClass,
-		metrics.contextTokens, metrics.compactionMs, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_compaction"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"])
+		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"])
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}
@@ -1163,14 +1137,9 @@ func formatToolResult(value string) string {
 	return value
 }
 
-const historyTurnLimit = 20
 const agentMaxIterations = 32
 const agentHTTPTimeout = 60 * time.Second
 const kimiMaxCompletionTokens = 8_192
-const maxHistoryTextRunes = 1200
-const maxToolResultRunes = 6000
-const agentToolHistoryTokenLimit int64 = 32_000
-const agentToolHistoryRetention = 2
 
 var shanghaiLocation = lifedata.ChinaLocation()
 
@@ -1230,26 +1199,16 @@ func intPointer(value int) *int {
 	return &value
 }
 
-func compactHistoryText(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	runes := []rune(text)
-	if len(runes) <= maxHistoryTextRunes {
-		return text
-	}
-	return string(runes[:maxHistoryTextRunes]) + "\n...(历史内容已截断)"
-}
-
 func agentFailureReply(runID int64, err error) string {
 	reply := "AI 助手出错，请稍后重试。"
 	if errors.Is(err, errAgentRunDeadline) {
-		reply = "AI 运行超过 90 秒，已停止。请缩小请求范围后重试。"
+		reply = "AI 运行超过 60 秒，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentContextBudget) {
 		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
 	} else if errors.Is(err, errAgentToolCallBudget) {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
+	} else if errors.Is(err, errAgentModelAttemptBudget) {
+		reply = "AI 服务仍然繁忙，5 次尝试后已停止。请稍后重试。"
 	} else if errors.Is(err, errAgentNonProgress) {
 		reply = "AI 工具计划没有取得进展，已停止。请换一种说法或缩小请求范围后重试。"
 	} else if errors.Is(err, errRepeatedToolCall) {
@@ -1298,24 +1257,14 @@ func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware 
 					logf("agent tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
+					toolOutcomesFromContext(ctx).markError(input.CallID)
 					return &compose.ToolOutput{Result: result}, nil
 				}
 				return nil, err
 			}
-			if out != nil {
-				out.Result = limitToolResult(out.Result)
-			}
 			return out, nil
 		}
 	}
-}
-
-func limitToolResult(result string) string {
-	runes := []rune(result)
-	if len(runes) <= maxToolResultRunes {
-		return result
-	}
-	return string(runes[:maxToolResultRunes]) + "\n...(工具结果过长，已截断；请缩小查询范围)"
 }
 
 func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMiddleware {
@@ -1333,6 +1282,7 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 					logf("agent streaming tool call failed: name=%s call_id=%s error=%v", input.Name, input.CallID, err)
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
+					toolOutcomesFromContext(ctx).markError(input.CallID)
 					return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{result})}, nil
 				}
 				return nil, err

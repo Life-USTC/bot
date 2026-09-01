@@ -23,7 +23,7 @@ const (
 	defaultJobPollInterval    = 250 * time.Millisecond
 	defaultJobBatchSize       = 4
 	defaultImageRenderTimeout = 5 * time.Second
-	userVisibleProgressDelay  = 2500 * time.Millisecond
+	defaultProgressDelay      = 2500 * time.Millisecond
 )
 
 type CommandHandler interface {
@@ -98,6 +98,7 @@ type CoordinatorConfig struct {
 	Recorder           Recorder
 	Renderer           Renderer
 	ImageRenderTimeout time.Duration
+	ProgressDelay      time.Duration
 	PollInterval       time.Duration
 	BatchSize          int
 	Logger             *log.Logger
@@ -115,6 +116,7 @@ type Coordinator struct {
 	recorder           Recorder
 	renderer           Renderer
 	imageRenderTimeout time.Duration
+	progressDelay      time.Duration
 	pollInterval       time.Duration
 	batchSize          int
 	logger             *log.Logger
@@ -145,10 +147,15 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	if batchSize <= 0 {
 		batchSize = defaultJobBatchSize
 	}
+	progressDelay := config.ProgressDelay
+	if progressDelay <= 0 {
+		progressDelay = defaultProgressDelay
+	}
 	return &Coordinator{
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
 		recorder: config.Recorder, renderer: config.Renderer,
 		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
+		progressDelay:      progressDelay,
 		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
 	}, nil
 }
@@ -325,7 +332,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	progressDone := make(chan struct{})
 	go func() {
 		defer close(progressDone)
-		timer := time.NewTimer(userVisibleProgressDelay)
+		timer := time.NewTimer(c.progressDelay)
 		defer timer.Stop()
 		select {
 		case <-progressStop:

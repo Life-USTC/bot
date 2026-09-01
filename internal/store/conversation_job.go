@@ -666,57 +666,6 @@ func (s *Store) ResolveUnknownConversationJob(ctx context.Context, id int64, sta
 	return result.RowsAffected == 1, nil
 }
 
-// ConsumeConversationJobConfirmation atomically consumes the oldest pending
-// confirmation for one actor in a conversation. Exactly one concurrent caller
-// can move it back to queued; subsequent calls return nil.
-func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
-	s.conversationJobMu.Lock()
-	defer s.conversationJobMu.Unlock()
-	if err := validateConversationIdentity(ident); err != nil {
-		return nil, err
-	}
-	ident = normalizeIdentity(ident)
-	now := claimConversationJobTime(at)
-	var consumed *ConversationJob
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row conversationJobRow
-		err := tx.Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ? AND expires_at > ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, string(ConversationJobStateWaitingConfirmation), now).
-			Order("sequence ASC").First(&row).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		result := tx.Model(&conversationJobRow{}).
-			Where("id = ? AND state = ? AND expires_at > ?", row.ID, string(ConversationJobStateWaitingConfirmation), now).
-			Updates(map[string]any{
-				"state":       string(ConversationJobStateQueued),
-				"wait_reason": "",
-				"retry_at":    nil,
-				"revision":    gorm.Expr("revision + 1"),
-				"updated_at":  now,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-		if err := tx.First(&row, row.ID).Error; err != nil {
-			return err
-		}
-		job, err := conversationJobFromRow(row)
-		if err != nil {
-			return err
-		}
-		consumed = &job
-		return nil
-	})
-	return consumed, err
-}
-
 // UnblockConversationJobsAfterAuth releases every unexpired auth-waiting job
 // for one actor's conversation lane. FIFO still serializes subsequent claims.
 func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Identity, at ...time.Time) error {
