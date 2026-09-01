@@ -46,11 +46,8 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 		if got, want := invocation.Policy(), descriptor.PolicyFor(invocation); got != want {
 			t.Errorf("%s invocation policy = %#v, descriptor policy = %#v", descriptor.ID, got, want)
 		}
-		if got := agentCommandNeedsConfirmation(invocation); got != (invocation.Policy().Confirmation == ConfirmUser) {
-			t.Errorf("%s confirmation policy diverged", descriptor.ID)
-		}
 	}
-	if len(seen) < 36 {
+	if len(seen) < 35 {
 		t.Fatalf("registered %d capabilities, want all capability families", len(seen))
 	}
 }
@@ -61,7 +58,6 @@ func TestNestedSettingsMutationsResolveChildPolicy(t *testing.T) {
 		id      CapabilityID
 	}{
 		{command: "设置 通知 课表 开", id: CapabilityNotify},
-		{command: "设置 工具调用 开", id: CapabilityAgentSettings},
 	}
 	for _, tt := range tests {
 		invocation, ok := ParseInvocation(tt.command)

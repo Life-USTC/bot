@@ -53,8 +53,8 @@ func TestHandleOutcomeReportsFailedDomainCallWithoutChangingDirectText(t *testin
 }
 
 func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testing.T) {
-	first := SearchCapabilities("课表", false)
-	second := SearchCapabilities("课表", false)
+	first := SearchCapabilityDocumentation("课表", CapabilitySearchOptions{})
+	second := SearchCapabilityDocumentation("课表", CapabilitySearchOptions{})
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("search is not deterministic:\nfirst=%#v\nsecond=%#v", first, second)
 	}
@@ -62,7 +62,7 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 		t.Fatalf("schedule was not the best match: %#v", first)
 	}
 
-	shared := SearchCapabilities("校车", true)
+	shared := SearchCapabilityDocumentation("校车", CapabilitySearchOptions{SharedConversation: true})
 	if len(shared) == 0 || shared[0].ID != CapabilityBus {
 		t.Fatalf("shared bus search = %#v", shared)
 	}
@@ -73,7 +73,7 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 			}
 		}
 	}
-	for _, result := range SearchCapabilities("课表", true) {
+	for _, result := range SearchCapabilityDocumentation("课表", CapabilitySearchOptions{SharedConversation: true}) {
 		if result.DataScope != DataScopePublic {
 			t.Fatalf("private capability leaked into shared search: %#v", result)
 		}
@@ -111,7 +111,7 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 }
 
 func TestMutationExpansionSplitsIndependentTargets(t *testing.T) {
-	subscription := ExpandCapabilityMutation(CapabilitySubscription, []string{"import", "CODE1.01", "CODE2.02"})
+	subscription := expandTestMutation(t, CapabilitySubscription, []string{"import", "CODE1.01", "CODE2.02"})
 	if len(subscription) != 2 {
 		t.Fatalf("subscription expansion = %#v", subscription)
 	}
@@ -121,19 +121,28 @@ func TestMutationExpansionSplitsIndependentTargets(t *testing.T) {
 	if got := subscription[1].CanonicalCommand(); got != "subscription import CODE2.02" {
 		t.Fatalf("second subscription invocation = %q", got)
 	}
-	opaque := ExpandCapabilityMutation(CapabilitySubscription, []string{"import", "CODE1", "CODE2"})
+	opaque := expandTestMutation(t, CapabilitySubscription, []string{"import", "CODE1", "CODE2"})
 	if len(opaque) != 2 || opaque[0].CanonicalCommand() != "subscription import CODE1" || opaque[1].CanonicalCommand() != "subscription import CODE2" {
 		t.Fatalf("opaque subscription expansion = %#v", opaque)
 	}
 
-	todo := ExpandCapabilityMutation(CapabilityTodo, []string{"delete", "1,2,3"})
+	todo := expandTestMutation(t, CapabilityTodo, []string{"delete", "1,2,3"})
 	if len(todo) != 3 || todo[0].CanonicalCommand() != "todo delete 1" || todo[2].CanonicalCommand() != "todo delete 3" {
 		t.Fatalf("todo expansion = %#v", todo)
 	}
-	read := ExpandCapabilityMutation(CapabilityCourse, []string{"数学分析"})
+	read := expandTestMutation(t, CapabilityCourse, []string{"数学分析"})
 	if len(read) != 1 || read[0].CanonicalCommand() != "course 数学分析" {
 		t.Fatalf("read expansion = %#v", read)
 	}
+}
+
+func expandTestMutation(t *testing.T, id CapabilityID, args []string) []Invocation {
+	t.Helper()
+	invocation, ok := NewInvocation(id, args)
+	if !ok {
+		t.Fatalf("invalid test invocation %s %#v", id, args)
+	}
+	return ExpandMutationInvocations(invocation)
 }
 
 func TestCapabilityExecutionDoesNotConfirmUnresolvedSubscriptionMutation(t *testing.T) {
@@ -169,7 +178,6 @@ func TestMutationExamplesCarryWriteConfirmationMetadata(t *testing.T) {
 		{command: "作业 完成 1", effect: EffectWrite},
 		{command: "作业 恢复 1", effect: EffectWrite},
 		{command: "通知 作业 开", effect: EffectWrite},
-		{command: "AI 工具 开", effect: EffectWrite},
 		{command: "校车 偏好 路线 东区 西区", effect: EffectWrite},
 		{command: "账户 退出", effect: EffectDestructive},
 	}
@@ -220,7 +228,7 @@ func TestDescribeInvocationBuildsHostReceiptAndApprovedOutcomeRetainsIt(t *testi
 	if description.Receipt.Action != ReceiptActionSubscribe || description.Receipt.Resource != ReceiptResourceSection {
 		t.Fatalf("receipt = %#v", description.Receipt)
 	}
-	if got := description.Receipt.Subject; got.Code != "CODE1.01" || got.ID != "12" || got.Course != "线性代数" || got.Teacher != "张老师" || got.Semester != "2026年秋季学期" {
+	if got := description.Receipt.Subject; got != "线性代数（张老师，2026年秋季学期）" {
 		t.Fatalf("receipt subject = %#v", got)
 	}
 	pending, err := handler.ExecuteCapability(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1.01"})

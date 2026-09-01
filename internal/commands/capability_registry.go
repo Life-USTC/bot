@@ -23,7 +23,6 @@ const (
 	CapabilitySubscription             CapabilityID = "subscription"
 	CapabilityNotify                   CapabilityID = "notify"
 	CapabilitySettings                 CapabilityID = "settings"
-	CapabilityAgentSettings            CapabilityID = "agent"
 	CapabilityFeedback                 CapabilityID = "feedback"
 	CapabilityPing                     CapabilityID = "ping"
 	CapabilityStatus                   CapabilityID = "status"
@@ -165,10 +164,10 @@ type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocatio
 
 // CapabilityPresenter maps a host response to the agent-facing result. It is
 // called after the descriptor policy has been resolved.
-type CapabilityPresenter func(Invocation, Response, CapabilityPolicy) AgentPresentation
+type CapabilityPresenter func(Invocation, Response, CapabilityPolicy) CapabilityPresentation
 
-// AgentPresentation is the result exposure decision for structured Agent invocations.
-type AgentPresentation struct {
+// CapabilityPresentation is the result-exposure decision for a host invocation.
+type CapabilityPresentation struct {
 	Text            string
 	DeliveredByHost bool
 	Response        Response
@@ -255,8 +254,8 @@ func textExecutor(run func(Handler, context.Context, store.Identity, []string) s
 	}
 }
 
-func defaultCapabilityPresenter(inv Invocation, response Response, policy CapabilityPolicy) AgentPresentation {
-	presentation := AgentPresentation{Response: response, Text: response.Text}
+func defaultCapabilityPresenter(inv Invocation, response Response, policy CapabilityPolicy) CapabilityPresentation {
+	presentation := CapabilityPresentation{Response: response, Text: response.Text}
 	switch policy.Exposure {
 	case ExposureHostOnly:
 		presentation.Text = ""
@@ -319,13 +318,6 @@ func homeworkPolicy(inv Invocation) CapabilityPolicy {
 
 func notifyPolicy(inv Invocation) CapabilityPolicy {
 	if len(inv.Args) >= 2 && firstArgIn(inv.Args[1:], "on", "off") {
-		return privateWritePolicy(inv, EffectWrite)
-	}
-	return readPolicy(inv, DataScopeUserPrivate)
-}
-
-func agentSettingsPolicy(inv Invocation) CapabilityPolicy {
-	if firstArgIn(inv.Args, "on", "off") {
 		return privateWritePolicy(inv, EffectWrite)
 	}
 	return readPolicy(inv, DataScopeUserPrivate)
@@ -439,9 +431,6 @@ func init() {
 		descriptor(CapabilitySettings, []string{"settings", "设置"}, CapabilityRequirements{DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, settingsArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.settings(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("settings", "设置", "管理通知等偏好", true, []HelpExample{example("设置", "查看设置命令")}, nil)),
-		descriptor(CapabilityAgentSettings, []string{"agent", "AI", "AI工具"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, agentArgsAcceptable, normalizeAgentArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.agentSettings(ctx, ident, args)
-		}, agentSettingsPolicy, helpMeta("advanced", "AI", "管理 AI 工具调用展示", true, []HelpExample{example("AI 工具", "查看当前工具调用提示设置"), example("AI 工具 开", "回答时显示 LLM 工具调用提示"), example("AI 工具 关", "回答时隐藏 LLM 工具调用提示"), example("设置 工具调用", "等同于「AI 工具」"), example("设置 工具调用 开", "等同于「AI 工具 开」"), example("设置 工具调用 关", "等同于「AI 工具 关」")}, nil)),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),

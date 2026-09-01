@@ -121,11 +121,6 @@ type NotificationSettings struct {
 	ReauthRequired  bool
 }
 
-type AgentSettings struct {
-	Identity        Identity
-	ExposeToolCalls bool
-}
-
 type BusSettings struct {
 	Identity        Identity
 	ShowSouthCampus bool
@@ -315,20 +310,6 @@ type notificationSettingRow struct {
 
 func (notificationSettingRow) TableName() string {
 	return "notification_settings"
-}
-
-type agentSettingRow struct {
-	UserID           int64  `gorm:"primaryKey"`
-	Platform         string `gorm:"not null"`
-	ExternalUserID   string `gorm:"not null"`
-	ConversationType string
-	ConversationID   string
-	ExposeToolCalls  bool `gorm:"not null"`
-	UpdatedAt        time.Time
-}
-
-func (agentSettingRow) TableName() string {
-	return "agent_settings"
 }
 
 type busSettingRow struct {
@@ -521,7 +502,6 @@ func (s *Store) migrateSchema() error {
 			&conversationStateRow{},
 			&interactionRow{},
 			&notificationSettingRow{},
-			&agentSettingRow{},
 			&busSettingRow{},
 			&agentRunRow{},
 			&feedbackRecordRow{},
@@ -563,6 +543,7 @@ func (s *Store) migrateSchema() error {
 			"pending_confirmations",
 			"pending_requests",
 			"notification_deliveries",
+			"agent_settings",
 		} {
 			if tx.Migrator().HasTable(table) {
 				if err := tx.Migrator().DropTable(table); err != nil {
@@ -1779,54 +1760,6 @@ func (s *Store) PauseNotificationsForReauth(ctx context.Context, ident Identity)
 		Updates(map[string]any{"reauth_required": true, "updated_at": nowUTC()}).Error
 }
 
-func (s *Store) AgentSettings(ctx context.Context, ident Identity) (AgentSettings, error) {
-	if err := validateIdentity(ident); err != nil {
-		return AgentSettings{}, err
-	}
-	ident = normalizeIdentity(ident)
-	var row agentSettingRow
-	err := s.db.WithContext(ctx).
-		Joins("JOIN users ON users.id = agent_settings.user_id").
-		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return AgentSettings{Identity: ident}, nil
-	}
-	if err != nil {
-		return AgentSettings{}, err
-	}
-	return agentSettingsFromRow(row, ident), nil
-}
-
-func (s *Store) SaveAgentSettings(ctx context.Context, settings AgentSettings) error {
-	settings.Identity = normalizeIdentity(settings.Identity)
-	userID, err := s.EnsureUser(ctx, settings.Identity)
-	if err != nil {
-		return err
-	}
-	now := nowUTC()
-	row := agentSettingRow{
-		UserID:           userID,
-		Platform:         settings.Identity.Platform,
-		ExternalUserID:   settings.Identity.UserID,
-		ConversationType: settings.Identity.ConversationType,
-		ConversationID:   settings.Identity.ConversationID,
-		ExposeToolCalls:  settings.ExposeToolCalls,
-		UpdatedAt:        now,
-	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"platform",
-			"external_user_id",
-			"conversation_type",
-			"conversation_id",
-			"expose_tool_calls",
-			"updated_at",
-		}),
-	}).Create(&row).Error
-}
-
 func (s *Store) BusSettings(ctx context.Context, ident Identity) (BusSettings, error) {
 	if err := validateIdentity(ident); err != nil {
 		return BusSettings{}, err
@@ -1883,19 +1816,6 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
 		ReauthRequired:  row.ReauthRequired,
-	}
-}
-
-func agentSettingsFromRow(row agentSettingRow, fallback Identity) AgentSettings {
-	ident := Identity{
-		Platform:         textutil.FirstNonEmpty(row.Platform, fallback.Platform),
-		UserID:           textutil.FirstNonEmpty(row.ExternalUserID, fallback.UserID),
-		ConversationType: textutil.FirstNonEmpty(row.ConversationType, fallback.ConversationType),
-		ConversationID:   textutil.FirstNonEmpty(row.ConversationID, fallback.ConversationID),
-	}
-	return AgentSettings{
-		Identity:        ident,
-		ExposeToolCalls: row.ExposeToolCalls,
 	}
 }
 

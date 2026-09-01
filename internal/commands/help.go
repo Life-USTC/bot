@@ -172,12 +172,6 @@ func helpOverviewRichText() string {
 }
 
 var helpTopicAliases = map[string]string{
-	"AI":           "advanced",
-	"ai":           "advanced",
-	"进阶":           "advanced",
-	"高级":           "advanced",
-	"帮助AI":         "advanced",
-	"帮助ai":         "advanced",
 	"快捷入口":         "shortcuts",
 	"快捷":           "shortcuts",
 	"shortcuts":    "shortcuts",
@@ -244,7 +238,6 @@ func capabilityTopic(name string) string {
 }
 
 var helpTopicTitles = map[string]string{
-	"advanced":     "AI",
 	"shortcuts":    "快捷入口",
 	"agenda":       "日程",
 	"schedule":     "课表",

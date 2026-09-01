@@ -89,18 +89,51 @@ func receiptFailureReason(execution store.CapabilityExecution) string {
 
 func appendReceiptLines(response commands.Response, prefix string, receipts executionReceipts) commands.Response {
 	parts := make([]string, 0, 2)
-	if text := strings.TrimSpace(response.Text); text != "" {
-		parts = append(parts, text)
-	}
 	if prefix = strings.TrimSpace(prefix); prefix != "" {
 		parts = append(parts, prefix)
 	}
 	if len(receipts.Lines) > 0 {
 		parts = append(parts, strings.Join(receipts.Lines, "\n"))
 	}
-	response.Text = strings.Join(parts, "\n\n")
+	receiptText := strings.Join(parts, "\n\n")
+	if len(response.Parts) > 0 {
+		if receiptText != "" {
+			response.Parts = append(response.Parts, commands.Response{Text: receiptText, Kind: "agent_receipt"})
+		}
+		return response
+	}
+	if text := strings.TrimSpace(response.Text); text != "" {
+		if receiptText != "" {
+			response.Text = text + "\n\n" + receiptText
+		} else {
+			response.Text = text
+		}
+	} else {
+		response.Text = receiptText
+	}
 	if response.Kind == "" {
 		response.Kind = "agent_receipt"
 	}
 	return response
+}
+
+func combineResponses(responses ...commands.Response) commands.Response {
+	parts := make([]commands.Response, 0, len(responses))
+	for _, response := range responses {
+		if len(response.Parts) > 0 {
+			parts = append(parts, response.Parts...)
+			continue
+		}
+		if strings.TrimSpace(response.Text) == "" && response.Image == nil {
+			continue
+		}
+		parts = append(parts, response)
+	}
+	if len(parts) == 0 {
+		return commands.Response{}
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return commands.Response{Parts: parts}
 }

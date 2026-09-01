@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/message"
 )
 
 func TestConversationJobEnqueueIsIdempotentAndSequencesPerConversation(t *testing.T) {
@@ -269,6 +271,89 @@ func TestCapabilityConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	}
 }
 
+func TestConversationJobOutputCommitMakesConfirmationVisibleAtomically(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "atomic-confirmation", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil || claimed.ID != job.ID {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: "atomic-confirmation-op", Capability: "subscription",
+		Effect: "mutation", RequiresConfirmation: true,
+		Receipt: CapabilityReceipt{Action: "待确认订阅", Resource: "课程", Subject: "数学分析（程艺，2026年秋季学期）"},
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare execution=%#v created=%v err=%v", execution, created, err)
+	}
+	outbound := message.Outbound{
+		Kind: "confirmation", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
+		Content: message.Content{Text: "请确认\n#待确认订阅课程{数学分析（程艺，2026年秋季学期）}"}, DedupeKey: "atomic-confirmation-output",
+	}
+	outputs, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{outbound}, ReceiptIDs: []string{execution.ID},
+		Transition: ConversationJobTransition{State: ConversationJobStateWaitingConfirmation},
+	})
+	if err != nil || len(outputs) != 1 || !outputs[0].Created {
+		t.Fatalf("commit outputs=%#v err=%v", outputs, err)
+	}
+	if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateWaitingConfirmation || got.LeaseToken != "" {
+		t.Fatalf("committed job=%#v", got)
+	}
+	gotExecution, found, err := s.CapabilityExecution(ctx, execution.ID)
+	if err != nil || !found || gotExecution.ReceiptState != CapabilityExecutionAwaitingConfirmation || gotExecution.ReceiptSentAt == nil {
+		t.Fatalf("committed execution=%#v found=%v err=%v", gotExecution, found, err)
+	}
+	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now.Add(time.Second))
+	if err != nil || resolved == nil || released == nil || resolved.ID != execution.ID || released.ID != job.ID {
+		t.Fatalf("immediate confirmation resolved=%#v released=%#v err=%v", resolved, released, err)
+	}
+}
+
+func TestConversationJobOutputCommitRollsBackJobReceiptAndOutboxTogether(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "atomic-rollback", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: "atomic-rollback-op", Capability: "subscription",
+		Effect: "mutation", RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare execution=%#v created=%v err=%v", execution, created, err)
+	}
+	_, err = s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: claimed.LeaseToken,
+		Messages: []message.Outbound{{DedupeKey: "atomic-invalid-output"}}, ReceiptIDs: []string{execution.ID},
+		Transition: ConversationJobTransition{State: ConversationJobStateWaitingConfirmation},
+	})
+	if err == nil {
+		t.Fatal("invalid outbound unexpectedly committed")
+	}
+	if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateRunning || got.LeaseToken != claimed.LeaseToken {
+		t.Fatalf("rolled-back job=%#v", got)
+	}
+	gotExecution, found, err := s.CapabilityExecution(ctx, execution.ID)
+	if err != nil || !found || gotExecution.ReceiptState != "" || gotExecution.ReceiptSentAt != nil {
+		t.Fatalf("rolled-back execution=%#v found=%v err=%v", gotExecution, found, err)
+	}
+	var outgoing int64
+	if err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).Count(&outgoing).Error; err != nil {
+		t.Fatal(err)
+	}
+	if outgoing != 0 {
+		t.Fatalf("rolled-back outgoing messages=%d", outgoing)
+	}
+}
+
 func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()
@@ -368,12 +453,23 @@ func TestConversationJobInputResumeLeaseRecoveryExpiryAndTerminalProtection(t *t
 	if claimed == nil || claimed.ID != running.ID {
 		t.Fatalf("recoverable job claim = %#v", claimed)
 	}
+	runningExecution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: running.ID, DedupeKey: "recover-running-operation",
+		Capability: "subscription", Effect: "mutation",
+	})
+	if err != nil || !created || runningExecution.State != CapabilityExecutionRunning {
+		t.Fatalf("prepare running execution=%#v created=%v err=%v", runningExecution, created, err)
+	}
 	recoveryAt := now.Add(3 * time.Minute)
 	if err := s.RecoverConversationJobLeases(ctx, recoveryAt, time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if got := mustGetConversationJob(t, s, running.ID); got.State != ConversationJobStateRetryWait || got.Revision != 1 || got.LeaseToken != "" || got.LastError == "" {
 		t.Fatalf("recovered job = %#v", got)
+	}
+	gotExecution, found, err := s.CapabilityExecution(ctx, runningExecution.ID)
+	if err != nil || !found || gotExecution.State != CapabilityExecutionUnknown || gotExecution.FinishedAt == nil || gotExecution.Error == "" {
+		t.Fatalf("recovered execution=%#v found=%v err=%v", gotExecution, found, err)
 	}
 	claimed, err = s.ClaimConversationJob(ctx, ident, recoveryAt)
 	if err != nil {

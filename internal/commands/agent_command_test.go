@@ -11,89 +11,63 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestExecuteCapabilityForAgentRunsReadOnlyHostCapability(t *testing.T) {
-	result, err := (Handler{}).ExecuteCapabilityForAgent(context.Background(), Input{
-		Identity: store.Identity{
-			Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42",
-		},
+func TestCapabilityExecutionReturnsTypedStateAndLiteralPresentation(t *testing.T) {
+	handler := Handler{}
+	outcome, err := handler.ExecuteCapability(context.Background(), Input{
+		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
 	}, CapabilityHelp, []string{"校车"})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !strings.Contains(outcome.Response.Text, "校车") {
+		t.Fatalf("outcome=%#v err=%v", outcome, err)
 	}
-	if !result.OK || result.Status != AgentCommandStatusSuccess || result.Kind != "help" || !strings.Contains(result.Text, "校车") {
-		t.Fatalf("result = %#v", result)
+	invocation, _ := NewInvocation(CapabilityHelp, []string{"校车"})
+	presentation := handler.PresentCapabilityOutcome(invocation, outcome)
+	if presentation.DeliveredByHost || presentation.Text != outcome.Response.Text {
+		t.Fatalf("presentation=%#v outcome=%#v", presentation, outcome)
 	}
 }
 
-func TestExecuteCapabilityForAgentEnforcesSharedDataScope(t *testing.T) {
-	ident := store.Identity{
-		Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100",
-	}
-	public, err := (Handler{}).ExecuteCapabilityForAgent(t.Context(), Input{Identity: ident}, CapabilityHelp, []string{"校车"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !public.OK || public.Status != AgentCommandStatusSuccess {
-		t.Fatalf("public result = %#v", public)
+func TestCapabilityExecutionEnforcesSharedDataScope(t *testing.T) {
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100"}
+	public, err := (Handler{}).ExecuteCapability(t.Context(), Input{Identity: ident}, CapabilityHelp, []string{"校车"})
+	if err != nil || public.Status != CapabilityOutcomeSuccess {
+		t.Fatalf("public=%#v err=%v", public, err)
 	}
 	for _, test := range []struct {
 		id   CapabilityID
 		args []string
-	}{
-		{id: CapabilitySchedule},
-		{id: CapabilityBus, args: []string{"偏好"}},
-	} {
-		result, err := (Handler{}).ExecuteCapabilityForAgent(t.Context(), Input{Identity: ident}, test.id, test.args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.OK || result.Status != AgentCommandStatusForbidden {
-			t.Fatalf("private result for %s = %#v", test.id, result)
+	}{{id: CapabilitySchedule}, {id: CapabilityBus, args: []string{"偏好"}}} {
+		outcome, err := (Handler{}).ExecuteCapability(t.Context(), Input{Identity: ident}, test.id, test.args)
+		if err != nil || outcome.Status != CapabilityOutcomeForbidden {
+			t.Fatalf("private %s outcome=%#v err=%v", test.id, outcome, err)
 		}
 	}
 }
 
-func TestExecuteCapabilityForAgentReturnsActionableInputStatuses(t *testing.T) {
-	invalid, err := (Handler{}).ExecuteCapabilityForAgent(context.Background(), Input{}, CapabilityBus, []string{"not-a-day"})
-	if err != nil {
-		t.Fatal(err)
+func TestCapabilityExecutionReturnsExplicitInvalidAndMissingStates(t *testing.T) {
+	invalid, err := (Handler{}).ExecuteCapability(context.Background(), Input{}, CapabilityBus, []string{"not-a-day"})
+	if err != nil || invalid.Status != CapabilityOutcomeInvalidInput || !strings.Contains(invalid.Response.Text, "命令文档") {
+		t.Fatalf("invalid=%#v err=%v", invalid, err)
 	}
-	if invalid.OK || invalid.Status != AgentCommandStatusInvalidInput || len(invalid.SuggestedCalls) == 0 {
-		t.Fatalf("invalid result = %#v", invalid)
-	}
-	for _, suggestion := range invalid.SuggestedCalls {
-		if suggestion.Capability == "" || suggestion.Arguments == nil {
-			t.Fatalf("unstructured suggestion = %#v", suggestion)
-		}
-	}
-
-	missing, err := (Handler{}).ExecuteCapabilityForAgent(context.Background(), Input{}, CapabilityID("does_not_exist"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if missing.OK || missing.Status != AgentCommandStatusNotFound {
-		t.Fatalf("missing result = %#v", missing)
+	missing, err := (Handler{}).ExecuteCapability(context.Background(), Input{}, CapabilityID("does_not_exist"), nil)
+	if err != nil || missing.Status != CapabilityOutcomeNotFound {
+		t.Fatalf("missing=%#v err=%v", missing, err)
 	}
 }
 
-func TestExecuteCapabilityForAgentPreparesMutationForRealUserConfirmation(t *testing.T) {
+func TestCapabilityExecutionLeavesConfirmationToHost(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-
-	result, err := (Handler{Store: db}).ExecuteCapabilityForAgent(context.Background(), Input{Identity: ident}, CapabilityNotify, []string{"作业", "开"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.OK || result.Status != AgentCommandStatusConfirmationRequired || !result.ConfirmationRequired || result.Command != "notify homework on" {
-		t.Fatalf("result = %#v", result)
+	outcome, err := (Handler{Store: db}).ExecuteCapability(context.Background(), Input{Identity: ident}, CapabilityNotify, []string{"作业", "开"})
+	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !outcome.ConfirmationRequired || outcome.Response.Text != "" {
+		t.Fatalf("outcome=%#v err=%v", outcome, err)
 	}
 }
 
-func TestExecuteCapabilityForAgentReturnsAuthRequiredWithoutExposingLoginData(t *testing.T) {
+func TestCapabilityPresentationKeepsLoginCredentialsHostOnly(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -107,45 +81,26 @@ func TestExecuteCapabilityForAgentReturnsAuthRequiredWithoutExposingLoginData(t 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	authManager := &auth.Manager{Store: db}
-	result, err := (Handler{
-		Life:  life.NewClient("http://life.invalid", nil),
-		Auth:  authManager,
-		Store: db,
-	}).ExecuteCapabilityForAgent(context.Background(), Input{Identity: ident}, CapabilitySchedule, nil)
-	if err != nil {
-		t.Fatal(err)
+	handler := Handler{Life: life.NewClient("http://life.invalid", nil), Auth: &auth.Manager{Store: db}, Store: db}
+	outcome, err := handler.ExecuteCapability(context.Background(), Input{Identity: ident}, CapabilitySchedule, nil)
+	if err != nil || outcome.Status != CapabilityOutcomeAuthRequired || !strings.Contains(outcome.Response.Text, userCode) {
+		t.Fatalf("outcome=%#v err=%v", outcome, err)
 	}
-	if result.OK || result.Status != AgentCommandStatusAuthRequired || !result.DeliveredByHost || result.Kind != ResponseKindAuthWait {
-		t.Fatalf("auth result = %#v", result)
-	}
-	if strings.Contains(result.Text, userCode) || strings.Contains(result.Text, "login.example") {
-		t.Fatalf("model-facing auth text = %q", result.Text)
-	}
-	if !strings.Contains(result.Response.Text, userCode) {
-		t.Fatalf("host response = %#v", result.Response)
+	invocation, _ := NewInvocation(CapabilitySchedule, nil)
+	presentation := handler.PresentCapabilityOutcome(invocation, outcome)
+	if !presentation.DeliveredByHost || strings.Contains(presentation.Text, userCode) || strings.Contains(presentation.Text, "login.example") {
+		t.Fatalf("presentation=%#v", presentation)
 	}
 }
 
-func TestCapabilityPresentationExposesPrivateCalendarLinkToModel(t *testing.T) {
-	cmd, ok := (Handler{}).parse("订阅 链接")
+func TestCapabilityPresentationExposesPrivateCalendarURLToModel(t *testing.T) {
+	invocation, ok := ParseInvocation("订阅 链接")
 	if !ok {
 		t.Fatal("calendar link command did not parse")
 	}
-	if agentCommandRequiresHostDelivery(cmd, Response{Text: "private"}) {
-		t.Fatal("private calendar link should be returned to the model in a private conversation")
-	}
-}
-
-func TestCapabilityPresentationKeepsLoginCredentialsOutOfModelResult(t *testing.T) {
-	cmd, ok := (Handler{}).parse("登录")
-	if !ok {
-		t.Fatal("login command did not parse")
-	}
-	if !agentCommandRequiresHostDelivery(cmd, Response{Text: "验证码：SECRET"}) {
-		t.Fatal("login response must bypass the model")
-	}
-	if !agentCommandRequiresHostDelivery(cmd, Response{Kind: ResponseKindAuthWait, Text: "验证码：SECRET"}) {
-		t.Fatal("auth_wait response must bypass the model")
+	const result = "日历订阅链接：https://life.example/api/calendar-feeds/user:token.ics"
+	presentation := (Handler{}).PresentCapabilityOutcome(invocation, SuccessOutcome(Response{Text: result, Kind: "subscription"}))
+	if presentation.DeliveredByHost || presentation.Text != result {
+		t.Fatalf("presentation=%#v", presentation)
 	}
 }

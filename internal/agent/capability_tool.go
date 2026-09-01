@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/gob"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,8 +22,14 @@ type capabilityInterruptState struct {
 }
 
 type capabilityInterruptInfo struct {
+	Kind         string
 	ExecutionIDs []string
 }
+
+const (
+	capabilityInterruptConfirmation = "confirmation"
+	capabilityInterruptAuth         = "auth"
+)
 
 func init() {
 	gob.Register(capabilityInterruptState{})
@@ -44,31 +53,54 @@ func (s *Service) invokeHostCapability(
 	id := commands.CapabilityID(strings.TrimSpace(input.Capability))
 	invocation, valid := commands.NewInvocation(id, input.Arguments)
 	if !valid {
-		result, err := s.handler.ExecuteCapabilityForAgent(ctx, commands.Input{Identity: ident, SuppressLog: true}, id, input.Arguments)
+		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, id, input.Arguments)
 		if err != nil {
 			return "", err
 		}
-		return strings.TrimSpace(result.Text), nil
+		if outcome.Status != commands.CapabilityOutcomeSuccess {
+			toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		}
+		presentation := s.handler.PresentCapabilityOutcome(commands.Invocation{Name: string(id), Args: append([]string(nil), input.Arguments...)}, outcome)
+		return strings.TrimSpace(presentation.Text), nil
 	}
 	policy := invocation.Policy()
 	if policy.Confirmation != commands.ConfirmUser {
-		return s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, compose.GetToolCallID(ctx), sendResponse)
+		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, compose.GetToolCallID(ctx), sendResponse)
+		if err != nil || !authWait {
+			return result, err
+		}
+		state := capabilityInterruptState{ExecutionIDs: []string{executionID}}
+		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
+			Kind: capabilityInterruptAuth, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
+		}, state)
 	}
 	if jobID <= 0 || s.handler.Store == nil {
 		return "", errors.New("durable confirmation requires a persisted conversation job")
 	}
 
-	invocations := expandConfirmationInvocations(invocation)
+	invocations := commands.ExpandMutationInvocations(invocation)
 	callID := strings.TrimSpace(compose.GetToolCallID(ctx))
 	if callID == "" {
 		callID = fmt.Sprintf("capability-%d", jobID)
 	}
 	state := capabilityInterruptState{ExecutionIDs: make([]string, 0, len(invocations))}
 	for index, item := range invocations {
-		receipt := receiptForInvocation(item)
+		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, item.ID(), item.Args)
+		if err != nil {
+			outcome, executeErr := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, item.ID(), item.Args)
+			if executeErr != nil {
+				return "", executeErr
+			}
+			presentation := s.handler.PresentCapabilityOutcome(item, outcome)
+			return strings.TrimSpace(presentation.Text), nil
+		}
+		receipt := commands.ReceiptForInvocation(item)
+		if description.Receipt != nil {
+			receipt = *description.Receipt
+		}
 		execution, _, err := s.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 			Identity: ident, JobID: jobID, Sequence: index,
-			DedupeKey:  fmt.Sprintf("conversation-job:%d:tool:%s:operation:%d", jobID, callID, index),
+			DedupeKey:  capabilityExecutionDedupeKey(jobID, callID, item),
 			ToolCallID: callID, Capability: string(item.ID()), Arguments: append([]string(nil), item.Args...),
 			Effect: string(item.Policy().Effect), Receipt: receipt, RequiresConfirmation: true,
 		})
@@ -77,7 +109,9 @@ func (s *Service) invokeHostCapability(
 		}
 		state.ExecutionIDs = append(state.ExecutionIDs, execution.ID)
 	}
-	return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{ExecutionIDs: append([]string(nil), state.ExecutionIDs...)}, state)
+	return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
+		Kind: capabilityInterruptConfirmation, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
+	}, state)
 }
 
 func (s *Service) executeUnconfirmedHostCapability(
@@ -87,48 +121,66 @@ func (s *Service) executeUnconfirmedHostCapability(
 	jobID int64,
 	toolCallID string,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
-) (string, error) {
+) (modelResult string, executionID string, authWait bool, err error) {
 	var execution store.CapabilityExecution
 	tracked := s.handler.Store != nil && jobID > 0
 	if tracked {
 		var err error
 		execution, _, err = s.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 			Identity: ident, JobID: jobID,
-			DedupeKey:  fmt.Sprintf("conversation-job:%d:tool:%s", jobID, stableToolCallID(toolCallID, invocation)),
+			DedupeKey:  capabilityExecutionDedupeKey(jobID, toolCallID, invocation),
 			ToolCallID: toolCallID, Capability: string(invocation.ID()), Arguments: append([]string(nil), invocation.Args...),
-			Effect: string(invocation.Policy().Effect), Receipt: receiptForInvocation(invocation),
+			Effect: string(invocation.Policy().Effect), Receipt: commands.ReceiptForInvocation(invocation),
 		})
 		if err != nil {
-			return "", err
+			return "", "", false, err
 		}
+		executionID = execution.ID
 		if execution.State != store.CapabilityExecutionRunning {
-			return capabilityExecutionModelResult(execution), nil
+			return capabilityExecutionModelResult(execution), execution.ID, execution.State == store.CapabilityExecutionWaitingAuth, nil
 		}
 	}
-	result, err := s.handler.ExecuteCapabilityForAgent(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
 	if err != nil {
 		if tracked {
 			_, _ = s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
 		}
-		return "", err
+		return "", executionID, false, err
 	}
-	text, deliveryErr := deliverAgentCommandResult(ctx, ident, result, sendResponse)
+	if outcome.Status != commands.CapabilityOutcomeSuccess && outcome.Status != commands.CapabilityOutcomeAuthRequired {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+	}
+	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
+	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
+		if !tracked {
+			text, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+			return text, "", false, deliveryErr
+		}
+		if _, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID); err != nil {
+			return "", executionID, false, err
+		}
+		if _, err := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse); err != nil {
+			return "", executionID, false, err
+		}
+		return "", executionID, true, nil
+	}
+	text, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
 	if deliveryErr != nil {
 		if tracked {
 			_, _ = s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", deliveryErr)
 		}
-		return "", deliveryErr
+		return "", executionID, false, deliveryErr
 	}
 	if tracked {
 		var outcomeErr error
-		if !result.OK {
+		if outcome.Status != commands.CapabilityOutcomeSuccess {
 			outcomeErr = errors.New(strings.TrimSpace(text))
 		}
 		if _, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, text, outcomeErr); err != nil {
-			return "", err
+			return "", executionID, false, err
 		}
 	}
-	return text, nil
+	return text, executionID, false, nil
 }
 
 func (s *Service) resumeHostCapability(
@@ -141,6 +193,7 @@ func (s *Service) resumeHostCapability(
 		return "", errors.New("capability execution store is unavailable")
 	}
 	pending := false
+	authWait := false
 	results := make([]string, 0, len(state.ExecutionIDs))
 	for _, executionID := range state.ExecutionIDs {
 		execution, found, err := s.handler.Store.CapabilityExecution(ctx, executionID)
@@ -154,7 +207,7 @@ func (s *Service) resumeHostCapability(
 		case store.CapabilityExecutionAwaitingConfirmation:
 			pending = true
 			continue
-		case store.CapabilityExecutionApproved:
+		case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
 			claimed, execute, err := s.handler.Store.ClaimCapabilityExecution(ctx, execution.ID)
 			if err != nil {
 				return "", err
@@ -163,10 +216,12 @@ func (s *Service) resumeHostCapability(
 				execution = claimed
 				break
 			}
-			execution, err = s.executeApprovedCapability(ctx, claimed, ident, sendResponse)
+			var waiting bool
+			execution, waiting, err = s.executeApprovedCapability(ctx, claimed, ident, sendResponse)
 			if err != nil {
 				return "", err
 			}
+			authWait = authWait || waiting
 		case store.CapabilityExecutionRunning:
 			if err := s.handler.Store.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
 				return "", err
@@ -176,10 +231,19 @@ func (s *Service) resumeHostCapability(
 				return "", err
 			}
 		}
-		results = append(results, capabilityExecutionModelResult(execution))
+		if execution.State != store.CapabilityExecutionWaitingAuth {
+			results = append(results, capabilityExecutionModelResult(execution))
+		}
+	}
+	if authWait {
+		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
+			Kind: capabilityInterruptAuth, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
+		}, state)
 	}
 	if pending {
-		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{ExecutionIDs: append([]string(nil), state.ExecutionIDs...)}, state)
+		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
+			Kind: capabilityInterruptConfirmation, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
+		}, state)
 	}
 	return strings.TrimSpace(strings.Join(results, "\n\n")), nil
 }
@@ -189,50 +253,78 @@ func (s *Service) executeApprovedCapability(
 	execution store.CapabilityExecution,
 	ident store.Identity,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
-) (store.CapabilityExecution, error) {
+) (store.CapabilityExecution, bool, error) {
 	invocation, valid := commands.RestoreInvocation(commands.CapabilityID(execution.Capability), execution.Arguments)
 	if !valid {
 		runErr := errors.New("宿主无法恢复已确认的操作")
-		return s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
+		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
+		return finished, false, err
 	}
-	response, handled := s.handler.HandleInvocationResponse(ctx, commands.Input{
-		Text: invocation.CanonicalCommand(), Identity: ident, SuppressLog: true,
-	}, invocation)
-	if !handled {
-		runErr := errors.New("宿主无法执行已确认的操作")
-		return s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
+	description := commands.CapabilityInvocationDescription{
+		Invocation: invocation, Policy: invocation.Policy(), ConfirmationRequired: invocation.Policy().Confirmation == commands.ConfirmUser,
+		Receipt: &execution.Receipt,
 	}
-	presentation := invocation.Descriptor().Present(invocation, response, invocation.Policy())
+	outcome, err := s.handler.ExecuteApprovedInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, description)
+	if err != nil {
+		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
+		return finished, false, finishErr
+	}
+	if outcome.Status != commands.CapabilityOutcomeSuccess && outcome.Status != commands.CapabilityOutcomeAuthRequired {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+	}
+	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
 	text := strings.TrimSpace(presentation.Text)
+	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
+		deferred, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID)
+		if err != nil {
+			return deferred, false, err
+		}
+		if presentation.DeliveredByHost {
+			if sendResponse == nil {
+				return deferred, false, errors.New("host response sender is unavailable")
+			}
+			if err := sendResponse(ctx, ident, presentation.Response); err != nil {
+				return deferred, false, err
+			}
+		}
+		return deferred, true, nil
+	}
 	if presentation.DeliveredByHost {
 		if sendResponse == nil {
 			runErr := errors.New("host response sender is unavailable")
-			return s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
+			finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", runErr)
+			return finished, false, err
 		}
 		if err := sendResponse(ctx, ident, presentation.Response); err != nil {
-			return s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
+			finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, "", err)
+			return finished, false, finishErr
 		}
 		if text == "" {
 			text = "结果已由宿主发送给用户。"
 		}
 	}
-	return s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, text, nil)
+	var outcomeErr error
+	if outcome.Status != commands.CapabilityOutcomeSuccess {
+		outcomeErr = errors.New(text)
+	}
+	finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, text, outcomeErr)
+	return finished, false, err
 }
 
-func deliverAgentCommandResult(
+func deliverCapabilityPresentation(
 	ctx context.Context,
 	ident store.Identity,
-	result commands.AgentCommandResult,
+	presentation commands.CapabilityPresentation,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
 ) (string, error) {
-	text := strings.TrimSpace(result.Text)
-	if !result.DeliveredByHost {
+	text := strings.TrimSpace(presentation.Text)
+	if !presentation.DeliveredByHost {
 		return text, nil
 	}
 	if sendResponse == nil {
 		return "", errors.New("host response sender is unavailable")
 	}
-	if err := sendResponse(ctx, ident, result.Response); err != nil {
+	if err := sendResponse(ctx, ident, presentation.Response); err != nil {
 		return "", err
 	}
 	if text == "" {
@@ -250,68 +342,28 @@ func capabilityExecutionModelResult(execution store.CapabilityExecution) string 
 		if reason == "" {
 			reason = "用户拒绝执行"
 		}
-		return "操作未执行：" + reason
+		return reason
 	case store.CapabilityExecutionFailed:
-		return "操作失败：" + strings.TrimSpace(execution.Error)
+		return strings.TrimSpace(execution.Error)
 	case store.CapabilityExecutionUnknown, store.CapabilityExecutionRunning:
-		return "操作结果未知：" + strings.TrimSpace(execution.Error)
+		return strings.TrimSpace(execution.Error)
 	default:
-		return "操作尚未执行。"
+		return "操作尚未执行"
 	}
 }
 
-func stableToolCallID(toolCallID string, invocation commands.Invocation) string {
+func capabilityExecutionDedupeKey(jobID int64, toolCallID string, invocation commands.Invocation) string {
+	if invocation.Policy().Effect != commands.EffectRead {
+		payload, _ := json.Marshal(struct {
+			Capability commands.CapabilityID `json:"capability"`
+			Arguments  []string              `json:"arguments"`
+		}{Capability: invocation.ID(), Arguments: invocation.Args})
+		digest := sha256.Sum256(payload)
+		return fmt.Sprintf("conversation-job:%d:mutation:%s", jobID, hex.EncodeToString(digest[:16]))
+	}
 	toolCallID = strings.TrimSpace(toolCallID)
 	if toolCallID != "" {
-		return toolCallID
+		return fmt.Sprintf("conversation-job:%d:tool:%s", jobID, toolCallID)
 	}
-	return invocation.CanonicalCommand()
-}
-
-func expandConfirmationInvocations(invocation commands.Invocation) []commands.Invocation {
-	if invocation.ID() != commands.CapabilitySubscription || len(invocation.Args) <= 2 || invocation.Args[0] != "import" {
-		return []commands.Invocation{invocation}
-	}
-	result := make([]commands.Invocation, 0, len(invocation.Args)-1)
-	for _, argument := range invocation.Args[1:] {
-		item, ok := commands.NewInvocation(commands.CapabilitySubscription, []string{"import", argument})
-		if ok {
-			result = append(result, item)
-		}
-	}
-	if len(result) == 0 {
-		return []commands.Invocation{invocation}
-	}
-	return result
-}
-
-func receiptForInvocation(invocation commands.Invocation) store.CapabilityReceipt {
-	receipt := store.CapabilityReceipt{Subject: strings.TrimSpace(strings.Join(invocation.Args, " "))}
-	switch invocation.ID() {
-	case commands.CapabilityCourse, commands.CapabilityCourseSearch, commands.CapabilityCourseByJWID:
-		receipt.Action, receipt.Resource = "查询", "课程"
-	case commands.CapabilitySection, commands.CapabilitySectionSearch, commands.CapabilitySectionByJWID,
-		commands.CapabilitySectionSchedules, commands.CapabilitySectionExams, commands.CapabilitySectionHomeworks:
-		receipt.Action, receipt.Resource = "查询", "课程"
-	case commands.CapabilityTeacher, commands.CapabilityTeacherSearch, commands.CapabilityTeacherByID:
-		receipt.Action, receipt.Resource = "查询", "教师"
-	case commands.CapabilitySemester, commands.CapabilityListSemesters:
-		receipt.Action, receipt.Resource = "查询", "学期"
-	case commands.CapabilitySubscription:
-		if len(invocation.Args) > 1 && invocation.Args[0] == "import" {
-			receipt.Action, receipt.Resource, receipt.Subject = "订阅", "课程", strings.Join(invocation.Args[1:], " ")
-		} else {
-			receipt.Action, receipt.Resource = "查询", "课程"
-		}
-	case commands.CapabilityUnsubscribeSectionByJWID:
-		receipt.Action, receipt.Resource = "取消", "课程"
-	default:
-		if invocation.Policy().Confirmation == commands.ConfirmUser {
-			receipt.Action, receipt.Resource, receipt.Subject = "执行", "操作", invocation.CanonicalCommand()
-		}
-	}
-	if receipt.Subject == "" {
-		receipt.Subject = invocation.CanonicalCommand()
-	}
-	return receipt
+	return fmt.Sprintf("conversation-job:%d:read:%s", jobID, invocation.CanonicalCommand())
 }

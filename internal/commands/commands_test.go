@@ -220,7 +220,6 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
 		"设置\t管理通知等偏好",
-		"AI\t管理 AI 工具调用展示",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -249,34 +248,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	}
 }
 
-func TestAdvancedAIHelpShowsToolTraceControls(t *testing.T) {
-	reply, ok := (Handler{}).Handle(context.Background(), Input{Text: "帮助 AI", Identity: testIdentity()})
-	if !ok {
-		t.Fatal("advanced AI help was not handled")
-	}
-	for _, want := range []string{
-		"AI 帮助：",
-		"AI 工具\t查看当前工具调用提示设置",
-		"AI 工具 开\t回答时显示 LLM 工具调用提示",
-		"AI 工具 关\t回答时隐藏 LLM 工具调用提示",
-		"设置 工具调用\t等同于「AI 工具」",
-	} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %q: %q", want, reply)
-		}
-	}
-	for _, unwanted := range []string{
-		"进阶 AI 帮助：",
-		"设置\t查看通知",
-		"设置 通知",
-	} {
-		if strings.Contains(reply, unwanted) {
-			t.Fatalf("AI help unexpectedly contains %q: %q", unwanted, reply)
-		}
-	}
-}
-
-func TestSettingsAndAIHelpRenderAsImages(t *testing.T) {
+func TestSettingsHelpRendersAsImages(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	cases := []struct {
 		text  string
@@ -301,24 +273,6 @@ func TestSettingsAndAIHelpRenderAsImages(t *testing.T) {
 			title: "设置 帮助",
 			want:  []string{"设置 通知"},
 			avoid: []string{"AI 工具"},
-		},
-		{
-			text:  "帮助 AI",
-			title: "AI 帮助",
-			want:  []string{"AI 工具 开", "设置 工具调用"},
-			avoid: []string{"设置 通知"},
-		},
-		{
-			text:  "AI 帮助",
-			title: "AI 帮助",
-			want:  []string{"AI 工具"},
-			avoid: []string{"设置 通知"},
-		},
-		{
-			text:  "AI 工具 帮助",
-			title: "AI 帮助",
-			want:  []string{"AI 工具 关"},
-			avoid: []string{"设置 通知"},
 		},
 	}
 	for _, tc := range cases {
@@ -461,7 +415,7 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 	}
 	visibleTopics := map[string]bool{
 		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
-		"bus": true, "account": true, "settings": true, "system": true, "feedback": true, "advanced": true,
+		"bus": true, "account": true, "settings": true, "system": true, "feedback": true,
 	}
 	if len(overviewCount) != len(visibleTopics) {
 		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))
@@ -683,14 +637,6 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 		t.Fatalf("compact notify args mutated = %#v", args)
 	}
 
-	args = []string{" 开 "}
-	normalized = normalizeAgentArgs(args)
-	if strings.Join(normalized, " ") != "on" {
-		t.Fatalf("agent normalized = %#v", normalized)
-	}
-	if args[0] != " 开 " {
-		t.Fatalf("agent args mutated = %#v", args)
-	}
 }
 
 func TestNormalizeNotificationKind(t *testing.T) {
@@ -960,7 +906,6 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
 		"| 设置 | 管理通知等偏好 |",
-		"| AI | 管理 AI 工具调用展示 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -3208,47 +3153,6 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	}
 }
 
-func TestAgentSettingsCommand(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	s, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s}
-
-	reply, ok := handler.Handle(ctx, Input{Text: "AI 工具", Identity: ident})
-	if !ok || !strings.Contains(reply, "AI 工具调用展示：关") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 开", Identity: ident})
-	if !ok || !strings.Contains(reply, "AI 工具调用展示：开") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	settings, err := s.AgentSettings(ctx, ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !settings.ExposeToolCalls {
-		t.Fatalf("settings = %#v", settings)
-	}
-	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 关", Identity: ident})
-	if !ok || !strings.Contains(reply, "AI 工具调用展示：关") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 maybe", Identity: ident})
-	if !ok || !strings.Contains(reply, "AI 帮助：") {
-		t.Fatalf("invalid agent args should return usage, reply = %q, ok = %v", reply, ok)
-	}
-	groupIdent := ident
-	groupIdent.ConversationType = "group"
-	reply, ok = handler.Handle(ctx, Input{Text: "AI 工具 开", Identity: groupIdent})
-	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
-		t.Fatalf("group reply = %q, ok = %v", reply, ok)
-	}
-}
-
 func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -3527,8 +3431,6 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "账户 信息", name: "account"},
 		{text: "账户 退出", name: "logout"},
 		{text: "设置 通知 课表 开", name: "notify", args: "classes on"},
-		{text: "设置 工具调用 开", name: "agent", args: "on"},
-		{text: "设置 AI 工具 关", name: "agent", args: "off"},
 		{text: "系统", name: "help", args: "系统"},
 		{text: "系统 状态", name: "status"},
 		{text: "系统 检查", name: "ping"},

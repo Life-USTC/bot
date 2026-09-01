@@ -128,6 +128,7 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 		`CREATE TABLE pending_confirmations (id integer primary key)`,
 		`CREATE TABLE pending_requests (id integer primary key)`,
 		`CREATE TABLE notification_deliveries (id integer primary key)`,
+		`CREATE TABLE agent_settings (user_id integer primary key, expose_tool_calls numeric not null default 0)`,
 		"DELETE FROM conversation_events",
 	} {
 		if _, err := db.Exec(statement); err != nil {
@@ -150,7 +151,7 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 	if len(events) != 2 || events[0].Content != "原始问题" || events[1].Content != "原始回答" {
 		t.Fatalf("migrated events = %#v", events)
 	}
-	for _, table := range []string{"conversation_summaries", "pending_confirmations", "pending_requests", "notification_deliveries"} {
+	for _, table := range []string{"conversation_summaries", "pending_confirmations", "pending_requests", "notification_deliveries", "agent_settings"} {
 		if s.db.Migrator().HasTable(table) {
 			t.Fatalf("obsolete table %s survived migration", table)
 		}
@@ -216,5 +217,44 @@ func TestFinishCapabilityExecutionRequiresRunningState(t *testing.T) {
 	}
 	if _, err := s.FinishCapabilityExecution(context.Background(), execution.ID, "", errors.New("should not run")); err == nil {
 		t.Fatal("awaiting confirmation execution was finalized")
+	}
+}
+
+func TestCapabilityExecutionWaitsForAuthWithoutLosingApproval(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	job, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "auth-state", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution, _, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: "auth-state", Capability: "subscription", Effect: "write",
+		RequiresConfirmation: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).Where("id = ?", execution.ID).
+		Update("state", string(CapabilityExecutionApproved)).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution, claimed, err := s.ClaimCapabilityExecution(ctx, execution.ID)
+	if err != nil || !claimed || execution.State != CapabilityExecutionRunning {
+		t.Fatalf("initial claim: execution=%#v claimed=%v err=%v", execution, claimed, err)
+	}
+	execution, err = s.DeferCapabilityExecutionForAuth(ctx, execution.ID)
+	if err != nil || execution.State != CapabilityExecutionWaitingAuth || execution.StartedAt != nil {
+		t.Fatalf("defer for auth: execution=%#v err=%v", execution, err)
+	}
+	execution, claimed, err = s.ClaimCapabilityExecution(ctx, execution.ID)
+	if err != nil || !claimed || execution.State != CapabilityExecutionRunning {
+		t.Fatalf("claim after auth: execution=%#v claimed=%v err=%v", execution, claimed, err)
 	}
 }

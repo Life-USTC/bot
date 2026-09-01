@@ -24,8 +24,37 @@ import (
 
 type commandFunc func(context.Context, commands.Input) (commands.Response, bool)
 
-func (fn commandFunc) HandleInvocationResponse(ctx context.Context, input commands.Input, _ commands.Invocation) (commands.Response, bool) {
-	return fn(ctx, input)
+func (fn commandFunc) DescribeCapabilityInvocations(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) ([]commands.CapabilityInvocationDescription, error) {
+	invocation, ok := commands.NewInvocation(id, args)
+	if !ok {
+		return nil, errors.New("invalid test capability")
+	}
+	invocations := commands.ExpandMutationInvocations(invocation)
+	descriptions := make([]commands.CapabilityInvocationDescription, 0, len(invocations))
+	for _, item := range invocations {
+		receipt := commands.ReceiptForInvocation(item)
+		descriptions = append(descriptions, commands.CapabilityInvocationDescription{
+			Invocation: item, Policy: item.Policy(), ConfirmationRequired: item.Policy().Confirmation == commands.ConfirmUser,
+			Receipt: &receipt,
+		})
+	}
+	return descriptions, nil
+}
+
+func (fn commandFunc) ExecuteCapability(ctx context.Context, input commands.Input, _ commands.CapabilityID, _ []string) (commands.CapabilityOutcome, error) {
+	response, handled := fn(ctx, input)
+	if !handled {
+		return commands.NotFoundOutcome(response), nil
+	}
+	status := commands.CapabilityOutcomeSuccess
+	if response.Kind == commands.ResponseKindAuthWait {
+		status = commands.CapabilityOutcomeAuthRequired
+	}
+	return commands.CapabilityOutcome{Status: status, Response: response}, nil
+}
+
+func (fn commandFunc) ExecuteApprovedInvocation(ctx context.Context, input commands.Input, _ commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error) {
+	return fn.ExecuteCapability(ctx, input, "", nil)
 }
 
 type agentFunc func(context.Context, agent.Input) (commands.Response, bool)
@@ -35,11 +64,15 @@ func (fn agentFunc) Run(ctx context.Context, input agent.Input) agent.Result {
 	return agent.Result{Response: response, Handled: handled, State: agent.RunStateCompleted}
 }
 
+func (fn agentFunc) Acknowledge(context.Context, int64) error { return nil }
+
 type agentResultFunc func(context.Context, agent.Input) agent.Result
 
 func (fn agentResultFunc) Run(ctx context.Context, input agent.Input) agent.Result {
 	return fn(ctx, input)
 }
+
+func (fn agentResultFunc) Acknowledge(context.Context, int64) error { return nil }
 
 type rendererFunc func(*responses.Image) ([]byte, int, int, error)
 
@@ -373,7 +406,7 @@ func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Text != "fallback" || records[0].Message.Content.Attachment != nil {
+	if len(records) != 1 || records[0].Message.Content.Text != "fallback\n\n#已查询校车{全部}" || records[0].Message.Content.Attachment != nil {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
@@ -455,9 +488,10 @@ func TestCoordinatorSendsOneProgressMessageOnlyWhenAgentIsSlow(t *testing.T) {
 		name      string
 		delay     time.Duration
 		wantTexts []string
+		wantKeys  []string
 	}{
-		{name: "slow", delay: 30 * time.Millisecond, wantTexts: []string{"稍等一下", "最终回复"}},
-		{name: "fast", delay: 0, wantTexts: []string{"最终回复"}},
+		{name: "slow", delay: 30 * time.Millisecond, wantTexts: []string{"稍等一下", "最终回复"}, wantKeys: []string{"conversation-job:1:progress", "conversation-job:1:revision:1:part:0"}},
+		{name: "fast", delay: 0, wantTexts: []string{"最终回复"}, wantKeys: []string{"conversation-job:1:revision:1:part:0"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db := newCoordinatorStore(t)
@@ -486,11 +520,16 @@ func TestCoordinatorSendsOneProgressMessageOnlyWhenAgentIsSlow(t *testing.T) {
 				t.Fatal(err)
 			}
 			texts := make([]string, 0, len(records))
+			keys := make([]string, 0, len(records))
 			for _, record := range records {
 				texts = append(texts, record.Message.Content.Text)
+				keys = append(keys, record.Message.DedupeKey)
 			}
 			if fmt.Sprint(texts) != fmt.Sprint(test.wantTexts) {
 				t.Fatalf("outbound texts=%#v want=%#v", texts, test.wantTexts)
+			}
+			if fmt.Sprint(keys) != fmt.Sprint(test.wantKeys) {
+				t.Fatalf("outbound keys=%#v want=%#v", keys, test.wantKeys)
 			}
 		})
 	}
@@ -631,10 +670,174 @@ func TestCoordinatorLoginWaitsOnSameJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Text != "请登录" || records[1].Message.Content.Text != "查询完成" {
+	if len(records) != 2 || records[0].Message.Content.Text != "请登录" || records[1].Message.Content.Text != "查询完成\n\n#已查询课表{全部}" {
 		t.Fatalf("resumed outbox = %#v", records)
 	}
 	if records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" || records[1].Message.DedupeKey != "conversation-job:1:revision:2:part:0" {
 		t.Fatalf("resumed dedupe keys = %q, %q", records[0].Message.DedupeKey, records[1].Message.DedupeKey)
+	}
+}
+
+func TestCoordinatorConfirmsDirectMutationBeforeExecutionAndExcludesMechanicsFromHistory(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := commands.Handler{Store: db}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("notify-confirm", "通知 作业 开")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
+		t.Fatalf("waiting job = %#v", saved)
+	}
+	settings, err := db.NotificationSettings(ctx, job.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.HomeworkEnabled {
+		t.Fatal("mutation executed before confirmation")
+	}
+	initial, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(initial) != 1 {
+		t.Fatalf("initial output: records=%#v err=%v", initial, err)
+	}
+	if got := initial[0].Message.Content.Text; !strings.Contains(got, confirmationPrompt) || !strings.Contains(got, "#待确认设置提醒{作业：开}") {
+		t.Fatalf("confirmation output = %q", got)
+	}
+
+	if err := coordinator.Enqueue(ctx, jobInbound("notify-approve", "ok")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("completed job = %#v", saved)
+	}
+	settings, err = db.NotificationSettings(ctx, job.Identity)
+	if err != nil || !settings.HomeworkEnabled {
+		t.Fatalf("settings after approval = %#v err=%v", settings, err)
+	}
+	terminal, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(terminal) != 1 {
+		t.Fatalf("terminal output: records=%#v err=%v", terminal, err)
+	}
+	if got := terminal[0].Message.Content.Text; !strings.Contains(got, "作业提醒：开") || !strings.Contains(got, "#已设置提醒{作业：开}") {
+		t.Fatalf("terminal output = %q", got)
+	}
+	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Type != store.ConversationEventUser || events[0].Content != "通知 作业 开" || events[1].Type != store.ConversationEventAssistant {
+		t.Fatalf("conversation events = %#v", events)
+	}
+	for _, event := range events {
+		if strings.Contains(event.Content, "ok") || strings.Contains(event.Content, "待确认") || strings.Contains(event.Content, "#已") {
+			t.Fatalf("host mechanic leaked into history: %#v", event)
+		}
+	}
+}
+
+func TestCoordinatorConfirmsGroupedCourseMutationsOneAtATimeWithFrozenDetails(t *testing.T) {
+	sections := map[string]string{
+		"CODE1.01": `{"code":"CODE1.01","jwId":11,"course":{"namePrimary":"线性代数"},"teacher":{"namePrimary":"张老师"},"semester":{"namePrimary":"2026年秋季学期"}}`,
+		"CODE2.02": `{"code":"CODE2.02","jwId":22,"course":{"namePrimary":"离散数学"},"teacher":{"namePrimary":"李老师"},"semester":{"namePrimary":"2026年秋季学期"}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/sections" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		section, ok := sections[r.URL.Query().Get("search")]
+		if !ok {
+			t.Fatalf("unexpected query %q", r.URL.Query().Get("search"))
+		}
+		_, _ = fmt.Fprintf(w, `{"data":[%s]}`, section)
+	}))
+	defer server.Close()
+
+	db := newCoordinatorStore(t)
+	handler := commands.Handler{Store: db, Life: life.NewClient(server.URL, server.Client())}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("course-group", "subscription import CODE1.01 CODE2.02")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+	first, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first confirmation: records=%#v err=%v", first, err)
+	}
+	firstText := first[0].Message.Content.Text
+	if !strings.Contains(firstText, "#待确认订阅课程{线性代数（张老师，2026年秋季学期）}") || strings.Contains(firstText, "离散数学") {
+		t.Fatalf("first confirmation = %q", firstText)
+	}
+
+	if err := coordinator.Enqueue(ctx, jobInbound("course-deny-1", "取消")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	second, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("second confirmation: records=%#v err=%v", second, err)
+	}
+	secondText := second[0].Message.Content.Text
+	for _, want := range []string{
+		"#订阅课程失败{线性代数（张老师，2026年秋季学期）：用户拒绝执行}",
+		"#待确认订阅课程{离散数学（李老师，2026年秋季学期）}",
+	} {
+		if !strings.Contains(secondText, want) {
+			t.Fatalf("second confirmation missing %q: %q", want, secondText)
+		}
+	}
+
+	if err := coordinator.Enqueue(ctx, jobInbound("course-deny-2", "取消")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	terminal, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(terminal) != 1 {
+		t.Fatalf("terminal receipt: records=%#v err=%v", terminal, err)
+	}
+	if got := terminal[0].Message.Content.Text; !strings.Contains(got, "#订阅课程失败{离散数学（李老师，2026年秋季学期）：用户拒绝执行}") {
+		t.Fatalf("terminal receipt = %q", got)
+	}
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateCompleted || saved.Attempts != 3 || saved.MaxAttempts != 0 {
+		t.Fatalf("grouped job = %#v", saved)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionDenied || executions[1].State != store.CapabilityExecutionDenied {
+		t.Fatalf("grouped executions = %#v err=%v", executions, err)
+	}
+	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[0].Type != store.ConversationEventUser || events[1].Content != "用户拒绝执行该操作。" || events[2].Content != "用户拒绝执行该操作。" {
+		t.Fatalf("denial history = %#v", events)
+	}
+	for _, event := range events {
+		if strings.Contains(event.Content, "取消") || strings.Contains(event.Content, "#待确认") || strings.Contains(event.Content, "#订阅") {
+			t.Fatalf("confirmation mechanic leaked into history: %#v", event)
+		}
 	}
 }

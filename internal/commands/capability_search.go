@@ -3,8 +3,6 @@ package commands
 import (
 	"sort"
 	"strings"
-
-	"github.com/Life-USTC/Bot/internal/store"
 )
 
 // CapabilitySearchOptions controls the registry-backed documentation search.
@@ -35,28 +33,18 @@ type CapabilityDocumentation struct {
 	searchFields []string
 }
 
-// CapabilitySearchResult is a documentation match with a deterministic score.
-// CapabilityDocumentation is embedded so callers can inspect result.ID,
-// result.Examples, and policy metadata directly.
-type CapabilitySearchResult struct {
+type capabilitySearchResult struct {
 	CapabilityDocumentation
-	Score int `json:"score"`
+	Score int
 }
 
-// SearchCapabilities searches the command registry using normalized command
-// IDs, forms, titles, summaries, descriptions and examples. Equal scores are
-// ordered by stable capability ID, making the output deterministic across
-// runs. Pass true to hide private capabilities in a shared conversation.
-func SearchCapabilities(query string, sharedConversation bool) []CapabilitySearchResult {
-	return SearchCapabilitiesWithOptions(query, CapabilitySearchOptions{SharedConversation: sharedConversation})
-}
-
-// SearchCapabilitiesWithOptions is the configurable form of
-// SearchCapabilities.
-func SearchCapabilitiesWithOptions(query string, options CapabilitySearchOptions) []CapabilitySearchResult {
+// SearchCapabilityDocumentation searches the registry using IDs, forms,
+// titles, summaries, and executable examples. Equal scores use stable ID
+// order. Shared conversations are filtered before ranking.
+func SearchCapabilityDocumentation(query string, options CapabilitySearchOptions) []CapabilityDocumentation {
 	query = normalizeCapabilitySearchText(query)
 	queryTokens := strings.Fields(query)
-	results := make([]CapabilitySearchResult, 0, len(capabilityDescriptors))
+	results := make([]capabilitySearchResult, 0, len(capabilityDescriptors))
 	for _, descriptor := range capabilityDescriptors {
 		documentation := capabilityDocumentationFor(descriptor, options.SharedConversation)
 		if documentation == nil {
@@ -66,7 +54,7 @@ func SearchCapabilitiesWithOptions(query string, options CapabilitySearchOptions
 		if !ok {
 			continue
 		}
-		results = append(results, CapabilitySearchResult{CapabilityDocumentation: *documentation, Score: score})
+		results = append(results, capabilitySearchResult{CapabilityDocumentation: *documentation, Score: score})
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score != results[j].Score {
@@ -77,42 +65,11 @@ func SearchCapabilitiesWithOptions(query string, options CapabilitySearchOptions
 	if options.Limit > 0 && len(results) > options.Limit {
 		results = results[:options.Limit]
 	}
-	return copyCapabilitySearchResults(results)
-}
-
-// SearchCapabilityDocumentation returns the same search matches without the
-// ranking wrapper. It is useful for help/tool-description consumers that only
-// need structured documentation.
-func SearchCapabilityDocumentation(query string, options CapabilitySearchOptions) []CapabilityDocumentation {
-	results := SearchCapabilitiesWithOptions(query, options)
 	documentation := make([]CapabilityDocumentation, 0, len(results))
 	for _, result := range results {
 		documentation = append(documentation, copyCapabilityDocumentation(result.CapabilityDocumentation))
 	}
 	return documentation
-}
-
-// SearchCapabilityDocs is a concise alias for documentation consumers.
-func SearchCapabilityDocs(query string, sharedConversation bool) []CapabilityDocumentation {
-	return SearchCapabilityDocumentation(query, CapabilitySearchOptions{SharedConversation: sharedConversation})
-}
-
-// SearchCapabilitiesForIdentity applies the shared-conversation policy from a
-// concrete host identity.
-func SearchCapabilitiesForIdentity(query string, identity store.Identity) []CapabilitySearchResult {
-	return SearchCapabilities(query, store.IsSharedConversation(identity))
-}
-
-// SearchCapabilities is also available as a Handler method for hosts that
-// already carry a command handler alongside their conversation identity.
-func (h Handler) SearchCapabilities(query string, sharedConversation bool) []CapabilitySearchResult {
-	return SearchCapabilities(query, sharedConversation)
-}
-
-// SearchCapabilityDocumentation is the Handler-method counterpart to the
-// package-level documentation search API.
-func (h Handler) SearchCapabilityDocumentation(query string, options CapabilitySearchOptions) []CapabilityDocumentation {
-	return SearchCapabilityDocumentation(query, options)
 }
 
 func capabilityDocumentationFor(descriptor CapabilityDescriptor, shared bool) *CapabilityDocumentation {
@@ -250,13 +207,4 @@ func copyCapabilityDocumentation(documentation CapabilityDocumentation) Capabili
 	documentation.Shortcuts = copyUsageExamples(documentation.Shortcuts)
 	documentation.searchFields = append([]string(nil), documentation.searchFields...)
 	return documentation
-}
-
-func copyCapabilitySearchResults(results []CapabilitySearchResult) []CapabilitySearchResult {
-	copy := make([]CapabilitySearchResult, len(results))
-	for i, result := range results {
-		result.CapabilityDocumentation = copyCapabilityDocumentation(result.CapabilityDocumentation)
-		copy[i] = result
-	}
-	return copy
 }

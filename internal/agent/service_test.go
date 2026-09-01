@@ -47,18 +47,20 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 
 func TestGroupAgentOnlyAdvertisesPublicCapabilities(t *testing.T) {
 	description := hostCapabilityToolDescription(true)
-	for _, public := range []string{" bus:", " course:", " teacher:"} {
-		if !strings.Contains(description, public) {
-			t.Fatalf("group description lacks public capability %q: %q", public, description)
-		}
+	if !strings.Contains(description, "shared conversation") {
+		t.Fatalf("group description lacks shared boundary: %q", description)
 	}
-	for _, private := range []string{" subscription:", " schedule:", " todo:", " account:"} {
-		if strings.Contains(description, private) {
-			t.Fatalf("group description exposes private capability %q: %q", private, description)
-		}
+	if strings.Contains(description, "course:") || strings.Contains(description, "subscription:") {
+		t.Fatalf("invoke description should not eagerly dump the registry: %q", description)
 	}
-	if strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "shared conversation") {
-		t.Fatalf("group description contains private workflow or lacks shared boundary: %q", description)
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100"}
+	public, err := searchCommandDocumentation(ident, commandSearchInput{Query: "course"})
+	if err != nil || !strings.Contains(public, `"id":"course"`) {
+		t.Fatalf("public search=%q err=%v", public, err)
+	}
+	private, err := searchCommandDocumentation(ident, commandSearchInput{Query: "subscription"})
+	if err != nil || private != "[]" {
+		t.Fatalf("private group search=%q err=%v", private, err)
 	}
 }
 
@@ -253,8 +255,8 @@ func TestAgentToolConstruction(t *testing.T) {
 		"get_current_time",
 		"invoke_bot_capability",
 		"record_bot_feedback",
+		"search_bot_commands",
 		"search_campus_tools",
-		"send_message_part",
 	)
 }
 
@@ -276,7 +278,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 		handler: commands.Handler{Store: db}, auth: &auth.Manager{Store: db},
 		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
 	}
-	lazy := newLazyMCPSession(svc, ident, 0, nil)
+	lazy := newLazyMCPSession(svc, ident, 0)
 	defer func() { _ = lazy.Close() }()
 
 	docs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "courses"})
@@ -300,7 +302,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tracked := newLazyMCPSession(svc, ident, job.ID, nil)
+	tracked := newLazyMCPSession(svc, ident, job.ID)
 	defer func() { _ = tracked.Close() }()
 	if _, err := tracked.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err != nil {
 		t.Fatal(err)
@@ -319,7 +321,7 @@ func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
 		"get_current_time",
 		"invoke_bot_capability",
-		"send_message_part",
+		"search_bot_commands",
 	)
 }
 
@@ -334,7 +336,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 		"get_current_time",
 		"invoke_bot_capability",
 		"record_bot_feedback",
-		"send_message_part",
+		"search_bot_commands",
 	)
 }
 
@@ -366,7 +368,7 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
 	if !names["search_campus_tools"] || logs.Len() != 0 {
 		t.Fatalf("MCP was initialized before a tool request: names=%#v logs=%q", names, logs.String())
 	}
-	session := newLazyMCPSession(svc, ident, 0, nil)
+	session := newLazyMCPSession(svc, ident, 0)
 	if _, err := session.search(context.Background(), campusToolSearchInput{Query: "course"}); !errors.Is(err, auth.ErrNotLoggedIn) {
 		t.Fatalf("lazy MCP search error = %v", err)
 	}
@@ -426,7 +428,7 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T)
 	if logs.Len() != 0 {
 		t.Fatalf("MCP initialized while only constructing tools: %q", logs.String())
 	}
-	session := newLazyMCPSession(svc, ident, 0, nil)
+	session := newLazyMCPSession(svc, ident, 0)
 	if _, err := session.search(context.Background(), campusToolSearchInput{Query: "course"}); err == nil {
 		t.Fatal("lazy MCP search unexpectedly succeeded with an unapproved resource")
 	}
@@ -473,9 +475,7 @@ func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *te
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, 0, nil, func(context.Context, store.Identity, string) error {
-		return nil
-	}, nil)
+	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -594,39 +594,6 @@ func recoverableMCPToolError(t *testing.T) error {
 	return err
 }
 
-func TestToolTraceNotifierSendsCallAndResultTogether(t *testing.T) {
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	var messages []string
-	trace := &toolTraceNotifier{
-		ident: ident,
-		send: func(ctx context.Context, gotIdent store.Identity, message string) error {
-			if gotIdent != ident {
-				t.Fatalf("identity = %#v", gotIdent)
-			}
-			messages = append(messages, message)
-			return nil
-		},
-	}
-
-	trace.Notify(context.Background(), "search_courses", struct {
-		Keyword string `json:"keyword"`
-	}{Keyword: "数学分析"}, "课程：数学分析\n教师：张三", nil)
-	trace.Notify(context.Background(), "get_current_time", emptyInput{}, "", nil)
-	trace.Notify(context.Background(), "search_courses", struct{}{}, "", errors.New("token=secret upstream exploded"))
-	if len(messages) != 3 {
-		t.Fatalf("messages = %#v", messages)
-	}
-	if messages[0] != "工具调用：search_courses {\"keyword\":\"数学分析\"}\n工具结果：\n课程：数学分析\n教师：张三" {
-		t.Fatalf("message 0 = %q", messages[0])
-	}
-	if messages[1] != "工具调用：get_current_time\n工具结果：" {
-		t.Fatalf("message 1 = %q", messages[1])
-	}
-	if strings.Contains(messages[2], "token=secret") || !strings.Contains(messages[2], "工具暂时不可用") {
-		t.Fatalf("message 2 exposes error = %q", messages[2])
-	}
-}
-
 func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -741,30 +708,6 @@ func TestRecordBotFeedbackStoresWithoutAdminTargets(t *testing.T) {
 	}
 }
 
-func TestSendMessagePartUsesSender(t *testing.T) {
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	var gotIdent store.Identity
-	var gotMessage string
-	reply, err := sendMessagePart(context.Background(), ident, func(ctx context.Context, ident store.Identity, message string) error {
-		gotIdent = ident
-		gotMessage = message
-		return nil
-	}, messagePartInput{Content: "第一段"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply != "已发送。" || gotIdent != ident || gotMessage != "第一段" {
-		t.Fatalf("reply = %q ident = %#v message = %q", reply, gotIdent, gotMessage)
-	}
-}
-
-func TestFormatToolResultTruncatesLongText(t *testing.T) {
-	got := formatToolResult(strings.Repeat("好", 1001))
-	if !strings.HasSuffix(got, "\n...") {
-		t.Fatalf("result was not truncated: %q", got)
-	}
-}
-
 func TestCleanQQReplyRemovesMarkdownTables(t *testing.T) {
 	input := `---
 
@@ -794,13 +737,13 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if strings.Contains(instruction, "Current local time is") {
 		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
-	if !strings.Contains(instruction, "prepare and confirm them one at a time") || !strings.Contains(instruction, "Avoid emojis") {
+	if !strings.Contains(instruction, "confirmed one operation at a time") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
-	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, or service availability") {
+	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, service availability, or operation results") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "Preserve every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") || !strings.Contains(instruction, "never replace a requested value with a default") {
+	if !strings.Contains(instruction, "preserving every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") {
 		t.Fatalf("instruction lacks universal argument-preservation rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never ask whether to record feedback") {
@@ -809,11 +752,11 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "confirmation_required") || !strings.Contains(instruction, "suggestedCalls") {
+	if !strings.Contains(instruction, "search_bot_commands") || !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "literal evidence") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
-	if !strings.Contains(strings.ToLower(instruction), "personal icalendar subscription url") || strings.Contains(strings.ToLower(instruction), "caldav") {
-		t.Fatalf("instruction lacks accurate calendar subscription guidance: %q", instruction)
+	if !strings.Contains(instruction, "Private URLs returned by a tool may be used and repeated in a direct chat") {
+		t.Fatalf("instruction lacks private URL policy: %q", instruction)
 	}
 	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
 		if strings.Contains(instruction, obsolete) {
@@ -851,7 +794,7 @@ func TestHostCapabilityToolReturnsPrivateCalendarURLInPrivateModelContext(t *tes
 	}, auth: authManager}
 
 	var delivered commands.Response
-	tools, session, err := svc.toolsFor(ctx, ident, 0, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+	tools, session, err := svc.toolsFor(ctx, ident, 0, func(_ context.Context, _ store.Identity, response commands.Response) error {
 		delivered = response
 		return nil
 	})
@@ -912,7 +855,7 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 	}, auth: authManager}
 
 	var delivered commands.Response
-	tools, session, err := svc.toolsFor(ctx, ident, 0, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+	tools, session, err := svc.toolsFor(ctx, ident, 0, func(_ context.Context, _ store.Identity, response commands.Response) error {
 		delivered = response
 		return nil
 	})
@@ -952,30 +895,24 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 	}
 }
 
-func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *testing.T) {
+func TestHostCapabilityDescriptionIsSmallAndCommandSearchReturnsExactCalls(t *testing.T) {
 	description := hostCapabilityToolDescription(false)
-	if !strings.Contains(description, `{"capability":"subscription","arguments":["link"]}`) {
-		t.Fatalf("description lacks structured subscription call: %q", description)
-	}
-	if !strings.Contains(description, `{"capability":"course_by_jw_id","arguments":["12345"]}`) || !strings.Contains(description, `{"capability":"section_schedules","arguments":["12345","2026-09-01","2026-09-30"]}`) {
-		t.Fatalf("description lacks exact structured identifier/date calls: %q", description)
-	}
-	if !strings.Contains(description, `{"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]}`) {
-		t.Fatalf("description lacks exact dated bus call: %q", description)
-	}
-	if !strings.Contains(description, `capability subscription and arguments ["link"] exactly`) || !strings.Contains(description, "no MCP tool can provide that private URL") {
-		t.Fatalf("description lacks private calendar URL routing rule: %q", description)
-	}
-	for _, status := range []string{"ok", "success", "invalid_input", "forbidden", "confirmation_required", "auth_required", "not_found", "ok:false"} {
-		if !strings.Contains(description, status) {
-			t.Fatalf("description lacks status guidance %q: %q", status, description)
+	for _, expected := range []string{"search_bot_commands", "actual domain result", "pauses before each independently reversible mutation", "Authentication is also host-owned"} {
+		if !strings.Contains(description, expected) {
+			t.Fatalf("description lacks %q: %q", expected, description)
 		}
 	}
-	if !strings.Contains(description, "never ask the user to type or copy a command") || !strings.Contains(description, "do not expose, repeat, or request any verification code") {
-		t.Fatalf("description lacks host/auth workflow: %q", description)
+	if strings.Contains(description, `{"capability"`) || strings.Contains(description, "invalid_input") || strings.Contains(description, "ok:false") {
+		t.Fatalf("description retained eager registry/status protocol: %q", description)
 	}
-	if strings.Contains(description, "confirmation=never") || strings.Contains(description, "订阅 链接") {
-		t.Fatalf("description exposes misleading policy or command syntax: %q", description)
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	subscription, err := searchCommandDocumentation(ident, commandSearchInput{Query: "subscription"})
+	if err != nil || !strings.Contains(subscription, `"capability":"subscription","arguments":["link"]`) {
+		t.Fatalf("subscription documentation=%q err=%v", subscription, err)
+	}
+	bus, err := searchCommandDocumentation(ident, commandSearchInput{Query: "bus"})
+	if err != nil || !strings.Contains(bus, `"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]`) {
+		t.Fatalf("bus documentation=%q err=%v", bus, err)
 	}
 }
 
@@ -1329,8 +1266,14 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		!strings.Contains(operations[0].Result, "作业提醒：开") {
 		t.Fatalf("completed operations=%#v err=%v", operations, err)
 	}
+	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
+		t.Fatalf("checkpoint must survive until coordinator acknowledgement: found=%v err=%v", found, err)
+	}
+	if err := svc.Acknowledge(ctx, job.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || found {
-		t.Fatalf("completed checkpoint found=%v err=%v", found, err)
+		t.Fatalf("acknowledged checkpoint found=%v err=%v", found, err)
 	}
 	events, err := db.RecentConversationEvents(ctx, ident, 20)
 	if err != nil {
@@ -1353,6 +1296,49 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	}
 	if requests.Load() != 2 {
 		t.Fatalf("model requests = %d", requests.Load())
+	}
+}
+
+func TestMutationExecutionDedupeSurvivesFreshToolCallID(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "dedupe", ConversationType: "private", ConversationID: "dedupe"}
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "semantic-dedupe", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, ok := commands.NewInvocation(commands.CapabilityNotify, []string{"homework", "on"})
+	if !ok {
+		t.Fatal("notify invocation is invalid")
+	}
+	firstKey := capabilityExecutionDedupeKey(job.ID, "first-model-call", invocation)
+	secondKey := capabilityExecutionDedupeKey(job.ID, "fresh-model-call", invocation)
+	if firstKey != secondKey {
+		t.Fatalf("mutation dedupe changed with tool call ID: %q != %q", firstKey, secondKey)
+	}
+	first, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: firstKey, Capability: string(invocation.ID()),
+		Arguments: invocation.Args, Effect: string(invocation.Policy().Effect), RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("first execution=%#v created=%v err=%v", first, created, err)
+	}
+	second, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: secondKey, Capability: string(invocation.ID()),
+		Arguments: invocation.Args, Effect: string(invocation.Policy().Effect), RequiresConfirmation: true,
+	})
+	if err != nil || created || second.ID != first.ID {
+		t.Fatalf("replayed execution=%#v created=%v err=%v first=%#v", second, created, err, first)
+	}
+	read, _ := commands.NewInvocation(commands.CapabilityCourse, []string{"数学分析"})
+	if capabilityExecutionDedupeKey(job.ID, "read-1", read) == capabilityExecutionDedupeKey(job.ID, "read-2", read) {
+		t.Fatal("independent read calls were incorrectly collapsed")
 	}
 }
 
@@ -1493,7 +1479,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 			}`))
 			return
 		}
-		if !bytes.Contains(body, []byte("操作未执行：用户拒绝执行")) {
+		if !bytes.Contains(body, []byte(`"content":"用户拒绝执行"`)) {
 			t.Errorf("denial missing from resumed transcript: %s", body)
 		}
 		_, _ = w.Write([]byte(`{
@@ -1593,8 +1579,14 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 	if err != nil || spending.ModelRequests != int64(agentRunMaxModelAttempts) {
 		t.Fatalf("job spending=%#v err=%v", spending, err)
 	}
+	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
+		t.Fatalf("terminal result checkpoint must await acknowledgement: found=%v err=%v", found, err)
+	}
+	if err := svc.Acknowledge(ctx, job.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || found {
-		t.Fatalf("terminal failure checkpoint found=%v err=%v", found, err)
+		t.Fatalf("acknowledged terminal checkpoint found=%v err=%v", found, err)
 	}
 }
 

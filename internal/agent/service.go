@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -63,18 +62,14 @@ type Service struct {
 }
 
 type Input struct {
-	Text       string
-	ImageURLs  []string
-	Identity   store.Identity
-	JobID      int64
-	SendUpdate func(context.Context, store.Identity, string) error
+	Text      string
+	ImageURLs []string
+	Identity  store.Identity
+	JobID     int64
 	// SendResponse lets a local tool hand an already formatted host response
-	// directly to the application. It is used for images and private values that
-	// must not pass through the model.
+	// directly to the application when its presentation cannot be reproduced
+	// from plain model text (for example, an image).
 	SendResponse func(context.Context, store.Identity, commands.Response) error
-	// WaitForConfirmation records the host invocation that must be resumed by
-	// a real inbound user confirmation. The agent cannot call it with "ok".
-	WaitForConfirmation func(context.Context, store.Identity, string) error
 
 	imageDataURLs []string
 	runState      *RunState
@@ -85,6 +80,7 @@ type RunState string
 const (
 	RunStateCompleted   RunState = "completed"
 	RunStateInterrupted RunState = "interrupted"
+	RunStateWaitingAuth RunState = "waiting_auth"
 	RunStateIgnored     RunState = "ignored"
 )
 
@@ -245,28 +241,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	traceEnabled, err := observeRunStageValue(ctx, "tool_setup", func() (bool, error) {
-		return s.toolTraceEnabled(ctx, input.Identity)
-	})
-	if err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
-		if errors.Is(err, context.Canceled) {
-			finishRun(store.AgentRunStatusIgnored, "", err)
-			return commands.Response{}, false
-		}
-		if isAgentBudgetError(err) {
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
-		}
-		reply := agentFailureReply(runID, err)
-		finishRun(store.AgentRunStatusFailed, reply, err)
-		return agentTextResponse(reply), true
-	}
-	var trace *toolTraceNotifier
-	if traceEnabled {
-		trace = &toolTraceNotifier{ident: input.Identity, send: input.SendUpdate}
-	}
 	var hostResponseDelivered atomic.Bool
 	sendResponse := input.SendResponse
 	if sendResponse != nil {
@@ -282,7 +256,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		tools   []tool.BaseTool
 		session *lazyMCPSession
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, input.JobID, trace, input.SendUpdate, sendResponse)
+		tools, session, err := s.toolsFor(ctx, input.Identity, input.JobID, sendResponse)
 		return struct {
 			tools   []tool.BaseTool
 			session *lazyMCPSession
@@ -342,7 +316,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: tools,
+				Tools: tools, ExecuteSequentially: true,
 				UnknownToolsHandler: func(ctx context.Context, name, input string) (string, error) {
 					started := time.Now()
 					defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
@@ -447,17 +421,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					finishRun(store.AgentRunStatusCompleted, reply, nil)
 					return agentLoginResponse(reply), true
 				}
-				s.deleteAgentCheckpoint(ctx, checkpointID)
 				finishRun(store.AgentRunStatusCompleted, reply, nil)
 				return agentTextResponse(reply), true
 			}
-			s.deleteAgentCheckpoint(ctx, checkpointID)
 			finishRun(store.AgentRunStatusFailed, reply, runErr)
 			return agentTextResponse(reply), true
 		}
 		if event.Action != nil && event.Action.Interrupted != nil {
 			if input.runState != nil {
 				*input.runState = RunStateInterrupted
+				if capabilityInterruptKind(event.Action.Interrupted) == capabilityInterruptAuth {
+					*input.runState = RunStateWaitingAuth
+				}
 			}
 			finishRun(store.AgentRunStatusInterrupted, "", nil)
 			return commands.Response{}, true
@@ -487,21 +462,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if hostResponseDelivered.Load() {
-		s.deleteAgentCheckpoint(ctx, checkpointID)
 		finishRun(store.AgentRunStatusCompleted, "", nil)
 		return commands.Response{}, true
 	}
 	if reply == "" {
-		s.deleteAgentCheckpoint(ctx, checkpointID)
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
-	}
-	if hasCalendarSubscriptionURL(reply) {
-		s.logf("agent reply blocked: id=%d reason=unverified_calendar_url", runID)
-		reply = calendarURLGuardReply
-	} else if claimsCalendarSubscriptionDelivered(reply) {
-		s.logf("agent reply blocked: id=%d reason=unverified_calendar_delivery_claim", runID)
-		reply = calendarURLGuardReply
 	}
 	response := s.responseFor(ctx, input, reply)
 	if err := budget.contextError(ctx); err != nil {
@@ -516,16 +482,38 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	if response.Text == "" && len(response.Parts) == 0 {
 		if hostResponseDelivered.Load() {
-			s.deleteAgentCheckpoint(ctx, checkpointID)
 			finishRun(store.AgentRunStatusCompleted, "", nil)
 			return commands.Response{}, true
 		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
-	s.deleteAgentCheckpoint(ctx, checkpointID)
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
+}
+
+func capabilityInterruptKind(info *adk.InterruptInfo) string {
+	if info == nil {
+		return ""
+	}
+	if value, ok := info.Data.(capabilityInterruptInfo); ok {
+		return value.Kind
+	}
+	if value, ok := info.Data.(*capabilityInterruptInfo); ok && value != nil {
+		return value.Kind
+	}
+	for _, interruptContext := range info.InterruptContexts {
+		if interruptContext == nil || !interruptContext.IsRootCause {
+			continue
+		}
+		if value, ok := interruptContext.Info.(capabilityInterruptInfo); ok {
+			return value.Kind
+		}
+		if value, ok := interruptContext.Info.(*capabilityInterruptInfo); ok && value != nil {
+			return value.Kind
+		}
+	}
+	return ""
 }
 
 func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
@@ -691,13 +679,14 @@ func agentMessageDedupeKey(jobID int64, message *schema.Message) string {
 	return fmt.Sprintf("conversation-job:%d:message:%x", jobID, digest[:16])
 }
 
-func (s *Service) deleteAgentCheckpoint(ctx context.Context, checkpointID string) {
+// Acknowledge removes a completed checkpoint only after the coordinator has
+// atomically persisted the final output and terminal job state.
+func (s *Service) Acknowledge(ctx context.Context, jobID int64) error {
+	checkpointID := agentCheckpointID(jobID)
 	if s.handler.Store == nil || checkpointID == "" {
-		return
+		return nil
 	}
-	if err := s.handler.Store.AgentCheckpoints().Delete(ctx, checkpointID); err != nil {
-		s.logf("delete completed agent checkpoint failed: checkpoint_id=%s error=%v", checkpointID, err)
-	}
+	return s.handler.Store.AgentCheckpoints().Delete(ctx, checkpointID)
 }
 
 type emptyInput struct{}
@@ -708,107 +697,46 @@ type feedbackInput struct {
 	Context  string `json:"context,omitempty" jsonschema_description:"Relevant user message, tool result, or short context that explains why this feedback matters"`
 }
 
-type messagePartInput struct {
-	Content string `json:"content" jsonschema_description:"One intermediate QQ message to send before the final response"`
-}
-
-type toolTraceNotifier struct {
-	mu    sync.Mutex
-	ident store.Identity
-	send  func(context.Context, store.Identity, string) error
-}
-
-func (r *toolTraceNotifier) Notify(ctx context.Context, name string, input any, result string, err error) {
-	if r == nil {
-		return
-	}
-	message := "工具调用：" + name
-	if args := formatToolArgs(input); args != "" {
-		message += " " + args
-	}
-	message += "\n工具结果："
-	if err != nil {
-		message += "\n失败：工具暂时不可用，请稍后重试。"
-	} else if formatted := formatToolResult(result); formatted != "" {
-		message += "\n" + formatted
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.send != nil {
-		_ = r.send(ctx, r.ident, message)
-	}
-}
-
-func (s *Service) toolTraceEnabled(ctx context.Context, ident store.Identity) (bool, error) {
-	if store.IsSharedConversation(ident) {
-		return false, nil
-	}
-	if s.handler.Store == nil {
-		return false, nil
-	}
-	settings, err := s.handler.Store.AgentSettings(ctx, ident)
-	if err != nil {
-		return false, err
-	}
-	return settings.ExposeToolCalls, nil
-}
-
 type hostCapabilityInput struct {
-	Capability string   `json:"capability" jsonschema_description:"Stable capability ID listed in the tool description"`
+	Capability string   `json:"capability" jsonschema_description:"Exact stable capability ID returned by search_bot_commands"`
 	Arguments  []string `json:"arguments,omitempty" jsonschema_description:"Capability arguments only; do not repeat the capability name"`
 }
 
+type commandSearchInput struct {
+	Query string `json:"query" jsonschema_description:"Concrete user intent, command name, or capability ID to search for"`
+}
+
 func hostCapabilityToolDescription(shared bool) string {
-	var description strings.Builder
-	description.WriteString("Invoke one host capability with structured arguments. Call it yourself; never ask the user to type or copy a command. Every result includes ok and one status: success means the host completed the capability; invalid_input means correct arguments using suggestedCalls; forbidden means explain the audience restriction; confirmation_required means wait for the real user's confirmation and do not claim it ran; auth_required means the host has sent private login instructions and will resume the pending request, so do not expose, repeat, or request any verification code; not_found means the capability ID is unavailable. Treat ok:false as a failed tool call: correct the request or explain the safe text, and do not announce success. Host-only results are delivered without exposing private values to the model. ")
+	description := "Invoke one Bot capability using the exact capability ID and arguments returned by search_bot_commands. The result is the actual domain result, without a status wrapper. The host pauses before each independently reversible mutation, asks the user for confirmation, and resumes this tool after the decision; never simulate approval or announce success before the resumed result. Authentication is also host-owned and resumes automatically."
 	if shared {
-		description.WriteString("This is a shared conversation: only the public capabilities listed below are available. Ask the user to continue in a private chat for any personal request. ")
-	} else {
-		description.WriteString("For a personal iCalendar subscription URL request, call this tool with capability subscription and arguments [\"link\"] exactly; no MCP tool can provide that private URL. ")
+		description += " This is a shared conversation; private capabilities are unavailable."
 	}
-	description.WriteString("Available capabilities (group, ID, exact calls):\n")
-	for _, usage := range commands.CapabilityUsages() {
-		descriptor, ok := commands.CapabilityDescriptorFor(usage.ID)
-		if !ok || (shared && descriptor.Requirements.DataScope != commands.DataScopePublic) {
-			continue
-		}
-		fmt.Fprintf(&description, "- [%s] %s: %s", usage.Group, usage.ID, strings.TrimSpace(usage.Summary))
-		if len(usage.Examples) > 0 {
-			description.WriteString(" Calls: ")
-			written := 0
-			for _, example := range usage.Examples {
-				if invocation, valid := example.Invocation(); !valid || (shared && invocation.Policy().DataScope != commands.DataScopePublic) {
-					continue
-				}
-				raw, err := json.Marshal(hostCapabilityInput{Capability: string(example.Capability), Arguments: example.Arguments})
-				if err != nil {
-					continue
-				}
-				if written > 0 {
-					description.WriteString("; ")
-				}
-				description.Write(raw)
-				written++
-			}
-		}
-		description.WriteByte('\n')
+	return description
+}
+
+func searchCommandDocumentation(ident store.Identity, input commandSearchInput) (string, error) {
+	documentation := commands.SearchCapabilityDocumentation(input.Query, commands.CapabilitySearchOptions{
+		SharedConversation: store.IsSharedConversation(ident),
+		Limit:              5,
+	})
+	encoded, err := json.Marshal(documentation)
+	if err != nil {
+		return "", fmt.Errorf("encode command documentation: %w", err)
 	}
-	return strings.TrimSpace(description.String())
+	return string(encoded), nil
 }
 
 func (s *Service) toolsFor(
 	ctx context.Context,
 	ident store.Identity,
 	jobID int64,
-	trace *toolTraceNotifier,
-	sendUpdate func(context.Context, store.Identity, string) error,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
 ) ([]tool.BaseTool, *lazyMCPSession, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
 	var mcpSession *lazyMCPSession
 	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
-		mcpSession = newLazyMCPSession(s, ident, jobID, trace)
+		mcpSession = newLazyMCPSession(s, ident, jobID)
 		tools, err = mcpSession.appendTools(tools)
 		if err != nil {
 			_ = mcpSession.Close()
@@ -817,7 +745,7 @@ func (s *Service) toolsFor(
 	}
 
 	if s.handler.Store != nil {
-		tools, err = appendInferredTool(tools, "record_bot_feedback", "Record feedback about missing LLM tools, bad tool results, typo handling gaps, API gaps, or user interaction problems for maintainers to review.", trace, func(ctx context.Context, input feedbackInput) (string, error) {
+		tools, err = appendInferredTool(tools, "record_bot_feedback", "Record feedback about missing LLM tools, bad tool results, typo handling gaps, API gaps, or user interaction problems for maintainers to review.", func(ctx context.Context, input feedbackInput) (string, error) {
 			return s.recordBotFeedback(ctx, ident, input)
 		})
 		if err != nil {
@@ -827,18 +755,16 @@ func (s *Service) toolsFor(
 			return nil, nil, err
 		}
 	}
-	if sendUpdate != nil {
-		tools, err = appendInferredTool(tools, "send_message_part", "Send one intermediate QQ message when a long answer should be split. After using this, put only the remaining content in the final answer.", trace, func(ctx context.Context, input messagePartInput) (string, error) {
-			return sendMessagePart(ctx, ident, sendUpdate, input)
-		})
-		if err != nil {
-			if mcpSession != nil {
-				_ = mcpSession.Close()
-			}
-			return nil, nil, err
+	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry for exact capability IDs, arguments, examples, confirmation policy, and audience scope. Search before invoking a capability; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
+		return searchCommandDocumentation(ident, input)
+	})
+	if err != nil {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
 		}
+		return nil, nil, err
 	}
-	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), trace, func(ctx context.Context, input hostCapabilityInput) (string, error) {
+	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), func(ctx context.Context, input hostCapabilityInput) (string, error) {
 		return s.invokeHostCapability(ctx, input, ident, jobID, sendResponse)
 	})
 	if err != nil {
@@ -847,7 +773,7 @@ func (s *Service) toolsFor(
 		}
 		return nil, nil, err
 	}
-	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", trace, func(_ context.Context, _ emptyInput) (string, error) {
+	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
 		return currentTimeMessage(), nil
 	})
 	if err != nil {
@@ -978,53 +904,12 @@ func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, i
 	return fmt.Sprintf("已记录反馈 #%d。", result.ID), nil
 }
 
-func sendMessagePart(ctx context.Context, ident store.Identity, send func(context.Context, store.Identity, string) error, input messagePartInput) (string, error) {
-	if send == nil {
-		return "", errors.New("message sender is unavailable")
-	}
-	content := cleanQQReply(input.Content)
-	if strings.TrimSpace(content) == "" {
-		return "", errors.New("message content is required")
-	}
-	if hasCalendarSubscriptionURL(content) {
-		return "", errUnverifiedCalendarURL
-	}
-	if err := send(ctx, ident, content); err != nil {
-		return "", err
-	}
-	return "已发送。", nil
-}
-
-func appendInferredTool[I any](tools []tool.BaseTool, name, description string, trace *toolTraceNotifier, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
-	wrapped := func(ctx context.Context, input I) (string, error) {
-		result, err := fn(ctx, input)
-		if trace != nil {
-			trace.Notify(ctx, name, input, result, err)
-		}
-		return result, err
-	}
-	t, err := utils.InferTool(name, description, wrapped)
+func appendInferredTool[I any](tools []tool.BaseTool, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
+	t, err := utils.InferTool(name, description, fn)
 	if err != nil {
 		return nil, err
 	}
 	return append(tools, t), nil
-}
-
-func formatToolArgs(input any) string {
-	data, err := json.Marshal(input)
-	if err != nil {
-		return fmt.Sprintf("%v", input)
-	}
-	args := strings.TrimSpace(string(data))
-	if args == "" || args == "{}" || args == "null" {
-		return ""
-	}
-	const maxRunes = 300
-	runes := []rune(args)
-	if len(runes) > maxRunes {
-		return string(runes[:maxRunes]) + "..."
-	}
-	return args
 }
 
 func cleanQQReply(reply string) string {
@@ -1124,19 +1009,6 @@ func cleanMarkdownTableRow(line string) string {
 	return strings.Join(cells, "  ")
 }
 
-func formatToolResult(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	const maxRunes = 1000
-	runes := []rune(value)
-	if len(runes) > maxRunes {
-		return string(runes[:maxRunes]) + "\n..."
-	}
-	return value
-}
-
 const agentMaxIterations = 32
 const agentHTTPTimeout = 60 * time.Second
 const kimiMaxCompletionTokens = 8_192
@@ -1153,20 +1025,16 @@ func currentInstructionAt(now time.Time) string {
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
-Use tools for Life @ USTC facts instead of guessing.
-Never invent prices, menus, locations, schedules, bus times, or service availability. If no tool or reliable data provides a fact, say that reliable data is unavailable.
-You can answer questions about prior messages using the chat history provided in this run. If the latest user turn contains multiple paragraphs separated by blank lines, treat them as one conversation turn and answer them together.
-The host capability registry is the source of truth for Bot actions. Use invoke_bot_capability whenever it covers the request, following its structured examples exactly. Preserve every user constraint in arguments, including dates, times, filters, targets, and direction; never replace a requested value with a default. Call tools yourself instead of asking the user to type, paste, or repeat a command.
-Treat the host result as authoritative: only ok:true with status success means completion. For invalid_input, use suggestedCalls to correct an unambiguous call; for confirmation_required, wait for the user's real ok; for auth_required, the host has sent login details and will resume automatically. Never claim completion before success.
-MCP tools are read-only supplements. Prefer a host capability whenever both layers cover the request. If no capability supports a requested mutation, explain that it is unavailable and record concrete feedback; never improvise a write through another tool.
-Personal iCalendar subscription URLs are handled only by the subscription capability with the link argument; call it directly for any calendar-link request instead of using another tool. The host sends the private link directly without exposing it to you. Never create, infer, reconstruct, sign, shorten, modify, or output an .ics URL, calendar feed URL, credential, token, or signature.
-Never claim that any lookup, mutation, message, or feedback succeeded unless the corresponding tool returned success in this run. On failure, use the safe result text or structured suggestions; never repeat raw or internal errors.
-When multiple mutations are needed, prepare and confirm them one at a time. Ask only for ok; never ask the user to copy or send a command.
+Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, or operation results.
+Search search_bot_commands with the concrete intent before using invoke_bot_capability. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
+Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
+The host owns confirmations. A mutation tool call pauses while the host asks the real user, then resumes with the operation result or an explicit denial. Never ask for or simulate confirmation yourself. Grouped mutations are confirmed one operation at a time.
+The host also owns authentication. If a tool pauses for login, wait for the automatic resume; never request, repeat, or invent a verification code.
+Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
+MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so and record concrete feedback; never improvise a write through another tool.
+You can answer questions about prior messages using the exact chat history in this run. Treat multiple paragraphs in the latest user turn as one turn.
 If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
-For long replies, you may call send_message_part once, then put only the remaining content in the final answer.
-Do not expose private profile, homework, todo, curriculum, subscription, authentication, or settings data unless the user asks in a direct chat.
-In a group or channel, answer only the addressed public request. Use only public host capabilities, never request or reveal personal data, and ask the user to continue in a private chat when the request is personal.
-Authentication is handled by the host. If login is required, the host starts it and resumes the pending request after authorization. Never tell the user to send 登录 or repeat the original request.`
+In a group or channel, answer only the addressed public request and ask the user to continue privately for personal requests.`
 }
 
 func currentTimeMessage() string {

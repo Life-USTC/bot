@@ -753,18 +753,36 @@ func (s *Store) RecoverConversationJobLeases(ctx context.Context, now time.Time,
 		leaseFor = lease[0]
 	}
 	cutoff := now.Add(-leaseFor)
-	return s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?",
-			string(ConversationJobStateRunning), cutoff, now).
-		Updates(map[string]any{
-			"state":       string(ConversationJobStateRetryWait),
-			"wait_reason": "",
-			"lease_token": "",
-			"claimed_at":  nil,
-			"retry_at":    now,
-			"last_error":  "worker lease expired before the job was resolved",
-			"updated_at":  now,
-		}).Error
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&conversationJobRow{}).
+			Where("state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?",
+				string(ConversationJobStateRunning), cutoff, now).
+			Updates(map[string]any{
+				"state":       string(ConversationJobStateRetryWait),
+				"wait_reason": "",
+				"lease_token": "",
+				"claimed_at":  nil,
+				"retry_at":    now,
+				"last_error":  "worker lease expired before the job was resolved",
+				"updated_at":  now,
+			}).Error; err != nil {
+			return err
+		}
+		// A running capability may already have reached an external service when
+		// its worker died. Never retry it silently: record the honest unknown
+		// outcome before the owning job can be reclaimed.
+		return tx.Model(&capabilityExecutionRow{}).
+			Where("state = ? AND job_id IN (SELECT id FROM conversation_jobs WHERE state <> ?)",
+				string(CapabilityExecutionRunning), string(ConversationJobStateRunning)).
+			Updates(map[string]any{
+				"state":       string(CapabilityExecutionUnknown),
+				"error":       "worker stopped after capability execution began; external outcome is unknown",
+				"finished_at": now,
+				"updated_at":  now,
+			}).Error
+	})
 }
 
 // ExpireConversationJobs marks every unexpired-state job whose TTL elapsed as

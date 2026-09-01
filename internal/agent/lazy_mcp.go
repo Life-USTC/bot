@@ -43,7 +43,6 @@ type lazyMCPSession struct {
 	service  *Service
 	identity store.Identity
 	jobID    int64
-	trace    *toolTraceNotifier
 
 	once    sync.Once
 	session *botmcp.Session
@@ -51,17 +50,17 @@ type lazyMCPSession struct {
 	err     error
 }
 
-func newLazyMCPSession(service *Service, identity store.Identity, jobID int64, trace *toolTraceNotifier) *lazyMCPSession {
-	return &lazyMCPSession{service: service, identity: identity, jobID: jobID, trace: trace}
+func newLazyMCPSession(service *Service, identity store.Identity, jobID int64) *lazyMCPSession {
+	return &lazyMCPSession{service: service, identity: identity, jobID: jobID}
 }
 
 func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, error) {
 	var err error
-	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first.", s.trace, s.search)
+	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first.", s.search)
 	if err != nil {
 		return nil, err
 	}
-	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. The result is the campus tool's actual result, without a status wrapper.", s.trace, s.call)
+	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. The result is the campus tool's actual result, without a status wrapper.", s.call)
 }
 
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
@@ -194,9 +193,6 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		return existingCampusToolResult(execution), nil
 	}
 	result, callErr := s.session.Call(ctx, name, input.Arguments)
-	if s.trace != nil {
-		s.trace.Notify(ctx, name, input.Arguments, result, callErr)
-	}
 	if tracked {
 		receipt := execution.Receipt
 		receipt.Subject = campusReceiptSubject(name, input.Arguments, result)

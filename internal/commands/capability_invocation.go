@@ -19,39 +19,19 @@ var (
 )
 
 const (
-	ReceiptActionSubscribe   = "subscribe"
-	ReceiptActionUnsubscribe = "unsubscribe"
-	ReceiptResourceSection   = "section"
+	ReceiptActionSubscribe   = "订阅"
+	ReceiptActionUnsubscribe = "取消"
+	ReceiptResourceSection   = "课程"
 )
-
-// CapabilityReceiptSubject is host-derived identity for a mutation target.
-// These fields are intentionally structured so confirmation and audit flows
-// do not need to parse a human-facing command response.
-type CapabilityReceiptSubject struct {
-	Code     string `json:"code,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Course   string `json:"course,omitempty"`
-	Teacher  string `json:"teacher,omitempty"`
-	Semester string `json:"semester,omitempty"`
-}
-
-// CapabilityReceipt identifies the resource and action represented by a
-// capability invocation. It is populated by the host from authoritative API
-// data, never from model-provided text.
-type CapabilityReceipt struct {
-	Action   string                   `json:"action"`
-	Resource string                   `json:"resource"`
-	Subject  CapabilityReceiptSubject `json:"subject"`
-}
 
 // CapabilityInvocationDescription is the host preflight contract. A caller
 // can freeze this value when asking for confirmation and reuse its Receipt
 // for the approved execution result.
 type CapabilityInvocationDescription struct {
-	Invocation           Invocation         `json:"invocation"`
-	Policy               CapabilityPolicy   `json:"policy"`
-	ConfirmationRequired bool               `json:"confirmationRequired"`
-	Receipt              *CapabilityReceipt `json:"receipt,omitempty"`
+	Invocation           Invocation               `json:"invocation"`
+	Policy               CapabilityPolicy         `json:"policy"`
+	ConfirmationRequired bool                     `json:"confirmationRequired"`
+	Receipt              *store.CapabilityReceipt `json:"receipt,omitempty"`
 }
 
 // DescribeInvocation validates and describes a normalized capability without
@@ -181,23 +161,6 @@ func subscriptionImportTargets(args []string) []string {
 	return targets
 }
 
-// ExpandCapabilityMutation validates a capability and returns its independent
-// mutation invocations. Invalid or unknown calls return nil, matching the
-// registry lookup contract used by NewInvocation.
-func ExpandCapabilityMutation(id CapabilityID, args []string) []Invocation {
-	invocation, ok := NewInvocation(id, args)
-	if !ok {
-		return nil
-	}
-	return ExpandMutationInvocations(invocation)
-}
-
-// ExpandCapabilityInvocations is an explicit alias for callers that operate
-// on capability IDs rather than an already normalized Invocation.
-func ExpandCapabilityInvocations(id CapabilityID, args []string) []Invocation {
-	return ExpandCapabilityMutation(id, args)
-}
-
 func splitMutationTargets(invocation Invocation, targetIndex int) []Invocation {
 	if targetIndex < 0 || targetIndex >= len(invocation.Args) {
 		return []Invocation{invocation}
@@ -219,17 +182,19 @@ func splitMutationTargets(invocation Invocation, targetIndex int) []Invocation {
 	return out
 }
 
-func (h Handler) receiptForInvocation(ctx context.Context, ident store.Identity, invocation Invocation) (*CapabilityReceipt, error) {
+func (h Handler) receiptForInvocation(ctx context.Context, ident store.Identity, invocation Invocation) (*store.CapabilityReceipt, error) {
 	if requiresReceiptResolution(invocation) && h.Life == nil {
 		return nil, fmt.Errorf("%w: Life @ USTC API unavailable: not configured", errCapabilityReceiptUnavailable)
 	}
 	if h.Life == nil {
-		return nil, nil
+		receipt := ReceiptForInvocation(invocation)
+		return receiptPointer(receipt), nil
 	}
 	switch invocation.ID() {
 	case CapabilitySubscription:
 		if !firstArgIs(invocation.Args, "import") {
-			return nil, nil
+			receipt := ReceiptForInvocation(invocation)
+			return receiptPointer(receipt), nil
 		}
 		codes := subscriptionImportTargets(invocation.Args[1:])
 		if len(codes) != 1 {
@@ -261,7 +226,8 @@ func (h Handler) receiptForInvocation(ctx context.Context, ident store.Identity,
 		}
 		return sectionReceipt(ReceiptActionUnsubscribe, section), nil
 	default:
-		return nil, nil
+		receipt := ReceiptForInvocation(invocation)
+		return receiptPointer(receipt), nil
 	}
 }
 
@@ -305,7 +271,7 @@ func matchingSectionCode(sections []map[string]any, code string) map[string]any 
 	return nil
 }
 
-func sectionReceipt(action string, section map[string]any) *CapabilityReceipt {
+func sectionReceipt(action string, section map[string]any) *store.CapabilityReceipt {
 	teacher := lifedata.NestedString(section, "teacher", "namePrimary", "nameCn", "name")
 	if teacher == "" {
 		teacher = lifedata.NestedString(section, "instructor", "namePrimary", "nameCn", "name")
@@ -333,17 +299,153 @@ func sectionReceipt(action string, section map[string]any) *CapabilityReceipt {
 	if semester == "" {
 		semester = lifedata.FirstString(section, "semesterName", "semesterNamePrimary", "semesterNameCn", "semester_name")
 	}
-	return &CapabilityReceipt{
-		Action:   action,
-		Resource: ReceiptResourceSection,
-		Subject: CapabilityReceiptSubject{
-			Code:     sectionCode(section),
-			ID:       firstSectionID(section),
-			Course:   course,
-			Teacher:  teacher,
-			Semester: semester,
-		},
+	if course == "" {
+		course = sectionCode(section)
 	}
+	qualifiers := make([]string, 0, 2)
+	if teacher != "" {
+		qualifiers = append(qualifiers, teacher)
+	}
+	if semester != "" {
+		qualifiers = append(qualifiers, semester)
+	}
+	subject := course
+	if len(qualifiers) > 0 {
+		subject += "（" + strings.Join(qualifiers, "，") + "）"
+	}
+	return &store.CapabilityReceipt{Action: action, Resource: ReceiptResourceSection, Subject: subject}
+}
+
+// ReceiptForInvocation returns the stable, host-owned label used for user
+// confirmations and execution receipts. Meta capabilities deliberately return
+// an empty receipt. Subscription mutations are replaced with catalog-derived
+// course, teacher, and semester details by DescribeInvocation.
+func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
+	invocation, ok := withDescriptor(invocation)
+	if !ok {
+		return store.CapabilityReceipt{}
+	}
+	args := strings.TrimSpace(strings.Join(invocation.Args, " "))
+	if args == "" {
+		args = "全部"
+	}
+	query := func(resource string) store.CapabilityReceipt {
+		return store.CapabilityReceipt{Action: "查询", Resource: resource, Subject: args}
+	}
+	mutation := func(action, resource string, skip int) store.CapabilityReceipt {
+		subject := strings.TrimSpace(strings.Join(invocation.Args[min(skip, len(invocation.Args)):], " "))
+		if subject == "" {
+			subject = args
+		}
+		return store.CapabilityReceipt{Action: action, Resource: resource, Subject: subject}
+	}
+
+	switch invocation.ID() {
+	case CapabilityHelp, CapabilityLogin, CapabilityPing, CapabilityStatus:
+		return store.CapabilityReceipt{}
+	case CapabilityLogout:
+		return store.CapabilityReceipt{Action: "退出", Resource: "账户", Subject: "当前账户"}
+	case CapabilityAccount:
+		return query("账户")
+	case CapabilityTodo:
+		if invocation.Policy().Effect == EffectRead {
+			return query("待办")
+		}
+		action := "更新"
+		if firstArgIs(invocation.Args, "delete") {
+			action = "删除"
+		} else if firstArgIs(invocation.Args, "done") {
+			action = "完成"
+		} else if firstArgIs(invocation.Args, "undo") {
+			action = "恢复"
+		} else if firstArgIs(invocation.Args, "add") {
+			action = "添加"
+		}
+		return mutation(action, "待办", 1)
+	case CapabilityHomework:
+		if invocation.Policy().Effect == EffectRead {
+			return query("作业")
+		}
+		action := "完成"
+		if firstArgIs(invocation.Args, "undo") {
+			action = "恢复"
+		}
+		return mutation(action, "作业", 1)
+	case CapabilitySubscription:
+		if invocation.Policy().Effect == EffectRead {
+			return query("课程")
+		}
+		return mutation(ReceiptActionSubscribe, ReceiptResourceSection, 1)
+	case CapabilityUnsubscribeSectionByJWID:
+		return mutation(ReceiptActionUnsubscribe, ReceiptResourceSection, 0)
+	case CapabilityNotify:
+		if invocation.Policy().Effect == EffectRead {
+			return query("提醒")
+		}
+		target := "提醒"
+		if len(invocation.Args) > 0 {
+			switch invocation.Args[0] {
+			case "homework":
+				target = "作业"
+			case "classes":
+				target = "课表"
+			}
+		}
+		state := ""
+		if len(invocation.Args) > 1 {
+			switch invocation.Args[1] {
+			case "on":
+				state = "开"
+			case "off":
+				state = "关"
+			}
+		}
+		if state != "" {
+			target += "：" + state
+		}
+		return store.CapabilityReceipt{Action: "设置", Resource: "提醒", Subject: target}
+	case CapabilitySettings:
+		if invocation.Policy().Effect == EffectRead {
+			return query("设置")
+		}
+		return mutation("更新", "设置", 0)
+	case CapabilityFeedback:
+		if invocation.Policy().Effect == EffectRead {
+			return store.CapabilityReceipt{}
+		}
+		return mutation("提交", "反馈", 0)
+	case CapabilitySemester, CapabilityListSemesters:
+		return query("学期")
+	case CapabilityCourse, CapabilityCourseSearch, CapabilityCourseByJWID,
+		CapabilitySection, CapabilitySectionSearch, CapabilitySectionByJWID,
+		CapabilityMySubscribedSections, CapabilitySectionSchedules,
+		CapabilitySectionExams, CapabilitySectionHomeworks:
+		return query("课程")
+	case CapabilityTeacher, CapabilityTeacherSearch, CapabilityTeacherByID:
+		return query("教师")
+	case CapabilityBus, CapabilityBusRoutes:
+		if invocation.Policy().Effect != EffectRead {
+			return mutation("设置", "校车偏好", 0)
+		}
+		return query("校车")
+	case CapabilitySchedule, CapabilityNextClass:
+		return query("课表")
+	case CapabilityExam:
+		return query("考试")
+	case CapabilityCalendar, CapabilityOverview:
+		return query("日程")
+	case CapabilityUpcomingDeadlines:
+		return query("截止事项")
+	default:
+		return store.CapabilityReceipt{}
+	}
+}
+
+func receiptPointer(receipt store.CapabilityReceipt) *store.CapabilityReceipt {
+	if strings.TrimSpace(receipt.Action) == "" || strings.TrimSpace(receipt.Resource) == "" || strings.TrimSpace(receipt.Subject) == "" {
+		return nil
+	}
+	return &receipt
 }
 
 func sectionCode(section map[string]any) string {

@@ -20,6 +20,7 @@ const (
 	CapabilityExecutionAwaitingConfirmation CapabilityExecutionState = "awaiting_confirmation"
 	CapabilityExecutionApproved             CapabilityExecutionState = "approved"
 	CapabilityExecutionDenied               CapabilityExecutionState = "denied"
+	CapabilityExecutionWaitingAuth          CapabilityExecutionState = "waiting_auth"
 	CapabilityExecutionRunning              CapabilityExecutionState = "running"
 	CapabilityExecutionSucceeded            CapabilityExecutionState = "succeeded"
 	CapabilityExecutionFailed               CapabilityExecutionState = "failed"
@@ -222,22 +223,6 @@ func (s *Store) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int6
 	return result, nil
 }
 
-func (s *Store) MarkCapabilityExecutionReceiptsSent(ctx context.Context, ids []string) error {
-	clean := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id = strings.TrimSpace(id); id != "" {
-			clean = append(clean, id)
-		}
-	}
-	if len(clean) == 0 {
-		return nil
-	}
-	now := nowUTC()
-	return s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id IN ? AND (receipt_state = '' OR receipt_state <> state)", clean).
-		Updates(map[string]any{"receipt_sent_at": now, "receipt_state": gorm.Expr("state"), "updated_at": now}).Error
-}
-
 // ResolveCapabilityConfirmation consumes exactly one independently reversible
 // operation, then releases its owning job for a checkpoint resume. Other
 // operations from the same grouped request remain awaiting confirmation.
@@ -322,8 +307,9 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 }
 
 // ClaimCapabilityExecution is the mutation commit gate. Only a host-approved
-// row may move to running; a replay sees the persisted terminal/running state
-// and must not invoke the external mutation again.
+// row, or an operation explicitly paused before execution for authentication,
+// may move to running. A replay sees the persisted terminal/running state and
+// must not invoke the external operation again.
 func (s *Store) ClaimCapabilityExecution(ctx context.Context, id string) (CapabilityExecution, bool, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -331,13 +317,38 @@ func (s *Store) ClaimCapabilityExecution(ctx context.Context, id string) (Capabi
 	}
 	now := nowUTC()
 	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state = ?", id, string(CapabilityExecutionApproved)).
+		Where("id = ? AND state IN ?", id, []string{string(CapabilityExecutionApproved), string(CapabilityExecutionWaitingAuth)}).
 		Updates(map[string]any{"state": string(CapabilityExecutionRunning), "started_at": now, "updated_at": now})
 	if result.Error != nil {
 		return CapabilityExecution{}, false, result.Error
 	}
 	execution, found, err := s.CapabilityExecution(ctx, id)
 	return execution, found && result.RowsAffected == 1, err
+}
+
+// DeferCapabilityExecutionForAuth records that no external effect completed
+// because authentication is required. The owning job can safely wait for the
+// auth poller and claim this exact operation again after authorization.
+func (s *Store) DeferCapabilityExecutionForAuth(ctx context.Context, id string) (CapabilityExecution, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return CapabilityExecution{}, errors.New("capability execution id is empty")
+	}
+	now := nowUTC()
+	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
+		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
+		Updates(map[string]any{
+			"state": string(CapabilityExecutionWaitingAuth), "started_at": nil,
+			"result": "", "error": "", "updated_at": now,
+		})
+	if result.Error != nil {
+		return CapabilityExecution{}, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return CapabilityExecution{}, errors.New("capability execution is not running")
+	}
+	execution, _, err := s.CapabilityExecution(ctx, id)
+	return execution, err
 }
 
 func (s *Store) FinishCapabilityExecution(ctx context.Context, id string, resultText string, runErr error) (CapabilityExecution, error) {
