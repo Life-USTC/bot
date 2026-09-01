@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -175,7 +177,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	if descriptor == nil || descriptor.Execute == nil {
 		return NotFoundOutcome(Response{}), false
 	}
-	execution := &capabilityExecutionState{}
+	execution := &capabilityExecutionState{effect: cmd.Policy().Effect}
 	executionHandler := h
 	executionHandler.execution = execution
 	if cmd.Name != string(CapabilityHelp) && firstArgIsHelp(cmd.Args) {
@@ -3209,6 +3211,9 @@ func (h Handler) failed(text string) string {
 func (h Handler) commandError(prefix string, err error) string {
 	if life.IsUnauthorized(err) || errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) {
 		h.markOutcome(CapabilityOutcomeAuthRequired)
+	} else if h.execution != nil && h.execution.effect != EffectRead && mutationResultUnknown(err) {
+		h.markOutcome(CapabilityOutcomeUnknown)
+		return prefix + "网络响应中断，无法确认操作是否完成；系统不会自动重试。"
 	} else {
 		h.markOutcome(CapabilityOutcomeFailed)
 	}
@@ -4222,6 +4227,9 @@ func chinaNow() time.Time {
 }
 
 func friendlyError(err error) string {
+	if err == nil {
+		return "未知错误"
+	}
 	text := err.Error()
 	lower := textutil.LowerTrim(text)
 	if strings.Contains(lower, "unauthorized_client") {
@@ -4233,7 +4241,30 @@ func friendlyError(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(lower, "timeout") {
 		return "网络超时，等会儿再试"
 	}
+	var httpErr life.HTTPError
+	if errors.As(err, &httpErr) {
+		return fmt.Sprintf("服务返回错误（HTTP %d）", httpErr.StatusCode)
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return "网络请求失败，等会儿再试"
+	}
 	return text
+}
+
+func mutationResultUnknown(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+	var httpErr life.HTTPError
+	return errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusRequestTimeout || httpErr.StatusCode >= http.StatusInternalServerError)
 }
 
 func commandError(prefix string, err error) string {

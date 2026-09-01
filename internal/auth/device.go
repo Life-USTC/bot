@@ -389,6 +389,9 @@ func (m *Manager) HasCurrentScopes(ctx context.Context, ident store.Identity) (b
 	if cred == nil {
 		return false, ErrNotLoggedIn
 	}
+	if !cred.ExpiresAt.After(m.now()) {
+		return false, nil
+	}
 	granted := make(map[string]struct{})
 	for _, scope := range strings.Fields(cred.Scope) {
 		granted[scope] = struct{}{}

@@ -492,11 +492,31 @@ func TestFriendlyError(t *testing.T) {
 	if got := friendlyError(context.DeadlineExceeded); got != "网络超时，等会儿再试" {
 		t.Fatalf("deadline friendlyError = %q", got)
 	}
+	if got := friendlyError(life.HTTPError{Method: http.MethodPost, Path: "/private?token=secret", StatusCode: http.StatusBadGateway, Body: "access_token=secret"}); got != "服务返回错误（HTTP 502）" {
+		t.Fatalf("HTTP friendlyError leaked diagnostics: %q", got)
+	}
 	if got := friendlyError(errors.New("server exploded")); got != "server exploded" {
 		t.Fatalf("passthrough friendlyError = %q", got)
 	}
 	if got := commandError("课表查不到：", errors.New("server exploded")); got != "课表查不到：server exploded" {
 		t.Fatalf("commandError = %q", got)
+	}
+}
+
+func TestMutationTransportFailureIsUnknownAndNeverPresentedAsDefinitiveFailure(t *testing.T) {
+	handler := Handler{execution: &capabilityExecutionState{effect: EffectWrite}}
+	got := handler.commandError("订阅更新失败：", context.DeadlineExceeded)
+	if handler.execution.status != CapabilityOutcomeUnknown {
+		t.Fatalf("mutation status = %q, want unknown", handler.execution.status)
+	}
+	if got != "订阅更新失败：网络响应中断，无法确认操作是否完成；系统不会自动重试。" {
+		t.Fatalf("mutation result = %q", got)
+	}
+
+	read := Handler{execution: &capabilityExecutionState{effect: EffectRead}}
+	_ = read.commandError("课程查不到：", context.DeadlineExceeded)
+	if read.execution.status != CapabilityOutcomeFailed {
+		t.Fatalf("read status = %q, want failed", read.execution.status)
 	}
 }
 

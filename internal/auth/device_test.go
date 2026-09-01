@@ -113,7 +113,7 @@ func TestHasCurrentScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	manager := Manager{Store: db}
+	manager := Manager{Store: db, Now: fixedClock(authTestNow)}
 
 	if err := db.SaveCredential(ctx, ident, store.Credential{
 		ClientID: "client", AccessToken: "access", ExpiresAt: authTestNow.Add(time.Hour),
@@ -135,6 +135,14 @@ func TestHasCurrentScopes(t *testing.T) {
 	}
 	if current, err := manager.HasCurrentScopes(ctx, ident); err != nil || !current {
 		t.Fatalf("current scope result = %v, err = %v", current, err)
+	}
+
+	cred.ExpiresAt = authTestNow
+	if err := db.SaveCredential(ctx, ident, *cred); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := manager.HasCurrentScopes(ctx, ident); err != nil || current {
+		t.Fatalf("expired scope result = %v, err = %v", current, err)
 	}
 }
 

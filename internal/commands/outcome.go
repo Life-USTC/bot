@@ -11,6 +11,7 @@ type CapabilityOutcomeStatus string
 const (
 	CapabilityOutcomeSuccess      CapabilityOutcomeStatus = "success"
 	CapabilityOutcomeFailed       CapabilityOutcomeStatus = "failed"
+	CapabilityOutcomeUnknown      CapabilityOutcomeStatus = "unknown"
 	CapabilityOutcomeAuthRequired CapabilityOutcomeStatus = "auth_required"
 	CapabilityOutcomeInvalidInput CapabilityOutcomeStatus = "invalid_input"
 	CapabilityOutcomeForbidden    CapabilityOutcomeStatus = "forbidden"
@@ -33,6 +34,7 @@ func (s CapabilityOutcomeStatus) Valid() bool {
 	switch s {
 	case CapabilityOutcomeSuccess,
 		CapabilityOutcomeFailed,
+		CapabilityOutcomeUnknown,
 		CapabilityOutcomeAuthRequired,
 		CapabilityOutcomeInvalidInput,
 		CapabilityOutcomeForbidden,
@@ -51,6 +53,10 @@ func SuccessOutcome(response Response) CapabilityOutcome {
 
 func FailedOutcome(response Response) CapabilityOutcome {
 	return CapabilityOutcome{Status: CapabilityOutcomeFailed, Response: response}
+}
+
+func UnknownOutcome(response Response) CapabilityOutcome {
+	return CapabilityOutcome{Status: CapabilityOutcomeUnknown, Response: response}
 }
 
 func AuthRequiredOutcome(response Response) CapabilityOutcome {
@@ -75,6 +81,7 @@ func NotFoundOutcome(response Response) CapabilityOutcome {
 // command implementation.
 type capabilityExecutionState struct {
 	status CapabilityOutcomeStatus
+	effect CapabilityEffect
 }
 
 func (h Handler) markOutcome(status CapabilityOutcomeStatus) {
