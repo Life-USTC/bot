@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const (
@@ -366,5 +368,5 @@ func (t *llmRetryTransport) logRetry(req *http.Request, attempt int, delay time.
 		return
 	}
 	t.logger.Printf("LLM request failed: method=%s path=%s attempt=%d/%d retry_in=%s error=%v",
-		req.Method, req.URL.Path, attempt, llmHTTPMaxAttempts, delay, err)
+		req.Method, req.URL.Path, attempt, llmHTTPMaxAttempts, delay, textutil.SafeLogError(err))
 }

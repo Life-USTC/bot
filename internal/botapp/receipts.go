@@ -69,16 +69,22 @@ func formatExecutionReceipt(execution store.CapabilityExecution) (string, bool) 
 }
 
 func receiptFailureReason(execution store.CapabilityExecution) string {
-	reason := strings.TrimSpace(execution.Error)
-	if reason == "" {
-		switch execution.State {
-		case store.CapabilityExecutionDenied:
-			reason = "用户拒绝执行"
-		case store.CapabilityExecutionUnknown:
-			reason = "操作结果未知，系统没有自动重试"
-		default:
+	var reason string
+	switch execution.State {
+	case store.CapabilityExecutionDenied:
+		reason = "用户拒绝执行"
+	case store.CapabilityExecutionUnknown:
+		reason = "操作结果未知，系统没有自动重试"
+	case store.CapabilityExecutionFailed:
+		// Result is the descriptor-owned, user-safe domain response. Error may
+		// contain protected transport diagnostics when execution failed before
+		// the descriptor could return a result.
+		reason = strings.TrimSpace(execution.Result)
+		if reason == "" {
 			reason = "操作没有完成"
 		}
+	default:
+		reason = "操作没有完成"
 	}
 	const maxRunes = 160
 	if utf8.RuneCountInString(reason) > maxRunes {
