@@ -171,7 +171,7 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	if err != nil || claimed == nil {
 		t.Fatalf("claim released job: %#v err=%v", claimed, err)
 	}
-	if _, execute, err := s.ClaimCapabilityExecution(ctx, first.ID); err != nil || !execute {
+	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, claimed.ID, claimed.LeaseToken); err != nil || !execute {
 		t.Fatalf("claim approved operation: execute=%v err=%v", execute, err)
 	}
 	if _, err := s.FinishCapabilityExecution(ctx, first.ID, "已订阅", nil); err != nil {
@@ -190,7 +190,7 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	if second.Sequence != 1 || second.State != CapabilityExecutionDenied || second.Error != "不想订阅" {
 		t.Fatalf("second resolution = %#v", second)
 	}
-	if _, execute, err := s.ClaimCapabilityExecution(ctx, second.ID); err != nil || execute {
+	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, second.ID, claimed.ID, claimed.LeaseToken); err != nil || execute {
 		t.Fatalf("denied operation became executable: execute=%v err=%v", execute, err)
 	}
 }
@@ -335,20 +335,24 @@ func TestCapabilityExecutionWaitsForAuthWithoutLosingApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim auth job: job=%#v err=%v", claimed, err)
+	}
 	if err := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).Where("id = ?", execution.ID).
 		Update("state", string(CapabilityExecutionApproved)).Error; err != nil {
 		t.Fatal(err)
 	}
-	execution, claimed, err := s.ClaimCapabilityExecution(ctx, execution.ID)
-	if err != nil || !claimed || execution.State != CapabilityExecutionRunning {
-		t.Fatalf("initial claim: execution=%#v claimed=%v err=%v", execution, claimed, err)
+	execution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, execution.ID, claimed.ID, claimed.LeaseToken)
+	if err != nil || !execute || execution.State != CapabilityExecutionRunning {
+		t.Fatalf("initial claim: execution=%#v claimed=%v err=%v", execution, execute, err)
 	}
 	execution, err = s.DeferCapabilityExecutionForAuth(ctx, execution.ID)
 	if err != nil || execution.State != CapabilityExecutionWaitingAuth || execution.StartedAt != nil {
 		t.Fatalf("defer for auth: execution=%#v err=%v", execution, err)
 	}
-	execution, claimed, err = s.ClaimCapabilityExecution(ctx, execution.ID)
-	if err != nil || !claimed || execution.State != CapabilityExecutionRunning {
-		t.Fatalf("claim after auth: execution=%#v claimed=%v err=%v", execution, claimed, err)
+	execution, execute, err = s.ClaimCapabilityExecutionForJob(ctx, execution.ID, claimed.ID, claimed.LeaseToken)
+	if err != nil || !execute || execution.State != CapabilityExecutionRunning {
+		t.Fatalf("claim after auth: execution=%#v claimed=%v err=%v", execution, execute, err)
 	}
 }

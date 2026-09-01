@@ -391,7 +391,11 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 				}
 				return agent.Result{Handled: true, State: agent.RunStateInterrupted}
 			}
-			execution, execute, err := db.ClaimCapabilityExecution(ctx, executions[0].ID)
+			claimedJob, err := db.GetConversationJob(ctx, input.JobID)
+			if err != nil || claimedJob == nil {
+				t.Fatalf("read claimed job: job=%#v err=%v", claimedJob, err)
+			}
+			execution, execute, err := db.ClaimCapabilityExecutionForJob(ctx, executions[0].ID, claimedJob.ID, claimedJob.LeaseToken)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -13,6 +13,54 @@ import (
 
 type responseCommitter func(context.Context, commands.Response, []string, store.ConversationJobTransition) error
 
+type leaseAwareCapabilityExecutionRepository interface {
+	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)
+}
+
+type capabilityExecutionBatchPreparer interface {
+	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
+}
+
+type unknownCapabilityExecutionFinisher interface {
+	FinishCapabilityExecutionUnknown(context.Context, string, string, string) (store.CapabilityExecution, error)
+}
+
+const capabilityOutcomeUnknown commands.CapabilityOutcomeStatus = "unknown"
+
+func capabilityOutcomeIsUnknown(outcome commands.CapabilityOutcome) bool {
+	return outcome.Status == capabilityOutcomeUnknown
+}
+
+func capabilityExecutionIsRead(execution store.CapabilityExecution) bool {
+	return strings.EqualFold(strings.TrimSpace(execution.Effect), string(commands.EffectRead))
+}
+
+func capabilityExecutionHasStaleLease(execution store.CapabilityExecution, job store.ConversationJob) bool {
+	owner := strings.TrimSpace(execution.LeaseToken)
+	current := strings.TrimSpace(job.LeaseToken)
+	return owner != "" && owner != current
+}
+
+func capabilityExecutionDiagnostic(status commands.CapabilityOutcomeStatus) error {
+	return fmt.Errorf("capability returned %s outcome", status)
+}
+
+func claimCapabilityExecutionForJob(ctx context.Context, jobs JobRepository, job store.ConversationJob, id string) (store.CapabilityExecution, bool, error) {
+	claimer, ok := jobs.(leaseAwareCapabilityExecutionRepository)
+	if !ok {
+		return store.CapabilityExecution{}, false, errors.New("capability execution repository does not support lease-aware claims")
+	}
+	return claimer.ClaimCapabilityExecutionForJob(ctx, id, job.ID, job.LeaseToken)
+}
+
+func finishCapabilityExecutionUnknown(ctx context.Context, jobs JobRepository, id, result, reason string) (store.CapabilityExecution, error) {
+	finisher, ok := jobs.(unknownCapabilityExecutionFinisher)
+	if !ok {
+		return store.CapabilityExecution{}, errors.New("capability execution repository does not support unknown outcomes")
+	}
+	return finisher.FinishCapabilityExecutionUnknown(ctx, id, result, reason)
+}
+
 func (c *Coordinator) executeCommandRoute(
 	ctx context.Context,
 	job store.ConversationJob,
@@ -63,6 +111,7 @@ func (c *Coordinator) prepareCommandConfirmations(
 		c.finishCommandWithoutExecution(ctx, job, inbound, outcome.Response, outcome.Status, commit)
 		return
 	}
+	prepares := make([]store.CapabilityExecutionPrepare, 0, len(descriptions))
 	for index, description := range descriptions {
 		if !description.ConfirmationRequired {
 			c.fail(ctx, job, fmt.Errorf("mutation capability %q bypassed confirmation", description.Invocation.ID()))
@@ -75,16 +124,21 @@ func (c *Coordinator) prepareCommandConfirmations(
 		if strings.TrimSpace(receipt.Action) == "" {
 			receipt = store.CapabilityReceipt{Action: "执行", Resource: "操作", Subject: description.Invocation.CanonicalCommand()}
 		}
-		_, _, err := c.jobs.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
-			Identity: job.Identity, JobID: job.ID, Sequence: index,
+		prepares = append(prepares, store.CapabilityExecutionPrepare{
+			Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken, Sequence: index,
 			DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:%d", job.ID, index),
 			Capability: string(description.Invocation.ID()), Arguments: append([]string(nil), description.Invocation.Args...),
 			Effect: string(description.Policy.Effect), Receipt: receipt, RequiresConfirmation: true,
 		})
-		if err != nil {
-			c.fail(ctx, job, err)
-			return
-		}
+	}
+	preparer, ok := c.jobs.(capabilityExecutionBatchPreparer)
+	if !ok {
+		c.fail(ctx, job, errors.New("capability execution repository does not support atomic batches"))
+		return
+	}
+	if _, _, err := preparer.PrepareCapabilityExecutions(ctx, prepares); err != nil {
+		c.fail(ctx, job, err)
+		return
 	}
 	c.waitForNextCommandConfirmation(ctx, job, inbound, commands.Response{}, commit)
 }
@@ -97,14 +151,68 @@ func (c *Coordinator) executeNewCommand(
 	commit responseCommitter,
 ) {
 	receipt := commands.ReceiptForInvocation(invocation)
-	execution, _, err := c.jobs.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
-		Identity: job.Identity, JobID: job.ID,
+	execution, created, err := c.jobs.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken,
 		DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:0", job.ID),
 		Capability: string(invocation.ID()), Arguments: append([]string(nil), invocation.Args...),
 		Effect: string(invocation.Policy().Effect), Receipt: receipt,
 	})
 	if err != nil {
 		c.fail(ctx, job, err)
+		return
+	}
+	if created {
+		if execution.State == store.CapabilityExecutionRunning && capabilityExecutionIsRead(execution) {
+			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, false, commit)
+			return
+		}
+		claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
+		if err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		if !execute {
+			c.handleCommandClaimLoser(ctx, job, inbound, claimed, commands.Response{}, commit)
+			return
+		}
+		execution = claimed
+	} else if execution.State == store.CapabilityExecutionRunning {
+		if capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
+			invocation, ok := commands.RestoreInvocation(commands.CapabilityID(execution.Capability), execution.Arguments)
+			if !ok {
+				c.fail(ctx, job, fmt.Errorf("restore running command capability %q", execution.Capability))
+				return
+			}
+			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, false, commit)
+			return
+		}
+		if capabilityExecutionHasStaleLease(execution, job) {
+			if err := c.jobs.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
+				c.fail(ctx, job, err)
+				return
+			}
+			c.finishCommandBatch(ctx, job, inbound, commands.Response{}, commit)
+			return
+		}
+		c.retryCommandBatch(ctx, job, inbound, commands.Response{}, "capability execution is still running", commit)
+		return
+	} else if execution.State == store.CapabilityExecutionAwaitingConfirmation {
+		c.waitForNextCommandConfirmation(ctx, job, inbound, commands.Response{}, commit)
+		return
+	} else if execution.State == store.CapabilityExecutionApproved || execution.State == store.CapabilityExecutionWaitingAuth {
+		claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
+		if err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		if !execute {
+			c.handleCommandClaimLoser(ctx, job, inbound, claimed, commands.Response{}, commit)
+			return
+		}
+		execution = claimed
+	}
+	if execution.State != store.CapabilityExecutionRunning {
+		c.finishCommandBatch(ctx, job, inbound, commands.Response{}, commit)
 		return
 	}
 	c.executeClaimedCommand(ctx, job, inbound, execution, invocation, false, commit)
@@ -124,13 +232,14 @@ func (c *Coordinator) resumeCommand(
 			c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
 			return
 		case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
-			claimed, execute, err := c.jobs.ClaimCapabilityExecution(ctx, execution.ID)
+			claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
 			if err != nil {
 				c.fail(ctx, job, err)
 				return
 			}
 			if !execute {
-				continue
+				c.handleCommandClaimLoser(ctx, job, inbound, claimed, response, commit)
+				return
 			}
 			invocation, ok := commands.RestoreInvocation(commands.CapabilityID(claimed.Capability), claimed.Arguments)
 			if !ok {
@@ -145,7 +254,11 @@ func (c *Coordinator) resumeCommand(
 				c.fail(ctx, job, fmt.Errorf("restore running command capability %q", execution.Capability))
 				return
 			}
-			if invocation.Policy().Effect != commands.EffectRead && invocation.ID() != commands.CapabilityLogin {
+			if capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
+				c.executeClaimedCommand(ctx, job, inbound, execution, invocation, invocation.Policy().Confirmation == commands.ConfirmUser, commit)
+				return
+			}
+			if capabilityExecutionHasStaleLease(execution, job) {
 				if err := c.jobs.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
 					c.fail(ctx, job, err)
 					return
@@ -153,11 +266,11 @@ func (c *Coordinator) resumeCommand(
 				c.finishCommandBatch(ctx, job, inbound, response, commit)
 				return
 			}
-			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, invocation.Policy().Confirmation == commands.ConfirmUser, commit)
+			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
 			return
-		case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed:
-			if execution.ReceiptState != execution.State && strings.TrimSpace(execution.Result) != "" {
-				response.Text = joinResponseText(response.Text, execution.Result)
+		case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
+			if execution.ReceiptState != execution.State && strings.TrimSpace(capabilityExecutionModelResult(execution)) != "" {
+				response.Text = joinResponseText(response.Text, capabilityExecutionModelResult(execution))
 				response.Kind = execution.Capability
 			}
 		case store.CapabilityExecutionDenied:
@@ -168,6 +281,34 @@ func (c *Coordinator) resumeCommand(
 		}
 	}
 	c.finishCommandBatch(ctx, job, inbound, response, commit)
+}
+
+func (c *Coordinator) handleCommandClaimLoser(
+	ctx context.Context,
+	job store.ConversationJob,
+	inbound message.Inbound,
+	execution store.CapabilityExecution,
+	response commands.Response,
+	commit responseCommitter,
+) {
+	switch execution.State {
+	case store.CapabilityExecutionAwaitingConfirmation:
+		c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
+	case store.CapabilityExecutionRunning:
+		if !capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
+			if err := c.jobs.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
+				c.fail(ctx, job, err)
+				return
+			}
+			c.finishCommandBatch(ctx, job, inbound, response, commit)
+			return
+		}
+		c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
+	case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
+		c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still owned by another worker", commit)
+	default:
+		c.finishCommandBatch(ctx, job, inbound, response, commit)
+	}
 }
 
 func (c *Coordinator) executeClaimedCommand(
@@ -218,12 +359,24 @@ func (c *Coordinator) executeClaimedCommand(
 		return
 	}
 	var outcomeErr error
-	if outcome.Status != commands.CapabilityOutcomeSuccess {
-		message := strings.TrimSpace(outcome.Response.Text)
-		if message == "" {
-			message = string(outcome.Status)
+	if capabilityOutcomeIsUnknown(outcome) {
+		finished, finishErr := finishCapabilityExecutionUnknown(ctx, c.jobs, execution.ID,
+			strings.TrimSpace(outcome.Response.Text), capabilityExecutionDiagnostic(outcome.Status).Error())
+		if finishErr != nil {
+			c.fail(ctx, job, finishErr)
+			return
 		}
-		outcomeErr = errors.New(message)
+		if text := strings.TrimSpace(finished.Result); text != "" {
+			if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text); err != nil {
+				c.fail(ctx, job, err)
+				return
+			}
+		}
+		c.finishCommandBatch(ctx, job, inbound, outcome.Response, commit)
+		return
+	}
+	if outcome.Status != commands.CapabilityOutcomeSuccess {
+		outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 	}
 	finished, err := c.jobs.FinishCapabilityExecution(ctx, execution.ID, strings.TrimSpace(outcome.Response.Text), outcomeErr)
 	if err != nil {
@@ -256,6 +409,21 @@ func (c *Coordinator) finishCommandBatch(
 			c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
 			return
 		}
+		if execution.State == store.CapabilityExecutionRunning {
+			if !capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
+				if err := c.jobs.MarkCapabilityExecutionUnknown(ctx, execution.ID, "进程中断，外部操作结果未知；系统没有自动重试"); err != nil {
+					c.fail(ctx, job, err)
+					return
+				}
+				continue
+			}
+			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
+			return
+		}
+		if execution.State == store.CapabilityExecutionApproved || execution.State == store.CapabilityExecutionWaitingAuth {
+			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is not terminal", commit)
+			return
+		}
 	}
 	receipts, err := c.unsentExecutionReceipts(ctx, job.ID, false)
 	if err != nil {
@@ -268,6 +436,23 @@ func (c *Coordinator) finishCommandBatch(
 		return
 	}
 	c.recordJob(ctx, job, inbound, response, store.InteractionStatusHandled)
+}
+
+func (c *Coordinator) retryCommandBatch(
+	ctx context.Context,
+	job store.ConversationJob,
+	inbound message.Inbound,
+	response commands.Response,
+	reason string,
+	commit responseCommitter,
+) {
+	if err := commit(ctx, response, nil, store.ConversationJobTransition{
+		State: store.ConversationJobStateRetryWait, LastError: reason,
+	}); err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	c.recordJob(ctx, job, inbound, response, store.InteractionStatusAccepted)
 }
 
 func (c *Coordinator) waitForNextCommandConfirmation(
@@ -353,4 +538,15 @@ func joinResponseText(current, next string) string {
 		parts = append(parts, next)
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
+	switch execution.State {
+	case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
+		return strings.TrimSpace(execution.Result)
+	case store.CapabilityExecutionDenied, store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
+		return strings.TrimSpace(execution.Error)
+	default:
+		return ""
+	}
 }

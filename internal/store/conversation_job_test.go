@@ -531,45 +531,15 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	}
 }
 
-func TestConversationJobInputResumeLeaseRecoveryExpiryAndTerminalProtection(t *testing.T) {
+func TestConversationJobLeaseRecoveryExpiryAndTerminalProtection(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()
 	ident := conversationJobTestIdentity()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	expires := now.Add(time.Hour)
 
-	waitingInput := enqueueConversationJobTest(t, s, ident, "input", ConversationJobEnqueue{
-		State:     ConversationJobStateWaitingInput,
-		ExpiresAt: expires,
-	})
-	if ok, err := s.ResumeConversationJobInput(ctx, waitingInput.ID, ConversationJobInput{Text: "补充参数"}, now); err != nil {
-		t.Fatal(err)
-	} else if !ok {
-		t.Fatal("waiting input was not resumed")
-	}
-	if ok, err := s.ResumeConversationJobInput(ctx, waitingInput.ID, ConversationJobInput{Text: "duplicate"}, now); err != nil {
-		t.Fatal(err)
-	} else if ok {
-		t.Fatal("waiting input was resumed twice")
-	}
-	if got := mustGetConversationJob(t, s, waitingInput.ID); got.State != ConversationJobStateQueued || got.Input.Text != "补充参数" {
-		t.Fatalf("resumed input = %#v", got)
-	}
-
 	running := enqueueConversationJobTest(t, s, ident, "recover", ConversationJobEnqueue{ExpiresAt: expires})
 	claimed, err := s.ClaimConversationJob(ctx, ident, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claimed == nil || claimed.ID != waitingInput.ID {
-		t.Fatalf("first queued job claim = %#v", claimed)
-	}
-	if ok, err := s.CompleteConversationJob(ctx, claimed.ID, claimed.LeaseToken); err != nil {
-		t.Fatal(err)
-	} else if !ok {
-		t.Fatal("input job completion failed")
-	}
-	claimed, err = s.ClaimConversationJob(ctx, ident, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,8 +550,15 @@ func TestConversationJobInputResumeLeaseRecoveryExpiryAndTerminalProtection(t *t
 		Identity: ident, JobID: running.ID, DedupeKey: "recover-running-operation",
 		Capability: "subscription", Effect: "mutation",
 	})
-	if err != nil || !created || runningExecution.State != CapabilityExecutionRunning {
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || runningExecution.State != CapabilityExecutionApproved {
 		t.Fatalf("prepare running execution=%#v created=%v err=%v", runningExecution, created, err)
+	}
+	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, runningExecution.ID, running.ID, claimed.LeaseToken)
+	if err != nil || !execute || claimedExecution.State != CapabilityExecutionRunning {
+		t.Fatalf("claim running execution=%#v execute=%v err=%v", claimedExecution, execute, err)
 	}
 	recoveryAt := now.Add(3 * time.Minute)
 	if err := s.RecoverConversationJobLeases(ctx, recoveryAt, time.Minute); err != nil {

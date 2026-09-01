@@ -20,6 +20,8 @@ const (
 	CapabilityExecutionAwaitingConfirmation CapabilityExecutionState = "awaiting_confirmation"
 	CapabilityExecutionApproved             CapabilityExecutionState = "approved"
 	CapabilityExecutionDenied               CapabilityExecutionState = "denied"
+	CapabilityExecutionCancelled            CapabilityExecutionState = "cancelled"
+	CapabilityExecutionExpired              CapabilityExecutionState = "expired"
 	CapabilityExecutionWaitingAuth          CapabilityExecutionState = "waiting_auth"
 	CapabilityExecutionRunning              CapabilityExecutionState = "running"
 	CapabilityExecutionSucceeded            CapabilityExecutionState = "succeeded"
@@ -40,6 +42,7 @@ type CapabilityExecution struct {
 	Sequence      int
 	DedupeKey     string
 	ToolCallID    string
+	LeaseToken    string
 	Capability    string
 	Arguments     []string
 	Effect        string
@@ -57,8 +60,11 @@ type CapabilityExecution struct {
 }
 
 type CapabilityExecutionPrepare struct {
-	Identity             Identity
-	JobID                int64
+	Identity Identity
+	JobID    int64
+	// LeaseToken optionally binds preparation to the caller's running job.
+	// A claim is still required before an external effect can be invoked.
+	LeaseToken           string
 	Sequence             int
 	DedupeKey            string
 	ToolCallID           string
@@ -85,6 +91,7 @@ type capabilityExecutionRow struct {
 	Sequence         int    `gorm:"not null;index:idx_capability_executions_job_sequence,priority:2"`
 	DedupeKey        string `gorm:"not null;uniqueIndex:idx_capability_executions_dedupe,priority:2"`
 	ToolCallID       string `gorm:"not null;default:'';index"`
+	LeaseToken       string `gorm:"index"`
 	Capability       string `gorm:"not null"`
 	ArgumentsJSON    string `gorm:"not null"`
 	Effect           string `gorm:"not null"`
@@ -104,36 +111,131 @@ type capabilityExecutionRow struct {
 func (capabilityExecutionRow) TableName() string { return "capability_executions" }
 
 func (s *Store) PrepareCapabilityExecution(ctx context.Context, input CapabilityExecutionPrepare) (CapabilityExecution, bool, error) {
-	if err := validateConversationIdentity(input.Identity); err != nil {
+	executions, created, err := s.PrepareCapabilityExecutions(ctx, []CapabilityExecutionPrepare{input})
+	if err != nil {
 		return CapabilityExecution{}, false, err
+	}
+	if len(executions) != 1 {
+		return CapabilityExecution{}, false, errors.New("capability execution batch returned an unexpected number of operations")
+	}
+	return executions[0], created, nil
+}
+
+// PrepareCapabilityExecutions persists a complete operation batch in one
+// transaction. Inputs are normalized and validated before the first row is
+// written, so a failed preflight or insert cannot leave an orphaned
+// confirmation item behind. Existing dedupe rows are returned unchanged.
+func (s *Store) PrepareCapabilityExecutions(ctx context.Context, inputs []CapabilityExecutionPrepare) ([]CapabilityExecution, bool, error) {
+	if len(inputs) == 0 {
+		return nil, false, errors.New("capability execution batch is empty")
+	}
+	normalized := make([]preparedCapabilityExecution, len(inputs))
+	for index, input := range inputs {
+		prepared, err := normalizeCapabilityExecutionPrepare(input)
+		if err != nil {
+			return nil, false, fmt.Errorf("prepare capability execution %d: %w", index, err)
+		}
+		normalized[index] = prepared
+	}
+
+	createdAll := true
+	rows := make([]capabilityExecutionRow, len(normalized))
+	now := nowUTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		first := normalized[0].input
+		for index, prepared := range normalized {
+			input := prepared.input
+			if input.JobID != first.JobID || input.Identity != first.Identity {
+				return errors.New("capability execution batch must belong to one conversation job")
+			}
+			if input.LeaseToken != "" {
+				if err := requireRunningConversationJobLease(tx, input.JobID, input.LeaseToken, input.Identity, now); err != nil {
+					return err
+				}
+			} else if err := requireLiveConversationJob(tx, input.JobID, input.Identity, now); err != nil {
+				return err
+			}
+			row := prepared.row
+			userID, err := ensureUser(tx, input.Identity, now)
+			if err != nil {
+				return err
+			}
+			row.UserID = userID
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				createdAll = false
+				if err := tx.Where("platform = ? AND dedupe_key = ?", input.Identity.Platform, input.DedupeKey).First(&row).Error; err != nil {
+					return err
+				}
+				if row.JobID != input.JobID || row.ConversationType != input.Identity.ConversationType || row.ConversationID != input.Identity.ConversationID || row.ExternalUserID != input.Identity.UserID {
+					return errors.New("capability execution dedupe row belongs to another conversation job")
+				}
+				if row.Capability != input.Capability || row.ArgumentsJSON != prepared.row.ArgumentsJSON || row.Effect != input.Effect {
+					return errors.New("capability execution dedupe row does not match the requested invocation")
+				}
+			}
+			rows[index] = row
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	executions := make([]CapabilityExecution, 0, len(rows))
+	for _, row := range rows {
+		execution, err := capabilityExecutionFromRow(row)
+		if err != nil {
+			return nil, false, err
+		}
+		executions = append(executions, execution)
+	}
+	return executions, createdAll, nil
+}
+
+type preparedCapabilityExecution struct {
+	input CapabilityExecutionPrepare
+	row   capabilityExecutionRow
+}
+
+func normalizeCapabilityExecutionPrepare(input CapabilityExecutionPrepare) (preparedCapabilityExecution, error) {
+	if err := validateConversationIdentity(input.Identity); err != nil {
+		return preparedCapabilityExecution{}, err
 	}
 	input.Identity = normalizeIdentity(input.Identity)
 	if input.JobID <= 0 {
-		return CapabilityExecution{}, false, errors.New("capability execution job id is invalid")
+		return preparedCapabilityExecution{}, errors.New("capability execution job id is invalid")
 	}
 	if input.Sequence < 0 {
-		return CapabilityExecution{}, false, errors.New("capability execution sequence is invalid")
+		return preparedCapabilityExecution{}, errors.New("capability execution sequence is invalid")
 	}
+	input.LeaseToken = strings.TrimSpace(input.LeaseToken)
 	input.DedupeKey = strings.TrimSpace(input.DedupeKey)
 	input.Capability = strings.TrimSpace(input.Capability)
 	input.Effect = strings.TrimSpace(input.Effect)
 	if input.DedupeKey == "" || input.Capability == "" || input.Effect == "" {
-		return CapabilityExecution{}, false, errors.New("capability execution identity is incomplete")
+		return preparedCapabilityExecution{}, errors.New("capability execution identity is incomplete")
 	}
 	argumentsJSON, err := json.Marshal(input.Arguments)
 	if err != nil {
-		return CapabilityExecution{}, false, fmt.Errorf("encode capability arguments: %w", err)
+		return preparedCapabilityExecution{}, fmt.Errorf("encode capability arguments: %w", err)
 	}
 	receiptJSON, err := json.Marshal(input.Receipt)
 	if err != nil {
-		return CapabilityExecution{}, false, fmt.Errorf("encode capability receipt: %w", err)
+		return preparedCapabilityExecution{}, fmt.Errorf("encode capability receipt: %w", err)
 	}
 	now := nowUTC()
-	state := CapabilityExecutionRunning
+	state := CapabilityExecutionApproved
 	var startedAt *time.Time
 	if input.RequiresConfirmation {
 		state = CapabilityExecutionAwaitingConfirmation
-	} else {
+	} else if strings.EqualFold(input.Effect, "read") {
+		// Read-only calls predate the lease-gated mutation path used by the
+		// lazy campus session. They are still owned by the creator, while
+		// every mutation remains approved until its explicit lease claim.
+		state = CapabilityExecutionRunning
 		startedAt = &now
 	}
 	row := capabilityExecutionRow{
@@ -143,30 +245,16 @@ func (s *Store) PrepareCapabilityExecution(ctx context.Context, input Capability
 		JobID: input.JobID, Sequence: input.Sequence, DedupeKey: input.DedupeKey,
 		ToolCallID: strings.TrimSpace(input.ToolCallID), Capability: input.Capability,
 		ArgumentsJSON: string(argumentsJSON), Effect: input.Effect, State: string(state),
-		ReceiptJSON: string(receiptJSON), StartedAt: startedAt, CreatedAt: now, UpdatedAt: now,
+		ReceiptJSON: string(receiptJSON), LeaseToken: capabilityExecutionLeaseToken(state, input.LeaseToken), StartedAt: startedAt, CreatedAt: now, UpdatedAt: now,
 	}
-	created := false
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		userID, err := ensureUser(tx, input.Identity, now)
-		if err != nil {
-			return err
-		}
-		row.UserID = userID
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
-		if result.Error != nil {
-			return result.Error
-		}
-		created = result.RowsAffected == 1
-		if !created {
-			return tx.Where("platform = ? AND dedupe_key = ?", input.Identity.Platform, input.DedupeKey).First(&row).Error
-		}
-		return nil
-	})
-	if err != nil {
-		return CapabilityExecution{}, false, err
+	return preparedCapabilityExecution{input: input, row: row}, nil
+}
+
+func capabilityExecutionLeaseToken(state CapabilityExecutionState, leaseToken string) string {
+	if state != CapabilityExecutionRunning {
+		return ""
 	}
-	execution, err := capabilityExecutionFromRow(row)
-	return execution, created, err
+	return strings.TrimSpace(leaseToken)
 }
 
 func (s *Store) CapabilityExecution(ctx context.Context, id string) (CapabilityExecution, bool, error) {
@@ -306,24 +394,57 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 	return resolved, released, err
 }
 
-// ClaimCapabilityExecution is the mutation commit gate. Only a host-approved
-// row, or an operation explicitly paused before execution for authentication,
-// may move to running. A replay sees the persisted terminal/running state and
-// must not invoke the external operation again.
-func (s *Store) ClaimCapabilityExecution(ctx context.Context, id string) (CapabilityExecution, bool, error) {
+// ClaimCapabilityExecutionForJob is the mutation commit gate. Only a
+// host-approved row, or an operation explicitly paused before execution for
+// authentication, may move to running while its owning conversation job is
+// still running under the caller's current lease token. Cancellation, expiry,
+// lease recovery, and a competing worker therefore all win atomically over a
+// later claim.
+func (s *Store) ClaimCapabilityExecutionForJob(ctx context.Context, id string, jobID int64, leaseToken string) (CapabilityExecution, bool, error) {
 	id = strings.TrimSpace(id)
+	leaseToken = strings.TrimSpace(leaseToken)
 	if id == "" {
 		return CapabilityExecution{}, false, errors.New("capability execution id is empty")
 	}
-	now := nowUTC()
-	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
-		Where("id = ? AND state IN ?", id, []string{string(CapabilityExecutionApproved), string(CapabilityExecutionWaitingAuth)}).
-		Updates(map[string]any{"state": string(CapabilityExecutionRunning), "started_at": now, "updated_at": now})
-	if result.Error != nil {
-		return CapabilityExecution{}, false, result.Error
+	if jobID <= 0 {
+		return CapabilityExecution{}, false, errors.New("capability execution job id is invalid")
 	}
-	execution, found, err := s.CapabilityExecution(ctx, id)
-	return execution, found && result.RowsAffected == 1, err
+	if leaseToken == "" {
+		return CapabilityExecution{}, false, errors.New("conversation job lease token is empty")
+	}
+	now := nowUTC()
+	var execution CapabilityExecution
+	claimed := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row capabilityExecutionRow
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		result := tx.Model(&capabilityExecutionRow{}).
+			Where("id = ? AND job_id = ? AND state IN ?", id, jobID, []string{string(CapabilityExecutionApproved), string(CapabilityExecutionWaitingAuth)}).
+			Where(`EXISTS (
+				SELECT 1 FROM conversation_jobs job
+				WHERE job.id = capability_executions.job_id
+				  AND job.state = ?
+				  AND job.lease_token = ?
+				  AND (job.expires_at IS NULL OR job.expires_at > ?)
+			)`, string(ConversationJobStateRunning), leaseToken, now).
+			Updates(map[string]any{"state": string(CapabilityExecutionRunning), "lease_token": leaseToken, "started_at": now, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		claimed = result.RowsAffected == 1
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+		var err error
+		execution, err = capabilityExecutionFromRow(row)
+		return err
+	})
+	return execution, claimed, err
 }
 
 // DeferCapabilityExecutionForAuth records that no external effect completed
@@ -339,7 +460,7 @@ func (s *Store) DeferCapabilityExecutionForAuth(ctx context.Context, id string) 
 		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
 		Updates(map[string]any{
 			"state": string(CapabilityExecutionWaitingAuth), "started_at": nil,
-			"result": "", "error": "", "updated_at": now,
+			"lease_token": "", "result": "", "error": "", "updated_at": now,
 		})
 	if result.Error != nil {
 		return CapabilityExecution{}, result.Error
@@ -367,6 +488,31 @@ func (s *Store) FinishCapabilityExecution(ctx context.Context, id string, result
 		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
 		Updates(map[string]any{
 			"state": string(state), "result": resultText, "error": errorText,
+			"finished_at": now, "updated_at": now,
+		})
+	if result.Error != nil {
+		return CapabilityExecution{}, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return CapabilityExecution{}, errors.New("capability execution is not running")
+	}
+	execution, _, err := s.CapabilityExecution(ctx, id)
+	return execution, err
+}
+
+// FinishCapabilityExecutionUnknown records a typed ambiguous domain outcome.
+// The descriptor-owned result is retained for replay; reason is diagnostic
+// metadata and is never the model-facing evidence.
+func (s *Store) FinishCapabilityExecutionUnknown(ctx context.Context, id, resultText, reason string) (CapabilityExecution, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return CapabilityExecution{}, errors.New("capability execution id is empty")
+	}
+	now := nowUTC()
+	result := s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
+		Where("id = ? AND state = ?", id, string(CapabilityExecutionRunning)).
+		Updates(map[string]any{
+			"state": string(CapabilityExecutionUnknown), "result": resultText, "error": strings.TrimSpace(reason),
 			"finished_at": now, "updated_at": now,
 		})
 	if result.Error != nil {
@@ -414,7 +560,7 @@ func capabilityExecutionFromRow(row capabilityExecutionRow) (CapabilityExecution
 	return CapabilityExecution{
 		ID:       row.ID,
 		Identity: Identity{Platform: row.Platform, UserID: row.ExternalUserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID},
-		JobID:    row.JobID, Sequence: row.Sequence, DedupeKey: row.DedupeKey, ToolCallID: row.ToolCallID,
+		JobID:    row.JobID, Sequence: row.Sequence, DedupeKey: row.DedupeKey, ToolCallID: row.ToolCallID, LeaseToken: row.LeaseToken,
 		Capability: row.Capability, Arguments: arguments, Effect: row.Effect,
 		State: CapabilityExecutionState(row.State), Receipt: receipt, Result: row.Result, Error: row.Error,
 		ConfirmedAt: row.ConfirmedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
