@@ -522,16 +522,6 @@ func conversationJobRunDeadline(job store.ConversationJob) time.Time {
 	return deadline
 }
 
-func persistedInvocation(command string) store.ConversationJobInvocation {
-	result := store.ConversationJobInvocation{Command: strings.TrimSpace(command)}
-	if parsed, ok := commands.ParseInvocation(command); ok {
-		result.Name = parsed.Name
-		result.Command = parsed.CanonicalCommand()
-		result.Args = append([]string(nil), parsed.Args...)
-	}
-	return result
-}
-
 func decodeConversationJobPayload(job store.ConversationJob) (conversationJobPayload, error) {
 	if len(job.Input.Data) == 0 {
 		return conversationJobPayload{}, errors.New("conversation job payload is empty")

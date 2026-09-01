@@ -451,10 +451,3 @@ func receiptPointer(receipt store.CapabilityReceipt) *store.CapabilityReceipt {
 func sectionCode(section map[string]any) string {
 	return lifedata.FirstString(section, "code", "sectionCode", "section_code")
 }
-
-func firstSectionID(section map[string]any) string {
-	if id := lifedata.FirstString(section, "jwId", "jwID", "jw_id", "id"); id != "" {
-		return id
-	}
-	return ""
-}

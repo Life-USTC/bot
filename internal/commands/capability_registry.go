@@ -593,23 +593,3 @@ func descriptorForForm(form string) (*CapabilityDescriptor, bool) {
 	}
 	return nil, false
 }
-
-func renderHelpWithoutParser(args []string) string {
-	if len(args) == 0 {
-		return helpOverviewText()
-	}
-	key := commandToken(args[0])
-	if topic, ok := helpTopicAliases[key]; ok {
-		return formatHelpTopic(topic)
-	}
-	if topic := capabilityTopic(key); topic != "" {
-		return formatHelpTopic(topic)
-	}
-	if descriptor, ok := descriptorForForm(key); ok {
-		return formatHelpTopic(descriptor.Help.Topic)
-	}
-	if _, ok := helpTopicTitles[key]; ok {
-		return formatHelpTopic(key)
-	}
-	return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
-}

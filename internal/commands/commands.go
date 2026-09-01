@@ -167,11 +167,6 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 	return outcome, true
 }
 
-func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocation) (Response, bool) {
-	outcome, handled := h.executeInvocationOutcome(ctx, input, cmd)
-	return outcome.Response, handled
-}
-
 func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd Invocation) (CapabilityOutcome, bool) {
 	descriptor := cmd.Capability
 	if descriptor == nil || descriptor.Execute == nil {
