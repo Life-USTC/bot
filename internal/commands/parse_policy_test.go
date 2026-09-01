@@ -53,7 +53,6 @@ func TestFixedPatternsStillParse(t *testing.T) {
 		"xc 东区 西区":     "bus",
 		"课程 数学分析":      "course",
 		"老师 程艺":        "teacher",
-		"AI 工具 开":      "agent",
 		"给我26秋课表的订阅链接": "subscription",
 		"请给我日历订阅链接":    "subscription",
 		"帮助":           "help",

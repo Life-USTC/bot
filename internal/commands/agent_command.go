@@ -2,120 +2,110 @@ package commands
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-const (
-	AgentCommandStatusSuccess              = "success"
-	AgentCommandStatusInvalidInput         = "invalid_input"
-	AgentCommandStatusForbidden            = "forbidden"
-	AgentCommandStatusConfirmationRequired = "confirmation_required"
-	AgentCommandStatusAuthRequired         = "auth_required"
-	AgentCommandStatusNotFound             = "not_found"
-)
-
-// AgentCommandResult is the host-authoritative result of an Agent-requested
-// command. Response is retained for application-layer delivery of images and
-// private values; it is deliberately excluded from model-facing JSON.
-type AgentCommandResult struct {
-	OK                   bool                     `json:"ok"`
-	Status               string                   `json:"status"`
-	Command              string                   `json:"command,omitempty"`
-	Kind                 string                   `json:"kind,omitempty"`
-	Text                 string                   `json:"text,omitempty"`
-	SuggestedCalls       []CapabilityUsageExample `json:"suggestedCalls,omitempty"`
-	ConfirmationRequired bool                     `json:"confirmationRequired,omitempty"`
-	DeliveredByHost      bool                     `json:"deliveredByHost,omitempty"`
-	Response             Response                 `json:"-"`
-}
-
-// ExecuteCapabilityForAgent executes one validated structured capability.
-// This is the Agent boundary; command strings remain a user-facing syntax.
-func (h Handler) ExecuteCapabilityForAgent(ctx context.Context, input Input, id CapabilityID, args []string) (AgentCommandResult, error) {
-	_, found := CapabilityDescriptorFor(id)
+// ExecuteCapability validates, applies the host privacy policy, resolves any
+// authoritative receipt subject, and executes one normalized capability.
+// Confirmation-required mutations are described but never executed here.
+func (h Handler) ExecuteCapability(ctx context.Context, input Input, id CapabilityID, args []string) (CapabilityOutcome, error) {
+	descriptor, found := CapabilityDescriptorFor(id)
 	if !found {
-		return AgentCommandResult{
-			Status:  AgentCommandStatusNotFound,
-			Command: string(id),
-			Kind:    string(id),
-			Text:    "没有找到这个能力。请使用工具描述中的稳定 capability ID。",
-		}, nil
+		return NotFoundOutcome(Response{Text: "没有找到这个能力。请先查询 Bot 命令文档。", Kind: string(id)}), nil
 	}
 	invocation, ok := NewInvocation(id, args)
 	if !ok {
-		return AgentCommandResult{
-			Status:         AgentCommandStatusInvalidInput,
-			Kind:           string(id),
-			Text:           "能力参数无效。请使用 suggestedCalls 中的 capability 和 arguments 修正调用。",
-			SuggestedCalls: CapabilityUsageExamples(id),
-		}, nil
+		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: string(descriptor.ID)}), nil
 	}
-	return h.executeInvocationForAgent(ctx, input, invocation)
+	return h.executeCapabilityInvocation(ctx, input, invocation, false)
 }
 
-func (h Handler) executeInvocationForAgent(ctx context.Context, input Input, invocation Invocation) (AgentCommandResult, error) {
-	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
-		return AgentCommandResult{
-			OK: false, Status: AgentCommandStatusForbidden, Command: canonicalAgentCommand(invocation),
-			Kind: invocation.Name, Text: "此功能只能在私聊使用。",
-		}, nil
-	}
-	command := canonicalAgentCommand(invocation)
-	policy := invocation.Capability.PolicyFor(invocation)
-	if policy.Confirmation == ConfirmUser {
-		return AgentCommandResult{
-			OK:                   false,
-			Status:               AgentCommandStatusConfirmationRequired,
-			Command:              command,
-			Kind:                 invocation.Name,
-			Text:                 "需要确认：" + command + "\n回复 ok 后执行。",
-			ConfirmationRequired: true,
-		}, nil
-	}
-
-	response, handled := h.executeInvocation(ctx, input, invocation)
-	if !handled {
-		return AgentCommandResult{Status: AgentCommandStatusNotFound, Command: command, Kind: invocation.Name, Text: "宿主无法执行这条命令。"}, nil
-	}
-	if response.Kind == ResponseKindAuthWait {
-		return AgentCommandResult{
-			OK:              false,
-			Status:          AgentCommandStatusAuthRequired,
-			Command:         command,
-			Kind:            response.Kind,
-			Text:            "需要登录；登录提示已由宿主安全发送，授权后会继续刚才的请求。",
-			DeliveredByHost: true,
-			Response:        response,
-		}, nil
-	}
-	presentation := invocation.Capability.Present(invocation, response, policy)
-	return AgentCommandResult{
-		OK:              true,
-		Status:          AgentCommandStatusSuccess,
-		Command:         command,
-		Kind:            response.Kind,
-		Text:            presentation.Text,
-		DeliveredByHost: presentation.DeliveredByHost,
-		Response:        presentation.Response,
-	}, nil
-}
-
-func canonicalAgentCommand(invocation Invocation) string {
-	return invocation.CanonicalCommand()
-}
-
-func agentCommandRequiresHostDelivery(invocation Invocation, response Response) bool {
-	if response.Kind == ResponseKindAuthWait {
-		return true
-	}
+// ExecuteInvocation is the Invocation form of ExecuteCapability.
+func (h Handler) ExecuteInvocation(ctx context.Context, input Input, invocation Invocation) (CapabilityOutcome, error) {
+	original := invocation
 	invocation, ok := withDescriptor(invocation)
-	if !ok || invocation.Capability.Present == nil {
-		return false
+	if !ok {
+		return NotFoundOutcome(Response{Text: "没有找到这个能力。请先查询 Bot 命令文档。", Kind: original.Name}), nil
 	}
-	return invocation.Capability.Present(invocation, response, invocation.Capability.PolicyFor(invocation)).DeliveredByHost
+	return h.executeCapabilityInvocation(ctx, input, invocation, false)
 }
 
-func agentCommandNeedsConfirmation(invocation Invocation) bool {
-	return invocation.Policy().Confirmation == ConfirmUser
+func (h Handler) executeCapabilityInvocation(ctx context.Context, input Input, invocation Invocation, approved bool) (CapabilityOutcome, error) {
+	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
+		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: invocation.Name}), nil
+	}
+	description, err := h.DescribeInvocation(ctx, input, invocation.ID(), invocation.Args)
+	if err != nil {
+		return capabilityDescriptionFailure(invocation, err), nil
+	}
+	description.Invocation.Raw = invocation.Raw
+	description.Invocation.NaturalRoute = invocation.NaturalRoute
+	return h.executeDescribedCapability(ctx, input, description, approved), nil
+}
+
+func capabilityDescriptionFailure(invocation Invocation, err error) CapabilityOutcome {
+	switch {
+	case errors.Is(err, errCapabilityForbidden):
+		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: invocation.Name})
+	case errors.Is(err, errCapabilityInvalidInput), errors.Is(err, errCapabilityMutationMustExpand):
+		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: invocation.Name})
+	case errors.Is(err, errCapabilityReceiptTargetNotFound):
+		return NotFoundOutcome(Response{Text: "没有找到可匹配的教学班。", Kind: invocation.Name})
+	default:
+		return FailedOutcome(Response{Text: "能力目标查找失败：" + friendlyError(err), Kind: invocation.Name})
+	}
+}
+
+// ExecuteApprovedInvocation executes a previously frozen description after
+// the host has consumed a real user approval. The approval bypasses only the
+// confirmation gate; validation, privacy, and authentication still apply.
+func (h Handler) ExecuteApprovedInvocation(ctx context.Context, input Input, description CapabilityInvocationDescription) (CapabilityOutcome, error) {
+	return h.executeDescribedCapability(ctx, input, description, true), nil
+}
+
+func (h Handler) executeDescribedCapability(ctx context.Context, input Input, description CapabilityInvocationDescription, approved bool) CapabilityOutcome {
+	original := description.Invocation
+	invocation, valid := NewInvocation(original.ID(), original.Args)
+	if !valid {
+		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: original.Name})
+	}
+	if err := validateReceiptInvocation(invocation); err != nil {
+		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: invocation.Name})
+	}
+	invocation.Raw = original.Raw
+	invocation.NaturalRoute = original.NaturalRoute
+	policy := invocation.Policy()
+	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
+		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: invocation.Name})
+	}
+	if policy.Confirmation == ConfirmUser && !approved {
+		return CapabilityOutcome{Status: CapabilityOutcomeSuccess, ConfirmationRequired: true, Receipt: description.Receipt}
+	}
+	outcome, handled := h.executeInvocationOutcome(ctx, input, invocation)
+	if !handled {
+		return CapabilityOutcome{Status: CapabilityOutcomeNotFound, Response: Response{Text: "宿主无法执行这条命令。", Kind: invocation.Name}, Receipt: description.Receipt}
+	}
+	outcome.Receipt = description.Receipt
+	return outcome
+}
+
+// PresentCapabilityOutcome applies only the descriptor's result-exposure
+// decision. Status remains host state; Text is literal model-facing domain
+// evidence, while Response is available for host-rendered delivery.
+func (h Handler) PresentCapabilityOutcome(invocation Invocation, outcome CapabilityOutcome) CapabilityPresentation {
+	outcome = normalizeOutcome(outcome)
+	presentation := CapabilityPresentation{Text: strings.TrimSpace(outcome.Response.Text), Response: outcome.Response}
+	if invocation, ok := withDescriptor(invocation); ok && invocation.Capability.Present != nil {
+		presentation = invocation.Capability.Present(invocation, outcome.Response, invocation.Policy())
+		presentation.Text = strings.TrimSpace(presentation.Text)
+	}
+	if outcome.Status == CapabilityOutcomeAuthRequired {
+		presentation.Text = "需要登录；登录提示已由宿主发送，授权后会自动继续刚才的请求。"
+		presentation.DeliveredByHost = true
+		presentation.Response = outcome.Response
+	}
+	return presentation
 }

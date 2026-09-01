@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -121,11 +124,6 @@ type NotificationSettings struct {
 	ReauthRequired  bool
 }
 
-type AgentSettings struct {
-	Identity        Identity
-	ExposeToolCalls bool
-}
-
 type BusSettings struct {
 	Identity        Identity
 	ShowSouthCampus bool
@@ -133,6 +131,7 @@ type BusSettings struct {
 
 type AgentRun struct {
 	ID               int64
+	JobID            int64
 	Identity         Identity
 	RawText          string
 	Provider         string
@@ -154,6 +153,39 @@ type AgentRun struct {
 
 const SpendingCurrencyCNY = "CNY"
 
+// CurrentSchemaVersion is the schema version written to SQLite user_version
+// after a successful startup migration.
+const CurrentSchemaVersion = 2
+
+var requiredSchemaModels = []any{
+	&userRow{},
+	&credentialRow{},
+	&loginSessionRow{},
+	&conversationStateRow{},
+	&interactionRow{},
+	&notificationSettingRow{},
+	&busSettingRow{},
+	&agentRunRow{},
+	&feedbackRecordRow{},
+	&outgoingMessageRow{},
+	&conversationJobSequenceRow{},
+	&conversationJobRow{},
+	&publicCommandCacheRow{},
+	&conversationEventRow{},
+	&agentCheckpointRow{},
+	&capabilityExecutionRow{},
+}
+
+var obsoleteSchemaTables = []string{
+	"conversation_summaries",
+	"pending_confirmations",
+	"pending_requests",
+	"notification_deliveries",
+	"agent_settings",
+}
+
+var obsoleteFeedbackColumns = []string{"sent_to_admin", "sent_at", "resolved"}
+
 type AgentSpending struct {
 	PromptTokens     int64
 	CachedTokens     int64
@@ -163,14 +195,6 @@ type AgentSpending struct {
 	ModelRequests    int64
 	ToolCalls        int64
 	Currency         string
-}
-
-type ConversationSummary struct {
-	Identity             Identity
-	Summary              string
-	ThroughInteractionID int64
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
 }
 
 type FeedbackRecord struct {
@@ -320,20 +344,6 @@ func (notificationSettingRow) TableName() string {
 	return "notification_settings"
 }
 
-type agentSettingRow struct {
-	UserID           int64  `gorm:"primaryKey"`
-	Platform         string `gorm:"not null"`
-	ExternalUserID   string `gorm:"not null"`
-	ConversationType string
-	ConversationID   string
-	ExposeToolCalls  bool `gorm:"not null"`
-	UpdatedAt        time.Time
-}
-
-func (agentSettingRow) TableName() string {
-	return "agent_settings"
-}
-
 type busSettingRow struct {
 	UserID          int64  `gorm:"primaryKey"`
 	Platform        string `gorm:"not null"`
@@ -348,6 +358,7 @@ func (busSettingRow) TableName() string {
 
 type agentRunRow struct {
 	ID               int64  `gorm:"primaryKey"`
+	JobID            int64  `gorm:"not null;default:0;index"`
 	UserID           int64  `gorm:"not null;index"`
 	Platform         string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	ExternalUserID   string `gorm:"not null"`
@@ -373,21 +384,6 @@ type agentRunRow struct {
 
 func (agentRunRow) TableName() string {
 	return "agent_runs"
-}
-
-type conversationSummaryRow struct {
-	ID                   int64  `gorm:"primaryKey"`
-	Platform             string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	ConversationType     string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	ConversationID       string `gorm:"not null;uniqueIndex:idx_conversation_summaries_identity"`
-	Summary              string `gorm:"not null"`
-	ThroughInteractionID int64  `gorm:"not null;default:0"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-}
-
-func (conversationSummaryRow) TableName() string {
-	return "conversation_summaries"
 }
 
 type feedbackRecordRow struct {
@@ -471,6 +467,18 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	// SQLite has one writer. A larger in-process pool lets a deferred
+	// transaction read on one connection while another connection commits,
+	// after which SQLite must reject the first connection's write upgrade with
+	// SQLITE_BUSY_SNAPSHOT; busy_timeout cannot make that snapshot valid again.
+	// Serialize this process at the pool boundary and retain busy_timeout for
+	// coordination with external readers/writers such as deployment backup.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		_ = s.Close()
@@ -495,45 +503,208 @@ func (s *Store) Ping(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
+// VerifySchema confirms that startup migration reached the expected schema
+// and that SQLite can read every page of the database.
+func (s *Store) VerifySchema() error {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read sqlite schema version: %w", err)
+	}
+	if version != CurrentSchemaVersion {
+		return fmt.Errorf("unsupported sqlite schema version %d (want %d)", version, CurrentSchemaVersion)
+	}
+	if err := verifySchemaShape(s.db); err != nil {
+		return err
+	}
+	var integrity string
+	if err := s.db.Raw("PRAGMA integrity_check").Scan(&integrity).Error; err != nil {
+		return fmt.Errorf("run sqlite integrity check: %w", err)
+	}
+	if integrity != "ok" {
+		return fmt.Errorf("sqlite integrity check failed: %s", integrity)
+	}
+	return nil
+}
+
 func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
 	}
-	if err := s.db.AutoMigrate(
-		&userRow{},
-		&credentialRow{},
-		&loginSessionRow{},
-		&conversationStateRow{},
-		&interactionRow{},
-		&notificationSettingRow{},
-		&agentSettingRow{},
-		&busSettingRow{},
-		&agentRunRow{},
-		&conversationSummaryRow{},
-		&feedbackRecordRow{},
-		&outgoingMessageRow{},
-		&conversationJobSequenceRow{},
-		&conversationJobRow{},
-		&publicCommandCacheRow{},
-	); err != nil {
-		return err
+	return s.migrateSchema()
+}
+
+func (s *Store) migrateSchema() error {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read schema version: %w", err)
 	}
-	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
-		if s.db.Migrator().HasColumn("feedback_records", column) {
-			if err := s.db.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
-				return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+	switch version {
+	case CurrentSchemaVersion:
+		return verifySchemaShape(s.db)
+	case 0:
+		// Version zero is the only production schema accepted by this one-way
+		// release. Intermediate versions are deliberately unsupported: there is
+		// one canonical shape, not a ladder of compatibility migrations.
+	default:
+		return fmt.Errorf("unsupported database schema version %d (accepted: 0 or %d)", version, CurrentSchemaVersion)
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(
+			&userRow{},
+			&credentialRow{},
+			&loginSessionRow{},
+			&conversationStateRow{},
+			&interactionRow{},
+			&notificationSettingRow{},
+			&busSettingRow{},
+			&agentRunRow{},
+			&feedbackRecordRow{},
+			&outgoingMessageRow{},
+			&conversationJobSequenceRow{},
+			&conversationJobRow{},
+			&publicCommandCacheRow{},
+			&conversationEventRow{},
+			&agentCheckpointRow{},
+			&capabilityExecutionRow{},
+		); err != nil {
+			return fmt.Errorf("migrate schema tables: %w", err)
+		}
+		for _, column := range obsoleteFeedbackColumns {
+			if tx.Migrator().HasColumn("feedback_records", column) {
+				if err := tx.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
+					return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
+				}
 			}
 		}
+		// notify_failed mixed delivery state into the login domain. Credentials
+		// were already saved, so close it without replaying stale delivery.
+		if err := tx.Model(&loginSessionRow{}).
+			Where("status = ?", "notify_failed").
+			Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
+			return fmt.Errorf("normalize obsolete login status: %w", err)
+		}
+		if err := migrateLegacyConversationEvents(tx); err != nil {
+			return fmt.Errorf("migrate conversation events: %w", err)
+		}
+		// Generated semantic summaries are not evidence and must never be fed
+		// back to the model. The immutable deployment backup remains the audit
+		// copy of this removed data.
+		for _, table := range obsoleteSchemaTables {
+			if tx.Migrator().HasTable(table) {
+				if err := tx.Migrator().DropTable(table); err != nil {
+					return fmt.Errorf("drop obsolete table %s: %w", table, err)
+				}
+			}
+		}
+		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
+			return fmt.Errorf("write schema version: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	// notify_failed mixed delivery state into the login domain. Credentials were
-	// already saved for these sessions, so close them without replaying a stale
-	// completion notification.
-	if err := s.db.Model(&loginSessionRow{}).
-		Where("status = ?", "notify_failed").
-		Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
-		return fmt.Errorf("normalize obsolete login status: %w", err)
+	return verifySchemaShape(s.db)
+}
+
+func verifySchemaShape(db *gorm.DB) error {
+	for _, model := range requiredSchemaModels {
+		if err := verifyModelSchema(db, model); err != nil {
+			return err
+		}
+	}
+	for _, table := range obsoleteSchemaTables {
+		if db.Migrator().HasTable(table) {
+			return fmt.Errorf("sqlite schema still contains obsolete table %s", table)
+		}
+	}
+	for _, column := range obsoleteFeedbackColumns {
+		if db.Migrator().HasColumn("feedback_records", column) {
+			return fmt.Errorf("sqlite schema still contains obsolete column feedback_records.%s", column)
+		}
 	}
 	return nil
+}
+
+func verifyModelSchema(db *gorm.DB, model any) error {
+	statement := &gorm.Statement{DB: db}
+	if err := statement.Parse(model); err != nil {
+		return fmt.Errorf("parse required sqlite model: %w", err)
+	}
+	table := statement.Schema.Table
+	if !db.Migrator().HasTable(model) {
+		return fmt.Errorf("sqlite schema is missing required table %s", table)
+	}
+	for _, field := range statement.Schema.Fields {
+		if field.DBName == "" {
+			continue
+		}
+		if !db.Migrator().HasColumn(model, field.DBName) {
+			return fmt.Errorf("sqlite schema is missing required column %s.%s", table, field.DBName)
+		}
+	}
+	for _, index := range statement.Schema.ParseIndexes() {
+		columns := make([]string, 0, len(index.Fields))
+		for _, field := range index.Fields {
+			if field.Expression != "" || field.DBName == "" {
+				return fmt.Errorf("sqlite schema verification does not support expression index %s on %s", index.Name, table)
+			}
+			columns = append(columns, field.DBName)
+		}
+		if err := verifySQLiteIndex(db, table, index.Name, strings.EqualFold(index.Class, "UNIQUE"), columns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func verifySQLiteIndex(db *gorm.DB, table, name string, unique bool, columns []string) error {
+	type indexListRow struct {
+		Name    string `gorm:"column:name"`
+		Unique  int    `gorm:"column:unique"`
+		Partial int    `gorm:"column:partial"`
+	}
+	var indexes []indexListRow
+	if err := db.Raw("PRAGMA index_list(" + quoteSQLiteIdentifier(table) + ")").Scan(&indexes).Error; err != nil {
+		return fmt.Errorf("inspect sqlite indexes on %s: %w", table, err)
+	}
+	found := false
+	for _, index := range indexes {
+		if index.Name != name {
+			continue
+		}
+		found = true
+		if (index.Unique != 0) != unique {
+			return fmt.Errorf("sqlite index %s on %s has wrong uniqueness", name, table)
+		}
+		if index.Partial != 0 {
+			return fmt.Errorf("sqlite index %s on %s is unexpectedly partial", name, table)
+		}
+		break
+	}
+	if !found {
+		return fmt.Errorf("sqlite schema is missing required index %s on %s", name, table)
+	}
+	type indexInfoRow struct {
+		Sequence int    `gorm:"column:seqno"`
+		Name     string `gorm:"column:name"`
+	}
+	var fields []indexInfoRow
+	if err := db.Raw("PRAGMA index_info(" + quoteSQLiteIdentifier(name) + ")").Scan(&fields).Error; err != nil {
+		return fmt.Errorf("inspect sqlite index %s on %s: %w", name, table, err)
+	}
+	sort.Slice(fields, func(i, j int) bool { return fields[i].Sequence < fields[j].Sequence })
+	actual := make([]string, 0, len(fields))
+	for _, field := range fields {
+		actual = append(actual, field.Name)
+	}
+	if !slices.Equal(actual, columns) {
+		return fmt.Errorf("sqlite index %s on %s has columns %v, want %v", name, table, actual, columns)
+	}
+	return nil
+}
+
+func quoteSQLiteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 func (s *Store) PublicCommandCache(ctx context.Context, version, command, args string, now time.Time) (PublicCommandCacheEntry, bool, error) {
@@ -1184,67 +1355,6 @@ func (s *Store) handledInteractions(ctx context.Context, ident Identity, afterID
 	return out, nil
 }
 
-func (s *Store) ConversationSummary(ctx context.Context, ident Identity) (ConversationSummary, bool, error) {
-	if err := validateConversationIdentity(ident); err != nil {
-		return ConversationSummary{}, false, err
-	}
-	ident = normalizeIdentity(ident)
-	var row conversationSummaryRow
-	err := s.db.WithContext(ctx).
-		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ConversationSummary{}, false, nil
-	}
-	if err != nil {
-		return ConversationSummary{}, false, err
-	}
-	return ConversationSummary{
-		Identity:             ident,
-		Summary:              row.Summary,
-		ThroughInteractionID: row.ThroughInteractionID,
-		CreatedAt:            row.CreatedAt,
-		UpdatedAt:            row.UpdatedAt,
-	}, true, nil
-}
-
-func (s *Store) SaveConversationSummary(ctx context.Context, summary ConversationSummary) error {
-	if err := validateConversationIdentity(summary.Identity); err != nil {
-		return err
-	}
-	ident := normalizeIdentity(summary.Identity)
-	text := strings.TrimSpace(summary.Summary)
-	if text == "" || summary.ThroughInteractionID <= 0 {
-		return errors.New("conversation summary and checkpoint are required")
-	}
-	now := nowUTC()
-	row := conversationSummaryRow{
-		Platform:             ident.Platform,
-		ConversationType:     ident.ConversationType,
-		ConversationID:       ident.ConversationID,
-		Summary:              text,
-		ThroughInteractionID: summary.ThroughInteractionID,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "platform"},
-			{Name: "conversation_type"},
-			{Name: "conversation_id"},
-		},
-		DoUpdates: clause.Assignments(map[string]any{
-			"summary":                row.Summary,
-			"through_interaction_id": row.ThroughInteractionID,
-			"updated_at":             row.UpdatedAt,
-		}),
-		Where: clause.Where{Exprs: []clause.Expression{
-			clause.Expr{SQL: "excluded.through_interaction_id > conversation_summaries.through_interaction_id"},
-		}},
-	}).Create(&row).Error
-}
-
 func dereferenceTime(value *time.Time) time.Time {
 	if value == nil {
 		return time.Time{}
@@ -1270,6 +1380,7 @@ func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, run AgentRun
 	now := nowUTC()
 	row := agentRunRow{
 		UserID:           userID,
+		JobID:            run.JobID,
 		Platform:         ident.Platform,
 		ExternalUserID:   ident.UserID,
 		ConversationType: ident.ConversationType,
@@ -1306,18 +1417,24 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 	return s.db.WithContext(ctx).Model(&agentRunRow{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"status":            status,
-			"reply":             reply,
-			"error":             strings.TrimSpace(errText),
-			"currency":          SpendingCurrencyCNY,
-			"prompt_tokens":     spending.PromptTokens,
-			"cached_tokens":     spending.CachedTokens,
-			"completion_tokens": spending.CompletionTokens,
-			"total_tokens":      spending.TotalTokens,
-			"cost_nano_cny":     spending.CostNanoCNY,
-			"model_requests":    spending.ModelRequests,
-			"tool_calls":        spending.ToolCalls,
-			"updated_at":        nowUTC(),
+			"status":   status,
+			"reply":    reply,
+			"error":    strings.TrimSpace(errText),
+			"currency": SpendingCurrencyCNY,
+			// Usage may have been persisted immediately after a successful
+			// provider response. Keep those monotonic observations when the run
+			// finishes, even if its final cleanup snapshot is incomplete.
+			"prompt_tokens":     gorm.Expr("MAX(prompt_tokens, ?)", spending.PromptTokens),
+			"cached_tokens":     gorm.Expr("MAX(cached_tokens, ?)", spending.CachedTokens),
+			"completion_tokens": gorm.Expr("MAX(completion_tokens, ?)", spending.CompletionTokens),
+			"total_tokens":      gorm.Expr("MAX(total_tokens, ?)", spending.TotalTokens),
+			"cost_nano_cny":     gorm.Expr("MAX(cost_nano_cny, ?)", spending.CostNanoCNY),
+			// model_requests includes durable reservations made before physical
+			// provider calls. Finishing a run may add observed usage, but must
+			// never roll a crash-reserved attempt back down.
+			"model_requests": gorm.Expr("MAX(model_requests, ?)", spending.ModelRequests),
+			"tool_calls":     gorm.Expr("MAX(tool_calls, ?)", spending.ToolCalls),
+			"updated_at":     nowUTC(),
 		}).Error
 }
 
@@ -1352,6 +1469,13 @@ func (s *Store) UserSpending(ctx context.Context, ident Identity) (AgentSpending
 	ident = normalizeIdentity(ident)
 	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID))
+}
+
+func (s *Store) AgentJobSpending(ctx context.Context, jobID int64) (AgentSpending, error) {
+	if jobID <= 0 {
+		return AgentSpending{Currency: SpendingCurrencyCNY}, nil
+	}
+	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).Where("job_id = ?", jobID))
 }
 
 func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {
@@ -1541,7 +1665,15 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		for i := range rows {
 			row := &rows[i]
 			result := tx.Model(&outgoingMessageRow{}).
-				Where("id = ? AND status IN ?", row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}).
+				Where(`id = ? AND status IN ? AND NOT EXISTS (
+					SELECT 1 FROM outgoing_messages AS earlier
+					WHERE earlier.id < outgoing_messages.id
+					AND earlier.platform = outgoing_messages.platform
+					AND earlier.conversation_type = outgoing_messages.conversation_type
+					AND earlier.conversation_id = outgoing_messages.conversation_id
+					AND earlier.kind = 'agent_progress'
+					AND earlier.status = ?
+				)`, row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, string(delivery.StatusDelivering)).
 				Updates(map[string]any{
 					"status":             string(delivery.StatusDelivering),
 					"attempts":           gorm.Expr("attempts + 1"),
@@ -1566,6 +1698,57 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		return nil
 	})
 	return records, err
+}
+
+// ReadyToDeliver is the last durable gate before an adapter call. It expires a
+// progress row when the corresponding job already produced a user-facing
+// output. A progress call that already passed this gate remains ordered ahead
+// of later messages for the same conversation by ClaimDue.
+func (s *Store) ReadyToDeliver(ctx context.Context, id int64) (bool, error) {
+	if id <= 0 {
+		return false, errors.New("outgoing message id must be positive")
+	}
+	ready := false
+	now := nowUTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row outgoingMessageRow
+		err := tx.Select("id", "kind", "dedupe_key", "status").Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if row.Kind != "agent_progress" {
+			ready = true
+			return nil
+		}
+		jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey)
+		if !ok {
+			return fmt.Errorf("agent progress %d has an invalid dedupe key", row.ID)
+		}
+		var job conversationJobRow
+		err = tx.Select("state").Where("id = ?", jobID).First(&job).Error
+		if err == nil && (job.State == string(ConversationJobStateRunning) || job.State == string(ConversationJobStateRetryWait)) {
+			ready = true
+			return nil
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		result := tx.Model(&outgoingMessageRow{}).
+			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+			Updates(map[string]any{
+				"status":             string(delivery.StatusExpired),
+				"next_attempt_at":    nil,
+				"attempt_started_at": nil,
+				"error_code":         "superseded",
+				"error_message":      "superseded by conversation job output",
+				"updated_at":         now,
+			})
+		return result.Error
+	})
+	return ready, err
 }
 
 func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome, nextAttemptAt time.Time) error {
@@ -1612,16 +1795,52 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 		}
 		updates["accepted_at"] = acceptedAt
 	}
-	result := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
-		Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row outgoingMessageRow
+		if err := tx.Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("outgoing message %d is not delivering", id)
+			}
+			return err
+		}
+		if status == delivery.StatusRetryWait && row.Kind == "agent_progress" {
+			if jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey); ok {
+				var job conversationJobRow
+				err := tx.Select("state").Where("id = ?", jobID).First(&job).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil &&
+					job.State != string(ConversationJobStateRunning) && job.State != string(ConversationJobStateRetryWait)) {
+					updates["status"] = string(delivery.StatusExpired)
+					updates["next_attempt_at"] = nil
+					updates["error_code"] = "superseded"
+					updates["error_message"] = "superseded by conversation job output"
+				} else if err != nil {
+					return err
+				}
+			}
+		}
+		result := tx.Model(&outgoingMessageRow{}).
+			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("outgoing message %d is not delivering", id)
+		}
+		return nil
+	})
+}
+
+func conversationJobIDFromProgressKey(key string) (int64, bool) {
+	const prefix = "conversation-job:"
+	const suffix = ":progress"
+	key = strings.TrimSpace(key)
+	if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) {
+		return 0, false
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("outgoing message %d is not delivering", id)
-	}
-	return nil
+	value := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
+	id, err := strconv.ParseInt(value, 10, 64)
+	return id, err == nil && id > 0
 }
 
 func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
@@ -1791,54 +2010,6 @@ func (s *Store) PauseNotificationsForReauth(ctx context.Context, ident Identity)
 		Updates(map[string]any{"reauth_required": true, "updated_at": nowUTC()}).Error
 }
 
-func (s *Store) AgentSettings(ctx context.Context, ident Identity) (AgentSettings, error) {
-	if err := validateIdentity(ident); err != nil {
-		return AgentSettings{}, err
-	}
-	ident = normalizeIdentity(ident)
-	var row agentSettingRow
-	err := s.db.WithContext(ctx).
-		Joins("JOIN users ON users.id = agent_settings.user_id").
-		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return AgentSettings{Identity: ident}, nil
-	}
-	if err != nil {
-		return AgentSettings{}, err
-	}
-	return agentSettingsFromRow(row, ident), nil
-}
-
-func (s *Store) SaveAgentSettings(ctx context.Context, settings AgentSettings) error {
-	settings.Identity = normalizeIdentity(settings.Identity)
-	userID, err := s.EnsureUser(ctx, settings.Identity)
-	if err != nil {
-		return err
-	}
-	now := nowUTC()
-	row := agentSettingRow{
-		UserID:           userID,
-		Platform:         settings.Identity.Platform,
-		ExternalUserID:   settings.Identity.UserID,
-		ConversationType: settings.Identity.ConversationType,
-		ConversationID:   settings.Identity.ConversationID,
-		ExposeToolCalls:  settings.ExposeToolCalls,
-		UpdatedAt:        now,
-	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"platform",
-			"external_user_id",
-			"conversation_type",
-			"conversation_id",
-			"expose_tool_calls",
-			"updated_at",
-		}),
-	}).Create(&row).Error
-}
-
 func (s *Store) BusSettings(ctx context.Context, ident Identity) (BusSettings, error) {
 	if err := validateIdentity(ident); err != nil {
 		return BusSettings{}, err
@@ -1895,19 +2066,6 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
 		ReauthRequired:  row.ReauthRequired,
-	}
-}
-
-func agentSettingsFromRow(row agentSettingRow, fallback Identity) AgentSettings {
-	ident := Identity{
-		Platform:         textutil.FirstNonEmpty(row.Platform, fallback.Platform),
-		UserID:           textutil.FirstNonEmpty(row.ExternalUserID, fallback.UserID),
-		ConversationType: textutil.FirstNonEmpty(row.ConversationType, fallback.ConversationType),
-		ConversationID:   textutil.FirstNonEmpty(row.ConversationID, fallback.ConversationID),
-	}
-	return AgentSettings{
-		Identity:        ident,
-		ExposeToolCalls: row.ExposeToolCalls,
 	}
 }
 

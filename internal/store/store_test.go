@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -193,7 +194,7 @@ func TestPublicCommandCacheRejectsIncompleteEntries(t *testing.T) {
 	}
 }
 
-func TestOpenConfiguresBusyTimeout(t *testing.T) {
+func TestOpenConfiguresSerializedSQLitePoolAndBusyTimeout(t *testing.T) {
 	path := t.TempDir() + "/bot.db"
 	s, err := Open(path)
 	if err != nil {
@@ -207,6 +208,13 @@ func TestOpenConfiguresBusyTimeout(t *testing.T) {
 	}
 	if timeout != 5000 {
 		t.Fatalf("busy_timeout = %d, want 5000", timeout)
+	}
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max := sqlDB.Stats().MaxOpenConnections; max != 1 {
+		t.Fatalf("max open SQLite connections = %d, want 1", max)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("database was not created at %q: %v", path, err)
@@ -1128,6 +1136,9 @@ func TestOpenClosesObsoleteFailedNotificationWithoutReplay(t *testing.T) {
 	if err := s.db.Model(&loginSessionRow{}).Where("device_code = ?", "device").Update("status", "notify_failed").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := s.db.Exec("PRAGMA user_version = 0").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -1597,48 +1608,6 @@ func TestNotificationSettingsTrimsIdentityKeys(t *testing.T) {
 	}
 }
 
-func TestAgentSettings(t *testing.T) {
-	s, err := Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	settings, err := s.AgentSettings(ctx, ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings.ExposeToolCalls {
-		t.Fatalf("default settings = %#v", settings)
-	}
-
-	settings.ExposeToolCalls = true
-	if err := s.SaveAgentSettings(ctx, settings); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.AgentSettings(ctx, Identity{
-		Platform:         " napcat ",
-		UserID:           " 42 ",
-		ConversationType: " private ",
-		ConversationID:   " 42 ",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.ExposeToolCalls || got.Identity != ident {
-		t.Fatalf("settings = %#v", got)
-	}
-	var row agentSettingRow
-	if err := s.db.WithContext(ctx).First(&row, "conversation_type = ? AND conversation_id = ?", "private", "42").Error; err != nil {
-		t.Fatal(err)
-	}
-	if row.UpdatedAt.IsZero() {
-		t.Fatal("agent settings updated_at was not set")
-	}
-}
-
 func TestNotificationSettingsRejectsIncompleteIdentity(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1936,7 +1905,7 @@ func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 	}
 }
 
-func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
+func TestConversationEventsPreserveTypedTranscriptAndDedupe(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -1945,47 +1914,110 @@ func TestConversationSummaryCheckpointsHandledHistory(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	for _, text := range []string{"first", "second", "third"} {
-		if err := s.RecordInteraction(ctx, ident, Interaction{
-			RawText: text, Handled: true, Reply: text + "-reply", Status: InteractionStatusHandled,
-		}); err != nil {
-			t.Fatal(err)
+	inputs := []ConversationEvent{
+		{Identity: ident, DedupeKey: "job:7:user", Type: ConversationEventUser, Content: "订阅数学分析"},
+		{Identity: ident, DedupeKey: "job:7:assistant:call-1", Type: ConversationEventAssistant, ToolCalls: []ConversationToolCall{{ID: "call-1", Name: "invoke_bot_capability", Arguments: `{"capability":"subscription"}`}}},
+		{Identity: ident, DedupeKey: "job:7:tool:call-1", Type: ConversationEventToolResult, ToolCallID: "call-1", ToolName: "invoke_bot_capability", Content: "已订阅数学分析"},
+		{Identity: ident, DedupeKey: "job:7:assistant:final", Type: ConversationEventAssistant, Content: "已经订阅好了。"},
+	}
+	for _, input := range inputs {
+		if _, created, err := s.AppendConversationEvent(ctx, input); err != nil || !created {
+			t.Fatalf("append event: created=%v err=%v", created, err)
 		}
 	}
-	all, err := s.HandledInteractionsAfter(ctx, ident, 0)
+	if _, created, err := s.AppendConversationEvent(ctx, inputs[2]); err != nil || created {
+		t.Fatalf("duplicate tool event: created=%v err=%v", created, err)
+	}
+	events, err := s.RecentConversationEvents(ctx, ident, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 3 || all[0].ID <= 0 || all[0].RawText != "first" || all[2].RawText != "third" {
-		t.Fatalf("interactions = %#v", all)
+	if len(events) != 4 || events[0].Type != ConversationEventUser || events[1].ToolCalls[0].ID != "call-1" || events[2].Type != ConversationEventToolResult || events[3].Content != "已经订阅好了。" {
+		t.Fatalf("events = %#v", events)
 	}
-	if err := s.SaveConversationSummary(ctx, ConversationSummary{
-		Identity: ident, Summary: "first two turns", ThroughInteractionID: all[1].ID,
-	}); err != nil {
+}
+
+func TestConversationEventsRequireCurrentJobLease(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "event-lease", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	first, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || first == nil {
+		t.Fatalf("first claim=%#v err=%v", first, err)
+	}
+	firstEvent := ConversationEvent{
+		Identity: ident, JobID: job.ID, JobRevision: first.Revision, JobLeaseToken: first.LeaseToken,
+		DedupeKey: "event-lease:first", Type: ConversationEventUser, Content: "first",
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, firstEvent); err != nil || !created {
+		t.Fatalf("first event created=%v err=%v", created, err)
+	}
+	recoveredAt := first.ClaimedAt.Add(time.Minute)
+	if err := s.RecoverConversationJobLeases(ctx, recoveredAt, time.Nanosecond); err != nil {
 		t.Fatal(err)
 	}
-	got, found, err := s.ConversationSummary(ctx, ident)
-	if err != nil || !found {
-		t.Fatalf("summary found = %v, err = %v", found, err)
+	second, err := s.ClaimConversationJob(ctx, ident, recoveredAt)
+	if err != nil || second == nil {
+		t.Fatalf("second claim=%#v err=%v", second, err)
 	}
-	if got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
-		t.Fatalf("summary = %#v", got)
+	stale := firstEvent
+	stale.DedupeKey = "event-lease:stale"
+	stale.Type = ConversationEventAssistant
+	stale.Content = "stale assistant output"
+	if _, created, err := s.AppendConversationEvent(ctx, stale); err == nil || created {
+		t.Fatalf("stale transcript event created=%v err=%v", created, err)
 	}
-	if err := s.SaveConversationSummary(ctx, ConversationSummary{
-		Identity: ident, Summary: "stale", ThroughInteractionID: all[0].ID,
-	}); err != nil {
-		t.Fatal(err)
+	current := stale
+	current.JobRevision = second.Revision
+	current.JobLeaseToken = second.LeaseToken
+	current.DedupeKey = "event-lease:current"
+	current.Content = "current assistant output"
+	if _, created, err := s.AppendConversationEvent(ctx, current); err != nil || !created {
+		t.Fatalf("current transcript event created=%v err=%v", created, err)
 	}
-	got, found, err = s.ConversationSummary(ctx, ident)
-	if err != nil || !found || got.Summary != "first two turns" || got.ThroughInteractionID != all[1].ID {
-		t.Fatalf("summary regressed = %#v, found = %v, err = %v", got, found, err)
+	if ok, err := s.CompleteConversationJob(ctx, second.ID, second.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete job ok=%v err=%v", ok, err)
 	}
-	remaining, err := s.RecentHandledInteractionsAfter(ctx, ident, got.ThroughInteractionID, 20)
+	current.DedupeKey = "event-lease:late"
+	if _, created, err := s.AppendConversationEvent(ctx, current); err == nil || created {
+		t.Fatalf("late terminal transcript event created=%v err=%v", created, err)
+	}
+}
+
+func TestConversationEventsPersistSupportedMultimodalParts(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	event := ConversationEvent{
+		Identity: ident, DedupeKey: "job:7:image", Type: ConversationEventUser,
+		Content: "看图", Parts: []ConversationMessagePart{
+			{Type: "text", Text: "看图"},
+			{Type: "image_url", URL: "data:image/png;base64,AAAA", Reference: "https://source.example/image.png", Detail: "auto", MIMEType: "image/png"},
+		},
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, event); err != nil || !created {
+		t.Fatalf("append multimodal event: created=%v err=%v", created, err)
+	}
+	events, err := s.RecentConversationEvents(ctx, ident, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(remaining) != 1 || remaining[0].RawText != "third" {
-		t.Fatalf("remaining = %#v", remaining)
+	if len(events) != 1 || len(events[0].Parts) != 2 || !reflect.DeepEqual(events[0].Parts[1], event.Parts[1]) {
+		t.Fatalf("multimodal event round trip = %#v", events)
+	}
+}
+
+func TestConversationEventsRejectOversizedMessageParts(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	event := ConversationEvent{
+		Identity: conversationJobTestIdentity(), DedupeKey: "job:7:oversized", Type: ConversationEventAssistant,
+		Parts: []ConversationMessagePart{{Type: "text", Text: strings.Repeat("x", maxConversationMessagePartsJSONBytes)}},
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, event); err == nil || created {
+		t.Fatalf("oversized message parts accepted: created=%v err=%v", created, err)
 	}
 }
 
@@ -2047,6 +2079,7 @@ func TestOpenDropsObsoleteFeedbackDeliveryColumns(t *testing.T) {
 		"ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0",
 		"ALTER TABLE feedback_records ADD COLUMN sent_at datetime",
 		"ALTER TABLE feedback_records ADD COLUMN resolved numeric NOT NULL DEFAULT 0",
+		"PRAGMA user_version = 0",
 	} {
 		if err := s.db.Exec(statement).Error; err != nil {
 			t.Fatal(err)

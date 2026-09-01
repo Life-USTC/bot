@@ -98,7 +98,7 @@ func (h Handler) help(args ...string) string {
 	topic := helpTopicCommand(args)
 	text := formatHelpTopic(topic)
 	if text == "" {
-		return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
+		return h.notFound("没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。")
 	}
 	return text
 }
@@ -172,12 +172,6 @@ func helpOverviewRichText() string {
 }
 
 var helpTopicAliases = map[string]string{
-	"AI":           "advanced",
-	"ai":           "advanced",
-	"进阶":           "advanced",
-	"高级":           "advanced",
-	"帮助AI":         "advanced",
-	"帮助ai":         "advanced",
 	"快捷入口":         "shortcuts",
 	"快捷":           "shortcuts",
 	"shortcuts":    "shortcuts",
@@ -244,7 +238,6 @@ func capabilityTopic(name string) string {
 }
 
 var helpTopicTitles = map[string]string{
-	"advanced":     "AI",
 	"shortcuts":    "快捷入口",
 	"agenda":       "日程",
 	"schedule":     "课表",

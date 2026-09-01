@@ -24,10 +24,19 @@ import (
 	"github.com/Life-USTC/Bot/internal/qqbot"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 func main() {
+	log.SetOutput(textutil.RedactingLogWriter(os.Stderr))
 	cfg := config.FromEnv()
+	if len(os.Args) == 2 && os.Args[1] == "migrate" {
+		if err := migrateDatabase(cfg.DBPath); err != nil {
+			log.Printf("migration failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
@@ -37,7 +46,7 @@ func main() {
 		}
 		return
 	}
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	logger := log.New(textutil.RedactingLogWriter(os.Stdout), "", log.LstdFlags)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = 16
 	httpClient := &http.Client{
@@ -236,6 +245,7 @@ func main() {
 			logger.Printf("QQ official bot gateway enabled")
 		}
 	}
+
 	if platformsEnabled {
 		deliveryWorker := &delivery.Worker{Service: deliveryService, Logger: logger}
 		go deliveryWorker.Run(ctx)
@@ -260,4 +270,13 @@ func main() {
 	}
 
 	<-ctx.Done()
+}
+
+func migrateDatabase(path string) error {
+	stateStore, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stateStore.Close() }()
+	return stateStore.VerifySchema()
 }

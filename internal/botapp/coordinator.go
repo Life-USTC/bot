@@ -17,20 +17,26 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/routing"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const (
-	defaultJobPollInterval    = 250 * time.Millisecond
-	defaultJobBatchSize       = 4
-	defaultImageRenderTimeout = 5 * time.Second
+	defaultJobPollInterval     = 250 * time.Millisecond
+	defaultJobRecoveryInterval = time.Second
+	defaultJobBatchSize        = 4
+	defaultImageRenderTimeout  = 5 * time.Second
+	defaultProgressDelay       = 2500 * time.Millisecond
 )
 
 type CommandHandler interface {
-	HandleInvocationResponse(context.Context, commands.Input, commands.Invocation) (commands.Response, bool)
+	DescribeCapabilityInvocations(context.Context, commands.Input, commands.CapabilityID, []string) ([]commands.CapabilityInvocationDescription, error)
+	ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error)
+	ExecuteApprovedInvocation(context.Context, commands.Input, commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error)
 }
 
 type AgentHandler interface {
-	HandleResponse(context.Context, agent.Input) (commands.Response, bool)
+	Run(context.Context, agent.Input) agent.Result
+	Acknowledge(context.Context, int64, int, string) error
 }
 
 type Recorder interface {
@@ -65,8 +71,21 @@ type JobRepository interface {
 	ClaimConversationJobs(context.Context, time.Time, int) ([]store.ConversationJob, error)
 	CompleteConversationJob(context.Context, int64, string) (bool, error)
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
-	TransitionConversationJob(context.Context, int64, string, store.ConversationJobTransition) (bool, error)
-	ConsumeConversationJobConfirmation(context.Context, store.Identity, ...time.Time) (*store.ConversationJob, error)
+	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
+	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
+	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
+	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
+	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
+	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)
+	DeferCapabilityExecutionForAuth(context.Context, string, string) (store.CapabilityExecution, error)
+	FinishCapabilityExecution(context.Context, string, string, string, error) (store.CapabilityExecution, error)
+	FinishCapabilityExecutionUnknown(context.Context, string, string, string, string) (store.CapabilityExecution, error)
+	MarkStaleCapabilityExecutionUnknown(context.Context, string, int64, string, string) (store.CapabilityExecution, bool, error)
+	UpdateCapabilityExecutionReceipt(context.Context, string, string, store.CapabilityReceipt) error
+	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
+	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
+	RetryConversationJob(context.Context, int64, string, string) (bool, error)
+	EnqueueConversationJobProgress(context.Context, store.ConversationJobProgressEnqueue) (delivery.Record, bool, error)
 	RecoverConversationJobLeases(context.Context, time.Time, ...time.Duration) error
 	ExpireConversationJobs(context.Context, time.Time) error
 }
@@ -90,6 +109,7 @@ type CoordinatorConfig struct {
 	Recorder           Recorder
 	Renderer           Renderer
 	ImageRenderTimeout time.Duration
+	ProgressDelay      time.Duration
 	PollInterval       time.Duration
 	BatchSize          int
 	Logger             *log.Logger
@@ -107,8 +127,10 @@ type Coordinator struct {
 	recorder           Recorder
 	renderer           Renderer
 	imageRenderTimeout time.Duration
+	progressDelay      time.Duration
 	pollInterval       time.Duration
 	batchSize          int
+	nextRecoveryAt     time.Time
 	logger             *log.Logger
 	wake               chan struct{}
 }
@@ -117,6 +139,34 @@ type conversationJobPayload struct {
 	Inbound    message.Inbound    `json:"inbound"`
 	Route      routing.Action     `json:"route"`
 	Activation routing.Activation `json:"activation"`
+}
+
+// conversationPersistenceError distinguishes a durable state/output failure
+// from a domain or tool failure. Persistence failures must leave the job
+// retryable because capability state, transcript events, and the outbox are
+// the source of truth for a later idempotent attempt.
+type conversationPersistenceError struct {
+	err error
+}
+
+func (e conversationPersistenceError) Error() string {
+	return fmt.Sprintf("persist conversation state: %v", e.err)
+}
+
+func (e conversationPersistenceError) Unwrap() error {
+	return e.err
+}
+
+func markConversationPersistenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return conversationPersistenceError{err: err}
+}
+
+func isConversationPersistenceError(err error) bool {
+	var target conversationPersistenceError
+	return errors.As(err, &target)
 }
 
 func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
@@ -137,10 +187,15 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	if batchSize <= 0 {
 		batchSize = defaultJobBatchSize
 	}
+	progressDelay := config.ProgressDelay
+	if progressDelay <= 0 {
+		progressDelay = defaultProgressDelay
+	}
 	return &Coordinator{
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
 		recorder: config.Recorder, renderer: config.Renderer,
 		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
+		progressDelay:      progressDelay,
 		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
 	}, nil
 }
@@ -162,10 +217,10 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 	if sourceEventID == "" {
 		return errors.New("inbound source event id is empty")
 	}
-	if isUserConfirmation(inbound.Text) {
-		confirmed, err := c.jobs.ConsumeConversationJobConfirmation(ctx, identityForInbound(inbound))
+	if decision, isDecision := userConfirmationDecision(inbound.Text); isDecision {
+		_, confirmed, err := c.jobs.ResolveCapabilityConfirmation(ctx, identityForInbound(inbound), decision)
 		if err != nil {
-			return fmt.Errorf("consume conversation confirmation: %w", err)
+			return fmt.Errorf("resolve capability confirmation: %w", err)
 		}
 		if confirmed != nil {
 			select {
@@ -174,6 +229,9 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			}
 			return nil
 		}
+		// Approval mechanics are not conversation turns. A standalone decision
+		// with nothing awaiting it is ignored instead of being sent to the LLM.
+		return nil
 	}
 	var replyContext *message.ResponseContext
 	if inbound.ReplyTo != nil && c.replies != nil {
@@ -208,8 +266,7 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			Text: strings.TrimSpace(inbound.Text),
 			Data: payload,
 		},
-		Invocation:  invocation,
-		MaxAttempts: 2,
+		Invocation: invocation,
 	})
 	if err != nil {
 		return err
@@ -223,12 +280,14 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 	return nil
 }
 
-func isUserConfirmation(text string) bool {
+func userConfirmationDecision(text string) (store.CapabilityConfirmationDecision, bool) {
 	switch strings.ToLower(strings.TrimSpace(text)) {
 	case "ok", "确认", "确定", "是":
-		return true
+		return store.CapabilityConfirmationDecision{Approved: true}, true
+	case "no", "取消", "拒绝", "否", "不":
+		return store.CapabilityConfirmationDecision{Approved: false, Reason: "用户拒绝执行"}, true
 	default:
-		return false
+		return store.CapabilityConfirmationDecision{}, false
 	}
 }
 
@@ -244,10 +303,6 @@ func inboundSourceEventID(source message.ReplyRef) string {
 func (c *Coordinator) Run(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	now := time.Now().UTC()
-	if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
-		c.logf("recover conversation jobs failed: %v", err)
 	}
 	c.tick(ctx)
 	ticker := time.NewTicker(c.pollInterval)
@@ -266,6 +321,12 @@ func (c *Coordinator) Run(ctx context.Context) {
 
 func (c *Coordinator) tick(ctx context.Context) {
 	now := time.Now().UTC()
+	if c.nextRecoveryAt.IsZero() || !now.Before(c.nextRecoveryAt) {
+		c.nextRecoveryAt = now.Add(defaultJobRecoveryInterval)
+		if err := c.jobs.RecoverConversationJobLeases(ctx, now); err != nil {
+			c.logf("recover conversation jobs failed: %v", err)
+		}
+	}
 	if err := c.jobs.ExpireConversationJobs(ctx, now); err != nil {
 		c.logf("expire conversation jobs failed: %v", err)
 		return
@@ -282,25 +343,65 @@ func (c *Coordinator) tick(ctx context.Context) {
 }
 
 func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if deadline := conversationJobRunDeadline(job); !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	ctx = store.WithConversationJobLease(ctx, job.ID, job.LeaseToken)
 	payload, err := decodeConversationJobPayload(job)
 	if err != nil {
 		c.fail(ctx, job, err)
 		return
 	}
 	inbound := payload.Inbound
-	commandText := inbound.Text
-	if strings.TrimSpace(job.Invocation.Command) != "" {
-		commandText = job.Invocation.Command
-	}
 	part := 0
 	var outputMu sync.Mutex
-	enqueue := func(ctx context.Context, response commands.Response) error {
+	visibleOutput := false
+	commit := func(ctx context.Context, response commands.Response, receiptIDs []string, transition store.ConversationJobTransition) error {
 		outputMu.Lock()
 		defer outputMu.Unlock()
-		next, err := c.enqueueResponse(ctx, job, inbound, response, part)
-		part = next
+		next, err := c.commitResponse(ctx, job, inbound, response, part, receiptIDs, transition)
+		if err == nil {
+			part = next
+			if response.Text != "" || response.Image != nil || len(response.Parts) > 0 {
+				visibleOutput = true
+			}
+		}
 		return err
 	}
+	progressStop := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		timer := time.NewTimer(c.progressDelay)
+		defer timer.Stop()
+		select {
+		case <-progressStop:
+			return
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			outputMu.Lock()
+			defer outputMu.Unlock()
+			if visibleOutput {
+				return
+			}
+			next, err := c.enqueueResponse(ctx, job, inbound, commands.Response{Text: "稍等一下", Kind: "agent_progress"}, part)
+			if err != nil {
+				c.logf("enqueue progress for conversation job %d failed: %v", job.ID, err)
+			} else if next != part {
+				visibleOutput = true
+			}
+		}
+	}()
+	defer func() {
+		close(progressStop)
+		<-progressDone
+	}()
 	commandRoute := strings.TrimSpace(job.Invocation.Command) != "" || payload.Route == routing.ActionCommand
 	if commandRoute {
 		invocation, restored := commands.RestoreInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
@@ -308,26 +409,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 			c.fail(ctx, job, fmt.Errorf("restore routed capability %q", job.Invocation.Name))
 			return
 		}
-		reply, ok := c.commands.HandleInvocationResponse(ctx, commands.Input{
-			Text: commandText, Identity: job.Identity, SuppressLog: true,
-		}, invocation)
-		if !ok {
-			c.fail(ctx, job, errors.New("routed command was not handled"))
-			return
-		}
-		if err := enqueue(ctx, reply); err != nil {
-			c.fail(ctx, job, err)
-			return
-		}
-		if reply.Kind == commands.ResponseKindAuthWait {
-			c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingAuth)
-			c.transition(ctx, job, store.ConversationJobTransition{
-				State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth,
-			})
-			return
-		}
-		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
-		c.complete(ctx, job)
+		c.executeCommandRoute(ctx, job, inbound, invocation, commit)
 		return
 	}
 	if payload.Route != routing.ActionAgent {
@@ -339,88 +421,105 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		c.complete(ctx, job)
 		return
 	}
-	var confirmationCommand string
 	var waitingAuth bool
-	reply, ok := c.agent.HandleResponse(ctx, agent.Input{
-		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity,
-		SendUpdate: func(ctx context.Context, _ store.Identity, text string) error {
-			return enqueue(ctx, commands.Response{Text: text, Kind: "agent_update"})
-		},
+	var hostResponses []commands.Response
+	result := c.agent.Run(ctx, agent.Input{
+		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
+		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
-			if err := enqueue(ctx, response); err != nil {
-				return err
-			}
-			if response.Kind == commands.ResponseKindAuthWait {
-				outputMu.Lock()
-				waitingAuth = true
-				outputMu.Unlock()
-			}
-			return nil
-		},
-		WaitForConfirmation: func(_ context.Context, _ store.Identity, command string) error {
+			_ = ctx
 			outputMu.Lock()
-			defer outputMu.Unlock()
-			command = strings.TrimSpace(command)
-			if command == "" {
-				return errors.New("confirmation command is empty")
+			hostResponses = append(hostResponses, response)
+			if response.Kind == commands.ResponseKindAuthWait {
+				waitingAuth = true
 			}
-			if confirmationCommand != "" && confirmationCommand != command {
-				return errors.New("only one confirmation may be requested per job")
-			}
-			confirmationCommand = command
+			outputMu.Unlock()
 			return nil
 		},
 	})
-	if !ok {
-		c.recordIgnoredJob(ctx, job, inbound)
-		c.complete(ctx, job)
+	if result.State == agent.RunStateFailed || result.Err != nil {
+		cause := result.Err
+		if cause == nil {
+			cause = errors.New("agent run failed before producing a durable result")
+		}
+		c.fail(ctx, job, markConversationPersistenceError(cause))
 		return
 	}
-	if reply.Text != "" || reply.Image != nil || len(reply.Parts) > 0 {
-		if err := enqueue(ctx, reply); err != nil {
+	if !result.Handled {
+		c.recordIgnoredJob(ctx, job, inbound)
+		if c.complete(ctx, job) {
+			c.acknowledgeAgent(ctx, job)
+		}
+		return
+	}
+	if result.State == agent.RunStateWaitingAuth {
+		outputMu.Lock()
+		response := combineResponses(hostResponses...)
+		outputMu.Unlock()
+		if err := commit(ctx, response, nil, store.ConversationJobTransition{
+			State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth,
+		}); err != nil {
 			c.fail(ctx, job, err)
 			return
 		}
+		c.recordJob(ctx, job, inbound, response, store.InteractionStatusWaitingAuth)
+		return
 	}
-	if reply.Kind == commands.ResponseKindAuthWait {
-		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingAuth)
-		c.transition(ctx, job, store.ConversationJobTransition{
-			State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth,
-		})
+	if result.State == agent.RunStateInterrupted {
+		receipts, err := c.unsentExecutionReceipts(ctx, job.ID, true)
+		if err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		confirmation := appendReceiptLines(commands.Response{Kind: "agent_confirmation"}, confirmationPrompt, receipts)
+		if err := commit(ctx, confirmation, receipts.IDs, store.ConversationJobTransition{
+			State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+		}); err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		c.recordJob(ctx, job, inbound, confirmation, store.InteractionStatusWaitingConfirmation)
 		return
 	}
 	outputMu.Lock()
-	authRequired := waitingAuth
-	confirmationRequired := confirmationCommand
+	reply := combineResponses(append(append([]commands.Response(nil), hostResponses...), result.Response)...)
+	outputMu.Unlock()
+	receipts, err := c.unsentExecutionReceipts(ctx, job.ID, false)
+	if err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	reply = appendReceiptLines(reply, "", receipts)
+	outputMu.Lock()
+	authRequired := waitingAuth || reply.Kind == commands.ResponseKindAuthWait
 	outputMu.Unlock()
 	if authRequired {
-		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingAuth)
-		c.transition(ctx, job, store.ConversationJobTransition{
+		if err := commit(ctx, reply, receipts.IDs, store.ConversationJobTransition{
 			State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth,
-		})
+		}); err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingAuth)
 		return
 	}
-	if confirmationRequired != "" {
-		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingConfirmation)
-		c.transition(ctx, job, store.ConversationJobTransition{
-			State:      store.ConversationJobStateWaitingConfirmation,
-			WaitReason: store.ConversationJobWaitReasonConfirmation,
-			Invocation: persistedInvocation(confirmationRequired),
-		})
+	if err := commit(ctx, reply, receipts.IDs, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
+		c.fail(ctx, job, err)
 		return
 	}
+	c.acknowledgeAgent(ctx, job)
 	c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
-	c.complete(ctx, job)
 }
 
-func persistedInvocation(command string) store.ConversationJobInvocation {
-	result := store.ConversationJobInvocation{Command: strings.TrimSpace(command)}
-	if parsed, ok := commands.ParseInvocation(command); ok {
-		result.Name = parsed.Name
-		result.Command = parsed.CanonicalCommand()
-		result.Args = append([]string(nil), parsed.Args...)
+func conversationJobRunDeadline(job store.ConversationJob) time.Time {
+	deadline := job.ExpiresAt
+	if job.ClaimedAt != nil && !job.ClaimedAt.IsZero() {
+		leaseDeadline := job.ClaimedAt.Add(store.ConversationJobLease)
+		if deadline.IsZero() || leaseDeadline.Before(deadline) {
+			deadline = leaseDeadline
+		}
 	}
-	return result
+	return deadline
 }
 
 func decodeConversationJobPayload(job store.ConversationJob) (conversationJobPayload, error) {
@@ -437,69 +536,147 @@ func decodeConversationJobPayload(job store.ConversationJob) (conversationJobPay
 	return payload, nil
 }
 
-func (c *Coordinator) complete(ctx context.Context, job store.ConversationJob) {
+func (c *Coordinator) complete(ctx context.Context, job store.ConversationJob) bool {
 	ok, err := c.jobs.CompleteConversationJob(ctx, job.ID, job.LeaseToken)
 	if err != nil {
 		c.logf("complete conversation job %d failed: %v", job.ID, err)
 	} else if !ok {
 		c.logf("complete conversation job %d lost lease", job.ID)
 	}
+	return err == nil && ok
+}
+
+func (c *Coordinator) acknowledgeAgent(ctx context.Context, job store.ConversationJob) {
+	if c.agent == nil {
+		return
+	}
+	if err := c.agent.Acknowledge(ctx, job.ID, job.Revision, job.LeaseToken); err != nil {
+		c.logf("acknowledge agent checkpoint for conversation job %d failed: %v", job.ID, err)
+	}
 }
 
 func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause error) {
+	if isConversationPersistenceError(cause) {
+		ok, err := c.jobs.RetryConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
+		if err != nil {
+			c.logf("retry conversation job %d after persistence failure failed: %v", job.ID, err)
+		} else if !ok {
+			c.logf("retry conversation job %d after persistence failure lost lease", job.ID)
+		} else {
+			c.logf("conversation job %d persistence failed; moved to retry_wait: %v", job.ID, cause)
+		}
+		return
+	}
 	ok, err := c.jobs.FailConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
 	if err != nil {
 		c.logf("fail conversation job %d failed: %v", job.ID, err)
 	} else if !ok {
 		c.logf("fail conversation job %d lost lease", job.ID)
+	} else {
+		c.acknowledgeAgent(ctx, job)
 	}
 	c.logf("conversation job %d failed: %v", job.ID, cause)
 }
 
-func (c *Coordinator) transition(ctx context.Context, job store.ConversationJob, transition store.ConversationJobTransition) {
-	ok, err := c.jobs.TransitionConversationJob(ctx, job.ID, job.LeaseToken, transition)
+func (c *Coordinator) enqueueResponse(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, start int) (int, error) {
+	messages, next, err := c.responseOutbounds(ctx, job, inbound, response, start)
 	if err != nil {
-		c.logf("transition conversation job %d failed: %v", job.ID, err)
-	} else if !ok {
-		c.logf("transition conversation job %d lost lease", job.ID)
+		return start, err
 	}
+	for index, outbound := range messages {
+		if outbound.Kind == "agent_progress" {
+			_, created, err := c.jobs.EnqueueConversationJobProgress(ctx, store.ConversationJobProgressEnqueue{
+				JobID: job.ID, LeaseToken: job.LeaseToken, Message: outbound,
+			})
+			if err != nil {
+				return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
+			}
+			if !created {
+				return start, nil
+			}
+			c.recordOutbound(ctx, job, outbound)
+			continue
+		}
+		_, created, err := c.outputs.Enqueue(ctx, outbound)
+		if err != nil {
+			return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
+		}
+		if created {
+			c.recordOutbound(ctx, job, outbound)
+		}
+	}
+	return next, nil
 }
 
-func (c *Coordinator) enqueueResponse(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, start int) (int, error) {
+func (c *Coordinator) commitResponse(
+	ctx context.Context,
+	job store.ConversationJob,
+	inbound message.Inbound,
+	response commands.Response,
+	start int,
+	receiptIDs []string,
+	transition store.ConversationJobTransition,
+) (int, error) {
+	messages, next, err := c.responseOutbounds(ctx, job, inbound, response, start)
+	if err != nil {
+		return start, markConversationPersistenceError(err)
+	}
+	committed, err := c.jobs.CommitConversationJobOutput(ctx, store.ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: job.LeaseToken, Messages: messages,
+		ReceiptIDs: receiptIDs, Transition: transition,
+	})
+	if err != nil {
+		return start, markConversationPersistenceError(err)
+	}
+	for index, output := range committed {
+		if output.Created && index < len(messages) {
+			c.recordOutbound(ctx, job, messages[index])
+		}
+	}
+	return next, nil
+}
+
+func (c *Coordinator) responseOutbounds(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, start int) ([]message.Outbound, int, error) {
+	if strings.TrimSpace(response.Text) == "" && response.Image == nil && len(response.Parts) == 0 {
+		return nil, start, nil
+	}
 	parts := response.Parts
 	if len(parts) == 0 {
 		parts = []commands.Response{response}
 	}
+	messages := make([]message.Outbound, 0, len(parts))
 	part := start
 	for _, item := range parts {
 		content, err := c.presentationContent(ctx, item)
 		if err != nil {
-			return part, err
+			return nil, part, err
 		}
 		replyTo := inbound.Source
 		replyTo.Sequence = part + 1
-		_, created, err := c.outputs.Enqueue(ctx, message.Outbound{
+		dedupeKey := fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, part)
+		messages = append(messages, message.Outbound{
 			Kind: item.Kind, Target: inbound.Conversation, ReplyTo: &replyTo, Content: content,
 			Context:   responseContextForJob(job),
-			DedupeKey: fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, part),
+			DedupeKey: dedupeKey,
 		})
-		if err != nil {
-			return part, fmt.Errorf("persist response part %d: %w", part, err)
-		}
-		if created && c.recorder != nil {
-			if recordErr := c.recorder.RecordInteraction(ctx, job.Identity, store.Interaction{
-				Direction: store.InteractionDirectionOutbound,
-				RawText:   content.Text,
-				Command:   item.Kind,
-				Handled:   true,
-				Status:    store.InteractionStatusSent,
-			}); recordErr != nil {
-				c.logf("record conversation job %d output failed: %v", job.ID, recordErr)
-			}
-		}
 		part++
 	}
-	return part, nil
+	return messages, part, nil
+}
+
+func (c *Coordinator) recordOutbound(ctx context.Context, job store.ConversationJob, outbound message.Outbound) {
+	if c.recorder == nil {
+		return
+	}
+	if err := c.recorder.RecordInteraction(ctx, job.Identity, store.Interaction{
+		Direction: store.InteractionDirectionOutbound,
+		RawText:   outbound.Content.Text,
+		Command:   outbound.Kind,
+		Handled:   true,
+		Status:    store.InteractionStatusSent,
+	}); err != nil {
+		c.logf("record conversation job %d output failed: %v", job.ID, err)
+	}
 }
 
 func responseContextForJob(job store.ConversationJob) *message.ResponseContext {
@@ -588,7 +765,7 @@ func (c *Coordinator) renderAttachment(ctx context.Context, image *responses.Ima
 
 func (c *Coordinator) logf(format string, args ...any) {
 	if c != nil && c.logger != nil {
-		c.logger.Printf(format, args...)
+		c.logger.Print(textutil.SafeLogText(fmt.Sprintf(format, args...)))
 	}
 }
 

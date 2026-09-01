@@ -15,10 +15,6 @@ func notifyArgsAcceptable(args []string) bool {
 	return false
 }
 
-func agentArgsAcceptable(args []string) bool {
-	return !hasArgs(args) || firstArgIn(args, "status", "help", "on", "off")
-}
-
 func settingsArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIsHelp(args) {
 		return true
@@ -26,12 +22,6 @@ func settingsArgsAcceptable(args []string) bool {
 	switch settingsTopic(args[0]) {
 	case "notify":
 		return notifyArgsAcceptable(normalizeNotifyArgs(args[1:]))
-	case "agent":
-		rest := args[1:]
-		if len(rest) > 0 && firstArgIn(rest, "tool", "tools", "工具") {
-			rest = rest[1:]
-		}
-		return agentArgsAcceptable(normalizeAgentArgs(rest))
 	default:
 		return false
 	}
@@ -196,8 +186,6 @@ func settingsTopic(token string) string {
 	switch normToken(token) {
 	case "notify", "notice", "提醒", "通知", "推送":
 		return "notify"
-	case "agent", "ai", "llm", "tool", "tools", "工具", "调试":
-		return "agent"
 	default:
 		return ""
 	}

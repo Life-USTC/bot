@@ -40,7 +40,6 @@ func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 		"课程 查看 not-an-id",
 		"教学班 课表 12345 bad-date 2026-09-30",
 		"作业 帮我看看还有啥",
-		"AI 帮我规划行程",
 	} {
 		response, ok := (Handler{}).HandleResponse(context.Background(), Input{
 			Text:     input,

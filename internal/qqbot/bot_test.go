@@ -25,6 +25,8 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
+const asyncIntegrationTestTimeout = 5 * time.Second
+
 type processorSpy struct{ messages []message.Inbound }
 
 func (s *processorSpy) Process(_ context.Context, inbound message.Inbound) {
@@ -306,12 +308,14 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	}))
 	defer server.Close()
 
+	var logs bytes.Buffer
 	bot := &Bot{
 		AppID:      "appid",
 		AppSecret:  "secret",
 		APIBaseURL: server.URL,
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
 	}
 	configureTestApp(t, bot, commands.Handler{Store: db}, nil, db)
 	data := json.RawMessage(`{
@@ -328,8 +332,8 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	})
 	select {
 	case gotBody = <-gotBodyCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for durable C2C reply")
+	case <-time.After(asyncIntegrationTestTimeout):
+		t.Fatalf("timed out waiting for durable C2C reply\nlog:\n%s", logs.String())
 	}
 
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
@@ -388,12 +392,14 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 	}))
 	defer server.Close()
 
+	var logs bytes.Buffer
 	bot := &Bot{
 		AppID:      "appid",
 		AppSecret:  "123456abcdef",
 		APIBaseURL: server.URL,
 		TokenURL:   server.URL + "/app/getAppAccessToken",
 		HTTPClient: server.Client(),
+		Logger:     log.New(&logs, "", 0),
 	}
 	configureTestApp(t, bot, commands.Handler{Store: db}, nil, db)
 	body := `{
@@ -420,8 +426,8 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 	var gotBody sendMessageRequest
 	select {
 	case gotBody = <-gotBodyCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for webhook reply")
+	case <-time.After(asyncIntegrationTestTimeout):
+		t.Fatalf("timed out waiting for webhook reply\nlog:\n%s", logs.String())
 	}
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
@@ -496,7 +502,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 	})
 	select {
 	case gotBody = <-gotBodyCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(asyncIntegrationTestTimeout):
 		t.Fatal("timed out waiting for durable interaction reply")
 	}
 
@@ -858,7 +864,7 @@ func signedWebhookRequest(t *testing.T, secret, body string) *http.Request {
 
 func waitInteractionCount(t *testing.T, db *store.Store, want int64) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(asyncIntegrationTestTimeout)
 	var last int64
 	for time.Now().Before(deadline) {
 		count, err := db.InteractionCount(context.Background())

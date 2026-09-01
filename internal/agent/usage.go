@@ -12,6 +12,7 @@ import (
 )
 
 type usageContextKey struct{}
+type usagePersisterContextKey struct{}
 
 type tokenUsage struct {
 	PromptTokens     int64
@@ -19,8 +20,11 @@ type tokenUsage struct {
 	CacheMissTokens  int64
 	CompletionTokens int64
 	TotalTokens      int64
-	ModelRequests    int64
-	ToolCalls        int64
+	// CostNanoCNY is provider-reported when the response includes an explicit
+	// cost. A zero value means spendingFor should use the configured estimate.
+	CostNanoCNY   int64
+	ModelRequests int64
+	ToolCalls     int64
 }
 
 type usageAccumulator struct {
@@ -36,6 +40,7 @@ func (a *usageAccumulator) add(usage tokenUsage) {
 	a.total.CacheMissTokens += usage.CacheMissTokens
 	a.total.CompletionTokens += usage.CompletionTokens
 	a.total.TotalTokens += usage.TotalTokens
+	a.total.CostNanoCNY += usage.CostNanoCNY
 	a.total.ModelRequests += usage.ModelRequests
 	a.total.ToolCalls += usage.ToolCalls
 }
@@ -48,6 +53,12 @@ func (a *usageAccumulator) snapshot() tokenUsage {
 
 func withUsageAccumulator(ctx context.Context, accumulator *usageAccumulator) context.Context {
 	return context.WithValue(ctx, usageContextKey{}, accumulator)
+}
+
+type usagePersister func(context.Context, tokenUsage) error
+
+func withUsagePersister(ctx context.Context, persister usagePersister) context.Context {
+	return context.WithValue(ctx, usagePersisterContextKey{}, persister)
 }
 
 func recordToolCall(ctx context.Context) {
@@ -88,6 +99,7 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 				CachedTokens int64 `json:"cached_tokens"`
 			} `json:"prompt_tokens_details"`
 		} `json:"usage"`
+		CostNanoCNY int64 `json:"cost_nano_cny"`
 	}
 	if json.Unmarshal(body, &payload) != nil {
 		return resp, nil
@@ -106,15 +118,23 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if miss == 0 {
 		miss = payload.Usage.PromptTokens - cached
 	}
+	usage := tokenUsage{
+		PromptTokens:     payload.Usage.PromptTokens,
+		CachedTokens:     cached,
+		CacheMissTokens:  miss,
+		CompletionTokens: payload.Usage.CompletionTokens,
+		TotalTokens:      payload.Usage.TotalTokens,
+		CostNanoCNY:      payload.CostNanoCNY,
+		ModelRequests:    1,
+	}
 	if accumulator, ok := req.Context().Value(usageContextKey{}).(*usageAccumulator); ok {
-		accumulator.add(tokenUsage{
-			PromptTokens:     payload.Usage.PromptTokens,
-			CachedTokens:     cached,
-			CacheMissTokens:  miss,
-			CompletionTokens: payload.Usage.CompletionTokens,
-			TotalTokens:      payload.Usage.TotalTokens,
-			ModelRequests:    1,
-		})
+		accumulator.add(usage)
+	}
+	if persister, ok := req.Context().Value(usagePersisterContextKey{}).(usagePersister); ok && persister != nil {
+		// Usage persistence is best effort. The provider response has already
+		// succeeded, so a database error must not turn it into a retry that could
+		// duplicate the external request; the durable attempt reservation remains.
+		_ = persister(req.Context(), usage)
 	}
 	return resp, nil
 }
@@ -131,7 +151,7 @@ func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {
 		missedNanoPerToken = deepseekMissedNanoPerToken
 		outputNanoPerToken = deepseekOutputNanoPerToken
 	}
-	return store.AgentSpending{
+	spending := store.AgentSpending{
 		PromptTokens:     usage.PromptTokens,
 		CachedTokens:     usage.CachedTokens,
 		CompletionTokens: usage.CompletionTokens,
@@ -143,6 +163,10 @@ func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {
 			usage.CompletionTokens*outputNanoPerToken,
 		Currency: store.SpendingCurrencyCNY,
 	}
+	if usage.CostNanoCNY > 0 {
+		spending.CostNanoCNY = usage.CostNanoCNY
+	}
+	return spending
 }
 
 const (

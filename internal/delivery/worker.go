@@ -11,24 +11,22 @@ const (
 	defaultBatchSize    = 20
 	defaultMaxAttempts  = 5
 	staleAttemptAge     = 5 * time.Minute
+	staleRecoveryPeriod = 30 * time.Second
 )
 
 type Worker struct {
-	Service     *Service
-	Interval    time.Duration
-	BatchSize   int
-	MaxAttempts int
-	Now         func() time.Time
-	Logger      *log.Logger
+	Service        *Service
+	Interval       time.Duration
+	BatchSize      int
+	MaxAttempts    int
+	Now            func() time.Time
+	Logger         *log.Logger
+	nextRecoveryAt time.Time
 }
 
 func (w *Worker) Run(ctx context.Context) {
 	if w == nil || w.Service == nil || w.Service.repository == nil {
 		return
-	}
-	now := w.now()
-	if err := w.Service.repository.RecoverStale(ctx, now.Add(-staleAttemptAge)); err != nil {
-		w.logf("recover stale deliveries failed: %v", err)
 	}
 	w.tick(ctx)
 	interval := w.Interval
@@ -52,6 +50,12 @@ func (w *Worker) tick(ctx context.Context) {
 		return
 	}
 	now := w.now()
+	if w.nextRecoveryAt.IsZero() || !now.Before(w.nextRecoveryAt) {
+		w.nextRecoveryAt = now.Add(staleRecoveryPeriod)
+		if err := w.Service.repository.RecoverStale(ctx, now.Add(-staleAttemptAge)); err != nil {
+			w.logf("recover stale deliveries failed: %v", err)
+		}
+	}
 	if err := w.Service.repository.ExpireDue(ctx, now); err != nil {
 		w.logf("expire deliveries failed: %v", err)
 		return
@@ -68,6 +72,14 @@ func (w *Worker) tick(ctx context.Context) {
 	for _, record := range records {
 		if ctx.Err() != nil {
 			return
+		}
+		ready, err := w.Service.repository.ReadyToDeliver(ctx, record.ID)
+		if err != nil {
+			w.logf("prepare delivery %d failed: %v", record.ID, err)
+			continue
+		}
+		if !ready {
+			continue
 		}
 		outcome := w.Service.DeliverNow(ctx, record.Message)
 		maxAttempts := w.MaxAttempts

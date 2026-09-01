@@ -44,10 +44,3 @@ func loginResumeInstructions(session store.LoginSession) string {
 		"完成后我会自动继续刚才的请求，无需重发。",
 	}, "\n")
 }
-
-func replyRequiresLogin(reply string) bool {
-	return strings.Contains(reply, "需要先登录。发送：登录") ||
-		strings.Contains(reply, "登录已过期。发送：登录") ||
-		strings.Contains(reply, "请发送：登录") ||
-		strings.Contains(reply, "请发送“登录”")
-}

@@ -25,9 +25,6 @@ const (
 	ConversationJobStateRunning             ConversationJobState = "running"
 	ConversationJobStateWaitingAuth         ConversationJobState = "waiting_auth"
 	ConversationJobStateWaitingConfirmation ConversationJobState = "waiting_confirmation"
-	ConversationJobStateWaitingInput        ConversationJobState = "waiting_input"
-	ConversationJobStateWaitingDelivery     ConversationJobState = "waiting_delivery"
-	ConversationJobStateDeliveryUnknown     ConversationJobState = "delivery_unknown"
 	ConversationJobStateRetryWait           ConversationJobState = "retry_wait"
 	ConversationJobStateCompleted           ConversationJobState = "completed"
 	ConversationJobStateFailed              ConversationJobState = "failed"
@@ -44,8 +41,6 @@ const (
 	ConversationJobWaitReasonNone         ConversationJobWaitReason = ""
 	ConversationJobWaitReasonAuth         ConversationJobWaitReason = "auth"
 	ConversationJobWaitReasonConfirmation ConversationJobWaitReason = "confirmation"
-	ConversationJobWaitReasonInput        ConversationJobWaitReason = "input"
-	ConversationJobWaitReasonDelivery     ConversationJobWaitReason = "delivery"
 )
 
 // ConversationJobInput is the typed, resumable input envelope stored in a
@@ -125,6 +120,36 @@ type ConversationJobTransition struct {
 	LastError      string
 }
 
+type conversationJobLeaseContextKey struct{}
+
+// WithConversationJobLease carries the exact lease selected by the
+// conversation worker into nested agent/tool calls. A capability claim must
+// use this token rather than re-reading the database, because a stale worker
+// must never adopt a newer lease after recovery.
+func WithConversationJobLease(ctx context.Context, jobID int64, leaseToken string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, conversationJobLeaseContextKey{}, struct {
+		jobID      int64
+		leaseToken string
+	}{jobID: jobID, leaseToken: strings.TrimSpace(leaseToken)})
+}
+
+func ConversationJobLeaseFromContext(ctx context.Context, jobID int64) string {
+	if ctx == nil || jobID <= 0 {
+		return ""
+	}
+	value, ok := ctx.Value(conversationJobLeaseContextKey{}).(struct {
+		jobID      int64
+		leaseToken string
+	})
+	if !ok || value.jobID != jobID {
+		return ""
+	}
+	return value.leaseToken
+}
+
 const (
 	// ConversationJobTTL bounds an interaction that is waiting for a user or
 	// an external system. Callers can provide a shorter or longer expiry per
@@ -140,9 +165,6 @@ var conversationJobBlockingStates = []ConversationJobState{
 	ConversationJobStateRunning,
 	ConversationJobStateWaitingAuth,
 	ConversationJobStateWaitingConfirmation,
-	ConversationJobStateWaitingInput,
-	ConversationJobStateWaitingDelivery,
-	ConversationJobStateDeliveryUnknown,
 	ConversationJobStateRetryWait,
 }
 
@@ -151,29 +173,32 @@ var conversationJobClaimableStates = []ConversationJobState{
 	ConversationJobStateRetryWait,
 }
 
+var ErrConversationJobHasNonterminalOperations = errors.New("conversation job has nonterminal capability executions")
+
 type conversationJobRow struct {
-	ID               int64      `gorm:"primaryKey"`
-	UserID           int64      `gorm:"not null;index"`
-	Platform         string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:1;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:1;index:idx_conversation_jobs_conversation_state,priority:1"`
-	ExternalUserID   string     `gorm:"not null"`
-	ConversationType string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:2;index:idx_conversation_jobs_conversation_state,priority:2"`
-	ConversationID   string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:3;index:idx_conversation_jobs_conversation_state,priority:3"`
-	Sequence         int64      `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:4;index"`
-	SourceEventID    string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:2"`
-	State            string     `gorm:"not null;index:idx_conversation_jobs_state_expiry,priority:1;index:idx_conversation_jobs_conversation_state,priority:4"`
-	WaitReason       string     `gorm:"not null;default:''"`
-	InputJSON        string     `gorm:"not null"`
-	InvocationJSON   string     `gorm:"not null"`
-	LeaseToken       string     `gorm:"index"`
-	ClaimedAt        *time.Time `gorm:"index"`
-	Revision         int        `gorm:"not null;default:1"`
-	Attempts         int        `gorm:"not null;default:0"`
-	MaxAttempts      int        `gorm:"not null;default:0"`
-	RetryAt          *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:2"`
-	ExpiresAt        *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:3"`
-	LastError        string
-	CreatedAt        time.Time `gorm:"index"`
-	UpdatedAt        time.Time
+	ID                 int64      `gorm:"primaryKey"`
+	UserID             int64      `gorm:"not null;index"`
+	Platform           string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:1;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:1;index:idx_conversation_jobs_conversation_state,priority:1"`
+	ExternalUserID     string     `gorm:"not null"`
+	ConversationType   string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:2;index:idx_conversation_jobs_conversation_state,priority:2"`
+	ConversationID     string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:3;index:idx_conversation_jobs_conversation_state,priority:3"`
+	Sequence           int64      `gorm:"not null;uniqueIndex:idx_conversation_jobs_conversation_sequence,priority:4;index"`
+	SourceEventID      string     `gorm:"not null;uniqueIndex:idx_conversation_jobs_source_event,priority:2"`
+	State              string     `gorm:"not null;index:idx_conversation_jobs_state_expiry,priority:1;index:idx_conversation_jobs_conversation_state,priority:4"`
+	WaitReason         string     `gorm:"not null;default:''"`
+	InputJSON          string     `gorm:"not null"`
+	InvocationJSON     string     `gorm:"not null"`
+	LeaseToken         string     `gorm:"index"`
+	TerminalLeaseToken string     `gorm:"not null;default:''"`
+	ClaimedAt          *time.Time `gorm:"index"`
+	Revision           int        `gorm:"not null;default:1"`
+	Attempts           int        `gorm:"not null;default:0"`
+	MaxAttempts        int        `gorm:"not null;default:0"`
+	RetryAt            *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:2"`
+	ExpiresAt          *time.Time `gorm:"index:idx_conversation_jobs_state_expiry,priority:3"`
+	LastError          string
+	CreatedAt          time.Time `gorm:"index"`
+	UpdatedAt          time.Time
 }
 
 func (conversationJobRow) TableName() string {
@@ -234,8 +259,6 @@ func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJo
 	case ConversationJobStateQueued,
 		ConversationJobStateWaitingAuth,
 		ConversationJobStateWaitingConfirmation,
-		ConversationJobStateWaitingInput,
-		ConversationJobStateWaitingDelivery,
 		ConversationJobStateRetryWait:
 		// These are the only states a new job can enter without a worker
 		// lease. Running and terminal states must be reached through a CAS.
@@ -473,6 +496,32 @@ func eligibleConversationJobs(db *gorm.DB, now time.Time) *gorm.DB {
 		)`, conversationJobStateStrings(conversationJobBlockingStates))
 }
 
+func requireLiveConversationJob(tx *gorm.DB, id int64, ident Identity, now time.Time) error {
+	var row conversationJobRow
+	err := tx.Where("id = ? AND platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ?", id,
+		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID).
+		Where("state IN ?", conversationJobStateStrings(conversationJobBlockingStates)).
+		Where("(expires_at IS NULL OR expires_at > ?)", now).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.New("conversation job is no longer live")
+	}
+	return err
+}
+
+func requireRunningConversationJobLease(tx *gorm.DB, id int64, leaseToken string, ident Identity, now time.Time) error {
+	var row conversationJobRow
+	err := tx.Where("id = ? AND platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ?", id,
+		ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID).
+		Where("state = ? AND lease_token = ?", string(ConversationJobStateRunning), leaseToken).
+		Where("(expires_at IS NULL OR expires_at > ?)", now).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.New("conversation job lease is not current")
+	}
+	return err
+}
+
 func claimConversationJobRow(tx *gorm.DB, id int64, now time.Time) (*ConversationJob, error) {
 	token, err := conversationJobLeaseToken()
 	if err != nil {
@@ -495,12 +544,13 @@ func claimConversationJobRow(tx *gorm.DB, id int64, now time.Time) (*Conversatio
 			  AND earlier.state IN ?
 		)`, conversationJobStateStrings(conversationJobBlockingStates)).
 		Updates(map[string]any{
-			"state":       string(ConversationJobStateRunning),
-			"wait_reason": "",
-			"attempts":    gorm.Expr("attempts + 1"),
-			"lease_token": token,
-			"claimed_at":  claimedAt,
-			"updated_at":  now,
+			"state":                string(ConversationJobStateRunning),
+			"wait_reason":          "",
+			"attempts":             gorm.Expr("attempts + 1"),
+			"lease_token":          token,
+			"terminal_lease_token": "",
+			"claimed_at":           claimedAt,
+			"updated_at":           now,
 		})
 	if result.Error != nil {
 		return nil, result.Error
@@ -537,14 +587,31 @@ func (s *Store) TransitionConversationJob(ctx context.Context, id int64, leaseTo
 	if err != nil {
 		return false, err
 	}
-	updates["updated_at"] = nowUTC()
-	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("id = ? AND state = ? AND lease_token = ?", id, string(ConversationJobStateRunning), leaseToken).
-		Updates(updates)
-	if result.Error != nil {
-		return false, result.Error
+	if conversationJobStateIsTerminal(transition.State) {
+		updates["terminal_lease_token"] = leaseToken
+	} else {
+		updates["terminal_lease_token"] = ""
 	}
-	return result.RowsAffected == 1, nil
+	now := nowUTC()
+	updates["updated_at"] = now
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	transitioned := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&conversationJobRow{}).
+			Where("id = ? AND state = ? AND lease_token = ? AND (expires_at IS NULL OR expires_at > ?)",
+				id, string(ConversationJobStateRunning), leaseToken, now).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		transitioned = true
+		return finalizeCapabilityExecutionsForJobTransition(tx, id, leaseToken, transition, now)
+	})
+	return transitioned && err == nil, err
 }
 
 // CompleteConversationJob resolves a running claim successfully.
@@ -567,21 +634,156 @@ func (s *Store) CancelConversationJob(ctx context.Context, id int64, reason stri
 	if id <= 0 {
 		return false, errors.New("conversation job id is invalid")
 	}
-	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("id = ? AND state IN ?", id, conversationJobStateStrings(conversationJobBlockingStates)).
-		Updates(map[string]any{
-			"state":       string(ConversationJobStateCancelled),
-			"wait_reason": "",
-			"lease_token": "",
-			"claimed_at":  nil,
-			"retry_at":    nil,
-			"last_error":  trimConversationJobError(reason),
-			"updated_at":  nowUTC(),
-		})
-	if result.Error != nil {
-		return false, result.Error
+	reason = trimConversationJobError(reason)
+	if reason == "" {
+		reason = "conversation job cancelled"
 	}
-	return result.RowsAffected == 1, nil
+	now := nowUTC()
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	var cancelled bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&conversationJobRow{}).
+			Where("id = ? AND state IN ?", id, conversationJobStateStrings(conversationJobBlockingStates)).
+			Updates(map[string]any{
+				"state":       string(ConversationJobStateCancelled),
+				"wait_reason": "",
+				"lease_token": "",
+				"claimed_at":  nil,
+				"retry_at":    nil,
+				"last_error":  reason,
+				"updated_at":  now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		cancelled = result.RowsAffected == 1
+		if !cancelled {
+			return nil
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{id}, CapabilityExecutionCancelled, reason, now); err != nil {
+			return err
+		}
+		return deleteAgentCheckpointsForJobs(tx, []int64{id})
+	})
+	return cancelled, err
+}
+
+func terminalizeCapabilityExecutionsForJobs(tx *gorm.DB, jobIDs []int64, waitingState CapabilityExecutionState, reason string, now time.Time) error {
+	jobIDs = uniqueInt64s(jobIDs)
+	if len(jobIDs) == 0 {
+		return nil
+	}
+	reason = trimConversationJobError(reason)
+	if reason == "" {
+		reason = "conversation job stopped before capability execution"
+	}
+	unknownReason := reason + "; external outcome is unknown"
+	if err := markRunningCapabilityExecutionsUnknown(tx, jobIDs, unknownReason, now); err != nil {
+		return err
+	}
+	return tx.Model(&capabilityExecutionRow{}).
+		Where("job_id IN ? AND (state IN ? OR (state = ? AND LOWER(effect) = LOWER(?)))", jobIDs, []string{
+			string(CapabilityExecutionAwaitingConfirmation),
+			string(CapabilityExecutionApproved),
+			string(CapabilityExecutionWaitingAuth),
+		}, string(CapabilityExecutionRunning), "read").
+		Updates(map[string]any{
+			"state":       string(waitingState),
+			"error":       reason,
+			"finished_at": now,
+			"started_at":  nil,
+			"lease_token": "",
+			"updated_at":  now,
+		}).Error
+}
+
+func markRunningCapabilityExecutionsUnknown(tx *gorm.DB, jobIDs []int64, reason string, now time.Time) error {
+	return tx.Model(&capabilityExecutionRow{}).
+		Where("job_id IN ? AND state = ? AND LOWER(effect) <> LOWER(?)", jobIDs, string(CapabilityExecutionRunning), "read").
+		Updates(map[string]any{
+			"state":       string(CapabilityExecutionUnknown),
+			"error":       strings.TrimSpace(reason),
+			"finished_at": now,
+			"updated_at":  now,
+		}).Error
+}
+
+func finalizeCapabilityExecutionsForJobTransition(
+	tx *gorm.DB,
+	jobID int64,
+	leaseToken string,
+	transition ConversationJobTransition,
+	now time.Time,
+) error {
+	if !conversationJobStateIsTerminal(transition.State) {
+		return nil
+	}
+	reason := trimConversationJobError(transition.LastError)
+	switch transition.State {
+	case ConversationJobStateCompleted:
+		if reason == "" {
+			reason = "worker lease changed before the operation reached a recorded outcome"
+		}
+		if err := tx.Model(&capabilityExecutionRow{}).
+			Where("job_id = ? AND state = ? AND LOWER(effect) <> LOWER(?) AND COALESCE(lease_token, '') <> ?",
+				jobID, string(CapabilityExecutionRunning), "read", leaseToken).
+			Updates(map[string]any{
+				"state": string(CapabilityExecutionUnknown), "error": reason,
+				"finished_at": now, "updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+	case ConversationJobStateFailed:
+		if reason == "" {
+			reason = "conversation job failed"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionFailed, reason, now); err != nil {
+			return err
+		}
+	case ConversationJobStateExpired:
+		if reason == "" {
+			reason = "conversation job expired"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionExpired, reason, now); err != nil {
+			return err
+		}
+	case ConversationJobStateCancelled:
+		if reason == "" {
+			reason = "conversation job cancelled"
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, []int64{jobID}, CapabilityExecutionCancelled, reason, now); err != nil {
+			return err
+		}
+	}
+	var nonterminal int64
+	if err := tx.Model(&capabilityExecutionRow{}).
+		Where("job_id = ? AND state NOT IN ?", jobID, []string{
+			string(CapabilityExecutionSucceeded), string(CapabilityExecutionFailed), string(CapabilityExecutionUnknown),
+			string(CapabilityExecutionDenied), string(CapabilityExecutionCancelled), string(CapabilityExecutionExpired),
+		}).Count(&nonterminal).Error; err != nil {
+		return err
+	}
+	if nonterminal != 0 {
+		return ErrConversationJobHasNonterminalOperations
+	}
+	return nil
+}
+
+func uniqueInt64s(values []int64) []int64 {
+	result := make([]int64, 0, len(values))
+	seen := make(map[int64]struct{}, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func validateConversationJobTransition(transition ConversationJobTransition) error {
@@ -618,9 +820,6 @@ func conversationJobTransitionUpdates(transition ConversationJobTransition) (map
 		}
 		updates["retry_at"] = retryAt.UTC()
 	}
-	if transition.State == ConversationJobStateDeliveryUnknown && strings.TrimSpace(transition.LastError) == "" {
-		updates["last_error"] = "delivery outcome is unknown"
-	}
 	if transition.InputJSON != "" || !conversationJobInputZero(transition.Input) {
 		inputJSON, err := normalizeConversationJobJSON(transition.InputJSON, transition.Input, "input")
 		if err != nil {
@@ -636,85 +835,6 @@ func conversationJobTransitionUpdates(transition ConversationJobTransition) (map
 		updates["invocation_json"] = invocationJSON
 	}
 	return updates, nil
-}
-
-// ResolveUnknownConversationJob is the manual CAS for a delivery_unknown
-// result. Automatic workers never reclaim that state because the platform may
-// already have accepted the message.
-func (s *Store) ResolveUnknownConversationJob(ctx context.Context, id int64, state ConversationJobState, reason string) (bool, error) {
-	if id <= 0 {
-		return false, errors.New("conversation job id is invalid")
-	}
-	if state != ConversationJobStateCompleted && state != ConversationJobStateCancelled && state != ConversationJobStateFailed {
-		return false, errors.New("unknown delivery can only resolve to a terminal state")
-	}
-	updates := map[string]any{
-		"state":       string(state),
-		"wait_reason": "",
-		"lease_token": "",
-		"claimed_at":  nil,
-		"retry_at":    nil,
-		"last_error":  trimConversationJobError(reason),
-		"updated_at":  nowUTC(),
-	}
-	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("id = ? AND state = ?", id, string(ConversationJobStateDeliveryUnknown)).
-		Updates(updates)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
-}
-
-// ConsumeConversationJobConfirmation atomically consumes the oldest pending
-// confirmation for one actor in a conversation. Exactly one concurrent caller
-// can move it back to queued; subsequent calls return nil.
-func (s *Store) ConsumeConversationJobConfirmation(ctx context.Context, ident Identity, at ...time.Time) (*ConversationJob, error) {
-	s.conversationJobMu.Lock()
-	defer s.conversationJobMu.Unlock()
-	if err := validateConversationIdentity(ident); err != nil {
-		return nil, err
-	}
-	ident = normalizeIdentity(ident)
-	now := claimConversationJobTime(at)
-	var consumed *ConversationJob
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row conversationJobRow
-		err := tx.Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ? AND expires_at > ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, string(ConversationJobStateWaitingConfirmation), now).
-			Order("sequence ASC").First(&row).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		result := tx.Model(&conversationJobRow{}).
-			Where("id = ? AND state = ? AND expires_at > ?", row.ID, string(ConversationJobStateWaitingConfirmation), now).
-			Updates(map[string]any{
-				"state":       string(ConversationJobStateQueued),
-				"wait_reason": "",
-				"retry_at":    nil,
-				"revision":    gorm.Expr("revision + 1"),
-				"updated_at":  now,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-		if err := tx.First(&row, row.ID).Error; err != nil {
-			return err
-		}
-		job, err := conversationJobFromRow(row)
-		if err != nil {
-			return err
-		}
-		consumed = &job
-		return nil
-	})
-	return consumed, err
 }
 
 // UnblockConversationJobsAfterAuth releases every unexpired auth-waiting job
@@ -737,63 +857,6 @@ func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Iden
 		}).Error
 }
 
-// UnblockAuthorizedConversationJobs repairs the small crash window between a
-// successful credential commit and the auth poller's wake-up call. A pending
-// login session deliberately blocks an older credential from releasing work.
-func (s *Store) UnblockAuthorizedConversationJobs(ctx context.Context, now time.Time) error {
-	now = normalizeStoreTime(now)
-	return s.db.WithContext(ctx).Exec(`
-		UPDATE conversation_jobs
-		SET state = ?, wait_reason = '', retry_at = NULL, revision = revision + 1, updated_at = ?
-		WHERE state = ?
-		  AND (expires_at IS NULL OR expires_at > ?)
-		  AND EXISTS (
-			SELECT 1 FROM credentials
-			WHERE credentials.user_id = conversation_jobs.user_id
-			  AND credentials.expires_at > ?
-		  )
-		  AND NOT EXISTS (
-			SELECT 1 FROM login_sessions
-			WHERE login_sessions.user_id = conversation_jobs.user_id
-			  AND login_sessions.platform = conversation_jobs.platform
-			  AND login_sessions.conversation_type = conversation_jobs.conversation_type
-			  AND login_sessions.conversation_id = conversation_jobs.conversation_id
-			  AND login_sessions.status = ?
-		  )`,
-		string(ConversationJobStateQueued), now,
-		string(ConversationJobStateWaitingAuth), now, now,
-		string(LoginStatusPending),
-	).Error
-}
-
-// ResumeConversationJobInput stores a user-provided input and queues a job
-// that was waiting for that input. The waiting state is the CAS predicate, so
-// duplicate replies consume the wait exactly once.
-func (s *Store) ResumeConversationJobInput(ctx context.Context, id int64, input ConversationJobInput, at ...time.Time) (bool, error) {
-	if id <= 0 {
-		return false, errors.New("conversation job id is invalid")
-	}
-	inputJSON, err := normalizeConversationJobJSON("", input, "input")
-	if err != nil {
-		return false, err
-	}
-	now := claimConversationJobTime(at)
-	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("id = ? AND state = ? AND expires_at > ?", id, string(ConversationJobStateWaitingInput), now).
-		Updates(map[string]any{
-			"state":       string(ConversationJobStateQueued),
-			"wait_reason": "",
-			"input_json":  inputJSON,
-			"retry_at":    nil,
-			"revision":    gorm.Expr("revision + 1"),
-			"updated_at":  now,
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
-}
-
 // RecoverConversationJobLeases moves stale running jobs into retry_wait. The
 // optional lease duration is useful when a deployment has a different worker
 // heartbeat; omitted calls use ConversationJobLease.
@@ -804,18 +867,47 @@ func (s *Store) RecoverConversationJobLeases(ctx context.Context, now time.Time,
 		leaseFor = lease[0]
 	}
 	cutoff := now.Add(-leaseFor)
-	return s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?",
-			string(ConversationJobStateRunning), cutoff, now).
-		Updates(map[string]any{
-			"state":       string(ConversationJobStateRetryWait),
-			"wait_reason": "",
-			"lease_token": "",
-			"claimed_at":  nil,
-			"retry_at":    now,
-			"last_error":  "worker lease expired before the job was resolved",
-			"updated_at":  now,
-		}).Error
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var stale []conversationJobRow
+		if err := tx.Where("state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?",
+			string(ConversationJobStateRunning), cutoff, now).Find(&stale).Error; err != nil {
+			return err
+		}
+		if len(stale) == 0 {
+			return nil
+		}
+		ids := make([]int64, 0, len(stale))
+		for _, row := range stale {
+			result := tx.Model(&conversationJobRow{}).
+				Where("id = ? AND state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?", row.ID,
+					string(ConversationJobStateRunning), cutoff, now).
+				Updates(map[string]any{
+					"state":       string(ConversationJobStateRetryWait),
+					"wait_reason": "",
+					"lease_token": "",
+					"claimed_at":  nil,
+					"retry_at":    now,
+					"last_error":  "worker lease expired before the job was resolved",
+					"updated_at":  now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				ids = append(ids, row.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		// A running capability may already have reached an external service when
+		// its worker died. Never retry it silently: record the honest unknown
+		// outcome before the owning job can be reclaimed.
+		return markRunningCapabilityExecutionsUnknown(tx, ids,
+			"worker stopped after capability execution began; external outcome is unknown", now)
+	})
 }
 
 // ExpireConversationJobs marks every unexpired-state job whose TTL elapsed as
@@ -823,18 +915,46 @@ func (s *Store) RecoverConversationJobLeases(ctx context.Context, now time.Time,
 // result.
 func (s *Store) ExpireConversationJobs(ctx context.Context, now time.Time) error {
 	now = normalizeStoreTime(now)
-	return s.db.WithContext(ctx).Model(&conversationJobRow{}).
-		Where("state IN ? AND expires_at IS NOT NULL AND expires_at <= ?",
-			conversationJobStateStrings(conversationJobBlockingStates), now).
-		Updates(map[string]any{
-			"state":       string(ConversationJobStateExpired),
-			"wait_reason": "",
-			"lease_token": "",
-			"claimed_at":  nil,
-			"retry_at":    nil,
-			"last_error":  "conversation job expired",
-			"updated_at":  now,
-		}).Error
+	s.conversationJobMu.Lock()
+	defer s.conversationJobMu.Unlock()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var expiring []conversationJobRow
+		if err := tx.Where("state IN ? AND expires_at IS NOT NULL AND expires_at <= ?",
+			conversationJobStateStrings(conversationJobBlockingStates), now).Find(&expiring).Error; err != nil {
+			return err
+		}
+		if len(expiring) == 0 {
+			return nil
+		}
+		ids := make([]int64, 0, len(expiring))
+		for _, row := range expiring {
+			result := tx.Model(&conversationJobRow{}).
+				Where("id = ? AND state IN ? AND expires_at IS NOT NULL AND expires_at <= ?", row.ID,
+					conversationJobStateStrings(conversationJobBlockingStates), now).
+				Updates(map[string]any{
+					"state":       string(ConversationJobStateExpired),
+					"wait_reason": "",
+					"lease_token": "",
+					"claimed_at":  nil,
+					"retry_at":    nil,
+					"last_error":  "conversation job expired",
+					"updated_at":  now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				ids = append(ids, row.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := terminalizeCapabilityExecutionsForJobs(tx, ids, CapabilityExecutionExpired, "conversation job expired", now); err != nil {
+			return err
+		}
+		return deleteAgentCheckpointsForJobs(tx, ids)
+	})
 }
 
 func normalizeConversationJobWait(state ConversationJobState, reason ConversationJobWaitReason) (ConversationJobWaitReason, error) {
@@ -847,10 +967,6 @@ func normalizeConversationJobWait(state ConversationJobState, reason Conversatio
 		want = ConversationJobWaitReasonAuth
 	case ConversationJobStateWaitingConfirmation:
 		want = ConversationJobWaitReasonConfirmation
-	case ConversationJobStateWaitingInput:
-		want = ConversationJobWaitReasonInput
-	case ConversationJobStateWaitingDelivery:
-		want = ConversationJobWaitReasonDelivery
 	}
 	if reason == "" {
 		reason = want
@@ -867,14 +983,20 @@ func validConversationJobState(state ConversationJobState) bool {
 		ConversationJobStateRunning,
 		ConversationJobStateWaitingAuth,
 		ConversationJobStateWaitingConfirmation,
-		ConversationJobStateWaitingInput,
-		ConversationJobStateWaitingDelivery,
-		ConversationJobStateDeliveryUnknown,
 		ConversationJobStateRetryWait,
 		ConversationJobStateCompleted,
 		ConversationJobStateFailed,
 		ConversationJobStateExpired,
 		ConversationJobStateCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func conversationJobStateIsTerminal(state ConversationJobState) bool {
+	switch state {
+	case ConversationJobStateCompleted, ConversationJobStateFailed, ConversationJobStateExpired, ConversationJobStateCancelled:
 		return true
 	default:
 		return false

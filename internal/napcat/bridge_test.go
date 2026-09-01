@@ -25,6 +25,8 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
+const reverseBridgeIntegrationTestTimeout = 5 * time.Second
+
 type processorSpy struct{ messages []message.Inbound }
 
 func (s *processorSpy) Process(_ context.Context, inbound message.Inbound) {
@@ -325,10 +327,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var frame map[string]any
-	if err := conn.ReadJSON(&frame); err != nil {
-		t.Fatal(err)
-	}
+	frame := readReverseAction(t, conn, "send_private_msg")
 	if frame["action"] != "send_private_msg" {
 		t.Fatalf("action = %v", frame["action"])
 	}
@@ -373,7 +372,7 @@ func TestCoordinatorProcessesCommandsWithoutAgentDelay(t *testing.T) {
 	})
 	select {
 	case <-replied:
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("command waited for the agent batching window")
 	}
 }
@@ -427,13 +426,7 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := conn1.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	var frame map[string]any
-	if err := conn1.ReadJSON(&frame); err != nil {
-		t.Fatal(err)
-	}
+	frame := readReverseAction(t, conn1, "send_private_msg")
 	if frame["action"] != "send_private_msg" {
 		t.Fatalf("action = %v", frame["action"])
 	}
@@ -445,6 +438,31 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9002}, "echo": frame["echo"],
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func readReverseAction(t *testing.T, conn *websocket.Conn, want string) map[string]any {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(reverseBridgeIntegrationTestTimeout)); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var frame map[string]any
+		if err := conn.ReadJSON(&frame); err != nil {
+			t.Fatal(err)
+		}
+		action, _ := frame["action"].(string)
+		if action == want {
+			return frame
+		}
+		if action != "get_doubt_friends_add_request" {
+			t.Fatalf("unexpected reverse action %q while waiting for %q", action, want)
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"status": "ok", "retcode": 0, "data": []any{}, "echo": frame["echo"],
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

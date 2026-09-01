@@ -4,32 +4,35 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	// The run deadline is intentionally fixed: it matches the webhook's
-	// existing 90-second dispatch lifetime and also bounds gateway-triggered
-	// runs that do not have an HTTP request context.
-	agentRunDeadline = 90 * time.Second
+	// Keep a single deadline for every stage of one Agent run, including all
+	// model requests and tool calls. It also bounds gateway-triggered runs that
+	// do not have an HTTP request context.
+	agentRunDeadline = 60 * time.Second
 
 	// Run finalization must still be able to close a started row when its
 	// caller cancels, but it must not turn cleanup into another unbounded run.
 	agentRunCleanupTimeout = 5 * time.Second
 
-	// Keep one bounded budget for prompt input plus the existing Kimi output
-	// ceiling. conversationCompactInputLimit is the largest provider input
-	// budget already used by history compaction; adding the known 8,192-token
-	// completion ceiling leaves no room for an unbounded sequence of retries.
-	agentRunTokenBudget  int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
-	agentRunMaxToolCalls       = 12
+	// Keep one bounded budget for logical prompt input plus the existing Kimi
+	// output ceiling. conversationCompactInputLimit is the hard provider input
+	// budget; physical retries reuse their logical request's reservation instead
+	// of consuming it again.
+	agentRunTokenBudget      int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
+	agentRunMaxToolCalls           = 12
+	agentRunMaxModelAttempts       = 5
 )
 
 var (
-	errAgentRunDeadline    = errors.New("agent run deadline exceeded")
-	errAgentContextBudget  = errors.New("agent context budget exceeded")
-	errAgentToolCallBudget = errors.New("agent tool-call budget exceeded")
-	errAgentNonProgress    = errors.New("agent tool plan made no progress")
+	errAgentRunDeadline        = errors.New("agent run deadline exceeded")
+	errAgentContextBudget      = errors.New("agent context budget exceeded")
+	errAgentModelAttemptBudget = errors.New("agent model-attempt budget exceeded")
+	errAgentToolCallBudget     = errors.New("agent tool-call budget exceeded")
+	errAgentNonProgress        = errors.New("agent tool plan made no progress")
 )
 
 type runBudgetContextKey struct{}
@@ -42,14 +45,12 @@ type runMetrics struct {
 
 	stageMilliseconds map[string]int64
 	contextTokens     int64
-	compactionMs      int64
 	modelRequests     int64
 	toolCalls         int64
 }
 
 type runMetricsSnapshot struct {
 	contextTokens     int64
-	compactionMs      int64
 	modelRequests     int64
 	toolCalls         int64
 	stageMilliseconds map[string]int64
@@ -109,15 +110,6 @@ func (m *runMetrics) recordToolCall() {
 	m.mu.Unlock()
 }
 
-func (m *runMetrics) recordCompaction(duration time.Duration) {
-	if m == nil {
-		return
-	}
-	m.mu.Lock()
-	m.compactionMs += duration.Milliseconds()
-	m.mu.Unlock()
-}
-
 func (m *runMetrics) snapshot() runMetricsSnapshot {
 	if m == nil {
 		return runMetricsSnapshot{}
@@ -130,7 +122,6 @@ func (m *runMetrics) snapshot() runMetricsSnapshot {
 	}
 	return runMetricsSnapshot{
 		contextTokens:     m.contextTokens,
-		compactionMs:      m.compactionMs,
 		modelRequests:     m.modelRequests,
 		toolCalls:         m.toolCalls,
 		stageMilliseconds: stages,
@@ -142,15 +133,31 @@ type runBudget struct {
 
 	deadline       time.Time
 	reservedTokens int64
+	modelAttempts  atomic.Int32
 	toolCalls      int
 	metrics        *runMetrics
+	// reserveModelAttempt is installed for conversation jobs after their
+	// started run row is created. It durably reserves the physical attempt
+	// before the transport calls the provider.
+	reserveModelAttempt func(context.Context) (bool, error)
 }
 
 func newRunBudget(now time.Time, metrics *runMetrics) *runBudget {
-	return &runBudget{
+	return newRunBudgetWithAttempts(now, metrics, 0)
+}
+
+func newRunBudgetWithAttempts(now time.Time, metrics *runMetrics, priorModelAttempts int64) *runBudget {
+	budget := &runBudget{
 		deadline: now.Add(agentRunDeadline),
 		metrics:  metrics,
 	}
+	if priorModelAttempts > int64(agentRunMaxModelAttempts) {
+		priorModelAttempts = int64(agentRunMaxModelAttempts)
+	}
+	if priorModelAttempts > 0 {
+		budget.modelAttempts.Store(int32(priorModelAttempts))
+	}
+	return budget
 }
 
 func withRunBudget(ctx context.Context, budget *runBudget) context.Context {
@@ -170,6 +177,22 @@ func runBudgetFromContext(ctx context.Context) *runBudget {
 	return nil
 }
 
+// contextWithRunDeadline gives a request the run budget's deadline when its
+// caller did not already provide an earlier one. The returned cancel function
+// is always safe to call.
+func contextWithRunDeadline(ctx context.Context, budget *runBudget) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if budget == nil || budget.deadline.IsZero() {
+		return ctx, func() {}
+	}
+	if deadline, ok := ctx.Deadline(); ok && !budget.deadline.Before(deadline) {
+		return ctx, func() {}
+	}
+	return context.WithDeadline(ctx, budget.deadline)
+}
+
 func (b *runBudget) contextError(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -187,11 +210,21 @@ func (b *runBudget) contextError(ctx context.Context) error {
 }
 
 // admitModelRequest reserves the estimated input plus the existing provider
-// completion ceiling before an HTTP attempt. Retries call this separately, so
-// they consume both time and cumulative token budget.
+// completion ceiling and admits the first physical provider attempt for one
+// logical model request. Retries must use admitModelAttempt: they count
+// against the run-wide attempt limit but do not reserve the same prompt and
+// completion budget again.
 func admitModelRequest(ctx context.Context, contextTokens int64) error {
 	budget := runBudgetFromContext(ctx)
 	if budget == nil {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if metrics := runMetricsFromContext(ctx); metrics != nil {
+			metrics.recordModelRequest(contextTokens)
+		}
 		return nil
 	}
 	if err := budget.contextError(ctx); err != nil {
@@ -200,17 +233,84 @@ func admitModelRequest(ctx context.Context, contextTokens int64) error {
 	if contextTokens < 1 {
 		contextTokens = 1
 	}
-	reservation := contextTokens + int64(kimiMaxCompletionTokens)
+	completionBudget := int64(kimiMaxCompletionTokens)
+	if contextTokens > agentRunTokenBudget-completionBudget {
+		return errAgentContextBudget
+	}
+	reservation := contextTokens + completionBudget
 	budget.mu.Lock()
-	defer budget.mu.Unlock()
+	if err := budget.contextError(ctx); err != nil {
+		budget.mu.Unlock()
+		return err
+	}
 	if budget.reservedTokens > agentRunTokenBudget-reservation {
+		budget.mu.Unlock()
 		return errAgentContextBudget
 	}
 	budget.reservedTokens += reservation
-	if budget.metrics != nil {
-		budget.metrics.recordModelRequest(contextTokens)
+	budget.mu.Unlock()
+
+	if err := admitModelAttempt(ctx); err != nil {
+		// A race can consume the last attempt slot after the reservation was
+		// made. A rejected physical attempt must not leave that reservation
+		// behind and reduce the budget available to later logical requests.
+		budget.mu.Lock()
+		budget.reservedTokens -= reservation
+		budget.mu.Unlock()
+		return err
 	}
 	return nil
+}
+
+// admitModelAttempt atomically admits one physical provider HTTP attempt.
+// Keeping this separate from token reservation is important: a retry sends
+// the same prompt again, but must not spend the run's context budget again.
+func admitModelAttempt(ctx context.Context) error {
+	budget := runBudgetFromContext(ctx)
+	if budget == nil {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if metrics := runMetricsFromContext(ctx); metrics != nil {
+			metrics.recordModelRequest(1)
+		}
+		return nil
+	}
+	if err := budget.contextError(ctx); err != nil {
+		return err
+	}
+	for {
+		current := budget.modelAttempts.Load()
+		if current >= agentRunMaxModelAttempts {
+			return errAgentModelAttemptBudget
+		}
+		if !budget.modelAttempts.CompareAndSwap(current, current+1) {
+			continue
+		}
+		// Do not admit an attempt that became canceled while contending for
+		// the atomic slot. Returning the slot keeps the physical count honest.
+		if err := budget.contextError(ctx); err != nil {
+			budget.modelAttempts.Add(-1)
+			return err
+		}
+		if budget.reserveModelAttempt != nil {
+			reserved, err := budget.reserveModelAttempt(ctx)
+			if err != nil {
+				budget.modelAttempts.Add(-1)
+				return err
+			}
+			if !reserved {
+				budget.modelAttempts.Add(-1)
+				return errAgentModelAttemptBudget
+			}
+		}
+		if budget.metrics != nil {
+			budget.metrics.recordModelRequest(1)
+		}
+		return nil
+	}
 }
 
 func admitToolCall(ctx context.Context) error {
@@ -239,12 +339,6 @@ func recordRunStage(ctx context.Context, stage string, duration time.Duration) {
 	}
 }
 
-func recordRunCompaction(ctx context.Context, duration time.Duration) {
-	if metrics := runMetricsFromContext(ctx); metrics != nil {
-		metrics.recordCompaction(duration)
-	}
-}
-
 func observeRunStage(ctx context.Context, stage string, work func() error) error {
 	started := time.Now()
 	defer func() { recordRunStage(ctx, stage, time.Since(started)) }()
@@ -263,6 +357,8 @@ func agentFailureClass(err error) string {
 		return "run_deadline"
 	case errors.Is(err, errAgentContextBudget):
 		return "context_budget"
+	case errors.Is(err, errAgentModelAttemptBudget):
+		return "model_attempt_budget"
 	case errors.Is(err, errAgentToolCallBudget):
 		return "tool_call_budget"
 	case errors.Is(err, errAgentNonProgress):
@@ -283,6 +379,7 @@ func agentFailureClass(err error) string {
 func isAgentBudgetError(err error) bool {
 	return errors.Is(err, errAgentRunDeadline) ||
 		errors.Is(err, errAgentContextBudget) ||
+		errors.Is(err, errAgentModelAttemptBudget) ||
 		errors.Is(err, errAgentToolCallBudget) ||
 		errors.Is(err, errAgentNonProgress)
 }
@@ -293,6 +390,7 @@ func normalizeAgentRunError(ctx context.Context, budget *runBudget, err error) e
 	}
 	if errors.Is(err, errAgentRunDeadline) ||
 		errors.Is(err, errAgentContextBudget) ||
+		errors.Is(err, errAgentModelAttemptBudget) ||
 		errors.Is(err, errAgentToolCallBudget) ||
 		errors.Is(err, errAgentNonProgress) {
 		return err

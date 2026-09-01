@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,4 +236,36 @@ func TestLoginPollerRepairsAuthorizedJobAfterRestart(t *testing.T) {
 		t.Fatalf("job after restart repair = %#v", saved)
 	}
 	_ = s.Close()
+}
+
+func TestLoginPollerDoesNotReleaseJobForIncompleteGrant(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := store.Identity{Platform: "qqbot", UserID: "stale-scope", ConversationType: "private", ConversationID: "stale-scope"}
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+		Scope: strings.ReplaceAll(oauthScope, "workspace.calendar-feed:read", ""),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := s.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "event-stale-scope", State: store.ConversationJobStateWaitingAuth,
+		Input: store.ConversationJobInput{Text: "查询作业"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	(&LoginPoller{Manager: &Manager{Store: s}}).tick(ctx)
+	saved, err := s.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateWaitingAuth {
+		t.Fatalf("incomplete grant released job = %#v", saved)
+	}
 }

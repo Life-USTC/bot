@@ -36,9 +36,7 @@ func (p *LoginPoller) tick(ctx context.Context) {
 	if p.Manager == nil || p.Manager.Store == nil {
 		return
 	}
-	if err := p.Manager.Store.UnblockAuthorizedConversationJobs(ctx, time.Now().UTC()); err != nil {
-		p.logf("unblock authorized conversation jobs failed: %v", err)
-	}
+	p.repairAuthorizedJobs(ctx)
 	sessions, err := p.Manager.Store.PendingLoginSessions(ctx)
 	if err != nil {
 		p.logf("list pending login sessions failed: %v", err)
@@ -58,10 +56,46 @@ func (p *LoginPoller) tick(ctx context.Context) {
 			continue
 		}
 		if result.Authorized {
+			current, scopeErr := p.Manager.HasCurrentScopes(ctx, ident)
+			if scopeErr != nil {
+				p.logf("verify OAuth scopes after login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+					ident.Platform, ident.ConversationType, ident.ConversationID, scopeErr)
+				continue
+			}
+			if !current {
+				continue
+			}
 			if err := p.Manager.Store.UnblockConversationJobsAfterAuth(ctx, session.Identity); err != nil {
 				p.logf("unblock conversation jobs after login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
 					session.Identity.Platform, session.Identity.ConversationType, session.Identity.ConversationID, err)
 			}
+		}
+	}
+}
+
+func (p *LoginPoller) repairAuthorizedJobs(ctx context.Context) {
+	jobs, err := p.Manager.Store.WaitingAuthConversationJobs(ctx, time.Now().UTC())
+	if err != nil {
+		p.logf("list authorization-waiting conversation jobs failed: %v", err)
+		return
+	}
+	checked := make(map[store.Identity]bool, len(jobs))
+	for _, job := range jobs {
+		ident := job.Identity
+		if checked[ident] {
+			continue
+		}
+		checked[ident] = true
+		current, err := p.Manager.HasCurrentScopes(ctx, ident)
+		if err != nil {
+			continue
+		}
+		if !current {
+			continue
+		}
+		if err := p.Manager.Store.UnblockConversationJobsAfterAuth(ctx, ident); err != nil {
+			p.logf("repair authorized conversation jobs failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
+				ident.Platform, ident.ConversationType, ident.ConversationID, err)
 		}
 	}
 }

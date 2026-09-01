@@ -23,7 +23,6 @@ const (
 	CapabilitySubscription             CapabilityID = "subscription"
 	CapabilityNotify                   CapabilityID = "notify"
 	CapabilitySettings                 CapabilityID = "settings"
-	CapabilityAgentSettings            CapabilityID = "agent"
 	CapabilityFeedback                 CapabilityID = "feedback"
 	CapabilityPing                     CapabilityID = "ping"
 	CapabilityStatus                   CapabilityID = "status"
@@ -76,7 +75,6 @@ type ResultExposure string
 
 const (
 	ExposureModel    ResultExposure = "model"
-	ExposureRedacted ResultExposure = "redacted"
 	ExposureHostOnly ResultExposure = "host_only"
 )
 
@@ -94,20 +92,20 @@ const (
 // a capability. PublicCache is a host execution optimization, not a policy
 // decision, but lives here so the descriptor remains the sole command source.
 type CapabilityRequirements struct {
-	Life        bool
-	Store       bool
-	OAuth       bool
-	DataScope   DataScope
-	PublicCache bool
+	Life        bool      `json:"life,omitempty"`
+	Store       bool      `json:"store,omitempty"`
+	OAuth       bool      `json:"oauth,omitempty"`
+	DataScope   DataScope `json:"dataScope"`
+	PublicCache bool      `json:"publicCache,omitempty"`
 }
 
 // CapabilityPolicy is the invocation-level policy. Descriptors provide the
 // default values and may resolve argument-sensitive values with ResolvePolicy.
 type CapabilityPolicy struct {
-	Effect       CapabilityEffect
-	DataScope    DataScope
-	Exposure     ResultExposure
-	Confirmation ConfirmationPolicy
+	Effect       CapabilityEffect   `json:"effect"`
+	DataScope    DataScope          `json:"dataScope"`
+	Exposure     ResultExposure     `json:"exposure"`
+	Confirmation ConfirmationPolicy `json:"confirmation"`
 }
 
 // HelpMetadata is the complete usage contract owned by a descriptor. Overview
@@ -127,11 +125,11 @@ type HelpMetadata struct {
 // canonical ID string used by durable conversation/audit storage; Capability
 // points at the descriptor that owns all requirements and execution policy.
 type Invocation struct {
-	Capability   *CapabilityDescriptor
-	Name         string
-	Args         []string
-	Raw          string
-	NaturalRoute string
+	Capability   *CapabilityDescriptor `json:"-"`
+	Name         string                `json:"name"`
+	Args         []string              `json:"args"`
+	Raw          string                `json:"raw,omitempty"`
+	NaturalRoute string                `json:"naturalRoute,omitempty"`
 }
 
 func (i Invocation) Descriptor() *CapabilityDescriptor { return i.Capability }
@@ -158,17 +156,17 @@ type CapabilityInputPolicy func([]string) bool
 // argument vocabulary.
 type CapabilityNormalizer func([]string) []string
 
-// CapabilityExecutor runs one normalized invocation and returns a host
-// response. Domain methods continue to return text; wrappers keep this
-// boundary explicit and descriptor-owned.
-type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocation) Response
+// CapabilityExecutor runs one normalized invocation and returns the typed
+// host/domain outcome. Response inside the outcome remains the actual domain
+// response and is intentionally separate from the runtime status.
+type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocation) CapabilityOutcome
 
 // CapabilityPresenter maps a host response to the agent-facing result. It is
 // called after the descriptor policy has been resolved.
-type CapabilityPresenter func(Invocation, Response, CapabilityPolicy) AgentPresentation
+type CapabilityPresenter func(Invocation, Response, CapabilityPolicy) CapabilityPresentation
 
-// AgentPresentation is the result exposure decision for structured Agent invocations.
-type AgentPresentation struct {
+// CapabilityPresentation is the result-exposure decision for a host invocation.
+type CapabilityPresentation struct {
 	Text            string
 	DeliveredByHost bool
 	Response        Response
@@ -247,19 +245,20 @@ func RestoreInvocation(id CapabilityID, args []string) (Invocation, bool) {
 func allowArgs([]string) bool { return true }
 
 func textExecutor(run func(Handler, context.Context, store.Identity, []string) string) CapabilityExecutor {
-	return func(h Handler, ctx context.Context, ident store.Identity, inv Invocation) Response {
-		return Response{Text: run(h, ctx, ident, inv.Args), Kind: inv.Name}
+	return func(h Handler, ctx context.Context, ident store.Identity, inv Invocation) CapabilityOutcome {
+		if h.execution == nil {
+			h.execution = &capabilityExecutionState{}
+		}
+		return outcomeFromResponse(h, Response{Text: run(h, ctx, ident, inv.Args), Kind: inv.Name})
 	}
 }
 
-func defaultCapabilityPresenter(inv Invocation, response Response, policy CapabilityPolicy) AgentPresentation {
-	presentation := AgentPresentation{Response: response, Text: response.Text}
+func defaultCapabilityPresenter(inv Invocation, response Response, policy CapabilityPolicy) CapabilityPresentation {
+	presentation := CapabilityPresentation{Response: response, Text: response.Text}
 	switch policy.Exposure {
 	case ExposureHostOnly:
 		presentation.Text = ""
 		presentation.DeliveredByHost = true
-	case ExposureRedacted:
-		presentation.Text = "结果已由宿主安全处理。"
 	}
 	if response.Image != nil || len(response.Parts) > 0 {
 		presentation.DeliveredByHost = true
@@ -289,7 +288,10 @@ func loginPolicy(inv Invocation) CapabilityPolicy {
 
 func subscriptionPolicy(inv Invocation) CapabilityPolicy {
 	if firstArgIs(inv.Args, "link") {
-		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureHostOnly, ConfirmNever)
+		// Private conversations may expose the user's own calendar URL to the
+		// model. The URL is already stored in private state; group policy still
+		// prevents this capability from being invoked on a shared surface.
+		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureModel, ConfirmNever)
 	}
 	if firstArgIs(inv.Args, "import") {
 		return privateWritePolicy(inv, EffectWrite)
@@ -313,13 +315,6 @@ func homeworkPolicy(inv Invocation) CapabilityPolicy {
 
 func notifyPolicy(inv Invocation) CapabilityPolicy {
 	if len(inv.Args) >= 2 && firstArgIn(inv.Args[1:], "on", "off") {
-		return privateWritePolicy(inv, EffectWrite)
-	}
-	return readPolicy(inv, DataScopeUserPrivate)
-}
-
-func agentSettingsPolicy(inv Invocation) CapabilityPolicy {
-	if firstArgIn(inv.Args, "on", "off") {
 		return privateWritePolicy(inv, EffectWrite)
 	}
 	return readPolicy(inv, DataScopeUserPrivate)
@@ -369,6 +364,11 @@ func busPreferenceMutationArgs(args []string) bool {
 		return true
 	}
 	if _, ok := parseBusShowSouth(args); ok {
+		return true
+	}
+	// A preference route is a write even when the user uses the natural
+	// "偏好 路线 东区 西区" form instead of the explicit "设置" prefix.
+	if busPreferenceArgs(args) && len(args) > 1 {
 		return true
 	}
 	return false
@@ -428,14 +428,12 @@ func init() {
 		descriptor(CapabilitySettings, []string{"settings", "设置"}, CapabilityRequirements{DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, settingsArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.settings(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("settings", "设置", "管理通知等偏好", true, []HelpExample{example("设置", "查看设置命令")}, nil)),
-		descriptor(CapabilityAgentSettings, []string{"agent", "AI", "AI工具"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, agentArgsAcceptable, normalizeAgentArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.agentSettings(ctx, ident, args)
-		}, agentSettingsPolicy, helpMeta("advanced", "AI", "管理 AI 工具调用展示", true, []HelpExample{example("AI 工具", "查看当前工具调用提示设置"), example("AI 工具 开", "回答时显示 LLM 工具调用提示"), example("AI 工具 关", "回答时隐藏 LLM 工具调用提示"), example("设置 工具调用", "等同于「AI 工具」"), example("设置 工具调用 开", "等同于「AI 工具 开」"), example("设置 工具调用 关", "等同于「AI 工具 关」")}, nil)),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),
 		descriptor(CapabilityPing, []string{"ping"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			if err := h.Life.Health(ctx); err != nil {
+				h.markOutcome(CapabilityOutcomeFailed)
 				return "Life @ USTC API unavailable: " + err.Error()
 			}
 			return "Life @ USTC API is reachable."
@@ -519,8 +517,8 @@ func init() {
 }
 
 func init() {
-	capabilityDescriptors[0].Execute = textExecutor(func(_ Handler, _ context.Context, _ store.Identity, args []string) string {
-		return renderHelpWithoutParser(args)
+	capabilityDescriptors[0].Execute = textExecutor(func(h Handler, _ context.Context, _ store.Identity, args []string) string {
+		return h.help(args...)
 	})
 }
 
@@ -594,24 +592,4 @@ func descriptorForForm(form string) (*CapabilityDescriptor, bool) {
 		}
 	}
 	return nil, false
-}
-
-func renderHelpWithoutParser(args []string) string {
-	if len(args) == 0 {
-		return helpOverviewText()
-	}
-	key := commandToken(args[0])
-	if topic, ok := helpTopicAliases[key]; ok {
-		return formatHelpTopic(topic)
-	}
-	if topic := capabilityTopic(key); topic != "" {
-		return formatHelpTopic(topic)
-	}
-	if descriptor, ok := descriptorForForm(key); ok {
-		return formatHelpTopic(descriptor.Help.Topic)
-	}
-	if _, ok := helpTopicTitles[key]; ok {
-		return formatHelpTopic(key)
-	}
-	return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
 }

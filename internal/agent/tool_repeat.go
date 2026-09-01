@@ -45,7 +45,7 @@ func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint
 			return nil, err
 		}
 		out, err := next(ctx, input)
-		g.recordResult(input, out, err)
+		g.recordResult(ctx, input, err)
 		return out, err
 	}
 }
@@ -75,9 +75,9 @@ func (g *toolRepeatGuard) admit(input *compose.ToolInput) error {
 	return nil
 }
 
-func (g *toolRepeatGuard) recordResult(input *compose.ToolInput, output *compose.ToolOutput, err error) {
+func (g *toolRepeatGuard) recordResult(ctx context.Context, input *compose.ToolInput, err error) {
 	key := toolCallKey(input)
-	if !toolResultFailed(outputResult(output), err) {
+	if !toolResultFailed(ctx, input, err) {
 		g.mu.Lock()
 		delete(g.failures, key)
 		g.mu.Unlock()
@@ -141,23 +141,15 @@ func nonProgressingToolPlanError(input *compose.ToolInput) error {
 	return errors.Join(errAgentNonProgress, errors.New("tool: "+name))
 }
 
-func outputResult(output *compose.ToolOutput) string {
-	if output == nil {
-		return ""
-	}
-	return output.Result
-}
-
-func toolResultFailed(result string, err error) bool {
+func toolResultFailed(ctx context.Context, input *compose.ToolInput, err error) bool {
 	if err != nil {
 		return !errors.Is(err, errAgentToolCallBudget) &&
 			!errors.Is(err, errAgentRunDeadline) &&
 			!errors.Is(err, errAgentContextBudget) &&
 			!errors.Is(err, context.Canceled)
 	}
-	var payload struct {
-		OK *bool `json:"ok"`
+	if input == nil {
+		return false
 	}
-	return json.Unmarshal([]byte(strings.TrimSpace(result)), &payload) == nil &&
-		payload.OK != nil && !*payload.OK
+	return toolOutcomesFromContext(ctx).isError(input.CallID)
 }

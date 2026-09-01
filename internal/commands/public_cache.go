@@ -84,6 +84,50 @@ func (c *PublicCommandCache) GetOrLoad(ctx context.Context, command string, args
 	return response
 }
 
+// GetOrLoadOutcome is the typed cache boundary used by capability execution.
+// A cached entry only stores a successful domain response; failures are never
+// guessed from their text and are never persisted by this path.
+func (c *PublicCommandCache) GetOrLoadOutcome(ctx context.Context, command string, args []string, load func() CapabilityOutcome) CapabilityOutcome {
+	if c == nil || c.store == nil || load == nil {
+		if load == nil {
+			return FailedOutcome(Response{})
+		}
+		return normalizeOutcome(load())
+	}
+
+	command = strings.TrimSpace(command)
+	argsKey := strings.Join(args, " ")
+	if response, ok := c.lookup(ctx, command, argsKey); ok {
+		return SuccessOutcome(Response{Text: response})
+	}
+
+	key := c.version + "\x00" + command + "\x00" + argsKey
+	value, _, _ := c.group.Do(key, func() (any, error) {
+		if response, ok := c.lookup(ctx, command, argsKey); ok {
+			return SuccessOutcome(Response{Text: response}), nil
+		}
+		outcome := normalizeOutcome(load())
+		if ctx.Err() == nil && outcome.Status == CapabilityOutcomeSuccess && !outcome.ConfirmationRequired {
+			now := c.currentTime()
+			err := c.store.SavePublicCommandCache(ctx, store.PublicCommandCacheEntry{
+				Version:   c.version,
+				Command:   command,
+				Args:      argsKey,
+				Response:  outcome.Response.Text,
+				ExpiresAt: now.Add(c.ttl),
+			})
+			if err != nil {
+				c.logf("save public command cache: %v", err)
+			}
+		}
+		return outcome, nil
+	})
+	if outcome, ok := value.(CapabilityOutcome); ok {
+		return normalizeOutcome(outcome)
+	}
+	return FailedOutcome(Response{})
+}
+
 func (c *PublicCommandCache) lookup(ctx context.Context, command, args string) (string, bool) {
 	entry, ok, err := c.store.PublicCommandCache(ctx, c.version, command, args, c.currentTime())
 	if err != nil {
