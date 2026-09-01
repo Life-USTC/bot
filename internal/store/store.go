@@ -1268,18 +1268,24 @@ func (s *Store) FinishAgentRun(ctx context.Context, id int64, status, reply stri
 	return s.db.WithContext(ctx).Model(&agentRunRow{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"status":            status,
-			"reply":             reply,
-			"error":             strings.TrimSpace(errText),
-			"currency":          SpendingCurrencyCNY,
-			"prompt_tokens":     spending.PromptTokens,
-			"cached_tokens":     spending.CachedTokens,
-			"completion_tokens": spending.CompletionTokens,
-			"total_tokens":      spending.TotalTokens,
-			"cost_nano_cny":     spending.CostNanoCNY,
-			"model_requests":    spending.ModelRequests,
-			"tool_calls":        spending.ToolCalls,
-			"updated_at":        nowUTC(),
+			"status":   status,
+			"reply":    reply,
+			"error":    strings.TrimSpace(errText),
+			"currency": SpendingCurrencyCNY,
+			// Usage may have been persisted immediately after a successful
+			// provider response. Keep those monotonic observations when the run
+			// finishes, even if its final cleanup snapshot is incomplete.
+			"prompt_tokens":     gorm.Expr("MAX(prompt_tokens, ?)", spending.PromptTokens),
+			"cached_tokens":     gorm.Expr("MAX(cached_tokens, ?)", spending.CachedTokens),
+			"completion_tokens": gorm.Expr("MAX(completion_tokens, ?)", spending.CompletionTokens),
+			"total_tokens":      gorm.Expr("MAX(total_tokens, ?)", spending.TotalTokens),
+			"cost_nano_cny":     gorm.Expr("MAX(cost_nano_cny, ?)", spending.CostNanoCNY),
+			// model_requests includes durable reservations made before physical
+			// provider calls. Finishing a run may add observed usage, but must
+			// never roll a crash-reserved attempt back down.
+			"model_requests": gorm.Expr("MAX(model_requests, ?)", spending.ModelRequests),
+			"tool_calls":     gorm.Expr("MAX(tool_calls, ?)", spending.ToolCalls),
+			"updated_at":     nowUTC(),
 		}).Error
 }
 

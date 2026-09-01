@@ -27,8 +27,24 @@ const (
 
 type ConversationToolCall struct {
 	ID        string `json:"id"`
+	Type      string `json:"type,omitempty"`
+	Index     *int   `json:"index,omitempty"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+}
+
+// ConversationMessagePart is the durable subset of Eino's typed message
+// parts. Text and image_url are the parts currently supported by this
+// application. Provider-only reasoning and other transient part kinds are
+// intentionally not represented here.
+type ConversationMessagePart struct {
+	Type       string `json:"type"`
+	Text       string `json:"text,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Reference  string `json:"reference,omitempty"`
+	Base64Data string `json:"base64data,omitempty"`
+	MIMEType   string `json:"mime_type,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 type ConversationEvent struct {
@@ -38,9 +54,11 @@ type ConversationEvent struct {
 	DedupeKey  string
 	Type       ConversationEventType
 	Content    string
+	Name       string
 	ToolCallID string
 	ToolName   string
 	ToolCalls  []ConversationToolCall
+	Parts      []ConversationMessagePart
 	CreatedAt  time.Time
 }
 
@@ -54,11 +72,15 @@ type conversationEventRow struct {
 	DedupeKey        string `gorm:"not null;uniqueIndex:idx_conversation_events_dedupe,priority:2"`
 	Type             string `gorm:"not null"`
 	Content          string
+	Name             string
 	ToolCallID       string
 	ToolName         string
 	ToolCallsJSON    string    `gorm:"not null;default:'[]'"`
+	PartsJSON        string    `gorm:"not null;default:'[]'"`
 	CreatedAt        time.Time `gorm:"index:idx_conversation_events_identity_id,priority:4"`
 }
+
+const maxConversationMessagePartsJSONBytes = 32 << 20
 
 func (conversationEventRow) TableName() string { return "conversation_events" }
 
@@ -81,6 +103,16 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 	if err != nil {
 		return ConversationEvent{}, false, fmt.Errorf("encode conversation tool calls: %w", err)
 	}
+	partsJSON, err := json.Marshal(event.Parts)
+	if err != nil {
+		return ConversationEvent{}, false, fmt.Errorf("encode conversation message parts: %w", err)
+	}
+	if string(partsJSON) == "null" {
+		partsJSON = []byte("[]")
+	}
+	if len(partsJSON) > maxConversationMessagePartsJSONBytes {
+		return ConversationEvent{}, false, fmt.Errorf("conversation message parts exceed %d bytes", maxConversationMessagePartsJSONBytes)
+	}
 	createdAt := event.CreatedAt.UTC()
 	if createdAt.IsZero() {
 		createdAt = nowUTC()
@@ -89,8 +121,9 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 		Platform: event.Identity.Platform, ConversationType: event.Identity.ConversationType,
 		ConversationID: event.Identity.ConversationID, ExternalUserID: event.Identity.UserID,
 		JobID: event.JobID, DedupeKey: event.DedupeKey, Type: string(event.Type), Content: event.Content,
+		Name:       strings.TrimSpace(event.Name),
 		ToolCallID: strings.TrimSpace(event.ToolCallID), ToolName: strings.TrimSpace(event.ToolName),
-		ToolCallsJSON: string(toolCallsJSON), CreatedAt: createdAt,
+		ToolCallsJSON: string(toolCallsJSON), PartsJSON: string(partsJSON), CreatedAt: createdAt,
 	}
 	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 	if result.Error != nil {
@@ -140,11 +173,20 @@ func conversationEventFromRow(row conversationEventRow) (ConversationEvent, erro
 	if err := json.Unmarshal([]byte(row.ToolCallsJSON), &calls); err != nil {
 		return ConversationEvent{}, fmt.Errorf("decode conversation event %d tool calls: %w", row.ID, err)
 	}
+	var parts []ConversationMessagePart
+	if strings.TrimSpace(row.PartsJSON) != "" {
+		if len(row.PartsJSON) > maxConversationMessagePartsJSONBytes {
+			return ConversationEvent{}, fmt.Errorf("conversation event %d message parts exceed %d bytes", row.ID, maxConversationMessagePartsJSONBytes)
+		}
+		if err := json.Unmarshal([]byte(row.PartsJSON), &parts); err != nil {
+			return ConversationEvent{}, fmt.Errorf("decode conversation event %d message parts: %w", row.ID, err)
+		}
+	}
 	return ConversationEvent{
 		ID:       row.ID,
 		Identity: Identity{Platform: row.Platform, UserID: row.ExternalUserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID},
 		JobID:    row.JobID, DedupeKey: row.DedupeKey, Type: ConversationEventType(row.Type), Content: row.Content,
-		ToolCallID: row.ToolCallID, ToolName: row.ToolName, ToolCalls: calls, CreatedAt: row.CreatedAt,
+		Name: row.Name, ToolCallID: row.ToolCallID, ToolName: row.ToolName, ToolCalls: calls, Parts: parts, CreatedAt: row.CreatedAt,
 	}, nil
 }
 
@@ -184,7 +226,7 @@ func migrateLegacyConversationEvents(tx *gorm.DB) error {
 			row := conversationEventRow{
 				Platform: ident.Platform, ConversationType: ident.ConversationType, ConversationID: ident.ConversationID,
 				ExternalUserID: ident.UserID, DedupeKey: event.DedupeKey, Type: string(event.Type), Content: event.Content,
-				ToolCallsJSON: string(calls), CreatedAt: event.CreatedAt,
+				ToolCallsJSON: string(calls), PartsJSON: "[]", CreatedAt: event.CreatedAt,
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 				return err

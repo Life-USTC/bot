@@ -116,6 +116,49 @@ func TestUsageCaptureReadsProviderCacheFields(t *testing.T) {
 	}
 }
 
+func TestUsageCapturePersistsObservedUsageWithoutChangingAttemptReservation(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "usage", ConversationType: "private", ConversationID: "usage"}
+	runID, err := db.RecordAgentRun(context.Background(), ident, store.AgentRun{JobID: 17, RawText: "usage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		reserved, err := db.ReserveAgentModelAttempt(context.Background(), runID, 17, 5)
+		if err != nil || !reserved {
+			t.Fatalf("reserve %d: reserved=%v err=%v", i, reserved, err)
+		}
+	}
+	persisted := func(ctx context.Context, usage tokenUsage) error {
+		return db.RecordAgentUsage(ctx, runID, spendingFor("kimi", "kimi-k3", usage))
+	}
+	transport := &usageCaptureTransport{base: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		body := `{"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"cached_tokens":5},"cost_nano_cny":777}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	ctx := withUsagePersister(context.Background(), persisted)
+	req := httptest.NewRequest(http.MethodPost, "https://compatible.example/v1/chat/completions", strings.NewReader(`{}`)).WithContext(ctx)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if err := db.FinishAgentRun(context.Background(), runID, store.AgentRunStatusInterrupted, "", nil, store.AgentSpending{ModelRequests: 1}); err != nil {
+		t.Fatal(err)
+	}
+	spending, err := db.AgentJobSpending(context.Background(), 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spending.PromptTokens != 10 || spending.CachedTokens != 5 || spending.CompletionTokens != 2 || spending.TotalTokens != 12 || spending.CostNanoCNY != 777 || spending.ModelRequests != 3 {
+		t.Fatalf("persisted usage = %#v", spending)
+	}
+}
+
 func TestLoadImageDataURLDownloadsAndEncodesSupportedImage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")

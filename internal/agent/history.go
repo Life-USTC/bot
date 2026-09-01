@@ -27,7 +27,10 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 	for _, event := range events {
 		switch event.Type {
 		case store.ConversationEventUser:
-			if strings.TrimSpace(event.Content) != "" {
+			parts := inputMessageParts(event.Parts)
+			if len(parts) > 0 {
+				messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
+			} else if strings.TrimSpace(event.Content) != "" {
 				messages = append(messages, schema.UserMessage(event.Content))
 			}
 		case store.ConversationEventAssistant:
@@ -36,13 +39,21 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 				if strings.TrimSpace(call.ID) == "" || strings.TrimSpace(call.Name) == "" {
 					continue
 				}
+				callType := call.Type
+				if callType == "" {
+					callType = "function"
+				}
 				calls = append(calls, schema.ToolCall{
-					ID: call.ID, Type: "function",
+					ID: call.ID, Type: callType, Index: call.Index,
 					Function: schema.FunctionCall{Name: call.Name, Arguments: call.Arguments},
 				})
 			}
-			if strings.TrimSpace(event.Content) != "" || len(calls) > 0 {
-				messages = append(messages, schema.AssistantMessage(event.Content, calls))
+			parts := outputMessageParts(event.Parts)
+			if strings.TrimSpace(event.Content) != "" || len(calls) > 0 || len(parts) > 0 {
+				message := schema.AssistantMessage(event.Content, calls)
+				message.Name = event.Name
+				message.AssistantGenMultiContent = parts
+				messages = append(messages, message)
 			}
 		case store.ConversationEventToolResult, store.ConversationEventToolError, store.ConversationEventToolDenial:
 			if strings.TrimSpace(event.ToolCallID) == "" {
@@ -52,6 +63,50 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 		}
 	}
 	return messages
+}
+
+func inputMessageParts(parts []store.ConversationMessagePart) []schema.MessageInputPart {
+	result := make([]schema.MessageInputPart, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case string(schema.ChatMessagePartTypeText):
+			result = append(result, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: part.Text})
+		case string(schema.ChatMessagePartTypeImageURL):
+			image := &schema.MessageInputImage{Detail: schema.ImageURLDetail(part.Detail), MessagePartCommon: schema.MessagePartCommon{MIMEType: part.MIMEType}}
+			if part.Base64Data != "" {
+				data := part.Base64Data
+				image.Base64Data = &data
+			}
+			if part.URL != "" {
+				url := part.URL
+				image.URL = &url
+			}
+			result = append(result, schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: image})
+		}
+	}
+	return result
+}
+
+func outputMessageParts(parts []store.ConversationMessagePart) []schema.MessageOutputPart {
+	result := make([]schema.MessageOutputPart, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case string(schema.ChatMessagePartTypeText):
+			result = append(result, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: part.Text})
+		case string(schema.ChatMessagePartTypeImageURL):
+			image := &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{MIMEType: part.MIMEType}}
+			if part.Base64Data != "" {
+				data := part.Base64Data
+				image.Base64Data = &data
+			}
+			if part.URL != "" {
+				url := part.URL
+				image.URL = &url
+			}
+			result = append(result, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: image})
+		}
+	}
+	return result
 }
 
 // exactConversationEventWindow bounds history only by removing complete old

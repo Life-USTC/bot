@@ -136,6 +136,10 @@ type runBudget struct {
 	modelAttempts  atomic.Int32
 	toolCalls      int
 	metrics        *runMetrics
+	// reserveModelAttempt is installed for conversation jobs after their
+	// started run row is created. It durably reserves the physical attempt
+	// before the transport calls the provider.
+	reserveModelAttempt func(context.Context) (bool, error)
 }
 
 func newRunBudget(now time.Time, metrics *runMetrics) *runBudget {
@@ -290,6 +294,17 @@ func admitModelAttempt(ctx context.Context) error {
 		if err := budget.contextError(ctx); err != nil {
 			budget.modelAttempts.Add(-1)
 			return err
+		}
+		if budget.reserveModelAttempt != nil {
+			reserved, err := budget.reserveModelAttempt(ctx)
+			if err != nil {
+				budget.modelAttempts.Add(-1)
+				return err
+			}
+			if !reserved {
+				budget.modelAttempts.Add(-1)
+				return errAgentModelAttemptBudget
+			}
 		}
 		if budget.metrics != nil {
 			budget.metrics.recordModelRequest(1)

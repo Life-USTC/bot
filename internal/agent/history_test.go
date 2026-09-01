@@ -65,3 +65,38 @@ func TestConversationEventMessagesDropsIncompleteLeadingToolExchange(t *testing.
 		t.Fatalf("messages = %#v", messages)
 	}
 }
+
+func TestConversationEventMessagesRoundTripsSupportedMultimodalParts(t *testing.T) {
+	inputURL := "data:image/png;base64,AAAA"
+	outputURL := "https://cdn.example/image.png"
+	events := []store.ConversationEvent{
+		{Type: store.ConversationEventUser, Parts: []store.ConversationMessagePart{
+			{Type: "text", Text: "请看图"},
+			{Type: "image_url", URL: inputURL, Reference: "https://source.example/image.png", Detail: "high", MIMEType: "image/png"},
+		}},
+		{Type: store.ConversationEventAssistant, Content: "图中有一只猫。", Parts: []store.ConversationMessagePart{
+			{Type: "image_url", URL: outputURL, MIMEType: "image/png"},
+			// Provider reasoning is intentionally not a supported transcript part.
+			{Type: "reasoning", Text: "private chain of thought"},
+		}},
+		{Type: store.ConversationEventAssistant, Parts: []store.ConversationMessagePart{{Type: "reasoning", Text: "private chain of thought"}}},
+	}
+	messages := messagesFromConversationEvents(events)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if len(messages[0].UserInputMultiContent) != 2 || messages[0].UserInputMultiContent[0].Text != "请看图" {
+		t.Fatalf("input parts = %#v", messages[0].UserInputMultiContent)
+	}
+	image := messages[0].UserInputMultiContent[1].Image
+	if image == nil || image.URL == nil || *image.URL != inputURL || image.Detail != schema.ImageURLDetailHigh || image.MIMEType != "image/png" {
+		t.Fatalf("input image = %#v", image)
+	}
+	if messages[1].Content != "图中有一只猫。" || len(messages[1].AssistantGenMultiContent) != 1 {
+		t.Fatalf("assistant parts = %#v", messages[1])
+	}
+	output := messages[1].AssistantGenMultiContent[0].Image
+	if output == nil || output.URL == nil || *output.URL != outputURL {
+		t.Fatalf("output image = %#v", output)
+	}
+}

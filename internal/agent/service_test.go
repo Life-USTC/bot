@@ -944,6 +944,39 @@ func TestMessagesForIncludesTypedHistory(t *testing.T) {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
+
+func TestMessagesForDoesNotDuplicatePersistedCurrentJobEvent(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "current", ConversationType: "private", ConversationID: "current"}
+	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "current-event", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue: job=%#v created=%v err=%v", job, created, err)
+	}
+	event := store.ConversationEvent{
+		Identity: ident, JobID: job.ID, DedupeKey: fmt.Sprintf("conversation-job:%d:user", job.ID),
+		Type: store.ConversationEventUser, Content: "同一个问题",
+		Parts: []store.ConversationMessagePart{{Type: "text", Text: "现在是 2026-09-02 12:00，Asia/Shanghai。\n\n同一个问题"}},
+	}
+	if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	messages, err := svc.messagesFor(ctx, Input{Text: "同一个问题", Identity: ident, JobID: job.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 1 || messages[0].UserInputMultiContent[0].Text != event.Parts[0].Text {
+		t.Fatalf("messages = %#v", messages)
+	}
+}
+
 func TestHandleResponseUsesTypedTranscriptWithoutSummaryRequest(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
@@ -1184,7 +1217,6 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "checkpoint-confirm", Input: store.ConversationJobInput{Text: "开启作业通知"},
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil || !created {
@@ -1234,7 +1266,8 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := svc.Run(ctx, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	firstInput := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	first := svc.Run(ctx, firstInput)
 	if !first.Handled || first.State != RunStateInterrupted || first.Response.Text != "" {
 		t.Fatalf("first run = %#v", first)
 	}
@@ -1246,6 +1279,11 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionAwaitingConfirmation {
 		t.Fatalf("pending operations=%#v err=%v", operations, err)
 	}
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, firstInput.JobLeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause confirmation job: ok=%v err=%v", ok, err)
+	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
 		t.Fatalf("checkpoint found=%v err=%v", found, err)
 	}
@@ -1253,7 +1291,8 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		t.Fatalf("approve operation: released=%#v err=%v", released, err)
 	}
 
-	second := svc.Run(ctx, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	secondInput := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	second := svc.Run(ctx, secondInput)
 	if !second.Handled || second.State != RunStateCompleted || second.Response.Text != "已处理。" {
 		t.Fatalf("second run = %#v", second)
 	}
@@ -1269,7 +1308,10 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
 		t.Fatalf("checkpoint must survive until coordinator acknowledgement: found=%v err=%v", found, err)
 	}
-	if err := svc.Acknowledge(ctx, job.ID); err != nil {
+	if ok, err := db.CompleteConversationJob(ctx, job.ID, secondInput.JobLeaseToken); err != nil || !ok {
+		t.Fatalf("complete resumed job: ok=%v err=%v", ok, err)
+	}
+	if err := svc.Acknowledge(ctx, job.ID, secondInput.JobRevision, secondInput.JobLeaseToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || found {
@@ -1352,7 +1394,6 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "parallel", ConversationType: "private", ConversationID: "parallel"}
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "parallel-confirm", Input: store.ConversationJobInput{Text: "打开两种通知"},
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil {
@@ -1388,9 +1429,14 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := Input{Text: "打开两种通知", Identity: ident, JobID: job.ID}
+	input := claimAgentInput(t, db, ident, Input{Text: "打开两种通知", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
+	}
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause first confirmation job: ok=%v err=%v", ok, err)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(operations) != 2 {
@@ -1410,6 +1456,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if err != nil || claimed == nil {
 		t.Fatalf("claim first resume=%#v err=%v", claimed, err)
 	}
+	input = Input{Text: "打开两种通知", Identity: ident, JobID: job.ID, JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken}
 	if middle := svc.Run(ctx, input); middle.State != RunStateInterrupted {
 		t.Fatalf("middle run = %#v", middle)
 	}
@@ -1429,6 +1476,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if err != nil || secondOperation == nil || secondOperation.ID == firstOperation.ID {
 		t.Fatalf("second approval operation=%#v err=%v", secondOperation, err)
 	}
+	input = claimAgentInput(t, db, ident, Input{Text: "打开两种通知", Identity: ident, JobID: job.ID})
 	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "两项都已处理。" {
 		t.Fatalf("final run = %#v", final)
 	}
@@ -1459,8 +1507,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "denied", ConversationType: "private", ConversationID: "denied"}
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "denied-confirm", State: store.ConversationJobStateWaitingConfirmation,
-		WaitReason: store.ConversationJobWaitReasonConfirmation, ExpiresAt: time.Now().Add(time.Hour),
+		Identity: ident, SourceEventID: "denied-confirm", ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1494,13 +1541,19 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := Input{Text: "开启作业通知", Identity: ident, JobID: job.ID}
+	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
+	}
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause denied confirmation job: ok=%v err=%v", ok, err)
 	}
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Reason: "用户拒绝执行"}); err != nil || released == nil {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
+	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
 	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "好的，没有更改。" {
 		t.Fatalf("final run = %#v", final)
 	}
@@ -1532,8 +1585,7 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "retry-resume", ConversationType: "private", ConversationID: "retry-resume"}
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "retry-resume", State: store.ConversationJobStateWaitingConfirmation,
-		WaitReason: store.ConversationJobWaitReasonConfirmation, ExpiresAt: time.Now().Add(time.Hour),
+		Identity: ident, SourceEventID: "retry-resume", ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1561,13 +1613,19 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := Input{Text: "开启作业通知", Identity: ident, JobID: job.ID}
+	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
+	}
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause retry confirmation job: ok=%v err=%v", ok, err)
 	}
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
 		t.Fatalf("approve confirmation: released=%#v err=%v", released, err)
 	}
+	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
 	second := svc.Run(ctx, input)
 	if !second.Handled || !strings.Contains(second.Response.Text, "5 次尝试") {
 		t.Fatalf("second run = %#v", second)
@@ -1582,7 +1640,10 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
 		t.Fatalf("terminal result checkpoint must await acknowledgement: found=%v err=%v", found, err)
 	}
-	if err := svc.Acknowledge(ctx, job.ID); err != nil {
+	if ok, err := db.CompleteConversationJob(ctx, job.ID, input.JobLeaseToken); err != nil || !ok {
+		t.Fatalf("complete retry job: ok=%v err=%v", ok, err)
+	}
+	if err := svc.Acknowledge(ctx, job.ID, input.JobRevision, input.JobLeaseToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || found {
@@ -1792,4 +1853,15 @@ func TestFinishAgentRunLogsUsageAndTotals(t *testing.T) {
 			t.Fatalf("usage logs missing %q: %q", want, logs.String())
 		}
 	}
+}
+
+func claimAgentInput(t *testing.T, db *store.Store, ident store.Identity, input Input) Input {
+	t.Helper()
+	claimed, err := db.ClaimConversationJob(t.Context(), ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim agent job: job=%#v err=%v", claimed, err)
+	}
+	input.JobRevision = claimed.Revision
+	input.JobLeaseToken = claimed.LeaseToken
+	return input
 }

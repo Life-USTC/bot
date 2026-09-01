@@ -19,22 +19,116 @@ func TestAgentCheckpointStoreRoundTrip(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	job, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "checkpoint-round-trip", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue checkpoint job: job=%#v created=%v err=%v", job, created, err)
+	}
+	claimed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim checkpoint job: job=%#v err=%v", claimed, err)
+	}
 	checkpoints := s.AgentCheckpoints()
-	if err := checkpoints.Set(ctx, "job:7", []byte("first")); err != nil {
+	bound, err := checkpoints.Bind(AgentCheckpointClaim{JobID: claimed.ID, Revision: claimed.Revision, LeaseToken: claimed.LeaseToken})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkpoints.Set(ctx, "job:7", []byte("second")); err != nil {
+	if err := bound.Set(ctx, "job:7", []byte("first")); err != nil {
 		t.Fatal(err)
 	}
-	payload, found, err := checkpoints.Get(ctx, "job:7")
+	if err := bound.Set(ctx, "job:7", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	payload, found, err := bound.Get(ctx, "job:7")
 	if err != nil || !found || string(payload) != "second" {
 		t.Fatalf("checkpoint: payload=%q found=%v err=%v", payload, found, err)
 	}
-	if err := checkpoints.Delete(ctx, "job:7"); err != nil {
+	if ok, err := s.CompleteConversationJob(ctx, claimed.ID, claimed.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete checkpoint job: ok=%v err=%v", ok, err)
+	}
+	if err := bound.Delete(ctx, "job:7"); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, err := checkpoints.Get(ctx, "job:7"); err != nil || found {
 		t.Fatalf("deleted checkpoint: found=%v err=%v", found, err)
+	}
+}
+
+func TestAgentCheckpointClaimRejectsStaleWorkersAndTransfersOnResume(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "checkpoint-stale", ConversationType: "private", ConversationID: "checkpoint-stale"}
+	job, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "checkpoint-stale", ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue: job=%#v created=%v err=%v", job, created, err)
+	}
+	first, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || first == nil {
+		t.Fatalf("first claim: job=%#v err=%v", first, err)
+	}
+	firstBound, err := s.AgentCheckpoints().Bind(AgentCheckpointClaim{
+		JobID: first.ID, Revision: first.Revision, LeaseToken: first.LeaseToken,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpointID := "conversation-job:checkpoint-stale"
+	if err := firstBound.Set(ctx, checkpointID, []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.TransitionConversationJob(ctx, first.ID, first.LeaseToken, ConversationJobTransition{
+		State: ConversationJobStateWaitingInput, WaitReason: ConversationJobWaitReasonInput,
+	}); err != nil || !ok {
+		t.Fatalf("pause first claim: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.ResumeConversationJobInput(ctx, first.ID, ConversationJobInput{Text: "resume"}); err != nil || !ok {
+		t.Fatalf("resume input: ok=%v err=%v", ok, err)
+	}
+	second, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || second == nil {
+		t.Fatalf("second claim: job=%#v err=%v", second, err)
+	}
+	secondBound, err := s.AgentCheckpoints().Bind(AgentCheckpointClaim{
+		JobID: second.ID, Revision: second.Revision, LeaseToken: second.LeaseToken,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, found, err := secondBound.Get(ctx, checkpointID)
+	if err != nil || !found || string(payload) != "first" {
+		t.Fatalf("second worker checkpoint transfer: payload=%q found=%v err=%v", payload, found, err)
+	}
+	if _, found, err := firstBound.Get(ctx, checkpointID); !errors.Is(err, ErrAgentCheckpointClaimMismatch) || found {
+		t.Fatalf("stale checkpoint rebind: found=%v err=%v", found, err)
+	}
+	if err := firstBound.Set(ctx, checkpointID, []byte("stale")); !errors.Is(err, ErrAgentCheckpointClaimMismatch) {
+		t.Fatalf("stale write error = %v", err)
+	}
+	if err := secondBound.Set(ctx, checkpointID, []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.CompleteConversationJob(ctx, second.ID, second.LeaseToken); err != nil || !ok {
+		t.Fatalf("complete second claim: ok=%v err=%v", ok, err)
+	}
+	if err := firstBound.Delete(ctx, checkpointID); !errors.Is(err, ErrAgentCheckpointClaimMismatch) {
+		t.Fatalf("stale delete error = %v", err)
+	}
+	if err := secondBound.Delete(ctx, checkpointID); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := s.AgentCheckpoints().Get(ctx, checkpointID); err != nil || found {
+		t.Fatalf("checkpoint after acknowledgement: found=%v err=%v", found, err)
+	}
+	if err := firstBound.Set(ctx, checkpointID, []byte("recreate")); !errors.Is(err, ErrAgentCheckpointClaimMismatch) {
+		t.Fatalf("stale recreation error = %v", err)
 	}
 }
 

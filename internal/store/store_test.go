@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1926,6 +1927,41 @@ func TestConversationEventsPreserveTypedTranscriptAndDedupe(t *testing.T) {
 	}
 	if len(events) != 4 || events[0].Type != ConversationEventUser || events[1].ToolCalls[0].ID != "call-1" || events[2].Type != ConversationEventToolResult || events[3].Content != "已经订阅好了。" {
 		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestConversationEventsPersistSupportedMultimodalParts(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	ident := conversationJobTestIdentity()
+	event := ConversationEvent{
+		Identity: ident, JobID: 7, DedupeKey: "job:7:image", Type: ConversationEventUser,
+		Content: "看图", Parts: []ConversationMessagePart{
+			{Type: "text", Text: "看图"},
+			{Type: "image_url", URL: "data:image/png;base64,AAAA", Reference: "https://source.example/image.png", Detail: "auto", MIMEType: "image/png"},
+		},
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, event); err != nil || !created {
+		t.Fatalf("append multimodal event: created=%v err=%v", created, err)
+	}
+	events, err := s.RecentConversationEvents(ctx, ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || len(events[0].Parts) != 2 || !reflect.DeepEqual(events[0].Parts[1], event.Parts[1]) {
+		t.Fatalf("multimodal event round trip = %#v", events)
+	}
+}
+
+func TestConversationEventsRejectOversizedMessageParts(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := context.Background()
+	event := ConversationEvent{
+		Identity: conversationJobTestIdentity(), JobID: 7, DedupeKey: "job:7:oversized", Type: ConversationEventAssistant,
+		Parts: []ConversationMessagePart{{Type: "text", Text: strings.Repeat("x", maxConversationMessagePartsJSONBytes)}},
+	}
+	if _, created, err := s.AppendConversationEvent(ctx, event); err == nil || created {
+		t.Fatalf("oversized message parts accepted: created=%v err=%v", created, err)
 	}
 }
 

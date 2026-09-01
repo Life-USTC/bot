@@ -66,6 +66,11 @@ type Input struct {
 	ImageURLs []string
 	Identity  store.Identity
 	JobID     int64
+	// JobRevision and JobLeaseToken are the exact claim held by the
+	// conversation coordinator. Checkpoint writes and acknowledgements are
+	// rejected unless both still identify the same worker revision.
+	JobRevision   int
+	JobLeaseToken string
 	// SendResponse lets a local tool hand an already formatted host response
 	// directly to the application when its presentation cannot be reproduced
 	// from plain model text (for example, an image).
@@ -207,6 +212,18 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	usage := &usageAccumulator{}
 	ctx = withUsageAccumulator(ctx, usage)
 	runID := s.recordAgentRun(ctx, input, provider, modelName)
+	if runID > 0 && s.handler.Store != nil {
+		budget.reserveModelAttempt = func(attemptCtx context.Context) (bool, error) {
+			return s.handler.Store.ReserveAgentModelAttempt(attemptCtx, runID, input.JobID, int64(agentRunMaxModelAttempts))
+		}
+		ctx = withUsagePersister(ctx, func(usageCtx context.Context, actual tokenUsage) error {
+			spending := spendingFor(provider, modelName, actual)
+			// Every run with a persisted row reserves its physical attempt before
+			// the request, including standalone runs. Usage updates tokens/cost;
+			// they never increment or replace that reservation count.
+			return s.handler.Store.RecordAgentUsage(usageCtx, runID, spending)
+		})
+	}
 	finishRun := func(status, reply string, runErr error) {
 		runErr = normalizeAgentRunError(ctx, budget, runErr)
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(parentCtx), agentRunCleanupTimeout)
@@ -353,7 +370,21 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	checkpointID := agentCheckpointID(input.JobID)
 	var checkpointStore adk.CheckPointStore
 	if s.handler.Store != nil && checkpointID != "" {
-		checkpointStore = s.handler.Store.AgentCheckpoints()
+		bound, bindErr := s.handler.Store.AgentCheckpoints().Bind(store.AgentCheckpointClaim{
+			JobID: input.JobID, Revision: input.JobRevision, LeaseToken: input.JobLeaseToken,
+		})
+		if bindErr != nil {
+			// An agent job without its coordinator claim cannot safely read or
+			// create a checkpoint. Continue without persistence only for callers
+			// that are not running a durable conversation job.
+			if input.JobID > 0 {
+				reply := agentFailureReply(runID, bindErr)
+				finishRun(store.AgentRunStatusFailed, reply, bindErr)
+				return agentTextResponse(reply), true
+			}
+		} else {
+			checkpointStore = bound
+		}
 	}
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore})
 	resume := false
@@ -370,11 +401,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		iter, err = runner.Resume(ctx, checkpointID)
 	} else {
 		var messages []*schema.Message
-		messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
-			return s.messagesFor(ctx, input)
-		})
+		err = s.persistCurrentUserEvent(ctx, input)
 		if err == nil {
-			err = s.persistCurrentUserEvent(ctx, input)
+			messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
+				return s.messagesFor(ctx, input)
+			})
 		}
 		if err == nil {
 			options := make([]adk.AgentRunOption, 0, 1)
@@ -544,12 +575,28 @@ func (s *Service) responseFor(ctx context.Context, input Input, reply string) co
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
 	messages := make([]*schema.Message, 0, conversationEventLimit+1)
+	hasCurrentEvent := false
 	if s.handler.Store != nil {
 		events, err := s.handler.Store.RecentConversationEvents(ctx, input.Identity, conversationEventLimit)
 		if err != nil {
 			return nil, err
 		}
+		if input.JobID > 0 {
+			currentKey := fmt.Sprintf("conversation-job:%d:user", input.JobID)
+			for _, event := range events {
+				if event.JobID == input.JobID && event.DedupeKey == currentKey {
+					hasCurrentEvent = true
+					break
+				}
+			}
+		}
 		messages = append(messages, conversationEventMessages(events)...)
+	}
+	// The current user event is persisted before this function is called. A
+	// checkpoint-less retry therefore restores the persisted turn exactly once
+	// instead of appending it to history a second time.
+	if hasCurrentEvent {
+		return messages, nil
 	}
 	currentText := strings.TrimSpace(input.Text)
 	if len(input.ImageURLs) == 0 {
@@ -599,15 +646,34 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 		return nil
 	}
 	content := strings.TrimSpace(input.Text)
-	if content == "" && len(input.ImageURLs) > 0 {
-		content = "[image]"
-	}
 	_, _, err := s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
 		Identity: input.Identity, JobID: input.JobID,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
 		Type:      store.ConversationEventUser, Content: content,
+		Parts: currentUserMessageParts(input),
 	})
 	return err
+}
+
+func currentUserMessageParts(input Input) []store.ConversationMessagePart {
+	text := strings.TrimSpace(input.Text)
+	if text == "" && len(input.ImageURLs) > 0 {
+		text = "请描述并分析这张图片。"
+	}
+	parts := []store.ConversationMessagePart{{Type: string(schema.ChatMessagePartTypeText), Text: withCurrentTimePrefix(text)}}
+	for index, imageURL := range input.ImageURLs {
+		imageURL = strings.TrimSpace(imageURL)
+		if index < len(input.imageDataURLs) && strings.TrimSpace(input.imageDataURLs[index]) != "" {
+			parts = append(parts, store.ConversationMessagePart{
+				Type: string(schema.ChatMessagePartTypeImageURL), URL: input.imageDataURLs[index], Reference: imageURL,
+			})
+			continue
+		}
+		parts = append(parts, store.ConversationMessagePart{
+			Type: string(schema.ChatMessagePartTypeImageURL), URL: imageURL, Reference: imageURL,
+		})
+	}
+	return parts
 }
 
 func (s *Service) persistAgentMessage(ctx context.Context, input Input, message *schema.Message) error {
@@ -615,18 +681,14 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 		return nil
 	}
 	event := store.ConversationEvent{
-		Identity: input.Identity, JobID: input.JobID, Content: message.Content,
+		Identity: input.Identity, JobID: input.JobID, Content: message.Content, Name: message.Name,
 		ToolCallID: message.ToolCallID, ToolName: message.ToolName,
+		Parts: messagePartsForPersistence(message),
 	}
 	switch message.Role {
 	case schema.Assistant:
 		event.Type = store.ConversationEventAssistant
-		event.ToolCalls = make([]store.ConversationToolCall, 0, len(message.ToolCalls))
-		for _, call := range message.ToolCalls {
-			event.ToolCalls = append(event.ToolCalls, store.ConversationToolCall{
-				ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments,
-			})
-		}
+		event.ToolCalls = messageToolCallsForPersistence(message)
 	case schema.Tool:
 		event.Type = s.toolEventType(ctx, input.JobID, message.ToolCallID)
 	default:
@@ -635,6 +697,70 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 	event.DedupeKey = agentMessageDedupeKey(input.JobID, message)
 	_, _, err := s.handler.Store.AppendConversationEvent(ctx, event)
 	return err
+}
+
+func messagePartsForPersistence(message *schema.Message) []store.ConversationMessagePart {
+	if message == nil {
+		return nil
+	}
+	parts := make([]store.ConversationMessagePart, 0)
+	if message.Role == schema.User {
+		for _, part := range message.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, store.ConversationMessagePart{Type: string(part.Type), Text: part.Text})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					continue
+				}
+				persisted := store.ConversationMessagePart{Type: string(part.Type), Detail: string(part.Image.Detail)}
+				persisted.URL, persisted.Base64Data, persisted.MIMEType = messagePartCommonValues(part.Image.MessagePartCommon)
+				parts = append(parts, persisted)
+			}
+		}
+		return parts
+	}
+	if message.Role != schema.Assistant {
+		return nil
+	}
+	for _, part := range message.AssistantGenMultiContent {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			parts = append(parts, store.ConversationMessagePart{Type: string(part.Type), Text: part.Text})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				continue
+			}
+			persisted := store.ConversationMessagePart{Type: string(part.Type)}
+			persisted.URL, persisted.Base64Data, persisted.MIMEType = messagePartCommonValues(part.Image.MessagePartCommon)
+			parts = append(parts, persisted)
+		}
+	}
+	return parts
+}
+
+func messageToolCallsForPersistence(message *schema.Message) []store.ConversationToolCall {
+	if message == nil || message.Role != schema.Assistant || len(message.ToolCalls) == 0 {
+		return nil
+	}
+	calls := make([]store.ConversationToolCall, 0, len(message.ToolCalls))
+	for _, call := range message.ToolCalls {
+		calls = append(calls, store.ConversationToolCall{
+			ID: call.ID, Type: call.Type, Index: call.Index, Name: call.Function.Name,
+			Arguments: call.Function.Arguments,
+		})
+	}
+	return calls
+}
+
+func messagePartCommonValues(common schema.MessagePartCommon) (url, base64Data, mimeType string) {
+	if common.URL != nil {
+		url = *common.URL
+	}
+	if common.Base64Data != nil {
+		base64Data = *common.Base64Data
+	}
+	return url, base64Data, common.MIMEType
 }
 
 func (s *Service) toolEventType(ctx context.Context, jobID int64, toolCallID string) store.ConversationEventType {
@@ -669,24 +795,33 @@ func agentMessageDedupeKey(jobID int64, message *schema.Message) string {
 		return fmt.Sprintf("conversation-job:%d:message:%s", jobID, id)
 	}
 	payload, _ := json.Marshal(struct {
-		Role       schema.RoleType   `json:"role"`
-		Content    string            `json:"content"`
-		ToolCalls  []schema.ToolCall `json:"toolCalls,omitempty"`
-		ToolCallID string            `json:"toolCallID,omitempty"`
-		ToolName   string            `json:"toolName,omitempty"`
-	}{message.Role, message.Content, message.ToolCalls, message.ToolCallID, message.ToolName})
+		Role       schema.RoleType                 `json:"role"`
+		Content    string                          `json:"content"`
+		Name       string                          `json:"name,omitempty"`
+		ToolCalls  []store.ConversationToolCall    `json:"toolCalls,omitempty"`
+		ToolCallID string                          `json:"toolCallID,omitempty"`
+		ToolName   string                          `json:"toolName,omitempty"`
+		Parts      []store.ConversationMessagePart `json:"parts,omitempty"`
+	}{message.Role, message.Content, message.Name, messageToolCallsForPersistence(message), message.ToolCallID, message.ToolName, messagePartsForPersistence(message)})
 	digest := sha256.Sum256(payload)
 	return fmt.Sprintf("conversation-job:%d:message:%x", jobID, digest[:16])
 }
 
 // Acknowledge removes a completed checkpoint only after the coordinator has
-// atomically persisted the final output and terminal job state.
-func (s *Service) Acknowledge(ctx context.Context, jobID int64) error {
+// atomically persisted the final output and terminal job state. The claim is
+// required so a stale worker cannot delete a newer revision's checkpoint.
+func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, leaseToken string) error {
 	checkpointID := agentCheckpointID(jobID)
 	if s.handler.Store == nil || checkpointID == "" {
 		return nil
 	}
-	return s.handler.Store.AgentCheckpoints().Delete(ctx, checkpointID)
+	bound, err := s.handler.Store.AgentCheckpoints().Bind(store.AgentCheckpointClaim{
+		JobID: jobID, Revision: revision, LeaseToken: leaseToken,
+	})
+	if err != nil {
+		return err
+	}
+	return bound.Delete(ctx, checkpointID)
 }
 
 type emptyInput struct{}
