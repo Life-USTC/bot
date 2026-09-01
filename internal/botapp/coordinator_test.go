@@ -100,6 +100,25 @@ func (s *outputCommitFaultStore) CommitConversationJobOutput(ctx context.Context
 	return s.Store.CommitConversationJobOutput(ctx, commit)
 }
 
+type receiptReadFaultStore struct {
+	*store.Store
+	mu       sync.Mutex
+	failures int
+}
+
+func (s *receiptReadFaultStore) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
+	s.mu.Lock()
+	inject := s.failures > 0
+	if inject {
+		s.failures--
+	}
+	s.mu.Unlock()
+	if inject {
+		return nil, errors.New("injected receipt loading failure")
+	}
+	return s.Store.UnsentCapabilityExecutionsForJob(ctx, jobID)
+}
+
 type periodicRecoveryStore struct {
 	*store.Store
 	mu    sync.Mutex
@@ -597,6 +616,53 @@ func TestCoordinatorOutputCommitFailureLeavesConfirmationResumable(t *testing.T)
 	}
 	if executions, err = db.CapabilityExecutionsForJob(ctx, job.ID); err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
 		t.Fatalf("confirmation operation was not executed once: %#v err=%v", executions, err)
+	}
+}
+
+func TestCoordinatorReceiptLoadingFailureRetriesAwaitingConfirmation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &receiptReadFaultStore{Store: db, failures: 1}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: jobs,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "已执行", Kind: "settings"}, true
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := coordinator.Enqueue(ctx, jobInbound("receipt-read-retry", "通知 作业 开")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateRetryWait || saved.LastError == "" {
+		t.Fatalf("receipt loading failure terminalized job: %#v", saved)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation || executions[0].ReceiptState != "" {
+		t.Fatalf("awaiting confirmation after receipt read failure=%#v err=%v", executions, err)
+	}
+
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
+		t.Fatalf("awaiting confirmation was not resumed: job=%#v err=%v", saved, err)
+	}
+	if err := coordinator.Enqueue(ctx, jobInbound("receipt-read-retry-ok", "ok")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("approved confirmation did not complete: job=%#v err=%v", saved, err)
 	}
 }
 

@@ -19,7 +19,7 @@ type executionReceipts struct {
 func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, includeOnePending bool) (executionReceipts, error) {
 	executions, err := c.jobs.UnsentCapabilityExecutionsForJob(ctx, jobID)
 	if err != nil {
-		return executionReceipts{}, err
+		return executionReceipts{}, markConversationOutputPersistenceError(err)
 	}
 	result := executionReceipts{}
 	seen := make(map[string]bool)
