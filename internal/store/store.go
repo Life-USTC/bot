@@ -155,6 +155,10 @@ type AgentRun struct {
 
 const SpendingCurrencyCNY = "CNY"
 
+// CurrentSchemaVersion is the schema version written to SQLite user_version
+// after a successful startup migration.
+const CurrentSchemaVersion = 1
+
 type AgentSpending struct {
 	PromptTokens     int64
 	CachedTokens     int64
@@ -474,6 +478,26 @@ func (s *Store) Ping(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
+// VerifySchema confirms that startup migration reached the expected schema
+// and that SQLite can read every page of the database.
+func (s *Store) VerifySchema() error {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read sqlite schema version: %w", err)
+	}
+	if version != CurrentSchemaVersion {
+		return fmt.Errorf("unsupported sqlite schema version %d (want %d)", version, CurrentSchemaVersion)
+	}
+	var integrity string
+	if err := s.db.Raw("PRAGMA integrity_check").Scan(&integrity).Error; err != nil {
+		return fmt.Errorf("run sqlite integrity check: %w", err)
+	}
+	if integrity != "ok" {
+		return fmt.Errorf("sqlite integrity check failed: %s", integrity)
+	}
+	return nil
+}
+
 func (s *Store) migrate() error {
 	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
 		return err
@@ -481,15 +505,13 @@ func (s *Store) migrate() error {
 	return s.migrateSchema()
 }
 
-const currentSchemaVersion = 1
-
 func (s *Store) migrateSchema() error {
 	var version int
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		return fmt.Errorf("read schema version: %w", err)
 	}
-	if version > currentSchemaVersion {
-		return fmt.Errorf("database schema version %d is newer than supported version %d", version, currentSchemaVersion)
+	if version > CurrentSchemaVersion {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", version, CurrentSchemaVersion)
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(
@@ -513,7 +535,7 @@ func (s *Store) migrateSchema() error {
 		); err != nil {
 			return fmt.Errorf("migrate schema tables: %w", err)
 		}
-		if version == currentSchemaVersion {
+		if version == CurrentSchemaVersion {
 			return nil
 		}
 		for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
@@ -548,7 +570,7 @@ func (s *Store) migrateSchema() error {
 				}
 			}
 		}
-		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion)).Error; err != nil {
+		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
 			return fmt.Errorf("write schema version: %w", err)
 		}
 		return nil

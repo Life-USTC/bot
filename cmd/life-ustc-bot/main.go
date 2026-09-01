@@ -28,6 +28,13 @@ import (
 
 func main() {
 	cfg := config.FromEnv()
+	if len(os.Args) == 2 && os.Args[1] == "migrate" {
+		if err := migrateDatabase(cfg.DBPath); err != nil {
+			log.Printf("migration failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
@@ -236,6 +243,7 @@ func main() {
 			logger.Printf("QQ official bot gateway enabled")
 		}
 	}
+
 	if platformsEnabled {
 		deliveryWorker := &delivery.Worker{Service: deliveryService, Logger: logger}
 		go deliveryWorker.Run(ctx)
@@ -260,4 +268,13 @@ func main() {
 	}
 
 	<-ctx.Done()
+}
+
+func migrateDatabase(path string) error {
+	stateStore, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stateStore.Close() }()
+	return stateStore.VerifySchema()
 }

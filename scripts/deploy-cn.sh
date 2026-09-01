@@ -159,6 +159,20 @@ fail() {
 	return 1
 }
 
+assert_no_symlink_components() {
+	local path="$1"
+	local current="/"
+	local component
+	local -a components
+	IFS=/ read -r -a components <<<"${path#/}"
+	for component in "${components[@]}"; do
+		[[ -n "$component" ]] || fail "path contains an empty component"
+		current="$current$component"
+		[[ ! -L "$current" ]] || fail "path contains a symlink: $current"
+		current="$current/"
+	done
+}
+
 [[ "$ROOT" == /* && "$ROOT" != "/" ]] || fail "invalid remote root"
 [[ "$STAGE" == "$ROOT/.deploy-staging/"* ]] || fail "invalid remote stage"
 [[ "$ROLLBACK" == "$ROOT/.deploy-rollback/"* ]] || fail "invalid remote rollback directory"
@@ -178,6 +192,8 @@ STAGE_IMAGE_FILE="$STAGE/image.yaml"
 ROLLBACK_IMAGE_FILE="$ROLLBACK/image.yaml"
 DIAGNOSTIC_DIR="$STAGE/diagnostics"
 FAILED_ACTIVE_DIR="$STAGE/failed-active"
+MIGRATION_DATA_DIR="$STAGE/migration-data"
+MIGRATION_LOG="$STAGE/migration.log"
 LOCK_FILE="$ROOT/.deploy.lock"
 
 PREVIOUS_CONTAINER_ID=""
@@ -198,6 +214,7 @@ NEW_ENV_MOVED=0
 NEW_REVISION_WRITTEN=0
 NEW_CONTAINER_ID=""
 NEW_IMAGE_ID=""
+MIGRATION_GATE_COMPLETE=0
 ROLLBACK_OK=0
 HANDLING_ERROR=0
 
@@ -244,11 +261,11 @@ for raw in open(sys.argv[1], encoding="utf-8"):
     line = raw.strip()
     if not line or line.startswith("#"):
         continue
-	key, separator, value = line.partition("=")
-	normalized_key = key.strip()
-	if normalized_key == "export BOT_DB_PATH":
-		normalized_key = "BOT_DB_PATH"
-	if separator and normalized_key == "BOT_DB_PATH":
+    key, separator, value = line.partition("=")
+    normalized_key = key.strip()
+    if normalized_key == "export BOT_DB_PATH":
+        normalized_key = "BOT_DB_PATH"
+    if separator and normalized_key == "BOT_DB_PATH":
         if seen:
             raise SystemExit("BOT_DB_PATH appears more than once")
         seen = True
@@ -275,7 +292,9 @@ if [[ -f "$ACTIVE_ENV" && ! -L "$ACTIVE_ENV" ]]; then
 fi
 [[ "$PREVIOUS_DB_CONTAINER_PATH" == "$DB_CONTAINER_PATH" ]] || fail "BOT_DB_PATH changed; refusing an implicit database migration"
 DB_PARENT="$(dirname "$DB_PATH")"
+assert_no_symlink_components "$DB_PARENT"
 mkdir -p "$DB_PARENT"
+assert_no_symlink_components "$DB_PARENT"
 [[ ! -L "$DB_PARENT" && ! -L "$DB_PATH" && ! -L "$DB_PATH-wal" && ! -L "$DB_PATH-shm" ]] || fail "database path contains a symlink"
 
 # Compose's image field is supplied only in this revision-scoped overlay. A
@@ -345,7 +364,7 @@ collect_diagnostics() {
 		compose_active_new logs --no-color --tail=200 "$SERVICE" >"$DIAGNOSTIC_DIR/service.log" 2>&1 || true
 		chmod 600 "$DIAGNOSTIC_DIR/service.log" 2>/dev/null || true
 	fi
-	for log_name in deploy.log config.log build.log stop.log start.log rollback-start.log; do
+	for log_name in deploy.log config.log build.log stop.log start.log migration.log rollback-start.log; do
 		if [[ -f "$STAGE/$log_name" ]]; then
 			cp -- "$STAGE/$log_name" "$DIAGNOSTIC_DIR/$log_name" || true
 			chmod 600 "$DIAGNOSTIC_DIR/$log_name" 2>/dev/null || true
@@ -462,7 +481,7 @@ rollback_transaction() {
 	if (( PROMOTION_STARTED == 1 )); then
 		restore_promoted_files || rollback_rc=1
 	fi
-	if (( rollback_rc == 0 && PREVIOUS_WAS_RUNNING == 1 && -n "$PREVIOUS_IMAGE_ID" )); then
+	if (( rollback_rc == 0 && PREVIOUS_WAS_RUNNING == 1 )) && [[ -n "$PREVIOUS_IMAGE_ID" ]]; then
 		if [[ ! -f "$ROLLBACK_IMAGE_FILE" ]]; then
 			printf 'services:\n  %s:\n    image: %s\n' "$SERVICE" "$PREVIOUS_IMAGE" >"$ROLLBACK_IMAGE_FILE"
 			chmod 600 "$ROLLBACK_IMAGE_FILE"
@@ -614,6 +633,77 @@ PY
 	BACKUP_CREATED=1
 	chmod 600 "$ROLLBACK/database.sqlite"
 fi
+
+run_migration_gate() {
+	local migration_db_path="$MIGRATION_DATA_DIR/$DB_RELATIVE_PATH"
+	local migration_db_parent
+	migration_db_parent="$(dirname "$migration_db_path")"
+	[[ ! -e "$MIGRATION_DATA_DIR" && ! -L "$MIGRATION_DATA_DIR" ]] || fail "migration data directory already exists"
+	assert_no_symlink_components "$migration_db_parent"
+	mkdir -p "$migration_db_parent"
+	assert_no_symlink_components "$migration_db_parent"
+	[[ ! -L "$MIGRATION_DATA_DIR" && ! -L "$migration_db_parent" && ! -L "$migration_db_path" ]] || fail "migration data path contains a symlink"
+	chmod 700 "$MIGRATION_DATA_DIR" "$migration_db_parent"
+	if (( PREVIOUS_DB_PRESENT == 1 )); then
+		cp -- "$ROLLBACK/database.sqlite" "$migration_db_path"
+	else
+		python3 - "$migration_db_path" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    connection.execute("PRAGMA user_version = 0")
+    connection.commit()
+finally:
+    connection.close()
+PY
+	fi
+	chmod 600 "$migration_db_path"
+	chown 10001:10001 "$MIGRATION_DATA_DIR" "$migration_db_parent" "$migration_db_path"
+	: >"$MIGRATION_LOG"
+	chmod 600 "$MIGRATION_LOG"
+	log "running isolated migration gate against the immutable image"
+	docker run --rm \
+		--name "deploy-$DEPLOY_ID-migrate" \
+		--network none \
+		--user 10001:10001 \
+		--mount "type=bind,src=$MIGRATION_DATA_DIR,dst=/data" \
+		--env "BOT_DB_PATH=$DB_CONTAINER_PATH" \
+		--env "BOT_BUILD_VERSION=$REVISION" \
+		--env "LIFE_USTC_SERVER=http://127.0.0.1:9" \
+		--env "BOT_HEALTH_ADDR=127.0.0.1:2282" \
+		--env BOT_ENABLE_NAPCAT_BRIDGE=false \
+		--env BOT_ENABLE_QQ_BOT=false \
+		--env BOT_ENABLE_QQ_BOT_GATEWAY=false \
+		--env BOT_ENABLE_QQ_BOT_WEBHOOK=false \
+		--env BOT_ENABLE_AGENT=false \
+		--env BOT_ENABLE_IMAGE_RESPONSES=false \
+		"$NEW_IMAGE" migrate >"$MIGRATION_LOG" 2>&1
+	python3 - "$migration_db_path" <<'PY' >>"$MIGRATION_LOG" 2>&1
+import os
+import sqlite3
+import sys
+
+database_path = sys.argv[1]
+if not os.path.isfile(database_path) or os.path.islink(database_path):
+    raise RuntimeError("migration database is not a regular file")
+connection = sqlite3.connect(database_path, timeout=30)
+try:
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version != 1:
+        raise RuntimeError(f"unexpected SQLite user_version: {version}")
+    integrity = connection.execute("PRAGMA integrity_check").fetchone()
+    if not integrity or integrity[0] != "ok":
+        raise RuntimeError(f"SQLite integrity check failed: {integrity[0] if integrity else 'empty result'}")
+finally:
+    connection.close()
+PY
+	MIGRATION_GATE_COMPLETE=1
+	log "isolated migration gate passed"
+}
+
+run_migration_gate
 
 # Move old files into the per-deployment rollback directory and promote the
 # already-built stage. Each move is tracked so a partial promotion is

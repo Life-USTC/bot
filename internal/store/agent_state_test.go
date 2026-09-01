@@ -159,7 +159,7 @@ func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
-	if version != currentSchemaVersion {
+	if version != CurrentSchemaVersion {
 		t.Fatalf("schema version = %d", version)
 	}
 }
@@ -170,7 +170,7 @@ func TestSchemaMigrationRejectsFutureVersionBeforeChangingTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", currentSchemaVersion+1)); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion+1)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
