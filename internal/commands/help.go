@@ -98,7 +98,7 @@ func (h Handler) help(args ...string) string {
 	topic := helpTopicCommand(args)
 	text := formatHelpTopic(topic)
 	if text == "" {
-		return "没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。"
+		return h.notFound("没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。")
 	}
 	return text
 }

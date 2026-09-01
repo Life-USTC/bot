@@ -94,20 +94,20 @@ const (
 // a capability. PublicCache is a host execution optimization, not a policy
 // decision, but lives here so the descriptor remains the sole command source.
 type CapabilityRequirements struct {
-	Life        bool
-	Store       bool
-	OAuth       bool
-	DataScope   DataScope
-	PublicCache bool
+	Life        bool      `json:"life,omitempty"`
+	Store       bool      `json:"store,omitempty"`
+	OAuth       bool      `json:"oauth,omitempty"`
+	DataScope   DataScope `json:"dataScope"`
+	PublicCache bool      `json:"publicCache,omitempty"`
 }
 
 // CapabilityPolicy is the invocation-level policy. Descriptors provide the
 // default values and may resolve argument-sensitive values with ResolvePolicy.
 type CapabilityPolicy struct {
-	Effect       CapabilityEffect
-	DataScope    DataScope
-	Exposure     ResultExposure
-	Confirmation ConfirmationPolicy
+	Effect       CapabilityEffect   `json:"effect"`
+	DataScope    DataScope          `json:"dataScope"`
+	Exposure     ResultExposure     `json:"exposure"`
+	Confirmation ConfirmationPolicy `json:"confirmation"`
 }
 
 // HelpMetadata is the complete usage contract owned by a descriptor. Overview
@@ -127,11 +127,11 @@ type HelpMetadata struct {
 // canonical ID string used by durable conversation/audit storage; Capability
 // points at the descriptor that owns all requirements and execution policy.
 type Invocation struct {
-	Capability   *CapabilityDescriptor
-	Name         string
-	Args         []string
-	Raw          string
-	NaturalRoute string
+	Capability   *CapabilityDescriptor `json:"-"`
+	Name         string                `json:"name"`
+	Args         []string              `json:"args"`
+	Raw          string                `json:"raw,omitempty"`
+	NaturalRoute string                `json:"naturalRoute,omitempty"`
 }
 
 func (i Invocation) Descriptor() *CapabilityDescriptor { return i.Capability }
@@ -158,10 +158,10 @@ type CapabilityInputPolicy func([]string) bool
 // argument vocabulary.
 type CapabilityNormalizer func([]string) []string
 
-// CapabilityExecutor runs one normalized invocation and returns a host
-// response. Domain methods continue to return text; wrappers keep this
-// boundary explicit and descriptor-owned.
-type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocation) Response
+// CapabilityExecutor runs one normalized invocation and returns the typed
+// host/domain outcome. Response inside the outcome remains the actual domain
+// response and is intentionally separate from the runtime status.
+type CapabilityExecutor func(Handler, context.Context, store.Identity, Invocation) CapabilityOutcome
 
 // CapabilityPresenter maps a host response to the agent-facing result. It is
 // called after the descriptor policy has been resolved.
@@ -247,8 +247,11 @@ func RestoreInvocation(id CapabilityID, args []string) (Invocation, bool) {
 func allowArgs([]string) bool { return true }
 
 func textExecutor(run func(Handler, context.Context, store.Identity, []string) string) CapabilityExecutor {
-	return func(h Handler, ctx context.Context, ident store.Identity, inv Invocation) Response {
-		return Response{Text: run(h, ctx, ident, inv.Args), Kind: inv.Name}
+	return func(h Handler, ctx context.Context, ident store.Identity, inv Invocation) CapabilityOutcome {
+		if h.execution == nil {
+			h.execution = &capabilityExecutionState{}
+		}
+		return outcomeFromResponse(h, Response{Text: run(h, ctx, ident, inv.Args), Kind: inv.Name})
 	}
 }
 
@@ -374,6 +377,11 @@ func busPreferenceMutationArgs(args []string) bool {
 	if _, ok := parseBusShowSouth(args); ok {
 		return true
 	}
+	// A preference route is a write even when the user uses the natural
+	// "偏好 路线 东区 西区" form instead of the explicit "设置" prefix.
+	if busPreferenceArgs(args) && len(args) > 1 {
+		return true
+	}
 	return false
 }
 
@@ -439,6 +447,7 @@ func init() {
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),
 		descriptor(CapabilityPing, []string{"ping"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			if err := h.Life.Health(ctx); err != nil {
+				h.markOutcome(CapabilityOutcomeFailed)
 				return "Life @ USTC API unavailable: " + err.Error()
 			}
 			return "Life @ USTC API is reachable."
@@ -522,8 +531,8 @@ func init() {
 }
 
 func init() {
-	capabilityDescriptors[0].Execute = textExecutor(func(_ Handler, _ context.Context, _ store.Identity, args []string) string {
-		return renderHelpWithoutParser(args)
+	capabilityDescriptors[0].Execute = textExecutor(func(h Handler, _ context.Context, _ store.Identity, args []string) string {
+		return h.help(args...)
 	})
 }
 

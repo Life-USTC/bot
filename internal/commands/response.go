@@ -55,6 +55,24 @@ func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image 
 	if !successfulImageText(text) {
 		return nil
 	}
+	return h.imageResponseForText(cmd, text)
+}
+
+// imageResponseForOutcome trusts the explicit capability outcome rather than
+// trying to infer command state from the domain text. The legacy
+// imageResponseFor helper above remains available to direct rendering callers
+// that only have text; capability execution always has the typed status.
+func (h Handler) imageResponseForOutcome(cmd Invocation, outcome CapabilityOutcome) *responses.Image {
+	if outcome.Status != CapabilityOutcomeSuccess || outcome.ConfirmationRequired {
+		return nil
+	}
+	if !h.EnableImageResponses || strings.TrimSpace(outcome.Response.Text) == "" {
+		return nil
+	}
+	return h.imageResponseForText(cmd, outcome.Response.Text)
+}
+
+func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Image {
 	imageText := imageRenderText(text)
 	if cmd.Name == "help" {
 		return responses.NewRichTextImage("help", helpRichText(cmd.Args...), imageText)

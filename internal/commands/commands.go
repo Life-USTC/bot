@@ -29,6 +29,11 @@ type Handler struct {
 	Feedback             feedback.Recorder
 	EnableImageResponses bool
 	PublicCache          *PublicCommandCache
+
+	// execution is populated only while a capability executor is running. It
+	// lets legacy direct command methods report explicit domain/auth outcomes
+	// without changing their user-facing string-returning APIs.
+	execution *capabilityExecutionState
 }
 
 type Input struct {
@@ -71,6 +76,15 @@ func (h Handler) Handle(ctx context.Context, input Input) (string, bool) {
 }
 
 func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, bool) {
+	outcome, handled := h.HandleOutcome(ctx, input)
+	return outcome.Response, handled
+}
+
+// HandleOutcome exposes the direct command boundary with the same typed
+// runtime status used by structured capability execution. Its Response is the
+// unchanged user-facing domain result, preserving Handle/HandleResponse
+// behavior for existing callers.
+func (h Handler) HandleOutcome(ctx context.Context, input Input) (CapabilityOutcome, bool) {
 	input.Text = stripCQCodes(input.Text)
 	parsed := h.parseResult(input.Text)
 	return h.handleParsedResponse(ctx, input, parsed, time.Now())
@@ -80,9 +94,16 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 // routing layer. It is the durable-job entry point and avoids reparsing text or
 // applying transport-specific fallbacks during execution.
 func (h Handler) HandleInvocationResponse(ctx context.Context, input Input, invocation Invocation) (Response, bool) {
+	outcome, handled := h.HandleInvocationOutcome(ctx, input, invocation)
+	return outcome.Response, handled
+}
+
+// HandleInvocationOutcome executes a normalized invocation at the direct
+// boundary and exposes its typed status.
+func (h Handler) HandleInvocationOutcome(ctx context.Context, input Input, invocation Invocation) (CapabilityOutcome, bool) {
 	invocation, ok := withDescriptor(invocation)
 	if !ok {
-		return Response{}, false
+		return NotFoundOutcome(Response{}), false
 	}
 	status := ParseStatusValid
 	if !invocation.Capability.Accepts(invocation.Args) {
@@ -94,18 +115,18 @@ func (h Handler) HandleInvocationResponse(ctx context.Context, input Input, invo
 	return h.handleParsedResponse(ctx, input, ParseResult{Status: status, Invocation: invocation}, time.Now())
 }
 
-func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed ParseResult, startedAt time.Time) (Response, bool) {
+func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed ParseResult, startedAt time.Time) (CapabilityOutcome, bool) {
 	if parsed.Status == ParseStatusUnknown {
-		return Response{}, false
+		return NotFoundOutcome(Response{}), false
 	}
 	cmd := parsed.Invocation
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(cmd) {
 		reply := "此功能涉及个人数据，请私聊 Presto 使用。"
 		if !input.SuppressLog {
 			h.recordState(ctx, input.Identity, cmd)
-			h.recordInteraction(ctx, input.Identity, cmd, reply)
+			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeForbidden)
 		}
-		return textResponse(reply), true
+		return ForbiddenOutcome(textResponse(reply)), true
 	}
 	if parsed.Status == ParseStatusInvalid {
 		reply := h.help(cmd.Name)
@@ -114,82 +135,104 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 		}
 		if !input.SuppressLog {
 			h.recordState(ctx, input.Identity, cmd)
-			h.recordInteraction(ctx, input.Identity, cmd, reply)
+			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeInvalidInput)
 		}
-		return Response{Text: reply, Kind: cmd.Name}, true
+		return InvalidInputOutcome(Response{Text: reply, Kind: cmd.Name}), true
 	}
 	if h.hasAdditionalCommandLine(input.Text) {
 		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
 		if !input.SuppressLog {
 			h.recordState(ctx, input.Identity, cmd)
-			h.recordInteraction(ctx, input.Identity, cmd, reply)
+			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeInvalidInput)
 		}
-		return textResponse(reply), true
+		return InvalidInputOutcome(textResponse(reply)), true
 	}
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)
 	}
-	response, handled := h.executeInvocation(ctx, input, cmd)
+	outcome, handled := h.executeInvocationOutcome(ctx, input, cmd)
 	if !handled {
-		return Response{}, false
+		return NotFoundOutcome(Response{}), false
 	}
+	response := outcome.Response
 	reply := response.Text
 	if !input.SuppressLog {
-		h.recordInteraction(ctx, input.Identity, cmd, reply)
+		h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, outcome.Status)
 	}
 	if cmd.NaturalRoute != "" {
-		h.logf("natural command routed: route=%s outcome=handled latency_ms=%d", cmd.NaturalRoute, time.Since(startedAt).Milliseconds())
+		h.logf("natural command routed: route=%s outcome=%s latency_ms=%d", cmd.NaturalRoute, outcome.Status, time.Since(startedAt).Milliseconds())
 	}
-	return response, true
+	return outcome, true
 }
 
 func (h Handler) executeInvocation(ctx context.Context, input Input, cmd Invocation) (Response, bool) {
+	outcome, handled := h.executeInvocationOutcome(ctx, input, cmd)
+	return outcome.Response, handled
+}
+
+func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd Invocation) (CapabilityOutcome, bool) {
 	descriptor := cmd.Capability
 	if descriptor == nil || descriptor.Execute == nil {
-		return Response{}, false
+		return NotFoundOutcome(Response{}), false
 	}
+	execution := &capabilityExecutionState{}
+	executionHandler := h
+	executionHandler.execution = execution
 	if cmd.Name != string(CapabilityHelp) && firstArgIsHelp(cmd.Args) {
-		return Response{Text: h.help(cmd.Name), Image: h.imageResponseFor(cmd, h.help(cmd.Name)), Kind: cmd.Name}, true
+		text := executionHandler.help(cmd.Name)
+		outcome := outcomeFromResponse(executionHandler, Response{Text: text, Kind: cmd.Name})
+		outcome.Response.Image = h.imageResponseForOutcome(cmd, outcome)
+		return outcome, true
 	}
 	if descriptor.Requirements.Life && h.Life == nil {
-		return Response{Text: "Life @ USTC API unavailable: not configured.", Kind: cmd.Name}, true
+		return FailedOutcome(Response{Text: "Life @ USTC API unavailable: not configured.", Kind: cmd.Name}), true
 	}
 	if descriptor.Requirements.OAuth && (h.Auth == nil || h.Auth.Store == nil) {
-		return Response{Text: "登录未配置。", Kind: cmd.Name}, true
+		return FailedOutcome(Response{Text: "登录未配置。", Kind: cmd.Name}), true
 	}
 	if descriptor.Requirements.Store && h.Store == nil {
-		return Response{Text: "存储未配置。", Kind: cmd.Name}, true
+		return FailedOutcome(Response{Text: "存储未配置。", Kind: cmd.Name}), true
 	}
-	var response Response
-	responseKind := cmd.Name
+
+	var outcome CapabilityOutcome
 	if descriptor.Requirements.PublicCache && h.PublicCache != nil {
-		response = Response{Text: h.PublicCache.GetOrLoad(ctx, cmd.Name, cmd.Args, func() string {
-			return descriptor.Execute(h, ctx, input.Identity, cmd).Text
-		}), Kind: cmd.Name}
+		outcome = h.PublicCache.GetOrLoadOutcome(ctx, cmd.Name, cmd.Args, func() CapabilityOutcome {
+			return descriptor.Execute(executionHandler, ctx, input.Identity, cmd)
+		})
+		outcome.Response.Kind = cmd.Name
 	} else {
-		response = descriptor.Execute(h, ctx, input.Identity, cmd)
+		outcome = descriptor.Execute(executionHandler, ctx, input.Identity, cmd)
 	}
+	outcome = normalizeOutcome(outcome)
+	response := outcome.Response
+	responseKind := cmd.Name
 	if cmd.Name == string(CapabilityLogin) && !firstArgIsHelp(cmd.Args) {
 		session, sessionErr := h.Auth.Store.ActiveLoginSession(ctx, input.Identity)
 		if sessionErr == nil && session != nil {
 			responseKind = ResponseKindAuthWait
+			outcome.Status = CapabilityOutcomeAuthRequired
 		}
 	}
-	if descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && replyRequiresLogin(response.Text) && store.IsDirectConversation(input.Identity) {
+	if cmd.Name != string(CapabilityLogin) && outcome.Status == CapabilityOutcomeAuthRequired && descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && store.IsDirectConversation(input.Identity) {
 		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
 		if loginErr != nil {
 			h.logf("start resumable login failed: %v", loginErr)
-			response.Text = commandError("登录开始失败：", loginErr)
+			response.Text = h.commandError("登录开始失败：", loginErr)
+			outcome.Status = CapabilityOutcomeFailed
 		} else {
 			response.Text = loginResponse.Text
 			responseKind = ResponseKindAuthWait
+			outcome.Status = CapabilityOutcomeAuthRequired
 		}
 	}
 	response.Kind = responseKind
 	if responseKind != ResponseKindAuthWait {
-		response.Image = h.imageResponseFor(cmd, response.Text)
+		response.Image = h.imageResponseForOutcome(cmd, outcome)
+	} else {
+		response.Image = nil
 	}
-	return response, true
+	outcome.Response = response
+	return outcome, true
 }
 
 const (
@@ -1010,11 +1053,11 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	}
 	text := strings.TrimSpace(joinedArgs(args))
 	if text == "" {
-		return "想反馈什么？例如：反馈 校车时间希望更清楚"
+		return h.invalidInput("想反馈什么？例如：反馈 校车时间希望更清楚")
 	}
 	contextText := h.feedbackContext(ctx, ident)
 	if h.Feedback == nil {
-		return "反馈功能暂不可用。"
+		return h.failed("反馈功能暂不可用。")
 	}
 	result, err := h.Feedback.Record(ctx, ident, feedback.Submission{
 		Source:   feedback.SourceUser,
@@ -1023,7 +1066,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		Context:  contextText,
 	})
 	if err != nil {
-		return commandError("反馈保存失败：", err)
+		return h.commandError("反馈保存失败：", err)
 	}
 	if result.AdminIntents > 0 {
 		return "已收到反馈，会转给维护者。"
@@ -1100,12 +1143,17 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 		}, "\n")
 	}
 	if h.Auth == nil {
-		return "登录未配置。"
+		return h.failed("登录未配置。")
 	}
 	if firstArgIs(args, "status") {
 		result, err := h.Auth.PollDeviceLogin(ctx, ident)
 		if err != nil {
-			return commandError("登录状态查不到：", err)
+			return h.commandError("登录状态查不到：", err)
+		}
+		if result.Pending || result.SlowDown {
+			h.markOutcome(CapabilityOutcomeAuthRequired)
+		} else if result.Status != "" && result.Status != store.LoginStatusApproved {
+			h.markOutcome(CapabilityOutcomeFailed)
 		}
 		return result.Message
 	}
@@ -1114,12 +1162,12 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 	}
 	session, err := h.Auth.Store.ActiveLoginSession(ctx, ident)
 	if err != nil {
-		return commandError("登录状态查不到：", err)
+		return h.commandError("登录状态查不到：", err)
 	}
 	if session == nil {
 		session, err = h.Auth.BeginDeviceLogin(ctx, ident)
 		if err != nil {
-			return commandError("登录开始失败：", err)
+			return h.commandError("登录开始失败：", err)
 		}
 	}
 	link := session.VerificationURIComplete
@@ -1137,10 +1185,10 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 
 func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 	if h.Auth == nil {
-		return "登录未配置。"
+		return h.failed("登录未配置。")
 	}
 	if err := h.Auth.Logout(ctx, ident); err != nil {
-		return commandError("退出失败：", err)
+		return h.commandError("退出失败：", err)
 	}
 	return "已退出登录。"
 }
@@ -1154,7 +1202,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 		return h.Life.Me(ctx, token)
 	})
 	if err != nil {
-		return commandError("个人信息查不到：", err)
+		return h.commandError("个人信息查不到：", err)
 	}
 	name := lifedata.FirstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
@@ -1188,40 +1236,40 @@ func (h Handler) todo(ctx context.Context, ident store.Identity, args []string) 
 	if firstArgIs(args, "add") {
 		opts := parseTodoCreateArgs(args[1:])
 		if opts.Title == "" {
-			return "想加什么？例如：待办 add 写报告"
+			return h.invalidInput("想加什么？例如：待办 add 写报告")
 		}
 		return h.createTodo(ctx, ident, token, opts)
 	}
 	if firstArgIs(args, "done") {
 		target := joinedArgs(args[1:])
 		if target == "" {
-			return "想完成哪条？例如：td done 1"
+			return h.invalidInput("想完成哪条？例如：td done 1")
 		}
 		return h.setTodoCompletion(ctx, ident, token, target, true)
 	}
 	if firstArgIs(args, "undo") {
 		target := joinedArgs(args[1:])
 		if target == "" {
-			return "想恢复哪条？例如：td undo 1"
+			return h.invalidInput("想恢复哪条？例如：td undo 1")
 		}
 		return h.setTodoCompletion(ctx, ident, token, target, false)
 	}
 	if firstArgIs(args, "delete") {
 		target := joinedArgs(args[1:])
 		if target == "" {
-			return "想删除哪条？例如：td delete 1"
+			return h.invalidInput("想删除哪条？例如：td delete 1")
 		}
 		return h.deleteTodo(ctx, ident, token, target)
 	}
 	if firstArgIs(args, "update") {
 		if len(args) < 3 {
-			return "想改哪条、改什么？例如：td update 1 title 写报告"
+			return h.invalidInput("想改哪条、改什么？例如：td update 1 title 写报告")
 		}
 		return h.updateTodo(ctx, ident, token, args[1], args[2:])
 	}
 	if opts, page, ok, err := todoListQueryFromArgs(args); ok {
 		if err != nil {
-			return err.Error()
+			return h.invalidInput(err.Error())
 		}
 		return h.listTodos(ctx, ident, token, opts, page)
 	}
@@ -1250,13 +1298,13 @@ func todoUndoReply(title string) string {
 func (h Handler) createTodo(ctx context.Context, ident store.Identity, token string, opts life.TodoCreateOptions) string {
 	opts.Title = strings.TrimSpace(opts.Title)
 	if opts.Title == "" {
-		return "想加什么？例如：td 写报告"
+		return h.invalidInput("想加什么？例如：td 写报告")
 	}
 	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.CreateTodoWithOptions(ctx, token, opts)
 	})
 	if err != nil {
-		return commandError("待办添加失败：", err)
+		return h.commandError("待办添加失败：", err)
 	}
 	return "已加待办：" + opts.Title
 }
@@ -1264,11 +1312,11 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token str
 func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions, requestedPage int) string {
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
-		return commandError("待办查不到：", err)
+		return h.commandError("待办查不到：", err)
 	}
 	numbered, err := filterNumberedTodos(todos, opts)
 	if err != nil {
-		return err.Error()
+		return h.invalidInput(err.Error())
 	}
 	if len(numbered) == 0 {
 		return "没有待办。"
@@ -1280,7 +1328,7 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 		return formatNumberedLine(numbered[i].number, formatTodo(numbered[i].todo))
 	})
 	if !ok {
-		return listPageOutOfRange("待办", len(numbered), command)
+		return h.invalidInput(listPageOutOfRange("待办", len(numbered), command))
 	}
 	return reply
 }
@@ -1289,7 +1337,7 @@ func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, to
 	targets := splitTodoTargets(target)
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
-		return commandError("待办查不到：", err)
+		return h.commandError("待办查不到：", err)
 	}
 	if len(targets) > 1 {
 		return h.setTodoCompletionBatch(ctx, ident, token, todos, targets, completed)
@@ -1297,9 +1345,9 @@ func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, to
 	todo, ok := resolveTodo(todos, target)
 	if !ok {
 		if completed {
-			return "没找到这条待办。发 td 看编号，再试：td done 1"
+			return h.notFound("没找到这条待办。发 td 看编号，再试：td done 1")
 		}
-		return "没找到这条已完成待办。发 td completed 看编号，再试：td undo 1"
+		return h.notFound("没找到这条已完成待办。发 td completed 看编号，再试：td undo 1")
 	}
 	return h.setTodoCompletionItem(ctx, ident, token, todo, completed)
 }
@@ -1316,7 +1364,7 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 		}
 		id := lifedata.FirstString(todo, "id")
 		if id == "" {
-			return "这条待办没有可用 ID，暂时操作不了。"
+			return h.failed("这条待办没有可用 ID，暂时操作不了。")
 		}
 		items = append(items, life.TodoCompletionItem{TodoID: id, Completed: completed})
 		done = append(done, lifedata.FirstString(todo, "title"))
@@ -1327,16 +1375,16 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 		})
 		if err != nil {
 			if completed {
-				return commandError("待办完成失败：", err)
+				return h.commandError("待办完成失败：", err)
 			}
-			return commandError("待办恢复失败：", err)
+			return h.commandError("待办恢复失败：", err)
 		}
 	}
 	if len(done) == 0 {
 		if completed {
-			return "没找到这些待办。发 td 看编号，再试：td done 1,2,3"
+			return h.notFound("没找到这些待办。发 td 看编号，再试：td done 1,2,3")
 		}
-		return "没找到这些已完成待办。发 td completed 看编号，再试：td undo 1,2,3"
+		return h.notFound("没找到这些已完成待办。发 td completed 看编号，再试：td undo 1,2,3")
 	}
 	action := "完成"
 	if !completed {
@@ -1358,16 +1406,16 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 func (h Handler) setTodoCompletionItem(ctx context.Context, ident store.Identity, token string, todo map[string]any, completed bool) string {
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
-		return "这条待办没有可用 ID，暂时操作不了。"
+		return h.failed("这条待办没有可用 ID，暂时操作不了。")
 	}
 	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.SetTodoCompleted(ctx, token, id, completed)
 	})
 	if err != nil {
 		if completed {
-			return commandError("待办完成失败：", err)
+			return h.commandError("待办完成失败：", err)
 		}
-		return commandError("待办恢复失败：", err)
+		return h.commandError("待办恢复失败：", err)
 	}
 	title := lifedata.FirstString(todo, "title")
 	if completed {
@@ -1390,25 +1438,25 @@ func (h Handler) todos(ctx context.Context, ident store.Identity, token string, 
 func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, target string, args []string) string {
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
-		return commandError("待办查不到：", err)
+		return h.commandError("待办查不到：", err)
 	}
 	todo, ok := resolveTodo(todos, target)
 	if !ok {
-		return "没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告"
+		return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
 	}
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
-		return "这条待办没有可用 ID，暂时修改不了。"
+		return h.failed("这条待办没有可用 ID，暂时修改不了。")
 	}
 	opts := parseTodoUpdateArgs(args)
 	if !hasTodoUpdate(opts) {
-		return "想改什么？例如：td update 1 title 写报告"
+		return h.invalidInput("想改什么？例如：td update 1 title 写报告")
 	}
 	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.UpdateTodo(ctx, token, id, opts)
 	})
 	if err != nil {
-		return commandError("待办修改失败：", err)
+		return h.commandError("待办修改失败：", err)
 	}
 	return "已修改待办：" + lifedata.FirstString(todo, "title", "id")
 }
@@ -1416,7 +1464,7 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, target string) string {
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
-		return commandError("待办查不到：", err)
+		return h.commandError("待办查不到：", err)
 	}
 	targets := splitTodoTargets(target)
 	if len(targets) > 1 {
@@ -1424,12 +1472,17 @@ func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, ta
 	}
 	todo, ok := resolveTodo(todos, target)
 	if !ok {
-		return "没找到这条待办。发 td all 看编号，再试：td delete 1"
+		return h.notFound("没找到这条待办。发 td all 看编号，再试：td delete 1")
 	}
 	return h.deleteTodoItem(ctx, ident, token, todo)
 }
 
 func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, token string, todos []map[string]any, targets []string) string {
+	execution := h.execution
+	if execution == nil {
+		execution = &capabilityExecutionState{}
+		h.execution = execution
+	}
 	deleted := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
@@ -1439,13 +1492,13 @@ func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, toke
 			continue
 		}
 		reply := h.deleteTodoItem(ctx, ident, token, todo)
-		if strings.HasPrefix(reply, "待办删除失败：") || strings.Contains(reply, "没有可用 ID") {
+		if execution.status == CapabilityOutcomeFailed || execution.status == CapabilityOutcomeAuthRequired {
 			return reply
 		}
 		deleted = append(deleted, strings.TrimPrefix(reply, "已删除："))
 	}
 	if len(deleted) == 0 {
-		return "没找到这些待办。发 td all 看编号，再试：td delete 1,2,3"
+		return h.notFound("没找到这些待办。发 td all 看编号，再试：td delete 1,2,3")
 	}
 	lines := []string{fmt.Sprintf("已删除 %d 条：", len(deleted))}
 	for _, title := range deleted {
@@ -1463,13 +1516,14 @@ func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, toke
 func (h Handler) deleteTodoItem(ctx context.Context, ident store.Identity, token string, todo map[string]any) string {
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
+		h.markOutcome(CapabilityOutcomeFailed)
 		return "这条待办没有可用 ID，暂时删除不了。"
 	}
 	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.DeleteTodo(ctx, token, id)
 	})
 	if err != nil {
-		return commandError("待办删除失败：", err)
+		return h.commandError("待办删除失败：", err)
 	}
 	title := strings.TrimSpace(lifedata.FirstString(todo, "title"))
 	if title == "" {
@@ -1794,21 +1848,21 @@ func (h Handler) overview(ctx context.Context, ident store.Identity) string {
 	now := chinaNow()
 	schedules, token, err := h.schedulesForDay(ctx, ident, token, now)
 	if err != nil {
-		return commandError("今日安排查不到：", err)
+		return h.commandError("今日安排查不到：", err)
 	}
 	todos, err := h.pendingTodos(ctx, ident, token)
 	if err != nil {
-		return commandError("今日安排查不到：", err)
+		return h.commandError("今日安排查不到：", err)
 	}
 	homeworks, err := h.homeworks(ctx, ident, token)
 	if err != nil {
-		return commandError("今日安排查不到：", err)
+		return h.commandError("今日安排查不到：", err)
 	}
 	subscription, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.CurrentSubscription(ctx, token)
 	})
 	if err != nil {
-		return commandError("今日安排查不到：", err)
+		return h.commandError("今日安排查不到：", err)
 	}
 	exams := upcomingSubscriptionExams(subscriptionExams(subscription), now)
 	return formatOverview(now, schedules, todos, dueSoonHomeworks(homeworks, now), exams)
@@ -1882,12 +1936,12 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 	if firstArgIn(args, "done", "undo") {
 		target := joinedArgs(args[1:])
 		if target == "" {
-			return "想改哪条作业？例如：作业 done 1"
+			return h.invalidInput("想改哪条作业？例如：作业 done 1")
 		}
 		completed := args[0] == "done"
 		homeworks, err := h.homeworks(ctx, ident, token)
 		if err != nil {
-			return commandError("作业查不到：", err)
+			return h.commandError("作业查不到：", err)
 		}
 		if completed {
 			homeworks = filterHomeworks(homeworks, true)
@@ -1898,17 +1952,17 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 		}
 		homework, ok := resolveHomework(homeworks, target)
 		if !ok {
-			return "没找到这条作业。发 作业 看编号，再试：作业 done 1"
+			return h.notFound("没找到这条作业。发 作业 看编号，再试：作业 done 1")
 		}
 		return h.setHomeworkCompletionItem(ctx, ident, token, homework, completed)
 	}
 	listArgs, err := parseHomeworkListArgs(args)
 	if err != nil {
-		return err.Error()
+		return h.invalidInput(err.Error())
 	}
 	homeworks, err := h.homeworks(ctx, ident, token)
 	if err != nil {
-		return commandError("作业查不到：", err)
+		return h.commandError("作业查不到：", err)
 	}
 	numbered := filterNumberedHomeworks(homeworks, listArgs)
 	if len(numbered) == 0 {
@@ -1922,7 +1976,7 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 	}
 	page, ok := listPageFor(len(numbered), listArgs.page)
 	if !ok {
-		return listPageOutOfRange("作业", len(numbered), command)
+		return h.invalidInput(listPageOutOfRange("作业", len(numbered), command))
 	}
 	return formatNumberedHomeworkListAt(
 		numbered[page.start:page.end],
@@ -2057,7 +2111,7 @@ func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Ide
 		}
 		id := lifedata.FirstString(homework, "id")
 		if id == "" {
-			return "这条作业没有可用 ID，暂时改不了。"
+			return h.failed("这条作业没有可用 ID，暂时改不了。")
 		}
 		items = append(items, life.HomeworkCompletionItem{HomeworkID: id, Completed: completed})
 		done = append(done, lifedata.FirstString(homework, "title"))
@@ -2067,11 +2121,11 @@ func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Ide
 			return h.Life.SetHomeworkCompletions(ctx, token, items)
 		})
 		if err != nil {
-			return commandError("作业状态更新失败：", err)
+			return h.commandError("作业状态更新失败：", err)
 		}
 	}
 	if len(done) == 0 {
-		return "没找到这些作业。发 作业 看编号，再试：作业 done 1,2,3"
+		return h.notFound("没找到这些作业。发 作业 看编号，再试：作业 done 1,2,3")
 	}
 	action := "完成"
 	if !completed {
@@ -2093,13 +2147,13 @@ func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Ide
 func (h Handler) setHomeworkCompletionItem(ctx context.Context, ident store.Identity, token string, homework map[string]any, completed bool) string {
 	id := lifedata.FirstString(homework, "id")
 	if id == "" {
-		return "这条作业没有可用 ID，暂时改不了。"
+		return h.failed("这条作业没有可用 ID，暂时改不了。")
 	}
 	err := auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
 		return h.Life.SetHomeworkCompletion(ctx, token, id, completed)
 	})
 	if err != nil {
-		return commandError("作业状态更新失败：", err)
+		return h.commandError("作业状态更新失败：", err)
 	}
 	return homeworkCompletionReply(completed, lifedata.FirstString(homework, "title"))
 }
@@ -2278,7 +2332,7 @@ func withCalendarSubscriptionHint(reply string) string {
 
 func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Identity) string {
 	if !store.IsDirectConversation(ident) {
-		return "订阅链接只能在私聊里查看。"
+		return h.forbidden("订阅链接只能在私聊里查看。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -2288,7 +2342,7 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 		return h.Life.CurrentSubscription(ctx, token)
 	})
 	if err != nil {
-		return commandError("订阅链接查不到：", err)
+		return h.commandError("订阅链接查不到：", err)
 	}
 	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
 	if calendarURL == "" {
@@ -2296,9 +2350,10 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 			if logoutErr := h.Auth.Logout(ctx, ident); logoutErr != nil {
 				h.logf("clear credential missing current OAuth scopes failed: %v", logoutErr)
 			}
+			h.markOutcome(CapabilityOutcomeAuthRequired)
 			return "当前登录未获得私有日历链接权限。请发送：登录\n重新登录后再发送：订阅 链接"
 		}
-		return "当前订阅没有可用的私有日历链接。"
+		return h.notFound("当前订阅没有可用的私有日历链接。")
 	}
 	return strings.Join([]string{
 		"日历订阅链接：",
@@ -2323,7 +2378,7 @@ func (h Handler) settings(ctx context.Context, ident store.Identity, args []stri
 		}
 		return h.agentSettings(ctx, ident, normalizeAgentArgs(rest))
 	default:
-		return "未知设置项。\n" + formatHelpTopic("settings")
+		return h.invalidInput("未知设置项。\n" + formatHelpTopic("settings"))
 	}
 }
 
@@ -2337,14 +2392,14 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		}, "\n")
 	}
 	if h.Store == nil {
-		return "存储未配置。"
+		return h.failed("存储未配置。")
 	}
 	if !store.IsDirectConversation(ident) {
-		return "通知只能在私聊里设置。"
+		return h.forbidden("通知只能在私聊里设置。")
 	}
 	settings, err := h.Store.NotificationSettings(ctx, ident)
 	if err != nil {
-		return commandError("通知设置查不到：", err)
+		return h.commandError("通知设置查不到：", err)
 	}
 	settings.Identity = ident
 	if !hasArgs(args) || firstArgIs(args, "status") {
@@ -2353,14 +2408,14 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if len(args) < 2 {
 		switch args[0] {
 		case "classes", "homework":
-			return "想打开还是关闭？例如：通知 作业 开"
+			return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
 		default:
-			return "支持：课表、作业。"
+			return h.invalidInput("支持：课表、作业。")
 		}
 	}
 	enabled := args[1] == "on"
 	if args[1] != "on" && args[1] != "off" {
-		return "想打开还是关闭？例如：通知 作业 开"
+		return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
 	}
 	switch args[0] {
 	case "classes":
@@ -2368,14 +2423,14 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	case "homework":
 		settings.HomeworkEnabled = enabled
 	default:
-		return "支持：课表、作业。"
+		return h.invalidInput("支持：课表、作业。")
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
-		return commandError("通知设置保存失败：", err)
+		return h.commandError("通知设置保存失败：", err)
 	}
 	settings, err = h.Store.NotificationSettings(ctx, ident)
 	if err != nil {
-		return commandError("通知设置查不到：", err)
+		return h.commandError("通知设置查不到：", err)
 	}
 	return formatNotificationSettings(settings)
 }
@@ -2397,14 +2452,14 @@ func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args [
 		return formatHelpTopic("advanced")
 	}
 	if h.Store == nil {
-		return "存储未配置。"
+		return h.failed("存储未配置。")
 	}
 	if !store.IsDirectConversation(ident) {
-		return "AI 工具设置只能在私聊里设置。"
+		return h.forbidden("AI 工具设置只能在私聊里设置。")
 	}
 	settings, err := h.Store.AgentSettings(ctx, ident)
 	if err != nil {
-		return commandError("AI 工具设置查不到：", err)
+		return h.commandError("AI 工具设置查不到：", err)
 	}
 	settings.Identity = ident
 	if !hasArgs(args) || firstArgIs(args, "status") {
@@ -2416,10 +2471,10 @@ func (h Handler) agentSettings(ctx context.Context, ident store.Identity, args [
 	case "off":
 		settings.ExposeToolCalls = false
 	default:
-		return "想打开还是关闭？例如：AI 工具 开"
+		return h.invalidInput("想打开还是关闭？例如：AI 工具 开")
 	}
 	if err := h.Store.SaveAgentSettings(ctx, settings); err != nil {
-		return commandError("AI 工具设置保存失败：", err)
+		return h.commandError("AI 工具设置保存失败：", err)
 	}
 	return formatAgentSettings(settings)
 }
@@ -2444,7 +2499,7 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		return h.Life.CurrentSubscription(ctx, token)
 	})
 	if err != nil {
-		return commandError("日程查不到：", err)
+		return h.commandError("日程查不到：", err)
 	}
 	sections := lifedata.SubscriptionSections(data)
 	if len(sections) == 0 {
@@ -2491,7 +2546,7 @@ func subscriptionSectionsBySemester(sections []map[string]any) []subscriptionSem
 func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity, raw string) string {
 	codes := extractSectionCodes(raw)
 	if len(codes) == 0 {
-		return "没找到教学班代码。把网页课表里的教学班代码粘过来，例如：\n订阅 导入 CONT5103P.01 CONT6104P.01"
+		return h.invalidInput("没找到教学班代码。把网页课表里的教学班代码粘过来，例如：\n订阅 导入 CONT5103P.01 CONT6104P.01")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -2501,12 +2556,16 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		return h.Life.BulkSubscribeSections(ctx, token, codes)
 	})
 	if err != nil {
-		return commandError("订阅更新失败：", err)
+		return h.commandError("订阅更新失败：", err)
 	}
 	sections := matchSections(matches)
 	added := lifedata.FirstInt(matches, "addedCount")
 	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
-	return formatBulkSubscriptionResult(matches, sections, nil, added, already)
+	reply := formatBulkSubscriptionResult(matches, sections, nil, added, already)
+	if len(sections) == 0 {
+		h.markOutcome(CapabilityOutcomeNotFound)
+	}
+	return reply
 }
 
 func extractSectionCodes(raw string) []string {
@@ -2605,17 +2664,17 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	case strings.HasPrefix(target, "week-date:"):
 		parsed, ok := parseScheduleDateToken(strings.TrimPrefix(target, "week-date:"), day)
 		if !ok {
-			return "日期格式不太对。可以发：课表 7.20周"
+			return h.invalidInput("日期格式不太对。可以发：课表 7.20周")
 		}
 		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed))
 	case strings.HasPrefix(target, "week-number:"):
 		week, err := strconv.Atoi(strings.TrimPrefix(target, "week-number:"))
 		if err != nil || week < 1 {
-			return "周次格式不太对。可以发：课表 第3周"
+			return h.invalidInput("周次格式不太对。可以发：课表 第3周")
 		}
 		start, err := h.academicWeekStart(ctx, week)
 		if err != nil {
-			return commandError("学期周次查不到：", err)
+			return h.commandError("学期周次查不到：", err)
 		}
 		return h.curriculumWeek(ctx, ident, start)
 	case strings.HasPrefix(target, "semester:"):
@@ -2628,12 +2687,12 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	} else if strings.HasPrefix(target, "date:") {
 		parsed, ok := parseScheduleDateToken(target, day)
 		if !ok {
-			return "日期格式不太对。可以发：课表 6.23"
+			return h.invalidInput("日期格式不太对。可以发：课表 6.23")
 		}
 		day = parsed
 		title = textutil.MonospaceDigits(day.Format("01-02")) + " 课表："
 	} else if target != "today" {
-		return "日期格式不太对。可以发：课表 6.23 或课表 2022.05.03"
+		return h.invalidInput("日期格式不太对。可以发：课表 6.23 或课表 2022.05.03")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -2641,15 +2700,15 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	}
 	schedules, token, err := h.schedulesForDay(ctx, ident, token, day)
 	if err != nil {
-		return commandError("课表查不到：", err)
+		return h.commandError("课表查不到：", err)
 	}
 	if len(schedules) == 0 {
 		hasSubscriptions, subscriptionErr := h.hasSubscribedSections(ctx, ident, token)
 		if subscriptionErr != nil {
-			return "没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。"
+			return h.failed("没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。")
 		}
 		if !hasSubscriptions {
-			return "没有查到已关注的班级，无法确认当天是否有课。请先恢复或关注对应学期的课程。"
+			return h.notFound("没有查到已关注的班级，无法确认当天是否有课。请先恢复或关注对应学期的课程。")
 		}
 		if target == "tomorrow" {
 			return "明天没有课。"
@@ -2693,7 +2752,7 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 	end := start.AddDate(0, 0, 6)
 	schedules, _, err := h.schedulesForRange(ctx, ident, token, start, end)
 	if err != nil {
-		return commandError("课表查不到：", err)
+		return h.commandError("课表查不到：", err)
 	}
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
 	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
@@ -2721,15 +2780,15 @@ type semesterScheduleEntry struct {
 func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, target string) string {
 	semester, err := h.matchScheduleSemester(ctx, target)
 	if err != nil {
-		return commandError("学期查不到：", err)
+		return h.commandError("学期查不到：", err)
 	}
 	if semester == nil {
-		return "没有找到 " + scheduleSemesterTargetLabel(target) + "。可以发「学期 列表」查看可用学期。"
+		return h.notFound("没有找到 " + scheduleSemesterTargetLabel(target) + "。可以发「学期 列表」查看可用学期。")
 	}
 	start, okStart := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
 	end, okEnd := lifedata.ParseAPITime(lifedata.FirstString(semester, "endDate"))
 	if !okStart || !okEnd {
-		return "该学期缺少起止日期，暂时无法生成整学期课表。"
+		return h.failed("该学期缺少起止日期，暂时无法生成整学期课表。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -2737,7 +2796,7 @@ func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, t
 	}
 	schedules, _, err := h.schedulesForSemester(ctx, ident, token, semester, start, end)
 	if err != nil {
-		return commandError("课表查不到：", err)
+		return h.commandError("课表查不到：", err)
 	}
 	entries := aggregateSemesterSchedules(schedules, start, end)
 	name := lifedata.FirstString(semester, "nameCn", "namePrimary", "name", "code")
@@ -2745,7 +2804,7 @@ func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, t
 		name = scheduleSemesterTargetLabel(target)
 	}
 	if len(entries) == 0 {
-		return name + "没有查到已关注课程。"
+		return h.notFound(name + "没有查到已关注课程。")
 	}
 	return withCalendarSubscriptionHint(formatSemesterSchedule(name, entries))
 }
@@ -3021,7 +3080,7 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 		schedules, refreshed, err := h.schedulesForDay(ctx, ident, token, day)
 		token = refreshed
 		if err != nil {
-			return commandError("下一节课查不到：", err)
+			return h.commandError("下一节课查不到：", err)
 		}
 		for _, schedule := range schedules {
 			start := lifedata.ScheduleStartTime(schedule, day, loc)
@@ -3037,7 +3096,7 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 			return prefix + "\n" + formatSchedule(schedule)
 		}
 	}
-	return "接下来一周没查到课。"
+	return h.notFound("接下来一周没查到课。")
 }
 
 func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, token string, day time.Time) ([]map[string]any, string, error) {
@@ -3192,7 +3251,37 @@ func (h Handler) accessToken(ctx context.Context, ident store.Identity) (string,
 }
 
 func (h Handler) loginRequired() string {
+	h.markOutcome(CapabilityOutcomeAuthRequired)
 	return "需要先登录。发送：登录"
+}
+
+func (h Handler) invalidInput(text string) string {
+	h.markOutcome(CapabilityOutcomeInvalidInput)
+	return text
+}
+
+func (h Handler) notFound(text string) string {
+	h.markOutcome(CapabilityOutcomeNotFound)
+	return text
+}
+
+func (h Handler) forbidden(text string) string {
+	h.markOutcome(CapabilityOutcomeForbidden)
+	return text
+}
+
+func (h Handler) failed(text string) string {
+	h.markOutcome(CapabilityOutcomeFailed)
+	return text
+}
+
+func (h Handler) commandError(prefix string, err error) string {
+	if life.IsUnauthorized(err) || errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) {
+		h.markOutcome(CapabilityOutcomeAuthRequired)
+	} else {
+		h.markOutcome(CapabilityOutcomeFailed)
+	}
+	return commandError(prefix, err)
 }
 
 func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd Invocation) {
@@ -3205,11 +3294,15 @@ func (h Handler) recordState(ctx context.Context, ident store.Identity, cmd Invo
 }
 
 func (h Handler) recordInteraction(ctx context.Context, ident store.Identity, cmd Invocation, reply string) {
+	h.recordInteractionWithOutcome(ctx, ident, cmd, reply, CapabilityOutcomeSuccess)
+}
+
+func (h Handler) recordInteractionWithOutcome(ctx context.Context, ident store.Identity, cmd Invocation, reply string, outcome CapabilityOutcomeStatus) {
 	if h.Store == nil || !store.HasConversationIdentity(ident) {
 		return
 	}
 	status := store.InteractionStatusHandled
-	if strings.HasPrefix(reply, "需要登录 Life @ USTC：") {
+	if outcome == CapabilityOutcomeAuthRequired {
 		status = store.InteractionStatusWaitingAuth
 	}
 	if err := h.Store.RecordInteraction(ctx, ident, store.Interaction{
@@ -3361,10 +3454,10 @@ func (h Handler) listSemesters(ctx context.Context, args []string) string {
 	}
 	semesters, err := h.Life.ListSemesters(ctx, page, limit)
 	if err != nil {
-		return commandError("学期查不到：", err)
+		return h.commandError("学期查不到：", err)
 	}
 	if len(semesters) == 0 {
-		return "没有学期数据。"
+		return h.notFound("没有学期数据。")
 	}
 	lines := []string{"学期："}
 	for _, semester := range semesters {
@@ -3386,14 +3479,14 @@ func (h Handler) listSemesters(ctx context.Context, args []string) string {
 func (h Handler) searchCoursesWithFilters(ctx context.Context, args []string) string {
 	opts := parseSearchCoursesArgs(args)
 	if opts.Keyword == "" && opts.EducationLevelID == 0 && opts.CategoryID == 0 && opts.ClassTypeID == 0 {
-		return "请输入搜索条件，例如：课程搜索 数学分析"
+		return h.invalidInput("请输入搜索条件，例如：课程搜索 数学分析")
 	}
 	courses, err := h.Life.SearchCoursesWithFilters(ctx, opts)
 	if err != nil {
-		return commandError("课程查不到：", err)
+		return h.commandError("课程查不到：", err)
 	}
 	if len(courses) == 0 {
-		return "没找到课程。"
+		return h.notFound("没找到课程。")
 	}
 	lines := []string{"课程："}
 	for _, course := range courses {
@@ -3407,14 +3500,14 @@ func (h Handler) searchSectionsWithFilters(ctx context.Context, args []string) s
 	if opts.Keyword == "" && opts.CourseID == 0 && opts.CourseJwID == 0 && opts.SemesterID == 0 &&
 		opts.SemesterJwID == 0 && opts.CampusID == 0 && opts.DepartmentID == 0 &&
 		opts.TeacherID == 0 && opts.TeacherCode == "" {
-		return "请输入搜索条件，例如：教学班搜索 高等数学"
+		return h.invalidInput("请输入搜索条件，例如：教学班搜索 高等数学")
 	}
 	sections, err := h.Life.SearchSectionsWithFilters(ctx, opts)
 	if err != nil {
-		return commandError("教学班查不到：", err)
+		return h.commandError("教学班查不到：", err)
 	}
 	if len(sections) == 0 {
-		return "没找到教学班。"
+		return h.notFound("没找到教学班。")
 	}
 	lines := []string{"教学班："}
 	for _, section := range sections {
@@ -3426,14 +3519,14 @@ func (h Handler) searchSectionsWithFilters(ctx context.Context, args []string) s
 func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) string {
 	opts := parseSearchTeachersArgs(args)
 	if opts.Keyword == "" && opts.DepartmentID == 0 {
-		return "请输入搜索条件，例如：老师搜索 张"
+		return h.invalidInput("请输入搜索条件，例如：老师搜索 张")
 	}
 	teachers, err := h.Life.SearchTeachersWithFilters(ctx, opts)
 	if err != nil {
-		return commandError("老师查不到：", err)
+		return h.commandError("老师查不到：", err)
 	}
 	if len(teachers) == 0 {
-		return "没找到老师。"
+		return h.notFound("没找到老师。")
 	}
 	lines := []string{"老师："}
 	for _, teacher := range teachers {
@@ -3445,11 +3538,11 @@ func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) s
 func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
 	jwId, ok := parseIntArg(raw)
 	if !ok {
-		return "需要提供课程 JW ID。"
+		return h.invalidInput("需要提供课程 JW ID。")
 	}
 	course, err := h.Life.GetCourseByJwID(ctx, jwId)
 	if err != nil {
-		return commandError("课程查不到：", err)
+		return h.commandError("课程查不到：", err)
 	}
 	return "课程：\n" + formatCourse(course)
 }
@@ -3457,11 +3550,11 @@ func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
 func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
 	jwId, ok := parseIntArg(raw)
 	if !ok {
-		return "需要提供教学班 JW ID。"
+		return h.invalidInput("需要提供教学班 JW ID。")
 	}
 	section, err := h.Life.GetSectionByJwID(ctx, jwId)
 	if err != nil {
-		return commandError("教学班查不到：", err)
+		return h.commandError("教学班查不到：", err)
 	}
 	return "教学班：\n" + formatSection(section)
 }
@@ -3469,11 +3562,11 @@ func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
 func (h Handler) getTeacherByID(ctx context.Context, raw string) string {
 	id, ok := parseIntArg(raw)
 	if !ok {
-		return "需要提供老师 ID。"
+		return h.invalidInput("需要提供老师 ID。")
 	}
 	teacher, err := h.Life.GetTeacherByID(ctx, id)
 	if err != nil {
-		return commandError("老师查不到：", err)
+		return h.commandError("老师查不到：", err)
 	}
 	return "老师：\n" + formatTeacher(teacher)
 }
@@ -3516,26 +3609,26 @@ func (h Handler) busRoutes(ctx context.Context, args []string) string {
 	if opts.From != "" || opts.To != "" {
 		data, err := h.Life.Bus(ctx)
 		if err != nil {
-			return commandError("校车路线查不到：", err)
+			return h.commandError("校车路线查不到：", err)
 		}
 		if opts.From != "" {
 			id, ok := campusIDByName(data, opts.From)
 			if !ok {
-				return "没找到出发校区：" + opts.From
+				return h.notFound("没找到出发校区：" + opts.From)
 			}
 			originID = int64(id)
 		}
 		if opts.To != "" {
 			id, ok := campusIDByName(data, opts.To)
 			if !ok {
-				return "没找到到达校区：" + opts.To
+				return h.notFound("没找到到达校区：" + opts.To)
 			}
 			destID = int64(id)
 		}
 	}
 	routes, err := h.Life.ListBusRoutes(ctx, originID, destID)
 	if err != nil {
-		return commandError("校车路线查不到：", err)
+		return h.commandError("校车路线查不到：", err)
 	}
 	return formatBusRoutes(routes)
 }
@@ -3573,7 +3666,7 @@ func formatBusRoutes(data map[string]any) string {
 func (h Handler) unsubscribeSectionByJwID(ctx context.Context, ident store.Identity, raw string) string {
 	jwId, ok := parseIntArg(raw)
 	if !ok {
-		return "需要提供教学班 JW ID。"
+		return h.invalidInput("需要提供教学班 JW ID。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -3583,7 +3676,7 @@ func (h Handler) unsubscribeSectionByJwID(ctx context.Context, ident store.Ident
 		return h.Life.UnsubscribeSectionByJwID(ctx, token, jwId)
 	})
 	if err != nil {
-		return commandError("退订失败：", err)
+		return h.commandError("退订失败：", err)
 	}
 	return "已退订教学班。"
 }
@@ -3594,11 +3687,11 @@ func (h Handler) mySubscribedSections(ctx context.Context, ident store.Identity)
 
 func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, args []string) string {
 	if len(args) < 3 {
-		return "用法：教学班课表 <JW ID> <开始日期> <结束日期>"
+		return h.invalidInput("用法：教学班课表 <JW ID> <开始日期> <结束日期>")
 	}
 	jwId, ok := parseIntArg(args[0])
 	if !ok {
-		return "JW ID 无效。"
+		return h.invalidInput("JW ID 无效。")
 	}
 	dateFrom, dateTo := args[1], args[2]
 	token, ok := h.accessToken(ctx, ident)
@@ -3609,7 +3702,7 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 		return h.Life.ListSchedulesBySection(ctx, token, jwId, dateFrom, dateTo)
 	})
 	if err != nil {
-		return commandError("课表查不到：", err)
+		return h.commandError("课表查不到：", err)
 	}
 	if len(schedules) == 0 {
 		return "该时间段没有课。"
@@ -3625,11 +3718,11 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []string) string {
 	listArgs, requestedPage, err := extractListPage(args)
 	if err != nil {
-		return err.Error()
+		return h.invalidInput(err.Error())
 	}
 	jwId, ok := parseIntArg(joinedArgs(listArgs))
 	if !ok {
-		return "需要提供教学班 JW ID。"
+		return h.invalidInput("需要提供教学班 JW ID。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -3637,13 +3730,13 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 	}
 	section, err := h.Life.GetSectionByJwID(ctx, jwId)
 	if err != nil {
-		return commandError("教学班查不到：", err)
+		return h.commandError("教学班查不到：", err)
 	}
 	exams, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.ListExamsBySection(ctx, token, jwId)
 	})
 	if err != nil {
-		return commandError("考试查不到：", err)
+		return h.commandError("考试查不到：", err)
 	}
 	if len(exams) == 0 {
 		return "该教学班没有考试。"
@@ -3660,7 +3753,7 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 		return formatNumberedLine(i+1, formatExam(wrapped[i]))
 	})
 	if !ok {
-		return listPageOutOfRange("考试", len(wrapped), command)
+		return h.invalidInput(listPageOutOfRange("考试", len(wrapped), command))
 	}
 	return reply
 }
@@ -3668,11 +3761,11 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, args []string) string {
 	listArgs, requestedPage, err := extractListPage(args)
 	if err != nil {
-		return err.Error()
+		return h.invalidInput(err.Error())
 	}
 	jwId, ok := parseIntArg(joinedArgs(listArgs))
 	if !ok {
-		return "需要提供教学班 JW ID。"
+		return h.invalidInput("需要提供教学班 JW ID。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -3682,7 +3775,7 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 		return h.Life.ListHomeworksBySection(ctx, token, jwId)
 	})
 	if err != nil {
-		return commandError("作业查不到：", err)
+		return h.commandError("作业查不到：", err)
 	}
 	lifedata.SortHomeworksByDue(homeworks)
 	if len(homeworks) == 0 {
@@ -3695,7 +3788,7 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 		return formatNumberedLine(i+1, formatHomework(homeworks[i]))
 	})
 	if !ok {
-		return listPageOutOfRange("作业", len(homeworks), command)
+		return h.invalidInput(listPageOutOfRange("作业", len(homeworks), command))
 	}
 	return reply
 }
@@ -3723,7 +3816,7 @@ func (h Handler) myDashboard(ctx context.Context, ident store.Identity) string {
 		return h.Life.GetMyDashboard(ctx, token)
 	})
 	if err != nil {
-		return commandError("概览查不到：", err)
+		return h.commandError("概览查不到：", err)
 	}
 	return formatDashboard(data, "我的概览")
 }
@@ -3743,7 +3836,7 @@ func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, ar
 		return h.Life.GetUpcomingDeadlines(ctx, token, dayLimit)
 	})
 	if err != nil {
-		return commandError("近期截止查不到：", err)
+		return h.commandError("近期截止查不到：", err)
 	}
 	return formatDashboard(data, fmt.Sprintf("未来 %d 天截止", dayLimit))
 }
@@ -3795,14 +3888,14 @@ func appendListOverflow(lines []string, total, shown int, command string) []stri
 func (h Handler) currentSemester(ctx context.Context) string {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
-		return commandError("学期查不到：", err)
+		return h.commandError("学期查不到：", err)
 	}
 	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
 		name = lifedata.FirstString(semester, "id")
 	}
 	if name == "" {
-		return "当前学期未知。"
+		return h.notFound("当前学期未知。")
 	}
 	return "当前学期：" + name
 }
@@ -3810,14 +3903,14 @@ func (h Handler) currentSemester(ctx context.Context) string {
 func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
-		return "想查哪门课？例如：课程 数学分析"
+		return h.invalidInput("想查哪门课？例如：课程 数学分析")
 	}
 	courses, err := h.Life.SearchCourses(ctx, keyword, 5)
 	if err != nil {
-		return commandError("课程查不到：", err)
+		return h.commandError("课程查不到：", err)
 	}
 	if len(courses) == 0 {
-		return "没找到课程。"
+		return h.notFound("没找到课程。")
 	}
 	lines := []string{"课程："}
 	for _, course := range courses {
@@ -3829,14 +3922,14 @@ func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
-		return "想查哪个教学班？例如：教学班 高等数学"
+		return h.invalidInput("想查哪个教学班？例如：教学班 高等数学")
 	}
 	sections, err := h.Life.SearchSections(ctx, keyword, 5)
 	if err != nil {
-		return commandError("教学班查不到：", err)
+		return h.commandError("教学班查不到：", err)
 	}
 	if len(sections) == 0 {
-		return "没找到教学班。"
+		return h.notFound("没找到教学班。")
 	}
 	lines := []string{"教学班："}
 	for _, section := range sections {
@@ -3848,14 +3941,14 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 func (h Handler) searchTeachers(ctx context.Context, keyword string) string {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
-		return "想查哪位老师？例如：老师 张"
+		return h.invalidInput("想查哪位老师？例如：老师 张")
 	}
 	teachers, err := h.Life.SearchTeachers(ctx, keyword, 5)
 	if err != nil {
-		return commandError("老师查不到：", err)
+		return h.commandError("老师查不到：", err)
 	}
 	if len(teachers) == 0 {
-		return "没找到老师。"
+		return h.notFound("没找到老师。")
 	}
 	lines := []string{"老师："}
 	for _, teacher := range teachers {
@@ -3867,10 +3960,10 @@ func (h Handler) searchTeachers(ctx context.Context, keyword string) string {
 func (h Handler) exams(ctx context.Context, ident store.Identity, args []string) string {
 	listArgs, requestedPage, pageErr := extractListPage(args)
 	if pageErr != nil {
-		return pageErr.Error()
+		return h.invalidInput(pageErr.Error())
 	}
 	if len(listArgs) > 0 {
-		return "考试分页用法：考试 第2页"
+		return h.invalidInput("考试分页用法：考试 第2页")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -3880,7 +3973,7 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 		return h.Life.CurrentSubscription(ctx, token)
 	})
 	if err != nil {
-		return commandError("考试查不到：", err)
+		return h.commandError("考试查不到：", err)
 	}
 	exams := subscriptionExams(data)
 	if len(exams) == 0 {
@@ -3894,7 +3987,7 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 		return formatNumberedLine(i+1, formatExam(exams[i]))
 	})
 	if !ok {
-		return listPageOutOfRange("考试", len(exams), command)
+		return h.invalidInput(listPageOutOfRange("考试", len(exams), command))
 	}
 	return reply
 }
@@ -3902,6 +3995,7 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 func (h Handler) status(ctx context.Context) string {
 	api := "OK"
 	if err := h.Life.Health(ctx); err != nil {
+		h.markOutcome(CapabilityOutcomeFailed)
 		api = friendlyError(err)
 	}
 	return strings.Join([]string{

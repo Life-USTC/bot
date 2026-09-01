@@ -294,14 +294,14 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	}
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
-		return commandError("校车查不到：", err)
+		return h.commandError("校车查不到：", err)
 	}
 	if busPreferenceArgs(args) {
 		return h.busPreferences(ctx, ident, data, args)
 	}
 	routeArgs, queryOptions := busQueryArgs(args, now)
 	if queryOptions.QueryError != "" {
-		return queryOptions.QueryError
+		return h.invalidInput(queryOptions.QueryError)
 	}
 	options := queryOptions
 	if !store.IsSharedConversation(ident) {
@@ -403,7 +403,7 @@ func busHelp() string {
 
 func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data map[string]any, args []string) string {
 	if store.IsSharedConversation(ident) {
-		return "群聊只能查校车；偏好请私聊设置。"
+		return h.forbidden("群聊只能查校车；偏好请私聊设置。")
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -413,7 +413,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 		return h.Life.BusPreferences(ctx, token)
 	})
 	if err != nil {
-		return commandError("校车偏好查不到：", err)
+		return h.commandError("校车偏好查不到：", err)
 	}
 	busSettings := h.currentBusSettings(ctx, ident)
 	if showSouth, ok := parseBusShowSouth(args); ok {
@@ -423,7 +423,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	}
 	update, shouldSave, message := parseBusPreferenceUpdate(data, args, preferences)
 	if message != "" {
-		return message
+		return h.invalidInput(message)
 	}
 	shouldSaveBusSettings := busSettings.ShowSouthCampus != h.currentBusSettings(ctx, ident).ShowSouthCampus
 	if !shouldSave && !shouldSaveBusSettings {
@@ -431,7 +431,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	}
 	if shouldSaveBusSettings && h.Store != nil {
 		if err := h.Store.SaveBusSettings(ctx, busSettings); err != nil {
-			return commandError("校车偏好保存失败：", err)
+			return h.commandError("校车偏好保存失败：", err)
 		}
 	}
 	if shouldSave {
@@ -439,7 +439,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 			return h.Life.SetBusPreferences(ctx, token, update)
 		})
 		if err != nil {
-			return commandError("校车偏好保存失败：", err)
+			return h.commandError("校车偏好保存失败：", err)
 		}
 	}
 	return formatBusPreferences(data, preferences, busSettings, "已更新校车偏好：")
