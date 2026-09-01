@@ -133,6 +133,7 @@ type BusSettings struct {
 
 type AgentRun struct {
 	ID               int64
+	JobID            int64
 	Identity         Identity
 	RawText          string
 	Provider         string
@@ -340,6 +341,7 @@ func (busSettingRow) TableName() string {
 
 type agentRunRow struct {
 	ID               int64  `gorm:"primaryKey"`
+	JobID            int64  `gorm:"not null;default:0;index"`
 	UserID           int64  `gorm:"not null;index"`
 	Platform         string `gorm:"not null;index:idx_agent_runs_conversation_created"`
 	ExternalUserID   string `gorm:"not null"`
@@ -1219,6 +1221,7 @@ func (s *Store) RecordAgentRun(ctx context.Context, ident Identity, run AgentRun
 	now := nowUTC()
 	row := agentRunRow{
 		UserID:           userID,
+		JobID:            run.JobID,
 		Platform:         ident.Platform,
 		ExternalUserID:   ident.UserID,
 		ConversationType: ident.ConversationType,
@@ -1301,6 +1304,13 @@ func (s *Store) UserSpending(ctx context.Context, ident Identity) (AgentSpending
 	ident = normalizeIdentity(ident)
 	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).
 		Where("platform = ? AND external_user_id = ?", ident.Platform, ident.UserID))
+}
+
+func (s *Store) AgentJobSpending(ctx context.Context, jobID int64) (AgentSpending, error) {
+	if jobID <= 0 {
+		return AgentSpending{Currency: SpendingCurrencyCNY}, nil
+	}
+	return s.sumAgentSpending(s.db.WithContext(ctx).Model(&agentRunRow{}).Where("job_id = ?", jobID))
 }
 
 func (s *Store) sumAgentSpending(query *gorm.DB) (AgentSpending, error) {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +66,7 @@ type Input struct {
 	Text       string
 	ImageURLs  []string
 	Identity   store.Identity
+	JobID      int64
 	SendUpdate func(context.Context, store.Identity, string) error
 	// SendResponse lets a local tool hand an already formatted host response
 	// directly to the application. It is used for images and private values that
@@ -75,6 +77,21 @@ type Input struct {
 	WaitForConfirmation func(context.Context, store.Identity, string) error
 
 	imageDataURLs []string
+	runState      *RunState
+}
+
+type RunState string
+
+const (
+	RunStateCompleted   RunState = "completed"
+	RunStateInterrupted RunState = "interrupted"
+	RunStateIgnored     RunState = "ignored"
+)
+
+type Result struct {
+	Response commands.Response
+	Handled  bool
+	State    RunState
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
@@ -154,6 +171,18 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	return response.Text, ok
 }
 
+// Run exposes the durable state transition needed by the coordinator while
+// HandleResponse remains the response-level API used by focused callers.
+func (s *Service) Run(ctx context.Context, input Input) Result {
+	state := RunStateCompleted
+	input.runState = &state
+	response, handled := s.HandleResponse(ctx, input)
+	if !handled && state != RunStateInterrupted {
+		state = RunStateIgnored
+	}
+	return Result{Response: response, Handled: handled, State: state}
+}
+
 func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Response, bool) {
 	runStarted := time.Now()
 	if ctx == nil {
@@ -167,7 +196,15 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	ctx, cancel := context.WithTimeout(parentCtx, agentRunDeadline)
 	defer cancel()
 	metrics := newRunMetrics()
-	budget := newRunBudget(runStarted, metrics)
+	priorModelAttempts := int64(0)
+	if s.handler.Store != nil && input.JobID > 0 {
+		prior, err := s.handler.Store.AgentJobSpending(ctx, input.JobID)
+		if err != nil {
+			return agentTextResponse(agentFailureReply(0, fmt.Errorf("read prior agent budget: %w", err))), true
+		}
+		priorModelAttempts = prior.ModelRequests
+	}
+	budget := newRunBudgetWithAttempts(runStarted, metrics, priorModelAttempts)
 	ctx = withRunBudget(ctx, budget)
 	ctx = withRunMetrics(ctx, metrics)
 	model, provider, modelName := s.modelFor()
@@ -245,7 +282,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		tools   []tool.BaseTool
 		session *botmcp.Session
 	}, error) {
-		tools, session, err := s.toolsFor(ctx, input.Identity, trace, input.SendUpdate, sendResponse, input.WaitForConfirmation)
+		tools, session, err := s.toolsFor(ctx, input.Identity, input.JobID, trace, input.SendUpdate, sendResponse)
 		return struct {
 			tools   []tool.BaseTool
 			session *botmcp.Session
@@ -284,22 +321,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
-	}
-	if err := observeRunStage(ctx, "history_compaction", func() error {
-		return s.compactConversationHistory(ctx, input.Identity, model, runID)
-	}); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
-		if errors.Is(err, context.Canceled) {
-			finishRun(store.AgentRunStatusIgnored, "", err)
-			return commands.Response{}, false
-		}
-		if isAgentBudgetError(err) {
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
-		}
-		s.logf("compact conversation history failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
-			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
 	}
 	if err := budget.contextError(ctx); err != nil {
 		err = normalizeAgentRunError(ctx, budget, err)
@@ -355,10 +376,40 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-	messages, err := observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
-		return s.messagesFor(ctx, input)
-	})
+	checkpointID := agentCheckpointID(input.JobID)
+	var checkpointStore adk.CheckPointStore
+	if s.handler.Store != nil && checkpointID != "" {
+		checkpointStore = s.handler.Store.AgentCheckpoints()
+	}
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore})
+	resume := false
+	if checkpointStore != nil {
+		_, resume, err = checkpointStore.Get(ctx, checkpointID)
+		if err != nil {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
+	}
+	var iter *adk.AsyncIterator[*adk.AgentEvent]
+	if resume {
+		iter, err = runner.Resume(ctx, checkpointID)
+	} else {
+		var messages []*schema.Message
+		messages, err = observeRunStageValue(ctx, "history_messages", func() ([]*schema.Message, error) {
+			return s.messagesFor(ctx, input)
+		})
+		if err == nil {
+			err = s.persistCurrentUserEvent(ctx, input)
+		}
+		if err == nil {
+			options := make([]adk.AgentRunOption, 0, 1)
+			if checkpointID != "" {
+				options = append(options, adk.WithCheckPointID(checkpointID))
+			}
+			iter = runner.Run(ctx, messages, options...)
+		}
+	}
 	if err != nil {
 		err = normalizeAgentRunError(ctx, budget, err)
 		if errors.Is(err, context.Canceled) {
@@ -372,7 +423,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 
 	reply := ""
 	repeatGuard.Reset()
-	iter := runner.Run(ctx, messages)
 	for {
 		event, ok := iter.Next()
 		if !ok {
@@ -393,9 +443,21 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			finishRun(store.AgentRunStatusFailed, reply, runErr)
 			return agentTextResponse(reply), true
 		}
+		if event.Action != nil && event.Action.Interrupted != nil {
+			if input.runState != nil {
+				*input.runState = RunStateInterrupted
+			}
+			finishRun(store.AgentRunStatusInterrupted, "", nil)
+			return commands.Response{}, true
+		}
 		msg, _, err := adk.GetMessage(event)
 		if err != nil || msg == nil {
 			continue
+		}
+		if err := s.persistAgentMessage(ctx, input, msg); err != nil {
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
 		}
 		content := strings.TrimSpace(msg.Content)
 		if content != "" {
@@ -413,10 +475,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if hostResponseDelivered.Load() {
+		s.deleteAgentCheckpoint(ctx, checkpointID)
 		finishRun(store.AgentRunStatusCompleted, "", nil)
 		return commands.Response{}, true
 	}
 	if reply == "" {
+		s.deleteAgentCheckpoint(ctx, checkpointID)
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
@@ -440,12 +504,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	if response.Text == "" && len(response.Parts) == 0 {
 		if hostResponseDelivered.Load() {
+			s.deleteAgentCheckpoint(ctx, checkpointID)
 			finishRun(store.AgentRunStatusCompleted, "", nil)
 			return commands.Response{}, true
 		}
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
+	s.deleteAgentCheckpoint(ctx, checkpointID)
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
 }
@@ -476,36 +542,14 @@ func (s *Service) responseFor(ctx context.Context, input Input, reply string) co
 	return commands.Response{Text: cleanQQReply(reply), Kind: "agent"}
 }
 
-func normalizeAgentHistoryReply(reply string) string {
-	return cleanQQReply(reply)
-}
-
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
-	messages := make([]*schema.Message, 0, historyTurnLimit*2+1)
+	messages := make([]*schema.Message, 0, conversationEventLimit+1)
 	if s.handler.Store != nil {
-		summary, found, err := s.handler.Store.ConversationSummary(ctx, input.Identity)
+		events, err := s.handler.Store.RecentConversationEvents(ctx, input.Identity, conversationEventLimit)
 		if err != nil {
 			return nil, err
 		}
-		afterID := int64(0)
-		if found {
-			afterID = summary.ThroughInteractionID
-			messages = append(messages, schema.UserMessage(conversationSummaryPrefix+summary.Summary))
-		}
-		history, err := s.handler.Store.RecentHandledInteractionsAfter(ctx, input.Identity, afterID, historyTurnLimit)
-		if err != nil {
-			return nil, err
-		}
-		for _, turn := range history {
-			rawText := compactHistoryText(turn.RawText)
-			if rawText == "" {
-				continue
-			}
-			messages = append(messages, schema.UserMessage(rawText))
-			if reply := compactHistoryText(normalizeAgentHistoryReply(turn.Reply)); reply != "" {
-				messages = append(messages, schema.AssistantMessage(reply, nil))
-			}
-		}
+		messages = append(messages, conversationEventMessages(events)...)
 	}
 	currentText := strings.TrimSpace(input.Text)
 	if len(input.ImageURLs) == 0 {
@@ -541,6 +585,104 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	}
 	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
 	return messages, nil
+}
+
+func agentCheckpointID(jobID int64) string {
+	if jobID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("conversation-job:%d", jobID)
+}
+
+func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) error {
+	if s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
+		return nil
+	}
+	content := strings.TrimSpace(input.Text)
+	if content == "" && len(input.ImageURLs) > 0 {
+		content = "[image]"
+	}
+	_, _, err := s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
+		Identity: input.Identity, JobID: input.JobID,
+		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
+		Type:      store.ConversationEventUser, Content: content,
+	})
+	return err
+}
+
+func (s *Service) persistAgentMessage(ctx context.Context, input Input, message *schema.Message) error {
+	if s.handler.Store == nil || input.JobID <= 0 || message == nil || !store.HasConversationIdentity(input.Identity) {
+		return nil
+	}
+	event := store.ConversationEvent{
+		Identity: input.Identity, JobID: input.JobID, Content: message.Content,
+		ToolCallID: message.ToolCallID, ToolName: message.ToolName,
+	}
+	switch message.Role {
+	case schema.Assistant:
+		event.Type = store.ConversationEventAssistant
+		event.ToolCalls = make([]store.ConversationToolCall, 0, len(message.ToolCalls))
+		for _, call := range message.ToolCalls {
+			event.ToolCalls = append(event.ToolCalls, store.ConversationToolCall{
+				ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments,
+			})
+		}
+	case schema.Tool:
+		event.Type = s.toolEventType(ctx, input.JobID, message.ToolCallID)
+	default:
+		return nil
+	}
+	event.DedupeKey = agentMessageDedupeKey(input.JobID, message)
+	_, _, err := s.handler.Store.AppendConversationEvent(ctx, event)
+	return err
+}
+
+func (s *Service) toolEventType(ctx context.Context, jobID int64, toolCallID string) store.ConversationEventType {
+	executions, err := s.handler.Store.CapabilityExecutionsForJob(ctx, jobID)
+	if err != nil {
+		s.logf("classify tool transcript event failed: job_id=%d error=%v", jobID, err)
+		return store.ConversationEventToolResult
+	}
+	denied := false
+	for _, execution := range executions {
+		if execution.ToolCallID != toolCallID {
+			continue
+		}
+		switch execution.State {
+		case store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
+			return store.ConversationEventToolError
+		case store.CapabilityExecutionDenied:
+			denied = true
+		}
+	}
+	if denied {
+		return store.ConversationEventToolDenial
+	}
+	return store.ConversationEventToolResult
+}
+
+func agentMessageDedupeKey(jobID int64, message *schema.Message) string {
+	if id := strings.TrimSpace(adk.GetMessageID(message)); id != "" {
+		return fmt.Sprintf("conversation-job:%d:message:%s", jobID, id)
+	}
+	payload, _ := json.Marshal(struct {
+		Role       schema.RoleType   `json:"role"`
+		Content    string            `json:"content"`
+		ToolCalls  []schema.ToolCall `json:"toolCalls,omitempty"`
+		ToolCallID string            `json:"toolCallID,omitempty"`
+		ToolName   string            `json:"toolName,omitempty"`
+	}{message.Role, message.Content, message.ToolCalls, message.ToolCallID, message.ToolName})
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("conversation-job:%d:message:%x", jobID, digest[:16])
+}
+
+func (s *Service) deleteAgentCheckpoint(ctx context.Context, checkpointID string) {
+	if s.handler.Store == nil || checkpointID == "" {
+		return
+	}
+	if err := s.handler.Store.AgentCheckpoints().Delete(ctx, checkpointID); err != nil {
+		s.logf("delete completed agent checkpoint failed: checkpoint_id=%s error=%v", checkpointID, err)
+	}
 }
 
 type emptyInput struct{}
@@ -642,10 +784,10 @@ func hostCapabilityToolDescription(shared bool) string {
 func (s *Service) toolsFor(
 	ctx context.Context,
 	ident store.Identity,
+	jobID int64,
 	trace *toolTraceNotifier,
 	sendUpdate func(context.Context, store.Identity, string) error,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
-	waitForConfirmation func(context.Context, store.Identity, string) error,
 ) ([]tool.BaseTool, *botmcp.Session, error) {
 	tools := make([]tool.BaseTool, 0)
 	var err error
@@ -687,32 +829,7 @@ func (s *Service) toolsFor(
 		}
 	}
 	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), trace, func(ctx context.Context, input hostCapabilityInput) (string, error) {
-		result, err := s.handler.ExecuteCapabilityForAgent(ctx, commands.Input{Identity: ident, SuppressLog: true}, commands.CapabilityID(input.Capability), input.Arguments)
-		if err != nil {
-			return "", err
-		}
-		if result.DeliveredByHost {
-			if sendResponse == nil {
-				return "", errors.New("host response sender is unavailable")
-			}
-			if err := sendResponse(ctx, ident, result.Response); err != nil {
-				return "", err
-			}
-			result.Text = "结果已由宿主安全发送给用户。"
-		}
-		if result.ConfirmationRequired {
-			if waitForConfirmation == nil {
-				return "", errors.New("confirmation coordinator is unavailable")
-			}
-			if err := waitForConfirmation(ctx, ident, result.Command); err != nil {
-				return "", err
-			}
-		}
-		raw, err := json.Marshal(result)
-		if err != nil {
-			return "", err
-		}
-		return string(raw), nil
+		return s.invokeHostCapability(ctx, input, ident, jobID, sendResponse)
 	})
 	if err != nil {
 		if mcpSession != nil {
@@ -777,6 +894,7 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 		rawText = "[image]"
 	}
 	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, store.AgentRun{
+		JobID:    input.JobID,
 		RawText:  rawText,
 		Provider: provider,
 		Model:    model,

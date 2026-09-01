@@ -409,9 +409,9 @@ func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *te
 
 func agentToolNames(t *testing.T, svc *Service) map[string]bool {
 	t.Helper()
-	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, nil, func(context.Context, store.Identity, string) error {
+	tools, session, err := svc.toolsFor(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, 0, nil, func(context.Context, store.Identity, string) error {
 		return nil
-	}, nil, nil)
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +755,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 }
 
-func TestHostCapabilityToolDeliversPrivateCalendarURLWithoutModelExposure(t *testing.T) {
+func TestHostCapabilityToolReturnsPrivateCalendarURLInPrivateModelContext(t *testing.T) {
 	ctx := context.Background()
 	calendarURL := "https://life.example/api/calendar-feeds/user-1:private-token.ics"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -784,10 +784,10 @@ func TestHostCapabilityToolDeliversPrivateCalendarURLWithoutModelExposure(t *tes
 	}, auth: authManager}
 
 	var delivered commands.Response
-	tools, session, err := svc.toolsFor(ctx, ident, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+	tools, session, err := svc.toolsFor(ctx, ident, 0, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
 		delivered = response
 		return nil
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -816,10 +816,10 @@ func TestHostCapabilityToolDeliversPrivateCalendarURLWithoutModelExposure(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(delivered.Text, calendarURL) || !strings.Contains(delivered.Text, "通过 URL 添加/订阅日历") {
-		t.Fatalf("delivered response = %#v", delivered)
+	if delivered.Text != "" || delivered.Image != nil || len(delivered.Parts) != 0 {
+		t.Fatalf("private URL was redundantly delivered by host = %#v", delivered)
 	}
-	if strings.Contains(result, calendarURL) || !strings.Contains(result, `"ok":true`) || !strings.Contains(result, `"status":"success"`) || !strings.Contains(result, `"deliveredByHost":true`) {
+	if !strings.Contains(result, calendarURL) || !strings.Contains(result, "通过 URL 添加/订阅日历") {
 		t.Fatalf("model-facing tool result = %q", result)
 	}
 }
@@ -845,10 +845,10 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 	}, auth: authManager}
 
 	var delivered commands.Response
-	tools, session, err := svc.toolsFor(ctx, ident, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
+	tools, session, err := svc.toolsFor(ctx, ident, 0, nil, nil, func(_ context.Context, _ store.Identity, response commands.Response) error {
 		delivered = response
 		return nil
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,7 +880,7 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 	if delivered.Kind != commands.ResponseKindAuthWait || !strings.Contains(delivered.Text, userCode) {
 		t.Fatalf("delivered auth response = %#v", delivered)
 	}
-	if strings.Contains(result, userCode) || strings.Contains(result, "login.example") || !strings.Contains(result, `"ok":false`) || !strings.Contains(result, `"status":"auth_required"`) {
+	if strings.Contains(result, userCode) || strings.Contains(result, "login.example") || !strings.Contains(result, "需要登录") {
 		t.Fatalf("model-facing auth result = %q", result)
 	}
 }
@@ -912,7 +912,7 @@ func TestHostCapabilityDescriptionUsesStructuredCallsAndDefersDynamicPolicy(t *t
 	}
 }
 
-func TestMessagesForIncludesRecentHistory(t *testing.T) {
+func TestMessagesForIncludesTypedHistory(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -920,40 +920,27 @@ func TestMessagesForIncludesRecentHistory(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	if err := db.RecordInteraction(ctx, ident, store.Interaction{
-		Direction: store.InteractionDirectionOutbound,
-		RawText:   "工具调用：search_courses {\"keyword\":\"数学分析\"}\n工具结果：\n课程：数学分析",
-		Handled:   true,
-		Status:    store.InteractionStatusSent,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.RecordInteraction(ctx, ident, store.Interaction{
-		RawText: "  你好  ",
-		Command: "agent",
-		Handled: true,
-		Reply:   "  你好！\n[已发送图片：课表 2026-09-04]\n有什么可以帮你的吗？  ",
-		Status:  "handled",
-	}); err != nil {
-		t.Fatal(err)
+	for _, event := range []store.ConversationEvent{
+		{Identity: ident, DedupeKey: "typed:user", Type: store.ConversationEventUser, Content: "你好"},
+		{Identity: ident, DedupeKey: "typed:assistant", Type: store.ConversationEventAssistant, Content: "你好！\n有什么可以帮你的吗？"},
+	} {
+		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
 	}
 	svc := &Service{handler: commands.Handler{Store: db}}
-	messages, err := svc.messagesFor(ctx, Input{Text: "  我上面说了什么？  ", Identity: ident})
+	messages, err := svc.messagesFor(ctx, Input{Text: "我上面说了什么？", Identity: ident})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 {
-		t.Fatalf("message count = %d", len(messages))
-	}
-	if messages[0].Content != "你好" ||
-		messages[1].Content != "你好！\n[已发送图片：课表 2026-09-04]\n有什么可以帮你的吗？" ||
+	if len(messages) != 3 || messages[0].Content != "你好" ||
+		messages[1].Content != "你好！\n有什么可以帮你的吗？" ||
 		!strings.Contains(messages[2].Content, "我上面说了什么？") ||
 		!strings.HasPrefix(messages[2].Content, "现在是 ") {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
-
-func TestMessagesForCompactsLongHistory(t *testing.T) {
+func TestHandleResponseUsesTypedTranscriptWithoutSummaryRequest(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -961,139 +948,13 @@ func TestMessagesForCompactsLongHistory(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	longReply := strings.Repeat("课", maxHistoryTextRunes+20)
-	if err := db.RecordInteraction(ctx, ident, store.Interaction{
-		RawText: "课表",
-		Command: "schedule",
-		Handled: true,
-		Reply:   longReply,
-		Status:  store.InteractionStatusHandled,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{handler: commands.Handler{Store: db}}
-	messages, err := svc.messagesFor(ctx, Input{Text: "总结一下", Identity: ident})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(messages) != 3 {
-		t.Fatalf("message count = %d", len(messages))
-	}
-	if got := []rune(messages[1].Content); len(got) <= maxHistoryTextRunes || len(got) > maxHistoryTextRunes+20 {
-		t.Fatalf("compacted length = %d", len(got))
-	}
-	if !strings.Contains(messages[1].Content, "历史内容已截断") {
-		t.Fatalf("reply was not marked compacted: %q", messages[1].Content)
-	}
-}
-
-func TestConversationCompactionKeepsSummaryAndRecentTurns(t *testing.T) {
-	ctx := context.Background()
-	var logs bytes.Buffer
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
-		if err := db.RecordInteraction(ctx, ident, store.Interaction{
-			RawText: fmt.Sprintf("turn-%02d %s", i, strings.Repeat("问", maxHistoryTextRunes)),
-			Handled: true,
-			Reply:   fmt.Sprintf("reply-%02d %s", i, strings.Repeat("答", maxHistoryTextRunes)),
-			Status:  store.InteractionStatusHandled,
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var summaryRequests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		summaryRequests.Add(1)
-		var request struct {
-			Messages []map[string]any `json:"messages"`
-			Tools    []any            `json:"tools"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		if len(request.Tools) != 0 {
-			t.Fatalf("summary request unexpectedly included tools: %#v", request.Tools)
-		}
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl-summary",
-			"object":"chat.completion",
-			"created":0,
-			"model":"test-model",
-			"choices":[{"index":0,"message":{"role":"assistant","content":"用户此前逐轮测试了对话记忆。"},"finish_reason":"stop"}]
-		}`))
-	}))
-	defer server.Close()
-	svc, err := New(ctx, Config{
-		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-		Logger: log.New(&logs, "", 0),
-	}, commands.Handler{Store: db}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.compactConversationHistory(ctx, ident, svc.model, 77); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"llm compaction started: run_id=77",
-		"compacted_turns=21 retained_turns=4",
-		"estimated_input_tokens=",
-		"llm compaction completed: run_id=77",
-		"summary_runes=14",
+	for _, event := range []store.ConversationEvent{
+		{Identity: ident, DedupeKey: "history:user", Type: store.ConversationEventUser, Content: "查数学分析"},
+		{Identity: ident, DedupeKey: "history:assistant-call", Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "call-history", Name: "invoke_bot_capability", Arguments: `{"capability":"course_search","arguments":["数学分析"]}`}}},
+		{Identity: ident, DedupeKey: "history:tool", Type: store.ConversationEventToolResult, ToolCallID: "call-history", ToolName: "invoke_bot_capability", Content: "数学分析（程艺，2026春）"},
+		{Identity: ident, DedupeKey: "history:assistant", Type: store.ConversationEventAssistant, Content: "程艺老师在 2026 春开课。"},
 	} {
-		if !strings.Contains(logs.String(), want) {
-			t.Fatalf("compaction logs missing %q: %q", want, logs.String())
-		}
-	}
-	if summaryRequests.Load() != 1 {
-		t.Fatalf("summary requests = %d", summaryRequests.Load())
-	}
-	summary, found, err := db.ConversationSummary(ctx, ident)
-	if err != nil || !found {
-		t.Fatalf("summary found = %v, err = %v", found, err)
-	}
-	if summary.Summary != "用户此前逐轮测试了对话记忆。" {
-		t.Fatalf("summary = %#v", summary)
-	}
-	messages, err := svc.messagesFor(ctx, Input{Text: "continue", Identity: ident})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(messages) != 1+4*2+1 {
-		t.Fatalf("message count = %d, messages = %#v", len(messages), messages)
-	}
-	if !strings.HasPrefix(messages[0].Content, conversationSummaryPrefix) ||
-		!strings.Contains(messages[1].Content, "turn-22") ||
-		!strings.Contains(messages[len(messages)-1].Content, "continue") ||
-		!strings.HasPrefix(messages[len(messages)-1].Content, "现在是 ") {
-		t.Fatalf("messages = %#v", messages)
-	}
-	for _, message := range messages {
-		if strings.Contains(message.Content, "turn-01") {
-			t.Fatalf("compacted raw turn leaked into recent history: %#v", messages)
-		}
-	}
-}
-
-func TestHandleResponseCompactsHistoryBeforeAnswering(t *testing.T) {
-	ctx := context.Background()
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
-		if err := db.RecordInteraction(ctx, ident, store.Interaction{
-			RawText: fmt.Sprintf("turn-%02d", i),
-			Handled: true,
-			Reply:   fmt.Sprintf("reply-%02d", i),
-			Status:  store.InteractionStatusHandled,
-		}); err != nil {
+		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1103,62 +964,35 @@ func TestHandleResponseCompactsHistoryBeforeAnswering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		switch requests.Add(1) {
-		case 1:
-			if bytes.Contains(body, []byte(`"tools"`)) {
-				t.Fatalf("summary request included tools: %s", body)
-			}
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-summary",
-				"object":"chat.completion",
-				"created":0,
-				"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"earlier summary"},"finish_reason":"stop"}],
-				"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}
-			}`))
-		case 2:
-			if !bytes.Contains(body, []byte("earlier summary")) ||
-				!bytes.Contains(body, []byte("turn-16")) ||
-				bytes.Contains(body, []byte("turn-01")) {
-				t.Fatalf("agent request history = %s", body)
-			}
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-answer",
-				"object":"chat.completion",
-				"created":0,
-				"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"continued"},"finish_reason":"stop"}],
-				"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}
-			}`))
-		default:
-			t.Fatalf("unexpected model request %d", requests.Load())
+		if requests.Add(1) != 1 {
+			t.Fatalf("unexpected extra model request")
 		}
+		for _, want := range [][]byte{[]byte("call-history"), []byte("course_search"), []byte("数学分析（程艺，2026春）"), []byte("continue")} {
+			if !bytes.Contains(body, want) {
+				t.Fatalf("typed history missing %q: %s", want, body)
+			}
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-answer",
+			"object":"chat.completion",
+			"created":0,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"continued"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}
+		}`))
 	}))
 	defer server.Close()
-	svc, err := New(ctx, Config{
-		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-	}, commands.Handler{Store: db}, server.Client())
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+		commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	response, ok := svc.HandleResponse(ctx, Input{Text: "continue", Identity: ident})
-	if !ok || response.Text != "continued" {
-		t.Fatalf("response = %#v, ok = %v", response, ok)
-	}
-	if requests.Load() != 2 {
-		t.Fatalf("model requests = %d", requests.Load())
-	}
-	total, err := db.ConversationSpending(ctx, ident)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if total.ModelRequests != 2 || total.PromptTokens != 8 || total.CompletionTokens != 2 {
-		t.Fatalf("spending = %#v", total)
+	if !ok || response.Text != "continued" || requests.Load() != 1 {
+		t.Fatalf("response=%#v ok=%v requests=%d", response, ok, requests.Load())
 	}
 }
-
-func TestHandleResponseRejectsHardLimitImageBeforeCompaction(t *testing.T) {
+func TestHandleResponseRejectsHardLimitImageBeforeModelCall(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1166,13 +1000,6 @@ func TestHandleResponseRejectsHardLimitImageBeforeCompaction(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "admin", ConversationType: "private", ConversationID: "admin"}
-	for i := 1; i <= conversationCompactTurnLimit+1; i++ {
-		if err := db.RecordInteraction(ctx, ident, store.Interaction{
-			RawText: fmt.Sprintf("turn-%02d", i), Handled: true, Reply: "reply", Status: store.InteractionStatusHandled,
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(maxImageDownloadBytes+1, 10))
 		w.WriteHeader(http.StatusOK)
@@ -1199,9 +1026,6 @@ func TestHandleResponseRejectsHardLimitImageBeforeCompaction(t *testing.T) {
 	}
 	if modelRequests.Load() != 0 {
 		t.Fatalf("model requests before image validation = %d", modelRequests.Load())
-	}
-	if _, found, err := db.ConversationSummary(ctx, ident); err != nil || found {
-		t.Fatalf("summary found = %v, err = %v", found, err)
 	}
 }
 

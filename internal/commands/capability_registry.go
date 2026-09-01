@@ -289,7 +289,10 @@ func loginPolicy(inv Invocation) CapabilityPolicy {
 
 func subscriptionPolicy(inv Invocation) CapabilityPolicy {
 	if firstArgIs(inv.Args, "link") {
-		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureHostOnly, ConfirmNever)
+		// Private conversations may expose the user's own calendar URL to the
+		// model. The URL is already stored in private state; group policy still
+		// prevents this capability from being invoked on a shared surface.
+		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureModel, ConfirmNever)
 	}
 	if firstArgIs(inv.Args, "import") {
 		return privateWritePolicy(inv, EffectWrite)

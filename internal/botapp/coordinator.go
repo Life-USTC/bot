@@ -23,6 +23,7 @@ const (
 	defaultJobPollInterval    = 250 * time.Millisecond
 	defaultJobBatchSize       = 4
 	defaultImageRenderTimeout = 5 * time.Second
+	userVisibleProgressDelay  = 2500 * time.Millisecond
 )
 
 type CommandHandler interface {
@@ -30,7 +31,7 @@ type CommandHandler interface {
 }
 
 type AgentHandler interface {
-	HandleResponse(context.Context, agent.Input) (commands.Response, bool)
+	Run(context.Context, agent.Input) agent.Result
 }
 
 type Recorder interface {
@@ -66,7 +67,14 @@ type JobRepository interface {
 	CompleteConversationJob(context.Context, int64, string) (bool, error)
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
 	TransitionConversationJob(context.Context, int64, string, store.ConversationJobTransition) (bool, error)
-	ConsumeConversationJobConfirmation(context.Context, store.Identity, ...time.Time) (*store.ConversationJob, error)
+	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
+	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
+	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
+	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
+	ClaimCapabilityExecution(context.Context, string) (store.CapabilityExecution, bool, error)
+	FinishCapabilityExecution(context.Context, string, string, error) (store.CapabilityExecution, error)
+	MarkCapabilityExecutionReceiptsSent(context.Context, []string) error
+	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
 	RecoverConversationJobLeases(context.Context, time.Time, ...time.Duration) error
 	ExpireConversationJobs(context.Context, time.Time) error
 }
@@ -162,10 +170,10 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 	if sourceEventID == "" {
 		return errors.New("inbound source event id is empty")
 	}
-	if isUserConfirmation(inbound.Text) {
-		confirmed, err := c.jobs.ConsumeConversationJobConfirmation(ctx, identityForInbound(inbound))
+	if decision, isDecision := userConfirmationDecision(inbound.Text); isDecision {
+		_, confirmed, err := c.jobs.ResolveCapabilityConfirmation(ctx, identityForInbound(inbound), decision)
 		if err != nil {
-			return fmt.Errorf("consume conversation confirmation: %w", err)
+			return fmt.Errorf("resolve capability confirmation: %w", err)
 		}
 		if confirmed != nil {
 			select {
@@ -174,6 +182,9 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			}
 			return nil
 		}
+		// Approval mechanics are not conversation turns. A standalone decision
+		// with nothing awaiting it is ignored instead of being sent to the LLM.
+		return nil
 	}
 	var replyContext *message.ResponseContext
 	if inbound.ReplyTo != nil && c.replies != nil {
@@ -223,12 +234,14 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 	return nil
 }
 
-func isUserConfirmation(text string) bool {
+func userConfirmationDecision(text string) (store.CapabilityConfirmationDecision, bool) {
 	switch strings.ToLower(strings.TrimSpace(text)) {
 	case "ok", "确认", "确定", "是":
-		return true
+		return store.CapabilityConfirmationDecision{Approved: true}, true
+	case "no", "取消", "拒绝", "否", "不":
+		return store.CapabilityConfirmationDecision{Approved: false, Reason: "用户拒绝执行"}, true
 	default:
-		return false
+		return store.CapabilityConfirmationDecision{}, false
 	}
 }
 
@@ -294,13 +307,44 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	}
 	part := 0
 	var outputMu sync.Mutex
+	visibleOutput := false
+	enqueueLocked := func(ctx context.Context, response commands.Response) error {
+		next, err := c.enqueueResponse(ctx, job, inbound, response, part)
+		if err == nil {
+			part = next
+			visibleOutput = true
+		}
+		return err
+	}
 	enqueue := func(ctx context.Context, response commands.Response) error {
 		outputMu.Lock()
 		defer outputMu.Unlock()
-		next, err := c.enqueueResponse(ctx, job, inbound, response, part)
-		part = next
-		return err
+		return enqueueLocked(ctx, response)
 	}
+	progressStop := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		timer := time.NewTimer(userVisibleProgressDelay)
+		defer timer.Stop()
+		select {
+		case <-progressStop:
+			return
+		case <-timer.C:
+			outputMu.Lock()
+			defer outputMu.Unlock()
+			if visibleOutput {
+				return
+			}
+			if err := enqueueLocked(ctx, commands.Response{Text: "稍等一下", Kind: "agent_progress"}); err != nil {
+				c.logf("enqueue progress for conversation job %d failed: %v", job.ID, err)
+			}
+		}
+	}()
+	defer func() {
+		close(progressStop)
+		<-progressDone
+	}()
 	commandRoute := strings.TrimSpace(job.Invocation.Command) != "" || payload.Route == routing.ActionCommand
 	if commandRoute {
 		invocation, restored := commands.RestoreInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
@@ -339,10 +383,9 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		c.complete(ctx, job)
 		return
 	}
-	var confirmationCommand string
 	var waitingAuth bool
-	reply, ok := c.agent.HandleResponse(ctx, agent.Input{
-		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity,
+	result := c.agent.Run(ctx, agent.Input{
+		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
 		SendUpdate: func(ctx context.Context, _ store.Identity, text string) error {
 			return enqueue(ctx, commands.Response{Text: text, Kind: "agent_update"})
 		},
@@ -357,27 +400,46 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 			}
 			return nil
 		},
-		WaitForConfirmation: func(_ context.Context, _ store.Identity, command string) error {
-			outputMu.Lock()
-			defer outputMu.Unlock()
-			command = strings.TrimSpace(command)
-			if command == "" {
-				return errors.New("confirmation command is empty")
-			}
-			if confirmationCommand != "" && confirmationCommand != command {
-				return errors.New("only one confirmation may be requested per job")
-			}
-			confirmationCommand = command
-			return nil
-		},
 	})
-	if !ok {
+	if !result.Handled {
 		c.recordIgnoredJob(ctx, job, inbound)
 		c.complete(ctx, job)
 		return
 	}
+	if result.State == agent.RunStateInterrupted {
+		receipts, err := c.unsentExecutionReceipts(ctx, job.ID, true)
+		if err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		confirmation := appendReceiptLines(commands.Response{Kind: "agent_confirmation"}, confirmationPrompt, receipts)
+		if err := enqueue(ctx, confirmation); err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		if err := c.jobs.MarkCapabilityExecutionReceiptsSent(ctx, receipts.IDs); err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		c.recordJob(ctx, job, inbound, confirmation, store.InteractionStatusWaitingConfirmation)
+		c.transition(ctx, job, store.ConversationJobTransition{
+			State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+		})
+		return
+	}
+	reply := result.Response
+	receipts, err := c.unsentExecutionReceipts(ctx, job.ID, false)
+	if err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	reply = appendReceiptLines(reply, "", receipts)
 	if reply.Text != "" || reply.Image != nil || len(reply.Parts) > 0 {
 		if err := enqueue(ctx, reply); err != nil {
+			c.fail(ctx, job, err)
+			return
+		}
+		if err := c.jobs.MarkCapabilityExecutionReceiptsSent(ctx, receipts.IDs); err != nil {
 			c.fail(ctx, job, err)
 			return
 		}
@@ -391,21 +453,11 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	}
 	outputMu.Lock()
 	authRequired := waitingAuth
-	confirmationRequired := confirmationCommand
 	outputMu.Unlock()
 	if authRequired {
 		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingAuth)
 		c.transition(ctx, job, store.ConversationJobTransition{
 			State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth,
-		})
-		return
-	}
-	if confirmationRequired != "" {
-		c.recordJob(ctx, job, inbound, reply, store.InteractionStatusWaitingConfirmation)
-		c.transition(ctx, job, store.ConversationJobTransition{
-			State:      store.ConversationJobStateWaitingConfirmation,
-			WaitReason: store.ConversationJobWaitReasonConfirmation,
-			Invocation: persistedInvocation(confirmationRequired),
 		})
 		return
 	}

@@ -33,24 +33,26 @@ type CapabilityReceipt struct {
 }
 
 type CapabilityExecution struct {
-	ID          string
-	Identity    Identity
-	JobID       int64
-	Sequence    int
-	DedupeKey   string
-	ToolCallID  string
-	Capability  string
-	Arguments   []string
-	Effect      string
-	State       CapabilityExecutionState
-	Receipt     CapabilityReceipt
-	Result      string
-	Error       string
-	ConfirmedAt *time.Time
-	StartedAt   *time.Time
-	FinishedAt  *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            string
+	Identity      Identity
+	JobID         int64
+	Sequence      int
+	DedupeKey     string
+	ToolCallID    string
+	Capability    string
+	Arguments     []string
+	Effect        string
+	State         CapabilityExecutionState
+	Receipt       CapabilityReceipt
+	Result        string
+	Error         string
+	ConfirmedAt   *time.Time
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	ReceiptSentAt *time.Time
+	ReceiptState  CapabilityExecutionState
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type CapabilityExecutionPrepare struct {
@@ -92,6 +94,8 @@ type capabilityExecutionRow struct {
 	ConfirmedAt      *time.Time
 	StartedAt        *time.Time
 	FinishedAt       *time.Time
+	ReceiptSentAt    *time.Time `gorm:"index"`
+	ReceiptState     string     `gorm:"not null;default:''"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -196,6 +200,42 @@ func (s *Store) CapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]
 		result = append(result, execution)
 	}
 	return result, nil
+}
+
+func (s *Store) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]CapabilityExecution, error) {
+	if jobID <= 0 {
+		return nil, errors.New("capability execution job id is invalid")
+	}
+	var rows []capabilityExecutionRow
+	if err := s.db.WithContext(ctx).Where("job_id = ? AND (receipt_state = '' OR receipt_state <> state)", jobID).
+		Order("sequence ASC, created_at ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]CapabilityExecution, 0, len(rows))
+	for _, row := range rows {
+		execution, err := capabilityExecutionFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, execution)
+	}
+	return result, nil
+}
+
+func (s *Store) MarkCapabilityExecutionReceiptsSent(ctx context.Context, ids []string) error {
+	clean := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" {
+			clean = append(clean, id)
+		}
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+	now := nowUTC()
+	return s.db.WithContext(ctx).Model(&capabilityExecutionRow{}).
+		Where("id IN ? AND (receipt_state = '' OR receipt_state <> state)", clean).
+		Updates(map[string]any{"receipt_sent_at": now, "receipt_state": gorm.Expr("state"), "updated_at": now}).Error
 }
 
 // ResolveCapabilityConfirmation consumes exactly one independently reversible
@@ -367,7 +407,9 @@ func capabilityExecutionFromRow(row capabilityExecutionRow) (CapabilityExecution
 		Capability: row.Capability, Arguments: arguments, Effect: row.Effect,
 		State: CapabilityExecutionState(row.State), Receipt: receipt, Result: row.Result, Error: row.Error,
 		ConfirmedAt: row.ConfirmedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		ReceiptSentAt: row.ReceiptSentAt,
+		ReceiptState:  CapabilityExecutionState(row.ReceiptState),
+		CreatedAt:     row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}, nil
 }
 

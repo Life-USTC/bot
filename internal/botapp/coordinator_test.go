@@ -30,7 +30,14 @@ func (fn commandFunc) HandleInvocationResponse(ctx context.Context, input comman
 
 type agentFunc func(context.Context, agent.Input) (commands.Response, bool)
 
-func (fn agentFunc) HandleResponse(ctx context.Context, input agent.Input) (commands.Response, bool) {
+func (fn agentFunc) Run(ctx context.Context, input agent.Input) agent.Result {
+	response, handled := fn(ctx, input)
+	return agent.Result{Response: response, Handled: handled, State: agent.RunStateCompleted}
+}
+
+type agentResultFunc func(context.Context, agent.Input) agent.Result
+
+func (fn agentResultFunc) Run(ctx context.Context, input agent.Input) agent.Result {
 	return fn(ctx, input)
 }
 
@@ -264,23 +271,43 @@ func TestCoordinatorTreatsReplyToAcceptedAgentOutputAsAddressed(t *testing.T) {
 	}
 }
 
-func TestCoordinatorConfirmationResumesTheSameJobOnce(t *testing.T) {
+func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	db := newCoordinatorStore(t)
 	mutations := 0
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: db,
-		Commands: commandFunc(func(_ context.Context, input commands.Input) (commands.Response, bool) {
-			if input.Text == "notify homework on" {
-				mutations++
-				return commands.Response{Text: "已开启", Kind: "notify"}, true
-			}
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
 			return commands.Response{}, false
 		}),
-		Agent: agentFunc(func(ctx context.Context, input agent.Input) (commands.Response, bool) {
-			if err := input.WaitForConfirmation(ctx, input.Identity, "通知 作业 开"); err != nil {
+		Agent: agentResultFunc(func(ctx context.Context, input agent.Input) agent.Result {
+			executions, err := db.CapabilityExecutionsForJob(ctx, input.JobID)
+			if err != nil {
 				t.Fatal(err)
 			}
-			return commands.Response{Text: "需要确认，回复 ok。", Kind: "agent"}, true
+			if len(executions) == 0 {
+				_, _, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+					Identity: input.Identity, JobID: input.JobID, DedupeKey: "notify-confirm", ToolCallID: "call-notify",
+					Capability: "notify", Arguments: []string{"homework", "on"}, Effect: "write",
+					Receipt:              store.CapabilityReceipt{Action: "执行", Resource: "操作", Subject: "开启作业通知"},
+					RequiresConfirmation: true,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return agent.Result{Handled: true, State: agent.RunStateInterrupted}
+			}
+			execution, execute, err := db.ClaimCapabilityExecution(ctx, executions[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if execute {
+				mutations++
+				execution, err = db.FinishCapabilityExecution(ctx, execution.ID, "已开启", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			return agent.Result{Response: commands.Response{Text: execution.Result, Kind: "agent"}, Handled: true, State: agent.RunStateCompleted}
 		}),
 		Outputs: db,
 	})
@@ -297,7 +324,7 @@ func TestCoordinatorConfirmationResumesTheSameJobOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation || saved.Invocation.Command != "notify homework on" {
+	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
 		t.Fatalf("waiting job = %#v", saved)
 	}
 	if err := coordinator.Enqueue(ctx, jobInbound("event-ok", "ok")); err != nil {
@@ -314,11 +341,12 @@ func TestCoordinatorConfirmationResumesTheSameJobOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Text != "需要确认，回复 ok。" || records[1].Message.Content.Text != "已开启" {
+	if len(records) != 2 ||
+		!strings.Contains(records[0].Message.Content.Text, "#待确认执行操作{开启作业通知}") ||
+		!strings.Contains(records[1].Message.Content.Text, "#已执行操作{开启作业通知}") {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
-
 func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	db := newCoordinatorStore(t)
 	coordinator, err := NewCoordinator(CoordinatorConfig{

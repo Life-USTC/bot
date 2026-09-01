@@ -151,10 +151,21 @@ type runBudget struct {
 }
 
 func newRunBudget(now time.Time, metrics *runMetrics) *runBudget {
-	return &runBudget{
+	return newRunBudgetWithAttempts(now, metrics, 0)
+}
+
+func newRunBudgetWithAttempts(now time.Time, metrics *runMetrics, priorModelAttempts int64) *runBudget {
+	budget := &runBudget{
 		deadline: now.Add(agentRunDeadline),
 		metrics:  metrics,
 	}
+	if priorModelAttempts > int64(agentRunMaxModelAttempts) {
+		priorModelAttempts = int64(agentRunMaxModelAttempts)
+	}
+	if priorModelAttempts > 0 {
+		budget.modelAttempts.Store(int32(priorModelAttempts))
+	}
+	return budget
 }
 
 func withRunBudget(ctx context.Context, budget *runBudget) context.Context {

@@ -127,13 +127,13 @@ func TestExecuteCapabilityForAgentReturnsAuthRequiredWithoutExposingLoginData(t 
 	}
 }
 
-func TestCapabilityPresentationMarksPrivateCalendarLinkForHostDelivery(t *testing.T) {
+func TestCapabilityPresentationExposesPrivateCalendarLinkToModel(t *testing.T) {
 	cmd, ok := (Handler{}).parse("订阅 链接")
 	if !ok {
 		t.Fatal("calendar link command did not parse")
 	}
-	if !agentCommandRequiresHostDelivery(cmd, Response{Text: "private"}) {
-		t.Fatal("private calendar link must bypass the model")
+	if agentCommandRequiresHostDelivery(cmd, Response{Text: "private"}) {
+		t.Fatal("private calendar link should be returned to the model in a private conversation")
 	}
 }
 
