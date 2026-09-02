@@ -134,31 +134,7 @@ func subscriptionImportTargets(args []string) []string {
 	if raw == "" {
 		return nil
 	}
-	// Prefer the command's canonical section-code extractor when the input
-	// contains ordinary Life section codes. It ignores surrounding prose while
-	// preserving the deterministic order and de-duplication of the direct
-	// command path.
-	if codes := extractSectionCodes(raw); len(codes) > 0 {
-		return codes
-	}
-	// Structured callers may use opaque code fixtures (for example CODE1 and
-	// CODE2) that do not have the catalog's dotted suffix yet. Split those
-	// arguments independently as well; the normal execution boundary still
-	// validates the resulting invocation before it can mutate anything.
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == '，' || r == ';' || r == '；' || r == '\n' || r == '\r' || r == '\t' || r == ' '
-	})
-	targets := make([]string, 0, len(parts))
-	seen := make(map[string]bool, len(parts))
-	for _, part := range parts {
-		part = strings.ToUpper(strings.TrimSpace(strings.Trim(part, "，,;；")))
-		if part == "" || seen[part] {
-			continue
-		}
-		seen[part] = true
-		targets = append(targets, part)
-	}
-	return targets
+	return extractSectionCodes(raw)
 }
 
 func splitMutationTargets(invocation Invocation, targetIndex int) []Invocation {

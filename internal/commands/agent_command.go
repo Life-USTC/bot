@@ -16,9 +16,13 @@ func (h Handler) ExecuteCapability(ctx context.Context, input Input, id Capabili
 	if !found {
 		return NotFoundOutcome(Response{Text: "没有找到这个能力。请先查询 Bot 命令文档。", Kind: string(id)}), nil
 	}
+	candidate, _ := RestoreInvocation(id, args)
+	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(candidate) {
+		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: string(id)}), nil
+	}
 	invocation, ok := NewInvocation(id, args)
 	if !ok {
-		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: string(descriptor.ID)}), nil
+		return InvalidInputOutcome(invalidCapabilityUsageResponse(descriptor.ID)), nil
 	}
 	return h.executeCapabilityInvocation(ctx, input, invocation, false)
 }
@@ -51,7 +55,7 @@ func capabilityDescriptionFailure(invocation Invocation, err error) CapabilityOu
 	case errors.Is(err, errCapabilityForbidden):
 		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: invocation.Name})
 	case errors.Is(err, errCapabilityInvalidInput), errors.Is(err, errCapabilityMutationMustExpand):
-		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: invocation.Name})
+		return InvalidInputOutcome(invalidCapabilityUsageResponse(invocation.ID()))
 	case errors.Is(err, errCapabilityReceiptTargetNotFound):
 		return NotFoundOutcome(Response{Text: "没有找到可匹配的教学班。", Kind: invocation.Name})
 	default:
@@ -70,10 +74,10 @@ func (h Handler) executeDescribedCapability(ctx context.Context, input Input, de
 	original := description.Invocation
 	invocation, valid := NewInvocation(original.ID(), original.Args)
 	if !valid {
-		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: original.Name})
+		return InvalidInputOutcome(invalidCapabilityUsageResponse(original.ID()))
 	}
 	if err := validateReceiptInvocation(invocation); err != nil {
-		return InvalidInputOutcome(Response{Text: "能力参数无效。请先查询 Bot 命令文档中的精确参数。", Kind: invocation.Name})
+		return InvalidInputOutcome(invalidCapabilityUsageResponse(invocation.ID()))
 	}
 	invocation.Raw = original.Raw
 	invocation.NaturalRoute = original.NaturalRoute

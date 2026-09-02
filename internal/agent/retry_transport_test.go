@@ -205,13 +205,16 @@ func TestRunBudgetLimitsPhysicalAttemptsAcrossRequests(t *testing.T) {
 		wait:   func(context.Context, time.Duration) error { return nil },
 	}
 
-	resp, err := transport.RoundTrip(retryTestRequest(ctx))
-	if err != nil {
-		t.Fatalf("first RoundTrip error = %v", err)
+	logicalRequests := agentRunMaxModelAttempts / llmHTTPMaxAttempts
+	for request := 0; request < logicalRequests; request++ {
+		resp, err := transport.RoundTrip(retryTestRequest(ctx))
+		if err != nil {
+			t.Fatalf("RoundTrip %d error = %v", request+1, err)
+		}
+		_ = resp.Body.Close()
 	}
-	_ = resp.Body.Close()
 	if _, err := transport.RoundTrip(retryTestRequest(ctx)); !errors.Is(err, errAgentModelAttemptBudget) {
-		t.Fatalf("second RoundTrip error = %v, want attempt budget", err)
+		t.Fatalf("request beyond aggregate limit error = %v, want attempt budget", err)
 	}
 	if got := attempts.Load(); got != int32(agentRunMaxModelAttempts) {
 		t.Fatalf("physical attempts = %d, want %d", got, agentRunMaxModelAttempts)
@@ -225,7 +228,7 @@ func TestRunBudgetAttemptAdmissionRace(t *testing.T) {
 	metrics := newRunMetrics()
 	budget := newRunBudget(time.Now(), metrics)
 	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	const workers = 64
+	const workers = 128
 	var successes atomic.Int32
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {

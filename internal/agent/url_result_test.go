@@ -24,7 +24,7 @@ func TestHandleResponsePreservesModelVisiblePrivateURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	response, handled := svc.HandleResponse(context.Background(), Input{
-		Text:     "给我日历链接",
+		Text:     "请原样复述测试内容",
 		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
 	})
 	if !handled || response.Text != want {

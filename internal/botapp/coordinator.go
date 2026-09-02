@@ -25,7 +25,6 @@ const (
 	defaultJobRecoveryInterval = time.Second
 	defaultJobBatchSize        = 4
 	defaultImageRenderTimeout  = 5 * time.Second
-	defaultProgressDelay       = 2500 * time.Millisecond
 )
 
 type CommandHandler interface {
@@ -85,7 +84,6 @@ type JobRepository interface {
 	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
 	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
 	RetryConversationJob(context.Context, int64, string, string) (bool, error)
-	EnqueueConversationJobProgress(context.Context, store.ConversationJobProgressEnqueue) (delivery.Record, bool, error)
 	RecoverConversationJobLeases(context.Context, time.Time, ...time.Duration) error
 	ExpireConversationJobs(context.Context, time.Time) error
 }
@@ -109,7 +107,6 @@ type CoordinatorConfig struct {
 	Recorder           Recorder
 	Renderer           Renderer
 	ImageRenderTimeout time.Duration
-	ProgressDelay      time.Duration
 	PollInterval       time.Duration
 	BatchSize          int
 	Logger             *log.Logger
@@ -127,7 +124,6 @@ type Coordinator struct {
 	recorder           Recorder
 	renderer           Renderer
 	imageRenderTimeout time.Duration
-	progressDelay      time.Duration
 	pollInterval       time.Duration
 	batchSize          int
 	nextRecoveryAt     time.Time
@@ -187,15 +183,10 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	if batchSize <= 0 {
 		batchSize = defaultJobBatchSize
 	}
-	progressDelay := config.ProgressDelay
-	if progressDelay <= 0 {
-		progressDelay = defaultProgressDelay
-	}
 	return &Coordinator{
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
 		recorder: config.Recorder, renderer: config.Renderer,
 		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
-		progressDelay:      progressDelay,
 		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
 	}, nil
 }
@@ -360,48 +351,15 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	inbound := payload.Inbound
 	part := 0
 	var outputMu sync.Mutex
-	visibleOutput := false
 	commit := func(ctx context.Context, response commands.Response, receiptIDs []string, transition store.ConversationJobTransition) error {
 		outputMu.Lock()
 		defer outputMu.Unlock()
 		next, err := c.commitResponse(ctx, job, inbound, response, part, receiptIDs, transition)
 		if err == nil {
 			part = next
-			if response.Text != "" || response.Image != nil || len(response.Parts) > 0 {
-				visibleOutput = true
-			}
 		}
 		return err
 	}
-	progressStop := make(chan struct{})
-	progressDone := make(chan struct{})
-	go func() {
-		defer close(progressDone)
-		timer := time.NewTimer(c.progressDelay)
-		defer timer.Stop()
-		select {
-		case <-progressStop:
-			return
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			outputMu.Lock()
-			defer outputMu.Unlock()
-			if visibleOutput {
-				return
-			}
-			next, err := c.enqueueResponse(ctx, job, inbound, commands.Response{Text: "稍等一下", Kind: "agent_progress"}, part)
-			if err != nil {
-				c.logf("enqueue progress for conversation job %d failed: %v", job.ID, err)
-			} else if next != part {
-				visibleOutput = true
-			}
-		}
-	}()
-	defer func() {
-		close(progressStop)
-		<-progressDone
-	}()
 	commandRoute := strings.TrimSpace(job.Invocation.Command) != "" || payload.Route == routing.ActionCommand
 	if commandRoute {
 		invocation, restored := commands.RestoreInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
@@ -576,36 +534,6 @@ func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause
 		c.acknowledgeAgent(ctx, job)
 	}
 	c.logf("conversation job %d failed: %v", job.ID, cause)
-}
-
-func (c *Coordinator) enqueueResponse(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, start int) (int, error) {
-	messages, next, err := c.responseOutbounds(ctx, job, inbound, response, start)
-	if err != nil {
-		return start, err
-	}
-	for index, outbound := range messages {
-		if outbound.Kind == "agent_progress" {
-			_, created, err := c.jobs.EnqueueConversationJobProgress(ctx, store.ConversationJobProgressEnqueue{
-				JobID: job.ID, LeaseToken: job.LeaseToken, Message: outbound,
-			})
-			if err != nil {
-				return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
-			}
-			if !created {
-				return start, nil
-			}
-			c.recordOutbound(ctx, job, outbound)
-			continue
-		}
-		_, created, err := c.outputs.Enqueue(ctx, outbound)
-		if err != nil {
-			return start + index, fmt.Errorf("persist response part %d: %w", start+index, err)
-		}
-		if created {
-			c.recordOutbound(ctx, job, outbound)
-		}
-	}
-	return next, nil
 }
 
 func (c *Coordinator) commitResponse(

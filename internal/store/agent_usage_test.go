@@ -28,8 +28,9 @@ func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 3; i++ {
-		reserved, err := s.ReserveAgentModelAttempt(ctx, first, job.ID, 5)
+	firstAttempts := agentModelAttemptLimit / 2
+	for i := int64(0); i < firstAttempts; i++ {
+		reserved, err := s.ReserveAgentModelAttempt(ctx, first, job.ID, agentModelAttemptLimit)
 		if err != nil || !reserved {
 			t.Fatalf("reserve attempt %d: reserved=%v err=%v", i, reserved, err)
 		}
@@ -42,13 +43,13 @@ func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2; i++ {
-		reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, 5)
+	for i := firstAttempts; i < agentModelAttemptLimit; i++ {
+		reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, agentModelAttemptLimit)
 		if err != nil || !reserved {
 			t.Fatalf("resume reserve attempt %d: reserved=%v err=%v", i, reserved, err)
 		}
 	}
-	if reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, 5); err != nil || reserved {
+	if reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, agentModelAttemptLimit); err != nil || reserved {
 		t.Fatalf("resume exceeded durable limit: reserved=%v err=%v", reserved, err)
 	}
 	if err := s.FinishAgentRun(ctx, second, AgentRunStatusFailed, "", nil, AgentSpending{ModelRequests: 1}); err != nil {
@@ -58,8 +59,8 @@ func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spending.ModelRequests != 5 {
-		t.Fatalf("job spending after crash/resume = %#v, want 5 attempts", spending)
+	if spending.ModelRequests != agentModelAttemptLimit {
+		t.Fatalf("job spending after crash/resume = %#v, want %d attempts", spending, agentModelAttemptLimit)
 	}
 }
 
@@ -86,7 +87,7 @@ func TestAgentModelAttemptReservationIsExclusiveAcrossWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const workers = 12
+	const workers = 128
 	var wg sync.WaitGroup
 	results := make(chan bool, workers)
 	errs := make(chan error, workers)
@@ -98,7 +99,7 @@ func TestAgentModelAttemptReservationIsExclusiveAcrossWorkers(t *testing.T) {
 		}
 		go func() {
 			defer wg.Done()
-			reserved, err := s.ReserveAgentModelAttempt(ctx, runID, job.ID, 5)
+			reserved, err := s.ReserveAgentModelAttempt(ctx, runID, job.ID, agentModelAttemptLimit)
 			if err != nil {
 				errs <- err
 				return
@@ -118,16 +119,16 @@ func TestAgentModelAttemptReservationIsExclusiveAcrossWorkers(t *testing.T) {
 			reserved++
 		}
 	}
-	if reserved != 5 {
-		t.Fatalf("concurrent reservations = %d, want 5", reserved)
+	if reserved != int(agentModelAttemptLimit) {
+		t.Fatalf("concurrent reservations = %d, want %d", reserved, agentModelAttemptLimit)
 	}
 	spending, err := s.AgentJobSpending(ctx, job.ID)
-	if err != nil || spending.ModelRequests != 5 {
+	if err != nil || spending.ModelRequests != agentModelAttemptLimit {
 		t.Fatalf("overlap spending = %#v err=%v", spending, err)
 	}
 }
 
-func TestAgentModelAttemptReservationNeverAcceptsLimitAboveFive(t *testing.T) {
+func TestAgentModelAttemptReservationNeverAcceptsLimitAboveHardCap(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)

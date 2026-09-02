@@ -261,6 +261,9 @@ func (h Handler) parseResult(text string) ParseResult {
 	if raw == "" {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
+	if HasRemovedCommandPrefix(raw) {
+		return ParseResult{Status: ParseStatusUnknown}
+	}
 	if isNaturalCalendarLinkRequest(raw) {
 		result := acceptedCommandResult(raw, "subscription", []string{"link"})
 		result.Invocation.NaturalRoute = "calendar_link"
@@ -287,6 +290,12 @@ func (h Handler) parseResult(text string) ParseResult {
 
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
+		if strings.HasPrefix(fields[0], "/") {
+			unknown := strings.TrimSpace(strings.TrimPrefix(fields[0], "/"))
+			if unknown != "" {
+				return acceptedCommandResult(raw, string(CapabilityHelp), []string{unknown})
+			}
+		}
 		return parseNaturalReadIntent(raw)
 	}
 	result := acceptedCommandResult(raw, name, args)
@@ -294,6 +303,15 @@ func (h Handler) parseResult(text string) ParseResult {
 		return result
 	}
 	return parseNaturalReadIntent(raw)
+}
+
+// HasRemovedCommandPrefix identifies command paths that no longer exist. The
+// router uses the same boundary as the parser so rejected slash commands can
+// never fall through to natural-language handling or the Agent.
+func HasRemovedCommandPrefix(text string) bool {
+	raw := strings.TrimSpace(stripCQCodes(text))
+	fields := strings.Fields(raw)
+	return len(fields) > 0 && strings.HasPrefix(strings.ToLower(fields[0]), "/life")
 }
 
 func parseNaturalReadIntent(raw string) ParseResult {
@@ -690,6 +708,9 @@ func normalizeScheduleWeekTarget(value string) (string, bool) {
 			return "week-number:" + strconv.Itoa(week), true
 		}
 	}
+	if week, ok := chineseScheduleWeekNumber(value); ok {
+		return "week-number:" + strconv.Itoa(week), true
+	}
 	if strings.HasSuffix(value, "周") {
 		dateValue := strings.TrimSpace(strings.TrimSuffix(value, "周"))
 		if _, ok := parseScheduleDateToken(dateValue, chinaNow()); ok {
@@ -697,6 +718,39 @@ func normalizeScheduleWeekTarget(value string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func chineseScheduleWeekNumber(value string) (int, bool) {
+	value = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(value), "第"), "周")
+	if value == "" {
+		return 0, false
+	}
+	digits := map[rune]int{'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+	runes := []rune(value)
+	if len(runes) == 1 {
+		if runes[0] == '十' {
+			return 10, true
+		}
+		week, ok := digits[runes[0]]
+		return week, ok
+	}
+	if len(runes) == 2 {
+		if runes[0] == '十' {
+			ones, ok := digits[runes[1]]
+			return 10 + ones, ok
+		}
+		if runes[1] == '十' {
+			tens, ok := digits[runes[0]]
+			return tens * 10, ok && tens <= 3
+		}
+	}
+	if len(runes) == 3 && runes[1] == '十' {
+		tens, tensOK := digits[runes[0]]
+		ones, onesOK := digits[runes[2]]
+		week := tens*10 + ones
+		return week, tensOK && onesOK && week <= 30
+	}
+	return 0, false
 }
 
 func parseScheduleDateToken(value string, base time.Time) (time.Time, bool) {
@@ -1972,34 +2026,43 @@ func parseHomeworkListArgs(args []string) (homeworkListArgs, error) {
 	i := 0
 	if i < len(args) {
 		switch normToken(args[i]) {
-		case "all":
+		case "list", "ls", "查看", "列表":
+			i++
+		}
+	}
+	if i < len(args) {
+		switch normToken(args[i]) {
+		case "all", "全部":
 			out.all = true
 			i++
-		case "pending":
+		case "pending", "未完成":
 			i++
 		}
 	}
 	for i < len(args) {
 		key := normToken(args[i])
 		if i+1 >= len(args) {
-			break
+			return homeworkListArgs{}, fmt.Errorf("%s 后面缺少学期 ID。例如：作业 semester_id 123", args[i])
 		}
 		value := args[i+1]
 		switch key {
-		case "semester_id":
+		case "semester_id", "学期id":
 			if v, ok := parseIntArg(value); ok {
 				out.semesterID = v
 				i += 2
 				continue
 			}
-		case "semester_jw_id":
+			return homeworkListArgs{}, fmt.Errorf("学期 ID 必须是大于 0 的整数。例如：作业 semester_id 123")
+		case "semester_jw_id", "学期jwid":
 			if v, ok := parseIntArg(value); ok {
 				out.semesterJwID = v
 				i += 2
 				continue
 			}
+			return homeworkListArgs{}, fmt.Errorf("学期 JW ID 必须是大于 0 的整数。例如：作业 semester_jw_id 202501")
+		default:
+			return homeworkListArgs{}, fmt.Errorf("无法识别作业参数“%s”。例如：作业 all 或 作业 第2页", args[i])
 		}
-		i++
 	}
 	return out, nil
 }

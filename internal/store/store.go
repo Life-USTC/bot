@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1665,15 +1664,7 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		for i := range rows {
 			row := &rows[i]
 			result := tx.Model(&outgoingMessageRow{}).
-				Where(`id = ? AND status IN ? AND NOT EXISTS (
-					SELECT 1 FROM outgoing_messages AS earlier
-					WHERE earlier.id < outgoing_messages.id
-					AND earlier.platform = outgoing_messages.platform
-					AND earlier.conversation_type = outgoing_messages.conversation_type
-					AND earlier.conversation_id = outgoing_messages.conversation_id
-					AND earlier.kind = 'agent_progress'
-					AND earlier.status = ?
-				)`, row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}, string(delivery.StatusDelivering)).
+				Where("id = ? AND status IN ?", row.ID, []string{string(delivery.StatusPending), string(delivery.StatusRetryWait)}).
 				Updates(map[string]any{
 					"status":             string(delivery.StatusDelivering),
 					"attempts":           gorm.Expr("attempts + 1"),
@@ -1698,57 +1689,6 @@ func (s *Store) ClaimDue(ctx context.Context, now time.Time, limit int) ([]deliv
 		return nil
 	})
 	return records, err
-}
-
-// ReadyToDeliver is the last durable gate before an adapter call. It expires a
-// progress row when the corresponding job already produced a user-facing
-// output. A progress call that already passed this gate remains ordered ahead
-// of later messages for the same conversation by ClaimDue.
-func (s *Store) ReadyToDeliver(ctx context.Context, id int64) (bool, error) {
-	if id <= 0 {
-		return false, errors.New("outgoing message id must be positive")
-	}
-	ready := false
-	now := nowUTC()
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row outgoingMessageRow
-		err := tx.Select("id", "kind", "dedupe_key", "status").Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).First(&row).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if row.Kind != "agent_progress" {
-			ready = true
-			return nil
-		}
-		jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey)
-		if !ok {
-			return fmt.Errorf("agent progress %d has an invalid dedupe key", row.ID)
-		}
-		var job conversationJobRow
-		err = tx.Select("state").Where("id = ?", jobID).First(&job).Error
-		if err == nil && (job.State == string(ConversationJobStateRunning) || job.State == string(ConversationJobStateRetryWait)) {
-			ready = true
-			return nil
-		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		result := tx.Model(&outgoingMessageRow{}).
-			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
-			Updates(map[string]any{
-				"status":             string(delivery.StatusExpired),
-				"next_attempt_at":    nil,
-				"attempt_started_at": nil,
-				"error_code":         "superseded",
-				"error_message":      "superseded by conversation job output",
-				"updated_at":         now,
-			})
-		return result.Error
-	})
-	return ready, err
 }
 
 func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome, nextAttemptAt time.Time) error {
@@ -1803,21 +1743,6 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 			}
 			return err
 		}
-		if status == delivery.StatusRetryWait && row.Kind == "agent_progress" {
-			if jobID, ok := conversationJobIDFromProgressKey(row.DedupeKey); ok {
-				var job conversationJobRow
-				err := tx.Select("state").Where("id = ?", jobID).First(&job).Error
-				if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil &&
-					job.State != string(ConversationJobStateRunning) && job.State != string(ConversationJobStateRetryWait)) {
-					updates["status"] = string(delivery.StatusExpired)
-					updates["next_attempt_at"] = nil
-					updates["error_code"] = "superseded"
-					updates["error_message"] = "superseded by conversation job output"
-				} else if err != nil {
-					return err
-				}
-			}
-		}
 		result := tx.Model(&outgoingMessageRow{}).
 			Where("id = ? AND status = ?", id, string(delivery.StatusDelivering)).
 			Updates(updates)
@@ -1829,18 +1754,6 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 		}
 		return nil
 	})
-}
-
-func conversationJobIDFromProgressKey(key string) (int64, bool) {
-	const prefix = "conversation-job:"
-	const suffix = ":progress"
-	key = strings.TrimSpace(key)
-	if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) {
-		return 0, false
-	}
-	value := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
-	id, err := strconv.ParseInt(value, 10, 64)
-	return id, err == nil && id > 0
 }
 
 func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {

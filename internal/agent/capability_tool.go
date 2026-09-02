@@ -57,7 +57,7 @@ func (s *Service) invokeHostCapability(
 		if err != nil {
 			return "", err
 		}
-		if outcome.Status != commands.CapabilityOutcomeSuccess {
+		if capabilityOutcomeIsToolError(outcome.Status) {
 			toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 		}
 		presentation := s.handler.PresentCapabilityOutcome(commands.Invocation{Name: string(id), Args: append([]string(nil), input.Arguments...)}, outcome)
@@ -218,7 +218,7 @@ func (s *Service) executeUnconfirmedHostCapability(
 		}
 		return "", executionID, false, err
 	}
-	if outcome.Status != commands.CapabilityOutcomeSuccess && outcome.Status != commands.CapabilityOutcomeAuthRequired {
+	if capabilityOutcomeIsToolError(outcome.Status) {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 	}
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
@@ -289,6 +289,7 @@ func (s *Service) resumeHostCapability(
 	pending := false
 	authWait := false
 	results := make([]string, 0, len(state.ExecutionIDs))
+	resolved := make([]store.CapabilityExecution, 0, len(state.ExecutionIDs))
 	for _, executionID := range state.ExecutionIDs {
 		execution, found, err := s.handler.Store.CapabilityExecution(ctx, executionID)
 		if err != nil {
@@ -368,7 +369,11 @@ func (s *Service) resumeHostCapability(
 			return "", fmt.Errorf("capability execution %s is not terminal: %s", execution.ID, execution.State)
 		}
 		if execution.State != store.CapabilityExecutionWaitingAuth {
+			if execution.State != store.CapabilityExecutionSucceeded {
+				toolOutcomesFromContext(ctx).markError(execution.ToolCallID)
+			}
 			results = append(results, capabilityExecutionModelResult(execution))
+			resolved = append(resolved, execution)
 		}
 	}
 	if authWait {
@@ -381,7 +386,46 @@ func (s *Service) resumeHostCapability(
 			Kind: capabilityInterruptConfirmation, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
 		}, state)
 	}
-	return strings.TrimSpace(strings.Join(results, "\n\n")), nil
+	result := strings.TrimSpace(strings.Join(results, "\n\n"))
+	if err := s.persistResumedCapabilityResult(ctx, ident, jobID, resolved, result); err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+func (s *Service) persistResumedCapabilityResult(
+	ctx context.Context,
+	ident store.Identity,
+	jobID int64,
+	executions []store.CapabilityExecution,
+	result string,
+) error {
+	if s.handler.Store == nil || jobID <= 0 || len(executions) == 0 {
+		return nil
+	}
+	toolCallID := strings.TrimSpace(executions[0].ToolCallID)
+	if toolCallID == "" {
+		return errors.New("resumed capability result has no tool call id")
+	}
+	for _, execution := range executions[1:] {
+		if strings.TrimSpace(execution.ToolCallID) != toolCallID {
+			return errors.New("resumed capability batch contains multiple tool call ids")
+		}
+	}
+	job, err := s.handler.Store.GetConversationJob(ctx, jobID)
+	if err != nil {
+		return markDurableAgentStateError("read resumed capability job", err)
+	}
+	if job == nil {
+		return markDurableAgentStateError("read resumed capability job", errors.New("conversation job is missing"))
+	}
+	_, _, err = s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
+		Identity: ident, JobID: jobID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
+		DedupeKey: agentToolResultDedupeKey(jobID, toolCallID),
+		Type:      s.toolEventType(ctx, jobID, toolCallID), Content: result,
+		ToolCallID: toolCallID, ToolName: capabilityToolName,
+	})
+	return markDurableAgentStateError("persist resumed capability result", err)
 }
 
 func capabilityJobIDForExecutions(ctx context.Context, db *store.Store, ids []string) (int64, error) {
@@ -442,6 +486,19 @@ func capabilityOutcomeIsUnknown(outcome commands.CapabilityOutcome) bool {
 	return outcome.Status == commands.CapabilityOutcomeUnknown
 }
 
+func capabilityOutcomeIsToolError(status commands.CapabilityOutcomeStatus) bool {
+	switch status {
+	case commands.CapabilityOutcomeFailed,
+		commands.CapabilityOutcomeUnknown,
+		commands.CapabilityOutcomeInvalidInput,
+		commands.CapabilityOutcomeForbidden,
+		commands.CapabilityOutcomeNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
 func capabilityExecutionDiagnostic(status commands.CapabilityOutcomeStatus) error {
 	return fmt.Errorf("capability returned %s outcome", status)
 }
@@ -481,7 +538,7 @@ func (s *Service) executeApprovedCapability(
 		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
 		return finished, false, markDurableAgentStateError("record approved capability failure", finishErr)
 	}
-	if outcome.Status != commands.CapabilityOutcomeSuccess && outcome.Status != commands.CapabilityOutcomeAuthRequired {
+	if capabilityOutcomeIsToolError(outcome.Status) {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 	}
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)

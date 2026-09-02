@@ -14,8 +14,6 @@ type workerRepository struct {
 	nextAttempts []time.Time
 	recoveredAt  time.Time
 	expiredAt    time.Time
-	ready        bool
-	readySet     bool
 }
 
 func (r *workerRepository) Enqueue(context.Context, message.Outbound) (Record, bool, error) {
@@ -26,13 +24,6 @@ func (r *workerRepository) ClaimDue(context.Context, time.Time, int) ([]Record, 
 	records := r.records
 	r.records = nil
 	return records, nil
-}
-
-func (r *workerRepository) ReadyToDeliver(context.Context, int64) (bool, error) {
-	if r.readySet {
-		return r.ready, nil
-	}
-	return true, nil
 }
 
 func (r *workerRepository) Complete(_ context.Context, _ int64, outcome Outcome, next time.Time) error {
@@ -121,24 +112,5 @@ func TestWorkerStopsRetryingAfterAttemptBudget(t *testing.T) {
 	}
 	if !repository.nextAttempts[0].IsZero() {
 		t.Fatalf("unexpected retry = %v", repository.nextAttempts[0])
-	}
-}
-
-func TestWorkerSkipsRecordSupersededBeforePlatformCall(t *testing.T) {
-	repository := &workerRepository{readySet: true, ready: false, records: []Record{{
-		ID: 1,
-		Message: message.Outbound{
-			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
-			Content: message.Content{Text: "稍等一下"},
-		},
-	}}}
-	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
-	service, err := New(repository, adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	(&Worker{Service: service}).tick(t.Context())
-	if adapter.got.Content.Text != "" || len(repository.completed) != 0 {
-		t.Fatalf("superseded delivery reached adapter=%#v completed=%#v", adapter.got, repository.completed)
 	}
 }

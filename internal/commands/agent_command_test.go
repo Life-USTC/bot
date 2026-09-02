@@ -45,8 +45,16 @@ func TestCapabilityExecutionEnforcesSharedDataScope(t *testing.T) {
 
 func TestCapabilityExecutionReturnsExplicitInvalidAndMissingStates(t *testing.T) {
 	invalid, err := (Handler{}).ExecuteCapability(context.Background(), Input{}, CapabilityBus, []string{"not-a-day"})
-	if err != nil || invalid.Status != CapabilityOutcomeInvalidInput || !strings.Contains(invalid.Response.Text, "命令文档") {
+	if err != nil || invalid.Status != CapabilityOutcomeInvalidInput ||
+		!strings.Contains(invalid.Response.Text, "校车的参数无法识别") ||
+		!strings.Contains(invalid.Response.Text, "校车 周六 周日") ||
+		!strings.Contains(invalid.Response.Text, "校车 偏好 路线 东区 西区") ||
+		strings.Contains(invalid.Response.Text, "命令文档") {
 		t.Fatalf("invalid=%#v err=%v", invalid, err)
+	}
+	schedule, err := (Handler{}).ExecuteCapability(context.Background(), Input{}, CapabilitySchedule, []string{"someday"})
+	if err != nil || schedule.Status != CapabilityOutcomeInvalidInput || !strings.Contains(schedule.Response.Text, "课表 第3周") {
+		t.Fatalf("schedule invalid=%#v err=%v", schedule, err)
 	}
 	missing, err := (Handler{}).ExecuteCapability(context.Background(), Input{}, CapabilityID("does_not_exist"), nil)
 	if err != nil || missing.Status != CapabilityOutcomeNotFound {

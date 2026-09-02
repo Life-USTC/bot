@@ -70,6 +70,20 @@ func (c *Coordinator) executeCommandRoute(
 		c.fail(ctx, job, markConversationPersistenceError(err))
 		return
 	}
+	if len(executions) == 0 {
+		validated, valid := commands.NewInvocation(invocation.ID(), invocation.Args)
+		if !valid {
+			input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true}
+			outcome, executeErr := c.commands.ExecuteCapability(ctx, input, invocation.ID(), invocation.Args)
+			if executeErr != nil {
+				c.fail(ctx, job, executeErr)
+				return
+			}
+			c.finishCommandWithoutExecution(ctx, job, inbound, outcome.Response, outcome.Status, commit)
+			return
+		}
+		invocation = validated
+	}
 	if len(executions) == 0 && invocation.Policy().Confirmation == commands.ConfirmUser {
 		c.prepareCommandConfirmations(ctx, job, inbound, invocation, commit)
 		return

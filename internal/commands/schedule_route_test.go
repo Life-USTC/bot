@@ -17,6 +17,7 @@ func TestNaturalScheduleIntentRouting(t *testing.T) {
 		"我下周有哪些课？":        "next-week",
 		"麻烦查一下本周的课表":      "this-week",
 		"想看看第3周课表":        "week-number:3",
+		"想看看第二周课表":        "week-number:2",
 		"查一下2026-05-06课表": "week-date:2026-05-06",
 		"我想看2026秋季学期课表":   "semester:2026-秋",
 	}

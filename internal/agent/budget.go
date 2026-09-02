@@ -22,9 +22,13 @@ const (
 	// output ceiling. conversationCompactInputLimit is the hard provider input
 	// budget; physical retries reuse their logical request's reservation instead
 	// of consuming it again.
-	agentRunTokenBudget      int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
-	agentRunMaxToolCalls           = 12
-	agentRunMaxModelAttempts       = 5
+	agentRunTokenBudget  int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
+	agentRunMaxToolCalls       = 12
+	// A tool loop can make at most one more logical model request than tool
+	// calls. Each logical request receives its own bounded retry window; the
+	// aggregate durable limit prevents a restart from resetting that budget.
+	llmRequestMaxAttempts    = 5
+	agentRunMaxModelAttempts = (agentRunMaxToolCalls + 1) * llmRequestMaxAttempts
 )
 
 var (
@@ -250,7 +254,7 @@ func admitModelRequest(ctx context.Context, contextTokens int64) error {
 	budget.reservedTokens += reservation
 	budget.mu.Unlock()
 
-	if err := admitModelAttempt(ctx); err != nil {
+	if err := admitModelAttemptWithContext(ctx, contextTokens); err != nil {
 		// A race can consume the last attempt slot after the reservation was
 		// made. A rejected physical attempt must not leave that reservation
 		// behind and reduce the budget available to later logical requests.
@@ -266,6 +270,13 @@ func admitModelRequest(ctx context.Context, contextTokens int64) error {
 // Keeping this separate from token reservation is important: a retry sends
 // the same prompt again, but must not spend the run's context budget again.
 func admitModelAttempt(ctx context.Context) error {
+	return admitModelAttemptWithContext(ctx, 1)
+}
+
+func admitModelAttemptWithContext(ctx context.Context, contextTokens int64) error {
+	if contextTokens < 1 {
+		contextTokens = 1
+	}
 	budget := runBudgetFromContext(ctx)
 	if budget == nil {
 		if ctx != nil {
@@ -274,7 +285,7 @@ func admitModelAttempt(ctx context.Context) error {
 			}
 		}
 		if metrics := runMetricsFromContext(ctx); metrics != nil {
-			metrics.recordModelRequest(1)
+			metrics.recordModelRequest(contextTokens)
 		}
 		return nil
 	}
@@ -307,7 +318,7 @@ func admitModelAttempt(ctx context.Context) error {
 			}
 		}
 		if budget.metrics != nil {
-			budget.metrics.recordModelRequest(1)
+			budget.metrics.recordModelRequest(contextTokens)
 		}
 		return nil
 	}
