@@ -37,26 +37,25 @@ type remoteRenderRequest struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// remoteBusPayload is the payload for kind "bus".
+// remoteBusPayload is the payload for kind "bus". It mirrors the geometry of
+// the legacy renderRichPNG bus branch: the sidecar only has to lay the tables
+// out at the given widths, not re-measure anything.
 type remoteBusPayload struct {
-	Kind         string           `json:"kind"`
 	Title        string           `json:"title"`
-	DateLine     string           `json:"date_line"`
-	SemesterLine string           `json:"semester_line"`
-	Next         *remoteNextBus   `json:"next,omitempty"`
-	Tables       []remoteBusTable `json:"tables"`
-}
-
-type remoteNextBus struct {
-	Time string `json:"time"`
-	Wait string `json:"wait"`
+	ContentWidth int              `json:"content_width"`
+	NextTime     string           `json:"next_time,omitempty"`
+	NextWait     string           `json:"next_wait,omitempty"`
+	Footer       []string         `json:"footer,omitempty"`
+	RowsOfTables [][]int          `json:"rows_of_tables,omitempty"`
+	Tables       []remoteBusTable `json:"tables,omitempty"`
 }
 
 type remoteBusTable struct {
 	Label          string         `json:"label,omitempty"`
-	Header         []string       `json:"header"`
+	Header         []string       `json:"header,omitempty"`
 	HeaderEmphasis []bool         `json:"header_emphasis,omitempty"`
-	Rows           []remoteBusRow `json:"rows"`
+	ColumnWidths   []int          `json:"column_widths,omitempty"`
+	Rows           []remoteBusRow `json:"rows,omitempty"`
 }
 
 type remoteBusRow struct {
@@ -95,6 +94,9 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	}
 
 	payload := r.buildBusRequest(img)
+	if len(payload.Tables) == 0 {
+		return nil, 0, 0, errors.New("response contains no bus tables")
+	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, 0, 0, err
@@ -141,45 +143,83 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	return png, width, height, nil
 }
 
+// buildBusRequest mirrors the legacy renderRichPNG bus branch: parse the rich
+// text, mark departed/highlighted rows, and run the same layout pass so the
+// sidecar receives final geometry (column widths, table pairing, content
+// width) instead of re-deriving it.
 func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
-	tables := busRenderTables(img)
-	markBusRowsByTime(tables, img.Title, now)
-	nextTime, nextWait := busNextWait(tables, img.Title, now)
+	doc := parseRichText(img.RichText)
+	tables := []busRenderTable{}
+	for i := range doc.Blocks {
+		if doc.Blocks[i].Table != nil {
+			tables = append(tables, *doc.Blocks[i].Table)
+		}
+	}
+	markBusRowsByTime(tables, doc.Title, now)
+	tableIndex := 0
+	for i := range doc.Blocks {
+		if doc.Blocks[i].Table != nil {
+			*doc.Blocks[i].Table = tables[tableIndex]
+			tableIndex++
+		}
+	}
+	layout := layoutRichText(doc, now)
 
 	title := busRenderTitle(img)
-	showDirectionLabels := title == "校车"
-	if showDirectionLabels {
+	if title == "校车" {
 		title = "全部路线"
 	}
 
 	req := remoteBusPayload{
-		Kind:         img.Kind,
 		Title:        "校车 · " + title,
-		DateLine:     now.Format("2006-01-02 15:04") + "（" + busDayType(now) + "）",
-		SemesterLine: "2026 春季学期时刻表 / 蜗壳小道消息",
+		ContentWidth: layout.Space.Width - 2*layout.Metrics.MarginX,
+		NextTime:     layout.NextTime,
+		NextWait:     layout.NextWait,
 	}
-	if nextTime != "" {
-		req.Next = &remoteNextBus{Time: nextTime, Wait: nextWait}
-	}
-	for _, table := range tables {
-		headers := busStopHeaders(table.Header, true)
-		rt := remoteBusTable{Rows: make([]remoteBusRow, 0, len(table.Rows))}
-		if showDirectionLabels {
-			rt.Label = table.directionKey()
+	footer := richFooterLines(now)
+	req.Footer = []string{footer[0], footer[1]}
+
+	// Nodes are laid out row-major; group them back into visual rows and map
+	// each table node to its index in doc order.
+	indexOf := map[*busRenderTable]int{}
+	for i := range doc.Blocks {
+		if doc.Blocks[i].Table != nil {
+			indexOf[doc.Blocks[i].Table] = len(req.Tables)
+			req.Tables = append(req.Tables, remoteBusTable{})
 		}
-		for _, h := range headers {
+	}
+	rowIndexByY := map[int]int{}
+	for _, node := range layout.Nodes {
+		if node.Table == nil {
+			continue
+		}
+		idx, ok := indexOf[node.Table]
+		if !ok {
+			continue
+		}
+		rt := &req.Tables[idx]
+		rt.Label = node.Heading
+		rt.ColumnWidths = append([]int(nil), node.ColumnWidths...)
+		for _, h := range node.Header {
 			rt.Header = append(rt.Header, h.Text)
 			rt.HeaderEmphasis = append(rt.HeaderEmphasis, h.Emphasize)
 		}
-		for _, row := range table.Rows {
+		for _, row := range node.Table.Rows {
 			rt.Rows = append(rt.Rows, remoteBusRow{
 				Cells:     row.Cells,
 				Highlight: row.Highlight,
 				Departed:  row.Departed,
 			})
 		}
-		req.Tables = append(req.Tables, rt)
+		y := node.Bounds.Min.Y
+		rowIdx, seen := rowIndexByY[y]
+		if !seen {
+			rowIdx = len(req.RowsOfTables)
+			rowIndexByY[y] = rowIdx
+			req.RowsOfTables = append(req.RowsOfTables, nil)
+		}
+		req.RowsOfTables[rowIdx] = append(req.RowsOfTables[rowIdx], idx)
 	}
 	return req
 }

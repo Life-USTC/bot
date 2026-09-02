@@ -160,13 +160,13 @@ impl World for SandboxWorld {
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        if id.vpath().as_rootless_path() == std::path::Path::new("assets/logo.png") {
-            static LOGO: OnceLock<Bytes> = OnceLock::new();
-            return Ok(LOGO
-                .get_or_init(|| Bytes::new(include_bytes!("../assets/life_ustc_logo_raw.png").to_vec()))
-                .clone());
+        match id.vpath().as_rootless_path().to_str() {
+            Some("assets/logo.png") => Ok(raw_logo().clone()),
+            Some("assets/logo-15.png") => faded_logo(0.15)
+                .cloned()
+                .ok_or_else(|| FileError::NotFound(id.vpath().as_rootless_path().into())),
+            _ => Err(FileError::NotFound(id.vpath().as_rootless_path().into())),
         }
-        Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -182,9 +182,42 @@ impl World for SandboxWorld {
     }
 }
 
+/// The embedded Life@USTC logo, served to templates as `assets/logo.png`.
+fn raw_logo() -> &'static Bytes {
+    static LOGO: OnceLock<Bytes> = OnceLock::new();
+    LOGO.get_or_init(|| Bytes::new(include_bytes!("../assets/life_ustc_logo_raw.png").to_vec()))
+}
+
+/// The logo with its alpha pre-scaled, served as `assets/logo-15.png` etc.
+/// Typst cannot draw images at reduced opacity, so the fade is baked into the
+/// PNG once and cached. Returns None if the logo cannot be decoded; the
+/// template then fails to compile, which is surfaced as a render error.
+fn faded_logo(opacity: f32) -> Option<&'static Bytes> {
+    static LOGO15: OnceLock<Option<Bytes>> = OnceLock::new();
+    LOGO15
+        .get_or_init(|| {
+            let mut pixmap = tiny_skia::Pixmap::decode_png(raw_logo()).ok()?;
+            for pixel in pixmap.pixels_mut() {
+                let c = pixel.demultiply();
+                let alpha = (c.alpha() as f32 * opacity).round() as u8;
+                *pixel = tiny_skia::ColorU8::from_rgba(c.red(), c.green(), c.blue(), alpha)
+                    .premultiply();
+            }
+            pixmap.encode_png().ok().map(Bytes::new)
+        })
+        .as_ref()
+}
+
+/// Pre-generate derived assets (faded logo variants) so the first request
+/// does not pay for PNG decode/encode, and fail fast if the logo is broken.
+pub fn warm_assets() -> Result<(), String> {
+    faded_logo(0.15)
+        .map(|_| ())
+        .ok_or_else(|| "failed to pre-render faded logo variant".to_string())
+}
+
 /// Howard Hinnant's civil-from-days algorithm.
-fn civil_from_days(z: i64) -> (i32, u8, u8) {
-    let z = z + 719_468;
+fn civil_from_days(z: i64) -> (i32, u8, u8) {    let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
@@ -195,4 +228,38 @@ fn civil_from_days(z: i64) -> (i32, u8, u8) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y as i32, m as u8, d as u8)
+}
+
+#[cfg(test)]
+mod debug_compile_tests {
+    /// Compile the typst file named by DEBUG_TYP_FILE and print diagnostics
+    /// with line numbers. Used to debug generated template syntax quickly:
+    /// `DEBUG_TYP_FILE=/tmp/gen.typ cargo test debug_compile -- --nocapture`.
+    #[test]
+    fn debug_compile() {
+        let Ok(path) = std::env::var("DEBUG_TYP_FILE") else {
+            return;
+        };
+        let source = std::fs::read_to_string(path).expect("read debug file");
+        let world = super::SandboxWorld::new(source);
+        let warned = typst::compile::<typst::layout::PagedDocument>(&world);
+        use typst::World as _;
+        let main = world.source(world.main()).unwrap();
+        match warned.output {
+            Ok(_) => println!("COMPILE OK"),
+            Err(errors) => {
+                for e in &errors {
+                    let line = main
+                        .range(e.span)
+                        .and_then(|r| main.byte_to_line(r.start))
+                        .map(|l| l + 1);
+                    eprintln!("ERR line={:?}: {}", line, e.message);
+                    for hint in &e.hints {
+                        eprintln!("  hint: {hint}");
+                    }
+                }
+                panic!("compile failed");
+            }
+        }
+    }
 }

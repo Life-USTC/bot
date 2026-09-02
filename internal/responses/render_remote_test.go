@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 	"testing"
 )
 
@@ -45,7 +46,12 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	}))
 	defer server.Close()
 
-	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	renderer := RemoteRenderer{
+		Endpoint: server.URL + "/render",
+		Now: func() time.Time {
+			return time.Date(2026, 9, 2, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}
 	pngBytes, width, height, err := renderer.RenderPNG(testBusImage())
 	if err != nil {
 		t.Fatalf("RenderPNG: %v", err)
@@ -64,17 +70,29 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	if err := json.Unmarshal(gotRequest.Payload, &gotPayload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
+	if gotPayload.Title != "校车 · 东区 → 西区" {
+		t.Fatalf("request title = %q", gotPayload.Title)
+	}
 	if len(gotPayload.Tables) != 2 {
 		t.Fatalf("request tables = %d, want 2", len(gotPayload.Tables))
 	}
-	if got := gotPayload.Tables[0].Header; len(got) != 4 || got[0] != "出发·东区" || got[3] != "到·高新区" {
+	if got := gotPayload.Tables[0].Header; len(got) != 4 || got[0] != "东区" || got[3] != "高新区" {
 		t.Fatalf("first table header = %#v", got)
 	}
-	if got := gotPayload.Tables[0].HeaderEmphasis; len(got) != 4 || !got[0] || got[1] || got[2] || !got[3] {
-		t.Fatalf("first table emphasis = %#v", got)
+	if got := gotPayload.Tables[0].ColumnWidths; len(got) != 4 {
+		t.Fatalf("first table column widths = %#v", got)
 	}
-	if gotPayload.Next == nil {
-		t.Fatalf("request next = nil, want next bus hint")
+	if len(gotPayload.RowsOfTables) != 2 || len(gotPayload.RowsOfTables[0]) != 1 || gotPayload.RowsOfTables[0][0] != 0 || gotPayload.RowsOfTables[1][0] != 1 {
+		t.Fatalf("rows_of_tables = %#v, want [[0] [1]]", gotPayload.RowsOfTables)
+	}
+	if gotPayload.ContentWidth <= 0 {
+		t.Fatalf("content_width = %d, want > 0", gotPayload.ContentWidth)
+	}
+	if len(gotPayload.Footer) != 2 || gotPayload.Footer[1] != "Life @ USTC" {
+		t.Fatalf("footer = %#v", gotPayload.Footer)
+	}
+	if gotPayload.NextTime == "" {
+		t.Fatalf("request next_time empty, want next bus hint")
 	}
 }
 

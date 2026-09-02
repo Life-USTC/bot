@@ -33,6 +33,10 @@ async fn main() {
         tracing::error!("font initialization failed: {err}");
         std::process::exit(1);
     }
+    if let Err(err) = world::warm_assets() {
+        tracing::error!("asset initialization failed: {err}");
+        std::process::exit(1);
+    }
 
     let app = Router::new()
         .route("/render", post(render_handler))
