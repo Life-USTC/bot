@@ -60,7 +60,6 @@ var (
 	weatherBg      = color.RGBA{250, 250, 250, 255}
 	weatherAmber   = color.RGBA{245, 158, 11, 255}
 	weatherAmberDk = color.RGBA{217, 119, 6, 255}
-	weatherSky     = color.RGBA{56, 189, 248, 255}
 	weatherSkyFill = color.RGBA{125, 211, 252, 255}
 	weatherTileBg  = color.RGBA{255, 255, 255, 255}
 )
