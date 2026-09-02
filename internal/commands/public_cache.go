@@ -107,7 +107,7 @@ func (c *PublicCommandCache) GetOrLoadOutcome(ctx context.Context, command strin
 			return SuccessOutcome(Response{Text: response}), nil
 		}
 		outcome := normalizeOutcome(load())
-		if ctx.Err() == nil && outcome.Status == CapabilityOutcomeSuccess && !outcome.ConfirmationRequired {
+		if ctx.Err() == nil && outcome.Status == CapabilityOutcomeSuccess {
 			now := c.currentTime()
 			err := c.store.SavePublicCommandCache(ctx, store.PublicCommandCacheEntry{
 				Version:   c.version,

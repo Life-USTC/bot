@@ -9,7 +9,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestUserAndLLMFeedbackShareRecorderAndDurablePath(t *testing.T) {
+func TestUserFeedbackUsesDurableAdminDeliveryPath(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -24,29 +24,23 @@ func TestUserAndLLMFeedbackShareRecorderAndDurablePath(t *testing.T) {
 	ctx := context.Background()
 	ident := store.Identity{Platform: "qqbot", UserID: "user", ConversationType: "private", ConversationID: "user"}
 	userResult, err := service.Record(ctx, ident, Submission{
-		Source: SourceUser, Category: "user_feedback", Content: "课表颜色会变化", Context: "用户：今天课表",
+		Category: "user_feedback", Content: "课表颜色会变化", Context: "用户：今天课表",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	llmResult, err := service.Record(ctx, ident, Submission{
-		Source: SourceLLM, Category: "missing_tool", Content: "缺少食堂价格工具", Context: "模型发现工具缺口",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if userResult.ID <= 0 || llmResult.ID <= userResult.ID || userResult.AdminIntents != 1 || llmResult.AdminIntents != 1 {
-		t.Fatalf("results = %#v, %#v", userResult, llmResult)
+	if userResult.ID <= 0 || userResult.AdminIntents != 1 {
+		t.Fatalf("result = %#v", userResult)
 	}
 	due, err := db.ClaimDue(ctx, time.Now().Add(time.Minute), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(due) != 2 {
+	if len(due) != 1 {
 		t.Fatalf("outgoing messages = %#v", due)
 	}
-	if !strings.Contains(due[0].Message.Content.Text, "用户反馈") || !strings.Contains(due[1].Message.Content.Text, "LLM 反馈") {
-		t.Fatalf("messages = %q, %q", due[0].Message.Content.Text, due[1].Message.Content.Text)
+	if !strings.Contains(due[0].Message.Content.Text, "用户反馈") || strings.Contains(due[0].Message.Content.Text, "LLM") {
+		t.Fatalf("message = %q", due[0].Message.Content.Text)
 	}
 }
 
@@ -65,7 +59,7 @@ func TestDuplicateTargetsCreateOneIntent(t *testing.T) {
 	}
 	result, err := service.Record(context.Background(), store.Identity{
 		Platform: "qqbot", UserID: "user", ConversationType: "private", ConversationID: "user",
-	}, Submission{Source: SourceUser, Content: "重复目标不应重复通知"})
+	}, Submission{Content: "重复目标不应重复通知"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +91,7 @@ func TestMultipleAdminsHaveIndependentMessages(t *testing.T) {
 	}
 	result, err := service.Record(context.Background(), store.Identity{
 		Platform: "napcat", UserID: "user", ConversationType: "group", ConversationID: "group",
-	}, Submission{Source: SourceLLM, Content: "待办查询偶发失败"})
+	}, Submission{Content: "待办查询偶发失败"})
 	if err != nil {
 		t.Fatal(err)
 	}

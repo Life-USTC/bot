@@ -1088,7 +1088,6 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		return h.failed("反馈功能暂不可用。")
 	}
 	result, err := h.Feedback.Record(ctx, ident, feedback.Submission{
-		Source:   feedback.SourceUser,
 		Category: "user_feedback",
 		Content:  text,
 		Context:  contextText,
@@ -2401,16 +2400,11 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 	}, "\n")
 }
 
-func (h Handler) settings(ctx context.Context, ident store.Identity, args []string) string {
+func (h Handler) settings(args []string) string {
 	if !hasArgs(args) || firstArgIs(args, "help") {
 		return formatHelpTopic("settings")
 	}
-	switch settingsTopic(args[0]) {
-	case "notify":
-		return h.notify(ctx, ident, normalizeNotifyArgs(args[1:]))
-	default:
-		return h.invalidInput("未知设置项。\n" + formatHelpTopic("settings"))
-	}
+	return h.invalidInput("未知设置项。\n" + formatHelpTopic("settings"))
 }
 
 func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {

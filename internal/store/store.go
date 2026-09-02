@@ -1503,7 +1503,7 @@ func (s *Store) CreateFeedbackWithOutbounds(
 	}
 	ident = normalizeIdentity(ident)
 	source := textutil.LowerTrim(feedback.Source)
-	if source != "user" && source != "llm" {
+	if source != "user" {
 		return 0, 0, fmt.Errorf("invalid feedback source %q", source)
 	}
 	status := textutil.LowerTrim(feedback.Status)

@@ -17,6 +17,8 @@ func TestParseCommandDistinguishesValidInvalidAndUnknown(t *testing.T) {
 	}{
 		{name: "valid", input: "课表 明天", status: ParseStatusValid, id: CapabilitySchedule},
 		{name: "invalid", input: "课表 someday", status: ParseStatusInvalid, id: CapabilitySchedule},
+		{name: "invalid natural query", input: "帮我查询 someday 的课表", status: ParseStatusInvalid, id: CapabilitySchedule},
+		{name: "casual schedule comment", input: "课表真难看", status: ParseStatusUnknown},
 		{name: "unknown", input: "帮我规划一下周末", status: ParseStatusUnknown},
 	}
 	for _, test := range tests {
@@ -53,6 +55,7 @@ func TestUnknownSlashCommandReturnsStaticHelpInsteadOfAgentFallback(t *testing.T
 func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 	for _, input := range []string{
 		"课表 someday",
+		"帮我查询 someday 的课表",
 		"校车 火星",
 		"校车 周六 nonsense",
 		"通知 作业 开 nonsense",

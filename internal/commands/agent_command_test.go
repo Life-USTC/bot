@@ -62,7 +62,7 @@ func TestCapabilityExecutionReturnsExplicitInvalidAndMissingStates(t *testing.T)
 	}
 }
 
-func TestCapabilityExecutionLeavesConfirmationToHost(t *testing.T) {
+func TestCapabilityExecutionRunsAfterCallerAuthorization(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +70,12 @@ func TestCapabilityExecutionLeavesConfirmationToHost(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	outcome, err := (Handler{Store: db}).ExecuteCapability(context.Background(), Input{Identity: ident}, CapabilityNotify, []string{"作业", "开"})
-	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !outcome.ConfirmationRequired || outcome.Response.Text != "" {
+	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !strings.Contains(outcome.Response.Text, "作业提醒：开") {
 		t.Fatalf("outcome=%#v err=%v", outcome, err)
+	}
+	settings, err := db.NotificationSettings(context.Background(), ident)
+	if err != nil || !settings.HomeworkEnabled {
+		t.Fatalf("settings=%#v err=%v", settings, err)
 	}
 }
 

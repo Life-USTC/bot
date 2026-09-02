@@ -26,7 +26,6 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
-	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -151,7 +150,7 @@ func TestAgentCapabilityPersistenceFailureMarksRunRetryable(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := svc.Run(ctx, Input{
-		Text: "ping", Identity: ident, JobID: job.ID,
+		Text: "你好呀", Identity: ident, JobID: job.ID,
 		JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
 	})
 	if !result.Handled || result.State != RunStateFailed || result.Err == nil {
@@ -336,6 +335,131 @@ func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testin
 	}
 }
 
+func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "missing-subscription-target", Input: store.ConversationJobInput{Text: "帮我订阅 MISSING.01"},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue job: created=%v err=%v", created, err)
+	}
+	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/sections" || r.URL.Query().Get("search") != "MISSING.01" {
+			t.Errorf("unexpected Life request: %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	t.Cleanup(lifeServer.Close)
+	var requests atomic.Int32
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		request := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-search-subscription","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-subscription","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"subscription\"}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 2:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-subscribe-missing","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"invoke-subscription","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"import\",\"MISSING.01\"]}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 3:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-false-subscription","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"订阅成功。"},"finish_reason":"stop"}]
+			}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(modelServer.Close)
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model"},
+		commands.Handler{Life: life.NewClient(lifeServer.URL, lifeServer.Client()), Store: db}, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := svc.Run(ctx, claimAgentInput(t, db, ident, Input{Text: "帮我订阅 MISSING.01", Identity: ident, JobID: job.ID}))
+	if !result.Handled || result.State != RunStateCompleted || !strings.Contains(result.Response.Text, "没有找到要操作的课程或教学班") ||
+		!strings.Contains(result.Response.Text, "教学班 搜索") || strings.Contains(result.Response.Text, "订阅成功") {
+		t.Fatalf("result=%#v", result)
+	}
+	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(operations) != 0 {
+		t.Fatalf("preflight created operations=%#v err=%v", operations, err)
+	}
+	if requests.Load() != 3 {
+		t.Fatalf("model requests=%d want=3", requests.Load())
+	}
+}
+
+func TestGroundingFailureIsPersistedAsTheVisibleAssistantTurn(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "grounding-fallback-history", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim=%#v err=%v", claimed, err)
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-ungrounded","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"上次操作没有确认。"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+		commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := svc.Run(ctx, Input{
+		Text: "帮我看一下我今年的选课", Identity: ident, JobID: job.ID,
+		JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
+	})
+	if !result.Handled || result.State != RunStateCompleted || !strings.Contains(result.Response.Text, "没有拿到可验证的实时查询") {
+		t.Fatalf("result=%#v", result)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("semantic grounding attempts=%d want=2", requests.Load())
+	}
+	events, err := db.RecentConversationEvents(ctx, ident, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Type != store.ConversationEventUser || events[1].Type != store.ConversationEventAssistant ||
+		events[1].Content != result.Response.Text || strings.Contains(events[1].Content, "上次操作没有确认") {
+		t.Fatalf("visible fallback history=%#v", events)
+	}
+}
+
 func TestAgentIgnoresBlankMessages(t *testing.T) {
 	svc := &Service{enabled: true}
 	reply, ok := svc.Handle(context.Background(), Input{
@@ -498,7 +622,6 @@ func TestAgentToolConstruction(t *testing.T) {
 		"call_campus_tool",
 		"get_current_time",
 		"invoke_bot_capability",
-		"record_bot_feedback",
 		"search_bot_commands",
 		"search_campus_tools",
 	)
@@ -608,7 +731,6 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
 		"invoke_bot_capability",
-		"record_bot_feedback",
 		"search_bot_commands",
 	)
 }
@@ -867,120 +989,6 @@ func recoverableMCPToolError(t *testing.T) error {
 	return err
 }
 
-func TestRecordBotFeedbackStoresFeedback(t *testing.T) {
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	recorder, err := botfeedback.New(db, botfeedback.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{feedback: recorder}
-
-	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
-		Category: "missing_tool",
-		Content:  "需要一个考试地点工具",
-		Context:  "用户问考试在哪里",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(reply, "已记录反馈") {
-		t.Fatalf("reply = %q", reply)
-	}
-	count, err := db.FeedbackCount(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("feedback count = %d", count)
-	}
-}
-
-func TestRecordBotFeedbackQueuesConfiguredAdmins(t *testing.T) {
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
-	recorder, err := botfeedback.New(db, botfeedback.Config{Targets: []botfeedback.Target{
-		{Platform: "napcat", ConversationType: "private", ConversationID: "admin-openid"},
-		{Platform: "napcat", ConversationType: "group", ConversationID: "group-openid"},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{feedback: recorder}
-
-	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{
-		Category: "api_gap",
-		Content:  "需要按日期查询课表",
-		Context:  "用户问 6.23 课表",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(reply, "已转给维护者") {
-		t.Fatalf("reply = %q", reply)
-	}
-	due, err := db.ClaimDue(context.Background(), time.Now().Add(time.Minute), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(due) != 2 {
-		t.Fatalf("intents = %#v", due)
-	}
-	if due[0].Message.Target.Platform != "napcat" || due[0].Message.Target.Type != "private" || due[0].Message.Target.ID != "admin-openid" {
-		t.Fatalf("private target = %#v", due[0].Message.Target)
-	}
-	if due[1].Message.Target.Platform != "napcat" || due[1].Message.Target.Type != "group" || due[1].Message.Target.ID != "group-openid" {
-		t.Fatalf("group target = %#v", due[1].Message.Target)
-	}
-	if !strings.Contains(due[0].Message.Content.Text, "LLM 反馈") || !strings.Contains(due[0].Message.Content.Text, "需要按日期查询课表") || !strings.Contains(due[0].Message.Content.Text, "编号：#1") {
-		t.Fatalf("message = %q", due[0].Message.Content.Text)
-	}
-}
-
-func TestRecordBotFeedbackStoresWithoutAdminTargets(t *testing.T) {
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "qqbot", UserID: "openid-user", ConversationType: "private", ConversationID: "openid-user"}
-	recorder, err := botfeedback.New(db, botfeedback.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{feedback: recorder}
-
-	reply, err := svc.recordBotFeedback(context.Background(), ident, feedbackInput{Content: "需要按日期查询课表"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(reply, "已记录反馈 #1") || strings.Contains(reply, "已转给维护者") {
-		t.Fatalf("reply = %q", reply)
-	}
-	count, err := db.FeedbackCount(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("feedback count = %d", count)
-	}
-	due, err := db.ClaimDue(context.Background(), time.Now().Add(time.Minute), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(due) != 0 {
-		t.Fatalf("unexpected intents = %#v", due)
-	}
-}
-
 func TestCleanQQReplyRemovesMarkdownTables(t *testing.T) {
 	input := `---
 
@@ -1010,8 +1018,13 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if strings.Contains(instruction, "Current local time is") {
 		t.Fatalf("instruction should not embed wall-clock time (cache stability): %q", instruction)
 	}
-	if !strings.Contains(instruction, "confirmed one operation at a time") || !strings.Contains(instruction, "Avoid emojis") {
+	if !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
+	}
+	for _, leaked := range []string{"opaque host behavior", "pauses and resumes", "approval"} {
+		if strings.Contains(strings.ToLower(instruction), leaked) {
+			t.Fatalf("instruction leaks host authorization mechanics %q: %q", leaked, instruction)
+		}
 	}
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results") ||
 		!strings.Contains(instruction, "Chat history is not fresh evidence") ||
@@ -1020,9 +1033,6 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	}
 	if !strings.Contains(instruction, "preserving every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") {
 		t.Fatalf("instruction lacks universal argument-preservation rule: %q", instruction)
-	}
-	if !strings.Contains(instruction, "Never ask whether to record feedback") {
-		t.Fatalf("instruction lacks automatic feedback rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
@@ -1172,7 +1182,7 @@ func TestHostCapabilityDeliversAuthWaitWithoutModelExposure(t *testing.T) {
 
 func TestHostCapabilityDescriptionIsSmallAndCommandSearchReturnsExactCalls(t *testing.T) {
 	description := hostCapabilityToolDescription(false)
-	for _, expected := range []string{"search_bot_commands", "actual domain result", "pauses before each independently reversible mutation", "Authentication is also host-owned"} {
+	for _, expected := range []string{"search_bot_commands", "actual domain result", "literal result"} {
 		if !strings.Contains(description, expected) {
 			t.Fatalf("description lacks %q: %q", expected, description)
 		}
@@ -1184,6 +1194,9 @@ func TestHostCapabilityDescriptionIsSmallAndCommandSearchReturnsExactCalls(t *te
 	subscription, err := searchCommandDocumentation(ident, commandSearchInput{Query: "subscription"})
 	if err != nil || !strings.Contains(subscription, `"capability":"subscription","arguments":["link"]`) {
 		t.Fatalf("subscription documentation=%q err=%v", subscription, err)
+	}
+	if strings.Contains(subscription, "confirmation") || strings.Contains(strings.ToLower(description), "confirm") || strings.Contains(strings.ToLower(description), "approval") {
+		t.Fatalf("confirmation mechanics leaked to model: description=%q documentation=%q", description, subscription)
 	}
 	bus, err := searchCommandDocumentation(ident, commandSearchInput{Query: "bus"})
 	if err != nil || !strings.Contains(bus, `"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]`) {
@@ -1456,7 +1469,7 @@ func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpt
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-host-tool","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-host","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"login\",\"arguments\":[]}"}
+					"id":"call-host","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"schedule\",\"arguments\":[]}"}
 				}]},"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
 			}`))
@@ -1472,14 +1485,14 @@ func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpt
 
 	svc, err := New(ctx, Config{
 		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model",
-	}, commands.Handler{Auth: manager, Store: db}, modelServer.Client())
+	}, commands.Handler{Life: life.NewClient("http://life.invalid", nil), Auth: manager, Store: db}, modelServer.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	var deliveries atomic.Int32
 	response, ok := svc.HandleResponse(ctx, Input{
-		Text: "帮我登录", Identity: ident,
+		Text: "你好呀", Identity: ident,
 		SendResponse: func(_ context.Context, got store.Identity, delivered commands.Response) error {
 			if got != ident || delivered.Kind != commands.ResponseKindAuthWait || !strings.Contains(delivered.Text, "USER-CODE") {
 				t.Fatalf("host response identity=%#v response=%#v", got, delivered)
@@ -1496,6 +1509,64 @@ func TestHandleResponseTreatsSuccessfulHostDeliveryAsHandledWhenModelReplyIsEmpt
 	}
 	if got := modelRequests.Load(); got != 2 {
 		t.Fatalf("model requests = %d, want 2", got)
+	}
+}
+
+func TestRunExecutesAgentReadWithoutConfirmation(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "agent-read-no-confirmation", Input: store.ConversationJobInput{Text: "hello"},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue job: created=%v err=%v", created, err)
+	}
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		request := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if request == 1 {
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-read","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"call-read","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"help\",\"arguments\":[]}"}
+				}]} ,"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}
+			}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-read-done","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"服务状态已返回。"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":6,"completion_tokens":2,"total_tokens":8}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+		commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := claimAgentInput(t, db, ident, Input{Text: "hello", Identity: ident, JobID: job.ID})
+	result := svc.Run(ctx, input)
+	if !result.Handled || result.State != RunStateCompleted || result.Response.Text != "服务状态已返回。" {
+		t.Fatalf("result = %#v", result)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].Capability != string(commands.CapabilityHelp) ||
+		executions[0].Effect != string(commands.EffectRead) || executions[0].State != store.CapabilityExecutionSucceeded ||
+		executions[0].ConfirmedAt != nil {
+		t.Fatalf("read executions=%#v err=%v", executions, err)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("model requests=%d want=2", requests.Load())
 	}
 }
 

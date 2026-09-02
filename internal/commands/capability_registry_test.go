@@ -53,21 +53,39 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 }
 
 func TestNestedSettingsMutationsResolveChildPolicy(t *testing.T) {
-	tests := []struct {
-		command string
-		id      CapabilityID
-	}{
-		{command: "设置 通知 课表 开", id: CapabilityNotify},
+	invocation, ok := ParseInvocation("设置 通知 课表 开")
+	if !ok || invocation.Capability == nil || invocation.ID() != CapabilityNotify {
+		t.Fatalf("nested command invocation=%#v ok=%v", invocation, ok)
 	}
-	for _, tt := range tests {
-		invocation, ok := ParseInvocation(tt.command)
-		if !ok || invocation.Capability == nil || invocation.Capability.ID != tt.id {
-			t.Fatalf("%q parsed as %#v, ok=%v", tt.command, invocation, ok)
-		}
-		policy := invocation.Policy()
-		if policy.Effect != EffectWrite || policy.Confirmation != ConfirmUser || policy.DataScope != DataScopeUserPrivate {
-			t.Fatalf("%q policy = %#v", tt.command, policy)
-		}
+	policy := invocation.Policy()
+	if policy.Effect != EffectWrite || policy.DataScope != DataScopeUserPrivate {
+		t.Fatalf("nested command policy = %#v", policy)
+	}
+	if structured, accepted := NewInvocation(CapabilitySettings, []string{"通知", "课表", "开"}); accepted {
+		t.Fatalf("structured settings bypass was accepted as %#v", structured)
+	}
+}
+
+func TestLoginPolicyDistinguishesReadFromStartingLogin(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		args   []string
+		effect CapabilityEffect
+	}{
+		{name: "start login", effect: EffectWrite},
+		{name: "show login status", args: []string{"status"}, effect: EffectRead},
+		{name: "show login help", args: []string{"help"}, effect: EffectRead},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invocation, ok := NewInvocation(CapabilityLogin, test.args)
+			if !ok {
+				t.Fatalf("login invocation with args %#v is invalid", test.args)
+			}
+			policy := invocation.Policy()
+			if policy.Effect != test.effect || policy.DataScope != DataScopeUserPrivate || policy.Exposure != ExposureHostOnly {
+				t.Fatalf("login policy = %#v", policy)
+			}
+		})
 	}
 }
 

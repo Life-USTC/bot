@@ -28,9 +28,7 @@ const (
 )
 
 type CommandHandler interface {
-	DescribeCapabilityInvocations(context.Context, commands.Input, commands.CapabilityID, []string) ([]commands.CapabilityInvocationDescription, error)
 	ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error)
-	ExecuteApprovedInvocation(context.Context, commands.Input, commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error)
 }
 
 type AgentHandler interface {
@@ -72,7 +70,6 @@ type JobRepository interface {
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
 	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
 	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
-	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
 	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)
@@ -80,7 +77,6 @@ type JobRepository interface {
 	FinishCapabilityExecution(context.Context, string, string, string, error) (store.CapabilityExecution, error)
 	FinishCapabilityExecutionUnknown(context.Context, string, string, string, string) (store.CapabilityExecution, error)
 	MarkStaleCapabilityExecutionUnknown(context.Context, string, int64, string, string) (store.CapabilityExecution, bool, error)
-	UpdateCapabilityExecutionReceipt(context.Context, string, string, store.CapabilityReceipt) error
 	AppendConversationEvent(context.Context, store.ConversationEvent) (store.ConversationEvent, bool, error)
 	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
 	RetryConversationJob(context.Context, int64, string, string) (bool, error)
@@ -220,9 +216,8 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			}
 			return nil
 		}
-		// Approval mechanics are not conversation turns. A standalone decision
-		// with nothing awaiting it is ignored instead of being sent to the LLM.
-		return nil
+		// A confirmation word is mechanics only while an operation is actually
+		// pending. Otherwise it remains an ordinary conversation turn.
 	}
 	var replyContext *message.ResponseContext
 	if inbound.ReplyTo != nil && c.replies != nil {
@@ -232,22 +227,22 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 		}
 		replyContext = resolved
 	}
-	decision := routing.Decide(inbound, replyContext)
-	if decision.Action == routing.ActionIgnore {
+	routeDecision := routing.Decide(inbound, replyContext)
+	if routeDecision.Action == routing.ActionIgnore {
 		return nil
 	}
 	payload, err := json.Marshal(conversationJobPayload{
-		Inbound: inbound, Route: decision.Action, Activation: decision.Activation,
+		Inbound: inbound, Route: routeDecision.Action, Activation: routeDecision.Activation,
 	})
 	if err != nil {
 		return fmt.Errorf("encode conversation job: %w", err)
 	}
 	var invocation store.ConversationJobInvocation
-	if decision.Invocation.Capability != nil {
+	if routeDecision.Invocation.Capability != nil {
 		invocation = store.ConversationJobInvocation{
-			Name:    decision.Invocation.Name,
-			Command: decision.Invocation.CanonicalCommand(),
-			Args:    append([]string(nil), decision.Invocation.Args...),
+			Name:    routeDecision.Invocation.Name,
+			Command: routeDecision.Invocation.CanonicalCommand(),
+			Args:    append([]string(nil), routeDecision.Invocation.Args...),
 		}
 	}
 	_, created, err := c.jobs.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{

@@ -79,16 +79,6 @@ const (
 	ExposureHostOnly ResultExposure = "host_only"
 )
 
-// ConfirmationPolicy makes confirmation an explicit descriptor policy instead
-// of a command-name switch. Login is a write but intentionally starts its
-// resumable OAuth flow without a confirmation; all other write policies opt in.
-type ConfirmationPolicy string
-
-const (
-	ConfirmNever ConfirmationPolicy = "never"
-	ConfirmUser  ConfirmationPolicy = "user"
-)
-
 // CapabilityRequirements contains host dependencies and the audience gate for
 // a capability. PublicCache is a host execution optimization, not a policy
 // decision, but lives here so the descriptor remains the sole command source.
@@ -103,10 +93,9 @@ type CapabilityRequirements struct {
 // CapabilityPolicy is the invocation-level policy. Descriptors provide the
 // default values and may resolve argument-sensitive values with ResolvePolicy.
 type CapabilityPolicy struct {
-	Effect       CapabilityEffect   `json:"effect"`
-	DataScope    DataScope          `json:"dataScope"`
-	Exposure     ResultExposure     `json:"exposure"`
-	Confirmation ConfirmationPolicy `json:"confirmation"`
+	Effect    CapabilityEffect `json:"effect"`
+	DataScope DataScope        `json:"dataScope"`
+	Exposure  ResultExposure   `json:"exposure"`
 }
 
 // HelpMetadata is the complete usage contract owned by a descriptor. Overview
@@ -197,10 +186,9 @@ func (d CapabilityDescriptor) Accepts(args []string) bool {
 
 func (d CapabilityDescriptor) PolicyFor(inv Invocation) CapabilityPolicy {
 	policy := CapabilityPolicy{
-		Effect:       d.Effect,
-		DataScope:    d.Requirements.DataScope,
-		Exposure:     d.Exposure,
-		Confirmation: ConfirmNever,
+		Effect:    d.Effect,
+		DataScope: d.Requirements.DataScope,
+		Exposure:  d.Exposure,
 	}
 	if d.ResolvePolicy != nil {
 		policy = d.ResolvePolicy(inv)
@@ -267,16 +255,16 @@ func defaultCapabilityPresenter(inv Invocation, response Response, policy Capabi
 	return presentation
 }
 
-func policyFor(inv Invocation, effect CapabilityEffect, scope DataScope, exposure ResultExposure, confirmation ConfirmationPolicy) CapabilityPolicy {
-	return CapabilityPolicy{Effect: effect, DataScope: scope, Exposure: exposure, Confirmation: confirmation}
+func policyFor(inv Invocation, effect CapabilityEffect, scope DataScope, exposure ResultExposure) CapabilityPolicy {
+	return CapabilityPolicy{Effect: effect, DataScope: scope, Exposure: exposure}
 }
 
 func readPolicy(inv Invocation, scope DataScope) CapabilityPolicy {
-	return policyFor(inv, EffectRead, scope, ExposureModel, ConfirmNever)
+	return policyFor(inv, EffectRead, scope, ExposureModel)
 }
 
 func privateWritePolicy(inv Invocation, effect CapabilityEffect) CapabilityPolicy {
-	return policyFor(inv, effect, DataScopeUserPrivate, ExposureModel, ConfirmUser)
+	return policyFor(inv, effect, DataScopeUserPrivate, ExposureModel)
 }
 
 func helpPolicy(inv Invocation) CapabilityPolicy {
@@ -284,7 +272,10 @@ func helpPolicy(inv Invocation) CapabilityPolicy {
 }
 
 func loginPolicy(inv Invocation) CapabilityPolicy {
-	return policyFor(inv, EffectWrite, DataScopeUserPrivate, ExposureHostOnly, ConfirmNever)
+	if firstArgIn(inv.Args, "status", "help") {
+		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureHostOnly)
+	}
+	return policyFor(inv, EffectWrite, DataScopeUserPrivate, ExposureHostOnly)
 }
 
 func subscriptionPolicy(inv Invocation) CapabilityPolicy {
@@ -292,7 +283,7 @@ func subscriptionPolicy(inv Invocation) CapabilityPolicy {
 		// Private conversations may expose the user's own calendar URL to the
 		// model. The URL is already stored in private state; group policy still
 		// prevents this capability from being invoked on a shared surface.
-		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureModel, ConfirmNever)
+		return policyFor(inv, EffectRead, DataScopeUserPrivate, ExposureModel)
 	}
 	if firstArgIs(inv.Args, "import") {
 		return privateWritePolicy(inv, EffectWrite)
@@ -323,7 +314,7 @@ func notifyPolicy(inv Invocation) CapabilityPolicy {
 
 func feedbackPolicy(inv Invocation) CapabilityPolicy {
 	if hasArgs(inv.Args) && !firstArgIs(inv.Args, "help") {
-		return policyFor(inv, EffectWrite, DataScopePublic, ExposureModel, ConfirmUser)
+		return policyFor(inv, EffectWrite, DataScopePublic, ExposureModel)
 	}
 	return readPolicy(inv, DataScopePublic)
 }
@@ -426,8 +417,8 @@ func init() {
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
 		}, notifyPolicy, helpMeta("settings", "设置", "管理通知等偏好", false, []HelpExample{example("设置 通知", "查看通知设置"), example("设置 通知 课表 开", "开启课前提醒"), example("设置 通知 作业 开", "开启作业提醒"), example("设置 通知 作业 关", "关闭作业提醒")}, []HelpExample{example("通知", "相当于“设置 通知")})),
-		descriptor(CapabilitySettings, []string{"settings", "设置"}, CapabilityRequirements{DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, settingsArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.settings(ctx, ident, args)
+		descriptor(CapabilitySettings, []string{"settings", "设置"}, CapabilityRequirements{DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, settingsArgsAcceptable, nil, func(h Handler, _ context.Context, _ store.Identity, args []string) string {
+			return h.settings(args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("settings", "设置", "管理通知等偏好", true, []HelpExample{example("设置", "查看设置命令")}, nil)),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)

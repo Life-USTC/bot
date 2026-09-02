@@ -64,7 +64,7 @@ func (s *Service) invokeHostCapability(
 		return strings.TrimSpace(presentation.Text), nil
 	}
 	policy := invocation.Policy()
-	if policy.Confirmation != commands.ConfirmUser {
+	if policy.Effect == commands.EffectRead {
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, compose.GetToolCallID(ctx), sendResponse)
 		if err != nil || !authWait {
 			return result, err
@@ -93,10 +93,11 @@ func (s *Service) invokeHostCapability(
 	for _, item := range invocations {
 		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, item.ID(), item.Args)
 		if err != nil {
+			if result, ok := commands.CapabilityPreflightFailure(item.ID(), err); ok {
+				toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+				return result, nil
+			}
 			return "", fmt.Errorf("describe capability %q: %w", item.ID(), err)
-		}
-		if !description.ConfirmationRequired {
-			return "", fmt.Errorf("capability %q bypassed confirmation", item.ID())
 		}
 		descriptions = append(descriptions, description)
 	}
@@ -529,11 +530,7 @@ func (s *Service) executeApprovedCapability(
 		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
 		return finished, false, markDurableAgentStateError("record invalid confirmed capability", err)
 	}
-	description := commands.CapabilityInvocationDescription{
-		Invocation: invocation, Policy: invocation.Policy(), ConfirmationRequired: invocation.Policy().Confirmation == commands.ConfirmUser,
-		Receipt: &execution.Receipt,
-	}
-	outcome, err := s.handler.ExecuteApprovedInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, description)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
 	if err != nil {
 		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
 		return finished, false, markDurableAgentStateError("record approved capability failure", finishErr)

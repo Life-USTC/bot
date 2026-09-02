@@ -3,6 +3,8 @@ package commands
 import "strings"
 
 var naturalSchedulePrefixes = []string{
+	"麻烦帮我查询一下", "可以帮我查询一下", "帮我查询一下", "麻烦查询一下", "请查询一下",
+	"请帮我查询", "帮我查询", "麻烦查询", "请查询",
 	"麻烦帮我查一下", "麻烦帮我看一下", "可以帮我查一下", "可以帮我看一下",
 	"我想知道", "我想看看", "我想查查", "我想看", "我想查", "帮我查一下", "帮我看一下",
 	"麻烦查一下", "麻烦看一下", "请帮我查", "请帮我看", "请查一下", "请看一下",
@@ -25,14 +27,16 @@ func parseNaturalScheduleIntent(raw string) ParseResult {
 	if text == "" || containsAny(text, ambiguousScheduleMarkers) {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	text = trimFirstPrefix(text, naturalSchedulePrefixes)
+	withoutPrefix := trimFirstPrefix(text, naturalSchedulePrefixes)
+	explicitRequest := withoutPrefix != text
+	text = withoutPrefix
 	text = strings.TrimPrefix(text, "我")
 	text = trimFirstSuffix(text, naturalScheduleSuffixes)
 	text = strings.Trim(text, "，,。！？!?；;")
 
 	for _, ending := range []string{"有什么课", "有哪些课", "上什么课", "上哪些课"} {
 		if target, ok := strings.CutSuffix(text, ending); ok {
-			return routedScheduleCommand(raw, target+"课表")
+			return routedScheduleCommand(raw, target+"课表", explicitRequest)
 		}
 	}
 
@@ -40,10 +44,10 @@ func parseNaturalScheduleIntent(raw string) ParseResult {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	text = strings.ReplaceAll(text, "的课表", "课表")
-	return routedScheduleCommand(raw, text)
+	return routedScheduleCommand(raw, text, explicitRequest)
 }
 
-func routedScheduleCommand(raw, compact string) ParseResult {
+func routedScheduleCommand(raw, compact string, acceptInvalid bool) ParseResult {
 	if compact == "课表" {
 		result := acceptedCommandResult(raw, "schedule", nil)
 		result.Invocation.NaturalRoute = "schedule"
@@ -51,7 +55,13 @@ func routedScheduleCommand(raw, compact string) ParseResult {
 	}
 	name, args, ok := normalizeJoinedCommand(compact, nil)
 	if !ok || name != "schedule" {
-		return ParseResult{Status: ParseStatusUnknown}
+		if !acceptInvalid {
+			return ParseResult{Status: ParseStatusUnknown}
+		}
+		target := strings.TrimSpace(strings.Replace(compact, "课表", "", 1))
+		result := acceptedCommandResult(raw, "schedule", []string{target})
+		result.Invocation.NaturalRoute = "schedule"
+		return result
 	}
 	result := acceptedCommandResult(raw, name, args)
 	result.Invocation.NaturalRoute = "schedule"

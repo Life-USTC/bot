@@ -2038,8 +2038,8 @@ func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = s.CreateFeedbackWithOutbounds(ctx, ident, FeedbackRecord{
-		Source:   "llm",
-		Category: "missing_tool",
+		Source:   "user",
+		Category: "user_feedback",
 		Content:  "需要考试地点查询工具",
 		Context:  "用户问考试地点",
 	}, func(id int64) []message.Outbound {

@@ -22,7 +22,6 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
-	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -42,7 +41,6 @@ type Config struct {
 	PremiumModel   string
 	MCPBaseURL     string
 	AuthManager    *auth.Manager
-	Feedback       botfeedback.Recorder
 }
 
 type Service struct {
@@ -58,7 +56,6 @@ type Service struct {
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
-	feedback  botfeedback.Recorder
 }
 
 type Input struct {
@@ -109,7 +106,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		mcpClient = botmcp.New(mcpBaseURL, httpClient)
 	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager, feedback: cfg.Feedback}, nil
+		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -141,7 +138,6 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		httpClient: agentHTTPClient,
 		mcpClient:  mcpClient,
 		auth:       authManager,
-		feedback:   cfg.Feedback,
 	}
 	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
 		premiumName := strings.TrimSpace(cfg.PremiumModel)
@@ -568,11 +564,23 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	if grounder != nil && !grounder.hasRequiredEvidence() {
 		if result, returned := grounder.capabilityResult(); returned && result != "" {
+			if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(result, nil)); err != nil {
+				markAgentInfrastructureFailure(input, err)
+				reply := agentFailureReply(runID, err)
+				finishRun(store.AgentRunStatusFailed, reply, err)
+				return agentTextResponse(reply), true
+			}
 			finishRun(store.AgentRunStatusCompleted, result, nil)
 			return agentTextResponse(result), true
 		}
 		groundingErr := errors.New("agent produced no capability result for a grounded turn")
 		reply := groundingFailureReply(runID)
+		if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(reply, nil)); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			failure := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, failure, err)
+			return agentTextResponse(failure), true
+		}
 		finishRun(store.AgentRunStatusFailed, reply, groundingErr)
 		return agentTextResponse(reply), true
 	}
@@ -940,12 +948,6 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 
 type emptyInput struct{}
 
-type feedbackInput struct {
-	Category string `json:"category,omitempty" jsonschema_description:"Short category for the feedback, such as missing_tool, bad_result, typo, or api_gap"`
-	Content  string `json:"content" jsonschema_description:"Concrete feedback about missing tools, wrong behavior, tool/API gaps, or user interaction problems"`
-	Context  string `json:"context,omitempty" jsonschema_description:"Relevant user message, tool result, or short context that explains why this feedback matters"`
-}
-
 type hostCapabilityInput struct {
 	Capability string   `json:"capability" jsonschema_description:"Exact stable capability ID returned by search_bot_commands"`
 	Arguments  []string `json:"arguments,omitempty" jsonschema_description:"Capability arguments only; do not repeat the capability name"`
@@ -956,7 +958,7 @@ type commandSearchInput struct {
 }
 
 func hostCapabilityToolDescription(shared bool) string {
-	description := "Invoke the exact best-matched Bot capability returned by search_bot_commands. The result is the actual domain result, without a status wrapper. The host pauses before each independently reversible mutation, asks the user for confirmation, and resumes this tool after the decision; never simulate approval or announce success before the resumed result. Authentication is also host-owned and resumes automatically."
+	description := "Invoke the exact best-matched Bot capability returned by search_bot_commands. The result is the actual domain result, without a status wrapper. Use only that literal result as evidence."
 	if shared {
 		description += " This is a shared conversation; private capabilities are unavailable."
 	}
@@ -996,18 +998,7 @@ func (s *Service) toolsFor(
 		}
 	}
 
-	if s.handler.Store != nil {
-		tools, err = appendInferredTool(tools, "record_bot_feedback", "Record feedback about missing LLM tools, bad tool results, typo handling gaps, API gaps, or user interaction problems for maintainers to review.", func(ctx context.Context, input feedbackInput) (string, error) {
-			return s.recordBotFeedback(ctx, ident, input)
-		})
-		if err != nil {
-			if mcpSession != nil {
-				_ = mcpSession.Close()
-			}
-			return nil, nil, err
-		}
-	}
-	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, confirmation policy, and audience scope. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, effect, and audience scope. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
 		return searchCommandDocumentation(ident, input)
 	})
 	if err != nil {
@@ -1142,29 +1133,6 @@ func (s *Service) modelFor() (*einoopenai.ChatModel, string, string) {
 	return s.model, "openai-compatible", s.modelName
 }
 
-func (s *Service) recordBotFeedback(ctx context.Context, ident store.Identity, input feedbackInput) (string, error) {
-	if s.feedback == nil {
-		return "", errors.New("feedback service is unavailable")
-	}
-	content := strings.TrimSpace(input.Content)
-	if content == "" {
-		return "", errors.New("feedback content is required")
-	}
-	result, err := s.feedback.Record(ctx, ident, botfeedback.Submission{
-		Source:   botfeedback.SourceLLM,
-		Category: input.Category,
-		Content:  content,
-		Context:  input.Context,
-	})
-	if err != nil {
-		return "", err
-	}
-	if result.AdminIntents > 0 {
-		return fmt.Sprintf("已记录反馈 #%d，并已转给维护者。", result.ID), nil
-	}
-	return fmt.Sprintf("已记录反馈 #%d。", result.ID), nil
-}
-
 func appendInferredTool[I any](tools []tool.BaseTool, name, description string, fn func(context.Context, I) (string, error)) ([]tool.BaseTool, error) {
 	t, err := utils.InferTool(name, description, fn)
 	if err != nil {
@@ -1289,12 +1257,9 @@ Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
 Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
 Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
-The host owns confirmations. A mutation tool call pauses while the host asks the real user, then resumes with the operation result or an explicit denial. Never ask for or simulate confirmation yourself. Grouped mutations are confirmed one operation at a time.
-The host also owns authentication. If a tool pauses for login, wait for the automatic resume; never request, repeat, or invent a verification code.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
-MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so and record concrete feedback; never improvise a write through another tool.
+MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so; never improvise a write through another tool.
 You can answer questions about prior messages using the exact chat history in this run. Treat multiple paragraphs in the latest user turn as one turn.
-If you notice a missing tool, bad result, typo handling gap, API gap, or recurring interaction problem, call record_bot_feedback with concrete context in the same turn. Never ask whether to record feedback.
 In a group or channel, answer only the addressed public request and ask the user to continue privately for personal requests.`
 }
 

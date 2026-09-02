@@ -133,7 +133,6 @@ func main() {
 		Logger:         logger,
 		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
 		AuthManager:    authManager,
-		Feedback:       feedbackService,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)

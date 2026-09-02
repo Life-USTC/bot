@@ -84,65 +84,11 @@ func (c *Coordinator) executeCommandRoute(
 		}
 		invocation = validated
 	}
-	if len(executions) == 0 && invocation.Policy().Confirmation == commands.ConfirmUser {
-		c.prepareCommandConfirmations(ctx, job, inbound, invocation, commit)
-		return
-	}
 	if len(executions) == 0 {
 		c.executeNewCommand(ctx, job, inbound, invocation, commit)
 		return
 	}
 	c.resumeCommand(ctx, job, inbound, executions, commit)
-}
-
-func (c *Coordinator) prepareCommandConfirmations(
-	ctx context.Context,
-	job store.ConversationJob,
-	inbound message.Inbound,
-	invocation commands.Invocation,
-	commit responseCommitter,
-) {
-	input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true}
-	descriptions, err := c.commands.DescribeCapabilityInvocations(ctx, input, invocation.ID(), invocation.Args)
-	if err != nil {
-		expanded := commands.ExpandMutationInvocations(invocation)
-		failed := invocation
-		if len(descriptions) < len(expanded) {
-			failed = expanded[len(descriptions)]
-		}
-		outcome, executeErr := c.commands.ExecuteCapability(ctx, input, failed.ID(), failed.Args)
-		if executeErr != nil {
-			c.fail(ctx, job, executeErr)
-			return
-		}
-		c.finishCommandWithoutExecution(ctx, job, inbound, outcome.Response, outcome.Status, commit)
-		return
-	}
-	prepares := make([]store.CapabilityExecutionPrepare, 0, len(descriptions))
-	for index, description := range descriptions {
-		if !description.ConfirmationRequired {
-			c.fail(ctx, job, fmt.Errorf("mutation capability %q bypassed confirmation", description.Invocation.ID()))
-			return
-		}
-		receipt := commands.ReceiptForInvocation(description.Invocation)
-		if description.Receipt != nil {
-			receipt = *description.Receipt
-		}
-		if strings.TrimSpace(receipt.Action) == "" {
-			receipt = store.CapabilityReceipt{Action: "执行", Resource: "操作", Subject: description.Invocation.CanonicalCommand()}
-		}
-		prepares = append(prepares, store.CapabilityExecutionPrepare{
-			Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken, Sequence: index,
-			DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:%d", job.ID, index),
-			Capability: string(description.Invocation.ID()), Arguments: append([]string(nil), description.Invocation.Args...),
-			Effect: string(description.Policy.Effect), Receipt: receipt, RequiresConfirmation: true,
-		})
-	}
-	if _, _, err := c.jobs.PrepareCapabilityExecutions(ctx, prepares); err != nil {
-		c.fail(ctx, job, markConversationPersistenceError(err))
-		return
-	}
-	c.waitForNextCommandConfirmation(ctx, job, inbound, commands.Response{}, commit)
 }
 
 func (c *Coordinator) executeNewCommand(
@@ -152,12 +98,11 @@ func (c *Coordinator) executeNewCommand(
 	invocation commands.Invocation,
 	commit responseCommitter,
 ) {
-	receipt := commands.ReceiptForInvocation(invocation)
 	execution, created, err := c.jobs.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 		Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken,
 		DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:0", job.ID),
 		Capability: string(invocation.ID()), Arguments: append([]string(nil), invocation.Args...),
-		Effect: string(invocation.Policy().Effect), Receipt: receipt,
+		Effect: string(invocation.Policy().Effect),
 	})
 	if err != nil {
 		c.fail(ctx, job, markConversationPersistenceError(err))
@@ -165,7 +110,7 @@ func (c *Coordinator) executeNewCommand(
 	}
 	if created {
 		if execution.State == store.CapabilityExecutionRunning && capabilityExecutionIsRead(execution) {
-			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, false, commit)
+			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, commit)
 			return
 		}
 		claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
@@ -194,7 +139,7 @@ func (c *Coordinator) executeNewCommand(
 				c.fail(ctx, job, fmt.Errorf("restore running command capability %q", execution.Capability))
 				return
 			}
-			c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, false, commit)
+			c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, commit)
 			return
 		}
 		if capabilityExecutionHasStaleLease(execution, job) {
@@ -212,9 +157,6 @@ func (c *Coordinator) executeNewCommand(
 		}
 		c.retryCommandBatch(ctx, job, inbound, commands.Response{}, "capability execution is still running", commit)
 		return
-	} else if execution.State == store.CapabilityExecutionAwaitingConfirmation {
-		c.waitForNextCommandConfirmation(ctx, job, inbound, commands.Response{}, commit)
-		return
 	} else if execution.State == store.CapabilityExecutionApproved || execution.State == store.CapabilityExecutionWaitingAuth {
 		claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
 		if err != nil {
@@ -231,7 +173,7 @@ func (c *Coordinator) executeNewCommand(
 		c.finishCommandBatch(ctx, job, inbound, commands.Response{}, commit)
 		return
 	}
-	c.executeClaimedCommand(ctx, job, inbound, execution, invocation, false, commit)
+	c.executeClaimedCommand(ctx, job, inbound, execution, invocation, commit)
 }
 
 func (c *Coordinator) resumeCommand(
@@ -245,7 +187,7 @@ func (c *Coordinator) resumeCommand(
 	for _, execution := range executions {
 		switch execution.State {
 		case store.CapabilityExecutionAwaitingConfirmation:
-			c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
+			c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
 			return
 		case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
 			claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
@@ -262,7 +204,7 @@ func (c *Coordinator) resumeCommand(
 				c.fail(ctx, job, fmt.Errorf("restore command capability %q", claimed.Capability))
 				return
 			}
-			c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, true, commit)
+			c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, commit)
 			return
 		case store.CapabilityExecutionRunning:
 			invocation, ok := commands.RestoreInvocation(commands.CapabilityID(execution.Capability), execution.Arguments)
@@ -280,7 +222,7 @@ func (c *Coordinator) resumeCommand(
 					c.handleCommandClaimLoser(ctx, job, inbound, claimed, response, commit)
 					return
 				}
-				c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, invocation.Policy().Confirmation == commands.ConfirmUser, commit)
+				c.executeClaimedCommand(ctx, job, inbound, claimed, invocation, commit)
 				return
 			}
 			if capabilityExecutionHasStaleLease(execution, job) {
@@ -304,10 +246,8 @@ func (c *Coordinator) resumeCommand(
 				response.Kind = execution.Capability
 			}
 		case store.CapabilityExecutionDenied:
-			if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, execution.ID, "用户拒绝执行该操作。"); err != nil {
-				c.fail(ctx, job, err)
-				return
-			}
+			c.fail(ctx, job, fmt.Errorf("direct command capability %q was unexpectedly denied", execution.Capability))
+			return
 		}
 	}
 	c.finishCommandBatch(ctx, job, inbound, response, commit)
@@ -323,7 +263,7 @@ func (c *Coordinator) handleCommandClaimLoser(
 ) {
 	switch execution.State {
 	case store.CapabilityExecutionAwaitingConfirmation:
-		c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
+		c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
 	case store.CapabilityExecutionRunning:
 		if !capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
 			current, marked, err := markStaleCapabilityExecutionUnknown(ctx, c.jobs, job, execution)
@@ -343,7 +283,9 @@ func (c *Coordinator) handleCommandClaimLoser(
 			return
 		}
 		c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
-	case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
+	case store.CapabilityExecutionApproved:
+		c.retryCommandBatch(ctx, job, inbound, response, "capability execution is ready to be claimed", commit)
+	case store.CapabilityExecutionWaitingAuth:
 		c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still owned by another worker", commit)
 	default:
 		c.finishCommandBatch(ctx, job, inbound, response, commit)
@@ -356,22 +298,10 @@ func (c *Coordinator) executeClaimedCommand(
 	inbound message.Inbound,
 	execution store.CapabilityExecution,
 	invocation commands.Invocation,
-	approved bool,
 	commit responseCommitter,
 ) {
 	input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true}
-	var (
-		outcome commands.CapabilityOutcome
-		err     error
-	)
-	if approved {
-		receipt := execution.Receipt
-		outcome, err = c.commands.ExecuteApprovedInvocation(ctx, input, commands.CapabilityInvocationDescription{
-			Invocation: invocation, Policy: invocation.Policy(), ConfirmationRequired: true, Receipt: &receipt,
-		})
-	} else {
-		outcome, err = c.commands.ExecuteCapability(ctx, input, invocation.ID(), invocation.Args)
-	}
+	outcome, err := c.commands.ExecuteCapability(ctx, input, invocation.ID(), invocation.Args)
 	if err != nil {
 		if _, finishErr := c.jobs.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err); finishErr != nil {
 			c.fail(ctx, job, markConversationPersistenceError(finishErr))
@@ -379,12 +309,6 @@ func (c *Coordinator) executeClaimedCommand(
 		}
 		c.fail(ctx, job, err)
 		return
-	}
-	if outcome.Receipt != nil && *outcome.Receipt != execution.Receipt {
-		if err := c.jobs.UpdateCapabilityExecutionReceipt(ctx, execution.ID, execution.LeaseToken, *outcome.Receipt); err != nil {
-			c.fail(ctx, job, markConversationPersistenceError(err))
-			return
-		}
 	}
 	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
 		if _, err := c.jobs.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken); err != nil {
@@ -448,7 +372,7 @@ func (c *Coordinator) finishCommandBatch(
 	}
 	for _, execution := range executions {
 		if execution.State == store.CapabilityExecutionAwaitingConfirmation {
-			c.waitForNextCommandConfirmation(ctx, job, inbound, response, commit)
+			c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
 			return
 		}
 		if execution.State == store.CapabilityExecutionRunning {
@@ -467,18 +391,16 @@ func (c *Coordinator) finishCommandBatch(
 			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
 			return
 		}
-		if execution.State == store.CapabilityExecutionApproved || execution.State == store.CapabilityExecutionWaitingAuth {
+		if execution.State == store.CapabilityExecutionApproved {
+			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is ready to be claimed", commit)
+			return
+		}
+		if execution.State == store.CapabilityExecutionWaitingAuth {
 			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is not terminal", commit)
 			return
 		}
 	}
-	receipts, err := c.unsentExecutionReceipts(ctx, job.ID, false)
-	if err != nil {
-		c.fail(ctx, job, err)
-		return
-	}
-	visible := appendReceiptLines(response, "", receipts)
-	if err := commit(ctx, visible, receipts.IDs, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
+	if err := commit(ctx, response, nil, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
 		c.fail(ctx, job, err)
 		return
 	}
@@ -500,29 +422,6 @@ func (c *Coordinator) retryCommandBatch(
 		return
 	}
 	c.recordJob(ctx, job, inbound, response, store.InteractionStatusAccepted)
-}
-
-func (c *Coordinator) waitForNextCommandConfirmation(
-	ctx context.Context,
-	job store.ConversationJob,
-	inbound message.Inbound,
-	response commands.Response,
-	commit responseCommitter,
-) {
-	receipts, err := c.unsentExecutionReceipts(ctx, job.ID, true)
-	if err != nil {
-		c.fail(ctx, job, err)
-		return
-	}
-	visible := appendReceiptLines(response, confirmationPrompt, receipts)
-	visible.Kind = "command_confirmation"
-	if err := commit(ctx, visible, receipts.IDs, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil {
-		c.fail(ctx, job, err)
-		return
-	}
-	c.recordJob(ctx, job, inbound, visible, store.InteractionStatusWaitingConfirmation)
 }
 
 func (c *Coordinator) finishCommandWithoutExecution(
