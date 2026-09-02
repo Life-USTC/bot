@@ -17,6 +17,7 @@ type Image struct {
 	AltText  string
 	URL      string
 	Grid     *ScheduleGrid
+	Weather  *WeatherCard
 }
 
 type ScheduleGrid struct {
@@ -57,6 +58,7 @@ func (img *Image) cacheKey(now time.Time) (string, error) {
 		RichText string
 		AltText  string
 		Grid     *ScheduleGrid
+		Weather  *WeatherCard
 	}{
 		Date:     now.In(time.FixedZone("CST", 8*60*60)).Format("2006-01-02"),
 		Kind:     img.Kind,
@@ -65,6 +67,7 @@ func (img *Image) cacheKey(now time.Time) (string, error) {
 		RichText: img.RichText,
 		AltText:  img.AltText,
 		Grid:     img.Grid,
+		Weather:  img.Weather,
 	}
 	data, err := json.Marshal(content)
 	if err != nil {

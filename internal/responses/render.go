@@ -86,6 +86,9 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if img.Grid != nil {
 		return r.renderScheduleGridPNG(img.Title, img.Grid)
 	}
+	if img.Weather != nil {
+		return r.renderWeatherCardPNG(img.Weather)
+	}
 	if strings.TrimSpace(img.RichText) == "" {
 		return nil, 0, 0, errors.New("response rich text is empty")
 	}

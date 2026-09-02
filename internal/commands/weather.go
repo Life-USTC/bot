@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
+	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
@@ -42,11 +44,29 @@ func weatherInput(args []string) bool {
 }
 
 func (h Handler) weather(ctx context.Context, args []string) string {
+	text, _ := h.weatherReport(ctx, args)
+	return text
+}
+
+func weatherExecutor(h Handler, ctx context.Context, _ store.Identity, inv Invocation) CapabilityOutcome {
+	if h.execution == nil {
+		h.execution = &capabilityExecutionState{}
+	}
+	text, card := h.weatherReport(ctx, inv.Args)
+	outcome := outcomeFromResponse(h, Response{Text: text, Kind: inv.Name})
+	if card != nil && h.EnableImageResponses && outcome.Status == CapabilityOutcomeSuccess {
+		outcome.Response.Image = responses.NewWeatherCardImage(card, textutil.PlainMonospace(text))
+	}
+	return outcome
+}
+
+func (h Handler) weatherReport(ctx context.Context, args []string) (string, *responses.WeatherCard) {
 	filter, ok := weatherLocationFilter(args)
 	if !ok {
-		return h.invalidInput("想查哪个校区？例如：天气 高新")
+		return h.invalidInput("想查哪个校区？例如：天气 高新"), nil
 	}
 	lines := []string{"天气："}
+	card := &responses.WeatherCard{}
 	latestFetched := ""
 	providers := []string{}
 	for _, location := range weatherLocations {
@@ -55,10 +75,11 @@ func (h Handler) weather(ctx context.Context, args []string) string {
 		}
 		snapshot, err := h.Life.Weather(ctx, location.key)
 		if err != nil {
-			return h.commandError("天气查不到：", err)
+			return h.commandError("天气查不到：", err), nil
 		}
 		lines = append(lines, "")
 		lines = append(lines, formatWeatherLocation(location.name, snapshot)...)
+		card.Locations = append(card.Locations, weatherCardLocation(location.name, snapshot))
 		if fetched := lifedata.FirstString(snapshot, "fetchedAt"); fetched != "" {
 			if latestFetched == "" {
 				latestFetched = fetched
@@ -83,8 +104,96 @@ func (h Handler) weather(ctx context.Context, args []string) string {
 	}
 	if len(meta) > 0 {
 		lines = append(lines, "", strings.Join(meta, " · "))
+		card.Meta = strings.Join(meta, " · ")
 	}
-	return textutil.MonospaceDigits(strings.Join(lines, "\n"))
+	return textutil.MonospaceDigits(strings.Join(lines, "\n")), card
+}
+
+func weatherFloat(m map[string]any, key string) (float64, bool) {
+	value, ok := m[key].(float64)
+	return value, ok
+}
+
+func weatherCardLocation(name string, snapshot map[string]any) responses.WeatherCardLocation {
+	location := responses.WeatherCardLocation{Name: name}
+	current := weatherMap(snapshot, "current")
+	if len(current) == 0 {
+		return location
+	}
+	temperature, _ := weatherFloat(current, "temperature")
+	location.Current = responses.WeatherCardCurrent{
+		Temperature:   temperature,
+		ConditionText: lifedata.NestedString(current, "condition", "text"),
+		Icon:          lifedata.NestedString(current, "condition", "icon"),
+	}
+	if humidity := lifedata.FirstString(current, "humidity"); humidity != "" {
+		location.Current.HumidityText = humidity + "%"
+	}
+	windDirection := lifedata.FirstString(current, "windDirection")
+	windSpeed := lifedata.FirstString(current, "windSpeed")
+	if windDirection != "" && windSpeed != "" {
+		location.Current.WindText = windDirection + "风 " + windSpeed + " 级"
+	}
+
+	daily := weatherList(snapshot, "daily")
+	if len(daily) > 0 {
+		if low, ok := weatherFloat(daily[0], "temperatureLow"); ok {
+			if high, ok := weatherFloat(daily[0], "temperatureHigh"); ok {
+				location.Current.Low = low
+				location.Current.High = high
+				location.Current.HasRange = true
+			}
+		}
+	}
+
+	now := time.Now()
+	for _, hour := range weatherList(snapshot, "hourly") {
+		at, ok := lifedata.ParseAPITime(lifedata.FirstString(hour, "at"))
+		if !ok || at.Before(now) {
+			continue
+		}
+		temperature, ok := weatherFloat(hour, "temperature")
+		if !ok {
+			continue
+		}
+		probability, _ := weatherFloat(hour, "precipitationProbability")
+		location.Hourly = append(location.Hourly, responses.WeatherCardHourPoint{
+			Label:                    at.In(lifedata.ChinaLocation()).Format("15:04"),
+			Temperature:              temperature,
+			PrecipitationProbability: probability,
+		})
+		if len(location.Hourly) >= 24 {
+			break
+		}
+	}
+
+	if len(daily) > 4 {
+		daily = daily[:4]
+	}
+	for i, day := range daily {
+		date, ok := lifedata.ParseAPITime(lifedata.FirstString(day, "date"))
+		if !ok {
+			continue
+		}
+		low, lowOK := weatherFloat(day, "temperatureLow")
+		high, highOK := weatherFloat(day, "temperatureHigh")
+		if !lowOK || !highOK {
+			continue
+		}
+		label := chineseWeekday(date.In(lifedata.ChinaLocation()))
+		if i == 0 {
+			label = "今天"
+		}
+		location.Daily = append(location.Daily, responses.WeatherCardDayPoint{
+			Label:         label,
+			Low:           low,
+			High:          high,
+			ConditionText: lifedata.NestedString(day, "condition", "text"),
+		})
+	}
+
+	location.Alerts = weatherAlerts(snapshot)
+	return location
 }
 
 func formatWeatherLocation(name string, snapshot map[string]any) []string {

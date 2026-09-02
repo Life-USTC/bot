@@ -224,7 +224,11 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	}
 	response.Kind = responseKind
 	if responseKind != ResponseKindAuthWait {
-		response.Image = h.imageResponseForOutcome(cmd, outcome)
+		// Executors may attach a structured image (e.g. the weather card);
+		// only fall back to the text-derived image when none was provided.
+		if response.Image == nil {
+			response.Image = h.imageResponseForOutcome(cmd, outcome)
+		}
 	} else {
 		response.Image = nil
 	}
