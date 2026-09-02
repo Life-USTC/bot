@@ -415,7 +415,7 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 	}
 	visibleTopics := map[string]bool{
 		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
-		"bus": true, "account": true, "settings": true, "system": true, "feedback": true,
+		"bus": true, "weather": true, "account": true, "settings": true, "system": true, "feedback": true,
 	}
 	if len(overviewCount) != len(visibleTopics) {
 		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))

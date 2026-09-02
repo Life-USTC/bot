@@ -384,6 +384,17 @@ func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 	return out, err
 }
 
+func (c *Client) Weather(ctx context.Context, locationKey string) (map[string]any, error) {
+	key := openapi.CatalogWeatherGetParamsLocationKey(locationKey)
+	var out map[string]any
+	resp, err := c.Typed(ctx, "").CatalogWeatherGet(
+		ctx,
+		&openapi.CatalogWeatherGetParams{LocationKey: &key},
+	)
+	err = typedJSON(resp, err, "weather", &out)
+	return out, err
+}
+
 type BusPreferences struct {
 	PreferredOriginCampusID      *int `json:"preferredOriginCampusId"`
 	PreferredDestinationCampusID *int `json:"preferredDestinationCampusId"`
