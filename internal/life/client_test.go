@@ -573,7 +573,7 @@ func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	out, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01", "CS1001.02"})
+	out, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01", "CS1001.02"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,13 +596,40 @@ func TestBulkSubscribeSectionsReturnsHTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	_, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01"})
+	_, err := client.BulkSubscribeSections(context.Background(), "token", []string{"MATH1001.01"}, 0)
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	var httpErr HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBulkUnsubscribeSectionsSendsCodes(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/batch" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"action":"remove","sections":[],"removedCount":0,"unchangedCount":2}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	out, err := client.BulkUnsubscribeSections(context.Background(), "token", []string{"MATH1001.01", "CS1001.02"}, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, ok := gotBody["codes"].([]any)
+	if !ok || len(codes) != 2 || codes[0] != "MATH1001.01" || codes[1] != "CS1001.02" {
+		t.Fatalf("codes = %#v", gotBody["codes"])
+	}
+	if gotBody["action"] != "remove" || gotBody["semesterId"] != "42" || out["removedCount"] != float64(0) {
+		t.Fatalf("body=%#v out=%#v", gotBody, out)
 	}
 }
 

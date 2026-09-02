@@ -13,43 +13,42 @@ import (
 type CapabilityID string
 
 const (
-	CapabilityHelp                     CapabilityID = "help"
-	CapabilityLogin                    CapabilityID = "login"
-	CapabilityLogout                   CapabilityID = "logout"
-	CapabilityAccount                  CapabilityID = "account"
-	CapabilityTodo                     CapabilityID = "todo"
-	CapabilityHomework                 CapabilityID = "homework"
-	CapabilityCalendar                 CapabilityID = "calendar"
-	CapabilitySubscription             CapabilityID = "subscription"
-	CapabilityNotify                   CapabilityID = "notify"
-	CapabilitySettings                 CapabilityID = "settings"
-	CapabilityFeedback                 CapabilityID = "feedback"
-	CapabilityPing                     CapabilityID = "ping"
-	CapabilityStatus                   CapabilityID = "status"
-	CapabilitySemester                 CapabilityID = "semester"
-	CapabilityCourse                   CapabilityID = "course"
-	CapabilitySection                  CapabilityID = "section"
-	CapabilityTeacher                  CapabilityID = "teacher"
-	CapabilityBus                      CapabilityID = "bus"
-	CapabilitySchedule                 CapabilityID = "schedule"
-	CapabilityNextClass                CapabilityID = "nextclass"
-	CapabilityExam                     CapabilityID = "exam"
-	CapabilityListSemesters            CapabilityID = "list_semesters"
-	CapabilityCourseSearch             CapabilityID = "course_search"
-	CapabilitySectionSearch            CapabilityID = "section_search"
-	CapabilityTeacherSearch            CapabilityID = "teacher_search"
-	CapabilityCourseByJWID             CapabilityID = "course_by_jw_id"
-	CapabilitySectionByJWID            CapabilityID = "section_by_jw_id"
-	CapabilityTeacherByID              CapabilityID = "teacher_by_id"
-	CapabilityBusRoutes                CapabilityID = "bus_routes"
-	CapabilityUnsubscribeSectionByJWID CapabilityID = "unsubscribe_section_by_jw_id"
-	CapabilityMySubscribedSections     CapabilityID = "my_subscribed_sections"
-	CapabilitySectionSchedules         CapabilityID = "section_schedules"
-	CapabilitySectionExams             CapabilityID = "section_exams"
-	CapabilitySectionHomeworks         CapabilityID = "section_homeworks"
-	CapabilityOverview                 CapabilityID = "overview"
-	CapabilityUpcomingDeadlines        CapabilityID = "upcoming_deadlines"
-	CapabilityWeather                  CapabilityID = "weather"
+	CapabilityHelp                 CapabilityID = "help"
+	CapabilityLogin                CapabilityID = "login"
+	CapabilityLogout               CapabilityID = "logout"
+	CapabilityAccount              CapabilityID = "account"
+	CapabilityTodo                 CapabilityID = "todo"
+	CapabilityHomework             CapabilityID = "homework"
+	CapabilityCalendar             CapabilityID = "calendar"
+	CapabilitySubscription         CapabilityID = "subscription"
+	CapabilityNotify               CapabilityID = "notify"
+	CapabilitySettings             CapabilityID = "settings"
+	CapabilityFeedback             CapabilityID = "feedback"
+	CapabilityPing                 CapabilityID = "ping"
+	CapabilityStatus               CapabilityID = "status"
+	CapabilitySemester             CapabilityID = "semester"
+	CapabilityCourse               CapabilityID = "course"
+	CapabilitySection              CapabilityID = "section"
+	CapabilityTeacher              CapabilityID = "teacher"
+	CapabilityBus                  CapabilityID = "bus"
+	CapabilitySchedule             CapabilityID = "schedule"
+	CapabilityNextClass            CapabilityID = "nextclass"
+	CapabilityExam                 CapabilityID = "exam"
+	CapabilityListSemesters        CapabilityID = "list_semesters"
+	CapabilityCourseSearch         CapabilityID = "course_search"
+	CapabilitySectionSearch        CapabilityID = "section_search"
+	CapabilityTeacherSearch        CapabilityID = "teacher_search"
+	CapabilityCourseByJWID         CapabilityID = "course_by_jw_id"
+	CapabilitySectionByJWID        CapabilityID = "section_by_jw_id"
+	CapabilityTeacherByID          CapabilityID = "teacher_by_id"
+	CapabilityBusRoutes            CapabilityID = "bus_routes"
+	CapabilityMySubscribedSections CapabilityID = "my_subscribed_sections"
+	CapabilitySectionSchedules     CapabilityID = "section_schedules"
+	CapabilitySectionExams         CapabilityID = "section_exams"
+	CapabilitySectionHomeworks     CapabilityID = "section_homeworks"
+	CapabilityOverview             CapabilityID = "overview"
+	CapabilityUpcomingDeadlines    CapabilityID = "upcoming_deadlines"
+	CapabilityWeather              CapabilityID = "weather"
 )
 
 // CapabilityEffect describes the state transition allowed by an invocation.
@@ -287,6 +286,9 @@ func subscriptionPolicy(inv Invocation) CapabilityPolicy {
 	if firstArgIs(inv.Args, "import") {
 		return privateWritePolicy(inv, EffectWrite)
 	}
+	if firstArgIs(inv.Args, "remove") {
+		return privateWritePolicy(inv, EffectDestructive)
+	}
 	return readPolicy(inv, DataScopeUserPrivate)
 }
 
@@ -412,7 +414,7 @@ func init() {
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", true, []HelpExample{example("日程 今日", "汇总今日课程、待办和作业")}, []HelpExample{example("今日（ddl）", "相当于“日程 今日")})),
 		descriptor(CapabilitySubscription, []string{"subscription", "订阅", "课程订阅"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, subscriptionArgsAcceptable, normalizeSubscriptionArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.subscription(ctx, ident, args)
-		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 链接", "查看私有日历订阅链接")}, nil)),
+		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、添加、取消和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 取消 CONT5103P.01", "按教学班代码取消订阅"), example("订阅 链接", "查看私有日历订阅链接")}, []HelpExample{example("退订教学班 CONT5103P.01", "相当于“订阅 取消 CONT5103P.01”")})),
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
 		}, notifyPolicy, helpMeta("settings", "设置", "管理通知等偏好", false, []HelpExample{example("设置 通知", "查看通知设置"), example("设置 通知 课表 开", "开启课前提醒"), example("设置 通知 作业 开", "开启作业提醒"), example("设置 通知 作业 关", "关闭作业提醒")}, []HelpExample{example("通知", "相当于“设置 通知")})),
@@ -491,9 +493,6 @@ func init() {
 		descriptor(CapabilityBusRoutes, []string{"bus_routes", "校车路线"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, busRouteArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.busRoutes(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("bus", "校车", "查询班次、路线与设置偏好", false, []HelpExample{example("校车 路线", "列出全部校车路线")}, nil)),
-		descriptor(CapabilityUnsubscribeSectionByJWID, []string{"unsubscribe_section_by_jw_id", "退订教学班"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectDestructive, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.unsubscribeSectionByJwID(ctx, ident, joinedArgs(args))
-		}, func(inv Invocation) CapabilityPolicy { return privateWritePolicy(inv, EffectDestructive) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{exampleFor(CapabilityUnsubscribeSectionByJWID, "订阅 删除 <JW ID>", "按 JW ID 退订教学班", "12345")}, nil)),
 		descriptor(CapabilityMySubscribedSections, []string{"my_subscribed_sections", "我的订阅", "选课列表", "已选课程"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
 			return h.mySubscribedSections(ctx, ident)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("subscription", "订阅", "查看个人已订阅教学班列表，用于回答选了哪些课", false, []HelpExample{example("订阅 列表", "查看已订阅教学班")}, nil)),

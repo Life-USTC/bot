@@ -144,16 +144,74 @@ func exactConversationEventWindow(events []store.ConversationEvent, tokenLimit i
 	return events[latestUser:]
 }
 
-// A bounded tail may begin halfway through a tool exchange, which providers
-// reject. Start at the first retained user event so every restored tool result
-// has its assistant call in the same window.
+// A bounded tail may begin halfway through a tool exchange, and an expired or
+// failed job may leave an assistant tool call without its result. Providers
+// reject both shapes. Keep only complete historical user turns. For the latest
+// turn, retain its user input even if a crashed suffix is incomplete so a new
+// job can proceed without replaying malformed tool protocol.
 func completeConversationEventWindow(events []store.ConversationEvent) []store.ConversationEvent {
-	for i, event := range events {
+	firstUser := -1
+	for index, event := range events {
 		if event.Type == store.ConversationEventUser {
-			return events[i:]
+			firstUser = index
+			break
 		}
 	}
-	return nil
+	if firstUser < 0 {
+		return nil
+	}
+	events = events[firstUser:]
+	result := make([]store.ConversationEvent, 0, len(events))
+	for start := 0; start < len(events); {
+		end := start + 1
+		for end < len(events) && events[end].Type != store.ConversationEventUser {
+			end++
+		}
+		turn := events[start:end]
+		if conversationTurnProviderCompatible(turn) {
+			result = append(result, turn...)
+		} else if end == len(events) {
+			result = append(result, turn[0])
+		}
+		start = end
+	}
+	return result
+}
+
+func conversationTurnProviderCompatible(events []store.ConversationEvent) bool {
+	messages := messagesFromConversationEvents(events)
+	if len(messages) == 0 || messages[0].Role != schema.User {
+		return false
+	}
+	pending := make(map[string]struct{})
+	for _, message := range messages {
+		if len(pending) > 0 {
+			if message.Role != schema.Tool {
+				return false
+			}
+			if _, found := pending[message.ToolCallID]; !found {
+				return false
+			}
+			delete(pending, message.ToolCallID)
+			continue
+		}
+		if message.Role == schema.Tool {
+			return false
+		}
+		if message.Role != schema.Assistant || len(message.ToolCalls) == 0 {
+			continue
+		}
+		for _, call := range message.ToolCalls {
+			if call.ID == "" {
+				return false
+			}
+			if _, duplicate := pending[call.ID]; duplicate {
+				return false
+			}
+			pending[call.ID] = struct{}{}
+		}
+	}
+	return len(pending) == 0
 }
 
 func estimateTextTokens(text string) int {

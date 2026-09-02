@@ -66,6 +66,54 @@ func TestConversationEventMessagesDropsIncompleteLeadingToolExchange(t *testing.
 	}
 }
 
+func TestConversationEventMessagesDropsHistoricalTurnWithUnansweredToolCall(t *testing.T) {
+	events := []store.ConversationEvent{
+		{JobID: 1, Type: store.ConversationEventUser, Content: "执行一个操作"},
+		{JobID: 1, Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{
+			ID: "orphaned-call", Name: "invoke_bot_capability", Arguments: `{"capability":"notify","arguments":["homework","on"]}`,
+		}}},
+		{JobID: 2, Type: store.ConversationEventUser, Content: "你还在吗"},
+	}
+
+	messages := conversationEventMessages(events)
+	if len(messages) != 1 || messages[0].Role != schema.User || messages[0].Content != "你还在吗" {
+		t.Fatalf("provider transcript retained an unanswered historical tool call: %#v", messages)
+	}
+}
+
+func TestConversationEventMessagesPreservesCompleteParallelToolExchange(t *testing.T) {
+	events := []store.ConversationEvent{
+		{Type: store.ConversationEventUser, Content: "查两项数据"},
+		{Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{
+			{ID: "call-a", Name: "search_a", Arguments: `{}`},
+			{ID: "call-b", Name: "search_b", Arguments: `{}`},
+		}},
+		{Type: store.ConversationEventToolResult, ToolCallID: "call-b", ToolName: "search_b", Content: "B"},
+		{Type: store.ConversationEventToolResult, ToolCallID: "call-a", ToolName: "search_a", Content: "A"},
+		{Type: store.ConversationEventAssistant, Content: "完成"},
+	}
+
+	messages := conversationEventMessages(events)
+	if len(messages) != 5 || messages[1].Role != schema.Assistant || len(messages[1].ToolCalls) != 2 ||
+		messages[2].ToolCallID != "call-b" || messages[3].ToolCallID != "call-a" || messages[4].Content != "完成" {
+		t.Fatalf("complete parallel exchange was changed: %#v", messages)
+	}
+}
+
+func TestConversationEventMessagesKeepsLatestUserAndDropsItsIncompleteToolSuffix(t *testing.T) {
+	events := []store.ConversationEvent{
+		{Type: store.ConversationEventUser, Content: "继续处理"},
+		{Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{
+			ID: "unfinished", Name: "invoke_bot_capability", Arguments: `{}`,
+		}}},
+	}
+
+	messages := conversationEventMessages(events)
+	if len(messages) != 1 || messages[0].Role != schema.User || messages[0].Content != "继续处理" {
+		t.Fatalf("latest user input was not recovered exactly: %#v", messages)
+	}
+}
+
 func TestConversationEventMessagesReplaysProviderCompatibleParts(t *testing.T) {
 	inputURL := "data:image/png;base64,AAAA"
 	outputURL := "https://cdn.example/image.png"

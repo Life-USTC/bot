@@ -4,18 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
 var (
-	errCapabilityReceiptTargetNotFound = errors.New("capability receipt target not found")
-	errCapabilityReceiptUnavailable    = errors.New("capability receipt unavailable")
-	errCapabilityInvalidInput          = errors.New("capability invocation invalid input")
-	errCapabilityMutationMustExpand    = errors.New("capability mutation requires expansion")
-	errCapabilityForbidden             = errors.New("capability invocation forbidden")
+	errCapabilityReceiptTargetNotFound  = errors.New("capability receipt target not found")
+	errCapabilityReceiptTargetAmbiguous = errors.New("capability receipt target is ambiguous")
+	errCapabilityReceiptIncomplete      = errors.New("capability receipt target details are incomplete")
+	errCapabilityReceiptInconsistent    = errors.New("capability receipt target conflicts with current semester")
+	errCapabilityReceiptUnavailable     = errors.New("capability receipt unavailable")
+	errCapabilityInvalidInput           = errors.New("capability invocation invalid input")
+	errCapabilityMutationMustExpand     = errors.New("capability mutation requires expansion")
+	errCapabilityForbidden              = errors.New("capability invocation forbidden")
 )
 
 const (
@@ -48,10 +53,11 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
 		return description, errCapabilityForbidden
 	}
-	receipt, err := h.receiptForInvocation(ctx, input.Identity, invocation)
+	resolved, receipt, err := h.resolveInvocationReceipt(ctx, invocation)
 	if err != nil {
 		return description, err
 	}
+	description.Invocation = resolved
 	description.Receipt = receipt
 	return description, nil
 }
@@ -64,6 +70,12 @@ func CapabilityPreflightFailure(id CapabilityID, err error) (string, bool) {
 	switch {
 	case errors.Is(err, errCapabilityReceiptTargetNotFound):
 		return "没有找到要操作的课程或教学班，因此没有执行任何操作。请先发送“教学班 搜索 <课程名或代码>”，再使用查询结果中的准确教学班代码。", true
+	case errors.Is(err, errCapabilityReceiptTargetAmbiguous):
+		return "这个教学班代码在当前学期对应多个结果，系统无法安全确定要操作哪一个，因此没有执行任何操作。请稍后重试或联系管理员核对教学班数据。", true
+	case errors.Is(err, errCapabilityReceiptIncomplete):
+		return "没有取得完整的课程名称、教师和学期信息，因此没有执行任何操作。请稍后重试；如果问题持续，请联系管理员核对教学班数据。", true
+	case errors.Is(err, errCapabilityReceiptInconsistent):
+		return "查询到的教学班与当前学期不一致，因此没有执行任何操作。请稍后重试；如果问题持续，请联系管理员核对教学班数据。", true
 	case errors.Is(err, errCapabilityInvalidInput), errors.Is(err, errCapabilityMutationMustExpand):
 		return invalidCapabilityUsageResponse(id).Text, true
 	case errors.Is(err, errCapabilityForbidden):
@@ -88,16 +100,16 @@ func ExpandMutationInvocations(invocation Invocation) []Invocation {
 
 	switch invocation.ID() {
 	case CapabilitySubscription:
-		if !firstArgIs(invocation.Args, "import") {
+		if !firstArgIn(invocation.Args, "import", "remove") {
 			return []Invocation{invocation}
 		}
-		codes := subscriptionImportTargets(invocation.Args[1:])
+		codes := subscriptionMutationTargets(invocation.Args[1:])
 		if len(codes) <= 1 {
 			return []Invocation{invocation}
 		}
 		out := make([]Invocation, 0, len(codes))
 		for _, code := range codes {
-			if expanded, ok := NewInvocation(CapabilitySubscription, []string{"import", code}); ok {
+			if expanded, ok := NewInvocation(CapabilitySubscription, []string{invocation.Args[0], code}); ok {
 				expanded.Raw = invocation.Raw
 				expanded.NaturalRoute = invocation.NaturalRoute
 				out = append(out, expanded)
@@ -119,8 +131,12 @@ func ExpandMutationInvocations(invocation Invocation) []Invocation {
 	}
 }
 
-func subscriptionImportTargets(args []string) []string {
-	raw := joinedArgs(args)
+func subscriptionMutationTargets(args []string) []string {
+	targetArgs, _, ok := splitSubscriptionMutationArgs(args)
+	if !ok {
+		return nil
+	}
+	raw := joinedArgs(targetArgs)
 	if raw == "" {
 		return nil
 	}
@@ -148,70 +164,74 @@ func splitMutationTargets(invocation Invocation, targetIndex int) []Invocation {
 	return out
 }
 
-func (h Handler) receiptForInvocation(ctx context.Context, ident store.Identity, invocation Invocation) (*store.CapabilityReceipt, error) {
+func (h Handler) resolveInvocationReceipt(ctx context.Context, invocation Invocation) (Invocation, *store.CapabilityReceipt, error) {
 	if requiresReceiptResolution(invocation) && h.Life == nil {
-		return nil, fmt.Errorf("%w: Life @ USTC API unavailable: not configured", errCapabilityReceiptUnavailable)
+		return invocation, nil, fmt.Errorf("%w: Life @ USTC API unavailable: not configured", errCapabilityReceiptUnavailable)
 	}
 	if h.Life == nil {
 		receipt := ReceiptForInvocation(invocation)
-		return receiptPointer(receipt), nil
+		return invocation, receiptPointer(receipt), nil
 	}
 	switch invocation.ID() {
 	case CapabilitySubscription:
-		if !firstArgIs(invocation.Args, "import") {
+		if !firstArgIn(invocation.Args, "import", "remove") {
 			receipt := ReceiptForInvocation(invocation)
-			return receiptPointer(receipt), nil
+			return invocation, receiptPointer(receipt), nil
 		}
-		codes := subscriptionImportTargets(invocation.Args[1:])
+		codes := subscriptionMutationTargets(invocation.Args[1:])
 		if len(codes) != 1 {
-			return nil, nil
+			return invocation, nil, nil
 		}
-		sections, err := h.Life.SearchSections(ctx, codes[0], 5)
+		semester, err := h.Life.CurrentSemester(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("resolve subscription target %s: %w", codes[0], err)
+			return invocation, nil, fmt.Errorf("resolve current semester for subscription target %s: %w", codes[0], err)
 		}
-		section := matchingSectionCode(sections, codes[0])
-		if section == nil {
-			return nil, fmt.Errorf("%w: %s", errCapabilityReceiptTargetNotFound, codes[0])
+		options := life.SearchSectionsOptions{Keyword: codes[0], Limit: 5}
+		options.SemesterID = int64(lifedata.FirstInt(semester, "id"))
+		if options.SemesterID == 0 {
+			return invocation, nil, fmt.Errorf("%w: current semester has no identifier", errCapabilityReceiptUnavailable)
 		}
-		return sectionReceipt(ReceiptActionSubscribe, section), nil
-	case CapabilityUnsubscribeSectionByJWID:
-		if len(invocation.Args) != 1 {
-			return nil, nil
-		}
-		jwID, ok := parseIntArg(invocation.Args[0])
-		if !ok {
-			return nil, nil
-		}
-		section, err := h.Life.GetSectionByJwID(ctx, jwID)
+		sections, err := h.Life.SearchSectionsWithFilters(ctx, options)
 		if err != nil {
-			return nil, fmt.Errorf("resolve unsubscribe target %s: %w", invocation.Args[0], err)
+			return invocation, nil, fmt.Errorf("resolve subscription target %s: %w", codes[0], err)
+		}
+		section, ambiguous := matchingSectionCode(sections, codes[0])
+		if ambiguous {
+			return invocation, nil, fmt.Errorf("%w: %s", errCapabilityReceiptTargetAmbiguous, codes[0])
 		}
 		if section == nil {
-			return nil, fmt.Errorf("%w: %s", errCapabilityReceiptTargetNotFound, invocation.Args[0])
+			return invocation, nil, fmt.Errorf("%w: %s", errCapabilityReceiptTargetNotFound, codes[0])
 		}
-		return sectionReceipt(ReceiptActionUnsubscribe, section), nil
+		if !sectionMatchesSemesterID(section, options.SemesterID) {
+			return invocation, nil, fmt.Errorf("%w: %s", errCapabilityReceiptInconsistent, codes[0])
+		}
+		action := ReceiptActionSubscribe
+		if firstArgIs(invocation.Args, "remove") {
+			action = ReceiptActionUnsubscribe
+		}
+		receipt, err := sectionReceipt(action, section, semester)
+		if err != nil {
+			return invocation, nil, err
+		}
+		invocation.Args = []string{invocation.Args[0], codes[0], subscriptionSemesterIDArg, strconv.FormatInt(options.SemesterID, 10)}
+		return invocation, receipt, nil
 	default:
 		receipt := ReceiptForInvocation(invocation)
-		return receiptPointer(receipt), nil
+		return invocation, receiptPointer(receipt), nil
 	}
 }
 
 func validateReceiptInvocation(invocation Invocation) error {
 	switch invocation.ID() {
 	case CapabilitySubscription:
-		if !firstArgIs(invocation.Args, "import") {
+		if !firstArgIn(invocation.Args, "import", "remove") {
 			return nil
 		}
-		if len(subscriptionImportTargets(invocation.Args[1:])) == 0 {
-			return fmt.Errorf("%w: subscription import requires a section code", errCapabilityInvalidInput)
+		if len(subscriptionMutationTargets(invocation.Args[1:])) == 0 {
+			return fmt.Errorf("%w: subscription mutation requires a section code", errCapabilityInvalidInput)
 		}
-		if len(subscriptionImportTargets(invocation.Args[1:])) != 1 {
-			return fmt.Errorf("%w: subscription import targets must be expanded before confirmation", errCapabilityMutationMustExpand)
-		}
-	case CapabilityUnsubscribeSectionByJWID:
-		if len(invocation.Args) != 1 {
-			return fmt.Errorf("%w: unsubscribe requires one section ID", errCapabilityInvalidInput)
+		if len(subscriptionMutationTargets(invocation.Args[1:])) != 1 {
+			return fmt.Errorf("%w: subscription mutation targets must be expanded before confirmation", errCapabilityMutationMustExpand)
 		}
 	}
 	return nil
@@ -220,24 +240,42 @@ func validateReceiptInvocation(invocation Invocation) error {
 func requiresReceiptResolution(invocation Invocation) bool {
 	switch invocation.ID() {
 	case CapabilitySubscription:
-		return firstArgIs(invocation.Args, "import") && len(subscriptionImportTargets(invocation.Args[1:])) == 1
-	case CapabilityUnsubscribeSectionByJWID:
-		return len(invocation.Args) == 1
+		return firstArgIn(invocation.Args, "import", "remove") && len(subscriptionMutationTargets(invocation.Args[1:])) == 1
 	default:
 		return false
 	}
 }
 
-func matchingSectionCode(sections []map[string]any, code string) map[string]any {
+func matchingSectionCode(sections []map[string]any, code string) (map[string]any, bool) {
+	var match map[string]any
 	for _, section := range sections {
 		if strings.EqualFold(strings.TrimSpace(sectionCode(section)), code) {
-			return section
+			if match != nil {
+				return nil, true
+			}
+			match = section
 		}
 	}
-	return nil
+	return match, false
 }
 
-func sectionReceipt(action string, section map[string]any) *store.CapabilityReceipt {
+func sectionMatchesSemesterID(section map[string]any, semesterID int64) bool {
+	if semesterID <= 0 {
+		return false
+	}
+	ids := []int64{int64(lifedata.FirstInt(section, "semesterId"))}
+	if semester, ok := section["semester"].(map[string]any); ok {
+		ids = append(ids, int64(lifedata.FirstInt(semester, "id")))
+	}
+	for _, id := range ids {
+		if id > 0 && id != semesterID {
+			return false
+		}
+	}
+	return true
+}
+
+func sectionReceipt(action string, section, currentSemester map[string]any) (*store.CapabilityReceipt, error) {
 	teacher := lifedata.NestedString(section, "teacher", "namePrimary", "nameCn", "name")
 	if teacher == "" {
 		teacher = lifedata.NestedString(section, "instructor", "namePrimary", "nameCn", "name")
@@ -265,21 +303,14 @@ func sectionReceipt(action string, section map[string]any) *store.CapabilityRece
 	if semester == "" {
 		semester = lifedata.FirstString(section, "semesterName", "semesterNamePrimary", "semesterNameCn", "semester_name")
 	}
-	if course == "" {
-		course = sectionCode(section)
+	if semester == "" {
+		semester = lifedata.FirstString(currentSemester, "namePrimary", "nameCn", "name")
 	}
-	qualifiers := make([]string, 0, 2)
-	if teacher != "" {
-		qualifiers = append(qualifiers, teacher)
+	if course == "" || teacher == "" || semester == "" {
+		return nil, fmt.Errorf("%w: course=%t teacher=%t semester=%t", errCapabilityReceiptIncomplete, course != "", teacher != "", semester != "")
 	}
-	if semester != "" {
-		qualifiers = append(qualifiers, semester)
-	}
-	subject := course
-	if len(qualifiers) > 0 {
-		subject += "（" + strings.Join(qualifiers, "，") + "）"
-	}
-	return &store.CapabilityReceipt{Action: action, Resource: ReceiptResourceSection, Subject: subject}
+	subject := course + "（" + teacher + "，" + semester + "）"
+	return &store.CapabilityReceipt{Action: action, Resource: ReceiptResourceSection, Subject: subject}, nil
 }
 
 // ReceiptForInvocation returns the stable, host-owned label used for user
@@ -346,9 +377,10 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 		if invocation.Policy().Effect == EffectRead {
 			return query("课程")
 		}
+		if firstArgIs(invocation.Args, "remove") {
+			return mutation(ReceiptActionUnsubscribe, ReceiptResourceSection, 1)
+		}
 		return mutation(ReceiptActionSubscribe, ReceiptResourceSection, 1)
-	case CapabilityUnsubscribeSectionByJWID:
-		return mutation(ReceiptActionUnsubscribe, ReceiptResourceSection, 0)
 	case CapabilityNotify:
 		if invocation.Policy().Effect == EffectRead {
 			return query("提醒")

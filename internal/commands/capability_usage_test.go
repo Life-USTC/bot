@@ -50,7 +50,6 @@ func TestPlaceholderUsageExamplesCarryStructuredArguments(t *testing.T) {
 		"课程 查看 <JW ID>":                {CapabilityCourseByJWID, []string{"12345"}},
 		"教学班 查看 <JW ID>":               {CapabilitySectionByJWID, []string{"12345"}},
 		"老师 查看 <ID>":                   {CapabilityTeacherByID, []string{"12345"}},
-		"订阅 删除 <JW ID>":                {CapabilityUnsubscribeSectionByJWID, []string{"12345"}},
 		"教学班 课表 <JW ID> <开始日期> <结束日期>": {CapabilitySectionSchedules, []string{"12345", "2026-09-01", "2026-09-30"}},
 		"教学班 考试 <JW ID>":               {CapabilitySectionExams, []string{"12345"}},
 		"教学班 作业 <JW ID>":               {CapabilitySectionHomeworks, []string{"12345"}},
