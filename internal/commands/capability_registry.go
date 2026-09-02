@@ -395,7 +395,7 @@ var capabilityDescriptors []CapabilityDescriptor
 
 func init() {
 	capabilityDescriptors = []CapabilityDescriptor{
-		descriptor(CapabilityHelp, []string{"help", "帮助", "菜单"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectRead, ExposureModel, allowArgs, nil, nil, helpPolicy, helpMeta("help", "帮助", "查看 Bot 命令总览与专题用法", false, nil, nil)),
+		descriptor(CapabilityHelp, []string{"help", "帮助", "菜单"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectRead, ExposureModel, allowArgs, nil, nil, helpPolicy, helpMeta("help", "帮助", "查看 Bot 所有命令、能力与工具总览及专题用法", false, nil, nil)),
 		descriptor(CapabilityLogin, []string{"login", "登录"}, CapabilityRequirements{OAuth: true, DataScope: DataScopeUserPrivate}, EffectWrite, ExposureHostOnly, func(args []string) bool { return !hasArgs(args) || firstArgIsHelp(args) || firstArgIs(args, "status") }, normalizeLoginArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.login(ctx, ident, args)
 		}, loginPolicy, helpMeta("account", "账户", "登录、退出与查看账户信息", true, []HelpExample{example("账户 登录", "开始 Life @ USTC 登录"), example("账户 登录状态", "查询当前登录流程")}, []HelpExample{example("登录", "相当于“账户 登录”")})),

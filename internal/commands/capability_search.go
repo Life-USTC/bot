@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 // CapabilitySearchOptions controls the registry-backed documentation search.
@@ -121,29 +123,46 @@ func capabilityDocumentationScore(query string, queryTokens []string, documentat
 		fields = capabilityDocumentationSearchFields(documentation, false)
 	}
 	joined := strings.Join(fields, "\x00")
+	markerFields := append([]string{strings.ToLower(string(documentation.ID)), strings.ToLower(documentation.Title)}, documentation.Forms...)
+	markers := strings.ToLower(strings.Join(markerFields, "\x00"))
 	score := 0
+	strongMatch := false
 	if query == strings.ToLower(string(documentation.ID)) {
 		score += 10000
+		strongMatch = true
 	}
 	for _, form := range documentation.Forms {
 		form = normalizeCapabilitySearchText(form)
 		switch {
 		case query == form:
 			score += 9000
+			strongMatch = true
 		case strings.HasPrefix(form, query):
 			score += 5000
+			strongMatch = true
 		case strings.Contains(form, query):
 			score += 3000
+			strongMatch = true
 		case containsHan(form) && strings.Contains(query, form):
 			score += 2500
+			strongMatch = true
 		}
 	}
-	matchedToken := false
+	matchedToken := strongMatch
+	hanMatches := 0
+	markerHanMatches := 0
 	for _, token := range queryTokens {
 		if token == "" {
 			continue
 		}
-		if strings.Contains(joined, token) {
+		if containsHan(token) {
+			hanMatches += textutil.MeaningfulSearchTokenMatches(token, joined)
+			markerHanMatches += textutil.MeaningfulSearchTokenMatches(token, markers)
+			// Natural Chinese searches often have no word boundaries and include
+			// polite or action words. Rank on meaningful overlapping terms.
+			continue
+		}
+		if textutil.MeaningfulSearchTokenMatches(token, joined) > 0 {
 			score += 1000
 			matchedToken = true
 			if strings.Contains(strings.ToLower(string(documentation.ID)), token) {
@@ -151,21 +170,17 @@ func capabilityDocumentationScore(query string, queryTokens []string, documentat
 			}
 			continue
 		}
-		if containsHan(token) {
-			matches := hanBigramMatches(token, joined)
-			if matches > 0 {
-				score += matches * 500
-				matchedToken = true
-			}
-			// Natural Chinese searches often have no word boundaries and include
-			// polite or action words. Rank on the meaningful overlapping terms
-			// instead of requiring the entire sentence to occur verbatim.
-			continue
-		}
 		// Search queries commonly contain several synonyms in both languages.
 		// Treat them as ranking hints; requiring every hint would discard the
 		// correct command whenever one synonym is absent from its documentation.
 		continue
+	}
+	// One generic grammatical overlap is too weak to select a capability.
+	// Exact IDs/forms remain sufficient; fuzzy Han matching needs two pieces
+	// of domain evidence across the complete query.
+	if hanMatches >= 2 || markerHanMatches > 0 {
+		score += hanMatches * 500
+		matchedToken = true
 	}
 	if score == 0 || (!matchedToken && query != strings.ToLower(string(documentation.ID))) {
 		return 0, false
@@ -180,33 +195,6 @@ func containsHan(value string) bool {
 		}
 	}
 	return false
-}
-
-func hanBigramMatches(value, corpus string) int {
-	runes := make([]rune, 0, len(value))
-	for _, r := range value {
-		if unicode.Is(unicode.Han, r) {
-			runes = append(runes, r)
-		} else {
-			runes = append(runes, 0)
-		}
-	}
-	seen := make(map[string]struct{})
-	matches := 0
-	for index := 1; index < len(runes); index++ {
-		if runes[index-1] == 0 || runes[index] == 0 {
-			continue
-		}
-		bigram := string(runes[index-1 : index+1])
-		if _, found := seen[bigram]; found {
-			continue
-		}
-		seen[bigram] = struct{}{}
-		if strings.Contains(corpus, bigram) {
-			matches++
-		}
-	}
-	return matches
 }
 
 func capabilityDocumentationSearchFields(documentation CapabilityDocumentation, shared bool) []string {

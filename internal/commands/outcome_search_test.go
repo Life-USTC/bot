@@ -141,6 +141,27 @@ func TestCapabilitySearchUnderstandsUnsegmentedChineseIntent(t *testing.T) {
 	}
 }
 
+func TestCapabilitySearchRejectsUnrelatedChineseQueryVerbOverlap(t *testing.T) {
+	for _, query := range []string{
+		"你能查询第二课堂平台的活动吗",
+		"查询第二课堂平台活动",
+		"第二课堂 二课 活动查询",
+		"想搜二课活动",
+		"请查询目前可以报名的第二课堂活动，列出前 3 个",
+	} {
+		if docs := SearchCapabilityDocumentation(query, CapabilitySearchOptions{}); len(docs) != 0 {
+			t.Errorf("SearchCapabilityDocumentation(%q) = %#v, want no supported capability", query, docs)
+		}
+	}
+}
+
+func TestCapabilitySearchRoutesInventoryRequestToHelp(t *testing.T) {
+	docs := SearchCapabilityDocumentation("列出所有可用命令和能力", CapabilitySearchOptions{Limit: 1})
+	if len(docs) != 1 || docs[0].ID != CapabilityHelp {
+		t.Fatalf("inventory search = %#v, want help documentation", docs)
+	}
+}
+
 func TestMutationExpansionSplitsIndependentTargets(t *testing.T) {
 	subscription := expandTestMutation(t, CapabilitySubscription, []string{"import", "CODE1.01", "CODE2.02"})
 	if len(subscription) != 2 {

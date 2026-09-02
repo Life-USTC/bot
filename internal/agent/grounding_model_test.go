@@ -97,6 +97,11 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 		{name: "shared public course search", text: "帮我搜索数学分析课程", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{searchCommands: true, executeCapability: true}},
 		{name: "shared public course query with fuzzy private matches", text: "帮我查数学分析课程", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{searchCommands: true, executeCapability: true}},
 		{name: "public bus facts", text: "高新区到东区校车", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true}},
+		{name: "second classroom platform", text: "你能查询第二课堂平台的活动吗", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
+		{name: "second classroom event list uses MCP", text: "请查询目前可以报名的第二课堂活动，列出前 3 个", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
+		{name: "second classroom short name", text: "但是你现在是不是能搜二课了", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
+		{name: "verify second classroom result", text: "请核实刚才第二课堂的结果", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
+		{name: "second period is not young event", text: "二课几点开始", ident: private, want: groundingPolicy{}},
 		{name: "public group introduction", text: "介绍一下这个公开服务", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{}},
 		{name: "casual chat", text: "你好", ident: private, want: groundingPolicy{}},
 	} {
@@ -105,6 +110,62 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 				t.Fatalf("policy=%#v want=%#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestGroundingModelForcesEmptyBotSearchThenCampusSearchAndCall(t *testing.T) {
+	inner := &groundingRecordingModel{}
+	policy := groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}
+	wrapped := newGroundingModel(inner, policy)
+	grounder := wrapped.(*groundingModel)
+	user := schema.UserMessage("查询第二课堂活动")
+	toolOptions := []model.Option{model.WithTools([]*schema.ToolInfo{
+		{Name: commandSearchToolName}, {Name: capabilityToolName},
+		{Name: campusSearchToolName}, {Name: campusCallToolName},
+	})}
+
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	assertOnlyAllowedTool(t, inner.options[0], commandSearchToolName)
+
+	commandSearchCall := schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "bot-search", Type: "function", Function: schema.FunctionCall{Name: commandSearchToolName, Arguments: `{"query":"第二课堂活动"}`},
+	}})
+	commandSearchResult := schema.ToolMessage(`[]`, "bot-search", schema.WithToolName(commandSearchToolName))
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user, commandSearchCall, commandSearchResult}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	assertOnlyAllowedTool(t, inner.options[1], campusSearchToolName)
+	if grounder.hasRequiredEvidence() {
+		t.Fatal("an empty Bot search alone satisfied the campus-data requirement")
+	}
+
+	campusSearchCall := schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "campus-search", Type: "function", Function: schema.FunctionCall{Name: campusSearchToolName, Arguments: `{"query":"二课活动"}`},
+	}})
+	campusSearchResult := schema.ToolMessage(`[{"name":"catalog_young_event_list"}]`, "campus-search", schema.WithToolName(campusSearchToolName))
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user, commandSearchCall, commandSearchResult, campusSearchCall, campusSearchResult}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	assertOnlyAllowedTool(t, inner.options[2], campusCallToolName)
+	if grounder.hasRequiredEvidence() {
+		t.Fatal("campus documentation without a read result satisfied grounding")
+	}
+
+	campusCall := schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "campus-call", Type: "function", Function: schema.FunctionCall{Name: campusCallToolName, Arguments: `{"name":"catalog_young_event_list","arguments":{"active":true}}`},
+	}})
+	campusResult := schema.ToolMessage(`{"data":[{"name":"第二课堂示例活动"}]}`, "campus-call", schema.WithToolName(campusCallToolName))
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user, commandSearchCall, commandSearchResult, campusSearchCall, campusSearchResult, campusCall, campusResult}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	assertNoForcedTool(t, inner.options[3])
+	if !grounder.hasRequiredEvidence() {
+		t.Fatal("approved campus tool result did not satisfy grounding")
+	}
+	if result, returned := grounder.groundedToolResult(); !returned || !strings.Contains(result, "第二课堂示例活动") {
+		t.Fatalf("campus fallback result = (%q, %v)", result, returned)
 	}
 }
 
@@ -171,7 +232,7 @@ func TestGroundingModelRejectsDirectCapabilityResultWithoutSearchOnConfirmationR
 	if grounder.hasRequiredEvidence() {
 		t.Fatal("capability result without a command-search allow-list counted as evidence")
 	}
-	if _, returned := grounder.capabilityResult(); returned {
+	if _, returned := grounder.groundedToolResult(); returned {
 		t.Fatal("capability outside a command-search allow-list became a fallback result")
 	}
 }
@@ -281,7 +342,7 @@ func TestGroundingModelRejectsWrongOrFailedCapabilityAsEvidence(t *testing.T) {
 	if grounder.hasRequiredEvidence() {
 		t.Fatal("a failed capability counted as evidence")
 	}
-	if result, returned := grounder.capabilityResult(); !returned || result != "课表查不到：服务返回错误" {
+	if result, returned := grounder.groundedToolResult(); !returned || result != "课表查不到：服务返回错误" {
 		t.Fatalf("failed capability fallback=(%q,%v)", result, returned)
 	}
 
@@ -322,11 +383,14 @@ func TestGroundedMessageForPersistenceDropsProvisionalTextButKeepsToolCall(t *te
 }
 
 func TestCommandSearchCapabilityIDsIncludeNestedExamples(t *testing.T) {
-	ids := commandSearchCapabilityIDs(`[{
+	ids, valid := commandSearchCapabilityIDs(`[{
 		"id":"course_search",
 		"examples":[{"capability":"course_by_jw_id"}],
 		"shortcuts":[{"capability":"teacher_by_id"}]
 	}]`)
+	if !valid {
+		t.Fatal("valid command-search result was rejected")
+	}
 	for _, id := range []string{"course_search", "course_by_jw_id", "teacher_by_id"} {
 		if _, ok := ids[id]; !ok {
 			t.Fatalf("nested capability %q missing from %#v", id, ids)
@@ -336,13 +400,14 @@ func TestCommandSearchCapabilityIDsIncludeNestedExamples(t *testing.T) {
 
 func TestGroundingModelDoesNotForceExecutionForUsageOrEmptySearch(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		policy groundingPolicy
-		result string
+		name         string
+		policy       groundingPolicy
+		result       string
+		wantEvidence bool
 	}{
-		{name: "usage", policy: groundingPolicy{searchCommands: true}, result: `[{"id":"schedule"}]`},
-		{name: "empty search", policy: groundingPolicy{searchCommands: true, executeCapability: true}, result: `[]`},
-		{name: "malformed search", policy: groundingPolicy{searchCommands: true, executeCapability: true}, result: `not-json`},
+		{name: "usage", policy: groundingPolicy{searchCommands: true}, result: `[{"id":"schedule"}]`, wantEvidence: true},
+		{name: "empty search", policy: groundingPolicy{searchCommands: true, executeCapability: true}, result: `[]`, wantEvidence: true},
+		{name: "malformed search", policy: groundingPolicy{searchCommands: true, executeCapability: true}, result: `not-json`, wantEvidence: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inner := &groundingRecordingModel{}
@@ -358,6 +423,9 @@ func TestGroundingModelDoesNotForceExecutionForUsageOrEmptySearch(t *testing.T) 
 				t.Fatal(err)
 			}
 			assertNoForcedTool(t, inner.options[1])
+			if got := wrapped.(*groundingModel).hasRequiredEvidence(); got != test.wantEvidence {
+				t.Fatalf("hasRequiredEvidence() = %v, want %v", got, test.wantEvidence)
+			}
 		})
 	}
 }

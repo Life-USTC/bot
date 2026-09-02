@@ -17,13 +17,15 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const maxCampusToolSearchResults = 5
 
 func campusReadToolAllowed(name string) bool {
 	switch name {
-	case "get_current_semester", "list_my_homeworks", "search_courses":
+	case "get_current_semester", "list_my_homeworks", "search_courses",
+		"catalog_young_event_list", "catalog_young_event_get":
 		return true
 	default:
 		return false
@@ -65,7 +67,7 @@ func newLazyMCPSession(service *Service, identity store.Identity, jobID int64) *
 
 func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, error) {
 	var err error
-	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first.", s.search)
+	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first. Use the exact query * only when the user asks for a complete inventory of approved campus tools.", s.search)
 	if err != nil {
 		return nil, err
 	}
@@ -124,17 +126,20 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 		return "", err
 	}
 	tokens := strings.Fields(query)
+	listAll := query == "*"
 	type match struct {
 		name  string
 		score int
 	}
 	matches := make([]match, 0, len(s.tools))
 	for name, candidate := range s.tools {
-		haystack := strings.ToLower(name + " " + candidate.Description)
+		haystack := strings.ToLower(name + " " + candidate.Description + " " + campusToolSearchAliases(name))
 		score := 0
-		for _, token := range tokens {
-			if strings.Contains(haystack, token) {
-				score++
+		if listAll {
+			score = 1
+		} else {
+			for _, token := range tokens {
+				score += textutil.MeaningfulSearchTokenMatches(token, haystack)
 			}
 		}
 		if score > 0 {
@@ -147,7 +152,7 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 		}
 		return matches[i].name < matches[j].name
 	})
-	if len(matches) > maxCampusToolSearchResults {
+	if !listAll && len(matches) > maxCampusToolSearchResults {
 		matches = matches[:maxCampusToolSearchResults]
 	}
 	docs := make([]campusToolDocumentation, 0, len(matches))
@@ -180,6 +185,13 @@ func campusToolInputSchema(candidate mcpgo.Tool) (json.RawMessage, error) {
 		return nil, fmt.Errorf("encode campus tool %s input schema: %w", candidate.Name, err)
 	}
 	return data, nil
+}
+
+func campusToolSearchAliases(name string) string {
+	if strings.Contains(strings.ToLower(name), "young_event") {
+		return "第二课堂 二课 活动 报名"
+	}
+	return ""
 }
 
 func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (string, error) {
@@ -293,6 +305,8 @@ func existingCampusToolResult(execution store.CapabilityExecution) string {
 func campusReceiptResource(name string) string {
 	lower := strings.ToLower(name)
 	switch {
+	case strings.Contains(lower, "young_event"):
+		return "第二课堂活动"
 	case strings.Contains(lower, "course"), strings.Contains(lower, "section"), strings.Contains(lower, "class"):
 		return "课程"
 	case strings.Contains(lower, "teacher"):
