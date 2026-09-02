@@ -179,7 +179,6 @@ func (b *Bridge) approvePendingFriendRequests(ctx context.Context) {
 	}
 
 	b.approveDoubtFriendRequests(ctx)
-	b.approveHistoricalFriendRequestTips(ctx)
 }
 
 func (b *Bridge) approveDoubtFriendRequests(ctx context.Context) {
@@ -213,39 +212,6 @@ func (b *Bridge) approveDoubtFriendRequests(ctx context.Context) {
 		}
 		b.logf("auto-approved pending friend request: user_id=%d nickname=%q", item.displayUserID(), item.displayNickname())
 	}
-}
-
-// historicalFriendRequestTipTimes are unix seconds for inbound "请求添加你为好友"
-// tip messages that were previously mishandled as normal chat. NapCat's
-// set_friend_add_request flag is buddyReq.reqTime, which often matches the tip
-// message time closely enough for a small search window.
-var historicalFriendRequestTipTimes = []struct {
-	userID int64
-	unix   int64
-}{
-	{2047532941, 1785762573},
-	{3905701512, 1786026367},
-	{3415369213, 1786026508},
-	{510223284, 1786026550},
-	{3500432733, 1786026554},
-	{3754066788, 1786026754},
-	{2675715651, 1786027315},
-	{3912535320, 1786030188},
-	{3381646459, 1786034137},
-	{1642618272, 1786039792},
-}
-
-func (b *Bridge) approveHistoricalFriendRequestTips(ctx context.Context) {
-	approved := 0
-	for _, item := range historicalFriendRequestTipTimes {
-		if ctx.Err() != nil {
-			return
-		}
-		if b.tryApproveFriendRequestFlags(ctx, item.userID, friendRequestFlagCandidates(item.unix)) {
-			approved++
-		}
-	}
-	b.logf("historical friend request tip sweep done: approved=%d candidates=%d", approved, len(historicalFriendRequestTipTimes))
 }
 
 func (b *Bridge) approveDoubtFriendRequest(ctx context.Context, flag string) error {
