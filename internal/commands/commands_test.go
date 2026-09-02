@@ -136,6 +136,21 @@ func TestFormatSectionOmitsTrailingTabWhenLabelMissing(t *testing.T) {
 	}
 }
 
+func TestFormatSectionIncludesOpenAPISemesterName(t *testing.T) {
+	for field, semester := range map[string]string{
+		"namePrimary": "2026秋季",
+		"nameCn":      "2026年秋季学期",
+	} {
+		line := formatSection(map[string]any{
+			"code": "MATH1001.01", "course": map[string]any{"namePrimary": "高等数学"},
+			"semester": map[string]any{field: semester},
+		})
+		if !strings.Contains(line, "高等数学 "+semester) {
+			t.Fatalf("semester %s missing from line %q", field, line)
+		}
+	}
+}
+
 func TestSearchSectionsTrimsKeyword(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("search") != "高等数学" {
@@ -3438,7 +3453,10 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "学期 当前", name: "semester"},
 		{text: "学期 列表 10", name: "list_semesters", args: "10"},
 		{text: "订阅 添加 CONT5103P.01 CONT6104P.01", name: "subscription", args: "import CONT5103P.01 CONT6104P.01"},
-		{text: "订阅 删除 999", name: "unsubscribe_section_by_jw_id", args: "999"},
+		{text: "订阅 删除 CONT5103P.01", name: "subscription", args: "remove CONT5103P.01"},
+		{text: "取消课程订阅 CONT5103P.01", name: "subscription", args: "remove CONT5103P.01"},
+		{text: "退订课程 CONT5103P.01", name: "subscription", args: "remove CONT5103P.01"},
+		{text: "退订教学班 CONT5103P.01", name: "subscription", args: "remove CONT5103P.01"},
 		{text: "订阅 列表", name: "my_subscribed_sections"},
 		{text: "订阅 链接", name: "subscription", args: "link"},
 		{text: "课程订阅", name: "subscription"},
@@ -4200,32 +4218,74 @@ func TestHandleUpcomingDeadlines(t *testing.T) {
 	}
 }
 
-func TestHandleUnsubscribeSectionByJwID(t *testing.T) {
+func TestHandleBulkUnsubscribeSectionsByCode(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/workspace/subscriptions/current" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"jwId":999,"code":"CS1001.01","course":{"namePrimary":"计算机导论"}}]}}`))
-		case r.URL.Path == "/api/workspace/subscriptions/batch" && r.Method == http.MethodPost:
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			if body["action"] != "remove" {
-				t.Fatalf("action = %q", body["action"])
-			}
-			_, _ = w.Write([]byte(`{}`))
-		default:
+		if r.URL.Path != "/api/workspace/subscriptions/batch" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
+		var body struct {
+			Action string   `json:"action"`
+			Codes  []string `json:"codes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Action != "remove" || strings.Join(body.Codes, ",") != "CS1001.01,MATH1001.02" {
+			t.Fatalf("body = %#v", body)
+		}
+		_, _ = w.Write([]byte(`{
+			"semester":{"nameCn":"2026年秋季学期"},
+			"sections":[
+				{"code":"CS1001.01","course":{"namePrimary":"计算机导论"}},
+				{"code":"MATH1001.02","course":{"namePrimary":"数学分析"}}
+			],
+			"removedCount":1,
+			"unchangedCount":1
+		}`))
 	}))
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "退订教学班 999", Identity: ident})
-	if !ok || reply != "已退订教学班。" {
+	reply, ok := handler.Handle(ctx, Input{Text: "退订教学班 CS1001.01 MATH1001.02", Identity: ident})
+	if !ok || !strings.Contains(reply, "已处理 𝟸 个教学班（取消订阅 𝟷 个，原本未订阅 𝟷 个）") ||
+		!strings.Contains(reply, "2026年秋季学期") || !strings.Contains(reply, "计算机导论") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestInvalidSubscriptionRemovalReturnsActionableCodeUsage(t *testing.T) {
+	outcome, handled := (Handler{}).HandleOutcome(t.Context(), Input{Text: "订阅 删除 999"})
+	if !handled || outcome.Status != CapabilityOutcomeInvalidInput {
+		t.Fatalf("outcome = %#v, handled = %v", outcome, handled)
+	}
+	if !strings.Contains(outcome.Response.Text, "订阅 帮助：") ||
+		!strings.Contains(outcome.Response.Text, "订阅 取消 CONT5103P.01") ||
+		strings.Contains(outcome.Response.Text, "JW ID") {
+		t.Fatalf("invalid removal response = %q", outcome.Response.Text)
+	}
+}
+
+func TestUnsubscribeAlreadyAbsentIsNotReportedAsCompletedMutation(t *testing.T) {
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/batch" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"semester":{"nameCn":"2026年秋季学期"},
+			"sections":[{"code":"CS1001.01","course":{"namePrimary":"计算机导论"}}],
+			"removedCount":0,"unchangedCount":1
+		}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	outcome, handled := handler.HandleOutcome(t.Context(), Input{Text: "订阅 取消 CS1001.01", Identity: ident})
+	if !handled || outcome.Status != CapabilityOutcomeNotFound ||
+		!strings.Contains(outcome.Response.Text, "取消订阅 𝟶 个，原本未订阅 𝟷 个") {
+		t.Fatalf("already-absent outcome=%#v handled=%v", outcome, handled)
 	}
 }
 

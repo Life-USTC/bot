@@ -431,6 +431,33 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		return
 	}
 	if result.State == agent.RunStateInterrupted {
+		executions, err := c.jobs.CapabilityExecutionsForJob(ctx, job.ID)
+		if err != nil {
+			c.fail(ctx, job, markConversationPersistenceError(err))
+			return
+		}
+		if !hasAwaitingConfirmation(executions) {
+			if !allCapabilityExecutionsTerminal(executions) {
+				c.fail(ctx, job, markConversationPersistenceError(errors.New("agent interrupted while a capability execution remained nonterminal")))
+				return
+			}
+			receipts, err := c.unsentExecutionReceipts(ctx, job.ID, false)
+			if err != nil {
+				c.fail(ctx, job, err)
+				return
+			}
+			reply := appendReceiptLines(commands.Response{
+				Kind: "agent_error",
+				Text: "这次请求没有可确认的待处理操作，系统已停止本次流程；没有执行新的操作。请重新发送原请求。",
+			}, "", receipts)
+			if err := commit(ctx, reply, receipts.IDs, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
+				c.fail(ctx, job, err)
+				return
+			}
+			c.acknowledgeAgent(ctx, job)
+			c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
+			return
+		}
 		receipts, err := c.unsentExecutionReceipts(ctx, job.ID, true)
 		if err != nil {
 			c.fail(ctx, job, err)
@@ -474,6 +501,32 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	}
 	c.acknowledgeAgent(ctx, job)
 	c.recordJob(ctx, job, inbound, reply, store.InteractionStatusHandled)
+}
+
+func hasAwaitingConfirmation(executions []store.CapabilityExecution) bool {
+	for _, execution := range executions {
+		if execution.State == store.CapabilityExecutionAwaitingConfirmation {
+			return true
+		}
+	}
+	return false
+}
+
+func allCapabilityExecutionsTerminal(executions []store.CapabilityExecution) bool {
+	for _, execution := range executions {
+		switch execution.State {
+		case store.CapabilityExecutionDenied,
+			store.CapabilityExecutionCancelled,
+			store.CapabilityExecutionExpired,
+			store.CapabilityExecutionSucceeded,
+			store.CapabilityExecutionFailed,
+			store.CapabilityExecutionUnknown:
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func conversationJobRunDeadline(job store.ConversationJob) time.Time {

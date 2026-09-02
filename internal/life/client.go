@@ -272,31 +272,6 @@ func (c *Client) ListBusRoutes(ctx context.Context, originCampusID, destinationC
 	return out, err
 }
 
-func (c *Client) UnsubscribeSectionByJwID(ctx context.Context, token string, jwId int64) (map[string]any, error) {
-	sub, err := c.CurrentSubscription(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	sections := lifedata.SubscriptionSections(sub)
-	sectionID := 0
-	for _, section := range sections {
-		if lifedata.FirstInt(section, "jwId") == int(jwId) {
-			sectionID = lifedata.FirstInt(section, "id")
-			break
-		}
-	}
-	if sectionID == 0 {
-		return nil, fmt.Errorf("section jwId %d is not in current subscription", jwId)
-	}
-	var out map[string]any
-	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
-		Action:     openapi.CalendarSubscriptionBatchRequestSchemaActionRemove,
-		SectionIds: &[]int{sectionID},
-	})
-	err = typedJSON(resp, err, "unsubscribe section", &out)
-	return out, err
-}
-
 func (c *Client) ListSubscribedSections(ctx context.Context, token string) ([]map[string]any, error) {
 	sub, err := c.CurrentSubscription(ctx, token)
 	if err != nil {
@@ -670,16 +645,13 @@ func (c *Client) SetHomeworkCompletions(ctx context.Context, token string, items
 	return typedResponse(resp, err)
 }
 
-func (c *Client) BulkSubscribeSections(ctx context.Context, token string, importCodes []string) (map[string]any, error) {
+func (c *Client) BulkSubscribeSections(ctx context.Context, token string, importCodes []string, semesterID int64) (map[string]any, error) {
 	var out map[string]any
-	codes := textutil.NonEmpty(importCodes...)
-	if len(codes) == 0 {
-		return nil, errors.New("section or course code is required")
+	body, err := subscriptionBatchRequest(openapi.CalendarSubscriptionBatchRequestSchemaActionAdd, importCodes, semesterID)
+	if err != nil {
+		return nil, err
 	}
-	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
-		Action: openapi.CalendarSubscriptionBatchRequestSchemaActionAdd,
-		Codes:  &codes,
-	})
+	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, body)
 	err = typedJSON(resp, err, "bulk subscribe sections", &out)
 	if err == nil && out != nil {
 		if _, ok := out["alreadySubscribedCount"]; !ok {
@@ -687,6 +659,33 @@ func (c *Client) BulkSubscribeSections(ctx context.Context, token string, import
 		}
 	}
 	return out, err
+}
+
+func (c *Client) BulkUnsubscribeSections(ctx context.Context, token string, codes []string, semesterID int64) (map[string]any, error) {
+	var out map[string]any
+	body, err := subscriptionBatchRequest(openapi.CalendarSubscriptionBatchRequestSchemaActionRemove, codes, semesterID)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, body)
+	err = typedJSON(resp, err, "bulk unsubscribe sections", &out)
+	return out, err
+}
+
+func subscriptionBatchRequest(action openapi.CalendarSubscriptionBatchRequestSchemaAction, codes []string, semesterID int64) (openapi.BatchUpdateCalendarSubscriptionJSONRequestBody, error) {
+	codes = textutil.NonEmpty(codes...)
+	if len(codes) == 0 {
+		return openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{}, errors.New("section or course code is required")
+	}
+	body := openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{Action: action, Codes: &codes}
+	if semesterID > 0 {
+		value := openapi.CalendarSubscriptionBatchRequestSchema_SemesterId{}
+		if err := value.FromCalendarSubscriptionBatchRequestSchemaSemesterId0(strconv.FormatInt(semesterID, 10)); err != nil {
+			return openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{}, fmt.Errorf("encode subscription semester id: %w", err)
+		}
+		body.SemesterId = &value
+	}
+	return body, nil
 }
 
 func (c *Client) CurrentSubscription(ctx context.Context, token string) (map[string]any, error) {

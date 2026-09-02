@@ -120,6 +120,15 @@ func TestCapabilitySearchUnderstandsUnsegmentedChineseIntent(t *testing.T) {
 	if len(docs) == 0 || docs[0].ID != CapabilitySubscription {
 		t.Fatalf("subscription search = %#v", docs)
 	}
+	removeExample := false
+	for _, example := range docs[0].Examples {
+		if len(example.Arguments) == 2 && example.Arguments[0] == "remove" {
+			removeExample = example.Capability == CapabilitySubscription && example.Effect == EffectDestructive
+		}
+	}
+	if !removeExample {
+		t.Fatalf("subscription search lacks executable destructive remove example: %#v", docs[0])
+	}
 
 	docs = SearchCapabilityDocumentation("打开 作业通知 查看 作业 通知 USTC", CapabilitySearchOptions{})
 	if len(docs) == 0 || docs[0].ID != CapabilityNotify {
@@ -142,6 +151,10 @@ func TestMutationExpansionSplitsIndependentTargets(t *testing.T) {
 	}
 	if got := subscription[1].CanonicalCommand(); got != "subscription import CODE2.02" {
 		t.Fatalf("second subscription invocation = %q", got)
+	}
+	removals := expandTestMutation(t, CapabilitySubscription, []string{"remove", "CODE1.01", "CODE2.02"})
+	if len(removals) != 2 || removals[0].CanonicalCommand() != "subscription remove CODE1.01" || removals[1].CanonicalCommand() != "subscription remove CODE2.02" {
+		t.Fatalf("subscription removal expansion = %#v", removals)
 	}
 	todo := expandTestMutation(t, CapabilityTodo, []string{"delete", "1,2,3"})
 	if len(todo) != 3 || todo[0].CanonicalCommand() != "todo delete 1" || todo[2].CanonicalCommand() != "todo delete 3" {
@@ -173,6 +186,11 @@ func TestMutationReceiptPreflightRequiresOneResolvedTarget(t *testing.T) {
 	if !errors.Is(err, errCapabilityReceiptUnavailable) {
 		t.Fatalf("unresolved receipt preflight error = %v", err)
 	}
+
+	_, err = handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"remove", "CODE1.01"})
+	if !errors.Is(err, errCapabilityReceiptUnavailable) {
+		t.Fatalf("unresolved remove receipt preflight error = %v", err)
+	}
 }
 
 func TestMutationExamplesCarryWriteEffects(t *testing.T) {
@@ -181,6 +199,7 @@ func TestMutationExamplesCarryWriteEffects(t *testing.T) {
 		effect  CapabilityEffect
 	}{
 		{command: "订阅 导入 CODE1.01", effect: EffectWrite},
+		{command: "订阅 取消 CODE1.01", effect: EffectDestructive},
 		{command: "待办 添加 写报告", effect: EffectWrite},
 		{command: "待办 完成 1", effect: EffectWrite},
 		{command: "待办 恢复 1", effect: EffectWrite},
@@ -204,6 +223,16 @@ func TestMutationExamplesCarryWriteEffects(t *testing.T) {
 	}
 }
 
+func TestBareSubscriptionCodeNormalizesToConfirmedImport(t *testing.T) {
+	invocation, ok := NewInvocation(CapabilitySubscription, []string{"CONT5103P.01"})
+	if !ok {
+		t.Fatal("bare subscription code was rejected")
+	}
+	if invocation.CanonicalCommand() != "subscription import CONT5103P.01" || invocation.Policy().Effect != EffectWrite {
+		t.Fatalf("bare subscription invocation=%#v policy=%#v", invocation, invocation.Policy())
+	}
+}
+
 func TestCapabilityDocumentationExamplesAreExecutableAndPolicyBound(t *testing.T) {
 	for _, usage := range CapabilityUsages() {
 		for _, example := range usage.Examples {
@@ -221,10 +250,17 @@ func TestCapabilityDocumentationExamplesAreExecutableAndPolicyBound(t *testing.T
 
 func TestDescribeInvocationBuildsHostReceipt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/catalog/sections" || r.URL.Query().Get("search") != "CODE1.01" {
+		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"jwId":202602,"nameCn":"2026年秋季学期"}`))
+		case "/api/catalog/sections":
+			if r.URL.Query().Get("search") != "CODE1.01" || r.URL.Query().Get("semesterId") != "42" {
+				t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"},"teacher":{"namePrimary":"张老师"},"semester":{"namePrimary":"2026年秋季学期"}}]}`))
+		default:
 			t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{"data":[{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"},"teacher":{"namePrimary":"张老师"},"semester":{"namePrimary":"2026年秋季学期"}}]}`))
 	}))
 	defer server.Close()
 
@@ -241,5 +277,84 @@ func TestDescribeInvocationBuildsHostReceipt(t *testing.T) {
 	}
 	if got := description.Receipt.Subject; got != "线性代数（张老师，2026年秋季学期）" {
 		t.Fatalf("receipt subject = %#v", got)
+	}
+	if got := description.Invocation.CanonicalCommand(); got != "subscription import CODE1.01 semester_id 42" {
+		t.Fatalf("frozen subscription invocation = %q", got)
+	}
+	description, err = handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"remove", "CODE1.01"})
+	if err != nil || description.Receipt == nil || description.Receipt.Action != ReceiptActionUnsubscribe ||
+		description.Receipt.Subject != "线性代数（张老师，2026年秋季学期）" {
+		t.Fatalf("unsubscribe description=%#v err=%v", description, err)
+	}
+	if got := description.Invocation.CanonicalCommand(); got != "subscription remove CODE1.01 semester_id 42" {
+		t.Fatalf("frozen unsubscribe invocation = %q", got)
+	}
+}
+
+func TestDescribeInvocationRejectsAmbiguousCurrentSemesterCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"nameCn":"2026年秋季学期"}`))
+		case "/api/catalog/sections":
+			_, _ = w.Write([]byte(`{"data":[
+				{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"}},
+				{"code":"code1.01","id":13,"course":{"namePrimary":"另一门课"}}
+			]}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	_, err := handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"remove", "CODE1.01"})
+	if !errors.Is(err, errCapabilityReceiptTargetAmbiguous) {
+		t.Fatalf("ambiguous receipt error=%v", err)
+	}
+	result, ok := CapabilityPreflightFailure(CapabilitySubscription, err)
+	if !ok || !strings.Contains(result, "当前学期对应多个结果") || !strings.Contains(result, "没有执行任何操作") {
+		t.Fatalf("ambiguous receipt result=%q ok=%v", result, ok)
+	}
+}
+
+func TestDescribeInvocationRejectsIncompleteSectionReceipt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"nameCn":"2026年秋季学期"}`))
+		case "/api/catalog/sections":
+			_, _ = w.Write([]byte(`{"data":[{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"},"teachers":[]}]}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	_, err := handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"remove", "CODE1.01"})
+	if !errors.Is(err, errCapabilityReceiptIncomplete) {
+		t.Fatalf("incomplete receipt error=%v", err)
+	}
+	result, ok := CapabilityPreflightFailure(CapabilitySubscription, err)
+	if !ok || !strings.Contains(result, "完整的课程名称、教师和学期信息") || !strings.Contains(result, "没有执行任何操作") {
+		t.Fatalf("incomplete receipt result=%q ok=%v", result, ok)
+	}
+}
+
+func TestSectionSemesterMustNotConflictWithFrozenTarget(t *testing.T) {
+	if sectionMatchesSemesterID(map[string]any{"semesterId": 43}, 42) {
+		t.Fatal("mismatched top-level semester was accepted")
+	}
+	if sectionMatchesSemesterID(map[string]any{"semester": map[string]any{"id": 43}}, 42) {
+		t.Fatal("mismatched nested semester was accepted")
+	}
+	if !sectionMatchesSemesterID(map[string]any{"semesterId": 42}, 42) ||
+		!sectionMatchesSemesterID(map[string]any{}, 42) {
+		t.Fatal("current or filter-constrained semester was rejected")
+	}
+	result, ok := CapabilityPreflightFailure(CapabilitySubscription, errCapabilityReceiptInconsistent)
+	if !ok || !strings.Contains(result, "与当前学期不一致") || !strings.Contains(result, "没有执行任何操作") {
+		t.Fatalf("inconsistent semester result=%q ok=%v", result, ok)
 	}
 }

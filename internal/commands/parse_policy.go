@@ -139,10 +139,11 @@ func subscriptionArgsAcceptable(args []string) bool {
 	switch args[0] {
 	case "link", "链接", "日历":
 		return len(args) == 1
-	case "import", "导入", "添加", "新增":
-		return len(args) >= 2 && sectionCodeListAcceptable(joinedArgs(args[1:]))
+	case "import", "导入", "添加", "新增", "remove", "取消", "删除", "移除", "退订":
+		targetArgs, _, ok := splitSubscriptionMutationArgs(args[1:])
+		return ok && sectionCodeListAcceptable(joinedArgs(targetArgs))
 	default:
-		return sectionCodeListAcceptable(joinedArgs(args))
+		return false
 	}
 }
 

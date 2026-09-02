@@ -506,7 +506,7 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "添加", "新增", "导入":
 			return "subscription", append([]string{"import"}, rest...), true
 		case "删除", "移除", "退订":
-			return "unsubscribe_section_by_jw_id", rest, true
+			return "subscription", append([]string{"remove"}, rest...), true
 		case "链接", "日历":
 			return "subscription", []string{"link"}, true
 		}
@@ -628,6 +628,8 @@ func normalizeJoinedCommand(name string, args []string) (string, []string, bool)
 		return "nextclass", nil, true
 	case "课程订阅":
 		return "subscription", normalizeSubscriptionArgs(args), true
+	case "取消课程订阅", "退订课程", "退订教学班":
+		return "subscription", append([]string{"remove"}, args...), true
 	case "订阅链接", "日历订阅链接", "subscriptionlink", "calendarlink":
 		return "subscription", []string{"link"}, true
 	case "校车偏好", "校车默认", "车偏好", "车默认", "xc偏好", "xc默认", "buspref", "busprefs", "buspreference", "buspreferences":
@@ -825,10 +827,35 @@ func normalizeSubscriptionArgs(args []string) []string {
 	switch normToken(args[0]) {
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
 		return withFirstArg(args, "import")
+	case "remove", "delete", "unsubscribe", "-", "取消", "删除", "移除", "退订":
+		return withFirstArg(args, "remove")
 	case "link", "url", "calendar", "ical", "链接", "日历", "订阅链接":
 		return withFirstArg(args, "link")
 	}
+	if sectionCodeListAcceptable(joinedArgs(args)) {
+		return append([]string{"import"}, args...)
+	}
 	return args
+}
+
+const subscriptionSemesterIDArg = "semester_id"
+
+func splitSubscriptionMutationArgs(args []string) (targetArgs []string, semesterID int64, ok bool) {
+	targetArgs = args
+	for index, arg := range args {
+		if normToken(arg) != subscriptionSemesterIDArg {
+			continue
+		}
+		if index != len(args)-2 {
+			return nil, 0, false
+		}
+		semesterID, ok = parseIntArg(args[index+1])
+		if !ok {
+			return nil, 0, false
+		}
+		return args[:index], semesterID, true
+	}
+	return targetArgs, 0, true
 }
 
 func normalizeLoginArgs(args []string) []string {
@@ -2352,12 +2379,13 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 		case "link":
 			return h.subscriptionCalendarLink(ctx, ident)
 		case "import":
-			return h.bulkSubscribeSections(ctx, ident, joinedArgs(args[1:]))
+			targetArgs, semesterID, _ := splitSubscriptionMutationArgs(args[1:])
+			return h.bulkSubscribeSections(ctx, ident, joinedArgs(targetArgs), semesterID)
+		case "remove":
+			targetArgs, semesterID, _ := splitSubscriptionMutationArgs(args[1:])
+			return h.bulkUnsubscribeSections(ctx, ident, joinedArgs(targetArgs), semesterID)
 		default:
-			raw := joinedArgs(args)
-			if len(extractSectionCodes(raw)) > 0 {
-				return h.bulkSubscribeSections(ctx, ident, raw)
-			}
+			return subscriptionHelp()
 		}
 	}
 	return h.subscriptionList(ctx, ident)
@@ -2371,6 +2399,8 @@ func subscriptionHelp() string {
 		"这是 iCalendar 链接，可在日历应用的“通过 URL 订阅/网络日历”中添加，并自动同步更新",
 		"订阅 导入 <教学班代码...>：批量添加教学班",
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
+		"订阅 取消 <教学班代码...>：批量取消教学班订阅",
+		"例：订阅 取消 CONT5103P.01 CONT6104P.01",
 	}, "\n")
 }
 
@@ -2550,7 +2580,7 @@ func subscriptionSectionsBySemester(sections []map[string]any) []subscriptionSem
 	return groups
 }
 
-func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity, raw string) string {
+func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity, raw string, semesterID int64) string {
 	codes := extractSectionCodes(raw)
 	if len(codes) == 0 {
 		return h.invalidInput("没找到教学班代码。把网页课表里的教学班代码粘过来，例如：\n订阅 导入 CONT5103P.01 CONT6104P.01")
@@ -2560,7 +2590,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 		return h.loginRequired()
 	}
 	matches, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.BulkSubscribeSections(ctx, token, codes)
+		return h.Life.BulkSubscribeSections(ctx, token, codes, semesterID)
 	})
 	if err != nil {
 		return h.commandError("订阅更新失败：", err)
@@ -2570,6 +2600,31 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
 	reply := formatBulkSubscriptionResult(matches, sections, nil, added, already)
 	if len(sections) == 0 {
+		h.markOutcome(CapabilityOutcomeNotFound)
+	}
+	return reply
+}
+
+func (h Handler) bulkUnsubscribeSections(ctx context.Context, ident store.Identity, raw string, semesterID int64) string {
+	codes := extractSectionCodes(raw)
+	if len(codes) == 0 {
+		return h.invalidInput("没找到教学班代码。请使用查询结果中的准确代码，例如：\n订阅 取消 CONT5103P.01 CONT6104P.01")
+	}
+	token, ok := h.accessToken(ctx, ident)
+	if !ok {
+		return h.loginRequired()
+	}
+	matches, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+		return h.Life.BulkUnsubscribeSections(ctx, token, codes, semesterID)
+	})
+	if err != nil {
+		return h.commandError("取消订阅失败：", err)
+	}
+	sections := matchSections(matches)
+	removed := lifedata.FirstInt(matches, "removedCount")
+	unchanged := lifedata.FirstInt(matches, "unchangedCount")
+	reply := formatBulkUnsubscriptionResult(matches, sections, nil, removed, unchanged)
+	if len(sections) == 0 || removed == 0 {
 		h.markOutcome(CapabilityOutcomeNotFound)
 	}
 	return reply
@@ -2637,6 +2692,39 @@ func formatBulkSubscriptionResult(matches map[string]any, sections []map[string]
 		}
 	}
 	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
+}
+
+func formatBulkUnsubscriptionResult(matches map[string]any, sections []map[string]any, fallbackUnmatched []string, removed, unchanged int) string {
+	unmatched := lifedata.StringSlice(matches["unmatchedCodes"])
+	if len(unmatched) == 0 {
+		unmatched = fallbackUnmatched
+	}
+	if len(sections) == 0 {
+		lines := []string{"没匹配到教学班，因此没有取消任何订阅。"}
+		if len(unmatched) > 0 {
+			lines = append(lines, "未匹配：")
+			for _, code := range unmatched {
+				lines = append(lines, "- "+textutil.MonospaceASCII(code))
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	semester := lifedata.SemesterLabel(matches)
+	lines := []string{textutil.MonospaceDigits(fmt.Sprintf("已处理 %d 个教学班（取消订阅 %d 个，原本未订阅 %d 个）。", len(sections), removed, unchanged))}
+	if semester != "" {
+		lines = append(lines, "学期："+semester)
+	}
+	lines = append(lines, "", "已匹配：")
+	for _, section := range sections {
+		lines = append(lines, formatSection(section))
+	}
+	if len(unmatched) > 0 {
+		lines = append(lines, "", "未匹配：")
+		for _, code := range unmatched {
+			lines = append(lines, "- "+textutil.MonospaceASCII(code))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h Handler) curriculum(ctx context.Context, ident store.Identity, args []string) string {
@@ -3673,24 +3761,6 @@ func formatBusRoutes(data map[string]any) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) unsubscribeSectionByJwID(ctx context.Context, ident store.Identity, raw string) string {
-	jwId, ok := parseIntArg(raw)
-	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
-	}
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.UnsubscribeSectionByJwID(ctx, token, jwId)
-	})
-	if err != nil {
-		return h.commandError("退订失败：", err)
-	}
-	return "已退订教学班。"
-}
-
 func (h Handler) mySubscribedSections(ctx context.Context, ident store.Identity) string {
 	return h.subscriptionList(ctx, ident)
 }
@@ -4031,7 +4101,7 @@ func formatCourse(course map[string]any) string {
 func formatSection(section map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(section, "code"))
 	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
-	semester := lifedata.NestedString(section, "semester", "name")
+	semester := lifedata.NestedString(section, "semester", "namePrimary", "nameCn", "name")
 	return formatCodeLabelLine(code, textutil.JoinNonEmpty(" ", course, semester))
 }
 

@@ -541,6 +541,100 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
+
+func TestCoordinatorDoesNotWaitWhenInterruptedRunHasNoPendingConfirmation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent: agentResultFunc(func(ctx context.Context, input agent.Input) agent.Result {
+			execution, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+				Identity: input.Identity, JobID: input.JobID, LeaseToken: input.JobLeaseToken,
+				DedupeKey: "terminal-without-confirmation", ToolCallID: "old-tool-call",
+				Capability: "notify", Arguments: []string{"homework", "on"}, Effect: "write",
+				Receipt: store.CapabilityReceipt{Action: "设置", Resource: "提醒", Subject: "作业：开"},
+			})
+			if err != nil || !created {
+				t.Fatalf("prepare terminal operation: execution=%#v created=%v err=%v", execution, created, err)
+			}
+			execution, execute, err := db.ClaimCapabilityExecutionForJob(ctx, execution.ID, input.JobID, input.JobLeaseToken)
+			if err != nil || !execute {
+				t.Fatalf("claim terminal operation: execution=%#v execute=%v err=%v", execution, execute, err)
+			}
+			if _, err := db.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "设置提醒失败：测试失败", errors.New("test failure")); err != nil {
+				t.Fatal(err)
+			}
+			return agent.Result{Handled: true, State: agent.RunStateInterrupted}
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(t.Context(), jobInbound("terminal-interrupt", "帮我开启作业通知")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(t.Context(), job)
+
+	saved, err := db.GetConversationJob(t.Context(), job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("terminal interrupted job=%#v err=%v", saved, err)
+	}
+	records, err := db.ClaimDue(t.Context(), time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("terminal interrupted output=%#v err=%v", records, err)
+	}
+	text := records[0].Message.Content.Text
+	if strings.Contains(text, confirmationPrompt) || strings.Contains(text, "#待确认") {
+		t.Fatalf("phantom confirmation was sent: %q", text)
+	}
+	if !strings.Contains(text, "没有可确认的待处理操作") || !strings.Contains(text, "#设置提醒失败{作业：开：设置提醒失败：测试失败}") {
+		t.Fatalf("terminal interrupted explanation=%q", text)
+	}
+}
+
+func TestCoordinatorRetriesInterruptedRunWithNonterminalExecution(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent: agentResultFunc(func(ctx context.Context, input agent.Input) agent.Result {
+			_, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+				Identity: input.Identity, JobID: input.JobID, LeaseToken: input.JobLeaseToken,
+				DedupeKey: "approved-without-confirmation-interrupt", ToolCallID: "tool-call",
+				Capability: "notify", Arguments: []string{"homework", "on"}, Effect: "write",
+			})
+			if err != nil || !created {
+				t.Fatalf("prepare nonterminal operation: created=%v err=%v", created, err)
+			}
+			return agent.Result{Handled: true, State: agent.RunStateInterrupted}
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(t.Context(), jobInbound("nonterminal-interrupt", "帮我开启作业通知")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(t.Context(), job)
+
+	saved, err := db.GetConversationJob(t.Context(), job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait ||
+		!strings.Contains(saved.LastError, "remained nonterminal") {
+		t.Fatalf("nonterminal interrupted job=%#v err=%v", saved, err)
+	}
+	if records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10); err != nil || len(records) != 0 {
+		t.Fatalf("nonterminal interrupt produced output=%#v err=%v", records, err)
+	}
+}
+
 func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	db := newCoordinatorStore(t)
 	coordinator, err := NewCoordinator(CoordinatorConfig{

@@ -351,11 +351,18 @@ func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.
 		t.Fatalf("enqueue job: created=%v err=%v", created, err)
 	}
 	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/catalog/sections" || r.URL.Query().Get("search") != "MISSING.01" {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"nameCn":"2026年秋季学期"}`))
+		case "/api/catalog/sections":
+			if r.URL.Query().Get("search") != "MISSING.01" || r.URL.Query().Get("semesterId") != "42" {
+				t.Errorf("unexpected Life request: %s?%s", r.URL.Path, r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		default:
 			t.Errorf("unexpected Life request: %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	t.Cleanup(lifeServer.Close)
 	var requests atomic.Int32
@@ -1377,6 +1384,56 @@ func TestHandleResponseUsesTypedTranscriptWithoutSummaryRequest(t *testing.T) {
 		t.Fatalf("response=%#v ok=%v requests=%d", response, ok, requests.Load())
 	}
 }
+
+func TestHandleResponseDropsOrphanedToolCallBeforeNewConversationTurn(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "orphan-history", ConversationType: "private", ConversationID: "orphan-history"}
+	for _, event := range []store.ConversationEvent{
+		{Identity: ident, DedupeKey: "orphan:user", Type: store.ConversationEventUser, Content: "执行之前的操作"},
+		{Identity: ident, DedupeKey: "orphan:assistant", Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{
+			ID: "orphaned-tool-call", Name: "invoke_bot_capability", Arguments: `{"capability":"notify","arguments":["homework","on"]}`,
+		}}},
+	} {
+		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(body, []byte("orphaned-tool-call")) {
+			t.Fatalf("provider request retained malformed historical turn: %s", body)
+		}
+		if !bytes.Contains(body, []byte("你还在吗")) {
+			t.Fatalf("provider request lost current user turn: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-recovered-history","object":"chat.completion","created":0,"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"在的。"},"finish_reason":"stop"}],
+			"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}
+		}`))
+	}))
+	defer server.Close()
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+		commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(ctx, Input{Text: "你还在吗", Identity: ident})
+	if !ok || response.Text != "在的。" {
+		t.Fatalf("response=%#v ok=%v", response, ok)
+	}
+}
+
 func TestHandleResponseRejectsHardLimitImageBeforeModelCall(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
@@ -1852,6 +1909,138 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	}
 }
 
+func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "unsubscribe", ConversationType: "private", ConversationID: "unsubscribe"}
+	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "unsubscribe", Input: store.ConversationJobInput{Text: "取消 COMP6212P.02 的课程订阅"},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue job=%#v created=%v err=%v", job, created, err)
+	}
+
+	var removeCalls atomic.Int32
+	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"jwId":202602,"nameCn":"2026年秋季学期"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/sections":
+			if r.URL.Query().Get("search") != "COMP6212P.02" || r.URL.Query().Get("semesterId") != "42" {
+				t.Errorf("section preflight query=%s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"data":[{
+				"id":12,"code":"COMP6212P.02","course":{"namePrimary":"编译原理"},
+				"teacher":{"namePrimary":"程老师"},"semester":{"nameCn":"2026年秋季学期"}
+			}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/subscriptions/batch":
+			removeCalls.Add(1)
+			var body struct {
+				Action     string   `json:"action"`
+				Codes      []string `json:"codes"`
+				SemesterID string   `json:"semesterId"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if body.Action != "remove" || strings.Join(body.Codes, ",") != "COMP6212P.02" || body.SemesterID != "42" {
+				t.Errorf("unsubscribe body=%#v", body)
+			}
+			_, _ = w.Write([]byte(`{
+				"semester":{"nameCn":"2026年秋季学期"},"removedCount":1,"unchangedCount":0,
+				"sections":[{"code":"COMP6212P.02","course":{"namePrimary":"编译原理"},"semester":{"nameCn":"2026年秋季学期"}}]
+			}`))
+		default:
+			t.Errorf("unexpected Life request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer lifeServer.Close()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), Resource: lifeServer.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	authManager := &auth.Manager{Server: lifeServer.URL, HTTPClient: lifeServer.Client(), Store: db}
+
+	var modelRequests atomic.Int32
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		request := modelRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-unsubscribe-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-unsubscribe","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消课程订阅\"}"}
+				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		case 2:
+			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) ||
+				!bytes.Contains(body, []byte(`\"arguments\":[\"remove\",\"CONT5103P.01\"]`)) ||
+				bytes.Contains(body, []byte("unsubscribe_section_by_jw_id")) {
+				t.Errorf("unsubscribe command documentation=%s", body)
+			}
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-unsubscribe-call","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"call-unsubscribe","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
+				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		case 3:
+			if !bytes.Contains(body, []byte("call-unsubscribe")) || !bytes.Contains(body, []byte("取消订阅")) {
+				t.Errorf("literal unsubscribe result missing from resumed request: %s", body)
+			}
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-unsubscribe-done","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"已经取消。"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		default:
+			t.Errorf("unexpected model request %d", request)
+			http.Error(w, "unexpected", http.StatusInternalServerError)
+		}
+	}))
+	defer modelServer.Close()
+
+	handler := commands.Handler{Life: life.NewClient(lifeServer.URL, lifeServer.Client()), Auth: authManager, Store: db}
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model"}, handler, modelServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := claimAgentInput(t, db, ident, Input{Text: "取消 COMP6212P.02 的课程订阅", Identity: ident, JobID: job.ID})
+	first := svc.Run(ctx, input)
+	if first.State != RunStateInterrupted || removeCalls.Load() != 0 {
+		t.Fatalf("pre-confirmation result=%#v remove_calls=%d", first, removeCalls.Load())
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation ||
+		executions[0].Effect != string(commands.EffectDestructive) || executions[0].Receipt.Subject != "编译原理（程老师，2026年秋季学期）" {
+		t.Fatalf("pending unsubscribe executions=%#v err=%v", executions, err)
+	}
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause unsubscribe confirmation: ok=%v err=%v", ok, err)
+	}
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
+		t.Fatalf("approve unsubscribe: released=%#v err=%v", released, err)
+	}
+	input = claimAgentInput(t, db, ident, Input{Text: "取消 COMP6212P.02 的课程订阅", Identity: ident, JobID: job.ID})
+	final := svc.Run(ctx, input)
+	if final.State != RunStateCompleted || final.Response.Text != "已经取消。" || removeCalls.Load() != 1 {
+		t.Fatalf("confirmed unsubscribe result=%#v remove_calls=%d", final, removeCalls.Load())
+	}
+}
+
 func TestMutationExecutionDedupeSurvivesFreshToolCallID(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1892,6 +2081,150 @@ func TestMutationExecutionDedupeSurvivesFreshToolCallID(t *testing.T) {
 	read, _ := commands.NewInvocation(commands.CapabilityCourse, []string{"数学分析"})
 	if capabilityExecutionDedupeKey(job.ID, "read-1", read) == capabilityExecutionDedupeKey(job.ID, "read-2", read) {
 		t.Fatal("independent read calls were incorrectly collapsed")
+	}
+}
+
+func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "terminal-replay", ConversationType: "private", ConversationID: "terminal-replay"}
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "terminal-replay", Input: store.ConversationJobInput{Text: "开启作业通知"},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	invocation, ok := commands.NewInvocation(commands.CapabilityNotify, []string{"homework", "on"})
+	if !ok {
+		t.Fatal("notify invocation is invalid")
+	}
+	execution, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, LeaseToken: input.JobLeaseToken,
+		DedupeKey:  capabilityExecutionDedupeKey(job.ID, "old-terminal-call", invocation),
+		ToolCallID: "old-terminal-call", Capability: string(invocation.ID()), Arguments: invocation.Args,
+		Effect: string(invocation.Policy().Effect),
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare terminal execution=%#v created=%v err=%v", execution, created, err)
+	}
+	execution, execute, err := db.ClaimCapabilityExecutionForJob(ctx, execution.ID, job.ID, input.JobLeaseToken)
+	if err != nil || !execute {
+		t.Fatalf("claim terminal execution=%#v execute=%v err=%v", execution, execute, err)
+	}
+	if _, err := db.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "之前已经完成", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		request := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-terminal-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-terminal-first","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		case 2:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-terminal-first","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"call-terminal-replay","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		case 3:
+			if !bytes.Contains(body, []byte("call-terminal-replay")) || !bytes.Contains(body, []byte("之前已经完成")) {
+				t.Errorf("terminal replay result missing from model request: %s", body)
+			}
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-terminal-done","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"没有重复执行。"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+		default:
+			t.Errorf("unexpected model request %d", request)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
+		commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := svc.Run(ctx, input)
+	if second.State != RunStateCompleted || second.Response.Text != "没有重复执行。" {
+		t.Fatalf("terminal replay run = %#v", second)
+	}
+	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("terminal replay operations=%#v err=%v", operations, err)
+	}
+	events, err := db.RecentConversationEvents(ctx, ident, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentResult := false
+	for _, event := range events {
+		if event.ToolCallID == "call-terminal-replay" && event.Type == store.ConversationEventToolResult && event.Content == "之前已经完成" {
+			currentResult = true
+		}
+	}
+	if !currentResult {
+		t.Fatalf("terminal replay did not persist the current tool result: %#v", events)
+	}
+	if requests.Load() != 3 {
+		t.Fatalf("model requests=%d want=3", requests.Load())
+	}
+}
+
+func TestCapabilityExecutionBatchCannotCrossJobOrConversation(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "batch-owner", ConversationType: "private", ConversationID: "batch-owner"}
+	prepare := func(sourceEventID, dedupeKey string) store.CapabilityExecution {
+		t.Helper()
+		job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+			Identity: ident, SourceEventID: sourceEventID, Input: store.ConversationJobInput{Text: sourceEventID}, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		if err != nil || !created {
+			t.Fatalf("enqueue %s: job=%#v created=%v err=%v", sourceEventID, job, created, err)
+		}
+		execution, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+			Identity: ident, JobID: job.ID, DedupeKey: dedupeKey, ToolCallID: dedupeKey,
+			Capability: string(commands.CapabilityNotify), Arguments: []string{"homework", "on"}, Effect: string(commands.EffectWrite),
+		})
+		if err != nil || !created {
+			t.Fatalf("prepare %s: execution=%#v created=%v err=%v", sourceEventID, execution, created, err)
+		}
+		return execution
+	}
+	first := prepare("batch-job-one", "batch-operation-one")
+	second := prepare("batch-job-two", "batch-operation-two")
+
+	if _, err := capabilityJobIDForExecutions(ctx, db, []string{first.ID, second.ID}, ident); err == nil ||
+		!strings.Contains(err.Error(), "multiple conversation jobs") {
+		t.Fatalf("cross-job batch error=%v", err)
+	}
+	other := ident
+	other.ConversationID = "someone-else"
+	if _, err := capabilityJobIDForExecutions(ctx, db, []string{first.ID}, other); err == nil ||
+		!strings.Contains(err.Error(), "another conversation") {
+		t.Fatalf("cross-conversation batch error=%v", err)
 	}
 }
 

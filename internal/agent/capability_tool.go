@@ -19,6 +19,7 @@ import (
 
 type capabilityInterruptState struct {
 	ExecutionIDs []string
+	ToolCallID   string
 }
 
 type capabilityInterruptInfo struct {
@@ -44,10 +45,10 @@ func (s *Service) invokeHostCapability(
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
 ) (string, error) {
 	if wasInterrupted, hasState, state := tool.GetInterruptState[capabilityInterruptState](ctx); wasInterrupted {
-		if !hasState || len(state.ExecutionIDs) == 0 {
+		if !hasState || len(state.ExecutionIDs) == 0 || strings.TrimSpace(state.ToolCallID) == "" {
 			return "", errors.New("confirmed capability checkpoint has no operation state")
 		}
-		return s.resumeHostCapability(ctx, state, ident, sendResponse)
+		return s.resolveHostCapability(ctx, state, ident, sendResponse, true)
 	}
 
 	id := commands.CapabilityID(strings.TrimSpace(input.Capability))
@@ -65,11 +66,12 @@ func (s *Service) invokeHostCapability(
 	}
 	policy := invocation.Policy()
 	if policy.Effect == commands.EffectRead {
-		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, compose.GetToolCallID(ctx), sendResponse)
+		callID := capabilityToolCallID(ctx, jobID)
+		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, callID, sendResponse)
 		if err != nil || !authWait {
 			return result, err
 		}
-		state := capabilityInterruptState{ExecutionIDs: []string{executionID}}
+		state := capabilityInterruptState{ExecutionIDs: []string{executionID}, ToolCallID: callID}
 		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
 			Kind: capabilityInterruptAuth, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
 		}, state)
@@ -84,11 +86,8 @@ func (s *Service) invokeHostCapability(
 	}
 
 	invocations := commands.ExpandMutationInvocations(invocation)
-	callID := strings.TrimSpace(compose.GetToolCallID(ctx))
-	if callID == "" {
-		callID = fmt.Sprintf("capability-%d", jobID)
-	}
-	state := capabilityInterruptState{ExecutionIDs: make([]string, 0, len(invocations))}
+	callID := capabilityToolCallID(ctx, jobID)
+	state := capabilityInterruptState{ExecutionIDs: make([]string, 0, len(invocations)), ToolCallID: callID}
 	descriptions := make([]commands.CapabilityInvocationDescription, 0, len(invocations))
 	for _, item := range invocations {
 		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, item.ID(), item.Args)
@@ -122,9 +121,14 @@ func (s *Service) invokeHostCapability(
 	for _, execution := range executions {
 		state.ExecutionIDs = append(state.ExecutionIDs, execution.ID)
 	}
-	return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
-		Kind: capabilityInterruptConfirmation, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
-	}, state)
+	return s.resolveHostCapability(ctx, state, ident, sendResponse, false)
+}
+
+func capabilityToolCallID(ctx context.Context, jobID int64) string {
+	if callID := strings.TrimSpace(compose.GetToolCallID(ctx)); callID != "" {
+		return callID
+	}
+	return fmt.Sprintf("capability-%d", jobID)
 }
 
 func (s *Service) executeUnconfirmedHostCapability(
@@ -269,16 +273,21 @@ func (s *Service) executeUnconfirmedHostCapability(
 	return text, executionID, false, nil
 }
 
-func (s *Service) resumeHostCapability(
+func (s *Service) resolveHostCapability(
 	ctx context.Context,
 	state capabilityInterruptState,
 	ident store.Identity,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
+	persistResult bool,
 ) (string, error) {
 	if s.handler.Store == nil {
 		return "", errors.New("capability execution store is unavailable")
 	}
-	jobID, err := capabilityJobIDForExecutions(ctx, s.handler.Store, state.ExecutionIDs)
+	toolCallID := strings.TrimSpace(state.ToolCallID)
+	if toolCallID == "" {
+		return "", errors.New("capability execution state has no tool call id")
+	}
+	jobID, err := capabilityJobIDForExecutions(ctx, s.handler.Store, state.ExecutionIDs, ident)
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +299,6 @@ func (s *Service) resumeHostCapability(
 	pending := false
 	authWait := false
 	results := make([]string, 0, len(state.ExecutionIDs))
-	resolved := make([]store.CapabilityExecution, 0, len(state.ExecutionIDs))
 	for _, executionID := range state.ExecutionIDs {
 		execution, found, err := s.handler.Store.CapabilityExecution(ctx, executionID)
 		if err != nil {
@@ -371,10 +379,9 @@ func (s *Service) resumeHostCapability(
 		}
 		if execution.State != store.CapabilityExecutionWaitingAuth {
 			if execution.State != store.CapabilityExecutionSucceeded {
-				toolOutcomesFromContext(ctx).markError(execution.ToolCallID)
+				toolOutcomesFromContext(ctx).markError(toolCallID)
 			}
 			results = append(results, capabilityExecutionModelResult(execution))
-			resolved = append(resolved, execution)
 		}
 	}
 	if authWait {
@@ -388,8 +395,10 @@ func (s *Service) resumeHostCapability(
 		}, state)
 	}
 	result := strings.TrimSpace(strings.Join(results, "\n\n"))
-	if err := s.persistResumedCapabilityResult(ctx, ident, jobID, resolved, result); err != nil {
-		return "", err
+	if persistResult {
+		if err := s.persistResumedCapabilityResult(ctx, ident, jobID, toolCallID, result); err != nil {
+			return "", err
+		}
 	}
 	return result, nil
 }
@@ -398,20 +407,15 @@ func (s *Service) persistResumedCapabilityResult(
 	ctx context.Context,
 	ident store.Identity,
 	jobID int64,
-	executions []store.CapabilityExecution,
+	toolCallID string,
 	result string,
 ) error {
-	if s.handler.Store == nil || jobID <= 0 || len(executions) == 0 {
+	if s.handler.Store == nil || jobID <= 0 {
 		return nil
 	}
-	toolCallID := strings.TrimSpace(executions[0].ToolCallID)
+	toolCallID = strings.TrimSpace(toolCallID)
 	if toolCallID == "" {
 		return errors.New("resumed capability result has no tool call id")
-	}
-	for _, execution := range executions[1:] {
-		if strings.TrimSpace(execution.ToolCallID) != toolCallID {
-			return errors.New("resumed capability batch contains multiple tool call ids")
-		}
 	}
 	job, err := s.handler.Store.GetConversationJob(ctx, jobID)
 	if err != nil {
@@ -429,17 +433,31 @@ func (s *Service) persistResumedCapabilityResult(
 	return markDurableAgentStateError("persist resumed capability result", err)
 }
 
-func capabilityJobIDForExecutions(ctx context.Context, db *store.Store, ids []string) (int64, error) {
+func capabilityJobIDForExecutions(ctx context.Context, db *store.Store, ids []string, ident store.Identity) (int64, error) {
+	var jobID int64
 	for _, id := range ids {
 		execution, found, err := db.CapabilityExecution(ctx, id)
 		if err != nil {
 			return 0, markDurableAgentStateError("locate capability job", err)
 		}
-		if found {
-			return execution.JobID, nil
+		if !found {
+			return 0, fmt.Errorf("capability execution %s is missing", id)
+		}
+		if execution.Identity != ident {
+			return 0, fmt.Errorf("capability execution %s belongs to another conversation", id)
+		}
+		if jobID == 0 {
+			jobID = execution.JobID
+			continue
+		}
+		if execution.JobID != jobID {
+			return 0, errors.New("capability execution batch spans multiple conversation jobs")
 		}
 	}
-	return 0, errors.New("capability execution batch has no persisted job")
+	if jobID == 0 {
+		return 0, errors.New("capability execution batch has no persisted job")
+	}
+	return jobID, nil
 }
 
 func ensureCapabilityJobLease(ctx context.Context, db *store.Store, jobID int64) (context.Context, error) {
