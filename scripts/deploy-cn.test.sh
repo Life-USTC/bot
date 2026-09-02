@@ -65,12 +65,18 @@ export DEPLOY_TEST_FIXTURE="$fixture"
 export DEPLOY_TEST_PHASE=running
 export DEPLOY_TEST_OLD_CONTAINER=0123456789abcdef
 export DEPLOY_TEST_OLD_IMAGE=sha256:$(printf '1%.0s' {1..64})
+export DEPLOY_TEST_OLD_IMAGE_REFERENCE=life-ustc-bot:same-revision
 export DEPLOY_TEST_NEW_IMAGE=sha256:$(printf '2%.0s' {1..64})
 docker() {
 	local command="${1:-}"
 	if [[ "$command" == compose ]]; then
 		local arguments="$*"
-		if [[ "$arguments" == *" config "* || "$arguments" == *" build "* ]]; then
+		if [[ "$arguments" == *" config "* ]]; then
+			return 0
+		fi
+		if [[ "$arguments" == *" build "* ]]; then
+			[[ -f "$DEPLOY_TEST_FIXTURE/rollback-image-tagged" ]] || return 43
+			: >"$DEPLOY_TEST_FIXTURE/build-ran"
 			return 0
 		fi
 		if [[ "$arguments" == *" stop "* ]]; then
@@ -105,12 +111,22 @@ docker() {
 			*State.Running*) [[ "$DEPLOY_TEST_PHASE" == running ]] && printf 'true\n' || printf 'false\n' ;;
 			*State.Health*) printf 'healthy\n' ;;
 			*State.Status*) printf 'running\n' ;;
+			*'.Config.Image'*) printf '%s\n' "$DEPLOY_TEST_OLD_IMAGE_REFERENCE" ;;
 			*'.Image'*) printf '%s\n' "$DEPLOY_TEST_OLD_IMAGE" ;;
 			*) printf '\n' ;;
 		esac
 		return 0
 	fi
-	if [[ "$command" == tag || "$command" == stop ]]; then
+	if [[ "$command" == tag ]]; then
+		if [[ "${DEPLOY_TEST_FAIL_TAG:-0}" == 1 ]]; then
+			return 44
+		fi
+		[[ "${2:-}" == "$DEPLOY_TEST_OLD_IMAGE_REFERENCE" ]]
+		[[ ! -f "$DEPLOY_TEST_FIXTURE/build-ran" ]]
+		: >"$DEPLOY_TEST_FIXTURE/rollback-image-tagged"
+		return 0
+	fi
+	if [[ "$command" == stop ]]; then
 		return 0
 	fi
 	if [[ "$command" == run ]]; then
@@ -128,6 +144,8 @@ bash "$remote_script" "$test_root" "$test_stage" "$test_rollback" \
 failure_status=$?
 set -e
 [[ "$failure_status" -ne 0 ]]
+[[ -f "$fixture/rollback-image-tagged" ]]
+[[ -f "$fixture/build-ran" ]]
 [[ -f "$fixture/migration-ran" ]]
 [[ ! -f "$fixture/active-started" ]]
 [[ -f "$fixture/rollback-started" ]]
@@ -146,6 +164,29 @@ finally:
     connection.close()
 PY
 ! grep -F 'not-printed' "$fixture/output" >/dev/null
+
+# A failure while preserving the old image happens before the service or
+# database is touched. It must report that fact instead of claiming an
+# incomplete rollback.
+preflight_root="$fixture/preflight-root"
+preflight_stage="$preflight_root/.deploy-staging/test"
+preflight_rollback="$preflight_root/.deploy-rollback/test"
+mkdir -p "$preflight_root/data" "$preflight_stage/src" "$preflight_stage/diagnostics" "$preflight_rollback"
+printf 'SECRET=not-printed\nBOT_DB_PATH=/data/life-ustc-bot.db\n' >"$preflight_root/.env"
+cp -- "$preflight_root/.env" "$preflight_stage/.env"
+printf 'services:\n  bot:\n    image: old\n' >"$preflight_root/compose.yaml"
+cp -- "$preflight_root/compose.yaml" "$preflight_stage/compose.yaml"
+set +e
+DEPLOY_TEST_FIXTURE="$fixture/preflight" DEPLOY_TEST_FAIL_TAG=1 DEPLOY_TEST_PHASE=running \
+	bash "$remote_script" "$preflight_root" "$preflight_stage" "$preflight_rollback" \
+	0123456789012345678901234567890123456789 bot 1 life-ustc-bot preflight \
+	>"$fixture/preflight-output" 2>&1
+preflight_status=$?
+set -e
+[[ "$preflight_status" -ne 0 ]]
+grep -F 'running service and database were not changed' "$fixture/preflight-output" >/dev/null
+! grep -F 'automatic rollback was incomplete' "$fixture/preflight-output" >/dev/null
+! grep -F 'not-printed' "$fixture/preflight-output" >/dev/null
 
 output="$(
 	DEPLOY_DRY_RUN=1 \

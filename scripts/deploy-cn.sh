@@ -198,6 +198,7 @@ LOCK_FILE="$ROOT/.deploy.lock"
 
 PREVIOUS_CONTAINER_ID=""
 PREVIOUS_IMAGE_ID=""
+PREVIOUS_IMAGE_REFERENCE=""
 PREVIOUS_REVISION="unknown"
 PREVIOUS_WAS_RUNNING=0
 PREVIOUS_DB_PRESENT=0
@@ -509,7 +510,9 @@ on_error() {
 		fi
 	fi
 	log "deployment failed for revision $REVISION; diagnostics retained at $DIAGNOSTIC_DIR"
-	if (( ROLLBACK_OK == 1 )); then
+	if (( SERVICE_QUIESCED == 0 && PROMOTION_STARTED == 0 )); then
+		log "running service and database were not changed"
+	elif (( ROLLBACK_OK == 1 )); then
 		log "previous service and database were restored"
 	else
 		log "automatic rollback was incomplete; inspect protected diagnostics before retrying"
@@ -520,15 +523,14 @@ trap 'on_error "$?"' ERR
 
 log "staging revision $REVISION"
 
-# Validate the staged Compose model and build the immutable image before the
-# running service is stopped. Build output is protected in the stage log.
+# Validate the staged Compose model before inspecting the running service.
 compose_stage config --quiet >"$STAGE/config.log" 2>&1
-compose_stage build "$SERVICE" >"$STAGE/build.log" 2>&1
-NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_IMAGE")"
-[[ "$NEW_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "built image id is invalid"
-chmod 600 "$STAGE/config.log" "$STAGE/build.log"
+chmod 600 "$STAGE/config.log"
 
-# Capture all previous service/source/image information before quiescing.
+# Preserve the exact image reference before building. A same-revision build
+# replaces the revision tag with a new OCI manifest when provenance changes;
+# after that replacement Docker can no longer tag the manifest used by the
+# running container even though the container itself remains healthy.
 PREVIOUS_CONTAINER_IDS="$(compose_existing ps -q "$SERVICE" 2>/dev/null || true)"
 if [[ -n "$PREVIOUS_CONTAINER_IDS" ]]; then
 	[[ "$PREVIOUS_CONTAINER_IDS" != *$'\n'* ]] || fail "more than one previous service container was found"
@@ -540,8 +542,18 @@ if [[ -n "$PREVIOUS_CONTAINER_IDS" ]]; then
 	fi
 	PREVIOUS_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$PREVIOUS_CONTAINER_ID")"
 	[[ "$PREVIOUS_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "previous image id is invalid"
-	docker tag "$PREVIOUS_IMAGE_ID" "$PREVIOUS_IMAGE"
+	PREVIOUS_IMAGE_REFERENCE="$(docker inspect --format '{{.Config.Image}}' "$PREVIOUS_CONTAINER_ID")"
+	[[ -n "$PREVIOUS_IMAGE_REFERENCE" && "$PREVIOUS_IMAGE_REFERENCE" != -* && "$PREVIOUS_IMAGE_REFERENCE" != *[[:space:]]* ]] || fail "previous image reference is invalid"
+	docker image inspect "$PREVIOUS_IMAGE_REFERENCE" >/dev/null
+	docker tag "$PREVIOUS_IMAGE_REFERENCE" "$PREVIOUS_IMAGE"
 fi
+
+# Build the immutable image only after the rollback tag is safe. The running
+# service is still untouched throughout this step.
+compose_stage build "$SERVICE" >"$STAGE/build.log" 2>&1
+NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_IMAGE")"
+[[ "$NEW_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "built image id is invalid"
+chmod 600 "$STAGE/build.log"
 
 if [[ -e "$ROOT/src" || -L "$ROOT/src" ]]; then
 	[[ -d "$ROOT/src" && ! -L "$ROOT/src" ]] || fail "active source path is not a directory"
@@ -555,6 +567,7 @@ revision=$PREVIOUS_REVISION
 container_id=${PREVIOUS_CONTAINER_ID:-none}
 running=$PREVIOUS_WAS_RUNNING
 image_id=${PREVIOUS_IMAGE_ID:-none}
+image_reference=${PREVIOUS_IMAGE_REFERENCE:-none}
 rollback_image=${PREVIOUS_IMAGE:-none}
 source=src
 compose=compose.yaml
