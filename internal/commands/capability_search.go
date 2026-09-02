@@ -26,7 +26,6 @@ type CapabilityDocumentation struct {
 	Title        string                   `json:"title"`
 	Summary      string                   `json:"summary"`
 	Effect       CapabilityEffect         `json:"effect"`
-	Confirmation ConfirmationPolicy       `json:"confirmation"`
 	DataScope    DataScope                `json:"dataScope"`
 	Exposure     ResultExposure           `json:"exposure"`
 	Examples     []CapabilityUsageExample `json:"examples"`
@@ -76,18 +75,17 @@ func SearchCapabilityDocumentation(query string, options CapabilitySearchOptions
 func capabilityDocumentationFor(descriptor CapabilityDescriptor, shared bool) *CapabilityDocumentation {
 	usage := descriptor.Usage()
 	documentation := &CapabilityDocumentation{
-		ID:           usage.ID,
-		Forms:        append([]string(nil), usage.Forms...),
-		Group:        usage.Group,
-		Topic:        usage.Group,
-		Title:        descriptor.Help.Title,
-		Summary:      usage.Summary,
-		Effect:       usage.Effect,
-		Confirmation: usage.Confirmation,
-		DataScope:    usage.DataScope,
-		Exposure:     usage.Exposure,
-		Examples:     copyUsageExamples(usage.Examples),
-		Shortcuts:    copyUsageExamples(descriptor.Help.Shortcuts),
+		ID:        usage.ID,
+		Forms:     append([]string(nil), usage.Forms...),
+		Group:     usage.Group,
+		Topic:     usage.Group,
+		Title:     descriptor.Help.Title,
+		Summary:   usage.Summary,
+		Effect:    usage.Effect,
+		DataScope: usage.DataScope,
+		Exposure:  usage.Exposure,
+		Examples:  copyUsageExamples(usage.Examples),
+		Shortcuts: copyUsageExamples(descriptor.Help.Shortcuts),
 	}
 	if !shared {
 		documentation.searchFields = capabilityDocumentationSearchFields(*documentation, false)

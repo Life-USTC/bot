@@ -221,39 +221,3 @@ func validConversationEventType(eventType ConversationEventType) bool {
 		return false
 	}
 }
-
-// migrateLegacyConversationEvents keeps the exact legacy user/assistant text
-// but deliberately discards generated summaries. Legacy rows never claimed to
-// contain typed tool calls, so none are invented during migration.
-func migrateLegacyConversationEvents(tx *gorm.DB) error {
-	var rows []interactionRow
-	if err := tx.Where("direction = ? AND handled = ? AND status = ?",
-		InteractionDirectionInbound, true, InteractionStatusHandled).
-		Order("id ASC").Find(&rows).Error; err != nil {
-		return err
-	}
-	for _, interaction := range rows {
-		ident := Identity{
-			Platform: interaction.Platform, UserID: interaction.UserID,
-			ConversationType: interaction.ConversationType, ConversationID: interaction.ConversationID,
-		}
-		for _, event := range []ConversationEvent{
-			{Identity: ident, DedupeKey: fmt.Sprintf("legacy:%d:user", interaction.ID), Type: ConversationEventUser, Content: interaction.RawText, CreatedAt: interaction.CreatedAt},
-			{Identity: ident, DedupeKey: fmt.Sprintf("legacy:%d:assistant", interaction.ID), Type: ConversationEventAssistant, Content: interaction.Reply, CreatedAt: interaction.CreatedAt},
-		} {
-			if strings.TrimSpace(event.Content) == "" {
-				continue
-			}
-			calls, _ := json.Marshal(event.ToolCalls)
-			row := conversationEventRow{
-				Platform: ident.Platform, ConversationType: ident.ConversationType, ConversationID: ident.ConversationID,
-				ExternalUserID: ident.UserID, DedupeKey: event.DedupeKey, Type: string(event.Type), Content: event.Content,
-				ToolCallsJSON: string(calls), PartsJSON: "[]", CreatedAt: event.CreatedAt,
-			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}

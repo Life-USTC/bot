@@ -1,7 +1,5 @@
 package commands
 
-import "github.com/Life-USTC/Bot/internal/store"
-
 // CapabilityOutcomeStatus is the host-facing execution state of a
 // capability. The status is deliberately separate from Response: Response
 // contains the domain result that may be delivered to a user, while Status is
@@ -21,13 +19,9 @@ const (
 // CapabilityOutcome is the typed execution boundary for a normalized
 // invocation. Response is the actual command/domain result; it is never
 // synthesized from Status and does not contain a generic status envelope.
-// ConfirmationRequired is a host workflow gate and intentionally remains
-// orthogonal to the six terminal execution statuses.
 type CapabilityOutcome struct {
-	Status               CapabilityOutcomeStatus  `json:"status"`
-	Response             Response                 `json:"response"`
-	ConfirmationRequired bool                     `json:"confirmationRequired,omitempty"`
-	Receipt              *store.CapabilityReceipt `json:"receipt,omitempty"`
+	Status   CapabilityOutcomeStatus `json:"status"`
+	Response Response                `json:"response"`
 }
 
 func (s CapabilityOutcomeStatus) Valid() bool {

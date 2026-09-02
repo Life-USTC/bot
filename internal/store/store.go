@@ -541,11 +541,15 @@ func (s *Store) migrateSchema() error {
 	case CurrentSchemaVersion:
 		return verifySchemaShape(s.db)
 	case 0:
-		// Version zero is the only production schema accepted by this one-way
-		// release. Intermediate versions are deliberately unsupported: there is
-		// one canonical shape, not a ladder of compatibility migrations.
+		empty, err := sqliteSchemaIsEmpty(s.db)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("unsupported nonempty database schema version 0 (want %d)", CurrentSchemaVersion)
+		}
 	default:
-		return fmt.Errorf("unsupported database schema version %d (accepted: 0 or %d)", version, CurrentSchemaVersion)
+		return fmt.Errorf("unsupported database schema version %d (want %d)", version, CurrentSchemaVersion)
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(
@@ -566,34 +570,7 @@ func (s *Store) migrateSchema() error {
 			&agentCheckpointRow{},
 			&capabilityExecutionRow{},
 		); err != nil {
-			return fmt.Errorf("migrate schema tables: %w", err)
-		}
-		for _, column := range obsoleteFeedbackColumns {
-			if tx.Migrator().HasColumn("feedback_records", column) {
-				if err := tx.Exec("ALTER TABLE feedback_records DROP COLUMN " + column).Error; err != nil {
-					return fmt.Errorf("drop obsolete feedback column %s: %w", column, err)
-				}
-			}
-		}
-		// notify_failed mixed delivery state into the login domain. Credentials
-		// were already saved, so close it without replaying stale delivery.
-		if err := tx.Model(&loginSessionRow{}).
-			Where("status = ?", "notify_failed").
-			Updates(map[string]any{"status": string(LoginStatusApproved), "updated_at": nowUTC()}).Error; err != nil {
-			return fmt.Errorf("normalize obsolete login status: %w", err)
-		}
-		if err := migrateLegacyConversationEvents(tx); err != nil {
-			return fmt.Errorf("migrate conversation events: %w", err)
-		}
-		// Generated semantic summaries are not evidence and must never be fed
-		// back to the model. The immutable deployment backup remains the audit
-		// copy of this removed data.
-		for _, table := range obsoleteSchemaTables {
-			if tx.Migrator().HasTable(table) {
-				if err := tx.Migrator().DropTable(table); err != nil {
-					return fmt.Errorf("drop obsolete table %s: %w", table, err)
-				}
-			}
+			return fmt.Errorf("initialize schema tables: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
 			return fmt.Errorf("write schema version: %w", err)
@@ -603,6 +580,14 @@ func (s *Store) migrateSchema() error {
 		return err
 	}
 	return verifySchemaShape(s.db)
+}
+
+func sqliteSchemaIsEmpty(db *gorm.DB) (bool, error) {
+	var objects int64
+	if err := db.Raw(`SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'`).Scan(&objects).Error; err != nil {
+		return false, fmt.Errorf("inspect unversioned sqlite schema: %w", err)
+	}
+	return objects == 0, nil
 }
 
 func verifySchemaShape(db *gorm.DB) error {
@@ -1503,7 +1488,7 @@ func (s *Store) CreateFeedbackWithOutbounds(
 	}
 	ident = normalizeIdentity(ident)
 	source := textutil.LowerTrim(feedback.Source)
-	if source != "user" && source != "llm" {
+	if source != "user" {
 		return 0, 0, fmt.Errorf("invalid feedback source %q", source)
 	}
 	status := textutil.LowerTrim(feedback.Status)

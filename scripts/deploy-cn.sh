@@ -647,17 +647,7 @@ run_migration_gate() {
 	if (( PREVIOUS_DB_PRESENT == 1 )); then
 		cp -- "$ROLLBACK/database.sqlite" "$migration_db_path"
 	else
-		python3 - "$migration_db_path" <<'PY'
-import sqlite3
-import sys
-
-connection = sqlite3.connect(sys.argv[1])
-try:
-    connection.execute("PRAGMA user_version = 0")
-    connection.commit()
-finally:
-    connection.close()
-PY
+		: >"$migration_db_path"
 	fi
 	chmod 600 "$migration_db_path"
 	chown 10001:10001 "$MIGRATION_DATA_DIR" "$migration_db_parent" "$migration_db_path"

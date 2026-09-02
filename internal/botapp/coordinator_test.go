@@ -25,23 +25,6 @@ import (
 
 type commandFunc func(context.Context, commands.Input) (commands.Response, bool)
 
-func (fn commandFunc) DescribeCapabilityInvocations(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) ([]commands.CapabilityInvocationDescription, error) {
-	invocation, ok := commands.NewInvocation(id, args)
-	if !ok {
-		return nil, errors.New("invalid test capability")
-	}
-	invocations := commands.ExpandMutationInvocations(invocation)
-	descriptions := make([]commands.CapabilityInvocationDescription, 0, len(invocations))
-	for _, item := range invocations {
-		receipt := commands.ReceiptForInvocation(item)
-		descriptions = append(descriptions, commands.CapabilityInvocationDescription{
-			Invocation: item, Policy: item.Policy(), ConfirmationRequired: item.Policy().Confirmation == commands.ConfirmUser,
-			Receipt: &receipt,
-		})
-	}
-	return descriptions, nil
-}
-
 func (fn commandFunc) ExecuteCapability(ctx context.Context, input commands.Input, _ commands.CapabilityID, _ []string) (commands.CapabilityOutcome, error) {
 	response, handled := fn(ctx, input)
 	if !handled {
@@ -52,10 +35,6 @@ func (fn commandFunc) ExecuteCapability(ctx context.Context, input commands.Inpu
 		status = commands.CapabilityOutcomeAuthRequired
 	}
 	return commands.CapabilityOutcome{Status: status, Response: response}, nil
-}
-
-func (fn commandFunc) ExecuteApprovedInvocation(ctx context.Context, input commands.Input, _ commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error) {
-	return fn.ExecuteCapability(ctx, input, "", nil)
 }
 
 type agentFunc func(context.Context, agent.Input) (commands.Response, bool)
@@ -100,12 +79,6 @@ func (s *outputCommitFaultStore) CommitConversationJobOutput(ctx context.Context
 	return s.Store.CommitConversationJobOutput(ctx, commit)
 }
 
-type receiptReadFaultStore struct {
-	*store.Store
-	mu       sync.Mutex
-	failures int
-}
-
 type capabilityReadFaultStore struct {
 	*store.Store
 	mu     sync.Mutex
@@ -130,13 +103,6 @@ func (s *capabilityWriteFaultStore) take(operation string) bool {
 	return true
 }
 
-func (s *capabilityWriteFaultStore) UpdateCapabilityExecutionReceipt(ctx context.Context, id, lease string, receipt store.CapabilityReceipt) error {
-	if s.take("receipt") {
-		return errors.New("injected receipt persistence failure")
-	}
-	return s.Store.UpdateCapabilityExecutionReceipt(ctx, id, lease, receipt)
-}
-
 func (s *capabilityWriteFaultStore) DeferCapabilityExecutionForAuth(ctx context.Context, id, lease string) (store.CapabilityExecution, error) {
 	if s.take("auth") {
 		return store.CapabilityExecution{}, errors.New("injected auth deferral persistence failure")
@@ -154,23 +120,15 @@ func (s *capabilityWriteFaultStore) FinishCapabilityExecution(ctx context.Contex
 type fixedOutcomeCommand struct {
 	outcome commands.CapabilityOutcome
 	calls   int
+	id      commands.CapabilityID
+	args    []string
 }
 
-func (h *fixedOutcomeCommand) DescribeCapabilityInvocations(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) ([]commands.CapabilityInvocationDescription, error) {
-	invocation, ok := commands.NewInvocation(id, args)
-	if !ok {
-		return nil, errors.New("invalid test capability")
-	}
-	return []commands.CapabilityInvocationDescription{{Invocation: invocation, Policy: invocation.Policy()}}, nil
-}
-
-func (h *fixedOutcomeCommand) ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error) {
+func (h *fixedOutcomeCommand) ExecuteCapability(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) (commands.CapabilityOutcome, error) {
 	h.calls++
+	h.id = id
+	h.args = append([]string(nil), args...)
 	return h.outcome, nil
-}
-
-func (h *fixedOutcomeCommand) ExecuteApprovedInvocation(ctx context.Context, input commands.Input, description commands.CapabilityInvocationDescription) (commands.CapabilityOutcome, error) {
-	return h.ExecuteCapability(ctx, input, description.Invocation.ID(), description.Invocation.Args)
 }
 
 func (s *capabilityReadFaultStore) CapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
@@ -182,19 +140,6 @@ func (s *capabilityReadFaultStore) CapabilityExecutionsForJob(ctx context.Contex
 		return nil, errors.New("injected capability loading failure")
 	}
 	return s.Store.CapabilityExecutionsForJob(ctx, jobID)
-}
-
-func (s *receiptReadFaultStore) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
-	s.mu.Lock()
-	inject := s.failures > 0
-	if inject {
-		s.failures--
-	}
-	s.mu.Unlock()
-	if inject {
-		return nil, errors.New("injected receipt loading failure")
-	}
-	return s.Store.UnsentCapabilityExecutionsForJob(ctx, jobID)
 }
 
 type periodicRecoveryStore struct {
@@ -444,6 +389,78 @@ func TestCoordinatorTreatsReplyToAcceptedAgentOutputAsAddressed(t *testing.T) {
 	}
 }
 
+func TestCoordinatorRoutesConfirmationWordNormallyWhenNothingIsPending(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := jobInbound("standalone-confirmation", "确定")
+	if err := coordinator.Enqueue(t.Context(), inbound); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	var payload conversationJobPayload
+	if err := json.Unmarshal(job.Input.Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Route != routing.ActionAgent || payload.Inbound.Text != "确定" {
+		t.Fatalf("standalone confirmation payload = %#v", payload)
+	}
+}
+
+func TestCoordinatorRejectsAgentRouteWithPersistedWriteInvocation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Text: "已开启", Kind: "notify"})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db, Commands: handler,
+		Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
+			t.Fatal("mismatched Agent route reached the model")
+			return commands.Response{}, false
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := jobInbound("agent-route-write-invocation", "帮我开启作业提醒")
+	payload, err := json.Marshal(conversationJobPayload{Inbound: inbound, Route: routing.ActionAgent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, created, err := db.EnqueueConversationJob(t.Context(), store.ConversationJobEnqueue{
+		Identity: identityForInbound(inbound), SourceEventID: inbound.Source.EventID,
+		Input: store.ConversationJobInput{Text: inbound.Text, Data: payload},
+		Invocation: store.ConversationJobInvocation{
+			Name: string(commands.CapabilityNotify), Command: "notify 作业 开", Args: []string{"作业", "开"},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue mismatched job=%#v created=%v err=%v", job, created, err)
+	}
+	coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+
+	saved, err := db.GetConversationJob(t.Context(), job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateFailed ||
+		!strings.Contains(saved.LastError, "Agent route unexpectedly contains") {
+		t.Fatalf("mismatched job=%#v err=%v", saved, err)
+	}
+	if handler.calls != 0 {
+		t.Fatalf("mismatched write executed %d times", handler.calls)
+	}
+	executions, err := db.CapabilityExecutionsForJob(t.Context(), job.ID)
+	if err != nil || len(executions) != 0 {
+		t.Fatalf("mismatched route executions=%#v err=%v", executions, err)
+	}
+}
+
 func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	db := newCoordinatorStore(t)
 	mutations := 0
@@ -550,13 +567,12 @@ func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Text != "fallback" || records[0].Message.Content.Attachment != nil ||
-		records[1].Message.Content.Text != "#已查询校车{全部}" || records[1].Message.Content.Attachment != nil {
+	if len(records) != 1 || records[0].Message.Content.Text != "fallback" || records[0].Message.Content.Attachment != nil {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
 
-func TestCoordinatorSendsReceiptAfterRenderedImage(t *testing.T) {
+func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 	db := newCoordinatorStore(t)
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: db,
@@ -582,9 +598,8 @@ func TestCoordinatorSendsReceiptAfterRenderedImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Attachment == nil || records[0].Message.Content.Text != "" ||
-		records[1].Message.Content.Attachment != nil || records[1].Message.Content.Text != "#已查询校车{全部}" {
-		t.Fatalf("image and receipt outputs=%#v", records)
+	if len(records) != 1 || records[0].Message.Content.Attachment == nil || records[0].Message.Content.Text != "" {
+		t.Fatalf("direct image output=%#v", records)
 	}
 }
 
@@ -596,7 +611,7 @@ func TestCoordinatorInvalidCommandReturnsExactUsageWithoutExecutionReceipt(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := coordinator.Enqueue(t.Context(), jobInbound("invalid-schedule-week", "课表 someday")); err != nil {
+	if err := coordinator.Enqueue(t.Context(), jobInbound("invalid-schedule-week", "帮我查询 someday 的课表")); err != nil {
 		t.Fatal(err)
 	}
 	job := claimOnlyConversationJob(t, db)
@@ -665,7 +680,7 @@ func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing
 	}
 }
 
-func TestCoordinatorOutputCommitFailureLeavesConfirmationResumable(t *testing.T) {
+func TestCoordinatorOutputCommitFailureDoesNotReplayDirectMutation(t *testing.T) {
 	db := newCoordinatorStore(t)
 	jobs := &outputCommitFaultStore{Store: db, failures: 1}
 	coordinator, err := NewCoordinator(CoordinatorConfig{
@@ -679,7 +694,7 @@ func TestCoordinatorOutputCommitFailureLeavesConfirmationResumable(t *testing.T)
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	inbound := jobInbound("confirmation-output-retry", "通知 作业 开")
+	inbound := jobInbound("direct-output-retry", "通知 作业 开")
 	if err := coordinator.Enqueue(ctx, inbound); err != nil {
 		t.Fatal(err)
 	}
@@ -691,81 +706,27 @@ func TestCoordinatorOutputCommitFailureLeavesConfirmationResumable(t *testing.T)
 		t.Fatal(err)
 	}
 	if saved == nil || saved.State != store.ConversationJobStateRetryWait {
-		t.Fatalf("confirmation output failure did not enter retry: %#v", saved)
+		t.Fatalf("direct output failure did not enter retry: %#v", saved)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation || executions[0].ReceiptState != "" {
-		t.Fatalf("confirmation operation after rollback=%#v err=%v", executions, err)
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("direct operation after output rollback=%#v err=%v", executions, err)
 	}
 
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	saved, err = db.GetConversationJob(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
-		t.Fatalf("confirmation was not resumed: %#v", saved)
-	}
-	if err := coordinator.Enqueue(ctx, jobInbound("confirmation-output-retry-ok", "ok")); err != nil {
-		t.Fatal(err)
-	}
 	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
 	saved, err = db.GetConversationJob(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if saved == nil || saved.State != store.ConversationJobStateCompleted {
-		t.Fatalf("approved confirmation job = %#v", saved)
+		t.Fatalf("retried direct job = %#v", saved)
 	}
 	if executions, err = db.CapabilityExecutionsForJob(ctx, job.ID); err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
-		t.Fatalf("confirmation operation was not executed once: %#v err=%v", executions, err)
+		t.Fatalf("direct operation was not retained exactly once: %#v err=%v", executions, err)
 	}
-}
-
-func TestCoordinatorReceiptLoadingFailureRetriesAwaitingConfirmation(t *testing.T) {
-	db := newCoordinatorStore(t)
-	jobs := &receiptReadFaultStore{Store: db, failures: 1}
-	coordinator, err := NewCoordinator(CoordinatorConfig{
-		Jobs: jobs,
-		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{Text: "已执行", Kind: "settings"}, true
-		}),
-		Outputs: db,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	if err := coordinator.Enqueue(ctx, jobInbound("receipt-read-retry", "通知 作业 开")); err != nil {
-		t.Fatal(err)
-	}
-	job := claimOnlyConversationJob(t, db)
-	coordinator.execute(ctx, job)
-
-	saved, err := db.GetConversationJob(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved == nil || saved.State != store.ConversationJobStateRetryWait || saved.LastError == "" {
-		t.Fatalf("receipt loading failure terminalized job: %#v", saved)
-	}
-	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation || executions[0].ReceiptState != "" {
-		t.Fatalf("awaiting confirmation after receipt read failure=%#v err=%v", executions, err)
-	}
-
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	saved, err = db.GetConversationJob(ctx, job.ID)
-	if err != nil || saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
-		t.Fatalf("awaiting confirmation was not resumed: job=%#v err=%v", saved, err)
-	}
-	if err := coordinator.Enqueue(ctx, jobInbound("receipt-read-retry-ok", "ok")); err != nil {
-		t.Fatal(err)
-	}
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	saved, err = db.GetConversationJob(ctx, job.ID)
-	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
-		t.Fatalf("approved confirmation did not complete: job=%#v err=%v", saved, err)
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "已执行" {
+		t.Fatalf("retried direct output=%#v err=%v", records, err)
 	}
 }
 
@@ -830,15 +791,6 @@ func TestCoordinatorRetriesCapabilityPersistenceBoundaries(t *testing.T) {
 		wantState store.ConversationJobState
 		wantOp    store.CapabilityExecutionState
 	}{
-		{
-			name: "receipt update", operation: "receipt",
-			outcome: commands.CapabilityOutcome{
-				Status:   commands.CapabilityOutcomeSuccess,
-				Response: commands.Response{Text: "pong", Kind: "ping"},
-				Receipt:  &store.CapabilityReceipt{Action: "查询", Resource: "状态", Subject: "服务可用"},
-			},
-			wantState: store.ConversationJobStateCompleted, wantOp: store.CapabilityExecutionSucceeded,
-		},
 		{
 			name: "authorization deferral", operation: "auth",
 			outcome: commands.CapabilityOutcome{
@@ -1175,7 +1127,7 @@ func TestCoordinatorLoginWaitsOnSameJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Text != "请登录" || records[1].Message.Content.Text != "查询完成\n\n#已查询课表{全部}" {
+	if len(records) != 2 || records[0].Message.Content.Text != "请登录" || records[1].Message.Content.Text != "查询完成" {
 		t.Fatalf("resumed outbox = %#v", records)
 	}
 	if records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" || records[1].Message.DedupeKey != "conversation-job:1:revision:2:part:0" {
@@ -1183,7 +1135,7 @@ func TestCoordinatorLoginWaitsOnSameJob(t *testing.T) {
 	}
 }
 
-func TestCoordinatorConfirmsDirectMutationBeforeExecutionAndExcludesMechanicsFromHistory(t *testing.T) {
+func TestCoordinatorExecutesDirectMutationWithoutConfirmationOrReceipt(t *testing.T) {
 	db := newCoordinatorStore(t)
 	handler := commands.Handler{Store: db}
 	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
@@ -1201,45 +1153,22 @@ func TestCoordinatorConfirmsDirectMutationBeforeExecutionAndExcludesMechanicsFro
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
-		t.Fatalf("waiting job = %#v", saved)
+	if saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("completed job = %#v", saved)
 	}
 	settings, err := db.NotificationSettings(ctx, job.Identity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.HomeworkEnabled {
-		t.Fatal("mutation executed before confirmation")
+	if !settings.HomeworkEnabled {
+		t.Fatal("direct mutation did not execute")
 	}
 	initial, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
 	if err != nil || len(initial) != 1 {
 		t.Fatalf("initial output: records=%#v err=%v", initial, err)
 	}
-	if got := initial[0].Message.Content.Text; !strings.Contains(got, confirmationPrompt) || !strings.Contains(got, "#待确认设置提醒{作业：开}") {
-		t.Fatalf("confirmation output = %q", got)
-	}
-
-	if err := coordinator.Enqueue(ctx, jobInbound("notify-approve", "ok")); err != nil {
-		t.Fatal(err)
-	}
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	saved, err = db.GetConversationJob(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved == nil || saved.State != store.ConversationJobStateCompleted {
-		t.Fatalf("completed job = %#v", saved)
-	}
-	settings, err = db.NotificationSettings(ctx, job.Identity)
-	if err != nil || !settings.HomeworkEnabled {
-		t.Fatalf("settings after approval = %#v err=%v", settings, err)
-	}
-	terminal, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(terminal) != 1 {
-		t.Fatalf("terminal output: records=%#v err=%v", terminal, err)
-	}
-	if got := terminal[0].Message.Content.Text; !strings.Contains(got, "作业提醒：开") || !strings.Contains(got, "#已设置提醒{作业：开}") {
-		t.Fatalf("terminal output = %q", got)
+	if got := initial[0].Message.Content.Text; !strings.Contains(got, "作业提醒：开") || strings.Contains(got, confirmationPrompt) || strings.Contains(got, "#") {
+		t.Fatalf("direct output = %q", got)
 	}
 	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
 	if err != nil {
@@ -1249,31 +1178,57 @@ func TestCoordinatorConfirmsDirectMutationBeforeExecutionAndExcludesMechanicsFro
 		t.Fatalf("conversation events = %#v", events)
 	}
 	for _, event := range events {
-		if strings.Contains(event.Content, "ok") || strings.Contains(event.Content, "待确认") || strings.Contains(event.Content, "#已") {
+		if strings.Contains(event.Content, "待确认") || strings.Contains(event.Content, "#已") {
 			t.Fatalf("host mechanic leaked into history: %#v", event)
 		}
 	}
 }
 
-func TestCoordinatorConfirmsGroupedCourseMutationsOneAtATimeWithFrozenDetails(t *testing.T) {
-	sections := map[string]string{
-		"CODE1.01": `{"code":"CODE1.01","jwId":11,"course":{"namePrimary":"线性代数"},"teacher":{"namePrimary":"张老师"},"semester":{"namePrimary":"2026年秋季学期"}}`,
-		"CODE2.02": `{"code":"CODE2.02","jwId":22,"course":{"namePrimary":"离散数学"},"teacher":{"namePrimary":"李老师"},"semester":{"namePrimary":"2026年秋季学期"}}`,
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/catalog/sections" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		section, ok := sections[r.URL.Query().Get("search")]
-		if !ok {
-			t.Fatalf("unexpected query %q", r.URL.Query().Get("search"))
-		}
-		_, _ = fmt.Fprintf(w, `{"data":[%s]}`, section)
-	}))
-	defer server.Close()
-
+func TestCoordinatorResumesDirectMutationPreparedBeforeClaim(t *testing.T) {
 	db := newCoordinatorStore(t)
-	handler := commands.Handler{Store: db, Life: life.NewClient(server.URL, server.Client())}
+	handler := commands.Handler{Store: db}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("notify-prepared", "通知 作业 开")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	execution, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken,
+		DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:0", job.ID),
+		Capability: string(commands.CapabilityNotify), Arguments: []string{"作业", "开"},
+		Effect: string(commands.EffectWrite),
+	})
+	if err != nil || !created || execution.State != store.CapabilityExecutionApproved {
+		t.Fatalf("prepared direct operation=%#v created=%v err=%v", execution, created, err)
+	}
+
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("resumed direct job=%#v err=%v", saved, err)
+	}
+	settings, err := db.NotificationSettings(ctx, job.Identity)
+	if err != nil || !settings.HomeworkEnabled {
+		t.Fatalf("resumed direct mutation settings=%#v err=%v", settings, err)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("resumed direct execution=%#v err=%v", executions, err)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || strings.Contains(records[0].Message.Content.Text, "#") {
+		t.Fatalf("resumed direct output=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorPassesGroupedDirectMutationThroughWithoutConfirmation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Text: "批量订阅完成", Kind: "subscription"})}
 	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
 	if err != nil {
 		t.Fatal(err)
@@ -1284,65 +1239,19 @@ func TestCoordinatorConfirmsGroupedCourseMutationsOneAtATimeWithFrozenDetails(t 
 	}
 	job := claimOnlyConversationJob(t, db)
 	coordinator.execute(ctx, job)
-	first, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(first) != 1 {
-		t.Fatalf("first confirmation: records=%#v err=%v", first, err)
-	}
-	firstText := first[0].Message.Content.Text
-	if !strings.Contains(firstText, "#待确认订阅课程{线性代数（张老师，2026年秋季学期）}") || strings.Contains(firstText, "离散数学") {
-		t.Fatalf("first confirmation = %q", firstText)
-	}
-
-	if err := coordinator.Enqueue(ctx, jobInbound("course-deny-1", "取消")); err != nil {
-		t.Fatal(err)
-	}
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	second, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(second) != 1 {
-		t.Fatalf("second confirmation: records=%#v err=%v", second, err)
-	}
-	secondText := second[0].Message.Content.Text
-	for _, want := range []string{
-		"#订阅课程失败{线性代数（张老师，2026年秋季学期）：用户拒绝执行}",
-		"#待确认订阅课程{离散数学（李老师，2026年秋季学期）}",
-	} {
-		if !strings.Contains(secondText, want) {
-			t.Fatalf("second confirmation missing %q: %q", want, secondText)
-		}
-	}
-
-	if err := coordinator.Enqueue(ctx, jobInbound("course-deny-2", "取消")); err != nil {
-		t.Fatal(err)
-	}
-	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
-	terminal, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(terminal) != 1 {
-		t.Fatalf("terminal receipt: records=%#v err=%v", terminal, err)
-	}
-	if got := terminal[0].Message.Content.Text; !strings.Contains(got, "#订阅课程失败{离散数学（李老师，2026年秋季学期）：用户拒绝执行}") {
-		t.Fatalf("terminal receipt = %q", got)
+	if handler.calls != 1 || handler.id != commands.CapabilitySubscription || strings.Join(handler.args, " ") != "import CODE1.01 CODE2.02" {
+		t.Fatalf("direct invocation: calls=%d id=%s args=%#v", handler.calls, handler.id, handler.args)
 	}
 	saved, err := db.GetConversationJob(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("grouped direct job=%#v err=%v", saved, err)
 	}
-	if saved == nil || saved.State != store.ConversationJobStateCompleted || saved.Attempts != 3 || saved.MaxAttempts != 0 {
-		t.Fatalf("grouped job = %#v", saved)
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "批量订阅完成" || strings.Contains(records[0].Message.Content.Text, "#") {
+		t.Fatalf("grouped direct output=%#v err=%v", records, err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionDenied || executions[1].State != store.CapabilityExecutionDenied {
-		t.Fatalf("grouped executions = %#v err=%v", executions, err)
-	}
-	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 3 || events[0].Type != store.ConversationEventUser || events[1].Content != "用户拒绝执行该操作。" || events[2].Content != "用户拒绝执行该操作。" {
-		t.Fatalf("denial history = %#v", events)
-	}
-	for _, event := range events {
-		if strings.Contains(event.Content, "取消") || strings.Contains(event.Content, "#待确认") || strings.Contains(event.Content, "#订阅") {
-			t.Fatalf("confirmation mechanic leaked into history: %#v", event)
-		}
+	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("grouped direct execution=%#v err=%v", executions, err)
 	}
 }

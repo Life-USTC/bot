@@ -53,7 +53,7 @@ func (s *Service) invokeHostCapability(
 	id := commands.CapabilityID(strings.TrimSpace(input.Capability))
 	invocation, valid := commands.NewInvocation(id, input.Arguments)
 	if !valid {
-		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, id, input.Arguments)
+		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, id, input.Arguments)
 		if err != nil {
 			return "", err
 		}
@@ -64,7 +64,7 @@ func (s *Service) invokeHostCapability(
 		return strings.TrimSpace(presentation.Text), nil
 	}
 	policy := invocation.Policy()
-	if policy.Confirmation != commands.ConfirmUser {
+	if policy.Effect == commands.EffectRead {
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, compose.GetToolCallID(ctx), sendResponse)
 		if err != nil || !authWait {
 			return result, err
@@ -91,12 +91,13 @@ func (s *Service) invokeHostCapability(
 	state := capabilityInterruptState{ExecutionIDs: make([]string, 0, len(invocations))}
 	descriptions := make([]commands.CapabilityInvocationDescription, 0, len(invocations))
 	for _, item := range invocations {
-		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, item.ID(), item.Args)
+		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, item.ID(), item.Args)
 		if err != nil {
+			if result, ok := commands.CapabilityPreflightFailure(item.ID(), err); ok {
+				toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+				return result, nil
+			}
 			return "", fmt.Errorf("describe capability %q: %w", item.ID(), err)
-		}
-		if !description.ConfirmationRequired {
-			return "", fmt.Errorf("capability %q bypassed confirmation", item.ID())
 		}
 		descriptions = append(descriptions, description)
 	}
@@ -209,7 +210,7 @@ func (s *Service) executeUnconfirmedHostCapability(
 			return "", executionID, false, errors.New("capability execution is already running")
 		}
 	}
-	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, invocation.ID(), invocation.Args)
 	if err != nil {
 		if tracked {
 			if _, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err); finishErr != nil {
@@ -529,11 +530,7 @@ func (s *Service) executeApprovedCapability(
 		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
 		return finished, false, markDurableAgentStateError("record invalid confirmed capability", err)
 	}
-	description := commands.CapabilityInvocationDescription{
-		Invocation: invocation, Policy: invocation.Policy(), ConfirmationRequired: invocation.Policy().Confirmation == commands.ConfirmUser,
-		Receipt: &execution.Receipt,
-	}
-	outcome, err := s.handler.ExecuteApprovedInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, description)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, invocation.ID(), invocation.Args)
 	if err != nil {
 		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
 		return finished, false, markDurableAgentStateError("record approved capability failure", finishErr)

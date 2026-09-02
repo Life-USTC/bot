@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -1120,43 +1119,6 @@ func TestTransitionLoginSessionRollsBackTerminalStateWhenOutboxFails(t *testing.
 	}
 }
 
-func TestOpenClosesObsoleteFailedNotificationWithoutReplay(t *testing.T) {
-	path := t.TempDir() + "/bot.db"
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	if err := s.SaveLoginSession(ctx, ident, LoginSession{
-		DeviceCode: "device", ClientID: "client", ExpiresAt: time.Now().Add(time.Minute), Status: "pending",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.Model(&loginSessionRow{}).Where("device_code = ?", "device").Update("status", "notify_failed").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.Exec("PRAGMA user_version = 0").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	var row loginSessionRow
-	if err := s.db.Where("device_code = ?", "device").Take(&row).Error; err != nil || row.Status != "approved" {
-		t.Fatalf("session = %#v, err = %v", row, err)
-	}
-	var messages int64
-	if err := s.db.Model(&outgoingMessageRow{}).Count(&messages).Error; err != nil || messages != 0 {
-		t.Fatalf("historical outbox messages = %d, err = %v", messages, err)
-	}
-}
-
 func TestRecordConversationStateTrimsIdentityKeys(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1764,99 +1726,6 @@ func TestInterruptStartedAgentRuns(t *testing.T) {
 	}
 }
 
-func TestOpenMigratesLegacyAgentRunsWithExistingRows(t *testing.T) {
-	path := t.TempDir() + "/bot.db"
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`
-		CREATE TABLE agent_runs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			platform TEXT NOT NULL,
-			external_user_id TEXT NOT NULL,
-			conversation_type TEXT NOT NULL,
-			conversation_id TEXT NOT NULL,
-			raw_text TEXT NOT NULL,
-			status TEXT NOT NULL,
-			reply TEXT,
-			error TEXT,
-			created_at DATETIME,
-			updated_at DATETIME
-		);
-		INSERT INTO agent_runs (
-			user_id, platform, external_user_id, conversation_type,
-			conversation_id, raw_text, status
-		) VALUES (1, 'napcat', '42', 'private', '42', 'legacy', 'completed');
-	`)
-	if err != nil {
-		_ = db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	var row agentRunRow
-	if err := s.db.First(&row).Error; err != nil {
-		t.Fatal(err)
-	}
-	if row.Provider != "" || row.Model != "" || row.Currency != SpendingCurrencyCNY ||
-		row.PromptTokens != 0 || row.CostNanoCNY != 0 || row.ModelRequests != 0 || row.ToolCalls != 0 {
-		t.Fatalf("migrated row = %#v", row)
-	}
-}
-
-func TestOpenMigratesNotificationSettingsWithExistingRows(t *testing.T) {
-	path := t.TempDir() + "/bot.db"
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`
-		CREATE TABLE notification_settings (
-			user_id INTEGER PRIMARY KEY,
-			platform TEXT NOT NULL,
-			external_user_id TEXT NOT NULL,
-			conversation_type TEXT,
-			conversation_id TEXT,
-			classes_enabled numeric NOT NULL,
-			homework_enabled numeric NOT NULL,
-			updated_at datetime
-		);
-		INSERT INTO notification_settings (
-			user_id, platform, external_user_id, conversation_type,
-			conversation_id, classes_enabled, homework_enabled
-		) VALUES (1, 'napcat', '42', 'private', '42', 1, 1);
-	`)
-	if err != nil {
-		_ = db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	var row notificationSettingRow
-	if err := s.db.First(&row).Error; err != nil {
-		t.Fatal(err)
-	}
-	if row.ReauthRequired {
-		t.Fatalf("migrated row = %#v", row)
-	}
-}
-
 func TestAgentSpendingTotalsByConversationAndUser(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -2038,8 +1907,8 @@ func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = s.CreateFeedbackWithOutbounds(ctx, ident, FeedbackRecord{
-		Source:   "llm",
-		Category: "missing_tool",
+		Source:   "user",
+		Category: "user_feedback",
 		Content:  "需要考试地点查询工具",
 		Context:  "用户问考试地点",
 	}, func(id int64) []message.Outbound {
@@ -2066,42 +1935,5 @@ func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 	}
 	if outgoingCount != 0 {
 		t.Fatalf("outgoing count after rollback = %d", outgoingCount)
-	}
-}
-
-func TestOpenDropsObsoleteFeedbackDeliveryColumns(t *testing.T) {
-	path := t.TempDir() + "/bot.db"
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{
-		"ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0",
-		"ALTER TABLE feedback_records ADD COLUMN sent_at datetime",
-		"ALTER TABLE feedback_records ADD COLUMN resolved numeric NOT NULL DEFAULT 0",
-		"PRAGMA user_version = 0",
-	} {
-		if err := s.db.Exec(statement).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	for _, column := range []string{"sent_to_admin", "sent_at", "resolved"} {
-		if s.db.Migrator().HasColumn("feedback_records", column) {
-			t.Fatalf("obsolete column %q still exists", column)
-		}
-	}
-	_, _, err = s.CreateFeedbackWithOutbounds(context.Background(), Identity{
-		Platform: "qqbot", UserID: "user", ConversationType: "private", ConversationID: "user",
-	}, FeedbackRecord{Source: "user", Content: "migration works"}, nil)
-	if err != nil {
-		t.Fatal(err)
 	}
 }

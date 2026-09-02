@@ -5,8 +5,8 @@ The Bot has four independent durable concerns:
 1. A conversation job decides what work belongs to one inbound event and owns
    its lease, waits, retry, and terminal state.
 2. A capability execution records one actual read or independently reversible
-   mutation. It is the source of truth for confirmation, result evidence, and
-   user-visible receipts.
+   mutation. It is the source of truth for result evidence and, for Agent
+   mutations, confirmation and user-visible receipts.
 3. An Agent checkpoint and physical-model-attempt counter make an interrupted
    tool loop resumable without granting a fresh lease or retry budget.
 4. The outbox delivers already-finished output. Delivery failure can resend a
@@ -36,14 +36,18 @@ stateDiagram-v2
         JQueued --> JRunning: FIFO claim + new lease
         JRetry --> JRunning: retry due + new lease
 
-        JRunning --> JConfirm: checkpoint + pending mutation committed
+        JRunning --> JConfirm: Agent checkpoint + pending non-read
+        note right of JConfirm
+          Direct commands never enter this state.
+          Agent reads never enter this state.
+        end note
         JConfirm --> JQueued: approve or deny exactly one operation\nrevision++
 
         JRunning --> JAuth: operation proved that login is required
         JAuth --> JQueued: exact required scopes are current\nrevision++
 
         JRunning --> JRetry: durable run, transcript, checkpoint,\nor output persistence failed; live lease recovery
-        JRunning --> JCompleted: final outbox + receipt states\ncommitted atomically
+        JRunning --> JCompleted: final outbox + any Agent receipt states\ncommitted atomically
         JRunning --> JFailed: irrecoverable contract/run failure
 
         JQueued --> JExpired: TTL elapsed
@@ -76,12 +80,13 @@ stateDiagram-v2
         state "cancelled" as CCancelled
         state "expired" as CExpired
 
-        [*] --> CAwaiting: mutation preflight
-        [*] --> CRunning: read prepared under current job lease
+        [*] --> CAwaiting: Agent write/destructive preflight
+        [*] --> CApproved: direct command write/destructive prepared
+        [*] --> CRunning: direct command read or Agent read
 
         CAwaiting --> CApproved: real user confirms
         CAwaiting --> CDenied: real user denies
-        CApproved --> CRunning: current job lease claims operation
+        CApproved --> CRunning: current job lease claims direct\nor confirmed operation
 
         CRunning --> CAuth: no effect occurred; login required
         CAuth --> CRunning: current job lease reclaims after auth
@@ -167,10 +172,10 @@ stateDiagram-v2
         OExpired --> [*]
     }
 
-    JConfirm --> CAwaiting: one pending receipt is shown
+    JConfirm --> CAwaiting: one pending Agent operation is shown
     JAuth --> CAuth: current configured scopes verified
     JRunning --> PReserved: model request
-    JRunning --> OPending: confirmation, auth, or final output
+    JRunning --> OPending: host confirmation, auth, or final output
     JCompleted --> OPending: final output already committed
     JExpired --> CExpired: pending operations terminalized
     JCancelled --> CCancelled: pending operations terminalized
@@ -207,28 +212,42 @@ a deterministic private-chat redirect without a provider call. `message.Actor`
 identifies who caused an event; `message.Conversation` is only the delivery
 address, and the two are never substituted for each other.
 
-## Capability and confirmation contract
+## Capability authorization and confirmation contract
 
 `internal/commands` owns one descriptor registry. A descriptor defines the
 stable ID, accepted forms, normalization, validation, effect, privacy scope,
-confirmation policy, executor, result presentation, receipt, and help data.
-Direct commands and Agent calls use the same descriptor.
+executor, result presentation, receipt, and help data. Direct commands and
+Agent calls use the same descriptor and executor; the calling host owns the
+authorization decision.
 
-The host, not the model, owns confirmation:
+The rule is entirely origin-and-effect based:
 
-- Every mutation is preflighted before any row is written. A grouped request
-  is stored atomically as independent operations.
+- A command explicitly typed by the user executes immediately, whether it is
+  a read, write, or destructive action. Its durable execution row prevents an
+  output retry from replaying the operation, but it never waits for another
+  confirmation and never emits an operation receipt.
+- An Agent read executes immediately. The host does not ask the model or user
+  for permission.
+- An Agent write or destructive operation is preflighted after the model calls
+  the capability and before any side effect. A grouped request is stored
+  atomically as independent operations.
+- A missing login never starts an adjacent write on behalf of an Agent read.
+  The read returns a literal instruction to send the direct `登录` command and
+  retry. An explicit Agent login call is itself a write and follows the same
+  confirmation gate.
 - Exactly one independently reversible operation is shown and decided at a
   time. Approval only changes `awaiting_confirmation` to `approved`; the
   current conversation-job lease must still claim it before execution.
 - A stale worker cannot use a newer lease. A running mutation from an older
   lease becomes `unknown`; a running read may be repeated.
-- Capability finalization, auth deferral, and receipt updates require the same
-  live job lease that claimed the operation. An elapsed job TTL fences the
-  worker immediately; it does not wait for the periodic expiry sweep.
-- Approval mechanics and receipt lines are not conversation
-  events. A denial is fed back as a typed tool denial because it is relevant
-  evidence for the model's next response.
+- Capability finalization, auth deferral, and Agent receipt updates require
+  the same live job lease that claimed the operation. An elapsed job TTL
+  fences the worker immediately; it does not wait for the periodic expiry
+  sweep.
+- Confirmation prompts, affirmative user replies, and receipt lines are not
+  model-visible conversation events. Approval resumes the interrupted tool
+  with only its literal domain result. A denial is fed back as a typed tool
+  denial because that is relevant evidence for the model's next response.
 
 Capability results have a typed host status, but the model receives the
 descriptor's literal result text. There is no generic `{ok,status,text}`
@@ -241,27 +260,32 @@ The model sees stable meta-tools rather than the entire command and MCP
 catalog:
 
 - `search_bot_commands` searches descriptor-backed documentation and returns
-  exact capability IDs, arguments, examples, effect, confirmation, and scope.
+  exact capability IDs, arguments, examples, effect, and scope. Confirmation
+  mechanics are intentionally absent.
 - `invoke_bot_capability` executes one normalized descriptor through the host
   state machine.
 - `search_campus_tools` and `call_campus_tool` lazily initialize MCP only when
-  supplementary campus data is needed. Only MCP tools explicitly annotated
-  read-only are exposed.
+  supplementary campus data is needed. Only exact tool names in the host-owned
+  read allowlist are exposed; remote MCP annotations cannot grant access.
 
 The compact system instruction tells the model to search before invoking and
 to preserve all user constraints. Mutation improvisation through MCP is not
 possible.
 
-For a personal-data request or a verification follow-up, the runtime also
-enforces the sequence instead of relying on the instruction alone. The first
-provider request is offered only `search_bot_commands`; after a nonempty
-result, the next request is offered only `invoke_bot_capability`. A capability
-is accepted only when its ID is the returned descriptor ID or one of that
-descriptor's executable examples. Provisional assistant text is neither
-persisted nor eligible for delivery. A successful relevant result unlocks the
-final answer; a relevant failure, unknown outcome, or denial is returned to the
-user as its literal tool result rather than allowing later model prose to turn
-it into a success claim.
+For a personal-data request, a verification follow-up, or an explicit public
+Bot capability request, the runtime also enforces the sequence instead of
+relying on the instruction alone. The first provider request is offered only
+`search_bot_commands`; after a nonempty result, the next request is offered
+only `invoke_bot_capability`. A capability is accepted only when its ID is the
+returned descriptor ID or one of that descriptor's executable examples.
+Provisional assistant text is neither persisted nor eligible for delivery. If
+the provider returns prose instead of
+the sole offered tool, the host makes one additional tool-only semantic
+attempt. If that still produces no evidence, the deterministic failure shown
+to the user is also persisted as the assistant turn. A successful relevant
+result unlocks the final answer; a relevant failure, unknown outcome, or denial
+is returned to the user as its literal tool result rather than allowing later
+model prose to turn it into a success claim.
 
 ## Exact conversation evidence
 
@@ -275,10 +299,10 @@ it into a success claim.
 
 Old complete user turns may be dropped to fit the history window, but retained
 events are never summarized, rewritten, or converted into another role. Host
-approvals and receipt lines are deliberately absent. No time-based placeholder
-message exists. Private URLs
-may appear in direct-chat tool results and this private database history; they
-are forbidden on shared surfaces and redacted from process logs.
+approval messages and receipt lines are deliberately absent. No time-based
+placeholder message exists. Private URLs may appear in direct-chat tool results
+and this private database history; they are forbidden on shared surfaces and
+redacted from process logs.
 
 Persisted assistant image-output parts remain private evidence but are not
 replayed because the configured OpenAI-compatible adapter cannot encode them
@@ -290,20 +314,23 @@ Every event emitted by an Agent run is appended only if its job ID, revision,
 state, and lease still match the running coordinator claim in the same
 transaction. A late provider response therefore cannot write transcript into a
 resumed turn. Unsupported provisional assistant text from a grounded turn is
-not an emitted event. Direct-command routes do not manufacture an Agent tool exchange:
-their actual user-visible domain response is stored as an `assistant` event;
-Agent routes preserve the real assistant/tool-call/tool-result roles exactly.
+not an emitted event. Direct-command routes do not manufacture an Agent tool
+exchange: their actual user-visible domain response is stored as an
+`assistant` event; Agent routes preserve the real assistant/tool-call/tool-result
+roles exactly.
 
-## User-visible receipts
+## User-visible Agent receipts
 
 The coordinator queues no time-based placeholder. A user-visible output exists
 only when the job has a confirmation request, an authentication instruction,
 or a real final result to persist.
 
-Receipt lines are derived only from actual capability-execution rows, never
-from model prose or intent. Meta-tool searches produce no receipt. Reads show
-a receipt when a real domain/MCP read ran, including an empty or failed read;
-duplicate identical lines are collapsed. Examples:
+Direct commands never show receipt lines: their command response is already
+the complete user-visible result. For Agent turns, receipt lines are derived
+only from actual capability-execution rows, never from model prose or intent.
+Meta-tool searches produce no receipt. Agent reads show a receipt when a real
+domain/MCP read ran, including an empty or failed read; duplicate identical
+lines are collapsed. Examples:
 
 ```text
 #已查询课程{数学分析（程艺，2026春）}
@@ -347,14 +374,15 @@ job without losing or duplicating the operation.
 
 ## Schema release boundary
 
-Schema version 2 is a deliberate one-way release. Startup accepts only the
-production version-0 shape or the exact version-2 shape. Version 0 is upgraded
-once in a transaction, obsolete summary/pending/delivery tables and feedback
-columns are removed, exact legacy transcript evidence is retained, and every
-required column and declared index (including order, uniqueness, and the
-absence of a narrowing partial predicate) is checked before the process
-becomes ready. Deployment takes an immutable backup and
-restores it if the new container or post-start schema audit fails.
+Schema version 2 is the only accepted persisted shape. A genuinely empty
+SQLite database may be initialized directly at version 2; a nonempty
+unversioned database, any other version, obsolete tables or columns, and
+malformed indexes are rejected instead of migrated or repaired. Legacy
+interaction replies are never imported into model history. Every required
+column and declared index (including order, uniqueness, and the absence of a
+narrowing partial predicate) is checked before the process becomes ready.
+Deployment takes an immutable backup and restores it if the new container or
+post-start schema audit fails.
 
 ## Module ownership
 

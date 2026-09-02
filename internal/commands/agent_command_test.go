@@ -62,7 +62,7 @@ func TestCapabilityExecutionReturnsExplicitInvalidAndMissingStates(t *testing.T)
 	}
 }
 
-func TestCapabilityExecutionLeavesConfirmationToHost(t *testing.T) {
+func TestCapabilityExecutionRunsAfterCallerAuthorization(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -70,12 +70,16 @@ func TestCapabilityExecutionLeavesConfirmationToHost(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	outcome, err := (Handler{Store: db}).ExecuteCapability(context.Background(), Input{Identity: ident}, CapabilityNotify, []string{"作业", "开"})
-	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !outcome.ConfirmationRequired || outcome.Response.Text != "" {
+	if err != nil || outcome.Status != CapabilityOutcomeSuccess || !strings.Contains(outcome.Response.Text, "作业提醒：开") {
 		t.Fatalf("outcome=%#v err=%v", outcome, err)
+	}
+	settings, err := db.NotificationSettings(context.Background(), ident)
+	if err != nil || !settings.HomeworkEnabled {
+		t.Fatalf("settings=%#v err=%v", settings, err)
 	}
 }
 
-func TestCapabilityPresentationKeepsLoginCredentialsHostOnly(t *testing.T) {
+func TestAgentCapabilityReportsLoginRequirementWithoutStartingLogin(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -90,14 +94,19 @@ func TestCapabilityPresentationKeepsLoginCredentialsHostOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := Handler{Life: life.NewClient("http://life.invalid", nil), Auth: &auth.Manager{Store: db}, Store: db}
-	outcome, err := handler.ExecuteCapability(context.Background(), Input{Identity: ident}, CapabilitySchedule, nil)
-	if err != nil || outcome.Status != CapabilityOutcomeAuthRequired || !strings.Contains(outcome.Response.Text, userCode) {
+	outcome, err := handler.ExecuteCapability(context.Background(), Input{Identity: ident, Origin: InvocationOriginAgent}, CapabilitySchedule, nil)
+	if err != nil || outcome.Status != CapabilityOutcomeFailed || !strings.Contains(outcome.Response.Text, "请直接发送“登录”") ||
+		strings.Contains(outcome.Response.Text, userCode) || strings.Contains(outcome.Response.Text, "login.example") {
 		t.Fatalf("outcome=%#v err=%v", outcome, err)
 	}
 	invocation, _ := NewInvocation(CapabilitySchedule, nil)
 	presentation := handler.PresentCapabilityOutcome(invocation, outcome)
-	if !presentation.DeliveredByHost || strings.Contains(presentation.Text, userCode) || strings.Contains(presentation.Text, "login.example") {
+	if presentation.DeliveredByHost || presentation.Text != outcome.Response.Text {
 		t.Fatalf("presentation=%#v", presentation)
+	}
+	session, err := db.ActiveLoginSession(context.Background(), ident)
+	if err != nil || session == nil || session.UserCode != userCode {
+		t.Fatalf("Agent read changed login session=%#v err=%v", session, err)
 	}
 }
 

@@ -10,13 +10,9 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-const (
-	SourceUser = "user"
-	SourceLLM  = "llm"
-)
+const SourceUser = "user"
 
 type Submission struct {
-	Source   string
 	Category string
 	Content  string
 	Context  string
@@ -85,10 +81,6 @@ func (s *Service) Record(ctx context.Context, ident store.Identity, submission S
 	if s == nil || s.repository == nil {
 		return Result{}, errors.New("feedback service is unavailable")
 	}
-	submission.Source = strings.ToLower(strings.TrimSpace(submission.Source))
-	if submission.Source != SourceUser && submission.Source != SourceLLM {
-		return Result{}, fmt.Errorf("invalid feedback source %q", submission.Source)
-	}
 	submission.Category = strings.TrimSpace(submission.Category)
 	submission.Content = strings.TrimSpace(submission.Content)
 	submission.Context = strings.TrimSpace(submission.Context)
@@ -97,7 +89,7 @@ func (s *Service) Record(ctx context.Context, ident store.Identity, submission S
 	}
 
 	id, intents, err := s.repository.CreateFeedbackWithOutbounds(ctx, ident, store.FeedbackRecord{
-		Source:   submission.Source,
+		Source:   SourceUser,
 		Category: submission.Category,
 		Content:  submission.Content,
 		Context:  submission.Context,
@@ -127,10 +119,6 @@ func (s *Service) Record(ctx context.Context, ident store.Identity, submission S
 }
 
 func formatAdminMessage(ident store.Identity, id int64, submission Submission) string {
-	title := "用户反馈"
-	if submission.Source == SourceLLM {
-		title = "LLM 反馈"
-	}
 	source := strings.TrimSpace(ident.ConversationType)
 	if conversationID := strings.TrimSpace(ident.ConversationID); conversationID != "" {
 		source += ":" + conversationID
@@ -142,17 +130,13 @@ func formatAdminMessage(ident store.Identity, id int64, submission Submission) s
 	if userID == "" {
 		userID = "unknown"
 	}
-	lines := []string{title, "来源：" + source, "用户：" + userID}
+	lines := []string{"用户反馈", "来源：" + source, "用户：" + userID}
 	if submission.Category != "" {
 		lines = append(lines, "分类："+submission.Category)
 	}
 	lines = append(lines, "内容："+submission.Content)
 	if submission.Context != "" {
-		label := "最近对话："
-		if submission.Source == SourceLLM {
-			label = "上下文："
-		}
-		lines = append(lines, label, submission.Context)
+		lines = append(lines, "最近对话：", submission.Context)
 	}
 	lines = append(lines, fmt.Sprintf("编号：#%d", id))
 	return strings.Join(lines, "\n")

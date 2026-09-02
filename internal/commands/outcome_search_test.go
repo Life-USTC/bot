@@ -92,7 +92,7 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 	foundMutation := false
 	for _, example := range todo.Examples {
 		if strings.Contains(example.Command, "完成") {
-			if example.Effect != EffectWrite || example.Confirmation != ConfirmUser || example.DataScope != DataScopeUserPrivate {
+			if example.Effect != EffectWrite || example.DataScope != DataScopeUserPrivate {
 				t.Fatalf("todo mutation metadata = %#v", example)
 			}
 			foundMutation = true
@@ -105,7 +105,7 @@ func TestCapabilitySearchRanksExactFormsAndFiltersSharedPrivateExamples(t *testi
 	if !ok {
 		t.Fatal("bus preference mutation was rejected")
 	}
-	if policy := bus.Policy(); policy.Effect != EffectWrite || policy.Confirmation != ConfirmUser || policy.DataScope != DataScopeUserPrivate {
+	if policy := bus.Policy(); policy.Effect != EffectWrite || policy.DataScope != DataScopeUserPrivate {
 		t.Fatalf("bus mutation metadata = %#v", policy)
 	}
 }
@@ -162,26 +162,20 @@ func expandTestMutation(t *testing.T, id CapabilityID, args []string) []Invocati
 	return ExpandMutationInvocations(invocation)
 }
 
-func TestCapabilityExecutionDoesNotConfirmUnresolvedSubscriptionMutation(t *testing.T) {
+func TestMutationReceiptPreflightRequiresOneResolvedTarget(t *testing.T) {
 	handler := Handler{}
-	outcome, err := handler.ExecuteCapability(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1", "CODE2"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Status != CapabilityOutcomeInvalidInput || outcome.ConfirmationRequired {
-		t.Fatalf("unexpanded subscription outcome = %#v", outcome)
+	_, err := handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1.01", "CODE2.02"})
+	if !errors.Is(err, errCapabilityMutationMustExpand) {
+		t.Fatalf("unexpanded receipt preflight error = %v", err)
 	}
 
-	outcome, err = handler.ExecuteCapability(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Status != CapabilityOutcomeInvalidInput || outcome.ConfirmationRequired {
-		t.Fatalf("unresolved subscription outcome = %#v", outcome)
+	_, err = handler.DescribeInvocation(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1.01"})
+	if !errors.Is(err, errCapabilityReceiptUnavailable) {
+		t.Fatalf("unresolved receipt preflight error = %v", err)
 	}
 }
 
-func TestMutationExamplesCarryWriteConfirmationMetadata(t *testing.T) {
+func TestMutationExamplesCarryWriteEffects(t *testing.T) {
 	tests := []struct {
 		command string
 		effect  CapabilityEffect
@@ -204,7 +198,7 @@ func TestMutationExamplesCarryWriteConfirmationMetadata(t *testing.T) {
 			t.Fatalf("%q did not parse", test.command)
 		}
 		policy := invocation.Policy()
-		if policy.Effect != test.effect || policy.Confirmation != ConfirmUser || policy.DataScope != DataScopeUserPrivate {
+		if policy.Effect != test.effect || policy.DataScope != DataScopeUserPrivate {
 			t.Errorf("%q policy = %#v", test.command, policy)
 		}
 	}
@@ -218,14 +212,14 @@ func TestCapabilityDocumentationExamplesAreExecutableAndPolicyBound(t *testing.T
 				t.Fatalf("%s example is not executable: %#v", usage.ID, example)
 			}
 			policy := invocation.Policy()
-			if example.Effect != policy.Effect || example.Confirmation != policy.Confirmation || example.DataScope != policy.DataScope {
+			if example.Effect != policy.Effect || example.DataScope != policy.DataScope {
 				t.Fatalf("%s example policy = %#v, invocation = %#v", usage.ID, example, policy)
 			}
 		}
 	}
 }
 
-func TestDescribeInvocationBuildsHostReceiptAndApprovedOutcomeRetainsIt(t *testing.T) {
+func TestDescribeInvocationBuildsHostReceipt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/sections" || r.URL.Query().Get("search") != "CODE1.01" {
 			t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
@@ -247,23 +241,5 @@ func TestDescribeInvocationBuildsHostReceiptAndApprovedOutcomeRetainsIt(t *testi
 	}
 	if got := description.Receipt.Subject; got != "线性代数（张老师，2026年秋季学期）" {
 		t.Fatalf("receipt subject = %#v", got)
-	}
-	pending, err := handler.ExecuteCapability(context.Background(), Input{}, CapabilitySubscription, []string{"import", "CODE1.01"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending.Status != CapabilityOutcomeSuccess || !pending.ConfirmationRequired || !reflect.DeepEqual(pending.Receipt, description.Receipt) {
-		t.Fatalf("pending outcome = %#v, description = %#v", pending, description)
-	}
-
-	outcome, err := handler.ExecuteApprovedInvocation(context.Background(), Input{}, description)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Status != CapabilityOutcomeFailed || outcome.Receipt == nil || !reflect.DeepEqual(outcome.Receipt, description.Receipt) {
-		t.Fatalf("approved outcome = %#v, description = %#v", outcome, description)
-	}
-	if strings.Contains(outcome.Response.Text, "status") {
-		t.Fatalf("domain response was wrapped in status text: %q", outcome.Response.Text)
 	}
 }

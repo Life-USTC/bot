@@ -24,14 +24,12 @@ const (
 	ReceiptResourceSection   = "课程"
 )
 
-// CapabilityInvocationDescription is the host preflight contract. A caller
-// can freeze this value when asking for confirmation and reuse its Receipt
-// for the approved execution result.
+// CapabilityInvocationDescription is the host preflight contract for a
+// mutation confirmation. It freezes the normalized invocation and its
+// user-visible subject before any side effect occurs.
 type CapabilityInvocationDescription struct {
-	Invocation           Invocation               `json:"invocation"`
-	Policy               CapabilityPolicy         `json:"policy"`
-	ConfirmationRequired bool                     `json:"confirmationRequired"`
-	Receipt              *store.CapabilityReceipt `json:"receipt,omitempty"`
+	Invocation Invocation               `json:"invocation"`
+	Receipt    *store.CapabilityReceipt `json:"receipt,omitempty"`
 }
 
 // DescribeInvocation validates and describes a normalized capability without
@@ -44,13 +42,9 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 		return CapabilityInvocationDescription{}, fmt.Errorf("%w for capability %q", errCapabilityInvalidInput, id)
 	}
 	if err := validateReceiptInvocation(invocation); err != nil {
-		return CapabilityInvocationDescription{Invocation: invocation, Policy: invocation.Policy()}, err
+		return CapabilityInvocationDescription{Invocation: invocation}, err
 	}
-	description := CapabilityInvocationDescription{
-		Invocation:           invocation,
-		Policy:               invocation.Policy(),
-		ConfirmationRequired: invocation.Policy().Confirmation == ConfirmUser,
-	}
+	description := CapabilityInvocationDescription{Invocation: invocation}
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
 		return description, errCapabilityForbidden
 	}
@@ -62,31 +56,27 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 	return description, nil
 }
 
-// DescribeCapabilityInvocations expands a mutation and preflights each
-// independent invocation in registry order. Callers can persist these
-// descriptions as confirmation items and later pass each one to
-// ExecuteApprovedInvocation without re-resolving its subject.
-func (h Handler) DescribeCapabilityInvocations(ctx context.Context, input Input, id CapabilityID, args []string) ([]CapabilityInvocationDescription, error) {
-	invocation, ok := NewInvocation(id, args)
-	if !ok {
-		return nil, fmt.Errorf("invalid arguments for capability %q", id)
+// CapabilityPreflightFailure returns literal, user-actionable evidence for a
+// semantic invocation error discovered before an Agent mutation is persisted.
+// Infrastructure failures remain errors so they cannot be mistaken for a
+// domain result.
+func CapabilityPreflightFailure(id CapabilityID, err error) (string, bool) {
+	switch {
+	case errors.Is(err, errCapabilityReceiptTargetNotFound):
+		return "没有找到要操作的课程或教学班，因此没有执行任何操作。请先发送“教学班 搜索 <课程名或代码>”，再使用查询结果中的准确教学班代码。", true
+	case errors.Is(err, errCapabilityInvalidInput), errors.Is(err, errCapabilityMutationMustExpand):
+		return invalidCapabilityUsageResponse(id).Text, true
+	case errors.Is(err, errCapabilityForbidden):
+		return "此功能只能在私聊使用。", true
+	default:
+		return "", false
 	}
-	expanded := ExpandMutationInvocations(invocation)
-	descriptions := make([]CapabilityInvocationDescription, 0, len(expanded))
-	for _, expandedInvocation := range expanded {
-		description, err := h.DescribeInvocation(ctx, input, expandedInvocation.ID(), expandedInvocation.Args)
-		if err != nil {
-			return descriptions, err
-		}
-		descriptions = append(descriptions, description)
-	}
-	return descriptions, nil
 }
 
 // ExpandMutationInvocations splits a normalized mutation into independent
-// invocations suitable for one-at-a-time confirmation and execution. Read
-// capabilities are returned unchanged. The helper is deterministic and keeps
-// each resulting invocation bound to the registry's normal validation.
+// invocations suitable for one-at-a-time confirmation and execution. The
+// helper is deterministic and keeps each resulting invocation bound to the
+// registry's normal validation.
 func ExpandMutationInvocations(invocation Invocation) []Invocation {
 	invocation, ok := withDescriptor(invocation)
 	if !ok {
@@ -317,8 +307,13 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 	}
 
 	switch invocation.ID() {
-	case CapabilityHelp, CapabilityLogin, CapabilityPing, CapabilityStatus:
+	case CapabilityHelp, CapabilityPing, CapabilityStatus:
 		return store.CapabilityReceipt{}
+	case CapabilityLogin:
+		if invocation.Policy().Effect == EffectRead {
+			return query("登录状态")
+		}
+		return store.CapabilityReceipt{Action: "登录", Resource: "账户", Subject: "当前账户"}
 	case CapabilityLogout:
 		return store.CapabilityReceipt{Action: "退出", Resource: "账户", Subject: "当前账户"}
 	case CapabilityAccount:

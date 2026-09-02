@@ -47,10 +47,8 @@ func groundingPolicyFor(text string, ident store.Identity) groundingPolicy {
 	}
 	allDocumentation := commands.SearchCapabilityDocumentation(text, commands.CapabilitySearchOptions{Limit: 5})
 	if store.IsSharedConversation(ident) {
-		for _, match := range allDocumentation {
-			if match.DataScope == commands.DataScopeUserPrivate {
-				return groundingPolicy{privateUnavailable: true}
-			}
+		if explicitlyNamesPrivateCapability(text, allDocumentation) || asksForOwnData(text) && containsPrivateCapability(allDocumentation) {
+			return groundingPolicy{privateUnavailable: true}
 		}
 	}
 	documentation := commands.SearchCapabilityDocumentation(text, commands.CapabilitySearchOptions{
@@ -63,15 +61,63 @@ func groundingPolicyFor(text string, ident store.Identity) groundingPolicy {
 	if asksForCommandUsage(text) {
 		return groundingPolicy{searchCommands: true}
 	}
-	// The hard delivery gate protects fresh user-specific state. Public
-	// information and general conversation still rely on the prompt's normal
-	// tool policy so a fuzzy documentation match cannot hijack casual chat.
 	for _, match := range documentation {
 		if match.DataScope == commands.DataScopeUserPrivate {
 			return groundingPolicy{searchCommands: true, executeCapability: true}
 		}
 	}
+	// Public summaries are intentionally searchable, but a fuzzy summary match
+	// alone must not hijack casual conversation. Require a concrete capability
+	// name, title, ID, or documented example argument in the user's request.
+	if explicitlyNamesCapability(text, documentation) {
+		return groundingPolicy{searchCommands: true, executeCapability: true}
+	}
 	return groundingPolicy{}
+}
+
+func explicitlyNamesPrivateCapability(text string, documentation []commands.CapabilityDocumentation) bool {
+	for _, item := range documentation {
+		if item.DataScope == commands.DataScopeUserPrivate && explicitlyNamesCapability(text, []commands.CapabilityDocumentation{item}) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPrivateCapability(documentation []commands.CapabilityDocumentation) bool {
+	for _, item := range documentation {
+		if item.DataScope == commands.DataScopeUserPrivate {
+			return true
+		}
+	}
+	return false
+}
+
+func asksForOwnData(text string) bool {
+	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
+	for _, marker := range []string{"我的", "我这", "我本", "我选", "我订阅", "我关注", "我有", "本人", "自己的"} {
+		if strings.Contains(compact, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func explicitlyNamesCapability(text string, documentation []commands.CapabilityDocumentation) bool {
+	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
+	for _, item := range documentation {
+		markers := append(append([]string(nil), item.Forms...), item.Title, string(item.ID))
+		for _, example := range append(append([]commands.CapabilityUsageExample(nil), item.Examples...), item.Shortcuts...) {
+			markers = append(markers, strings.Join(example.Arguments, ""))
+		}
+		for _, marker := range markers {
+			marker = strings.ToLower(strings.Join(strings.Fields(marker), ""))
+			if marker != "" && strings.Contains(compact, marker) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func asksForCommandUsage(text string) bool {
@@ -141,17 +187,42 @@ func newGroundingModel(inner model.BaseChatModel, policy groundingPolicy) model.
 }
 
 func (m *groundingModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	return m.inner.Generate(ctx, input, m.withGroundingTools(ctx, input, opts)...)
+	toolName, grounded := m.withGroundingTools(ctx, input, opts)
+	response, err := m.inner.Generate(ctx, input, grounded...)
+	if err != nil || toolName == "" || callsRequiredTool(response, toolName) {
+		return response, err
+	}
+	return m.inner.Generate(ctx, groundingRetryInput(input, toolName), grounded...)
 }
 
 func (m *groundingModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	return m.inner.Stream(ctx, input, m.withGroundingTools(ctx, input, opts)...)
+	toolName, grounded := m.withGroundingTools(ctx, input, opts)
+	stream, err := m.inner.Stream(ctx, input, grounded...)
+	if err != nil {
+		return nil, err
+	}
+	response, err := schema.ConcatMessageStream(stream)
+	if err != nil || toolName == "" || callsRequiredTool(response, toolName) {
+		if err != nil {
+			return nil, err
+		}
+		return schema.StreamReaderFromArray([]*schema.Message{response}), nil
+	}
+	stream, err = m.inner.Stream(ctx, groundingRetryInput(input, toolName), grounded...)
+	if err != nil {
+		return nil, err
+	}
+	response, err = schema.ConcatMessageStream(stream)
+	if err != nil {
+		return nil, err
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{response}), nil
 }
 
-func (m *groundingModel) withGroundingTools(ctx context.Context, input []*schema.Message, opts []model.Option) []model.Option {
+func (m *groundingModel) withGroundingTools(ctx context.Context, input []*schema.Message, opts []model.Option) (string, []model.Option) {
 	toolName := m.nextGroundingTool(ctx, input)
 	if toolName == "" {
-		return opts
+		return "", opts
 	}
 	options := model.GetCommonOptions(nil, opts...)
 	tools := make([]*schema.ToolInfo, 0, 1)
@@ -166,7 +237,34 @@ func (m *groundingModel) withGroundingTools(ctx context.Context, input []*schema
 	// Kimi K3 always thinks and rejects a specified/required tool choice. Give
 	// the model only the required next tool and keep tool_choice=auto; the host
 	// separately refuses to deliver a factual answer without the real result.
-	return append(grounded, model.WithTools(tools), model.WithToolChoice(schema.ToolChoiceAllowed))
+	return toolName, append(grounded, model.WithTools(tools), model.WithToolChoice(schema.ToolChoiceAllowed))
+}
+
+func callsRequiredTool(message *schema.Message, name string) bool {
+	if message == nil {
+		return false
+	}
+	for _, call := range message.ToolCalls {
+		if call.Function.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func groundingRetryInput(input []*schema.Message, toolName string) []*schema.Message {
+	retry := make([]*schema.Message, 0, len(input)+1)
+	insertAt := len(input)
+	for index := len(input) - 1; index >= 0; index-- {
+		if input[index] != nil && input[index].Role == schema.User {
+			insertAt = index
+			break
+		}
+	}
+	retry = append(retry, input[:insertAt]...)
+	retry = append(retry, schema.SystemMessage("Your entire response must be a call to "+toolName+". Do not answer with text."))
+	retry = append(retry, input[insertAt:]...)
+	return retry
 }
 
 func (m *groundingModel) nextGroundingTool(ctx context.Context, input []*schema.Message) string {

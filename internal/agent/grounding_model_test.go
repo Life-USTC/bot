@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -16,14 +17,58 @@ type groundingRecordingModel struct {
 	options []*model.Options
 }
 
+type groundingRetryModel struct {
+	calls  int
+	inputs [][]*schema.Message
+}
+
+func (m *groundingRetryModel) Generate(_ context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	return m.response(input, opts), nil
+}
+
+func (m *groundingRetryModel) Stream(_ context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	return schema.StreamReaderFromArray([]*schema.Message{m.response(input, opts)}), nil
+}
+
+func (m *groundingRetryModel) response(input []*schema.Message, opts []model.Option) *schema.Message {
+	m.calls++
+	m.inputs = append(m.inputs, append([]*schema.Message(nil), input...))
+	if m.calls == 1 {
+		return schema.AssistantMessage("我直接回答", nil)
+	}
+	name := onlyOfferedTool(opts)
+	return schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "retry-call", Type: "function", Function: schema.FunctionCall{Name: name, Arguments: `{}`},
+	}})
+}
+
 func (m *groundingRecordingModel) Generate(_ context.Context, _ []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	m.record(opts)
+	if name := onlyOfferedTool(opts); name != "" {
+		return schema.AssistantMessage("", []schema.ToolCall{{
+			ID: "call-" + name, Type: "function", Function: schema.FunctionCall{Name: name, Arguments: `{}`},
+		}}), nil
+	}
 	return schema.AssistantMessage("ok", nil), nil
 }
 
 func (m *groundingRecordingModel) Stream(_ context.Context, _ []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	m.record(opts)
-	return schema.StreamReaderFromArray([]*schema.Message{schema.AssistantMessage("ok", nil)}), nil
+	message := schema.AssistantMessage("ok", nil)
+	if name := onlyOfferedTool(opts); name != "" {
+		message = schema.AssistantMessage("", []schema.ToolCall{{
+			ID: "call-" + name, Type: "function", Function: schema.FunctionCall{Name: name, Arguments: `{}`},
+		}})
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{message}), nil
+}
+
+func onlyOfferedTool(opts []model.Option) string {
+	options := model.GetCommonOptions(nil, opts...)
+	if options.ToolChoice == nil || *options.ToolChoice != schema.ToolChoiceAllowed || len(options.Tools) != 1 || options.Tools[0] == nil {
+		return ""
+	}
+	return options.Tools[0].Name
 }
 
 func (m *groundingRecordingModel) record(opts []model.Option) {
@@ -49,7 +94,9 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 		{name: "standalone correctness", text: "正确吗", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true}},
 		{name: "standalone plausibility", text: "靠谱吗", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true}},
 		{name: "shared personal data", text: "我这学期选了哪些课", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{privateUnavailable: true}},
-		{name: "shared public course search", text: "帮我搜索数学分析课程", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{}},
+		{name: "shared public course search", text: "帮我搜索数学分析课程", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{searchCommands: true, executeCapability: true}},
+		{name: "shared public course query with fuzzy private matches", text: "帮我查数学分析课程", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{searchCommands: true, executeCapability: true}},
+		{name: "public bus facts", text: "高新区到东区校车", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true}},
 		{name: "public group introduction", text: "介绍一下这个公开服务", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{}},
 		{name: "casual chat", text: "你好", ident: private, want: groundingPolicy{}},
 	} {
@@ -58,6 +105,55 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 				t.Fatalf("policy=%#v want=%#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestGroundingModelRetriesPlainTextOnceWithTransientToolOnlyInstruction(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		name := "generate"
+		if stream {
+			name = "stream"
+		}
+		t.Run(name, func(t *testing.T) {
+			inner := &groundingRetryModel{}
+			wrapped := newGroundingModel(inner, groundingPolicy{searchCommands: true, executeCapability: true})
+			input := []*schema.Message{schema.UserMessage("高新区到东区校车")}
+			options := []model.Option{model.WithTools([]*schema.ToolInfo{{Name: commandSearchToolName}, {Name: capabilityToolName}})}
+			var response *schema.Message
+			var err error
+			if stream {
+				var output *schema.StreamReader[*schema.Message]
+				output, err = wrapped.Stream(t.Context(), input, options...)
+				if err == nil {
+					response, err = schema.ConcatMessageStream(output)
+				}
+			} else {
+				response, err = wrapped.Generate(t.Context(), input, options...)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if inner.calls != 2 || !callsRequiredTool(response, commandSearchToolName) {
+				t.Fatalf("calls=%d response=%#v", inner.calls, response)
+			}
+			if len(input) != 1 || len(inner.inputs[1]) != 2 || inner.inputs[1][0].Role != schema.System ||
+				!strings.Contains(inner.inputs[1][0].Content, commandSearchToolName) || inner.inputs[1][1] != input[0] {
+				t.Fatalf("original=%#v retry=%#v", input, inner.inputs[1])
+			}
+		})
+	}
+}
+
+func TestGroundingRetryInputKeepsToolCallAdjacentToItsResult(t *testing.T) {
+	user := schema.UserMessage("高新区到东区校车")
+	call := schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "search", Type: "function", Function: schema.FunctionCall{Name: commandSearchToolName, Arguments: `{}`},
+	}})
+	result := schema.ToolMessage(`[{"id":"bus"}]`, "search", schema.WithToolName(commandSearchToolName))
+	input := []*schema.Message{schema.SystemMessage("base"), user, call, result}
+	retry := groundingRetryInput(input, capabilityToolName)
+	if len(retry) != 5 || retry[0] != input[0] || retry[1].Role != schema.System || retry[2] != user || retry[3] != call || retry[4] != result {
+		t.Fatalf("retry input broke current-turn tool transcript: %#v", retry)
 	}
 }
 

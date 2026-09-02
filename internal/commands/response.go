@@ -63,7 +63,7 @@ func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image 
 // imageResponseFor helper above remains available to direct rendering callers
 // that only have text; capability execution always has the typed status.
 func (h Handler) imageResponseForOutcome(cmd Invocation, outcome CapabilityOutcome) *responses.Image {
-	if outcome.Status != CapabilityOutcomeSuccess || outcome.ConfirmationRequired {
+	if outcome.Status != CapabilityOutcomeSuccess {
 		return nil
 	}
 	if !h.EnableImageResponses || strings.TrimSpace(outcome.Response.Text) == "" {

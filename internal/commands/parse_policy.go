@@ -19,15 +19,7 @@ func notifyArgsAcceptable(args []string) bool {
 }
 
 func settingsArgsAcceptable(args []string) bool {
-	if !hasArgs(args) || firstArgIsHelp(args) {
-		return true
-	}
-	switch settingsTopic(args[0]) {
-	case "notify":
-		return notifyArgsAcceptable(normalizeNotifyArgs(args[1:]))
-	default:
-		return false
-	}
+	return !hasArgs(args) || len(args) == 1 && firstArgIsHelp(args)
 }
 
 func homeworkArgsAcceptable(args []string) bool {
@@ -267,15 +259,6 @@ func keywordSearchArgsAcceptable(args []string, numericFilters, textFilters map[
 		index++
 	}
 	return true
-}
-
-func settingsTopic(token string) string {
-	switch normToken(token) {
-	case "notify", "notice", "提醒", "通知", "推送":
-		return "notify"
-	default:
-		return ""
-	}
 }
 
 func acceptedCommandResult(raw, name string, args []string) ParseResult {
