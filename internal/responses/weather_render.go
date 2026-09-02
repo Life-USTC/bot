@@ -61,6 +61,7 @@ var (
 	weatherAmber   = color.RGBA{245, 158, 11, 255}
 	weatherAmberDk = color.RGBA{217, 119, 6, 255}
 	weatherSkyFill = color.RGBA{125, 211, 252, 255}
+	weatherSkyDark = color.RGBA{2, 132, 199, 255}
 	weatherTileBg  = color.RGBA{255, 255, 255, 255}
 )
 
@@ -281,7 +282,7 @@ func drawWeatherHourlyChart(canvas *image.RGBA, s func(int) int, faces weatherFa
 	maxTemp += 1
 	tempY := func(temp float64) float64 {
 		ratio := (temp - minTemp) / (maxTemp - minTemp)
-		return float64(plotBottom) - ratio*float64(chartHeight-48)
+		return float64(plotBottom) - ratio*float64(chartHeight-58)
 	}
 	pointX := func(i int) float64 {
 		return float64(left) + slotWidth*(float64(i)+0.5)
@@ -323,6 +324,30 @@ func drawWeatherHourlyChart(canvas *image.RGBA, s func(int) int, faces weatherFa
 	}
 	baselineY := s(plotBottom) + 1
 	drawRect(canvas, image.Rect(s(left), baselineY, s(left+contentWidth), baselineY+s(1)), weatherLine)
+
+	// Temperature label above each curve point.
+	for i, point := range hourly {
+		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(int(pointX(i))), s(int(tempY(point.Temperature))-6), weatherFormatTemp(point.Temperature), weatherMuted)
+	}
+
+	// Probability label for meaningful precipitation bars: inside tall bars,
+	// above short ones when the curve leaves room, otherwise skipped.
+	for i, point := range hourly {
+		if point.PrecipitationProbability < 30 {
+			continue
+		}
+		barHeight := point.PrecipitationProbability / 100 * maxBarHeight
+		label := strconv.Itoa(int(math.Round(point.PrecipitationProbability))) + "%"
+		if barHeight >= 14 {
+			drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(int(pointX(i))), s(int(float64(plotBottom)-barHeight/2+3)), label, weatherSkyDark)
+			continue
+		}
+		labelY := float64(plotBottom) - barHeight - 4
+		if labelY-10 < tempY(point.Temperature)-6 {
+			continue
+		}
+		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(int(pointX(i))), s(int(labelY)), label, weatherSkyDark)
+	}
 
 	// Sparse x-axis labels every three hours.
 	labelY := plotBottom + 16
