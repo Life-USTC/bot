@@ -1342,9 +1342,10 @@ func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
 		cmd  Invocation
 		text string
 	}{
-		"preference": {cmd: Invocation{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
-		"no service": {cmd: Invocation{Name: "bus"}, text: "今天后面没查到校车。"},
-		"error":      {cmd: Invocation{Name: "bus"}, text: "校车查不到：server exploded"},
+		"preference":       {cmd: Invocation{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
+		"no service":       {cmd: Invocation{Name: "bus"}, text: "今天后面没查到校车。"},
+		"dated no service": {cmd: Invocation{Name: "bus", Args: []string{"周六"}}, text: "查询日期：2026-09-05（周六）\n没有查到校车。"},
+		"error":            {cmd: Invocation{Name: "bus"}, text: "校车查不到：server exploded"},
 	} {
 		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
 			t.Fatalf("%s image = %#v, want nil", name, got)
@@ -3498,7 +3499,7 @@ func TestLifePrefixIsRejected(t *testing.T) {
 	handler := Handler{}
 	for _, text := range []string{
 		"/life", "/LIFE help", "/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容",
-		"/life校车 东区 西区", "/lifekb今天", "/lifenope",
+		"/life校车 东区 西区", "/lifekb今天", "/lifenope", "/life课表订阅链接",
 	} {
 		if cmd, ok := handler.parse(text); ok {
 			t.Fatalf("removed prefix %q parsed as %#v", text, cmd)

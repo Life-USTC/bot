@@ -215,6 +215,127 @@ func TestAgentHandlesRouterActivatedGroupRequest(t *testing.T) {
 	}
 }
 
+func TestGroupPersonalDataRequestIsRefusedWithoutCallingModel(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	svc, err := New(t.Context(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(t.Context(), Input{
+		Text: "我这学期选了哪些课",
+		Identity: store.Identity{
+			Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100",
+		},
+	})
+	if !ok || response.Text != "这个问题涉及个人数据，请私聊 Presto 查询。" {
+		t.Fatalf("response=%#v ok=%v", response, ok)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("model requests=%d want=0", requests.Load())
+	}
+}
+
+func TestGroundedTurnFallsBackToLiteralToolResultInsteadOfProvisionalText(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		request := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"未经核实的旧答案","tool_calls":[{
+					"id":"search-help","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"帮助\"}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 2:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-invoke","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"仍然未经核实","tool_calls":[{
+					"id":"invoke-help","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"help\",\"arguments\":[]}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 3:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-empty","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}]
+			}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+	svc, err := New(t.Context(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(t.Context(), Input{
+		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
+	})
+	if !ok || !strings.Contains(response.Text, "Bot 帮助：") || strings.Contains(response.Text, "未经核实") {
+		t.Fatalf("response=%#v ok=%v", response, ok)
+	}
+	if requests.Load() != 3 {
+		t.Fatalf("model requests=%d want=3", requests.Load())
+	}
+}
+
+func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		request := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-search-schedule","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-schedule","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"课表\"}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 2:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-invalid-schedule","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"invoke-schedule","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"schedule\",\"arguments\":[\"someday\"]}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`))
+		case 3:
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-false-success","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"课表已经查询成功。"},"finish_reason":"stop"}]
+			}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+	svc, err := New(t.Context(), Config{
+		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
+	}, commands.Handler{}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := svc.HandleResponse(t.Context(), Input{
+		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
+	})
+	if !ok || !strings.Contains(response.Text, "课表的参数无法识别") || !strings.Contains(response.Text, "可以这样发送") || strings.Contains(response.Text, "查询成功") {
+		t.Fatalf("response=%#v ok=%v", response, ok)
+	}
+	if requests.Load() != 3 {
+		t.Fatalf("model requests=%d want=3", requests.Load())
+	}
+}
+
 func TestAgentIgnoresBlankMessages(t *testing.T) {
 	svc := &Service{enabled: true}
 	reply, ok := svc.Handle(context.Background(), Input{
@@ -892,7 +1013,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "confirmed one operation at a time") || !strings.Contains(instruction, "Avoid emojis") {
 		t.Fatalf("instruction = %q", instruction)
 	}
-	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, service availability, or operation results") {
+	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results") ||
+		!strings.Contains(instruction, "Chat history is not fresh evidence") ||
+		!strings.Contains(instruction, "unless a domain tool actually returned that evidence in this turn") {
 		t.Fatalf("instruction lacks grounding rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "preserving every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") {
@@ -1065,6 +1188,18 @@ func TestHostCapabilityDescriptionIsSmallAndCommandSearchReturnsExactCalls(t *te
 	bus, err := searchCommandDocumentation(ident, commandSearchInput{Query: "bus"})
 	if err != nil || !strings.Contains(bus, `"capability":"bus","arguments":["2026-09-06","东区","太湖路园区"]`) {
 		t.Fatalf("bus documentation=%q err=%v", bus, err)
+	}
+	selectedCourses, err := searchCommandDocumentation(ident, commandSearchInput{Query: "查询本学期已选课程 选课列表 课程表"})
+	if err != nil || !strings.Contains(selectedCourses, `"id":"my_subscribed_sections"`) || strings.Contains(selectedCourses, `"id":"semester"`) {
+		t.Fatalf("selected-course documentation=%q err=%v", selectedCourses, err)
+	}
+}
+
+func TestCommandSearchRejectsBlankQueryWithActionableToolResult(t *testing.T) {
+	_, err := searchCommandDocumentation(store.Identity{ConversationType: "private"}, commandSearchInput{})
+	result, recoverable := botmcp.ModelToolErrorResult(err)
+	if !recoverable || !strings.Contains(result, "本学期已选课程") || !strings.Contains(result, "明天课表") {
+		t.Fatalf("blank command search result=%q recoverable=%v err=%v", result, recoverable, err)
 	}
 }
 
@@ -1391,6 +1526,19 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
 			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-confirm-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+				}]} ,"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}
+			}`))
+			return
+		}
+		if request == 2 {
+			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+				t.Errorf("capability request lacks command-search result: %s", body)
+			}
+			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
 					"id":"call-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
@@ -1399,7 +1547,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			}`))
 			return
 		}
-		if request != 2 {
+		if request != 3 {
 			t.Errorf("unexpected model request %d", request)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -1479,8 +1627,10 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		t.Fatal(err)
 	}
 	wantTypes := []store.ConversationEventType{
-		store.ConversationEventUser, store.ConversationEventAssistant,
-		store.ConversationEventToolResult, store.ConversationEventAssistant,
+		store.ConversationEventUser,
+		store.ConversationEventAssistant, store.ConversationEventToolResult,
+		store.ConversationEventAssistant, store.ConversationEventToolResult,
+		store.ConversationEventAssistant,
 	}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("typed events = %#v", events)
@@ -1493,7 +1643,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			t.Fatalf("approval persisted in model transcript: %#v", events[index])
 		}
 	}
-	if requests.Load() != 2 {
+	if requests.Load() != 3 {
 		t.Fatalf("model requests = %d", requests.Load())
 	}
 }
@@ -1557,10 +1707,24 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-parallel-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-parallel","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"打开通知\"}"}
+				}]} ,"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}
+			}`))
+			return
+		}
+		if request == 2 {
+			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+				t.Errorf("parallel capability request lacks command-search result: %s", body)
+			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-parallel","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[
@@ -1571,7 +1735,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 			}`))
 			return
 		}
-		if request != 2 {
+		if request != 3 {
 			t.Errorf("unexpected model request %d", request)
 		}
 		_, _ = w.Write([]byte(`{
@@ -1618,7 +1782,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if middle := svc.Run(ctx, input); middle.State != RunStateInterrupted {
 		t.Fatalf("middle run = %#v", middle)
 	}
-	if requests.Load() != 1 {
+	if requests.Load() != 2 {
 		t.Fatalf("model ran while a sibling confirmation was pending: %d requests", requests.Load())
 	}
 	settings, err := db.NotificationSettings(ctx, ident)
@@ -1651,7 +1815,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 			t.Fatalf("operation did not finish: %#v", operation)
 		}
 	}
-	if requests.Load() != 2 {
+	if requests.Load() != 3 {
 		t.Fatalf("model requests = %d", requests.Load())
 	}
 }
@@ -1677,6 +1841,19 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
 			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-deny-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-deny","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+				}]} ,"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+			return
+		}
+		if request == 2 {
+			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+				t.Errorf("denied capability request lacks command-search result: %s", body)
+			}
+			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-deny","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
 					"id":"call-deny","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
@@ -1684,12 +1861,15 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 			}`))
 			return
 		}
+		if request != 3 {
+			t.Errorf("unexpected model request %d", request)
+		}
 		if !bytes.Contains(body, []byte(`"content":"用户拒绝执行"`)) {
 			t.Errorf("denial missing from resumed transcript: %s", body)
 		}
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-denied-final","object":"chat.completion","created":0,"model":"test-model",
-			"choices":[{"index":0,"message":{"role":"assistant","content":"好的，没有更改。"},"finish_reason":"stop"}],
+			"choices":[{"index":0,"message":{"role":"assistant","content":"已成功打开提醒。"},"finish_reason":"stop"}],
 			"usage":{"prompt_tokens":6,"completion_tokens":2,"total_tokens":8}
 		}`))
 	}))
@@ -1712,7 +1892,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
-	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "好的，没有更改。" {
+	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "用户拒绝执行" {
 		t.Fatalf("final run = %#v", final)
 	}
 	settings, err := db.NotificationSettings(ctx, ident)
@@ -1734,7 +1914,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	}
 }
 
-func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
+func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1749,10 +1929,24 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-retry-search","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"search-retry-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+				}]} ,"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+			}`))
+			return
+		}
+		if request == 2 {
+			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+				t.Errorf("retry capability request lacks command-search result: %s", body)
+			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-retry-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
@@ -1785,14 +1979,15 @@ func TestRunSharesFiveProviderAttemptsAcrossConfirmationResume(t *testing.T) {
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
 	second := svc.Run(ctx, input)
-	if !second.Handled || !strings.Contains(second.Response.Text, "5 次尝试") {
+	if !second.Handled || !strings.Contains(second.Response.Text, "连续 5 次") {
 		t.Fatalf("second run = %#v", second)
 	}
-	if requests.Load() != agentRunMaxModelAttempts {
-		t.Fatalf("physical provider requests = %d, want %d", requests.Load(), agentRunMaxModelAttempts)
+	wantRequests := int32(2 + llmHTTPMaxAttempts)
+	if requests.Load() != wantRequests {
+		t.Fatalf("physical provider requests = %d, want %d", requests.Load(), wantRequests)
 	}
 	spending, err := db.AgentJobSpending(ctx, job.ID)
-	if err != nil || spending.ModelRequests != int64(agentRunMaxModelAttempts) {
+	if err != nil || spending.ModelRequests != int64(wantRequests) {
 		t.Fatalf("job spending=%#v err=%v", spending, err)
 	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {

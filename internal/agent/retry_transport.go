@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	// A run-wide budget enforces this limit when the request context belongs to
-	// an Agent run. The local loop is also bounded for callers without one.
-	llmHTTPMaxAttempts = agentRunMaxModelAttempts
+	// Every logical model request gets the same retry window. The separate
+	// run-wide budget bounds the sum across a complete tool loop and resumes.
+	llmHTTPMaxAttempts = llmRequestMaxAttempts
 	llmRetryBaseDelay  = 200 * time.Millisecond
 	llmRetryMaxDelay   = 5 * time.Second
 )

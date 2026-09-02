@@ -12,7 +12,7 @@ import (
 const (
 	conversationEventLimit        = 80
 	conversationCompactInputLimit = 128_000
-	conversationHistoryTokenLimit = 48_000
+	conversationHistoryTokenLimit = 8_000
 )
 
 // conversationEventMessages restores exact role-bearing history. It never

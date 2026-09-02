@@ -6,11 +6,14 @@ import (
 )
 
 func notifyArgsAcceptable(args []string) bool {
-	if !hasArgs(args) || firstArgIn(args, "status", "help") {
+	if !hasArgs(args) {
 		return true
 	}
+	if firstArgIn(args, "status", "help") {
+		return len(args) == 1
+	}
 	if args[0] == "classes" || args[0] == "homework" {
-		return len(args) == 1 || args[1] == "on" || args[1] == "off"
+		return len(args) == 1 || len(args) == 2 && (args[1] == "on" || args[1] == "off")
 	}
 	return false
 }
@@ -28,16 +31,18 @@ func settingsArgsAcceptable(args []string) bool {
 }
 
 func homeworkArgsAcceptable(args []string) bool {
-	if !hasArgs(args) || firstArgIsHelp(args) {
+	if !hasArgs(args) {
 		return true
+	}
+	if firstArgIsHelp(args) {
+		return len(args) == 1
 	}
 	switch normToken(args[0]) {
-	case "done", "undo", "pending", "all", "list", "ls", "查看", "列表", "未完成", "全部":
-		return true
-	case "semester_id", "semester_jw_id", "学期id", "学期jwid":
-		return true
+	case "done", "undo":
+		return len(args) >= 2 && strings.TrimSpace(joinedArgs(args[1:])) != ""
 	}
-	return isListPageToken(args[0])
+	_, err := parseHomeworkListArgs(args)
+	return err == nil
 }
 
 func scheduleArgsAcceptable(args []string) bool {
@@ -133,15 +138,35 @@ func busPreferenceArgsAcceptable(args []string) bool {
 }
 
 func subscriptionArgsAcceptable(args []string) bool {
-	if !hasArgs(args) || firstArgIsHelp(args) {
+	if !hasArgs(args) {
 		return true
+	}
+	if firstArgIsHelp(args) {
+		return len(args) == 1
 	}
 	switch args[0] {
-	case "help", "link", "import", "链接", "日历", "导入", "添加", "新增":
-		return true
+	case "link", "链接", "日历":
+		return len(args) == 1
+	case "import", "导入", "添加", "新增":
+		return len(args) >= 2 && sectionCodeListAcceptable(joinedArgs(args[1:]))
 	default:
-		return len(extractSectionCodes(joinedArgs(args))) > 0
+		return sectionCodeListAcceptable(joinedArgs(args))
 	}
+}
+
+func sectionCodeListAcceptable(raw string) bool {
+	raw = strings.NewReplacer(",", " ", "，", " ", ";", " ", "；", " ").Replace(raw)
+	parts := strings.Fields(raw)
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		matches := sectionCodePattern.FindAllString(part, -1)
+		if len(matches) != 1 || !strings.EqualFold(matches[0], part) {
+			return false
+		}
+	}
+	return true
 }
 
 func positiveIDArgs(args []string) bool {
@@ -167,19 +192,81 @@ func sectionPagedIDArgsAcceptable(args []string) bool {
 }
 
 func examArgsAcceptable(args []string) bool {
-	if !hasArgs(args) || firstArgIsHelp(args) {
+	if !hasArgs(args) {
 		return true
 	}
-	return isListPageToken(args[0])
+	if firstArgIsHelp(args) {
+		return len(args) == 1
+	}
+	remaining, _, err := extractListPage(args)
+	return err == nil && len(remaining) == 0
 }
 
-func isListPageToken(value string) bool {
-	remaining, _, err := extractListPage([]string{value})
-	if err == nil && len(remaining) == 0 && strings.TrimSpace(value) != "" {
-		return true
+func courseSearchArgsAcceptable(args []string) bool {
+	return keywordSearchArgsAcceptable(args, map[string]bool{
+		"education_level_id": true,
+		"category_id":        true,
+		"class_type_id":      true,
+		"limit":              true,
+	}, nil)
+}
+
+func sectionSearchArgsAcceptable(args []string) bool {
+	return keywordSearchArgsAcceptable(args, map[string]bool{
+		"course_id":      true,
+		"course_jw_id":   true,
+		"semester_id":    true,
+		"semester_jw_id": true,
+		"campus_id":      true,
+		"department_id":  true,
+		"teacher_id":     true,
+		"limit":          true,
+	}, map[string]bool{"teacher_code": true})
+}
+
+func teacherSearchArgsAcceptable(args []string) bool {
+	return keywordSearchArgsAcceptable(args, map[string]bool{
+		"department_id": true,
+		"limit":         true,
+	}, nil)
+}
+
+func keywordSearchArgsAcceptable(args []string, numericFilters, textFilters map[string]bool) bool {
+	filter := func(token string) bool { return numericFilters[token] || textFilters[token] }
+	seen := make(map[string]bool, len(numericFilters)+len(textFilters))
+	for index := 0; index < len(args); index++ {
+		key := normToken(args[index])
+		if key == "keyword" {
+			start := index + 1
+			index = start
+			for index < len(args) && !filter(normToken(args[index])) {
+				index++
+			}
+			if strings.TrimSpace(joinedArgs(args[start:index])) == "" {
+				return false
+			}
+			index--
+			continue
+		}
+		if !filter(key) {
+			continue
+		}
+		if seen[key] || index+1 >= len(args) || filter(normToken(args[index+1])) {
+			return false
+		}
+		seen[key] = true
+		value := strings.TrimSpace(args[index+1])
+		if value == "" {
+			return false
+		}
+		if numericFilters[key] {
+			if _, ok := parseIntArg(value); !ok {
+				return false
+			}
+		}
+		index++
 	}
-	n, ok := parseIntArg(strings.TrimSpace(value))
-	return ok && n > 0
+	return true
 }
 
 func settingsTopic(token string) string {

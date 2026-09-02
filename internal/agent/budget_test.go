@@ -39,6 +39,9 @@ func TestRunBudgetCountsRetryReservationsCumulatively(t *testing.T) {
 	if got := metrics.snapshot().modelRequests; got != 1 {
 		t.Fatalf("model requests = %d, want 1", got)
 	}
+	if got := metrics.snapshot().contextTokens; got != firstContext {
+		t.Fatalf("observed context tokens = %d, want %d", got, firstContext)
+	}
 }
 
 func TestRunBudgetLimitsToolCalls(t *testing.T) {

@@ -116,6 +116,34 @@ func formatHelpTopic(topic string) string {
 	return strings.Join(lines, "\n")
 }
 
+func invalidCapabilityUsageResponse(id CapabilityID) Response {
+	descriptor, ok := CapabilityDescriptorFor(id)
+	if !ok {
+		return Response{Text: "没有找到这个能力。请先发送“帮助”查看可用命令。", Kind: string(id)}
+	}
+	lines := []string{descriptor.Help.Title + "的参数无法识别。"}
+	examples := descriptor.Help.Examples
+	if len(examples) == 0 {
+		if help := formatHelpTopic(descriptor.Help.Topic); help != "" {
+			lines = append(lines, "", help)
+		}
+		return Response{Text: strings.Join(lines, "\n"), Kind: string(id)}
+	}
+	lines = append(lines, "", "可以这样发送：")
+	for _, example := range examples {
+		command := strings.TrimSpace(example.Command)
+		if command == "" {
+			continue
+		}
+		line := command
+		if description := strings.TrimSpace(example.Description); description != "" {
+			line += "：" + description
+		}
+		lines = append(lines, line)
+	}
+	return Response{Text: strings.Join(lines, "\n"), Kind: string(id)}
+}
+
 func helpOverviewText() string {
 	lines := []string{
 		"Bot 帮助：",

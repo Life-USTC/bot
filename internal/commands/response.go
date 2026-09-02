@@ -69,6 +69,9 @@ func (h Handler) imageResponseForOutcome(cmd Invocation, outcome CapabilityOutco
 	if !h.EnableImageResponses || strings.TrimSpace(outcome.Response.Text) == "" {
 		return nil
 	}
+	if !successfulImageText(outcome.Response.Text) {
+		return nil
+	}
 	return h.imageResponseForText(cmd, outcome.Response.Text)
 }
 
@@ -140,6 +143,9 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 		if first, rest, found := strings.Cut(body, "\n"); found && strings.HasPrefix(first, "查询日期：") {
 			title += " · " + strings.TrimPrefix(first, "查询日期：")
 			renderBody = rest
+		}
+		if !successfulImageText(renderBody) {
+			return nil
 		}
 		return responses.NewRichTextImage("bus", busRichText(title, renderBody, parseBusRouteArgs(cmd.Args)), body)
 	case "weather":

@@ -550,49 +550,70 @@ func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Text != "fallback\n\n#已查询校车{全部}" || records[0].Message.Content.Attachment != nil {
+	if len(records) != 2 || records[0].Message.Content.Text != "fallback" || records[0].Message.Content.Attachment != nil ||
+		records[1].Message.Content.Text != "#已查询校车{全部}" || records[1].Message.Content.Attachment != nil {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
 
-func TestCoordinatorLeaseRetryReusesOutputRevision(t *testing.T) {
+func TestCoordinatorSendsReceiptAfterRenderedImage(t *testing.T) {
 	db := newCoordinatorStore(t)
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: db,
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{Text: "pong", Kind: "ping"}, true
+			return commands.Response{
+				Text: "校车查询结果", Kind: "bus",
+				Image: responses.NewTextImage("bus", "校车", "校车查询结果"),
+			}, true
 		}),
 		Outputs: db,
+		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
+			return []byte("png"), 1, 1, nil
+		}),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inbound := jobInbound("event-retry-dedupe", "ping")
-	if err := coordinator.Enqueue(context.Background(), inbound); err != nil {
+	if err := coordinator.Enqueue(t.Context(), jobInbound("rendered-bus-receipt", "校车")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+	records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 || records[0].Message.Content.Attachment == nil || records[0].Message.Content.Text != "" ||
+		records[1].Message.Content.Attachment != nil || records[1].Message.Content.Text != "#已查询校车{全部}" {
+		t.Fatalf("image and receipt outputs=%#v", records)
+	}
+}
+
+func TestCoordinatorInvalidCommandReturnsExactUsageWithoutExecutionReceipt(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db, Commands: commands.Handler{}, Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(t.Context(), jobInbound("invalid-schedule-week", "课表 someday")); err != nil {
 		t.Fatal(err)
 	}
 	job := claimOnlyConversationJob(t, db)
-	if _, err := coordinator.enqueueResponse(context.Background(), job, inbound, commands.Response{Text: "pong", Kind: "ping"}, 0); err != nil {
-		t.Fatal(err)
-	}
-	recoveryAt := time.Now().UTC().Add(3 * time.Minute)
-	if err := db.RecoverConversationJobLeases(context.Background(), recoveryAt, time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	retried, err := db.ClaimConversationJob(context.Background(), job.Identity, recoveryAt)
+	coordinator.execute(t.Context(), job)
+	records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retried == nil || retried.Revision != job.Revision || retried.Attempts != 2 {
-		t.Fatalf("retried job = %#v", retried)
+	if len(records) != 1 ||
+		!strings.Contains(records[0].Message.Content.Text, "课表的参数无法识别") ||
+		!strings.Contains(records[0].Message.Content.Text, "课表 第3周") ||
+		strings.Contains(records[0].Message.Content.Text, "#查询") {
+		t.Fatalf("invalid command output=%#v", records)
 	}
-	coordinator.execute(context.Background(), *retried)
-	records, err := db.ClaimDue(context.Background(), recoveryAt, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(records) != 1 || records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" {
-		t.Fatalf("outbox records = %#v", records)
+	executions, err := db.CapabilityExecutionsForJob(t.Context(), job.ID)
+	if err != nil || len(executions) != 0 {
+		t.Fatalf("invalid command executions=%#v err=%v", executions, err)
 	}
 }
 
@@ -974,82 +995,48 @@ func TestCoordinatorHostOnlyResponseIsQueuedOnce(t *testing.T) {
 	}
 }
 
-func TestCoordinatorSendsOneProgressMessageOnlyWhenAgentIsSlow(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		delay     time.Duration
-		wantTexts []string
-		wantKeys  []string
-	}{
-		{name: "slow", delay: 30 * time.Millisecond, wantTexts: []string{"稍等一下", "最终回复"}, wantKeys: []string{"conversation-job:1:progress", "conversation-job:1:revision:1:part:0"}},
-		{name: "fast", delay: 0, wantTexts: []string{"最终回复"}, wantKeys: []string{"conversation-job:1:revision:1:part:0"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			db := newCoordinatorStore(t)
-			coordinator, err := NewCoordinator(CoordinatorConfig{
-				Jobs: db,
-				Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-					return commands.Response{}, false
-				}),
-				Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
-					if test.delay > 0 {
-						time.Sleep(test.delay)
-					}
-					return commands.Response{Text: "最终回复", Kind: "agent"}, true
-				}),
-				Outputs: db, ProgressDelay: 5 * time.Millisecond,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := coordinator.Enqueue(t.Context(), jobInbound("progress-"+test.name, "请仔细想想这个问题")); err != nil {
-				t.Fatal(err)
-			}
-			job := claimOnlyConversationJob(t, db)
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				coordinator.execute(t.Context(), job)
-			}()
-			records := make([]delivery.Record, 0, 2)
-			if test.delay > 0 {
-				deadline := time.Now().Add(test.delay)
-				for len(records) == 0 && time.Now().Before(deadline) {
-					due, claimErr := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 1)
-					if claimErr != nil {
-						t.Fatal(claimErr)
-					}
-					records = append(records, due...)
-					if len(records) == 0 {
-						time.Sleep(time.Millisecond)
-					}
-				}
-				if len(records) != 1 || records[0].Message.Kind != "agent_progress" {
-					t.Fatalf("live progress records=%#v", records)
-				}
-				if err := db.Complete(t.Context(), records[0].ID, delivery.Outcome{State: delivery.OutcomeAccepted}, time.Time{}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			<-done
-			finalRecords, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
-			if err != nil {
-				t.Fatal(err)
-			}
-			records = append(records, finalRecords...)
-			texts := make([]string, 0, len(records))
-			keys := make([]string, 0, len(records))
-			for _, record := range records {
-				texts = append(texts, record.Message.Content.Text)
-				keys = append(keys, record.Message.DedupeKey)
-			}
-			if fmt.Sprint(texts) != fmt.Sprint(test.wantTexts) {
-				t.Fatalf("outbound texts=%#v want=%#v", texts, test.wantTexts)
-			}
-			if fmt.Sprint(keys) != fmt.Sprint(test.wantKeys) {
-				t.Fatalf("outbound keys=%#v want=%#v", keys, test.wantKeys)
-			}
-		})
+func TestCoordinatorSlowAgentEmitsOnlyFinalResponse(t *testing.T) {
+	db := newCoordinatorStore(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
+			close(started)
+			<-release
+			return commands.Response{Text: "最终回复", Kind: "agent"}, true
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(t.Context(), jobInbound("slow-agent", "请仔细想想这个问题")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		coordinator.execute(t.Context(), job)
+	}()
+	<-started
+	if records, claimErr := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10); claimErr != nil {
+		t.Fatal(claimErr)
+	} else if len(records) != 0 {
+		t.Fatalf("slow agent emitted interim output=%#v", records)
+	}
+	close(release)
+	<-done
+	records, err := db.ClaimDue(t.Context(), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].Message.Content.Text != "最终回复" || records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" {
+		t.Fatalf("final output=%#v", records)
 	}
 }
 

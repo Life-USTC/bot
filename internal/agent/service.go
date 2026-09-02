@@ -268,6 +268,24 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
+	grounding := groundingPolicyFor(input.Text, input.Identity)
+	if grounding.privateUnavailable {
+		reply := "这个问题涉及个人数据，请私聊 Presto 查询。"
+		if err := s.persistCurrentUserEvent(ctx, input); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			failure := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, failure, err)
+			return agentTextResponse(failure), true
+		}
+		if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(reply, nil)); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			failure := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, failure, err)
+			return agentTextResponse(failure), true
+		}
+		finishRun(store.AgentRunStatusCompleted, reply, nil)
+		return agentTextResponse(reply), true
+	}
 	if err := observeRunStage(ctx, "input_images", func() error {
 		return s.prepareInputImages(ctx, &input)
 	}); err != nil {
@@ -352,11 +370,13 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	ctx = withToolOutcomes(ctx, newToolOutcomeRegistry())
 	repeatGuard := newToolRepeatGuard()
+	agentModel := newGroundingModel(model, grounding)
+	grounder, _ := agentModel.(*groundingModel)
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "presto_assistant",
 		Description:   "Presto, a Life @ USTC QQ assistant",
-		Instruction:   currentInstruction(),
-		Model:         model,
+		Instruction:   groundingInstruction(currentInstruction(), grounding),
+		Model:         agentModel,
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
@@ -516,14 +536,19 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		if err != nil || msg == nil {
 			continue
 		}
-		if err := s.persistAgentMessage(ctx, input, msg); err != nil {
-			markAgentInfrastructureFailure(input, err)
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
-		}
 		content := strings.TrimSpace(msg.Content)
-		if content != "" {
+		candidateAnswer := msg.Role == schema.Assistant && len(msg.ToolCalls) == 0 && content != ""
+		ungroundedAnswer := candidateAnswer && grounder != nil && !grounder.hasRequiredEvidence()
+		if !ungroundedAnswer {
+			persistedMessage := groundedMessageForPersistence(msg, grounder != nil)
+			if err := s.persistAgentMessage(ctx, input, persistedMessage); err != nil {
+				markAgentInfrastructureFailure(input, err)
+				reply := agentFailureReply(runID, err)
+				finishRun(store.AgentRunStatusFailed, reply, err)
+				return agentTextResponse(reply), true
+			}
+		}
+		if candidateAnswer && !ungroundedAnswer {
 			reply = content
 		}
 	}
@@ -540,6 +565,21 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if hostResponseDelivered.Load() {
 		finishRun(store.AgentRunStatusCompleted, "", nil)
 		return commands.Response{}, true
+	}
+	if grounder != nil && !grounder.hasRequiredEvidence() {
+		if result, returned := grounder.capabilityResult(); returned && result != "" {
+			finishRun(store.AgentRunStatusCompleted, result, nil)
+			return agentTextResponse(result), true
+		}
+		groundingErr := errors.New("agent produced no capability result for a grounded turn")
+		reply := groundingFailureReply(runID)
+		finishRun(store.AgentRunStatusFailed, reply, groundingErr)
+		return agentTextResponse(reply), true
+	}
+	if reply == "" {
+		if result, returned := grounder.capabilityResult(); returned && result != "" {
+			reply = result
+		}
 	}
 	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
@@ -566,6 +606,26 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
+}
+
+// A provider may emit speculative text in the same assistant message that
+// requests a required grounding tool. Keep the exact tool call needed by the
+// transcript, but do not turn that provisional text into future evidence.
+func groundedMessageForPersistence(message *schema.Message, grounded bool) *schema.Message {
+	if !grounded || message == nil || message.Role != schema.Assistant || len(message.ToolCalls) == 0 {
+		return message
+	}
+	sanitized := *message
+	sanitized.Content = ""
+	if len(message.AssistantGenMultiContent) > 0 {
+		sanitized.AssistantGenMultiContent = make([]schema.MessageOutputPart, 0, len(message.AssistantGenMultiContent))
+		for _, part := range message.AssistantGenMultiContent {
+			if part.Type != schema.ChatMessagePartTypeText {
+				sanitized.AssistantGenMultiContent = append(sanitized.AssistantGenMultiContent, part)
+			}
+		}
+	}
+	return &sanitized
 }
 
 func capabilityInterruptKind(info *adk.InterruptInfo) string {
@@ -810,9 +870,6 @@ func messagePartCommonValues(common schema.MessagePartCommon) (url, base64Data, 
 }
 
 func (s *Service) toolEventType(ctx context.Context, jobID int64, toolCallID string) store.ConversationEventType {
-	if toolOutcomesFromContext(ctx).isError(toolCallID) {
-		return store.ConversationEventToolError
-	}
 	executions, err := s.handler.Store.CapabilityExecutionsForJob(ctx, jobID)
 	if err != nil {
 		s.logf("classify tool transcript event failed: job_id=%d error=%v", jobID, err)
@@ -833,10 +890,16 @@ func (s *Service) toolEventType(ctx context.Context, jobID int64, toolCallID str
 	if denied {
 		return store.ConversationEventToolDenial
 	}
+	if toolOutcomesFromContext(ctx).isError(toolCallID) {
+		return store.ConversationEventToolError
+	}
 	return store.ConversationEventToolResult
 }
 
 func agentMessageDedupeKey(jobID int64, message *schema.Message) string {
+	if message != nil && message.Role == schema.Tool && strings.TrimSpace(message.ToolCallID) != "" {
+		return agentToolResultDedupeKey(jobID, message.ToolCallID)
+	}
 	if id := strings.TrimSpace(adk.GetMessageID(message)); id != "" {
 		return fmt.Sprintf("conversation-job:%d:message:%s", jobID, id)
 	}
@@ -851,6 +914,11 @@ func agentMessageDedupeKey(jobID int64, message *schema.Message) string {
 	}{message.Role, message.Content, message.Name, messageToolCallsForPersistence(message), message.ToolCallID, message.ToolName, messagePartsForPersistence(message)})
 	digest := sha256.Sum256(payload)
 	return fmt.Sprintf("conversation-job:%d:message:%x", jobID, digest[:16])
+}
+
+func agentToolResultDedupeKey(jobID int64, toolCallID string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(toolCallID)))
+	return fmt.Sprintf("conversation-job:%d:tool-result:%x", jobID, digest[:16])
 }
 
 // Acknowledge removes a completed checkpoint only after the coordinator has
@@ -888,7 +956,7 @@ type commandSearchInput struct {
 }
 
 func hostCapabilityToolDescription(shared bool) string {
-	description := "Invoke one Bot capability using the exact capability ID and arguments returned by search_bot_commands. The result is the actual domain result, without a status wrapper. The host pauses before each independently reversible mutation, asks the user for confirmation, and resumes this tool after the decision; never simulate approval or announce success before the resumed result. Authentication is also host-owned and resumes automatically."
+	description := "Invoke the exact best-matched Bot capability returned by search_bot_commands. The result is the actual domain result, without a status wrapper. The host pauses before each independently reversible mutation, asks the user for confirmation, and resumes this tool after the decision; never simulate approval or announce success before the resumed result. Authentication is also host-owned and resumes automatically."
 	if shared {
 		description += " This is a shared conversation; private capabilities are unavailable."
 	}
@@ -896,9 +964,12 @@ func hostCapabilityToolDescription(shared bool) string {
 }
 
 func searchCommandDocumentation(ident store.Identity, input commandSearchInput) (string, error) {
+	if strings.TrimSpace(input.Query) == "" {
+		return "", botmcp.NewRecoverableToolError(commandSearchToolName, "请提供具体查询意图，例如：本学期已选课程、明天课表、关闭作业提醒。")
+	}
 	documentation := commands.SearchCapabilityDocumentation(input.Query, commands.CapabilitySearchOptions{
 		SharedConversation: store.IsSharedConversation(ident),
-		Limit:              5,
+		Limit:              1,
 	})
 	encoded, err := json.Marshal(documentation)
 	if err != nil {
@@ -936,7 +1007,7 @@ func (s *Service) toolsFor(
 			return nil, nil, err
 		}
 	}
-	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry for exact capability IDs, arguments, examples, confirmation policy, and audience scope. Search before invoking a capability; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, confirmation policy, and audience scope. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
 		return searchCommandDocumentation(ident, input)
 	})
 	if err != nil {
@@ -1215,8 +1286,8 @@ func currentInstructionAt(now time.Time) string {
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
-Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, or operation results.
-Search search_bot_commands with the concrete intent before using invoke_bot_capability. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
+Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
+Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
 Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
 The host owns confirmations. A mutation tool call pauses while the host asks the real user, then resumes with the operation result or an explicit denial. Never ask for or simulate confirmation yourself. Grouped mutations are confirmed one operation at a time.
 The host also owns authentication. If a tool pauses for login, wait for the automatic resume; never request, repeat, or invent a verification code.
@@ -1266,7 +1337,9 @@ func agentFailureReply(runID int64, err error) string {
 	} else if errors.Is(err, errAgentToolCallBudget) {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentModelAttemptBudget) {
-		reply = "AI 服务仍然繁忙，5 次尝试后已停止。请稍后重试。"
+		reply = "AI 工具流程达到模型请求总上限，已停止。请缩小请求范围后重试。"
+	} else if isExhaustedRetryableProviderError(err) {
+		reply = "AI 服务连续 5 次请求仍未成功，请稍后重试。"
 	} else if errors.Is(err, errAgentNonProgress) {
 		reply = "AI 工具计划没有取得进展，已停止。请换一种说法或缩小请求范围后重试。"
 	} else if errors.Is(err, errRepeatedToolCall) {
@@ -1276,6 +1349,19 @@ func agentFailureReply(runID int64, err error) string {
 	} else if isTimeoutError(err) {
 		reply = "AI 响应超时，请稍后重试。"
 	}
+	if runID > 0 {
+		reply += fmt.Sprintf("\n记录 #%d", runID)
+	}
+	return reply
+}
+
+func isExhaustedRetryableProviderError(err error) bool {
+	var apiErr *einoopenai.APIError
+	return errors.As(err, &apiErr) && isRetryableLLMStatus(apiErr.HTTPStatusCode)
+}
+
+func groundingFailureReply(runID int64) string {
+	reply := "这次没有拿到可验证的实时查询或操作结果，所以我不会确认或重复未经工具核实的数据。请稍后重试，或把具体对象和时间范围说清楚。"
 	if runID > 0 {
 		reply += fmt.Sprintf("\n记录 #%d", runID)
 	}

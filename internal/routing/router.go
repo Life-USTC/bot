@@ -35,6 +35,9 @@ type Decision struct {
 // Decide is the single pre-persistence routing decision. Ambient shared-chat
 // text must leave here as Ignore; execution never performs a second fallback.
 func Decide(inbound message.Inbound, replyContext *message.ResponseContext) Decision {
+	if commands.HasRemovedCommandPrefix(inbound.Text) {
+		return Decision{Action: ActionIgnore}
+	}
 	identity := store.Identity{ConversationType: inbound.Conversation.Type}
 	switch store.SurfaceForConversation(identity) {
 	case store.ConversationSurfaceDirect:

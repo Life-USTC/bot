@@ -444,7 +444,7 @@ func init() {
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("system", "系统", "查看服务状态与检查连通性", true, []HelpExample{example("系统 状态", "查看公开服务状态")}, []HelpExample{example("状态（status）", "相当于“系统 状态")})),
 		descriptor(CapabilitySemester, []string{"semester", "学期"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, semesterInput, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			return h.currentSemester(ctx)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("semester", "学期", "查看当前学期和学期列表", false, []HelpExample{example("学期", "查看当前学期"), example("学期 当前", "查看当前学期")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("semester", "学期", "只查看公开的当前学期名称和日期，不返回个人选课", false, []HelpExample{example("学期", "查看当前学期"), example("学期 当前", "查看当前学期")}, nil)),
 		descriptor(CapabilityWeather, []string{"weather", "天气"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, weatherInput, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.weather(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil)),
@@ -472,13 +472,13 @@ func init() {
 		descriptor(CapabilityListSemesters, []string{"list_semesters", "学期列表"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, semesterListInput, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.listSemesters(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("semester", "学期", "查看当前学期和学期列表", false, []HelpExample{example("学期 列表", "列出最近 20 个学期"), example("学期 列表 10", "指定返回数量")}, nil)),
-		descriptor(CapabilityCourseSearch, []string{"course_search", "课程搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, allowEffect(), ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		descriptor(CapabilityCourseSearch, []string{"course_search", "课程搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, allowEffect(), ExposureModel, courseSearchArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCoursesWithFilters(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 搜索 数学分析", "搜索课程"), exampleFor(CapabilityCourseSearch, "课程 搜索 培养层次ID <ID>", "按培养层次筛选", "education_level_id", "1"), exampleFor(CapabilityCourseSearch, "课程 搜索 类别ID <ID>", "按课程类别筛选", "category_id", "1"), exampleFor(CapabilityCourseByJWID, "课程 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
-		descriptor(CapabilitySectionSearch, []string{"section_search", "教学班搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		descriptor(CapabilitySectionSearch, []string{"section_search", "教学班搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, sectionSearchArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchSectionsWithFilters(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{example("教学班 搜索 高等数学", "搜索教学班"), exampleFor(CapabilitySectionByJWID, "教学班 查看 <JW ID>", "按 JW ID 查看详情", "12345")}, nil)),
-		descriptor(CapabilityTeacherSearch, []string{"teacher_search", "老师搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+		descriptor(CapabilityTeacherSearch, []string{"teacher_search", "老师搜索"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, teacherSearchArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchTeachersWithFilters(ctx, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", false, []HelpExample{example("老师 搜索 张", "搜索老师"), exampleFor(CapabilityTeacherByID, "老师 查看 <ID>", "按 ID 查看详情", "12345")}, nil)),
 		descriptor(CapabilityCourseByJWID, []string{"course_by_jw_id", "课程编号"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
@@ -496,9 +496,9 @@ func init() {
 		descriptor(CapabilityUnsubscribeSectionByJWID, []string{"unsubscribe_section_by_jw_id", "退订教学班"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectDestructive, ExposureModel, positiveIDArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.unsubscribeSectionByJwID(ctx, ident, joinedArgs(args))
 		}, func(inv Invocation) CapabilityPolicy { return privateWritePolicy(inv, EffectDestructive) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{exampleFor(CapabilityUnsubscribeSectionByJWID, "订阅 删除 <JW ID>", "按 JW ID 退订教学班", "12345")}, nil)),
-		descriptor(CapabilityMySubscribedSections, []string{"my_subscribed_sections", "我的订阅"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
+		descriptor(CapabilityMySubscribedSections, []string{"my_subscribed_sections", "我的订阅", "选课列表", "已选课程"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
 			return h.mySubscribedSections(ctx, ident)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("subscription", "订阅", "查看、导入和管理教学班订阅", false, []HelpExample{example("订阅 列表", "查看已订阅教学班")}, nil)),
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("subscription", "订阅", "查看个人已订阅教学班列表，用于回答选了哪些课", false, []HelpExample{example("订阅 列表", "查看已订阅教学班")}, nil)),
 		descriptor(CapabilitySectionSchedules, []string{"section_schedules", "教学班课表"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, sectionScheduleArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.sectionSchedules(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionSchedules, "教学班 课表 <JW ID> <开始日期> <结束日期>", "查看日期范围内的课表", "12345", "2026-09-01", "2026-09-30")}, nil)),
@@ -512,7 +512,14 @@ func init() {
 			return h.myDashboard(ctx, ident)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 概览", "汇总待办、作业和考试")}, []HelpExample{example("概览", "相当于“日程 概览")})),
 		descriptor(CapabilityUpcomingDeadlines, []string{"upcoming_deadlines", "近期截止"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, func(args []string) bool {
-			return len(args) <= 1 && (!hasArgs(args) || isListPageToken(args[0]) || firstArgIsHelp(args))
+			if !hasArgs(args) {
+				return true
+			}
+			if firstArgIsHelp(args) {
+				return len(args) == 1
+			}
+			_, ok := parseIntArg(args[0])
+			return len(args) == 1 && ok
 		}, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.upcomingDeadlines(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 截止", "查看未来 7 天的截止事项"), example("日程 截止 14", "指定未来天数")}, []HelpExample{example("近期截止 14", "相当于“日程 截止 14")})),
@@ -535,8 +542,14 @@ func noArgsOrHelp(args []string) bool { return !hasArgs(args) || firstArgIsHelp(
 func semesterInput(args []string) bool { return noArgsOrHelp(args) }
 
 func semesterListInput(args []string) bool {
-	if !hasArgs(args) || firstArgIsHelp(args) || isListPageToken(args[0]) {
+	if !hasArgs(args) {
 		return true
+	}
+	if firstArgIsHelp(args) {
+		return len(args) == 1
+	}
+	if len(args) != 1 {
+		return false
 	}
 	_, ok := parseIntArg(args[0])
 	return ok

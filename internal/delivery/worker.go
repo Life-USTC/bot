@@ -73,14 +73,6 @@ func (w *Worker) tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		ready, err := w.Service.repository.ReadyToDeliver(ctx, record.ID)
-		if err != nil {
-			w.logf("prepare delivery %d failed: %v", record.ID, err)
-			continue
-		}
-		if !ready {
-			continue
-		}
 		outcome := w.Service.DeliverNow(ctx, record.Message)
 		maxAttempts := w.MaxAttempts
 		if maxAttempts <= 0 {

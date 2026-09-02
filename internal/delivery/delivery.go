@@ -60,7 +60,6 @@ type Record struct {
 type Repository interface {
 	Enqueue(context.Context, message.Outbound) (Record, bool, error)
 	ClaimDue(context.Context, time.Time, int) ([]Record, error)
-	ReadyToDeliver(context.Context, int64) (bool, error)
 	Complete(context.Context, int64, Outcome, time.Time) error
 	ExpireDue(context.Context, time.Time) error
 	RecoverStale(context.Context, time.Time) error

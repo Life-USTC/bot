@@ -13,8 +13,8 @@ import (
 )
 
 // ConversationEventType is the exact role-bearing transcript consumed by the
-// model. Host approvals, progress messages and receipts are intentionally not
-// event types and therefore cannot leak into future model context.
+// model. Host approvals and receipts are intentionally not event types and
+// therefore cannot leak into future model context.
 type ConversationEventType string
 
 const (

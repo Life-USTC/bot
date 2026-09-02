@@ -143,11 +143,6 @@ func TestMutationExpansionSplitsIndependentTargets(t *testing.T) {
 	if got := subscription[1].CanonicalCommand(); got != "subscription import CODE2.02" {
 		t.Fatalf("second subscription invocation = %q", got)
 	}
-	opaque := expandTestMutation(t, CapabilitySubscription, []string{"import", "CODE1", "CODE2"})
-	if len(opaque) != 2 || opaque[0].CanonicalCommand() != "subscription import CODE1" || opaque[1].CanonicalCommand() != "subscription import CODE2" {
-		t.Fatalf("opaque subscription expansion = %#v", opaque)
-	}
-
 	todo := expandTestMutation(t, CapabilityTodo, []string{"delete", "1,2,3"})
 	if len(todo) != 3 || todo[0].CanonicalCommand() != "todo delete 1" || todo[2].CanonicalCommand() != "todo delete 3" {
 		t.Fatalf("todo expansion = %#v", todo)
@@ -181,7 +176,7 @@ func TestCapabilityExecutionDoesNotConfirmUnresolvedSubscriptionMutation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome.Status != CapabilityOutcomeFailed || outcome.ConfirmationRequired {
+	if outcome.Status != CapabilityOutcomeInvalidInput || outcome.ConfirmationRequired {
 		t.Fatalf("unresolved subscription outcome = %#v", outcome)
 	}
 }

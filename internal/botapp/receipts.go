@@ -113,6 +113,12 @@ func appendReceiptLines(response commands.Response, prefix string, receipts exec
 		}
 		return response
 	}
+	if response.Image != nil && receiptText != "" {
+		return commands.Response{Parts: []commands.Response{
+			response,
+			{Text: receiptText, Kind: "agent_receipt"},
+		}}
+	}
 	if text := strings.TrimSpace(response.Text); text != "" {
 		if receiptText != "" {
 			response.Text = text + "\n\n" + receiptText

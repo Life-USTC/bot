@@ -159,9 +159,8 @@ stateDiagram-v2
         ODelivering --> ORejected: permanent failure or budget exhausted
         ODelivering --> OUnknown: platform outcome ambiguous\nnever auto-retry
         ODelivering --> OUnknown: worker died after send began
-        ODelivering --> OExpired: final committed before\nthe last adapter gate
-        OPending --> OExpired: message TTL elapsed\nor final supersedes progress
-        ORetry --> OExpired: message TTL elapsed\nor final supersedes progress
+        OPending --> OExpired: message TTL elapsed
+        ORetry --> OExpired: message TTL elapsed
         OAccepted --> [*]
         ORejected --> [*]
         OUnknown --> [*]
@@ -171,7 +170,7 @@ stateDiagram-v2
     JConfirm --> CAwaiting: one pending receipt is shown
     JAuth --> CAuth: current configured scopes verified
     JRunning --> PReserved: model request
-    JRunning --> OPending: progress or final output
+    JRunning --> OPending: confirmation, auth, or final output
     JCompleted --> OPending: final output already committed
     JExpired --> CExpired: pending operations terminalized
     JCancelled --> CCancelled: pending operations terminalized
@@ -191,7 +190,8 @@ cancellation atomically close the entire operation batch.
 
 1. A platform adapter translates a protocol event into `message.Inbound`.
 2. `routing.Decide` classifies activation and privacy before persistence.
-   Ambient shared-chat text is discarded here.
+   Ambient shared-chat text and retired `/life...` paths are discarded here,
+   before natural-language matching or Agent fallback.
 3. `botapp` stores the exact route and normalized invocation. Execution uses
    that stored decision; it does not reparse or fall through to another route.
 4. One actor/conversation lane is processed FIFO. A waiting confirmation or
@@ -201,7 +201,9 @@ cancellation atomically close the entire operation batch.
 
 In shared conversations, only strict public commands, high-confidence public
 natural routes, mentions, or verified replies activate the Bot. Personal
-capabilities are unavailable even if a model asks for them. `message.Actor`
+capabilities are unavailable even if a model asks for them. An addressed
+natural-language request whose registry match requires personal data receives
+a deterministic private-chat redirect without a provider call. `message.Actor`
 identifies who caused an event; `message.Conversation` is only the delivery
 address, and the two are never substituted for each other.
 
@@ -224,7 +226,7 @@ The host, not the model, owns confirmation:
 - Capability finalization, auth deferral, and receipt updates require the same
   live job lease that claimed the operation. An elapsed job TTL fences the
   worker immediately; it does not wait for the periodic expiry sweep.
-- Approval mechanics, progress text, and receipt lines are not conversation
+- Approval mechanics and receipt lines are not conversation
   events. A denial is fed back as a typed tool denial because it is relevant
   evidence for the model's next response.
 
@@ -235,8 +237,8 @@ nor turns a login message into evidence of a successful operation.
 
 ## Tool discovery
 
-The model initially sees stable meta-tools rather than the entire command and
-MCP catalog:
+The model sees stable meta-tools rather than the entire command and MCP
+catalog:
 
 - `search_bot_commands` searches descriptor-backed documentation and returns
   exact capability IDs, arguments, examples, effect, confirmation, and scope.
@@ -250,6 +252,17 @@ The compact system instruction tells the model to search before invoking and
 to preserve all user constraints. Mutation improvisation through MCP is not
 possible.
 
+For a personal-data request or a verification follow-up, the runtime also
+enforces the sequence instead of relying on the instruction alone. The first
+provider request is offered only `search_bot_commands`; after a nonempty
+result, the next request is offered only `invoke_bot_capability`. A capability
+is accepted only when its ID is the returned descriptor ID or one of that
+descriptor's executable examples. Provisional assistant text is neither
+persisted nor eligible for delivery. A successful relevant result unlocks the
+final answer; a relevant failure, unknown outcome, or denial is returned to the
+user as its literal tool result rather than allowing later model prose to turn
+it into a success claim.
+
 ## Exact conversation evidence
 
 `conversation_events` stores only typed model-visible transcript events:
@@ -262,7 +275,8 @@ possible.
 
 Old complete user turns may be dropped to fit the history window, but retained
 events are never summarized, rewritten, or converted into another role. Host
-approvals, `稍等一下`, and receipt lines are deliberately absent. Private URLs
+approvals and receipt lines are deliberately absent. No time-based placeholder
+message exists. Private URLs
 may appear in direct-chat tool results and this private database history; they
 are forbidden on shared surfaces and redacted from process logs.
 
@@ -275,17 +289,16 @@ so the adapter cannot silently discard `Content`.
 Every event emitted by an Agent run is appended only if its job ID, revision,
 state, and lease still match the running coordinator claim in the same
 transaction. A late provider response therefore cannot write transcript into a
-resumed turn. Direct-command routes do not manufacture an Agent tool exchange:
+resumed turn. Unsupported provisional assistant text from a grounded turn is
+not an emitted event. Direct-command routes do not manufacture an Agent tool exchange:
 their actual user-visible domain response is stored as an `assistant` event;
 Agent routes preserve the real assistant/tool-call/tool-result roles exactly.
 
-## User-visible progress and receipts
+## User-visible receipts
 
-If no visible response has been persisted after 2.5 seconds, the coordinator
-enqueues one lease-checked `稍等一下`. A final output supersedes progress before
-the adapter's last durable gate. If the platform call has already passed that
-gate, its outcome remains honest and the final is held behind it, so the final
-answer cannot overtake an in-flight progress message.
+The coordinator queues no time-based placeholder. A user-visible output exists
+only when the job has a confirmation request, an authentication instruction,
+or a real final result to persist.
 
 Receipt lines are derived only from actual capability-execution rows, never
 from model prose or intent. Meta-tool searches produce no receipt. Reads show
@@ -305,11 +318,12 @@ job without losing or duplicating the operation.
 
 ## Retry and delivery invariants
 
-- One Agent job gets at most five physical provider HTTP attempts across all
-  logical turns, retries, authentication resumes, confirmation resumes, and
-  process restarts. The Agent-run row and each attempt reservation must commit
-  durably before network I/O; persistence failure retries the job without
-  contacting the provider.
+- Each logical provider request gets at most five physical HTTP attempts. One
+  Agent job gets at most 65 physical attempts in total (12 tool calls plus a
+  final model turn, each with that retry window) across authentication resumes,
+  confirmation resumes, and process restarts. The Agent-run row and each
+  attempt reservation must commit durably before network I/O; persistence
+  failure retries the job without contacting the provider.
 - The whole Agent run remains bounded by 60 seconds. Retry-After and jittered
   exponential delays are capped by the remaining deadline.
 - A deterministic outbox key makes output persistence idempotent. Business

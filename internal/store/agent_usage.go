@@ -7,7 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const agentModelAttemptLimit int64 = 5
+// Mirrors the Agent's maximum of 13 logical requests (12 tool calls plus the
+// final answer), each with up to five physical provider attempts. Keeping a
+// hard store-side ceiling prevents callers from bypassing the durable budget.
+const agentModelAttemptLimit int64 = 65
 
 // ReserveAgentModelAttempt atomically reserves one physical provider attempt
 // for a started run. For a conversation job the aggregate predicate covers

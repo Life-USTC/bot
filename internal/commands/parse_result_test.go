@@ -32,12 +32,44 @@ func TestParseCommandDistinguishesValidInvalidAndUnknown(t *testing.T) {
 	}
 }
 
+func TestParseCommandNormalizesChineseOrdinalWeek(t *testing.T) {
+	result := ParseCommand("课表 第二周")
+	if result.Status != ParseStatusValid || result.Invocation.ID() != CapabilitySchedule || strings.Join(result.Invocation.Args, " ") != "week-number:2" {
+		t.Fatalf("ParseCommand Chinese week=%#v", result)
+	}
+}
+
+func TestUnknownSlashCommandReturnsStaticHelpInsteadOfAgentFallback(t *testing.T) {
+	result := ParseCommand("/not-a-command ignored arguments")
+	if result.Status != ParseStatusValid || result.Invocation.ID() != CapabilityHelp || strings.Join(result.Invocation.Args, " ") != "not-a-command" {
+		t.Fatalf("unknown slash parse=%#v", result)
+	}
+	response, ok := (Handler{}).HandleResponse(t.Context(), Input{Text: "/not-a-command"})
+	if !ok || !strings.Contains(response.Text, "没有找到一级命令“not-a-command”") || !strings.Contains(response.Text, "发送“帮助”查看命令总览") {
+		t.Fatalf("unknown slash response=%#v handled=%v", response, ok)
+	}
+}
+
 func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 	for _, input := range []string{
 		"课表 someday",
 		"校车 火星",
 		"校车 周六 nonsense",
+		"通知 作业 开 nonsense",
+		"设置 通知 课表 开 nonsense",
+		"作业 all garbage",
+		"作业 semester_id not-an-int",
+		"作业 第2页 extra",
+		"学期 列表 第2页",
+		"日程 截止 第2页",
+		"考试 第2页 extra",
+		"订阅 导入",
+		"订阅 导入 BAD",
+		"订阅 导入 CONT5103P.01 nonsense",
 		"课程 查看 not-an-id",
+		"课程 搜索 数学 limit nope",
+		"教学班 搜索 高等数学 学期ID nope",
+		"老师 搜索 张 limit nope",
 		"教学班 课表 12345 bad-date 2026-09-30",
 		"作业 帮我看看还有啥",
 	} {
