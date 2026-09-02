@@ -355,17 +355,29 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 		}
 		return err
 	}
-	commandRoute := strings.TrimSpace(job.Invocation.Command) != "" || payload.Route == routing.ActionCommand
-	if commandRoute {
+	switch payload.Route {
+	case routing.ActionCommand:
+		if strings.TrimSpace(job.Invocation.Name) == "" || strings.TrimSpace(job.Invocation.Command) == "" || len(job.Invocation.Data) > 0 {
+			c.fail(ctx, job, errors.New("persisted command route has an incomplete invocation"))
+			return
+		}
 		invocation, restored := commands.RestoreInvocation(commands.CapabilityID(job.Invocation.Name), job.Invocation.Args)
 		if !restored {
 			c.fail(ctx, job, fmt.Errorf("restore routed capability %q", job.Invocation.Name))
 			return
 		}
+		if strings.TrimSpace(job.Invocation.Command) != invocation.CanonicalCommand() {
+			c.fail(ctx, job, errors.New("persisted command route does not match its invocation"))
+			return
+		}
 		c.executeCommandRoute(ctx, job, inbound, invocation, commit)
 		return
-	}
-	if payload.Route != routing.ActionAgent {
+	case routing.ActionAgent:
+		if strings.TrimSpace(job.Invocation.Name) != "" || strings.TrimSpace(job.Invocation.Command) != "" || len(job.Invocation.Args) > 0 || len(job.Invocation.Data) > 0 {
+			c.fail(ctx, job, errors.New("persisted Agent route unexpectedly contains a command invocation"))
+			return
+		}
+	default:
 		c.fail(ctx, job, fmt.Errorf("unsupported persisted route %q", payload.Route))
 		return
 	}

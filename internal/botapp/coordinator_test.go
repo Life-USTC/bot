@@ -415,6 +415,52 @@ func TestCoordinatorRoutesConfirmationWordNormallyWhenNothingIsPending(t *testin
 	}
 }
 
+func TestCoordinatorRejectsAgentRouteWithPersistedWriteInvocation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Text: "已开启", Kind: "notify"})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db, Commands: handler,
+		Agent: agentFunc(func(context.Context, agent.Input) (commands.Response, bool) {
+			t.Fatal("mismatched Agent route reached the model")
+			return commands.Response{}, false
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbound := jobInbound("agent-route-write-invocation", "帮我开启作业提醒")
+	payload, err := json.Marshal(conversationJobPayload{Inbound: inbound, Route: routing.ActionAgent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, created, err := db.EnqueueConversationJob(t.Context(), store.ConversationJobEnqueue{
+		Identity: identityForInbound(inbound), SourceEventID: inbound.Source.EventID,
+		Input: store.ConversationJobInput{Text: inbound.Text, Data: payload},
+		Invocation: store.ConversationJobInvocation{
+			Name: string(commands.CapabilityNotify), Command: "notify 作业 开", Args: []string{"作业", "开"},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue mismatched job=%#v created=%v err=%v", job, created, err)
+	}
+	coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+
+	saved, err := db.GetConversationJob(t.Context(), job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateFailed ||
+		!strings.Contains(saved.LastError, "Agent route unexpectedly contains") {
+		t.Fatalf("mismatched job=%#v err=%v", saved, err)
+	}
+	if handler.calls != 0 {
+		t.Fatalf("mismatched write executed %d times", handler.calls)
+	}
+	executions, err := db.CapabilityExecutionsForJob(t.Context(), job.ID)
+	if err != nil || len(executions) != 0 {
+		t.Fatalf("mismatched route executions=%#v err=%v", executions, err)
+	}
+}
+
 func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	db := newCoordinatorStore(t)
 	mutations := 0

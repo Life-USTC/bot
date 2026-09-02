@@ -73,7 +73,7 @@ func (c *Coordinator) executeCommandRoute(
 	if len(executions) == 0 {
 		validated, valid := commands.NewInvocation(invocation.ID(), invocation.Args)
 		if !valid {
-			input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true}
+			input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true, Origin: commands.InvocationOriginDirectCommand}
 			outcome, executeErr := c.commands.ExecuteCapability(ctx, input, invocation.ID(), invocation.Args)
 			if executeErr != nil {
 				c.fail(ctx, job, executeErr)
@@ -300,7 +300,7 @@ func (c *Coordinator) executeClaimedCommand(
 	invocation commands.Invocation,
 	commit responseCommitter,
 ) {
-	input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true}
+	input := commands.Input{Text: invocation.CanonicalCommand(), Identity: job.Identity, SuppressLog: true, Origin: commands.InvocationOriginDirectCommand}
 	outcome, err := c.commands.ExecuteCapability(ctx, input, invocation.ID(), invocation.Args)
 	if err != nil {
 		if _, finishErr := c.jobs.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err); finishErr != nil {

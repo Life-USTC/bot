@@ -334,17 +334,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return agentTextResponse(reply), true
 		}
 		if errors.Is(err, auth.ErrNotLoggedIn) {
-			reply := s.beginLoginForInput(ctx, input)
+			reply := agentLoginRequiredReply(runID)
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
-			return agentLoginResponse(reply), true
+			return agentTextResponse(reply), true
 		}
 		reply := s.mcpFailureReply(ctx, input.Identity, runID, err)
 		if isMCPAuthorizationError(err) {
-			if strings.HasPrefix(reply, "登录权限已失效。") {
-				reply = s.beginLoginForInput(ctx, input)
-				finishRun(store.AgentRunStatusCompleted, reply, nil)
-				return agentLoginResponse(reply), true
-			}
 			finishRun(store.AgentRunStatusCompleted, reply, nil)
 			return agentTextResponse(reply), true
 		}
@@ -500,18 +495,13 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 				return agentTextResponse(reply), true
 			}
 			if errors.Is(runErr, auth.ErrNotLoggedIn) {
-				reply = s.beginLoginForInput(ctx, input)
+				reply = agentLoginRequiredReply(runID)
 				finishRun(store.AgentRunStatusCompleted, reply, nil)
-				return agentLoginResponse(reply), true
+				return agentTextResponse(reply), true
 			}
 			reply := agentFailureReply(runID, runErr)
 			if isMCPAuthorizationError(runErr) {
 				reply = s.mcpFailureReply(ctx, input.Identity, runID, runErr)
-				if strings.HasPrefix(reply, "登录权限已失效。") {
-					reply = s.beginLoginForInput(ctx, input)
-					finishRun(store.AgentRunStatusCompleted, reply, nil)
-					return agentLoginResponse(reply), true
-				}
 				finishRun(store.AgentRunStatusCompleted, reply, nil)
 				return agentTextResponse(reply), true
 			}
@@ -660,24 +650,16 @@ func capabilityInterruptKind(info *adk.InterruptInfo) string {
 	return ""
 }
 
-func (s *Service) beginLoginForInput(ctx context.Context, input Input) string {
-	response, err := s.handler.BeginLoginForRequest(ctx, commands.Input{
-		Text: input.Text, Identity: input.Identity, SuppressLog: true,
-	})
-	if err != nil {
-		s.logf("start resumable agent login failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
-			input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, err)
-		return "登录暂时无法开始，请稍后重试。"
-	}
-	return response.Text
-}
-
 func agentTextResponse(text string) commands.Response {
 	return commands.Response{Text: cleanQQReply(text), Kind: "agent"}
 }
 
-func agentLoginResponse(text string) commands.Response {
-	return commands.Response{Text: cleanQQReply(text), Kind: commands.ResponseKindAuthWait}
+func agentLoginRequiredReply(runID int64) string {
+	reply := "需要登录 Life @ USTC。请直接发送“登录”，完成后重新发送刚才的请求；本次没有执行任何查询或操作。"
+	if runID > 0 {
+		reply += fmt.Sprintf("\n记录 #%d", runID)
+	}
+	return reply
 }
 
 func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
@@ -1073,13 +1055,7 @@ func (s *Service) mcpFailureReply(ctx context.Context, ident store.Identity, run
 				return "校园工具拒绝了当前登录权限，请稍后重试。本次没有执行任何查询或操作。"
 			}
 		}
-		if s.auth != nil {
-			if logoutErr := s.auth.Logout(ctx, ident); logoutErr != nil {
-				s.logf("clear credential requiring reauthorization failed: platform=%s conversation_type=%s conversation_id=%s error=%v",
-					ident.Platform, ident.ConversationType, ident.ConversationID, logoutErr)
-			}
-		}
-		return "登录权限已失效。\n系统将重新申请校园工具所需的正确权限；本次没有执行任何查询或操作。"
+		return "登录权限已失效。请直接发送“登录”重新授权；本次没有执行任何查询或操作。"
 	}
 	reply := "校园工具暂时不可用，请稍后重试。本次没有执行任何查询或操作。"
 	if runID > 0 {

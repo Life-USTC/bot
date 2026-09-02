@@ -42,7 +42,18 @@ type Input struct {
 	Text        string
 	Identity    store.Identity
 	SuppressLog bool
+	Origin      InvocationOrigin
 }
+
+// InvocationOrigin identifies who selected a capability. The zero value is
+// intentionally conservative: only an explicitly direct user command may
+// start an adjacent login flow without another confirmation.
+type InvocationOrigin string
+
+const (
+	InvocationOriginDirectCommand InvocationOrigin = "direct_command"
+	InvocationOriginAgent         InvocationOrigin = "agent"
+)
 
 // ParseStatus is the outcome of parsing one user message. A recognized
 // command with invalid arguments is deliberately distinct from unknown text:
@@ -87,6 +98,7 @@ func (h Handler) HandleResponse(ctx context.Context, input Input) (Response, boo
 // unchanged user-facing domain result, preserving Handle/HandleResponse
 // behavior for existing callers.
 func (h Handler) HandleOutcome(ctx context.Context, input Input) (CapabilityOutcome, bool) {
+	input.Origin = InvocationOriginDirectCommand
 	input.Text = stripCQCodes(input.Text)
 	parsed := h.parseResult(input.Text)
 	return h.handleParsedResponse(ctx, input, parsed, time.Now())
@@ -103,6 +115,7 @@ func (h Handler) HandleInvocationResponse(ctx context.Context, input Input, invo
 // HandleInvocationOutcome executes a normalized invocation at the direct
 // boundary and exposes its typed status.
 func (h Handler) HandleInvocationOutcome(ctx context.Context, input Input, invocation Invocation) (CapabilityOutcome, bool) {
+	input.Origin = InvocationOriginDirectCommand
 	invocation, ok := withDescriptor(invocation)
 	if !ok {
 		return NotFoundOutcome(Response{}), false
@@ -210,16 +223,21 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 			outcome.Status = CapabilityOutcomeAuthRequired
 		}
 	}
-	if cmd.Name != string(CapabilityLogin) && outcome.Status == CapabilityOutcomeAuthRequired && descriptor.AutoLogin && h.Auth != nil && h.Auth.Store != nil && store.IsDirectConversation(input.Identity) {
-		loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
-		if loginErr != nil {
-			h.logf("start resumable login failed: %v", loginErr)
-			response.Text = h.commandError("登录开始失败：", loginErr)
-			outcome.Status = CapabilityOutcomeFailed
+	if cmd.Name != string(CapabilityLogin) && outcome.Status == CapabilityOutcomeAuthRequired {
+		if input.Origin == InvocationOriginDirectCommand && h.Auth != nil && h.Auth.Store != nil && store.IsDirectConversation(input.Identity) {
+			loginResponse, loginErr := h.BeginLoginForRequest(ctx, input)
+			if loginErr != nil {
+				h.logf("start resumable login failed: %v", loginErr)
+				response.Text = h.commandError("登录开始失败：", loginErr)
+				outcome.Status = CapabilityOutcomeFailed
+			} else {
+				response.Text = loginResponse.Text
+				responseKind = ResponseKindAuthWait
+				outcome.Status = CapabilityOutcomeAuthRequired
+			}
 		} else {
-			response.Text = loginResponse.Text
-			responseKind = ResponseKindAuthWait
-			outcome.Status = CapabilityOutcomeAuthRequired
+			response.Text = "需要登录 Life @ USTC。请直接发送“登录”，完成后重新发送刚才的请求；本次没有执行任何查询或操作。"
+			outcome.Status = CapabilityOutcomeFailed
 		}
 	}
 	response.Kind = responseKind

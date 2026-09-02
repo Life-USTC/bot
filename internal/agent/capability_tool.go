@@ -53,7 +53,7 @@ func (s *Service) invokeHostCapability(
 	id := commands.CapabilityID(strings.TrimSpace(input.Capability))
 	invocation, valid := commands.NewInvocation(id, input.Arguments)
 	if !valid {
-		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, id, input.Arguments)
+		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, id, input.Arguments)
 		if err != nil {
 			return "", err
 		}
@@ -91,7 +91,7 @@ func (s *Service) invokeHostCapability(
 	state := capabilityInterruptState{ExecutionIDs: make([]string, 0, len(invocations))}
 	descriptions := make([]commands.CapabilityInvocationDescription, 0, len(invocations))
 	for _, item := range invocations {
-		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true}, item.ID(), item.Args)
+		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, item.ID(), item.Args)
 		if err != nil {
 			if result, ok := commands.CapabilityPreflightFailure(item.ID(), err); ok {
 				toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
@@ -210,7 +210,7 @@ func (s *Service) executeUnconfirmedHostCapability(
 			return "", executionID, false, errors.New("capability execution is already running")
 		}
 	}
-	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, invocation.ID(), invocation.Args)
 	if err != nil {
 		if tracked {
 			if _, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err); finishErr != nil {
@@ -530,7 +530,7 @@ func (s *Service) executeApprovedCapability(
 		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
 		return finished, false, markDurableAgentStateError("record invalid confirmed capability", err)
 	}
-	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true}, invocation.ID(), invocation.Args)
+	outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, invocation.ID(), invocation.Args)
 	if err != nil {
 		finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
 		return finished, false, markDurableAgentStateError("record approved capability failure", finishErr)

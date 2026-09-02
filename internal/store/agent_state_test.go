@@ -303,67 +303,59 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	}
 }
 
-func TestSchemaMigrationBackfillsRawHistoryAndDropsSemanticSummaries(t *testing.T) {
-	path := t.TempDir() + "/bot.db"
-	s, err := Open(path)
+func TestSchemaInitializesOnlyAnEmptyVersionZeroDatabase(t *testing.T) {
+	freshPath := t.TempDir() + "/fresh.db"
+	s, err := Open(freshPath)
 	if err != nil {
 		t.Fatal(err)
-	}
-	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	if err := s.RecordInteraction(context.Background(), ident, Interaction{
-		RawText: "原始问题", Reply: "原始回答", Handled: true, Status: InteractionStatusHandled,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{
-		"PRAGMA user_version = 0",
-		`CREATE TABLE conversation_summaries (id integer primary key, platform text, conversation_type text, conversation_id text, summary text, through_interaction_id integer, created_at datetime, updated_at datetime)`,
-		`INSERT INTO conversation_summaries(platform, conversation_type, conversation_id, summary, through_interaction_id) VALUES ('napcat','private','42','模型生成的错误摘要',1)`,
-		`CREATE TABLE pending_confirmations (id integer primary key)`,
-		`CREATE TABLE pending_requests (id integer primary key)`,
-		`CREATE TABLE notification_deliveries (id integer primary key)`,
-		`CREATE TABLE agent_settings (user_id integer primary key, expose_tool_calls numeric not null default 0)`,
-		"DELETE FROM conversation_events",
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	events, err := s.RecentConversationEvents(context.Background(), ident, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 2 || events[0].Content != "原始问题" || events[1].Content != "原始回答" {
-		t.Fatalf("migrated events = %#v", events)
-	}
-	for _, table := range []string{"conversation_summaries", "pending_confirmations", "pending_requests", "notification_deliveries", "agent_settings"} {
-		if s.db.Migrator().HasTable(table) {
-			t.Fatalf("obsolete table %s survived migration", table)
-		}
 	}
 	var version int
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
 	if version != CurrentSchemaVersion {
-		t.Fatalf("schema version = %d", version)
+		t.Fatalf("fresh schema version = %d", version)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyPath := t.TempDir() + "/legacy.db"
+	db, err := sql.Open("sqlite3", legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE interactions (id INTEGER PRIMARY KEY, reply TEXT NOT NULL);
+		INSERT INTO interactions(id, reply) VALUES (1, '#待确认订阅课程{数学分析}');
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if opened, err := Open(legacyPath); err == nil {
+		_ = opened.Close()
+		t.Fatal("nonempty version-zero database was accepted")
+	}
+	db, err = sql.Open("sqlite3", legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var reply string
+	if err := db.QueryRow("SELECT reply FROM interactions WHERE id = 1").Scan(&reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply != "#待确认订阅课程{数学分析}" {
+		t.Fatalf("rejected legacy database changed reply = %q", reply)
+	}
+	var users int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'`).Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if users != 0 {
+		t.Fatal("rejected legacy database was modified")
 	}
 }
 
@@ -463,6 +455,24 @@ func TestCurrentSchemaRejectsMalformedOrObsoleteShape(t *testing.T) {
 		if opened, err := Open(path); err == nil {
 			_ = opened.Close()
 			t.Fatal("obsolete current schema was silently repaired")
+		}
+	})
+
+	t.Run("obsolete column", func(t *testing.T) {
+		path := t.TempDir() + "/obsolete-column.db"
+		s, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.db.Exec("ALTER TABLE feedback_records ADD COLUMN sent_to_admin numeric NOT NULL DEFAULT 0").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if opened, err := Open(path); err == nil {
+			_ = opened.Close()
+			t.Fatal("obsolete current-schema column was silently repaired")
 		}
 	})
 

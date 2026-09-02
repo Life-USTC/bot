@@ -176,7 +176,6 @@ type CapabilityDescriptor struct {
 	Execute       CapabilityExecutor
 	Present       CapabilityPresenter
 	ResolvePolicy func(Invocation) CapabilityPolicy
-	AutoLogin     bool
 	Help          HelpMetadata
 }
 
@@ -371,7 +370,7 @@ func descriptor(id CapabilityID, forms []string, requirements CapabilityRequirem
 		ID: id, Forms: forms, Requirements: requirements, Effect: effect,
 		Exposure: exposure, Input: input, Normalize: normalize,
 		Execute: textExecutor(run), Present: defaultCapabilityPresenter,
-		ResolvePolicy: resolve, AutoLogin: true, Help: help,
+		ResolvePolicy: resolve, Help: help,
 	}
 }
 
@@ -445,7 +444,6 @@ func init() {
 			Effect:       EffectRead, Exposure: ExposureModel,
 			Input: weatherInput, Execute: weatherExecutor, Present: defaultCapabilityPresenter,
 			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
-			AutoLogin:     true,
 			Help:          helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil),
 		},
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {

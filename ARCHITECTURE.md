@@ -231,6 +231,10 @@ The rule is entirely origin-and-effect based:
 - An Agent write or destructive operation is preflighted after the model calls
   the capability and before any side effect. A grouped request is stored
   atomically as independent operations.
+- A missing login never starts an adjacent write on behalf of an Agent read.
+  The read returns a literal instruction to send the direct `登录` command and
+  retry. An explicit Agent login call is itself a write and follows the same
+  confirmation gate.
 - Exactly one independently reversible operation is shown and decided at a
   time. Approval only changes `awaiting_confirmation` to `approved`; the
   current conversation-job lease must still claim it before execution.
@@ -261,8 +265,8 @@ catalog:
 - `invoke_bot_capability` executes one normalized descriptor through the host
   state machine.
 - `search_campus_tools` and `call_campus_tool` lazily initialize MCP only when
-  supplementary campus data is needed. Only MCP tools explicitly annotated
-  read-only are exposed.
+  supplementary campus data is needed. Only exact tool names in the host-owned
+  read allowlist are exposed; remote MCP annotations cannot grant access.
 
 The compact system instruction tells the model to search before invoking and
 to preserve all user constraints. Mutation improvisation through MCP is not
@@ -370,14 +374,15 @@ job without losing or duplicating the operation.
 
 ## Schema release boundary
 
-Schema version 2 is a deliberate one-way release. Startup accepts only the
-production version-0 shape or the exact version-2 shape. Version 0 is upgraded
-once in a transaction, obsolete summary/pending/delivery tables and feedback
-columns are removed, exact legacy transcript evidence is retained, and every
-required column and declared index (including order, uniqueness, and the
-absence of a narrowing partial predicate) is checked before the process
-becomes ready. Deployment takes an immutable backup and
-restores it if the new container or post-start schema audit fails.
+Schema version 2 is the only accepted persisted shape. A genuinely empty
+SQLite database may be initialized directly at version 2; a nonempty
+unversioned database, any other version, obsolete tables or columns, and
+malformed indexes are rejected instead of migrated or repaired. Legacy
+interaction replies are never imported into model history. Every required
+column and declared index (including order, uniqueness, and the absence of a
+narrowing partial predicate) is checked before the process becomes ready.
+Deployment takes an immutable backup and restores it if the new container or
+post-start schema audit fails.
 
 ## Module ownership
 

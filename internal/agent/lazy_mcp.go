@@ -21,6 +21,15 @@ import (
 
 const maxCampusToolSearchResults = 5
 
+func campusReadToolAllowed(name string) bool {
+	switch name {
+	case "get_current_semester", "list_my_homeworks", "search_courses":
+		return true
+	default:
+		return false
+	}
+}
+
 type campusToolSearchInput struct {
 	Query string `json:"query" jsonschema_description:"Words describing the campus data lookup you need"`
 }
@@ -87,8 +96,8 @@ func (s *lazyMCPSession) ensure(ctx context.Context) error {
 		}
 		readOnly := make(map[string]mcpgo.Tool)
 		for _, candidate := range listed {
-			if candidate.Annotations.ReadOnlyHint == nil || !*candidate.Annotations.ReadOnlyHint {
-				s.service.logf("MCP mutation tool hidden from agent: name=%s", candidate.Name)
+			if !campusReadToolAllowed(candidate.Name) {
+				s.service.logf("MCP tool outside host read allowlist hidden from agent: name=%s", candidate.Name)
 				continue
 			}
 			readOnly[candidate.Name] = candidate
