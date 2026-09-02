@@ -854,6 +854,11 @@ func cardTheme(kind string) responseCardTheme {
 		theme.Background = color.RGBA{240, 249, 255, 255}
 		theme.Header = color.RGBA{224, 242, 254, 255}
 		theme.Accent = color.RGBA{2, 132, 199, 255}
+	case "weather":
+		theme.Label = "天气"
+		theme.Background = color.RGBA{240, 249, 255, 255}
+		theme.Header = color.RGBA{224, 242, 254, 255}
+		theme.Accent = color.RGBA{217, 119, 6, 255}
 	case "deadlines":
 		theme.Label = "截止"
 		theme.Background = color.RGBA{255, 247, 237, 255}
