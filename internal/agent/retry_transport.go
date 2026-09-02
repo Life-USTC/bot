@@ -35,11 +35,14 @@ func newAgentHTTPClient(base *http.Client, timeout time.Duration, logger *log.Lo
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	client.Transport = &usageCaptureTransport{
-		base: &llmRetryTransport{
-			base:   transport,
-			logger: logger,
+	// Capture each successful attempt's body inside the retry boundary. A
+	// provider can return headers and then cancel or truncate the JSON body;
+	// those read failures must be classified and retried like RoundTrip errors.
+	client.Transport = &llmRetryTransport{
+		base: &usageCaptureTransport{
+			base: transport,
 		},
+		logger: logger,
 	}
 	return &client
 }
@@ -90,6 +93,13 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 
 		resp, err := t.base.RoundTrip(attemptReq)
+		if errors.Is(err, context.Canceled) && attemptReq.Context().Err() == nil {
+			// Some provider transports surface a canceled internal stream as
+			// context.Canceled even though the caller's request is still live.
+			// Keep it distinct from a real caller cancellation so it can be
+			// retried and, if exhausted, reported to the user.
+			err = errLLMUpstreamCanceled
+		}
 		if !shouldRetryLLMRequest(resp, err) || attempt == llmHTTPMaxAttempts {
 			return resp, err
 		}
@@ -173,6 +183,9 @@ func shouldRetryLLMRequest(resp *http.Response, err error) bool {
 }
 
 func isRetryableTransportError(err error) bool {
+	if errors.Is(err, errLLMUpstreamCanceled) {
+		return true
+	}
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}

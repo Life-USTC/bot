@@ -68,7 +68,6 @@ func TestRetryTransportRetriesOnlyRetryableTransportErrors(t *testing.T) {
 		{name: "unexpected EOF", transportErr: io.ErrUnexpectedEOF, wantAttempts: llmHTTPMaxAttempts},
 		{name: "url error", transportErr: &url.Error{Op: "POST", URL: "http://model.test", Err: io.ErrUnexpectedEOF}, wantAttempts: llmHTTPMaxAttempts},
 		{name: "permanent error", transportErr: errors.New("invalid request"), wantAttempts: 1},
-		{name: "canceled", transportErr: context.Canceled, wantAttempts: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var attempts atomic.Int32
@@ -86,6 +85,111 @@ func TestRetryTransportRetriesOnlyRetryableTransportErrors(t *testing.T) {
 			}
 			if got := attempts.Load(); got != test.wantAttempts {
 				t.Fatalf("attempts = %d, want %d", got, test.wantAttempts)
+			}
+		})
+	}
+}
+
+func TestRetryTransportRetriesUpstreamCancellationWhileRequestContextIsLive(t *testing.T) {
+	var attempts atomic.Int32
+	transport := &llmRetryTransport{
+		base: scriptedRoundTripper(func(*http.Request) (*http.Response, error) {
+			attempts.Add(1)
+			return nil, context.Canceled
+		}),
+		jitter: func(time.Duration) time.Duration { return 0 },
+		wait:   func(context.Context, time.Duration) error { return nil },
+	}
+	_, err := transport.RoundTrip(retryTestRequest(context.Background()))
+	if err == nil || errors.Is(err, context.Canceled) {
+		t.Fatalf("RoundTrip error = %v, want a non-context upstream cancellation error", err)
+	}
+	if got := attempts.Load(); got != llmHTTPMaxAttempts {
+		t.Fatalf("attempts = %d, want %d", got, llmHTTPMaxAttempts)
+	}
+}
+
+func TestRetryTransportRecoversFromTransientUpstreamCancellation(t *testing.T) {
+	var attempts atomic.Int32
+	transport := &llmRetryTransport{
+		base: scriptedRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if attempts.Add(1) == 1 {
+				return nil, context.Canceled
+			}
+			return retryTestResponse(req, http.StatusOK, nil), nil
+		}),
+		jitter: func(time.Duration) time.Duration { return 0 },
+		wait:   func(context.Context, time.Duration) error { return nil },
+	}
+	resp, err := transport.RoundTrip(retryTestRequest(context.Background()))
+	if err != nil {
+		t.Fatalf("RoundTrip error = %v", err)
+	}
+	_ = resp.Body.Close()
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
+	}
+}
+
+func TestRetryTransportPreservesRealRequestCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var attempts atomic.Int32
+	transport := &llmRetryTransport{
+		base: scriptedRoundTripper(func(*http.Request) (*http.Response, error) {
+			attempts.Add(1)
+			cancel()
+			return nil, context.Canceled
+		}),
+		jitter: func(time.Duration) time.Duration { return 0 },
+		wait:   func(context.Context, time.Duration) error { return nil },
+	}
+	_, err := transport.RoundTrip(retryTestRequest(ctx))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RoundTrip error = %v, want context cancellation", err)
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+}
+
+func TestAgentHTTPClientRetriesResponseBodyReadFailures(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		readErr    error
+		wantErr    error
+		wantNotErr error
+	}{
+		{name: "upstream cancellation", readErr: context.Canceled, wantErr: errLLMUpstreamCanceled, wantNotErr: context.Canceled},
+		{name: "truncated body", readErr: io.ErrUnexpectedEOF, wantErr: io.ErrUnexpectedEOF},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			base := scriptedRoundTripper(func(req *http.Request) (*http.Response, error) {
+				attempts.Add(1)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       responseBodyError{err: test.readErr},
+					Request:    req,
+				}, nil
+			})
+			client := newAgentHTTPClient(&http.Client{Transport: base}, time.Second, nil)
+			retryTransport, ok := client.Transport.(*llmRetryTransport)
+			if !ok {
+				t.Fatalf("client transport = %T, want retry boundary outside usage capture", client.Transport)
+			}
+			retryTransport.jitter = func(time.Duration) time.Duration { return 0 }
+			retryTransport.wait = func(context.Context, time.Duration) error { return nil }
+
+			_, err := client.Do(retryTestRequest(context.Background()))
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("client error = %v, want %v", err, test.wantErr)
+			}
+			if test.wantNotErr != nil && errors.Is(err, test.wantNotErr) {
+				t.Fatalf("client error = %v, must not look like caller cancellation", err)
+			}
+			if got := attempts.Load(); got != llmHTTPMaxAttempts {
+				t.Fatalf("attempts = %d, want %d", got, llmHTTPMaxAttempts)
 			}
 		})
 	}
@@ -291,4 +395,16 @@ func retryTestResponse(req *http.Request, status int, header http.Header) *http.
 		Body:       io.NopCloser(strings.NewReader(`{}`)),
 		Request:    req,
 	}
+}
+
+type responseBodyError struct {
+	err error
+}
+
+func (b responseBodyError) Read([]byte) (int, error) {
+	return 0, b.err
+}
+
+func (responseBodyError) Close() error {
+	return nil
 }

@@ -37,6 +37,7 @@ var (
 	errAgentModelAttemptBudget = errors.New("agent model-attempt budget exceeded")
 	errAgentToolCallBudget     = errors.New("agent tool-call budget exceeded")
 	errAgentNonProgress        = errors.New("agent tool plan made no progress")
+	errLLMUpstreamCanceled     = errors.New("llm upstream canceled request")
 )
 
 type runBudgetContextKey struct{}
@@ -374,6 +375,8 @@ func agentFailureClass(err error) string {
 		return "tool_call_budget"
 	case errors.Is(err, errAgentNonProgress):
 		return "non_progress"
+	case errors.Is(err, errLLMUpstreamCanceled):
+		return "upstream_canceled"
 	case errors.Is(err, errRepeatedToolCall):
 		return "repeated_tool_call"
 	case isAgentIterationLimitError(err):
@@ -406,9 +409,6 @@ func normalizeAgentRunError(ctx context.Context, budget *runBudget, err error) e
 		errors.Is(err, errAgentNonProgress) {
 		return err
 	}
-	if errors.Is(err, context.Canceled) {
-		return context.Canceled
-	}
 	if errors.Is(err, context.DeadlineExceeded) && budget != nil &&
 		!budget.deadline.After(time.Now()) {
 		return errAgentRunDeadline
@@ -416,10 +416,15 @@ func normalizeAgentRunError(ctx context.Context, budget *runBudget, err error) e
 	if ctx != nil {
 		if ctxErr := ctx.Err(); errors.Is(ctxErr, context.Canceled) {
 			return context.Canceled
-		} else if errors.Is(ctxErr, context.DeadlineExceeded) && budget != nil &&
-			!budget.deadline.After(time.Now()) {
-			return errAgentRunDeadline
+		} else if errors.Is(ctxErr, context.DeadlineExceeded) {
+			if budget != nil && !budget.deadline.After(time.Now()) {
+				return errAgentRunDeadline
+			}
+			return context.DeadlineExceeded
 		}
+	}
+	if errors.Is(err, context.Canceled) {
+		return errLLMUpstreamCanceled
 	}
 	return err
 }

@@ -77,6 +77,32 @@ func TestRunBudgetPropagatesCancellation(t *testing.T) {
 	}
 }
 
+func TestNormalizeAgentRunErrorDoesNotTreatUpstreamCancellationAsCallerCancellation(t *testing.T) {
+	ctx := context.Background()
+	budget := newRunBudget(time.Now(), newRunMetrics())
+	err := normalizeAgentRunError(ctx, budget, context.Canceled)
+	if err == nil || errors.Is(err, context.Canceled) {
+		t.Fatalf("normalizeAgentRunError = %v, want visible upstream failure", err)
+	}
+	if reply := agentFailureReply(295, err); !strings.Contains(reply, "重新发送") || !strings.Contains(reply, "记录 #295") {
+		t.Fatalf("agentFailureReply = %q", reply)
+	}
+}
+
+func TestNormalizeAgentRunErrorPreservesEarlierCallerDeadline(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	budget := newRunBudget(time.Now(), newRunMetrics())
+
+	err := normalizeAgentRunError(ctx, budget, context.Canceled)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("normalizeAgentRunError = %v, want caller deadline", err)
+	}
+	if got := agentFailureClass(err); got != "request_timeout" {
+		t.Fatalf("agentFailureClass = %q, want request_timeout", got)
+	}
+}
+
 func TestAgentFailureClassesAreStable(t *testing.T) {
 	for _, test := range []struct {
 		err   error
@@ -86,6 +112,7 @@ func TestAgentFailureClassesAreStable(t *testing.T) {
 		{err: errAgentContextBudget, class: "context_budget"},
 		{err: errAgentToolCallBudget, class: "tool_call_budget"},
 		{err: errAgentNonProgress, class: "non_progress"},
+		{err: errLLMUpstreamCanceled, class: "upstream_canceled"},
 		{err: errRepeatedToolCall, class: "repeated_tool_call"},
 		{err: context.Canceled, class: "canceled"},
 	} {

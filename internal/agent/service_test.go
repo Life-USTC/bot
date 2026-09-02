@@ -662,6 +662,33 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if !strings.Contains(docs, "list_my_homeworks") || strings.Contains(docs, "delete_my_homework") {
 		t.Fatalf("read-only MCP docs = %s", docs)
 	}
+	for _, query := range []string{"第二课堂 活动", "查询第二课堂平台活动", "二课活动"} {
+		youngDocs, err := lazy.search(context.Background(), campusToolSearchInput{Query: query})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(youngDocs, "catalog_young_event_list") || !strings.Contains(youngDocs, "catalog_young_event_get") {
+			t.Fatalf("young-event MCP docs for %q = %s", query, youngDocs)
+		}
+	}
+	allDocs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"get_current_semester", "list_my_homeworks", "search_courses", "catalog_young_event_list", "catalog_young_event_get"} {
+		if !strings.Contains(allDocs, name) {
+			t.Fatalf("complete MCP inventory omitted %q: %s", name, allDocs)
+		}
+	}
+	if strings.Contains(allDocs, "delete_my_homework") {
+		t.Fatalf("complete MCP inventory exposed mutation: %s", allDocs)
+	}
+	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "catalog_young_event_list", Arguments: map[string]any{"active": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls["catalog_young_event_list"].Load() != 1 {
+		t.Fatal("allowed young-event lookup did not reach the remote server")
+	}
 	result, err := lazy.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}})
 	if err != nil || result != `{"ok":true}` {
 		t.Fatalf("lazy MCP call result=%q err=%v", result, err)
@@ -729,6 +756,104 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	}
 	if _, err := secondSession.call(secondCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("same-live MCP read was replayed: %v", err)
+	}
+}
+
+func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "napcat", UserID: "young-event", ConversationType: "private", ConversationID: "young-event"}
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", RefreshToken: "refresh", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	inputText := "请查询目前可以报名的第二课堂活动，列出前 3 个"
+	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "young-event", Input: store.ConversationJobInput{Text: inputText},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("enqueue young-event job: created=%v err=%v", created, err)
+	}
+	mcpURL, mcpHTTPClient, closeMCP, calls := newAgentMCPTestServer(t)
+	t.Cleanup(closeMCP)
+
+	var modelRequests atomic.Int32
+	var requestBodies [][]byte
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("read model request: %v", readErr)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		requestBodies = append(requestBodies, body)
+		request := modelRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch request {
+		case 1:
+			_, _ = io.WriteString(w, `{
+				"id":"young-search-bot","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"young-search-bot-call","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"请查询目前可以报名的第二课堂活动，列出前 3 个\"}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`)
+		case 2:
+			_, _ = io.WriteString(w, `{
+				"id":"young-search-mcp","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"young-search-mcp-call","type":"function","function":{"name":"search_campus_tools","arguments":"{\"query\":\"二课活动 报名\"}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`)
+		case 3:
+			_, _ = io.WriteString(w, `{
+				"id":"young-call-mcp","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"young-call-mcp-call","type":"function","function":{"name":"call_campus_tool","arguments":"{\"name\":\"catalog_young_event_list\",\"arguments\":{\"active\":true,\"page\":1,\"pageSize\":3}}"}
+				}]} ,"finish_reason":"tool_calls"}]
+			}`)
+		case 4:
+			_, _ = io.WriteString(w, `{
+				"id":"young-final","object":"chat.completion","created":0,"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"目前可以报名：第二课堂示例活动，地点为东区图书馆。"},"finish_reason":"stop"}]
+			}`)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(modelServer.Close)
+	authManager := &auth.Manager{Store: db}
+	svc, err := New(ctx, Config{
+		Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model",
+		MCPBaseURL: mcpURL, AuthManager: authManager,
+	}, commands.Handler{Store: db, Auth: authManager}, mcpHTTPClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := svc.Run(ctx, claimAgentInput(t, db, ident, Input{Text: inputText, Identity: ident, JobID: job.ID}))
+	if !result.Handled || result.State != RunStateCompleted || result.Response.Text != "目前可以报名：第二课堂示例活动，地点为东区图书馆。" {
+		t.Fatalf("young-event result = %#v", result)
+	}
+	if got := modelRequests.Load(); got != 4 {
+		t.Fatalf("model requests = %d, want 4", got)
+	}
+	if calls["catalog_young_event_list"].Load() != 1 {
+		t.Fatalf("young-event MCP calls = %d, want 1", calls["catalog_young_event_list"].Load())
+	}
+	if len(requestBodies) != 4 || !bytes.Contains(requestBodies[1], []byte(`"content":"[]"`)) ||
+		!bytes.Contains(requestBodies[2], []byte("catalog_young_event_list")) ||
+		!bytes.Contains(requestBodies[3], []byte("youngId")) || !bytes.Contains(requestBodies[3], []byte("第二课堂示例活动")) {
+		t.Fatalf("model did not receive the exact empty-search/docs/result sequence: %q", requestBodies)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 || executions[0].Capability != "mcp:catalog_young_event_list" ||
+		executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Effect != string(commands.EffectRead) {
+		t.Fatalf("young-event execution = %#v err=%v", executions, err)
 	}
 }
 
@@ -946,6 +1071,8 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 		mcpgo.NewTool("list_my_homeworks", mcpgo.WithDescription("List my homeworks.")),
 		mcpgo.NewTool("search_courses", mcpgo.WithDescription("Search courses.")),
 		mcpgo.NewTool("get_current_semester", mcpgo.WithDescription("Get current semester.")),
+		mcpgo.NewTool("catalog_young_event_list", mcpgo.WithDescription("List second-classroom (第二课堂) signup events.")),
+		mcpgo.NewTool("catalog_young_event_get", mcpgo.WithDescription("Fetch one second-classroom (第二课堂) signup event.")),
 		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
@@ -954,7 +1081,11 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 		calls[tool.Name] = &atomic.Int32{}
 		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			calls[tool.Name].Add(1)
-			return mcpgo.NewToolResultText(`{"ok":true}`), nil
+			result := `{"ok":true}`
+			if tool.Name == "catalog_young_event_list" {
+				result = `{"data":[{"youngId":"event-1","name":"第二课堂示例活动","category":"单次项目","status":"报名中","isActive":true,"location":"东区图书馆"}],"pagination":{"page":1,"pageSize":20,"total":1}}`
+			}
+			return mcpgo.NewToolResultText(result), nil
 		})
 	}
 	handler := mcpserver.NewStreamableHTTPServer(mcpServer)

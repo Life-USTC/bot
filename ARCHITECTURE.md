@@ -139,7 +139,7 @@ stateDiagram-v2
         [*] --> PReserved: atomically reserve attempt in SQLite\nreservation failure sends no HTTP request
         PReserved --> PInFlight: send HTTP request
         PInFlight --> PAccepted: successful provider response
-        PInFlight --> PBackoff: 408 / 429 / 5xx / retryable transport\nattempts below 5 and time remains
+        PInFlight --> PBackoff: 408 / 429 / 5xx / retryable transport /\nprovider-side cancel while caller remains live; attempts below 5
         PBackoff --> PReserved: bounded Retry-After / jitter delay
         PInFlight --> PRejected: permanent provider response
         PInFlight --> PExhausted: fifth retryable attempt failed
@@ -268,6 +268,21 @@ catalog:
   supplementary campus data is needed. Only exact tool names in the host-owned
   read allowlist are exposed; remote MCP annotations cannot grant access.
 
+Search ignores generic request verbs, politeness, and standalone numbers. A
+fuzzy Chinese match needs domain-bearing evidence in the capability ID, title,
+accepted forms, or multiple documentation fragments; words such as “查询” and
+“列出” cannot make an unrelated command look relevant. A valid empty Bot search
+result is evidence that the registry has no match and allows the model to try
+MCP. A malformed search result is not evidence and cannot unlock invocation.
+
+An explicit request for the complete command/tool/capability inventory bypasses
+the model. The host constructs the response from the current descriptor
+registry, its fixed meta-tools, and the intersection of the live remote MCP
+catalog with the host read allowlist. This keeps the answer complete and
+truthful even when a model would otherwise browse one tool family at a time.
+The shortcut requires explicit inventory wording and refuses mutation wording,
+so it cannot preempt the normal confirmation path for an operation.
+
 The compact system instruction tells the model to search before invoking and
 to preserve all user constraints. Mutation improvisation through MCP is not
 possible.
@@ -286,6 +301,12 @@ to the user is also persisted as the assistant turn. A successful relevant
 result unlocks the final answer; a relevant failure, unknown outcome, or denial
 is returned to the user as its literal tool result rather than allowing later
 model prose to turn it into a success claim.
+
+Known supplementary campus domains use the same host-enforced evidence chain.
+For a second-classroom lookup, an empty Bot search forces an MCP search; a
+nonempty MCP search then forces `call_campus_tool`, and only a name returned by
+that search can satisfy the turn. The model may format the literal read result,
+but it cannot replace any required stage with an unsupported factual answer.
 
 ## Exact conversation evidence
 
@@ -353,6 +374,12 @@ job without losing or duplicating the operation.
   failure retries the job without contacting the provider.
 - The whole Agent run remains bounded by 60 seconds. Retry-After and jittered
   exponential delays are capped by the remaining deadline.
+- If a provider transport reports `context.Canceled` while the caller context
+  is still live, including while a successful-status response body is being
+  read, it is treated as a retryable upstream interruption. A truncated body is
+  retryable too. A genuine caller cancellation remains silent; exhausting
+  upstream retries produces a user-visible failure with the durable run ID
+  instead of dropping the reply.
 - A deterministic outbox key makes output persistence idempotent. Business
   work and final output/receipt state commit together.
 - A definite mutation transport timeout is `unknown`, not `failed`, because

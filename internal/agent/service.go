@@ -264,6 +264,33 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusFailed, reply, err)
 		return agentTextResponse(reply), true
 	}
+	if asksForCapabilityInventory(input.Text) {
+		if err := s.persistCurrentUserEvent(ctx, input); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
+		reply, err := s.capabilityInventory(ctx, input.Identity)
+		if err != nil {
+			err = normalizeAgentRunError(ctx, budget, err)
+			if errors.Is(err, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", err)
+				return commands.Response{}, false
+			}
+			reply = agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
+		if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(reply, nil)); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			failure := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, failure, err)
+			return agentTextResponse(failure), true
+		}
+		finishRun(store.AgentRunStatusCompleted, reply, nil)
+		return agentTextResponse(reply), true
+	}
 	grounding := groundingPolicyFor(input.Text, input.Identity)
 	if grounding.privateUnavailable {
 		reply := "这个问题涉及个人数据，请私聊 Presto 查询。"
@@ -553,7 +580,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return commands.Response{}, true
 	}
 	if grounder != nil && !grounder.hasRequiredEvidence() {
-		if result, returned := grounder.capabilityResult(); returned && result != "" {
+		if result, returned := grounder.groundedToolResult(); returned && result != "" {
 			if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(result, nil)); err != nil {
 				markAgentInfrastructureFailure(input, err)
 				reply := agentFailureReply(runID, err)
@@ -575,7 +602,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if reply == "" {
-		if result, returned := grounder.capabilityResult(); returned && result != "" {
+		if result, returned := grounder.groundedToolResult(); returned && result != "" {
 			reply = result
 		}
 	}
@@ -980,7 +1007,7 @@ func (s *Service) toolsFor(
 		}
 	}
 
-	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, effect, and audience scope. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, effect, and audience scope. An empty JSON array means no Bot command matched: never substitute an unrelated command, and search search_campus_tools next when the request is a read-only campus-data lookup. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
 		return searchCommandDocumentation(ident, input)
 	})
 	if err != nil {
@@ -1232,6 +1259,8 @@ QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), 
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
 Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
+An empty search_bot_commands result means that no Bot command matched. Never substitute a loosely related command. For a read-only campus-data request, search search_campus_tools next; say the overall request is unsupported only if neither registry has a relevant tool.
+When the user asks for a complete capability or tool inventory, search Bot commands for “help” and invoke that exact help capability, then call search_campus_tools with query "*" when that tool is available. Report only those actual results plus the host meta-tools visible in this turn; never reconstruct an inventory from memory.
 Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
 MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so; never improvise a write through another tool.
@@ -1281,6 +1310,8 @@ func agentFailureReply(runID int64, err error) string {
 		reply = "AI 工具流程达到模型请求总上限，已停止。请缩小请求范围后重试。"
 	} else if isExhaustedRetryableProviderError(err) {
 		reply = "AI 服务连续 5 次请求仍未成功，请稍后重试。"
+	} else if errors.Is(err, errLLMUpstreamCanceled) {
+		reply = "AI 服务连接意外中断，未能生成回复。请重新发送这条消息。"
 	} else if errors.Is(err, errAgentNonProgress) {
 		reply = "AI 工具计划没有取得进展，已停止。请换一种说法或缩小请求范围后重试。"
 	} else if errors.Is(err, errRepeatedToolCall) {

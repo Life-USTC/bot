@@ -16,11 +16,14 @@ import (
 const (
 	commandSearchToolName = "search_bot_commands"
 	capabilityToolName    = "invoke_bot_capability"
+	campusSearchToolName  = "search_campus_tools"
+	campusCallToolName    = "call_campus_tool"
 )
 
 type groundingPolicy struct {
 	searchCommands     bool
 	executeCapability  bool
+	requireCampusTool  bool
 	privateUnavailable bool
 }
 
@@ -31,7 +34,10 @@ func groundingInstruction(base string, policy groundingPolicy) string {
 	}
 	requirement := "CURRENT TURN REQUIREMENT: Call search_bot_commands before giving the user an answer. Do not answer from chat history or general knowledge."
 	if policy.executeCapability {
-		requirement += " If the search returns documentation, call invoke_bot_capability with one exact documented capability and use only its result. A plain-text factual answer before that capability result is invalid."
+		requirement += " If the search returns documentation, call invoke_bot_capability with one exact documented capability and use only its result. A plain-text factual answer before that capability result is invalid. If the search returns an empty JSON array, never substitute an unrelated Bot capability; for a read-only campus lookup, search search_campus_tools before deciding that the overall request is unsupported."
+	}
+	if policy.requireCampusTool {
+		requirement += " For this known supplementary campus-data request, an empty Bot search must be followed by search_campus_tools and, when that search returns documentation, call_campus_tool. Do not give a factual or availability answer without that evidence."
 	}
 	return base + "\n" + requirement
 }
@@ -40,6 +46,9 @@ func groundingPolicyFor(text string, ident store.Identity) groundingPolicy {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return groundingPolicy{}
+	}
+	if !store.IsSharedConversation(ident) && asksForYoungEventLookup(text) {
+		return groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}
 	}
 	verification := asksToVerifyPreviousAnswer(text)
 	if verification {
@@ -73,6 +82,22 @@ func groundingPolicyFor(text string, ident store.Identity) groundingPolicy {
 		return groundingPolicy{searchCommands: true, executeCapability: true}
 	}
 	return groundingPolicy{}
+}
+
+func asksForYoungEventLookup(text string) bool {
+	compact := strings.ToLower(strings.Join(strings.Fields(text), ""))
+	if strings.Contains(compact, "第二课堂") {
+		return true
+	}
+	if !strings.Contains(compact, "二课") {
+		return false
+	}
+	for _, marker := range []string{"活动", "平台", "报名", "查询", "搜索", "查", "搜", "支持", "能"} {
+		if strings.Contains(compact, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func explicitlyNamesPrivateCapability(text string, documentation []commands.CapabilityDocumentation) bool {
@@ -172,11 +197,18 @@ type groundingModel struct {
 	mu                       sync.Mutex
 	offeredCommandSearch     bool
 	offeredCapability        bool
+	offeredCampusSearch      bool
+	offeredCampusCall        bool
 	observedCommandSearch    bool
 	observedCapabilityResult bool
 	observedCapabilityReturn bool
+	observedCampusSearch     bool
+	observedCampusResult     bool
+	observedCampusReturn     bool
 	lastCapabilityResult     string
+	lastCampusResult         string
 	allowedCapabilities      map[string]struct{}
+	allowedCampusTools       map[string]struct{}
 }
 
 func newGroundingModel(inner model.BaseChatModel, policy groundingPolicy) model.BaseChatModel {
@@ -285,18 +317,20 @@ func (m *groundingModel) nextGroundingTool(ctx context.Context, input []*schema.
 		if toolOutcomesFromContext(ctx).isError(last.ToolCallID) {
 			return ""
 		}
-		m.observedCommandSearch = true
-		m.allowedCapabilities = commandSearchCapabilityIDs(last.Content)
+		m.allowedCapabilities, m.observedCommandSearch = commandSearchCapabilityIDs(last.Content)
 		if m.policy.executeCapability && !m.offeredCapability && len(m.allowedCapabilities) > 0 {
 			m.offeredCapability = true
 			return capabilityToolName
+		}
+		if m.policy.requireCampusTool && m.observedCommandSearch && len(m.allowedCapabilities) == 0 && !m.offeredCampusSearch {
+			m.offeredCampusSearch = true
+			return campusSearchToolName
 		}
 	}
 	if last.Role == schema.Tool && toolNameForResult(input, last) == capabilityToolName {
 		capability := capabilityIDForResult(input, last)
 		if !m.observedCommandSearch {
-			m.allowedCapabilities = recoverCommandSearchCapabilityIDs(input)
-			m.observedCommandSearch = len(m.allowedCapabilities) > 0
+			m.allowedCapabilities, m.observedCommandSearch = recoverCommandSearchCapabilityIDs(input)
 		}
 		allowed := false
 		if _, found := m.allowedCapabilities[capability]; found {
@@ -310,15 +344,38 @@ func (m *groundingModel) nextGroundingTool(ctx context.Context, input []*schema.
 			}
 		}
 	}
+	if last.Role == schema.Tool && toolNameForResult(input, last) == campusSearchToolName {
+		if toolOutcomesFromContext(ctx).isError(last.ToolCallID) {
+			return ""
+		}
+		m.allowedCampusTools, m.observedCampusSearch = campusSearchToolNames(last.Content)
+		if m.policy.requireCampusTool && m.observedCampusSearch && len(m.allowedCampusTools) > 0 && !m.offeredCampusCall {
+			m.offeredCampusCall = true
+			return campusCallToolName
+		}
+	}
+	if last.Role == schema.Tool && toolNameForResult(input, last) == campusCallToolName {
+		name := campusCallNameForResult(input, last)
+		if _, allowed := m.allowedCampusTools[name]; allowed {
+			m.observedCampusReturn = true
+			m.lastCampusResult = strings.TrimSpace(last.Content)
+			if !toolOutcomesFromContext(ctx).isError(last.ToolCallID) {
+				m.observedCampusResult = true
+			}
+		}
+	}
 	return ""
 }
 
-func (m *groundingModel) capabilityResult() (string, bool) {
+func (m *groundingModel) groundedToolResult() (string, bool) {
 	if m == nil {
 		return "", false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.observedCampusReturn {
+		return m.lastCampusResult, true
+	}
 	return m.lastCapabilityResult, m.observedCapabilityReturn
 }
 
@@ -333,21 +390,66 @@ func (m *groundingModel) hasRequiredEvidence() bool {
 		// from the host-produced command-search transcript.
 		return true
 	}
-	return m.observedCommandSearch && !m.policy.executeCapability
+	if m.policy.requireCampusTool {
+		if !m.observedCommandSearch || len(m.allowedCapabilities) > 0 {
+			return false
+		}
+		if m.observedCampusResult {
+			return true
+		}
+		return m.observedCampusSearch && len(m.allowedCampusTools) == 0
+	}
+	return m.observedCommandSearch && (!m.policy.executeCapability || len(m.allowedCapabilities) == 0)
 }
 
-func recoverCommandSearchCapabilityIDs(input []*schema.Message) map[string]struct{} {
+func campusSearchToolNames(result string) (map[string]struct{}, bool) {
+	var documentation []struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(result)), &documentation) != nil || documentation == nil {
+		return nil, false
+	}
+	names := make(map[string]struct{}, len(documentation))
+	for _, item := range documentation {
+		if name := strings.TrimSpace(item.Name); name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names, true
+}
+
+func campusCallNameForResult(input []*schema.Message, result *schema.Message) string {
+	if result == nil || result.ToolCallID == "" {
+		return ""
+	}
+	for index := len(input) - 2; index >= 0; index-- {
+		candidate := input[index]
+		if candidate == nil || candidate.Role != schema.Assistant {
+			continue
+		}
+		for _, call := range candidate.ToolCalls {
+			if call.ID != result.ToolCallID || call.Function.Name != campusCallToolName {
+				continue
+			}
+			var invocation campusToolCallInput
+			if json.Unmarshal([]byte(call.Function.Arguments), &invocation) == nil {
+				return strings.TrimSpace(invocation.Name)
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+func recoverCommandSearchCapabilityIDs(input []*schema.Message) (map[string]struct{}, bool) {
 	for index := len(input) - 2; index >= 0; index-- {
 		candidate := input[index]
 		if candidate == nil || candidate.Role != schema.Tool || toolNameForResult(input, candidate) != commandSearchToolName {
 			continue
 		}
-		if capabilities := commandSearchCapabilityIDs(candidate.Content); len(capabilities) > 0 {
-			return capabilities
-		}
-		return nil
+		return commandSearchCapabilityIDs(candidate.Content)
 	}
-	return nil
+	return nil, false
 }
 
 func toolNameForResult(input []*schema.Message, result *schema.Message) string {
@@ -371,7 +473,7 @@ func toolNameForResult(input []*schema.Message, result *schema.Message) string {
 	return ""
 }
 
-func commandSearchCapabilityIDs(result string) map[string]struct{} {
+func commandSearchCapabilityIDs(result string) (map[string]struct{}, bool) {
 	var documentation []struct {
 		ID       string `json:"id"`
 		Examples []struct {
@@ -381,8 +483,8 @@ func commandSearchCapabilityIDs(result string) map[string]struct{} {
 			Capability string `json:"capability"`
 		} `json:"shortcuts"`
 	}
-	if json.Unmarshal([]byte(strings.TrimSpace(result)), &documentation) != nil {
-		return nil
+	if json.Unmarshal([]byte(strings.TrimSpace(result)), &documentation) != nil || documentation == nil {
+		return nil, false
 	}
 	capabilities := make(map[string]struct{}, len(documentation))
 	for _, item := range documentation {
@@ -400,7 +502,7 @@ func commandSearchCapabilityIDs(result string) map[string]struct{} {
 			}
 		}
 	}
-	return capabilities
+	return capabilities, true
 }
 
 func capabilityIDForResult(input []*schema.Message, result *schema.Message) string {
