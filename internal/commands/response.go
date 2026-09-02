@@ -148,9 +148,6 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 			return nil
 		}
 		return responses.NewRichTextImage("bus", busRichText(title, renderBody, parseBusRouteArgs(cmd.Args)), body)
-	case "weather":
-		plainText := textutil.PlainMonospace(text)
-		return richTextImage("weather", imageTitle(plainText, "天气"), plainText)
 	default:
 		return nil
 	}

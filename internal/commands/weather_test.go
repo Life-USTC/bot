@@ -11,6 +11,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -123,20 +124,40 @@ func TestWeatherRejectsUnknownCampus(t *testing.T) {
 func TestWeatherImageResponse(t *testing.T) {
 	handler := weatherTestHandler(t, nil)
 	handler.EnableImageResponses = true
-	text := handler.weather(context.Background(), nil)
-	image := handler.imageResponseForOutcome(
-		Invocation{Name: string(CapabilityWeather)},
-		CapabilityOutcome{Status: CapabilityOutcomeSuccess, Response: Response{Text: text}},
-	)
+	outcome := weatherExecutor(handler, context.Background(), store.Identity{}, Invocation{Name: string(CapabilityWeather)})
+	if outcome.Status != CapabilityOutcomeSuccess {
+		t.Fatalf("outcome status = %v, text = %q", outcome.Status, outcome.Response.Text)
+	}
+	image := outcome.Response.Image
 	if image == nil {
 		t.Fatal("weather image is nil")
 	}
 	if image.Kind != "weather" || image.Title != "天气" {
 		t.Fatalf("image kind/title = %q/%q", image.Kind, image.Title)
 	}
-	for _, want := range []string{"## 本部", "## 高新校区"} {
-		if !strings.Contains(image.RichText, want) {
-			t.Fatalf("image rich text missing %q: %q", want, image.RichText)
+	if image.Weather == nil {
+		t.Fatal("weather card is nil")
+	}
+	if len(image.Weather.Locations) != 2 {
+		t.Fatalf("card locations = %d, want 2", len(image.Weather.Locations))
+	}
+	for i, want := range []string{"本部", "高新校区"} {
+		location := image.Weather.Locations[i]
+		if location.Name != want {
+			t.Fatalf("location %d name = %q, want %q", i, location.Name, want)
 		}
+		if len(location.Hourly) == 0 || len(location.Daily) == 0 {
+			t.Fatalf("location %q missing hourly/daily points", location.Name)
+		}
+	}
+	if !strings.Contains(image.Weather.Meta, "数据来源：amap") {
+		t.Fatalf("card meta = %q", image.Weather.Meta)
+	}
+	png, width, height, err := (responses.Renderer{}).RenderPNG(image)
+	if err != nil {
+		t.Fatalf("render weather card: %v", err)
+	}
+	if len(png) == 0 || width <= 0 || height <= 0 {
+		t.Fatalf("rendered png = %d bytes, %dx%d", len(png), width, height)
 	}
 }

@@ -445,9 +445,18 @@ func init() {
 		descriptor(CapabilitySemester, []string{"semester", "学期"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, semesterInput, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			return h.currentSemester(ctx)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("semester", "学期", "只查看公开的当前学期名称和日期，不返回个人选课", false, []HelpExample{example("学期", "查看当前学期"), example("学期 当前", "查看当前学期")}, nil)),
-		descriptor(CapabilityWeather, []string{"weather", "天气"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, weatherInput, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
-			return h.weather(ctx, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil)),
+		{
+			// Weather builds a structured card image during execution, so it
+			// cannot use the text-only public cache; the server API reads from
+			// KV and is cheap to call per invocation.
+			ID: CapabilityWeather, Forms: []string{"weather", "天气"},
+			Requirements: CapabilityRequirements{Life: true, DataScope: DataScopePublic},
+			Effect:       EffectRead, Exposure: ExposureModel,
+			Input: weatherInput, Execute: weatherExecutor, Present: defaultCapabilityPresenter,
+			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
+			AutoLogin:     true,
+			Help:          helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil),
+		},
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 数学分析", "按关键词快速搜索课程")}, nil)),
