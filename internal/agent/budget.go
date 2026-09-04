@@ -12,7 +12,7 @@ const (
 	// Keep a single deadline for every stage of one Agent run, including all
 	// model requests and tool calls. It also bounds gateway-triggered runs that
 	// do not have an HTTP request context.
-	agentRunDeadline = 60 * time.Second
+	agentRunDeadline = 2 * time.Minute
 
 	// Run finalization must still be able to close a started row when its
 	// caller cancels, but it must not turn cleanup into another unbounded run.

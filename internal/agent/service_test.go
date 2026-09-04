@@ -2824,6 +2824,17 @@ func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
 	}
 }
 
+func TestAgentFailureReplyDescribesRunDeadline(t *testing.T) {
+	reply := agentFailureReply(308, errAgentRunDeadline)
+	if !strings.Contains(reply, "超过 2 分钟") || !strings.Contains(reply, "未能生成完整回复") ||
+		!strings.Contains(reply, "可指定数量或筛选条件") || !strings.Contains(reply, "记录 #308") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "60 秒") {
+		t.Fatalf("reply exposes the obsolete run deadline: %q", reply)
+	}
+}
+
 func TestImageFailureReplyOnlyExposesInputValidation(t *testing.T) {
 	internal := imageFailureReply(7, errors.New("GET https://secret.example: dial tcp 10.0.0.1: refused"))
 	if !strings.Contains(internal, "图片处理失败，请稍后重试") || !strings.Contains(internal, "记录 #7") {

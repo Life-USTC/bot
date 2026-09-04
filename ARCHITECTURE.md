@@ -375,8 +375,10 @@ job without losing or duplicating the operation.
   confirmation resumes, and process restarts. The Agent-run row and each
   attempt reservation must commit durably before network I/O; persistence
   failure retries the job without contacting the provider.
-- The whole Agent run remains bounded by 60 seconds. Retry-After and jittered
-  exponential delays are capped by the remaining deadline.
+- The whole Agent run remains bounded by two minutes. Its conversation-job
+  lease is three minutes, leaving one minute for final persistence and outbox
+  commit before stale-lease recovery can begin. Retry-After and jittered
+  exponential delays are capped by the remaining run deadline.
 - If a provider transport reports `context.Canceled` while the caller context
   is still live, including while a successful-status response body is being
   read, it is treated as a retryable upstream interruption. A truncated body is
