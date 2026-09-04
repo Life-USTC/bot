@@ -157,7 +157,7 @@ const (
 	ConversationJobTTL = 15 * time.Minute
 	// ConversationJobLease is the maximum time a worker may hold a running
 	// claim before a recovery pass makes it retryable.
-	ConversationJobLease = 2 * time.Minute
+	ConversationJobLease = 3 * time.Minute
 )
 
 var conversationJobBlockingStates = []ConversationJobState{

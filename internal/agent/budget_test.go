@@ -9,7 +9,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/store"
 )
+
+func TestAgentRunDeadlineLeavesConversationLeaseCommitMargin(t *testing.T) {
+	if agentRunDeadline != 2*time.Minute {
+		t.Fatalf("agent run deadline = %s, want 2m", agentRunDeadline)
+	}
+	if store.ConversationJobLease != 3*time.Minute {
+		t.Fatalf("conversation job lease = %s, want 3m", store.ConversationJobLease)
+	}
+	if margin := store.ConversationJobLease - agentRunDeadline; margin < time.Minute {
+		t.Fatalf("conversation job lease commit margin = %s, want at least 1m", margin)
+	}
+}
 
 func TestRunBudgetStopsAnotherModelRequestAfterDeadline(t *testing.T) {
 	metrics := newRunMetrics()
