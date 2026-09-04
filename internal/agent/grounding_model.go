@@ -33,11 +33,10 @@ func groundingInstruction(base string, policy groundingPolicy) string {
 		return base
 	}
 	requirement := "CURRENT TURN REQUIREMENT: Call search_bot_commands before giving the user an answer. Do not answer from chat history or general knowledge."
-	if policy.executeCapability {
-		requirement += " If the search returns documentation, call invoke_bot_capability with one exact documented capability and use only its result. A plain-text factual answer before that capability result is invalid. If the search returns an empty JSON array, never substitute an unrelated Bot capability; for a read-only campus lookup, search search_campus_tools before deciding that the overall request is unsupported."
-	}
 	if policy.requireCampusTool {
-		requirement += " For this known supplementary campus-data request, an empty Bot search must be followed by search_campus_tools and, when that search returns documentation, call_campus_tool. Do not give a factual or availability answer without that evidence."
+		requirement += " This is a known supplementary campus-data request. After search_bot_commands returns, call search_campus_tools even if the Bot search returned unrelated documentation; do not call invoke_bot_capability for this request. When the campus search returns documentation, call call_campus_tool. Do not give a factual or availability answer without that evidence."
+	} else if policy.executeCapability {
+		requirement += " If the search returns documentation, call invoke_bot_capability with one exact documented capability and use only its result. A plain-text factual answer before that capability result is invalid. If the search returns an empty JSON array, never substitute an unrelated Bot capability; for a read-only campus lookup, search search_campus_tools before deciding that the overall request is unsupported."
 	}
 	return base + "\n" + requirement
 }
@@ -318,13 +317,13 @@ func (m *groundingModel) nextGroundingTool(ctx context.Context, input []*schema.
 			return ""
 		}
 		m.allowedCapabilities, m.observedCommandSearch = commandSearchCapabilityIDs(last.Content)
+		if m.policy.requireCampusTool && m.observedCommandSearch && !m.offeredCampusSearch {
+			m.offeredCampusSearch = true
+			return campusSearchToolName
+		}
 		if m.policy.executeCapability && !m.offeredCapability && len(m.allowedCapabilities) > 0 {
 			m.offeredCapability = true
 			return capabilityToolName
-		}
-		if m.policy.requireCampusTool && m.observedCommandSearch && len(m.allowedCapabilities) == 0 && !m.offeredCampusSearch {
-			m.offeredCampusSearch = true
-			return campusSearchToolName
 		}
 	}
 	if last.Role == schema.Tool && toolNameForResult(input, last) == capabilityToolName {
@@ -376,6 +375,9 @@ func (m *groundingModel) groundedToolResult() (string, bool) {
 	if m.observedCampusReturn {
 		return m.lastCampusResult, true
 	}
+	if m.policy.requireCampusTool {
+		return "", false
+	}
 	return m.lastCapabilityResult, m.observedCapabilityReturn
 }
 
@@ -385,19 +387,19 @@ func (m *groundingModel) hasRequiredEvidence() bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.observedCapabilityResult {
-		// A real result counts only after the invoked capability was recovered
-		// from the host-produced command-search transcript.
-		return true
-	}
 	if m.policy.requireCampusTool {
-		if !m.observedCommandSearch || len(m.allowedCapabilities) > 0 {
+		if !m.observedCommandSearch {
 			return false
 		}
 		if m.observedCampusResult {
 			return true
 		}
 		return m.observedCampusSearch && len(m.allowedCampusTools) == 0
+	}
+	if m.observedCapabilityResult {
+		// A real result counts only after the invoked capability was recovered
+		// from the host-produced command-search transcript.
+		return true
 	}
 	return m.observedCommandSearch && (!m.policy.executeCapability || len(m.allowedCapabilities) == 0)
 }

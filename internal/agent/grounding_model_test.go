@@ -100,6 +100,7 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 		{name: "second classroom platform", text: "你能查询第二课堂平台的活动吗", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
 		{name: "second classroom event list uses MCP", text: "请查询目前可以报名的第二课堂活动，列出前 3 个", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
 		{name: "second classroom short name", text: "但是你现在是不是能搜二课了", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
+		{name: "second classroom current production wording", text: "现在能查询到二课都有哪些项目了吗", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
 		{name: "verify second classroom result", text: "请核实刚才第二课堂的结果", ident: private, want: groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true}},
 		{name: "second period is not young event", text: "二课几点开始", ident: private, want: groundingPolicy{}},
 		{name: "public group introduction", text: "介绍一下这个公开服务", ident: store.Identity{ConversationType: "group"}, want: groundingPolicy{}},
@@ -110,6 +111,35 @@ func TestGroundingPolicyTargetsDomainAndVerificationRequests(t *testing.T) {
 				t.Fatalf("policy=%#v want=%#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestGroundingModelForcesCampusSearchAfterIrrelevantBotMatch(t *testing.T) {
+	inner := &groundingRecordingModel{}
+	wrapped := newGroundingModel(inner, groundingPolicy{searchCommands: true, executeCapability: true, requireCampusTool: true})
+	grounder := wrapped.(*groundingModel)
+	user := schema.UserMessage("现在能查询到二课都有哪些项目了吗")
+	toolOptions := []model.Option{model.WithTools([]*schema.ToolInfo{
+		{Name: commandSearchToolName}, {Name: capabilityToolName},
+		{Name: campusSearchToolName}, {Name: campusCallToolName},
+	})}
+
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	commandSearchCall := schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "bot-search", Type: "function", Function: schema.FunctionCall{Name: commandSearchToolName, Arguments: `{"query":"查询第二课堂平台活动项目列表"}`},
+	}})
+	commandSearchResult := schema.ToolMessage(`[{"id":"list_semesters"}]`, "bot-search", schema.WithToolName(commandSearchToolName))
+	if _, err := wrapped.Generate(t.Context(), []*schema.Message{user, commandSearchCall, commandSearchResult}, toolOptions...); err != nil {
+		t.Fatal(err)
+	}
+	assertOnlyAllowedTool(t, inner.options[1], campusSearchToolName)
+	if grounder.hasRequiredEvidence() {
+		t.Fatal("an unrelated Bot search result satisfied the campus-data requirement")
+	}
+	if _, returned := grounder.groundedToolResult(); returned {
+		t.Fatal("an unrelated Bot search result became fallback evidence")
 	}
 }
 

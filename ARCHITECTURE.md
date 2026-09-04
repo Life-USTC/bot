@@ -270,8 +270,8 @@ catalog:
 
 Search ignores generic request verbs, politeness, and standalone numbers. A
 fuzzy Chinese match needs domain-bearing evidence in the capability ID, title,
-accepted forms, or multiple documentation fragments; words such as “查询” and
-“列出” cannot make an unrelated command look relevant. A valid empty Bot search
+accepted forms, or multiple documentation fragments; words such as “查询”,
+“列出”, and “列表” cannot make an unrelated command look relevant. A valid empty Bot search
 result is evidence that the registry has no match and allows the model to try
 MCP. A malformed search result is not evidence and cannot unlock invocation.
 
@@ -303,10 +303,13 @@ is returned to the user as its literal tool result rather than allowing later
 model prose to turn it into a success claim.
 
 Known supplementary campus domains use the same host-enforced evidence chain.
-For a second-classroom lookup, an empty Bot search forces an MCP search; a
-nonempty MCP search then forces `call_campus_tool`, and only a name returned by
-that search can satisfy the turn. The model may format the literal read result,
-but it cannot replace any required stage with an unsupported factual answer.
+For a second-classroom lookup, completion of the required Bot search always
+forces an MCP search, even if a loosely reformulated Bot search happened to
+return unrelated documentation. The model is not offered Bot invocation for
+that turn. A nonempty MCP search then forces `call_campus_tool`, and only a name
+returned by that search can satisfy the turn. The model may format the literal
+read result, but it cannot replace any required stage with an unsupported
+factual answer.
 
 ## Exact conversation evidence
 

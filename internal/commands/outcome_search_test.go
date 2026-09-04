@@ -148,10 +148,19 @@ func TestCapabilitySearchRejectsUnrelatedChineseQueryVerbOverlap(t *testing.T) {
 		"第二课堂 二课 活动查询",
 		"想搜二课活动",
 		"请查询目前可以报名的第二课堂活动，列出前 3 个",
+		"查询第二课堂平台活动列表",
+		"查询第二课堂平台活动项目列表",
 	} {
 		if docs := SearchCapabilityDocumentation(query, CapabilitySearchOptions{}); len(docs) != 0 {
 			t.Errorf("SearchCapabilityDocumentation(%q) = %#v, want no supported capability", query, docs)
 		}
+	}
+}
+
+func TestCapabilitySearchStillMatchesExplicitSemesterList(t *testing.T) {
+	docs := SearchCapabilityDocumentation("学期列表", CapabilitySearchOptions{Limit: 1})
+	if len(docs) != 1 || docs[0].ID != CapabilityListSemesters {
+		t.Fatalf("semester-list search = %#v", docs)
 	}
 }
 
