@@ -772,7 +772,7 @@ func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *t
 	}); err != nil {
 		t.Fatal(err)
 	}
-	inputText := "请查询目前可以报名的第二课堂活动，列出前 3 个"
+	inputText := "现在能查询到二课都有哪些项目了吗"
 	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "young-event", Input: store.ConversationJobInput{Text: inputText},
 		ExpiresAt: time.Now().Add(time.Hour),
@@ -800,7 +800,7 @@ func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *t
 			_, _ = io.WriteString(w, `{
 				"id":"young-search-bot","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"young-search-bot-call","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"请查询目前可以报名的第二课堂活动，列出前 3 个\"}"}
+					"id":"young-search-bot-call","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"查询第二课堂平台活动项目列表\"}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`)
 		case 2:
@@ -814,7 +814,7 @@ func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *t
 			_, _ = io.WriteString(w, `{
 				"id":"young-call-mcp","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"young-call-mcp-call","type":"function","function":{"name":"call_campus_tool","arguments":"{\"name\":\"catalog_young_event_list\",\"arguments\":{\"active\":true,\"page\":1,\"pageSize\":3}}"}
+					"id":"young-call-mcp-call","type":"function","function":{"name":"call_campus_tool","arguments":"{\"name\":\"catalog_young_event_list\",\"arguments\":{\"active\":true,\"page\":1,\"limit\":3}}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`)
 		case 4:
