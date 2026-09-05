@@ -210,18 +210,9 @@
 
 // Header and body cells are painted first, then course blocks, then the
 // today/divider overlays to match the legacy draw order.
-#block(height: page-height)[
+#block(width: page-width, height: page-height)[
   #place(top + left, dx: margin, dy: 35pt, text(size: 18pt, weight: "bold")[#data.title])
-  #place(
-    top + left,
-    dx: margin,
-    dy: 35pt,
-    box(
-      width: page-width - 2 * margin,
-      height: 24pt,
-      align(right + top, text(size: 9pt, fill: muted)[#data.summary]),
-    ),
-  )
+  #place(top + right, dx: -margin, dy: 35pt, text(size: 9pt, fill: muted)[#data.summary])
 
   #put-cell(margin, grid-top, data.label_width, data.header_height, rgb("#f4f4f5"))
   #place(
