@@ -2,6 +2,7 @@
 
 pub mod bus;
 pub mod richtext;
+pub mod weather;
 
 use crate::request::RenderEnvelope;
 use crate::world::SandboxWorld;
@@ -12,6 +13,7 @@ pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     match env.kind.as_str() {
         "bus" => bus::render(&env.payload, scale),
         "rich" => richtext::render(&env.payload, scale),
+        "weather" => weather::render(&env.payload, scale),
         other => Err(anyhow!("unsupported kind: {other}")),
     }
 }

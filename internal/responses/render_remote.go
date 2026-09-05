@@ -128,7 +128,12 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	case img.Grid != nil:
 		return nil, 0, 0, errors.New("remote renderer does not support grid cards yet")
 	case img.Weather != nil:
-		return nil, 0, 0, errors.New("remote renderer does not support weather cards yet")
+		p, err := r.buildWeatherRequest(img)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		kind = "weather"
+		payload = p
 	case richDocumentIsBus(parseRichText(img.RichText)):
 		p := r.buildBusRequest(img)
 		if len(p.Tables) == 0 {
