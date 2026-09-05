@@ -64,6 +64,39 @@ type remoteBusRow struct {
 	Departed  bool     `json:"departed,omitempty"`
 }
 
+// remoteRichPayload is the payload for kind "rich" (every non-bus rich text
+// card). It mirrors the legacy renderRichPNG general branch: the Go side runs
+// layoutRichText and serializes each richLayoutNode into a block, so the
+// sidecar draws final geometry without re-measuring.
+type remoteRichPayload struct {
+	Title             string            `json:"title"`
+	ContentWidth      int               `json:"content_width"`
+	CompactFirstBlock bool              `json:"compact_first_block"`
+	Footer            []string          `json:"footer,omitempty"`
+	Blocks            []remoteRichBlock `json:"blocks"`
+}
+
+// remoteRichBlock is one layout node: either a text block (Lines, already
+// wrapped by wrapRichText — hence Wrapped) or a table block.
+type remoteRichBlock struct {
+	Heading string           `json:"heading,omitempty"`
+	Lines   []string         `json:"lines,omitempty"`
+	Wrapped bool             `json:"wrapped,omitempty"`
+	Table   *remoteRichTable `json:"table,omitempty"`
+}
+
+type remoteRichTable struct {
+	Header         []string        `json:"header,omitempty"`
+	HeaderEmphasis []bool          `json:"header_emphasis,omitempty"`
+	ColumnWidths   []int           `json:"column_widths,omitempty"`
+	Rows           []remoteRichRow `json:"rows,omitempty"`
+}
+
+type remoteRichRow struct {
+	Cells     []string `json:"cells"`
+	Highlight bool     `json:"highlight,omitempty"`
+}
+
 func (r RemoteRenderer) httpClient() *http.Client {
 	if r.Client != nil {
 		return r.Client
@@ -89,19 +122,34 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	if endpoint == "" {
 		return nil, 0, 0, errors.New("remote renderer endpoint is empty")
 	}
-	if strings.TrimSpace(img.Kind) != "bus" {
-		return nil, 0, 0, fmt.Errorf("remote renderer PoC only supports kind %q, got %q", "bus", img.Kind)
+	var kind string
+	var payload any
+	switch {
+	case img.Grid != nil:
+		return nil, 0, 0, errors.New("remote renderer does not support grid cards yet")
+	case img.Weather != nil:
+		return nil, 0, 0, errors.New("remote renderer does not support weather cards yet")
+	case richDocumentIsBus(parseRichText(img.RichText)):
+		p := r.buildBusRequest(img)
+		if len(p.Tables) == 0 {
+			return nil, 0, 0, errors.New("response contains no bus tables")
+		}
+		kind = "bus"
+		payload = p
+	default:
+		p := r.buildRichRequest(img)
+		if len(p.Blocks) == 0 {
+			return nil, 0, 0, errors.New("response contains no rich content")
+		}
+		kind = "rich"
+		payload = p
 	}
 
-	payload := r.buildBusRequest(img)
-	if len(payload.Tables) == 0 {
-		return nil, 0, 0, errors.New("response contains no bus tables")
-	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	body, err := json.Marshal(remoteRenderRequest{Kind: img.Kind, Payload: payloadJSON})
+	body, err := json.Marshal(remoteRenderRequest{Kind: kind, Payload: payloadJSON})
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -220,6 +268,66 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 			req.RowsOfTables = append(req.RowsOfTables, nil)
 		}
 		req.RowsOfTables[rowIdx] = append(req.RowsOfTables[rowIdx], idx)
+	}
+	return req
+}
+
+// buildRichRequest mirrors the legacy renderRichPNG non-bus branch: parse the
+// rich text, run the same layoutRichText pass, and serialize each layout node
+// into a block carrying final geometry (pre-wrapped lines, fitted cells,
+// column widths) so the sidecar only draws.
+func (r RemoteRenderer) buildRichRequest(img *Image) remoteRichPayload {
+	now := r.now().In(time.FixedZone("CST", 8*60*60))
+	doc := parseRichText(img.RichText)
+	layout := layoutRichText(doc, now)
+	m := layout.Metrics
+
+	req := remoteRichPayload{
+		Title:             layout.Title,
+		ContentWidth:      layout.Space.Width - 2*m.MarginX,
+		CompactFirstBlock: richDocumentHasCompactHelpIntro(doc),
+	}
+	footer := richFooterLines(now)
+	req.Footer = []string{footer[0], footer[1]}
+
+	for _, node := range layout.Nodes {
+		block := remoteRichBlock{
+			Heading: fitRichTextToWidth(node.Heading, node.Bounds.Dx()-2*m.TextPaddingX, 13),
+		}
+		if node.Table == nil {
+			block.Lines = node.Lines
+			block.Wrapped = true
+			req.Blocks = append(req.Blocks, block)
+			continue
+		}
+		table := &remoteRichTable{
+			ColumnWidths: append([]int(nil), node.ColumnWidths...),
+		}
+		for i, header := range node.Header {
+			width := 0
+			if i < len(node.ColumnWidths) {
+				width = node.ColumnWidths[i]
+			}
+			table.Header = append(table.Header, fitRichTextToWidth(header.Text, width-2*m.TableCellPaddingX, 13))
+			table.HeaderEmphasis = append(table.HeaderEmphasis, header.Emphasize)
+		}
+		for _, row := range node.Table.Rows {
+			cells := make([]string, len(table.Header))
+			for i := range cells {
+				cell := ""
+				if i < len(row.Cells) {
+					cell = row.Cells[i]
+				}
+				width := 0
+				if i < len(node.ColumnWidths) {
+					width = node.ColumnWidths[i]
+				}
+				cells[i] = fitRichTextToWidth(cell, width-2*m.TableCellPaddingX, 14)
+			}
+			table.Rows = append(table.Rows, remoteRichRow{Cells: cells, Highlight: row.Highlight})
+		}
+		block.Table = table
+		req.Blocks = append(req.Blocks, block)
 	}
 	return req
 }

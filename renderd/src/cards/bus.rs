@@ -8,7 +8,6 @@ use anyhow::{anyhow, Context};
 use serde::Deserialize;
 
 use crate::escape::typst_str;
-use crate::world::SandboxWorld;
 
 #[derive(Debug, Deserialize)]
 pub struct BusPayload {
@@ -58,39 +57,8 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     if req.tables.is_empty() {
         return Err(anyhow!("bus render requires at least one table"));
     }
-    crate::world::fonts().map_err(|e| anyhow!(e))?;
-
     let source = build_source(&req);
-    let world = SandboxWorld::new(source.clone());
-    let warned = typst::compile::<typst::layout::PagedDocument>(&world);
-    let doc = warned.output.map_err(|errors| {
-        use typst::World as _;
-        let main = world.source(world.main()).ok();
-        let detail = errors
-            .iter()
-            .map(|e| {
-                let mut msg = e.message.to_string();
-                if let Some(line) = main
-                    .as_ref()
-                    .and_then(|s| s.range(e.span))
-                    .and_then(|range| main.as_ref().and_then(|s| s.byte_to_line(range.start)))
-                {
-                    msg.push_str(&format!(" (line {})", line + 1));
-                }
-                msg
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        if std::env::var_os("RENDERD_DEBUG_SOURCE").is_some() {
-            tracing::error!(source = %source, "typst compile failed");
-        }
-        anyhow!("typst compile failed: {detail}")
-    })?;
-    let page = doc.pages.first().context("compiled document has no pages")?;
-
-    let pixmap = typst_render::render(page, scale);
-    let png = pixmap.encode_png().context("png encode failed")?;
-    Ok((png, pixmap.width(), pixmap.height()))
+    super::compile_png(source, scale)
 }
 
 /// Serialize the request into a typst dictionary literal.
@@ -98,7 +66,7 @@ fn data_literal(req: &BusPayload) -> String {
     let mut out = String::new();
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
-    out.push_str(&format!("content_width: {}, ", fmt_num(req.content_width)));
+    out.push_str(&format!("content_width: {}, ", super::fmt_num(req.content_width)));
     match (&req.next_time, &req.next_wait) {
         (Some(time), Some(wait)) => out.push_str(&format!(
             "next_time: {}, next_wait: {}, ",
@@ -139,7 +107,7 @@ fn data_literal(req: &BusPayload) -> String {
         out.push_str("), column_widths: (");
         for i in 0..ncols {
             let w = table.column_widths.get(i).copied().unwrap_or(0.0);
-            out.push_str(&fmt_num(w));
+            out.push_str(&super::fmt_num(w));
             out.push_str(", ");
         }
         out.push_str("), rows: (");
@@ -162,14 +130,6 @@ fn data_literal(req: &BusPayload) -> String {
     out
 }
 
-/// Format a JSON number as a typst numeric literal without a trailing `.0`.
-fn fmt_num(v: f64) -> String {
-    if v.fract() == 0.0 {
-        format!("{}", v as i64)
-    } else {
-        format!("{v}")
-    }
-}
 
 fn build_source(req: &BusPayload) -> String {
     TEMPLATE.replace("__DATA__", &data_literal(req))

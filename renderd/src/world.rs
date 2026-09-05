@@ -154,6 +154,10 @@ impl World for SandboxWorld {
     fn source(&self, id: FileId) -> FileResult<Source> {
         if id == self.main_id {
             Ok(self.main.clone())
+        } else if id.vpath().as_rootless_path().to_str() == Some("common.typ") {
+            // Shared template fragment (palette, metrics, watermark, footer)
+            // imported by every card template; embedded like the logo assets.
+            Ok(Source::new(id, COMMON_TYP.to_string()))
         } else {
             Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
         }
@@ -187,6 +191,9 @@ fn raw_logo() -> &'static Bytes {
     static LOGO: OnceLock<Bytes> = OnceLock::new();
     LOGO.get_or_init(|| Bytes::new(include_bytes!("../assets/life_ustc_logo_raw.png").to_vec()))
 }
+
+/// Shared template fragment, served to card templates as `common.typ`.
+const COMMON_TYP: &str = include_str!("templates/common.typ");
 
 /// The logo with its alpha pre-scaled, served as `assets/logo-15.png` etc.
 /// Typst cannot draw images at reduced opacity, so the fade is baked into the

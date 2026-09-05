@@ -1,25 +1,9 @@
 // Bus timetable card, visually replicating the legacy Go renderRichPNG bus
 // branch (rich_render.go). All geometry is decided by the Go side; this
 // template only draws. Units are logical pt == legacy logical px.
+#import "common.typ": *
+
 #let data = __DATA__
-
-#let bg = rgb("#fafafa")
-#let ink = rgb("#27272a")
-#let muted = rgb("#71717a")
-#let line-c = rgb("#d4d4d8")
-#let highlight-bg = rgb("#f4f4f5")
-#let accent = rgb("#0f766e")
-
-// richRenderMetrics (logical px):
-#let margin-x = 32pt
-#let content-top = 82pt
-#let header-h = 28pt
-#let row-h = 32pt
-#let cell-pad-x = 8pt
-#let col-gap = 20pt
-#let row-gap = 30pt
-// footer occupies FooterGap(24) + FooterLineGap(14) + BottomMargin(32) = 70pt
-#let footer-zone = 70pt
 
 #set page(
   width: (data.content_width + 64) * 1pt,
@@ -28,7 +12,7 @@
   fill: bg,
 )
 #set text(
-  font: ("Fira Code", "Noto Sans CJK SC", "Source Han Sans CN"),
+  font: card-fonts,
   size: 13pt,
   fill: ink,
 )
@@ -36,16 +20,8 @@
 // default inter-block spacing (1.2em) so legacy metrics are exact.
 #set block(spacing: 0pt)
 
-// Watermark: legacy drawBusLogoWatermark puts the 120pt logo's center 30pt
-// (size/4) beyond the bottom-right corner, rotated -30deg, at 15% opacity
-// (pre-baked into assets/logo-15.png by renderd). Placed first so all text
-// draws over it.
-#place(
-  bottom + right,
-  dx: 90pt,
-  dy: 90pt,
-  rotate(-30deg, image("assets/logo-15.png", width: 120pt)),
-)
+// Placed first so all text draws over it.
+#card-watermark()
 
 // Body cells: legacy draws ASCII runs with the 14pt mono face and other runs
 // with the 13pt sans face (drawMixedText). The font list already picks Fira
@@ -86,19 +62,7 @@
   ]
 }
 
-// Footer: two right-aligned 9pt muted lines, anchored so the second line's
-// baseline sits 32pt above the page bottom (legacy footerY + 14 + 32).
-#if data.footer.len() > 0 {
-  place(
-    bottom + right,
-    dx: -margin-x,
-    dy: -29pt,
-    align(right)[
-      #text(size: 9pt, fill: muted)[#data.footer.at(0)]\
-      #text(size: 9pt, fill: muted)[#data.footer.at(1)]
-    ],
-  )
-}
+#card-footer(data.footer)
 
 #block(height: content-top, inset: (left: margin-x, right: margin-x))[
   #v(35pt)

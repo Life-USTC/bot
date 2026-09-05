@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 	"testing"
+	"time"
 )
 
 func testRemotePNG(t *testing.T) []byte {
@@ -79,6 +79,9 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	if got := gotPayload.Tables[0].Header; len(got) != 4 || got[0] != "东区" || got[3] != "高新区" {
 		t.Fatalf("first table header = %#v", got)
 	}
+	if got := gotPayload.Tables[0].HeaderEmphasis; len(got) != 4 || got[0] || got[1] || got[2] || got[3] {
+		t.Fatalf("first table header_emphasis = %#v, want [false false false false]", got)
+	}
 	if got := gotPayload.Tables[0].ColumnWidths; len(got) != 4 {
 		t.Fatalf("first table column widths = %#v", got)
 	}
@@ -107,13 +110,158 @@ func TestRemoteRendererUnavailable(t *testing.T) {
 	}
 }
 
-func TestRemoteRendererRejectsNonBusKind(t *testing.T) {
+func TestRemoteRendererRejectsUnsupportedCard(t *testing.T) {
 	renderer := RemoteRenderer{Endpoint: "http://127.0.0.1:1/render"}
-	img := NewTextImage("todo", "待办", "写报告")
+	img := NewScheduleGridImage("schedule", "本周课表", &ScheduleGrid{
+		Days:    []ScheduleGridDay{{Label: "今天", Date: "09-02"}},
+		Periods: []ScheduleGridPeriod{{Label: "第 1 节", Time: "09:00–09:45"}},
+	}, "本周课表")
 	if img == nil {
 		t.Skip("nil image")
 	}
-	if _, _, _, err := renderer.RenderPNG(img); err == nil || !strings.Contains(err.Error(), "only supports") {
-		t.Fatalf("err = %v, want unsupported-kind error", err)
+	if _, _, _, err := renderer.RenderPNG(img); err == nil || !strings.Contains(err.Error(), "grid") {
+		t.Fatalf("err = %v, want unsupported-grid error", err)
+	}
+}
+
+func TestRemoteRendererRichPayload(t *testing.T) {
+	payload := testRemotePNG(t)
+	var gotRequest remoteRenderRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("X-Image-Width", "8")
+		w.Header().Set("X-Image-Height", "6")
+		w.Write(payload)
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{
+		Endpoint: server.URL + "/render",
+		Now: func() time.Time {
+			return time.Date(2026, 9, 2, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}
+	img := NewRichTextImage("todo", `# 待办
+
+## 本周待办
+| 任务 | 截止 |
+| --- | --- |
+| 提交数据库实验报告 | 07-10 |
+| 写完文献综述初稿 | 07-12 | ✨ |
+| 还图书馆的书 | 07-15 |`, "待办：提交数据库实验报告等 3 项")
+	if img == nil {
+		t.Skip("nil image")
+	}
+	if _, _, _, err := renderer.RenderPNG(img); err != nil {
+		t.Fatalf("RenderPNG: %v", err)
+	}
+
+	if gotRequest.Kind != "rich" {
+		t.Fatalf("request kind = %q, want rich", gotRequest.Kind)
+	}
+	var gotPayload remoteRichPayload
+	if err := json.Unmarshal(gotRequest.Payload, &gotPayload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if gotPayload.Title != "待办" {
+		t.Fatalf("payload title = %q", gotPayload.Title)
+	}
+	if gotPayload.CompactFirstBlock {
+		t.Fatalf("compact_first_block = true, want false")
+	}
+	if len(gotPayload.Blocks) != 1 || gotPayload.Blocks[0].Table == nil {
+		t.Fatalf("blocks = %#v, want a single table block", gotPayload.Blocks)
+	}
+	block := gotPayload.Blocks[0]
+	if block.Heading != "本周待办" {
+		t.Fatalf("block heading = %q", block.Heading)
+	}
+	table := block.Table
+	if got := table.Header; len(got) != 2 || got[0] != "任务" || got[1] != "截止" {
+		t.Fatalf("table header = %#v", got)
+	}
+	if got := table.HeaderEmphasis; len(got) != 2 || got[0] || got[1] {
+		t.Fatalf("table header_emphasis = %#v, want [false false]", got)
+	}
+	if len(table.Rows) != 3 || !table.Rows[1].Highlight || table.Rows[0].Highlight || table.Rows[2].Highlight {
+		t.Fatalf("table rows = %#v, want 3 rows with only row 1 highlighted", table.Rows)
+	}
+	if got := table.Rows[0].Cells; len(got) != 2 || got[0] != "提交数据库实验报告" || got[1] != "07-10" {
+		t.Fatalf("first row cells = %#v", got)
+	}
+	widthSum := 0
+	for _, w := range table.ColumnWidths {
+		widthSum += w
+	}
+	if widthSum != gotPayload.ContentWidth {
+		t.Fatalf("column widths sum = %d, want content_width %d", widthSum, gotPayload.ContentWidth)
+	}
+	if len(gotPayload.Footer) != 2 || gotPayload.Footer[0] != "13:00 · 工作日" || gotPayload.Footer[1] != "Life @ USTC" {
+		t.Fatalf("footer = %#v", gotPayload.Footer)
+	}
+}
+
+func TestRemoteRendererRichTextWrap(t *testing.T) {
+	var gotRequest remoteRenderRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("X-Image-Width", "8")
+		w.Header().Set("X-Image-Height", "6")
+		w.Write(testRemotePNG(t))
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{
+		Endpoint: server.URL + "/render",
+		Now: func() time.Time {
+			return time.Date(2026, 9, 2, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}
+	img := NewRichTextImage("help", `# Bot 帮助
+
+发送「帮助 课表」可以查看「课表」命令的具体用法。
+直接发送「课表」即可查看今天的课程安排，发送「校车」查看校车时刻表。
+`+strings.Repeat("这是一段用于触发自动换行的较长的说明文字，", 8), "Bot 帮助")
+	if img == nil {
+		t.Skip("nil image")
+	}
+	if _, _, _, err := renderer.RenderPNG(img); err != nil {
+		t.Fatalf("RenderPNG: %v", err)
+	}
+
+	if gotRequest.Kind != "rich" {
+		t.Fatalf("request kind = %q, want rich", gotRequest.Kind)
+	}
+	var gotPayload remoteRichPayload
+	if err := json.Unmarshal(gotRequest.Payload, &gotPayload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if gotPayload.Title != "Bot 帮助" {
+		t.Fatalf("payload title = %q", gotPayload.Title)
+	}
+	if len(gotPayload.Blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(gotPayload.Blocks))
+	}
+	block := gotPayload.Blocks[0]
+	if block.Table != nil || !block.Wrapped {
+		t.Fatalf("block = %#v, want a wrapped text block", block)
+	}
+	// Two short lines plus the long paragraph wrapped into four segments.
+	if len(block.Lines) != 6 {
+		t.Fatalf("block lines = %d, want 6: %q", len(block.Lines), block.Lines)
+	}
+	if block.Lines[0] != "发送「帮助 课表」可以查看「课表」命令的具体用法。" {
+		t.Fatalf("first line = %q", block.Lines[0])
+	}
+	for i, line := range block.Lines {
+		if richTextWidth(line, 13) > gotPayload.ContentWidth-16 {
+			t.Fatalf("line %d wider than wrap width: %q", i, line)
+		}
 	}
 }
