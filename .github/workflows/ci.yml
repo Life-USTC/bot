@@ -67,6 +67,36 @@ jobs:
           make generate
           git diff --exit-code
 
+  renderd:
+    name: Renderd
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout bot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          toolchain: "1.89.0"
+          components: rustfmt, clippy
+          cache-workspaces: renderd
+          cache-targets: false
+          rustflags: ""
+
+      - name: Install CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-firacode fonts-noto-cjk fonts-noto-cjk-extra
+
+      - name: Check, test, and release-build renderd
+        run: |
+          cargo fmt --manifest-path renderd/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path renderd/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path renderd/Cargo.toml
+          cargo build --locked --release --manifest-path renderd/Cargo.toml
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

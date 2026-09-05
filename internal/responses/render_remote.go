@@ -15,9 +15,8 @@ import (
 	"time"
 )
 
-// RemoteRenderer is a proof-of-concept renderer that delegates PNG rendering
-// to the typst-based sidecar service (renderd) over HTTP. It implements the
-// same RenderPNG semantics as Renderer.
+// RemoteRenderer delegates PNG rendering to the typst-based renderd sidecar
+// over HTTP. It implements the same RenderPNG semantics as Renderer.
 type RemoteRenderer struct {
 	// Endpoint is the full URL of the sidecar render endpoint, e.g.
 	// "http://127.0.0.1:9123/render".
@@ -36,6 +35,12 @@ type remoteRenderRequest struct {
 	Kind    string          `json:"kind"`
 	Payload json.RawMessage `json:"payload"`
 }
+
+const (
+	maxRemotePNGBytes       = 32 << 20
+	maxRemoteImageDimension = 16_384
+	maxRemoteImagePixels    = 32 << 20
+)
 
 // remoteBusPayload is the payload for kind "bus". It mirrors the geometry of
 // the legacy renderRichPNG bus branch: the sidecar only has to lay the tables
@@ -112,11 +117,25 @@ func (r RemoteRenderer) now() time.Time {
 }
 
 // RenderPNG renders img via the sidecar. It returns the PNG bytes and the
-// pixel dimensions reported by the sidecar (falling back to decoding the PNG
-// header if the headers are missing).
+// validated pixel dimensions reported by the sidecar (or the decoded image
+// when the optional headers are missing).
 func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
+	return r.RenderPNGContext(context.Background(), img)
+}
+
+// RenderPNGContext is the cancellation-aware renderer entry point used by
+// application workflows. The parent context can cancel an in-flight HTTP
+// request when a job or notification times out.
+func (r RemoteRenderer) RenderPNGContext(parent context.Context, img *Image) ([]byte, int, int, error) {
 	if img == nil || strings.TrimSpace(img.AltText) == "" {
 		return nil, 0, 0, errors.New("response image is empty")
+	}
+	if parent != nil {
+		select {
+		case <-parent.Done():
+			return nil, 0, 0, parent.Err()
+		default:
+		}
 	}
 	endpoint := strings.TrimSpace(r.Endpoint)
 	if endpoint == "" {
@@ -147,10 +166,10 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 		kind = "bus"
 		payload = p
 	default:
-		p := r.buildRichRequest(img)
-		if len(p.Blocks) == 0 {
-			return nil, 0, 0, errors.New("response contains no rich content")
+		if strings.TrimSpace(img.RichText) == "" {
+			return nil, 0, 0, errors.New("response rich text is empty")
 		}
+		p := r.buildRichRequest(img)
 		kind = "rich"
 		payload = p
 	}
@@ -164,7 +183,10 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 		return nil, 0, 0, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -175,6 +197,9 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 
 	resp, err := r.httpClient().Do(httpReq)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, 0, 0, ctxErr
+		}
 		return nil, 0, 0, fmt.Errorf("render sidecar unavailable: %w", err)
 	}
 	defer resp.Body.Close()
@@ -184,19 +209,50 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 		return nil, 0, 0, fmt.Errorf("render sidecar returned %s: %s", resp.Status, strings.TrimSpace(string(detail)))
 	}
 
-	png, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if resp.ContentLength > maxRemotePNGBytes {
+		return nil, 0, 0, fmt.Errorf("render sidecar response is too large: %d bytes", resp.ContentLength)
+	}
+	png, err := io.ReadAll(io.LimitReader(resp.Body, maxRemotePNGBytes+1))
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	if len(png) == 0 {
+		return nil, 0, 0, errors.New("render sidecar returned an empty PNG")
+	}
+	if len(png) > maxRemotePNGBytes {
+		return nil, 0, 0, fmt.Errorf("render sidecar response is too large: more than %d bytes", maxRemotePNGBytes)
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(png))
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("decode rendered PNG header: %w", err)
+	}
+	if format != "png" {
+		return nil, 0, 0, fmt.Errorf("render sidecar returned %s instead of PNG", format)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, 0, 0, errors.New("render sidecar returned an image with invalid dimensions")
+	}
+	if cfg.Width > maxRemoteImageDimension || cfg.Height > maxRemoteImageDimension {
+		return nil, 0, 0, fmt.Errorf("render sidecar image dimensions are too large: %dx%d", cfg.Width, cfg.Height)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxRemoteImagePixels {
+		return nil, 0, 0, fmt.Errorf("render sidecar image has too many pixels: %dx%d", cfg.Width, cfg.Height)
+	}
+	// Decode the complete image after checking its advertised dimensions. DecodeConfig
+	// only reads the header, so it would accept a truncated PNG with a valid IHDR.
+	if _, format, err := image.Decode(bytes.NewReader(png)); err != nil {
+		return nil, 0, 0, fmt.Errorf("decode rendered PNG: %w", err)
+	} else if format != "png" {
+		return nil, 0, 0, fmt.Errorf("render sidecar returned %s instead of PNG", format)
+	}
 
-	width := parseIntHeader(resp.Header, "X-Image-Width")
-	height := parseIntHeader(resp.Header, "X-Image-Height")
-	if width <= 0 || height <= 0 {
-		cfg, _, err := image.DecodeConfig(bytes.NewReader(png))
-		if err != nil {
-			return nil, 0, 0, fmt.Errorf("decode rendered PNG header: %w", err)
-		}
-		width, height = cfg.Width, cfg.Height
+	width, err := parseImageDimensionHeader(resp.Header, "X-Image-Width", cfg.Width)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	height, err := parseImageDimensionHeader(resp.Header, "X-Image-Height", cfg.Height)
+	if err != nil {
+		return nil, 0, 0, err
 	}
 	return png, width, height, nil
 }
@@ -224,13 +280,11 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 	}
 	layout := layoutRichText(doc, now)
 
-	title := busRenderTitle(img)
-	if title == "校车" {
-		title = "全部路线"
-	}
-
 	req := remoteBusPayload{
-		Title:        "校车 · " + title,
+		// renderRichPNG draws layout.Title directly. Keep the sidecar title
+		// byte-for-byte identical to the parsed rich document, including the
+		// all-routes and route-specific forms.
+		Title:        layout.Title,
 		ContentWidth: layout.Space.Width - 2*layout.Metrics.MarginX,
 		NextTime:     layout.NextTime,
 		NextWait:     layout.NextWait,
@@ -342,14 +396,17 @@ func (r RemoteRenderer) buildRichRequest(img *Image) remoteRichPayload {
 	return req
 }
 
-func parseIntHeader(h http.Header, name string) int {
+func parseImageDimensionHeader(h http.Header, name string, actual int) (int, error) {
 	value := strings.TrimSpace(h.Get(name))
 	if value == "" {
-		return 0
+		return actual, nil
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("render sidecar returned invalid %s header", name)
 	}
-	return parsed
+	if parsed != actual {
+		return 0, fmt.Errorf("render sidecar %s header %d disagrees with PNG dimensions %d", name, parsed, actual)
+	}
+	return parsed, nil
 }

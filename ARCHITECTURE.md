@@ -430,3 +430,28 @@ post-start schema audit fails.
 - `internal/napcat`, `internal/qqbot`: protocol parsing and platform I/O.
 - `internal/store`: SQLite CAS transitions and transactional outbox writes.
 - `cmd/life-ustc-bot`: dependency composition and process lifecycle only.
+
+## Image rendering
+
+Image responses are rendered by the `renderd` sidecar. The bot keeps domain
+and layout decisions in Go, sends a validated JSON envelope to
+`BOT_RENDER_ENDPOINT`, and receives a PNG from the Rust/Typst renderer. The
+Compose deployment starts `renderd` first and waits for its `/healthz` probe;
+the bot does not silently retry with a legacy renderer when the endpoint is
+unavailable, so an operational failure remains visible while the normal text
+response is preserved.
+
+`renderd` rasterizes at 3x by default. `RENDERD_SCALE` can be set between 1x
+and 4x, and a request may provide a per-request scale. Its runtime image
+includes Fira Code and Noto CJK. The Typst world exposes only embedded card
+templates and watermark assets; it cannot read arbitrary files or access the
+network during compilation.
+
+For local development, start `renderd` and point the bot at
+`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`, or compare all card
+kinds with:
+
+```sh
+RENDERD_ADDR=127.0.0.1:9123 renderd/target/release/renderd
+go run ./cmd/render-parity -endpoint http://127.0.0.1:9123/render -out /tmp/parity
+```

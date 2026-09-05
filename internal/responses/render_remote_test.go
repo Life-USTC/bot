@@ -2,12 +2,16 @@ package responses
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +74,7 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	if err := json.Unmarshal(gotRequest.Payload, &gotPayload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if gotPayload.Title != "校车 · 东区 → 西区" {
+	if gotPayload.Title != "校车 东区 → 西区" {
 		t.Fatalf("request title = %q", gotPayload.Title)
 	}
 	if len(gotPayload.Tables) != 2 {
@@ -99,6 +103,25 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	}
 }
 
+func TestRemoteRendererBusTitleMatchesRichDocument(t *testing.T) {
+	tests := []struct {
+		name string
+		img  *Image
+		want string
+	}{
+		{name: "route", img: testBusImage(), want: "校车 东区 → 西区"},
+		{name: "all routes", img: testBusAllImage(), want: "校车"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (RemoteRenderer{}).buildBusRequest(tt.img).Title
+			if got != tt.want {
+				t.Fatalf("request title = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRemoteRendererUnavailable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	server.Close() // immediately unreachable
@@ -107,6 +130,109 @@ func TestRemoteRendererUnavailable(t *testing.T) {
 	_, _, _, err := renderer.RenderPNG(testBusImage())
 	if err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("err = %v, want unavailable error", err)
+	}
+}
+
+func TestRemoteRendererHonorsCanceledContext(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNGContext(ctx, testBusImage())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if called {
+		t.Fatal("canceled render made an HTTP request")
+	}
+}
+
+func TestRemoteRendererRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(maxRemotePNGBytes+1))
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNG(testBusImage())
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("err = %v, want oversized-response error", err)
+	}
+}
+
+func TestRemoteRendererRejectsMalformedPNG(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("X-Image-Width", "8")
+		w.Header().Set("X-Image-Height", "6")
+		_, _ = w.Write([]byte("not a png"))
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNG(testBusImage())
+	if err == nil || !strings.Contains(err.Error(), "decode rendered PNG header") {
+		t.Fatalf("err = %v, want malformed-PNG error", err)
+	}
+}
+
+func TestRemoteRendererRejectsTruncatedPNG(t *testing.T) {
+	payload := testRemotePNG(t)
+	// Keep the signature and IHDR, but remove the IDAT/IEND data. DecodeConfig
+	// accepts this header; a complete decode must reject it.
+	if len(payload) < 33 {
+		t.Fatalf("test PNG unexpectedly short: %d bytes", len(payload))
+	}
+	truncated := payload[:33]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(truncated)
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNG(testBusImage())
+	if err == nil || !strings.Contains(err.Error(), "decode rendered PNG") {
+		t.Fatalf("err = %v, want truncated-PNG error", err)
+	}
+}
+
+func TestRemoteRendererRejectsMismatchedDimensions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("X-Image-Width", "9")
+		w.Header().Set("X-Image-Height", "6")
+		_, _ = w.Write(testRemotePNG(t))
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNG(testBusImage())
+	if err == nil || !strings.Contains(err.Error(), "disagrees with PNG dimensions") {
+		t.Fatalf("err = %v, want dimension-mismatch error", err)
+	}
+}
+
+func TestRemoteRendererRejectsNonPNGImage(t *testing.T) {
+	var payload bytes.Buffer
+	if err := jpeg.Encode(&payload, image.NewRGBA(image.Rect(0, 0, 8, 6)), nil); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(payload.Bytes())
+	}))
+	defer server.Close()
+
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	_, _, _, err := renderer.RenderPNG(testBusImage())
+	if err == nil || !strings.Contains(err.Error(), "instead of PNG") {
+		t.Fatalf("err = %v, want non-PNG error", err)
 	}
 }
 
@@ -340,5 +466,47 @@ func TestRemoteRendererRichTextWrap(t *testing.T) {
 		if richTextWidth(line, 13) > gotPayload.ContentWidth-16 {
 			t.Fatalf("line %d wider than wrap width: %q", i, line)
 		}
+	}
+}
+
+func TestRemoteRendererRichTitleOnly(t *testing.T) {
+	var gotRequest remoteRenderRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(testRemotePNG(t))
+	}))
+	defer server.Close()
+
+	img := NewRichTextImage("help", "# 标题", "标题")
+	if img == nil {
+		t.Fatal("title-only image is nil")
+	}
+	renderer := RemoteRenderer{Endpoint: server.URL + "/render"}
+	if _, _, _, err := renderer.RenderPNG(img); err != nil {
+		t.Fatalf("RenderPNG: %v", err)
+	}
+	if gotRequest.Kind != "rich" {
+		t.Fatalf("request kind = %q, want rich", gotRequest.Kind)
+	}
+	var payload remoteRichPayload
+	if err := json.Unmarshal(gotRequest.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Title != "标题" {
+		t.Fatalf("payload title = %q, want 标题", payload.Title)
+	}
+	if len(payload.Blocks) != 0 {
+		t.Fatalf("payload blocks = %d, want 0", len(payload.Blocks))
+	}
+}
+
+func TestRemoteRendererRejectsEmptyRichText(t *testing.T) {
+	renderer := RemoteRenderer{Endpoint: "http://127.0.0.1:1/render"}
+	_, _, _, err := renderer.RenderPNG(&Image{AltText: "text fallback"})
+	if err == nil || !strings.Contains(err.Error(), "rich text is empty") {
+		t.Fatalf("err = %v, want empty-rich-text error", err)
 	}
 }

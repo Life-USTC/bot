@@ -36,6 +36,7 @@ const MAX_DAILY_POINTS: usize = 31;
 const MAX_ALERTS: usize = 32;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_LABEL_BYTES: usize = 256;
+const MAX_NUMERIC_VALUE: f64 = 1_000_000.0;
 
 #[derive(Debug, Deserialize)]
 pub struct WeatherPayload {
@@ -123,7 +124,10 @@ impl WeatherPayload {
         check_text("title", &self.title, MAX_TEXT_BYTES)?;
         check_text("meta", &self.meta, MAX_TEXT_BYTES)?;
         if self.footer.len() > 2 {
-            bail!("weather payload footer has {} lines; at most 2 are supported", self.footer.len());
+            bail!(
+                "weather payload footer has {} lines; at most 2 are supported",
+                self.footer.len()
+            );
         }
         for (index, line) in self.footer.iter().enumerate() {
             check_text(&format!("footer[{index}]"), line, MAX_TEXT_BYTES)?;
@@ -141,11 +145,15 @@ impl WeatherPayload {
             bail!("weather render requires at least one location");
         }
         if self.locations.len() > MAX_LOCATIONS {
-            bail!("weather payload has too many locations ({} > {MAX_LOCATIONS})", self.locations.len());
+            bail!(
+                "weather payload has too many locations ({} > {MAX_LOCATIONS})",
+                self.locations.len()
+            );
         }
         for (index, location) in self.locations.iter().enumerate() {
             location.validate(index)?;
         }
+        self.validate_text_budget()?;
         if self.height != 0.0 && (!self.height.is_finite() || self.height <= 0.0) {
             bail!("weather payload height must be zero or a finite positive number");
         }
@@ -158,11 +166,70 @@ impl WeatherPayload {
         }
         Ok(())
     }
+
+    fn validate_text_budget(&self) -> anyhow::Result<()> {
+        let mut total = 0usize;
+        super::check_text_budget(&mut total, "title", &self.title)?;
+        super::check_text_budget(&mut total, "meta", &self.meta)?;
+        for (index, line) in self.footer.iter().enumerate() {
+            super::check_text_budget(&mut total, &format!("footer[{index}]"), line)?;
+        }
+        for (index, location) in self.locations.iter().enumerate() {
+            super::check_text_budget(
+                &mut total,
+                &format!("locations[{index}].name"),
+                &location.name,
+            )?;
+            for (field, value) in [
+                ("condition_text", &location.current.condition_text),
+                ("icon", &location.current.icon),
+                ("humidity_text", &location.current.humidity_text),
+                ("wind_text", &location.current.wind_text),
+            ] {
+                super::check_text_budget(
+                    &mut total,
+                    &format!("locations[{index}].current.{field}"),
+                    value,
+                )?;
+            }
+            for (point, hour) in location.hourly.iter().enumerate() {
+                super::check_text_budget(
+                    &mut total,
+                    &format!("locations[{index}].hourly[{point}].label"),
+                    &hour.label,
+                )?;
+            }
+            for (point, day) in location.daily.iter().enumerate() {
+                super::check_text_budget(
+                    &mut total,
+                    &format!("locations[{index}].daily[{point}].label"),
+                    &day.label,
+                )?;
+                super::check_text_budget(
+                    &mut total,
+                    &format!("locations[{index}].daily[{point}].condition_text"),
+                    &day.condition_text,
+                )?;
+            }
+            for (alert, text) in location.alerts.iter().enumerate() {
+                super::check_text_budget(
+                    &mut total,
+                    &format!("locations[{index}].alerts[{alert}]"),
+                    text,
+                )?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl WeatherLocation {
     fn validate(&self, index: usize) -> anyhow::Result<()> {
-        check_text(&format!("locations[{index}].name"), &self.name, MAX_LABEL_BYTES)?;
+        check_text(
+            &format!("locations[{index}].name"),
+            &self.name,
+            MAX_LABEL_BYTES,
+        )?;
         if self.name.trim().is_empty() {
             bail!("locations[{index}].name is empty");
         }
@@ -210,14 +277,11 @@ impl WeatherLocation {
                 &day.condition_text,
                 MAX_LABEL_BYTES,
             )?;
-            finite(
-                &format!("locations[{index}].daily[{point}].low"),
-                day.low,
-            )?;
-            finite(
-                &format!("locations[{index}].daily[{point}].high"),
-                day.high,
-            )?;
+            finite(&format!("locations[{index}].daily[{point}].low"), day.low)?;
+            finite(&format!("locations[{index}].daily[{point}].high"), day.high)?;
+            if day.high < day.low {
+                bail!("locations[{index}].daily[{point}].high must be >= low");
+            }
         }
         if self.alerts.len() > MAX_ALERTS {
             bail!(
@@ -242,14 +306,8 @@ impl WeatherCurrent {
             &format!("locations[{index}].current.temperature"),
             self.temperature,
         )?;
-        finite(
-            &format!("locations[{index}].current.high"),
-            self.high,
-        )?;
-        finite(
-            &format!("locations[{index}].current.low"),
-            self.low,
-        )?;
+        finite(&format!("locations[{index}].current.high"), self.high)?;
+        finite(&format!("locations[{index}].current.low"), self.low)?;
         check_text(
             &format!("locations[{index}].current.condition_text"),
             &self.condition_text,
@@ -285,8 +343,8 @@ fn check_text(field: &str, value: &str, max_bytes: usize) -> anyhow::Result<()> 
 }
 
 fn finite(field: &str, value: f64) -> anyhow::Result<()> {
-    if !value.is_finite() {
-        bail!("{field} must be finite");
+    if !value.is_finite() || value.abs() > MAX_NUMERIC_VALUE {
+        bail!("{field} must be finite and within +/-{MAX_NUMERIC_VALUE}");
     }
     Ok(())
 }
@@ -297,12 +355,14 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     let req: WeatherPayload =
         serde_json::from_value(payload.clone()).context("invalid weather payload")?;
     req.validate()?;
+    super::check_render_dimensions(CANVAS_WIDTH, logical_height(&req), scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
 }
 
 fn logical_height(req: &WeatherPayload) -> f64 {
-    TITLE_BASELINE + TITLE_GAP
+    TITLE_BASELINE
+        + TITLE_GAP
         + req
             .locations
             .iter()
@@ -346,7 +406,10 @@ fn data_literal(req: &WeatherPayload) -> String {
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
     out.push_str(&format!("meta: {}, ", typst_str(&req.meta)));
-    out.push_str(&format!("canvas_width: {}, ", super::fmt_num(req.canvas_width)));
+    out.push_str(&format!(
+        "canvas_width: {}, ",
+        super::fmt_num(req.canvas_width)
+    ));
     out.push_str(&format!("height: {}, ", super::fmt_num(height)));
     out.push_str("footer: (");
     for line in &req.footer {
@@ -414,7 +477,11 @@ fn location_literal(out: &mut String, location: &WeatherLocation) {
     }
     out.push_str("), area: (");
     for (x, y) in &plot.area {
-        out.push_str(&format!("({}, {}), ", super::fmt_num(*x), super::fmt_num(*y)));
+        out.push_str(&format!(
+            "({}, {}), ",
+            super::fmt_num(*x),
+            super::fmt_num(*y)
+        ));
     }
     out.push_str(")), daily: (");
     let daily_bars = daily_bar_geometry(&location.daily);
@@ -476,7 +543,11 @@ struct HourlyPlot {
 /// or any data-dependent layout decisions.
 fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     if hours.is_empty() {
-        return HourlyPlot { points: Vec::new(), segments: Vec::new(), area: Vec::new() };
+        return HourlyPlot {
+            points: Vec::new(),
+            segments: Vec::new(),
+            area: Vec::new(),
+        };
     }
     let slot_width = CONTENT_WIDTH / hours.len() as f64;
     let mut min_temp = hours[0].temperature;
@@ -506,7 +577,10 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
             0.0
         };
         let precipitation_label = if hour.precipitation_probability >= 30.0 {
-            Some(format!("{}%", hour.precipitation_probability.round() as i64))
+            Some(format!(
+                "{}%",
+                hour.precipitation_probability.round() as i64
+            ))
         } else {
             None
         };
@@ -533,7 +607,10 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     }
 
     let sampled = catmull_rom(
-        &hours.iter().map(|hour| hour.temperature).collect::<Vec<_>>(),
+        &hours
+            .iter()
+            .map(|hour| hour.temperature)
+            .collect::<Vec<_>>(),
         12,
     );
     let step_x = slot_width / 12.0;
@@ -559,7 +636,11 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
             area.push((first_x, CHART_PLOT_BOTTOM));
         }
     }
-    HourlyPlot { points, segments, area }
+    HourlyPlot {
+        points,
+        segments,
+        area,
+    }
 }
 
 fn daily_bar_geometry(days: &[WeatherDay]) -> Vec<(f64, f64)> {
@@ -655,7 +736,11 @@ mod tests {
     fn validates_and_computes_legacy_height() {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
-        assert_eq!(logical_height(&req), 64.0 + (34.0 + 110.0 + 68.0 + 32.0 + 158.0 + 20.0 + 32.0 + 30.0 + 32.0 + 24.0 + 30.0) + 48.0);
+        assert_eq!(
+            logical_height(&req),
+            64.0 + (34.0 + 110.0 + 68.0 + 32.0 + 158.0 + 20.0 + 32.0 + 30.0 + 32.0 + 24.0 + 30.0)
+                + 48.0
+        );
     }
 
     #[test]
@@ -668,15 +753,40 @@ mod tests {
         let mut value = valid_payload();
         value["locations"] = json!([]);
         let req: WeatherPayload = serde_json::from_value(value).unwrap();
-        assert!(req.validate().unwrap_err().to_string().contains("at least one location"));
+        assert!(req
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("at least one location"));
+
+        let mut value = valid_payload();
+        value["locations"][0]["daily"][0]["high"] = json!(19);
+        let req: WeatherPayload = serde_json::from_value(value).unwrap();
+        assert!(req
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("daily[0].high must be >= low"));
     }
 
     #[test]
     fn plot_is_finite_for_flat_and_single_point_series() {
-        let one = vec![WeatherHour { label: "now".into(), temperature: 20.0, precipitation_probability: 0.0 }];
+        let one = vec![WeatherHour {
+            label: "now".into(),
+            temperature: 20.0,
+            precipitation_probability: 0.0,
+        }];
         let flat = vec![
-            WeatherHour { label: "a".into(), temperature: 20.0, precipitation_probability: 0.0 },
-            WeatherHour { label: "b".into(), temperature: 20.0, precipitation_probability: 50.0 },
+            WeatherHour {
+                label: "a".into(),
+                temperature: 20.0,
+                precipitation_probability: 0.0,
+            },
+            WeatherHour {
+                label: "b".into(),
+                temperature: 20.0,
+                precipitation_probability: 50.0,
+            },
         ];
         for plot in [hourly_plot(&one), hourly_plot(&flat)] {
             assert!(!plot.points.is_empty());
@@ -696,6 +806,9 @@ mod tests {
         let (png, width, height) = render(&payload, 1.0).expect("weather template should compile");
         assert!(!png.is_empty());
         assert_eq!(width, CANVAS_WIDTH as u32);
-        assert_eq!(height, logical_height(&serde_json::from_value(payload).unwrap()) as u32);
+        assert_eq!(
+            height,
+            logical_height(&serde_json::from_value(payload).unwrap()) as u32
+        );
     }
 }

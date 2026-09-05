@@ -19,6 +19,28 @@ pub fn resolve_scale(req: Option<f32>) -> f32 {
         std::env::var("RENDERD_SCALE")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
     };
-    req.or_else(from_env).unwrap_or(3.0).clamp(1.0, 4.0)
+    req.filter(|v| v.is_finite())
+        .or_else(from_env)
+        .unwrap_or(3.0)
+        .clamp(1.0, 4.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_scale;
+
+    #[test]
+    fn request_scale_wins_and_is_clamped() {
+        assert_eq!(resolve_scale(Some(2.5)), 2.5);
+        assert_eq!(resolve_scale(Some(0.1)), 1.0);
+        assert_eq!(resolve_scale(Some(9.0)), 4.0);
+    }
+
+    #[test]
+    fn non_finite_request_uses_default() {
+        assert_eq!(resolve_scale(Some(f32::NAN)), 3.0);
+        assert_eq!(resolve_scale(Some(f32::INFINITY)), 3.0);
+    }
 }

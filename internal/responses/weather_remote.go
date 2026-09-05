@@ -2,7 +2,6 @@ package responses
 
 import (
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -31,15 +30,13 @@ func (r RemoteRenderer) buildWeatherRequest(img *Image) (remoteWeatherPayload, e
 	if len(img.Weather.Locations) == 0 {
 		return remoteWeatherPayload{}, errors.New("response weather card has no locations")
 	}
-	title := strings.TrimSpace(img.Title)
-	if title == "" {
-		title = "天气"
-	}
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	footer := richFooterLines(now)
 	return remoteWeatherPayload{
-		Title:       title,
-		Meta:        strings.TrimSpace(img.Weather.Meta),
+		// The legacy weather renderer always uses the fixed card title,
+		// regardless of the caller-provided image title.
+		Title:       "天气",
+		Meta:        img.Weather.Meta,
 		Footer:      []string{footer[0], footer[1]},
 		CanvasWidth: remoteWeatherCanvasWidth,
 		Height:      remoteWeatherLogicalHeight(img.Weather),

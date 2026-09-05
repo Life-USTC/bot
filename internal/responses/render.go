@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -26,6 +27,20 @@ var embeddedBusLogoPNG []byte
 
 type Renderer struct {
 	FontPath string
+}
+
+// RenderPNGContext provides the renderer contract used by cancellable
+// application workflows. The legacy renderer cannot interrupt an in-progress
+// rasterization, but it observes cancellation before starting work.
+func (r Renderer) RenderPNGContext(ctx context.Context, img *Image) ([]byte, int, int, error) {
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return nil, 0, 0, ctx.Err()
+		default:
+		}
+	}
+	return r.RenderPNG(img)
 }
 
 type responseCardTheme struct {

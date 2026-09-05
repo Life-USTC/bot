@@ -46,10 +46,8 @@ pub fn fonts() -> Result<&'static FontSet, String> {
     if let Some(set) = FONTS.get() {
         return Ok(set);
     }
-    if let Some(err) = FONT_ERROR.get() {
-        if let Some(err) = err {
-            return Err(err.clone());
-        }
+    if let Some(Some(err)) = FONT_ERROR.get() {
+        return Err(err.clone());
     }
 
     match load_fonts() {
@@ -87,7 +85,12 @@ fn load_fonts() -> Result<FontSet, String> {
             let is_font = path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| matches!(e.to_ascii_lowercase().as_str(), "otf" | "ttf" | "ttc" | "otc"))
+                .map(|e| {
+                    matches!(
+                        e.to_ascii_lowercase().as_str(),
+                        "otf" | "ttf" | "ttc" | "otc"
+                    )
+                })
                 .unwrap_or(false);
             if !is_font {
                 continue;
@@ -109,7 +112,10 @@ fn load_fonts() -> Result<FontSet, String> {
     }
 
     let book = FontBook::from_fonts(fonts.iter());
-    Ok(FontSet { book: LazyHash::new(book), fonts })
+    Ok(FontSet {
+        book: LazyHash::new(book),
+        fonts,
+    })
 }
 
 /// One-off world for a single compile. Cheap to construct: the library is
@@ -125,7 +131,11 @@ impl SandboxWorld {
     pub fn new(source_text: String) -> Self {
         let main_id = FileId::new(None, VirtualPath::new("main.typ"));
         let main = Source::new(main_id, source_text);
-        Self { library: LazyHash::new(Library::default()), main_id, main }
+        Self {
+            library: LazyHash::new(Library::default()),
+            main_id,
+            main,
+        }
     }
 }
 
@@ -208,8 +218,8 @@ fn faded_logo(opacity: f32) -> Option<&'static Bytes> {
         for pixel in pixmap.pixels_mut() {
             let c = pixel.demultiply();
             let alpha = (c.alpha() as f32 * opacity).round() as u8;
-            *pixel = tiny_skia::ColorU8::from_rgba(c.red(), c.green(), c.blue(), alpha)
-                .premultiply();
+            *pixel =
+                tiny_skia::ColorU8::from_rgba(c.red(), c.green(), c.blue(), alpha).premultiply();
         }
         pixmap.encode_png().ok().map(Bytes::new)
     }
@@ -235,7 +245,8 @@ pub fn warm_assets() -> Result<(), String> {
 }
 
 /// Howard Hinnant's civil-from-days algorithm.
-fn civil_from_days(z: i64) -> (i32, u8, u8) {    let z = z + 719_468;
+fn civil_from_days(z: i64) -> (i32, u8, u8) {
+    let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;

@@ -41,7 +41,7 @@ type Recorder interface {
 }
 
 type Renderer interface {
-	RenderPNG(*responses.Image) ([]byte, int, int, error)
+	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
 }
 
 type Processor interface {
@@ -737,7 +737,7 @@ func (c *Coordinator) renderAttachment(ctx context.Context, image *responses.Ima
 	defer cancel()
 	result := make(chan renderedImage, 1)
 	go func() {
-		data, _, _, err := c.renderer.RenderPNG(image)
+		data, _, _, err := c.renderer.RenderPNGContext(renderCtx, image)
 		result <- renderedImage{data: data, err: err}
 	}()
 	select {

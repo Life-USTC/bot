@@ -13,6 +13,7 @@ mod world;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -39,7 +40,10 @@ async fn main() {
     }
 
     let app = Router::new()
-        .route("/render", post(render_handler))
+        .route(
+            "/render",
+            post(render_handler).layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES)),
+        )
         .route("/healthz", get(healthz_handler));
 
     let addr = std::env::var("RENDERD_ADDR").unwrap_or_else(|_| "127.0.0.1:9123".into());
@@ -55,19 +59,27 @@ async fn healthz_handler() -> &'static str {
 }
 
 static RENDER_SEM: OnceLock<std::sync::Arc<tokio::sync::Semaphore>> = OnceLock::new();
+const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RENDER_CONCURRENCY: usize = 2;
 
 async fn render_handler(
     Json(env): Json<request::RenderEnvelope>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Bound concurrent renders to the CPU core count; excess requests fail
-    // fast with 429 instead of queueing unboundedly on the blocking pool.
+    // Keep simultaneous pixmaps bounded independently of the host CPU count.
+    // A single render can reserve tens of megabytes.
     let sem = RENDER_SEM.get_or_init(|| {
+        let available = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
         std::sync::Arc::new(tokio::sync::Semaphore::new(
-            std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4),
+            available.clamp(1, MAX_RENDER_CONCURRENCY),
         ))
     });
     let permit = sem.clone().try_acquire_owned().map_err(|_| {
-        (StatusCode::TOO_MANY_REQUESTS, "render queue full".to_string())
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "render queue full".to_string(),
+        )
     })?;
     let started = Instant::now();
     // typst compilation + rasterization is CPU-bound and the `World` is
@@ -87,7 +99,10 @@ async fn render_handler(
         }
         Err(join_err) => {
             tracing::error!("render task panicked: {join_err}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, "render task failed".into()));
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "render task failed".into(),
+            ));
         }
     };
 

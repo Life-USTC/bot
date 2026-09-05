@@ -9,6 +9,69 @@ use crate::request::RenderEnvelope;
 use crate::world::SandboxWorld;
 use anyhow::{anyhow, Context};
 
+pub(crate) const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
+// Keep enough headroom for the largest normal scale-4 schedule while leaving
+// a bounded memory envelope for the Typst compiler and pixmap allocation.
+pub(crate) const MAX_RENDER_PIXELS: u64 = 24 * 1024 * 1024;
+pub(crate) const MAX_RENDER_DIMENSION: u64 = 16_384;
+pub(crate) const MAX_PNG_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const MAX_TEXT_BYTES: usize = 4096;
+pub(crate) const MAX_LABEL_BYTES: usize = 256;
+pub(crate) const MAX_PAYLOAD_TEXT_BYTES: usize = 512 * 1024;
+
+pub(crate) fn check_text(field: &str, value: &str, max_bytes: usize) -> anyhow::Result<()> {
+    if value.len() > max_bytes {
+        return Err(anyhow!(
+            "{field} is too long ({} bytes > {max_bytes})",
+            value.len()
+        ));
+    }
+    Ok(())
+}
+
+/// Bound the total amount of user text handed to Typst. Per-field limits are
+/// useful for diagnostics, but a request containing hundreds of individually
+/// valid fields can still make layout disproportionately expensive.
+pub(crate) fn check_text_budget(total: &mut usize, field: &str, value: &str) -> anyhow::Result<()> {
+    *total = total
+        .checked_add(value.len())
+        .ok_or_else(|| anyhow!("{field} text budget overflowed"))?;
+    if *total > MAX_PAYLOAD_TEXT_BYTES {
+        return Err(anyhow!(
+            "{field} exceeds the total text budget ({} bytes > {MAX_PAYLOAD_TEXT_BYTES})",
+            *total
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn check_finite(field: &str, value: f64) -> anyhow::Result<()> {
+    if !value.is_finite() {
+        return Err(anyhow!("{field} must be finite"));
+    }
+    Ok(())
+}
+
+pub(crate) fn check_positive_dimension(field: &str, value: f64, max: f64) -> anyhow::Result<()> {
+    if !value.is_finite() || value <= 0.0 || value > max {
+        return Err(anyhow!(
+            "{field} must be finite and in the range (0, {max}]"
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a page whose dimensions would exceed the rasterizer limits before
+/// Typst compilation starts. Auto-height templates otherwise make it possible
+/// for a bounded request body to force a very large intermediate document.
+pub(crate) fn check_render_dimensions(
+    logical_width: f64,
+    logical_height: f64,
+    scale: f32,
+) -> anyhow::Result<()> {
+    checked_pixel_dimensions(logical_width, logical_height, scale).map(|_| ())
+}
+
 pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let scale = crate::request::resolve_scale(env.scale);
     match env.kind.as_str() {
@@ -24,6 +87,15 @@ pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
 /// Shared by every card renderer; the templates differ, the pipeline does
 /// not.
 pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+    if !scale.is_finite() || !(1.0..=4.0).contains(&scale) {
+        return Err(anyhow!("render scale must be finite and between 1 and 4"));
+    }
+    if source.len() > MAX_SOURCE_BYTES {
+        return Err(anyhow!(
+            "generated typst source is too large ({} bytes > {MAX_SOURCE_BYTES})",
+            source.len()
+        ));
+    }
     crate::world::fonts().map_err(|e| anyhow!(e))?;
 
     let world = SandboxWorld::new(source.clone());
@@ -51,10 +123,26 @@ pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>
         }
         anyhow!("typst compile failed: {detail}")
     })?;
-    let page = doc.pages.first().context("compiled document has no pages")?;
+    let page = doc
+        .pages
+        .first()
+        .context("compiled document has no pages")?;
 
+    let (expected_width, expected_height, _) = checked_pixel_dimensions(
+        page.frame.size().x.to_pt(),
+        page.frame.size().y.to_pt(),
+        scale,
+    )?;
     let pixmap = typst_render::render(page, scale);
+    debug_assert_eq!(pixmap.width(), expected_width);
+    debug_assert_eq!(pixmap.height(), expected_height);
     let png = pixmap.encode_png().context("png encode failed")?;
+    if png.len() > MAX_PNG_BYTES {
+        return Err(anyhow!(
+            "encoded PNG is too large ({} bytes > {MAX_PNG_BYTES})",
+            png.len()
+        ));
+    }
     Ok((png, pixmap.width(), pixmap.height()))
 }
 
@@ -64,5 +152,73 @@ pub(super) fn fmt_num(v: f64) -> String {
         format!("{}", v as i64)
     } else {
         format!("{v}")
+    }
+}
+
+/// Check the dimensions used by `typst_render::render` before it allocates a
+/// pixmap. The renderer itself unwraps that allocation, so this guard must run
+/// on the logical page size rather than after rasterization.
+fn checked_pixel_dimensions(
+    logical_width: f64,
+    logical_height: f64,
+    scale: f32,
+) -> anyhow::Result<(u32, u32, u64)> {
+    if !logical_width.is_finite()
+        || !logical_height.is_finite()
+        || logical_width <= 0.0
+        || logical_height <= 0.0
+    {
+        return Err(anyhow!(
+            "rendered page dimensions must be finite and positive"
+        ));
+    }
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(anyhow!("render scale must be finite and positive"));
+    }
+
+    let width = (logical_width * f64::from(scale)).round().max(1.0);
+    let height = (logical_height * f64::from(scale)).round().max(1.0);
+    if !width.is_finite()
+        || !height.is_finite()
+        || width > u32::MAX as f64
+        || height > u32::MAX as f64
+    {
+        return Err(anyhow!("rendered image dimensions are out of range"));
+    }
+    let width = width as u64;
+    let height = height as u64;
+    if width > MAX_RENDER_DIMENSION || height > MAX_RENDER_DIMENSION {
+        return Err(anyhow!(
+            "rendered image dimensions are too large: {width}x{height} (maximum {MAX_RENDER_DIMENSION})"
+        ));
+    }
+    let pixels = width
+        .checked_mul(height)
+        .ok_or_else(|| anyhow!("rendered image pixel count overflowed"))?;
+    if pixels > MAX_RENDER_PIXELS {
+        return Err(anyhow!(
+            "rendered image is too large ({pixels} pixels > {MAX_RENDER_PIXELS})"
+        ));
+    }
+    Ok((width as u32, height as u32, pixels))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_pixel_dimensions;
+
+    #[test]
+    fn checks_normal_page_dimensions() {
+        assert_eq!(
+            checked_pixel_dimensions(920.0, 1436.0, 3.0).unwrap(),
+            (2760, 4308, 11_890_080)
+        );
+    }
+
+    #[test]
+    fn rejects_non_finite_and_oversized_pages() {
+        assert!(checked_pixel_dimensions(f64::NAN, 10.0, 3.0).is_err());
+        assert!(checked_pixel_dimensions(20_000.0, 1.0, 1.0).is_err());
+        assert!(checked_pixel_dimensions(10_000.0, 10_000.0, 4.0).is_err());
     }
 }

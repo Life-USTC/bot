@@ -162,7 +162,7 @@ func weatherImage() *responses.Image {
 		temperature := 26.0 + 6*math.Sin(float64(i-9)/24*2*math.Pi)
 		probability := 0.0
 		if i >= 14 && i <= 19 {
-			probability = 0.6
+			probability = 60.0
 		}
 		hourly[i] = responses.WeatherCardHourPoint{
 			Label:                    fmt.Sprintf("%02d:00", (15+i)%24),

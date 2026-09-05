@@ -1,11 +1,32 @@
 name: life-ustc-bot
 
 services:
+  renderd:
+    image: life-ustc-renderd:${BOT_BUILD_VERSION:-dev}
+    environment:
+      RENDERD_SCALE: ${RENDERD_SCALE:-3}
+    build:
+      context: ./src/renderd
+    restart: unless-stopped
+    stop_grace_period: 10s
+    expose:
+      - "9123"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9123/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
   bot:
     build:
       context: ./src
     env_file:
       - .env
+    environment:
+      BOT_RENDER_ENDPOINT: ${BOT_RENDER_ENDPOINT:-http://renderd:9123/render}
+    depends_on:
+      renderd:
+        condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 10s
     healthcheck:

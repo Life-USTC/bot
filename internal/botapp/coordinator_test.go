@@ -60,6 +60,10 @@ func (fn rendererFunc) RenderPNG(image *responses.Image) ([]byte, int, int, erro
 	return fn(image)
 }
 
+func (fn rendererFunc) RenderPNGContext(_ context.Context, image *responses.Image) ([]byte, int, int, error) {
+	return fn(image)
+}
+
 type outputCommitFaultStore struct {
 	*store.Store
 	mu       sync.Mutex

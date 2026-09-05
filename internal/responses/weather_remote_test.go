@@ -16,8 +16,8 @@ func TestRemoteRendererWeatherPayload(t *testing.T) {
 			t.Errorf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("X-Image-Width", "12")
-		w.Header().Set("X-Image-Height", "8")
+		w.Header().Set("X-Image-Width", "8")
+		w.Header().Set("X-Image-Height", "6")
 		_, _ = w.Write(testRemotePNG(t))
 	}))
 	defer server.Close()
@@ -51,12 +51,15 @@ func TestRemoteRendererWeatherPayload(t *testing.T) {
 	if img == nil {
 		t.Fatal("weather image is nil")
 	}
+	// Weather parity uses the fixed legacy title even for a manually assembled
+	// image whose title does not come from NewWeatherCardImage.
+	img.Title = "自定义标题"
 	_, width, height, err := renderer.RenderPNG(img)
 	if err != nil {
 		t.Fatalf("RenderPNG: %v", err)
 	}
-	if width != 12 || height != 8 {
-		t.Fatalf("dimensions = %dx%d, want 12x8", width, height)
+	if width != 8 || height != 6 {
+		t.Fatalf("dimensions = %dx%d, want 8x6", width, height)
 	}
 	if got.Kind != "weather" {
 		t.Fatalf("request kind = %q, want weather", got.Kind)
