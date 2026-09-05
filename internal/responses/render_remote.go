@@ -126,7 +126,12 @@ func (r RemoteRenderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 	var payload any
 	switch {
 	case img.Grid != nil:
-		return nil, 0, 0, errors.New("remote renderer does not support grid cards yet")
+		p := r.buildGridRequest(img)
+		if len(p.Days) == 0 || len(p.Periods) == 0 {
+			return nil, 0, 0, errors.New("response grid is empty")
+		}
+		kind = "grid"
+		payload = p
 	case img.Weather != nil:
 		p, err := r.buildWeatherRequest(img)
 		if err != nil {
