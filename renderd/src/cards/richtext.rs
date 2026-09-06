@@ -1,8 +1,7 @@
-//! Generic rich text card rendering: JSON payload -> typst source -> PNG.
+//! Generic rich text card rendering: semantic JSON payload -> Typst -> PNG.
 //!
-//! The payload mirrors the legacy Go `renderRichPNG` non-bus branch: the Go
-//! side runs `layoutRichText` and sends final geometry (content width,
-//! pre-wrapped text lines, per-table column widths); this side only draws.
+//! The Go side preserves the parsed document. Typst owns the shared 390pt
+//! phone canvas, natural paragraph wrapping, table sizing, and auto-height.
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
@@ -14,25 +13,19 @@ pub struct RichPayload {
     #[serde(default)]
     pub title: String,
     #[serde(default)]
-    pub content_width: f64,
-    #[serde(default)]
-    pub compact_first_block: bool,
-    #[serde(default)]
     pub footer: Vec<String>,
     #[serde(default)]
     pub blocks: Vec<RichBlock>,
 }
 
-/// One layout node: either a text block (`lines`, already wrapped by the Go
-/// side) or a table block.
+/// One document block: either text lines or a table. Text is deliberately
+/// kept whole so Typst can wrap it at the shared phone width.
 #[derive(Debug, Deserialize)]
 pub struct RichBlock {
     #[serde(default)]
     pub heading: String,
     #[serde(default)]
-    pub lines: Option<Vec<String>>,
-    #[serde(default)]
-    pub wrapped: bool,
+    pub lines: Vec<String>,
     #[serde(default)]
     pub table: Option<RichTable>,
 }
@@ -44,32 +37,34 @@ pub struct RichTable {
     #[serde(default)]
     pub header_emphasis: Vec<bool>,
     #[serde(default)]
-    pub column_widths: Vec<f64>,
-    #[serde(default)]
     pub rows: Vec<RichRow>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RichRow {
+    #[serde(default)]
     pub cells: Vec<String>,
     #[serde(default)]
     pub highlight: bool,
 }
 
+const CARD_WIDTH: f64 = 390.0;
+const CONTENT_WIDTH: f64 = 350.0;
 const MAX_BLOCKS: usize = 64;
 const MAX_COLUMNS: usize = 32;
 const MAX_ROWS: usize = 512;
 const MAX_LINES: usize = 512;
-const MAX_DIMENSION: f64 = 4096.0;
-const MIN_CONTENT_WIDTH: f64 = 64.0;
-const MIN_COLUMN_WIDTH: f64 = 16.0;
-const FOOTER_ZONE: f64 = 70.0;
-const CONTENT_TOP: f64 = 82.0;
-const COMPACT_CONTENT_TOP: f64 = 58.0;
-const BLOCK_GAP: f64 = 30.0;
-const HEADER_HEIGHT: f64 = 28.0;
-const TEXT_ROW_HEIGHT: f64 = 32.0;
-const COMPACT_TEXT_ROW_HEIGHT: f64 = 24.0;
+const MAX_RENDERED_ROWS: usize = 2048;
+const MAX_TABLE_COLUMNS: usize = 4;
+const CELL_PADDING: f64 = 10.0;
+const BODY_SIZE: f64 = 17.0;
+const BODY_LINE_HEIGHT: f64 = 28.0;
+const TITLE_LINE_HEIGHT: f64 = 32.0;
+const SECTION_LINE_HEIGHT: f64 = 26.0;
+const SECTION_GAP: f64 = 24.0;
+const HEADER_GAP: f64 = 8.0;
+const PARAGRAPH_GAP: f64 = 8.0;
+const FOOTER_HEIGHT: f64 = 80.0;
 
 fn validate(req: &RichPayload) -> anyhow::Result<()> {
     let mut text_budget = 0usize;
@@ -78,10 +73,6 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
     }
     super::check_text("title", &req.title, super::MAX_TEXT_BYTES)?;
     super::check_text_budget(&mut text_budget, "title", &req.title)?;
-    super::check_finite("content_width", req.content_width)?;
-    if req.content_width < MIN_CONTENT_WIDTH || req.content_width > MAX_DIMENSION {
-        return Err(anyhow!("rich content_width is out of range"));
-    }
     if req.footer.len() > 2 {
         return Err(anyhow!("rich payload supports at most 2 footer lines"));
     }
@@ -89,11 +80,10 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
         super::check_text(&format!("footer[{index}]"), line, super::MAX_TEXT_BYTES)?;
         super::check_text_budget(&mut text_budget, &format!("footer[{index}]"), line)?;
     }
-    // A title-only document is still a valid legacy card: it renders the title
-    // and footer even when there are no content blocks.
     if req.blocks.len() > MAX_BLOCKS {
         return Err(anyhow!("rich payload has too many blocks"));
     }
+
     let mut row_count = 0usize;
     for (block_index, block) in req.blocks.iter().enumerate() {
         super::check_text(
@@ -106,96 +96,24 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
             &format!("blocks[{block_index}].heading"),
             &block.heading,
         )?;
-        if block.table.is_some() && block.lines.is_some() {
+        if block.table.is_some() && !block.lines.is_empty() {
             return Err(anyhow!(
                 "rich block {block_index} cannot contain both table and lines"
             ));
         }
         if let Some(table) = &block.table {
-            if table.header.is_empty() || table.header.len() > MAX_COLUMNS {
-                return Err(anyhow!(
-                    "rich table {block_index} has an invalid column count"
-                ));
-            }
-            if table.column_widths.len() != table.header.len() {
-                return Err(anyhow!(
-                    "rich table {block_index} column widths do not match header"
-                ));
-            }
-            if table.header_emphasis.len() > table.header.len() {
-                return Err(anyhow!(
-                    "rich table {block_index} header emphasis has too many entries"
-                ));
-            }
-            for (column, header) in table.header.iter().enumerate() {
-                super::check_text(
-                    &format!("blocks[{block_index}].table.header[{column}]"),
-                    header,
-                    super::MAX_LABEL_BYTES,
-                )?;
-                super::check_text_budget(
-                    &mut text_budget,
-                    &format!("blocks[{block_index}].table.header[{column}]"),
-                    header,
-                )?;
-            }
-            let mut width_sum = 0.0;
-            for (column, width) in table.column_widths.iter().enumerate() {
-                super::check_positive_dimension(
-                    &format!("blocks[{block_index}].table.column_widths[{column}]"),
-                    *width,
-                    MAX_DIMENSION,
-                )?;
-                if *width < MIN_COLUMN_WIDTH {
-                    return Err(anyhow!(
-                        "rich table {block_index} column {column} is narrower than {MIN_COLUMN_WIDTH}"
-                    ));
-                }
-                width_sum += *width;
-            }
-            if !width_sum.is_finite() || width_sum > req.content_width {
-                return Err(anyhow!("rich table {block_index} width is too large"));
-            }
-            if table.rows.len() > MAX_ROWS - row_count {
-                return Err(anyhow!("rich payload has too many rows"));
-            }
-            row_count += table.rows.len();
-            for (row_index, row) in table.rows.iter().enumerate() {
-                if row.cells.len() > MAX_COLUMNS {
-                    return Err(anyhow!(
-                        "rich table {block_index} row {row_index} has too many cells"
-                    ));
-                }
-                for (column, cell) in row.cells.iter().enumerate() {
-                    if column >= table.header.len() {
-                        return Err(anyhow!(
-                            "rich table {block_index} row {row_index} has more cells than its header"
-                        ));
-                    }
-                    super::check_text(
-                        &format!("blocks[{block_index}].table.rows[{row_index}].cells[{column}]"),
-                        cell,
-                        super::MAX_TEXT_BYTES,
-                    )?;
-                    super::check_text_budget(
-                        &mut text_budget,
-                        &format!("blocks[{block_index}].table.rows[{row_index}].cells[{column}]"),
-                        cell,
-                    )?;
-                }
-            }
+            validate_table(table, block_index, &mut text_budget, &mut row_count)?;
         } else {
-            let lines = block.lines.as_deref().unwrap_or(&[]);
-            if lines.len() > MAX_LINES {
+            if block.lines.len() > MAX_LINES {
                 return Err(anyhow!("rich block {block_index} has too many lines"));
             }
-            let has_line = lines.iter().any(|line| !line.trim().is_empty());
+            let has_line = block.lines.iter().any(|line| !line.trim().is_empty());
             if block.heading.trim().is_empty() && !has_line {
                 return Err(anyhow!(
                     "rich block {block_index} has neither a heading nor text lines"
                 ));
             }
-            for (line_index, line) in lines.iter().enumerate() {
+            for (line_index, line) in block.lines.iter().enumerate() {
                 super::check_text(
                     &format!("blocks[{block_index}].lines[{line_index}]"),
                     line,
@@ -209,6 +127,68 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
             }
         }
     }
+    if row_count > MAX_RENDERED_ROWS {
+        return Err(anyhow!("rich payload expands to too many rendered rows"));
+    }
+    Ok(())
+}
+
+fn validate_table(
+    table: &RichTable,
+    block_index: usize,
+    text_budget: &mut usize,
+    row_count: &mut usize,
+) -> anyhow::Result<()> {
+    if table.header.is_empty() || table.header.len() > MAX_COLUMNS {
+        return Err(anyhow!(
+            "rich table {block_index} has an invalid column count"
+        ));
+    }
+    if table.header_emphasis.len() > table.header.len() {
+        return Err(anyhow!(
+            "rich table {block_index} header emphasis has too many entries"
+        ));
+    }
+    for (column, header) in table.header.iter().enumerate() {
+        super::check_text(
+            &format!("blocks[{block_index}].table.header[{column}]"),
+            header,
+            super::MAX_LABEL_BYTES,
+        )?;
+        super::check_text_budget(
+            text_budget,
+            &format!("blocks[{block_index}].table.header[{column}]"),
+            header,
+        )?;
+    }
+    if table.rows.len() > MAX_ROWS.saturating_sub(*row_count) {
+        return Err(anyhow!("rich payload has too many rows"));
+    }
+    *row_count += table.rows.len();
+    for (row_index, row) in table.rows.iter().enumerate() {
+        if row.cells.len() > MAX_COLUMNS {
+            return Err(anyhow!(
+                "rich table {block_index} row {row_index} has too many cells"
+            ));
+        }
+        if row.cells.len() > table.header.len() {
+            return Err(anyhow!(
+                "rich table {block_index} row {row_index} has more cells than its header"
+            ));
+        }
+        for (column, cell) in row.cells.iter().enumerate() {
+            super::check_text(
+                &format!("blocks[{block_index}].table.rows[{row_index}].cells[{column}]"),
+                cell,
+                super::MAX_TEXT_BYTES,
+            )?;
+            super::check_text_budget(
+                text_budget,
+                &format!("blocks[{block_index}].table.rows[{row_index}].cells[{column}]"),
+                cell,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -217,88 +197,118 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     let req: RichPayload =
         serde_json::from_value(payload.clone()).context("invalid rich payload")?;
     validate(&req)?;
-    super::check_render_dimensions(req.content_width + 64.0, logical_height(&req), scale)?;
+    // This is a conservative bound before compilation. compile_png checks the
+    // actual auto-height frame after Typst has wrapped every value.
+    super::check_render_dimensions(CARD_WIDTH, logical_height(&req), scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
 }
 
-/// Compute the auto-height used by the rich template from its fixed rows. The
-/// Go side sends already-wrapped lines, so this is an upper bound on the page
-/// height and can be checked before invoking Typst.
-fn logical_height(req: &RichPayload) -> f64 {
-    let mut height = if req.compact_first_block {
-        COMPACT_CONTENT_TOP
-    } else {
-        CONTENT_TOP
-    };
-    for (index, block) in req.blocks.iter().enumerate() {
-        if index > 0 {
-            height += BLOCK_GAP;
-        }
-        let block_height = if let Some(table) = &block.table {
-            let heading = if block.heading.trim().is_empty() {
-                0.0
-            } else {
-                HEADER_HEIGHT
-            };
-            heading + HEADER_HEIGHT + TEXT_ROW_HEIGHT * table.rows.len() as f64
+fn estimated_lines(value: &str, width: f64) -> usize {
+    let width = width.max(1.0);
+    let mut lines = 1usize;
+    let mut used = 0.0;
+    for ch in value.chars() {
+        let glyph = if ch.is_ascii() {
+            BODY_SIZE * 0.62
         } else {
-            let heading = if block.heading.trim().is_empty() {
-                0.0
-            } else {
-                HEADER_HEIGHT
-            };
-            let row_height = if req.compact_first_block && index == 0 {
-                COMPACT_TEXT_ROW_HEIGHT
-            } else {
-                TEXT_ROW_HEIGHT
-            };
-            heading + row_height * block.lines.as_ref().map_or(0, Vec::len) as f64
+            BODY_SIZE
         };
-        height += block_height;
+        if used > 0.0 && used + glyph > width {
+            lines += 1;
+            used = glyph;
+        } else {
+            used += glyph;
+        }
     }
-    height + FOOTER_ZONE
+    lines
 }
 
-/// Serialize the request into a typst dictionary literal.
+fn standard_row_height(table: &RichTable, row: Option<&RichRow>) -> f64 {
+    let columns = table.header.len().max(1) as f64;
+    let cell_width = (CONTENT_WIDTH / columns - CELL_PADDING * 2.0).max(1.0);
+    let line_count = row.map_or(1, |row| {
+        (0..table.header.len())
+            .map(|index| {
+                row.cells
+                    .get(index)
+                    .map_or(1, |cell| estimated_lines(cell, cell_width))
+            })
+            .max()
+            .unwrap_or(1)
+    });
+    line_count as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0
+}
+
+fn table_height(table: &RichTable) -> f64 {
+    let mut height = standard_row_height(table, None);
+    if table.header.len() > MAX_TABLE_COLUMNS {
+        let value_width = CONTENT_WIDTH * 2.0 / 3.0 - CELL_PADDING * 2.0;
+        for row in &table.rows {
+            for index in 0..table.header.len() {
+                let lines = row
+                    .cells
+                    .get(index)
+                    .map_or(1, |cell| estimated_lines(cell, value_width));
+                height += lines as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0;
+            }
+        }
+    } else {
+        for row in &table.rows {
+            height += standard_row_height(table, Some(row));
+        }
+    }
+    height
+}
+
+fn logical_height(req: &RichPayload) -> f64 {
+    let mut height = estimated_lines(&req.title, CONTENT_WIDTH) as f64 * TITLE_LINE_HEIGHT;
+    height += SECTION_GAP;
+    for (index, block) in req.blocks.iter().enumerate() {
+        if index > 0 {
+            height += SECTION_GAP;
+        }
+        if !block.heading.trim().is_empty() {
+            height += SECTION_LINE_HEIGHT + HEADER_GAP;
+        }
+        if let Some(table) = &block.table {
+            height += table_height(table);
+        } else {
+            for (line_index, line) in block.lines.iter().enumerate() {
+                if line_index > 0 {
+                    height += PARAGRAPH_GAP;
+                }
+                height += estimated_lines(line, CONTENT_WIDTH) as f64 * BODY_LINE_HEIGHT;
+            }
+        }
+    }
+    height + FOOTER_HEIGHT
+}
+
+/// Serialize the request into a Typst dictionary literal.
 fn data_literal(req: &RichPayload) -> String {
     let mut out = String::new();
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
-    out.push_str(&format!(
-        "content_width: {}, ",
-        super::fmt_num(req.content_width)
-    ));
-    out.push_str(&format!(
-        "compact_first_block: {}, ",
-        req.compact_first_block
-    ));
     out.push_str("footer: (");
     for line in &req.footer {
         out.push_str(&typst_str(line));
         out.push_str(", ");
     }
     out.push_str("), blocks: (");
-    for (i, block) in req.blocks.iter().enumerate() {
-        let compact = req.compact_first_block && i == 0;
-        out.push('(');
-        // Normalize outer whitespace so the heading presence check and its
-        // fixed-height contribution match the Typst template exactly.
-        out.push_str(&format!("heading: {}, ", typst_str(block.heading.trim())));
-        out.push_str(&format!("compact: {compact}, "));
+    for block in &req.blocks {
+        out.push_str(&format!(
+            "(heading: {}, lines: (",
+            typst_str(block.heading.trim())
+        ));
+        for line in &block.lines {
+            out.push_str(&typst_str(line));
+            out.push_str(", ");
+        }
+        out.push_str("), table: ");
         match &block.table {
-            Some(table) => {
-                out.push_str("lines: (), wrapped: false, table: ");
-                out.push_str(&table_literal(table));
-            }
-            None => {
-                out.push_str("lines: (");
-                for line in block.lines.iter().flatten() {
-                    out.push_str(&typst_str(line));
-                    out.push_str(", ");
-                }
-                out.push_str(&format!("), wrapped: {}, table: none, ", block.wrapped));
-            }
+            Some(table) => out.push_str(&table_literal(table)),
+            None => out.push_str("none"),
         }
         out.push_str("), ");
     }
@@ -307,31 +317,27 @@ fn data_literal(req: &RichPayload) -> String {
 }
 
 fn table_literal(table: &RichTable) -> String {
-    let ncols = table.header.len().max(1);
     let mut out = String::new();
     out.push('(');
     out.push_str("header: (");
-    for h in &table.header {
-        out.push_str(&typst_str(h));
+    for header in &table.header {
+        out.push_str(&typst_str(header));
         out.push_str(", ");
     }
     out.push_str("), header_emphasis: (");
-    for i in 0..ncols {
-        let em = table.header_emphasis.get(i).copied().unwrap_or(false);
-        out.push_str(if em { "true, " } else { "false, " });
-    }
-    out.push_str("), column_widths: (");
-    for i in 0..ncols {
-        let w = table.column_widths.get(i).copied().unwrap_or(0.0);
-        out.push_str(&super::fmt_num(w));
-        out.push_str(", ");
+    for index in 0..table.header.len() {
+        out.push_str(
+            if table.header_emphasis.get(index).copied().unwrap_or(false) {
+                "true, "
+            } else {
+                "false, "
+            },
+        );
     }
     out.push_str("), rows: (");
     for row in &table.rows {
         out.push_str("(cells: (");
-        for i in 0..ncols {
-            // Pad missing cells so the typst table never wraps mid-row.
-            let cell = row.cells.get(i).map(String::as_str).unwrap_or("");
+        for cell in &row.cells {
             out.push_str(&typst_str(cell));
             out.push_str(", ");
         }
@@ -354,17 +360,13 @@ mod tests {
     fn valid_payload() -> RichPayload {
         RichPayload {
             title: "帮助".into(),
-            content_width: 640.0,
-            compact_first_block: false,
             footer: vec!["更新时间".into(), "Life @ USTC".into()],
             blocks: vec![RichBlock {
                 heading: "命令".into(),
-                lines: None,
-                wrapped: false,
+                lines: vec![],
                 table: Some(RichTable {
                     header: vec!["命令".into(), "说明".into()],
                     header_emphasis: vec![true, false],
-                    column_widths: vec![160.0, 320.0],
                     rows: vec![RichRow {
                         cells: vec!["/help".into(), "查看帮助".into()],
                         highlight: false,
@@ -375,47 +377,59 @@ mod tests {
     }
 
     #[test]
-    fn accepts_valid_table_payload() {
+    fn accepts_valid_semantic_table_payload() {
         validate(&valid_payload()).unwrap();
     }
 
     #[test]
     fn rejects_inconsistent_table_and_text_limits() {
         let mut payload = valid_payload();
-        payload.blocks[0]
-            .table
-            .as_mut()
-            .unwrap()
-            .column_widths
-            .pop();
-        assert!(validate(&payload)
-            .unwrap_err()
-            .to_string()
-            .contains("column widths"));
-
-        let mut payload = valid_payload();
-        payload.blocks[0].table = None;
-        payload.blocks[0].lines = Some(vec!["x".repeat(super::super::MAX_TEXT_BYTES + 1)]);
+        payload.blocks[0].table.as_mut().unwrap().rows[0].cells[0] =
+            "x".repeat(super::super::MAX_TEXT_BYTES + 1);
         assert!(validate(&payload)
             .unwrap_err()
             .to_string()
             .contains("too long"));
 
         let mut payload = valid_payload();
-        payload.content_width = f64::INFINITY;
+        payload.blocks[0].lines = vec!["text".into()];
         assert!(validate(&payload)
             .unwrap_err()
             .to_string()
-            .contains("finite"));
+            .contains("both table and lines"));
     }
 
     #[test]
-    fn rejects_tall_page_before_typst_compilation() {
-        let lines = vec!["line".to_string(); 200];
+    fn preserves_full_text_and_removes_geometry_from_source() {
+        let mut payload = valid_payload();
+        payload.blocks[0].table = None;
+        payload.blocks[0].lines = vec![
+            "这是一个完整的长段落，不应该由 Go 预先拆分或省略。".into(),
+            "https://example.com/a/very-long-unbroken-id-20260906-with-all-content".into(),
+        ];
+        let source = build_source(&payload);
+        assert!(source.contains("完整的长段落，不应该由 Go 预先拆分或省略"));
+        assert!(source.contains("very-long-unbroken-id-20260906-with-all-content"));
+        assert!(!source.contains("content_width:"));
+        assert!(!source.contains("column_widths:"));
+        assert!(!source.contains("wrapped:"));
+    }
+
+    #[test]
+    fn estimates_wrapping_height_for_long_paragraphs() {
+        let mut short = valid_payload();
+        short.blocks[0].table = None;
+        short.blocks[0].lines = vec!["短文本".into()];
+        let short_height = logical_height(&short);
+        short.blocks[0].lines = vec!["长文本".repeat(80)];
+        assert!(logical_height(&short) > short_height);
+    }
+
+    #[test]
+    fn rejects_page_that_exceeds_output_dimension_bound() {
         let payload = serde_json::json!({
             "title": "stress",
-            "content_width": 640,
-            "blocks": [{"lines": lines}],
+            "blocks": [{"lines": vec!["line"; 512]}]
         });
         let err = render(&payload, 3.0).unwrap_err().to_string();
         assert!(
@@ -425,75 +439,54 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ambiguous_or_empty_blocks() {
+    fn reflows_wide_tables_without_dropping_values() {
         let mut payload = valid_payload();
-        payload.blocks[0].lines = Some(vec![]);
-        assert!(validate(&payload)
-            .unwrap_err()
-            .to_string()
-            .contains("both table and lines"));
-
-        let empty = RichPayload {
-            title: "帮助".into(),
-            content_width: 640.0,
-            compact_first_block: false,
-            footer: vec![],
-            blocks: vec![RichBlock {
-                heading: String::new(),
-                lines: Some(vec!["   ".into()]),
-                wrapped: true,
-                table: None,
+        payload.blocks[0].table = Some(RichTable {
+            header: vec![
+                "一".into(),
+                "二".into(),
+                "三".into(),
+                "四".into(),
+                "五".into(),
+            ],
+            header_emphasis: vec![false; 5],
+            rows: vec![RichRow {
+                cells: vec![
+                    "one".into(),
+                    "two".into(),
+                    "three".into(),
+                    "four".into(),
+                    "a-complete-long-value-that-must-stay-readable".into(),
+                ],
+                highlight: true,
             }],
-        };
-        assert!(validate(&empty)
-            .unwrap_err()
-            .to_string()
-            .contains("neither a heading"));
-    }
-
-    #[test]
-    fn accepts_heading_only_block_and_rejects_overwide_table() {
-        let heading_only = RichPayload {
-            title: "帮助".into(),
-            content_width: 640.0,
-            compact_first_block: false,
-            footer: vec![],
-            blocks: vec![RichBlock {
-                heading: "说明".into(),
-                lines: None,
-                wrapped: false,
-                table: None,
-            }],
-        };
-        validate(&heading_only).unwrap();
-
-        let mut overwide = valid_payload();
-        overwide.content_width = 100.0;
-        assert!(validate(&overwide)
-            .unwrap_err()
-            .to_string()
-            .contains("width is too large"));
-    }
-
-    #[test]
-    fn accepts_title_only_payload() {
-        let mut payload = valid_payload();
-        payload.blocks.clear();
-        validate(&payload).unwrap();
-        assert!(build_source(&payload).contains("blocks: ())"));
-        assert_eq!(logical_height(&payload), CONTENT_TOP + FOOTER_ZONE);
-    }
-
-    #[test]
-    fn compiles_title_only_payload() {
-        let payload = serde_json::json!({
-            "title": "标题",
-            "content_width": 480,
-            "footer": ["13:00 · 工作日"],
-            "blocks": []
         });
-        let (png, width, height) = render(&payload, 1.0).unwrap();
+        let source = build_source(&payload);
+        for value in [
+            "one",
+            "two",
+            "three",
+            "four",
+            "a-complete-long-value-that-must-stay-readable",
+        ] {
+            assert!(source.contains(value), "missing {value}");
+        }
+    }
+
+    #[test]
+    fn renders_phone_width_and_wraps_long_content() {
+        let payload = serde_json::json!({
+            "title": "一个很长的手机卡片标题，也应该完整换行显示",
+            "footer": ["13:00 · 工作日", "Life @ USTC"],
+            "blocks": [{
+                "heading": "说明",
+                "lines": ["这是一段足够长的正文，用来验证 Typst 会在 350pt 内容宽度内自动换行，并保留完整内容。 https://example.com/a/very-long-unbroken-id-20260906-with-all-content ABC1234567890ABC1234567890ABC1234567890ABC1234567890"],
+                "table": null
+            }]
+        });
+        let (png, width, height) = render(&payload, 3.0).expect("rich template should compile");
         assert!(!png.is_empty());
-        assert_eq!((width, height), (544, 152));
+        assert_eq!(width, 1170);
+        assert!(height > 0);
     }
 }
