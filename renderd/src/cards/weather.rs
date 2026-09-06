@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn separates_multiple_locations_with_one_flow_divider() {
+    fn renders_multiple_locations_in_one_flow() {
         let mut payload = valid_payload();
         let location = payload["locations"][0].clone();
         payload["locations"] = json!([location.clone(), location]);

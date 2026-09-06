@@ -23,7 +23,6 @@
 #let weather-chart-fill = weather-sun.transparentize(86%)
 #let weather-bar-fill = weather-sky.transparentize(25%)
 #let weather-alert-bg = rgb("#fff7ed")
-#let weather-alert-line = rgb("#fdba74")
 
 #let glyph-dot(x, y, radius, color) = {
   place(top + left, dx: x, dy: y,
@@ -112,7 +111,7 @@
 
 #let stat-cell(label, value) = block(width: 100%)[
   #text(size: caption-size, fill: muted)[#label]
-  #v(4pt)
+  #linebreak()
   #text(size: body-size, fill: ink)[#value]
 ]
 
@@ -141,11 +140,11 @@
     block(width: 100%)[
       #text(size: 52pt, weight: "bold")[#current.temperature_text]
       #if current.condition_text != "" {
-        v(4pt)
+        linebreak()
         text(size: body-size, weight: "semibold")[#current.condition_text]
       }
       #if current.has_range {
-        v(3pt)
+        linebreak()
         text(size: subhead-size, fill: muted)[
           #("最高 " + current.high_text + " · 最低 " + current.low_text)
         ]
@@ -200,6 +199,7 @@
       }
     }
   ]
+  #parbreak()
   #grid(
     columns: (10pt, 1fr), column-gutter: 8pt, align: left + horizon,
     rect(width: 10pt, height: 10pt, radius: 2pt,
@@ -207,7 +207,7 @@
     text(size: caption-size, fill: weather-drop-text)[降水概率（蓝柱）],
   )
   #if location.precipitation_summary != "" {
-    v(5pt)
+    parbreak()
     text(size: caption-size, fill: muted)[#location.precipitation_summary]
   }
 ]
@@ -215,7 +215,7 @@
 #let daily-label(day) = block(width: 100%)[
   #text(size: body-size, weight: "semibold")[#day.label]
   #if day.condition_text != "" {
-    v(2pt)
+    linebreak()
     text(size: caption-size, fill: muted)[#day.condition_text]
   }
 ]
@@ -236,75 +236,65 @@
   }
 ]
 
-#let daily-forecast(days) = card-surface[
-  #grid(
-    columns: (72pt, 38pt, 1fr, 38pt), column-gutter: 8pt,
-    align: left + horizon,
+#let daily-forecast(days) = {
+  let cells = (
     [],
     text(size: caption-size, fill: muted)[最低],
     [],
     text(size: caption-size, fill: muted)[最高],
   )
-  #v(8pt)
-  #for (index, day) in days.enumerate() {
-    grid(
-      columns: (72pt, 38pt, 1fr, 38pt), column-gutter: 8pt,
-      align: left + horizon,
-      daily-label(day),
-      text(size: body-size, fill: muted, weight: "semibold")[#day.low_text],
-      daily-bar(day),
-      text(size: body-size, fill: ink, weight: "semibold")[#day.high_text],
-    )
-    if index + 1 < days.len() {
-      v(10pt)
-      line(length: 100%, stroke: 0.6pt + line-c)
-      v(10pt)
-    }
+  for day in days {
+    cells.push(daily-label(day))
+    cells.push(text(size: body-size, fill: muted, weight: "semibold")[#day.low_text])
+    cells.push(daily-bar(day))
+    cells.push(text(size: body-size, fill: ink, weight: "semibold")[#day.high_text])
   }
-]
-
-#let alert-row(alert) = {
-  grid(
-    columns: (8pt, 1fr), column-gutter: 10pt, align: left + top,
-    align(center + horizon, circle(radius: 3.5pt, fill: weather-warning,
-      stroke: none)),
-    text(size: body-size, fill: ink)[#alert],
-  )
+  card-surface[
+    #table(
+      columns: (72pt, 38pt, 1fr, 38pt),
+      align: left + horizon,
+      stroke: none,
+      ..cells,
+    )
+  ]
 }
 
-#let alert-panel(alerts) = card-surface(fill: weather-alert-bg)[
-  #for (index, alert) in alerts.enumerate() {
-    alert-row(alert)
-    if index + 1 < alerts.len() {
-      v(10pt)
-      line(length: 100%, stroke: 0.6pt + weather-alert-line)
-      v(10pt)
-    }
+#let alert-panel(alerts) = {
+  let cells = ()
+  for alert in alerts {
+    cells.push(align(center + horizon, circle(
+      radius: 3.5pt, fill: weather-warning, stroke: none)))
+    cells.push(text(size: body-size, fill: ink)[#alert])
   }
-]
+  card-surface(fill: weather-alert-bg)[
+    #table(
+      columns: (8pt, 1fr),
+      column-gutter: 10pt,
+      align: left + top,
+      stroke: none,
+      ..cells,
+    )
+  ]
+}
 
 #let weather-location(location) = {
   card-section(location.name)
   weather-hero(location.current)
 
   if location.current.humidity_text != "" or location.current.wind_text != "" {
-    v(12pt)
     weather-stats(location.current)
   }
 
   if location.alerts.len() > 0 {
-    v(section-gap)
     card-section("天气预警")
     alert-panel(location.alerts)
   }
 
   if location.hourly.len() > 0 {
-    v(section-gap)
     card-section("逐小时预报")
     hourly-panel(location)
   }
   if location.daily.len() > 0 {
-    v(section-gap)
     card-section("每日预报")
     daily-forecast(location.daily)
   }
@@ -312,12 +302,7 @@
 
 #card-page[
   #card-header(data.title, subtitle: data.meta)
-  #for (index, location) in data.locations.enumerate() {
-    if index > 0 {
-      v(section-gap)
-      line(length: 100%, stroke: 0.8pt + line-c)
-      v(section-gap)
-    }
+  #for location in data.locations {
     weather-location(location)
   }
   #card-footer(data.footer)
