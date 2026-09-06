@@ -83,7 +83,7 @@ pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     }
 }
 
-/// Compile a generated typst source and rasterize the first page to PNG.
+/// Compile a generated Typst source and rasterize its single card to PNG.
 /// Shared by every card renderer; the templates differ, the pipeline does
 /// not.
 pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
@@ -123,6 +123,12 @@ pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>
         }
         anyhow!("typst compile failed: {detail}")
     })?;
+    if doc.pages.len() != 1 {
+        return Err(anyhow!(
+            "card must contain exactly one page, got {}",
+            doc.pages.len()
+        ));
+    }
     let page = doc
         .pages
         .first()
@@ -220,5 +226,14 @@ mod tests {
         assert!(checked_pixel_dimensions(f64::NAN, 10.0, 3.0).is_err());
         assert!(checked_pixel_dimensions(20_000.0, 1.0, 1.0).is_err());
         assert!(checked_pixel_dimensions(10_000.0, 10_000.0, 4.0).is_err());
+    }
+
+    #[test]
+    fn rejects_multiple_pages_instead_of_losing_content() {
+        let source = "#set page(width: 390pt, height: 200pt)\nFirst\n#pagebreak()\nSecond";
+        let error = super::compile_png(source.into(), 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("exactly one page, got 2"), "{error}");
     }
 }

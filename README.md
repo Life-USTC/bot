@@ -49,6 +49,20 @@ MCP 对齐（见
 进程在 `BOT_HEALTH_ADDR`（默认 `127.0.0.1:2282`）提供 `/live`，只检查进程初始化和本地 SQLite，外部消息渠道断线不会触发容器重启。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
+图卡由 Typst `renderd` 服务渲染。所有卡片使用 390pt 手机画布，默认 3× 输出
+1170px 宽 PNG；正文 17pt、注释和页脚 13pt，共用字体、留白与颜色。
+课表按天纵向排列，长课程名、表格单元格和天气预警自动换行，图片高度随内容增长。
+该排版以手机上按宽度查看为目标；QQ 聊天气泡的缩略图尺寸仍由客户端控制。
+
+启动 `renderd` 后可生成全部示例及按 390px 显示的本地预览页：
+
+```sh
+go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bot-examples
+```
+
+打开 `/tmp/bot-examples/index.html` 即可查看。示例使用固定测试数据；该命令及 CI
+会校验每张图片的默认输出宽度，渲染失败或宽度不一致时返回非零退出码。
+
 `make build` 会先校验 `api/openapi.provenance`，再从仓库内固定的
 `api/openapi.json` 重新生成客户端，因此构建不依赖网络且可复现。更新契约时需提供
 server 的完整提交 SHA，例如：

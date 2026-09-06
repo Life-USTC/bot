@@ -1,16 +1,10 @@
-// Command render-parity renders a fixed set of fixtures with both the legacy
-// Go renderer (responses.Renderer) and the typst sidecar renderer
-// (responses.RemoteRenderer against renderd), writing side-by-side PNGs and a
-// one-line size report per fixture. It is the acceptance tool for the sidecar
-// template-replication tasks.
+// Command render-examples renders all phone card fixtures through Typst.
+// It checks the shared default 1170px width and writes PNGs plus a gallery
+// that displays each image at its intended 390-point phone size.
 //
 // Usage:
 //
-//	go run ./cmd/render-parity -endpoint http://127.0.0.1:9123/render -out parity/
-//	go run ./cmd/render-parity -only bus -out parity/
-//
-// Legacy renders at 2x, the sidecar at 3x by default, so remote width divided
-// by legacy width should be ~= 1.5; a deviation over 2% prints a WARN.
+//	go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out examples/
 package main
 
 import (
@@ -27,15 +21,11 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 )
 
-// legacyScale and remoteScale are the rasterization factors used by the two
-// renderers; the expected remote/legacy size ratio is their quotient.
-const (
-	legacyScale = 2.0
-	remoteScale = 3.0
-)
+const exampleWidth = 390 * 3
 
 type fixture struct {
 	name  string
+	title string
 	build func() *responses.Image
 }
 
@@ -47,13 +37,13 @@ func fixtureNow() time.Time {
 // helpers live in _test.go files so the literals are copied here.
 func fixtures() []fixture {
 	return []fixture{
-		{"bus-single", busSingleImage},
-		{"bus-all", busAllImage},
-		{"rich-table", richTableImage},
-		{"rich-text", richTextImage},
-		{"grid-week", gridWeekImage},
-		{"grid-day", gridDayImage},
-		{"weather", weatherImage},
+		{"bus-single", "校车 · 单条路线", busSingleImage},
+		{"bus-all", "校车 · 全部路线", busAllImage},
+		{"rich-table", "待办表格", richTableImage},
+		{"rich-text", "帮助与长文本", richTextImage},
+		{"grid-week", "本周课表", gridWeekImage},
+		{"grid-day", "今日课表", gridDayImage},
+		{"weather", "多城市天气", weatherImage},
 	}
 }
 
@@ -110,9 +100,8 @@ func richTextImage() *responses.Image {
 `+strings.Repeat("这是一段用于触发自动换行的较长的说明文字，", 8), "Bot 帮助")
 }
 
-// gridWeekImage is a 7-day × 12-period schedule with merged multi-period
-// blocks, today's column highlighted at the fixture date, and an overlong
-// course name that triggers truncation.
+// gridWeekImage exercises seven day sections, full English course names,
+// multiple classes on one day, current-day emphasis, and empty days.
 func gridWeekImage() *responses.Image {
 	now := fixtureNow()
 	todayIndex := int(now.Weekday()) // index 0 is 周日, matching day labels below
@@ -135,7 +124,7 @@ func gridWeekImage() *responses.Image {
 	}, "本周课表")
 }
 
-// gridDayImage is a single-day schedule (DayWidth=360 layout branch).
+// gridDayImage exercises a compact single-day agenda.
 func gridDayImage() *responses.Image {
 	now := fixtureNow()
 	return responses.NewScheduleGridImage("schedule", now.Format("01-02")+" 课表", &responses.ScheduleGrid{
@@ -150,10 +139,16 @@ func gridDayImage() *responses.Image {
 	}, "今日课表")
 }
 
+// Distinct example lesson times, not a live university timetable.
 func schedulePeriods() []responses.ScheduleGridPeriod {
-	periods := make([]responses.ScheduleGridPeriod, 12)
-	for i := range periods {
-		periods[i] = responses.ScheduleGridPeriod{Label: "第 " + strconv.Itoa(i+1) + " 节", Time: "09:00–09:45"}
+	times := []string{
+		"08:00–08:45", "08:50–09:35", "09:55–10:40", "10:45–11:30",
+		"11:35–12:20", "14:00–14:45", "14:50–15:35", "15:55–16:40",
+		"16:45–17:30", "17:35–18:20", "19:30–20:15", "20:20–21:05",
+	}
+	periods := make([]responses.ScheduleGridPeriod, len(times))
+	for i, lessonTime := range times {
+		periods[i] = responses.ScheduleGridPeriod{Label: "第 " + strconv.Itoa(i+1) + " 节", Time: lessonTime}
 	}
 	return periods
 }
@@ -235,7 +230,7 @@ func weatherImage() *responses.Image {
 
 func main() {
 	endpoint := flag.String("endpoint", envOr("BOT_RENDER_ENDPOINT", "http://127.0.0.1:9123/render"), "renderd endpoint URL")
-	out := flag.String("out", "parity", "output directory for side-by-side PNGs")
+	out := flag.String("out", "examples", "output directory for PNGs and a phone-size gallery")
 	only := flag.String("only", "", "only run fixtures whose name has this prefix (e.g. -only bus)")
 	flag.Parse()
 
@@ -249,12 +244,10 @@ func run(endpoint, out, only string) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
-	legacy := responses.Renderer{Now: fixtureNow}
-	remote := responses.RemoteRenderer{Endpoint: endpoint, Now: fixtureNow}
-	expectedRatio := remoteScale / legacyScale
+	renderer := responses.RemoteRenderer{Endpoint: endpoint, Now: fixtureNow}
 	var failures []error
+	var examples []example
 	matched := 0
-
 	for _, f := range fixtures() {
 		if only != "" && !strings.HasPrefix(f.name, only) {
 			continue
@@ -265,37 +258,30 @@ func run(endpoint, out, only string) error {
 			failures = append(failures, fmt.Errorf("%s fixture build failed", f.name))
 			continue
 		}
-
-		report := f.name
-		legacyW, legacyH := 0, 0
-		png, w, h, err := legacy.RenderPNG(img)
+		png, width, height, err := renderer.RenderPNG(img)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("%s legacy: %w", f.name, err))
-		} else {
-			legacyW, legacyH = w, h
-			failures = append(failures, writePNG(out, f.name+"-legacy.png", png))
-			report += fmt.Sprintf(" legacy=%dx%d", w, h)
+			failures = append(failures, fmt.Errorf("%s: %w", f.name, err))
+			continue
 		}
-
-		png, w, h, err = remote.RenderPNG(img)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("%s remote: %w", f.name, err))
-		} else {
-			failures = append(failures, writePNG(out, f.name+"-remote.png", png))
-			report += fmt.Sprintf(" remote=%dx%d", w, h)
-			if legacyW > 0 && legacyH > 0 {
-				ratio := float64(w) / float64(legacyW)
-				if math.Abs(ratio-expectedRatio)/expectedRatio > 0.02 {
-					report += fmt.Sprintf(" WARN ratio=%.3f want≈%.1f", ratio, expectedRatio)
-				}
-			}
+		if width != exampleWidth {
+			failures = append(failures, fmt.Errorf("%s: image width %d, want %d (390pt at default 3x scale)", f.name, width, exampleWidth))
+			continue
 		}
-		fmt.Println(report)
+		filename := f.name + ".png"
+		if err := writePNG(out, filename, png); err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		examples = append(examples, example{Name: f.name, Title: f.title, File: filename, Width: width, Height: height})
+		fmt.Printf("%s: %dx%d (%d bytes)\n", f.name, width, height, len(png))
 	}
 	if matched == 0 {
 		return fmt.Errorf("no fixtures match %q", only)
 	}
-	return errors.Join(failures...)
+	if err := errors.Join(failures...); err != nil {
+		return err
+	}
+	return writeGallery(out, examples)
 }
 
 func writePNG(dir, name string, data []byte) error {

@@ -10,7 +10,6 @@ RUN mkdir -p src && printf 'fn main() {}\n' >src/main.rs \
     && cargo build --release --locked
 
 COPY src ./src
-COPY assets ./assets
 # COPY preserves timestamps in some builders; touch the entrypoint so Cargo
 # cannot mistake the dependency-cache dummy for the real renderer.
 RUN touch src/main.rs \

@@ -116,8 +116,16 @@ jobs:
           trap 'kill "$renderd_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/renderd.log"' EXIT
           curl --fail --silent --show-error --retry 20 --retry-connrefused \
             --retry-delay 1 --retry-max-time 30 --max-time 2 http://127.0.0.1:9123/healthz
-          go run ./cmd/render-parity -endpoint http://127.0.0.1:9123/render \
-            -out "$RUNNER_TEMP/render-parity"
+          go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render \
+            -out "$RUNNER_TEMP/render-examples"
+
+      - name: Save phone card examples
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: typst-phone-examples
+          path: ${{ runner.temp }}/render-examples
+          if-no-files-found: error
+          retention-days: 14
 
   lint:
     name: Lint

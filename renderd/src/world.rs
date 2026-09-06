@@ -165,8 +165,7 @@ impl World for SandboxWorld {
         if id == self.main_id {
             Ok(self.main.clone())
         } else if id.vpath().as_rootless_path().to_str() == Some("common.typ") {
-            // Shared template fragment (palette, metrics, watermark, footer)
-            // imported by every card template; embedded like the logo assets.
+            // Shared canvas, typography, and flow helpers imported by every card.
             Ok(Source::new(id, COMMON_TYP.to_string()))
         } else {
             Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
@@ -174,16 +173,7 @@ impl World for SandboxWorld {
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        match id.vpath().as_rootless_path().to_str() {
-            Some("assets/logo.png") => Ok(raw_logo().clone()),
-            Some("assets/logo-15.png") => faded_logo(0.15)
-                .cloned()
-                .ok_or_else(|| FileError::NotFound(id.vpath().as_rootless_path().into())),
-            Some("assets/logo-10.png") => faded_logo(0.10)
-                .cloned()
-                .ok_or_else(|| FileError::NotFound(id.vpath().as_rootless_path().into())),
-            _ => Err(FileError::NotFound(id.vpath().as_rootless_path().into())),
-        }
+        Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -199,50 +189,8 @@ impl World for SandboxWorld {
     }
 }
 
-/// The embedded Life@USTC logo, served to templates as `assets/logo.png`.
-fn raw_logo() -> &'static Bytes {
-    static LOGO: OnceLock<Bytes> = OnceLock::new();
-    LOGO.get_or_init(|| Bytes::new(include_bytes!("../assets/life_ustc_logo_raw.png").to_vec()))
-}
-
 /// Shared template fragment, served to card templates as `common.typ`.
 const COMMON_TYP: &str = include_str!("templates/common.typ");
-
-/// The logo with its alpha pre-scaled, served as `assets/logo-15.png` etc.
-/// Typst cannot draw images at reduced opacity, so the fade is baked into the
-/// PNG once and cached. Returns None if the logo cannot be decoded; the
-/// template then fails to compile, which is surfaced as a render error.
-fn faded_logo(opacity: f32) -> Option<&'static Bytes> {
-    fn build(opacity: f32) -> Option<Bytes> {
-        let mut pixmap = tiny_skia::Pixmap::decode_png(raw_logo()).ok()?;
-        for pixel in pixmap.pixels_mut() {
-            let c = pixel.demultiply();
-            let alpha = (c.alpha() as f32 * opacity).round() as u8;
-            *pixel =
-                tiny_skia::ColorU8::from_rgba(c.red(), c.green(), c.blue(), alpha).premultiply();
-        }
-        pixmap.encode_png().ok().map(Bytes::new)
-    }
-
-    static LOGO15: OnceLock<Option<Bytes>> = OnceLock::new();
-    static LOGO10: OnceLock<Option<Bytes>> = OnceLock::new();
-    if (opacity - 0.15).abs() < f32::EPSILON {
-        return LOGO15.get_or_init(|| build(0.15)).as_ref();
-    }
-    if (opacity - 0.10).abs() < f32::EPSILON {
-        return LOGO10.get_or_init(|| build(0.10)).as_ref();
-    }
-    None
-}
-
-/// Pre-generate derived assets (faded logo variants) so the first request
-/// does not pay for PNG decode/encode, and fail fast if the logo is broken.
-pub fn warm_assets() -> Result<(), String> {
-    faded_logo(0.15)
-        .and_then(|_| faded_logo(0.10))
-        .map(|_| ())
-        .ok_or_else(|| "failed to pre-render faded logo variants".to_string())
-}
 
 /// Howard Hinnant's civil-from-days algorithm.
 fn civil_from_days(z: i64) -> (i32, u8, u8) {
