@@ -45,33 +45,6 @@ pub(crate) fn check_text_budget(total: &mut usize, field: &str, value: &str) -> 
     Ok(())
 }
 
-pub(crate) fn check_finite(field: &str, value: f64) -> anyhow::Result<()> {
-    if !value.is_finite() {
-        return Err(anyhow!("{field} must be finite"));
-    }
-    Ok(())
-}
-
-pub(crate) fn check_positive_dimension(field: &str, value: f64, max: f64) -> anyhow::Result<()> {
-    if !value.is_finite() || value <= 0.0 || value > max {
-        return Err(anyhow!(
-            "{field} must be finite and in the range (0, {max}]"
-        ));
-    }
-    Ok(())
-}
-
-/// Reject a page whose dimensions would exceed the rasterizer limits before
-/// Typst compilation starts. Auto-height templates otherwise make it possible
-/// for a bounded request body to force a very large intermediate document.
-pub(crate) fn check_render_dimensions(
-    logical_width: f64,
-    logical_height: f64,
-    scale: f32,
-) -> anyhow::Result<()> {
-    checked_pixel_dimensions(logical_width, logical_height, scale).map(|_| ())
-}
-
 pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let scale = crate::request::resolve_scale(env.scale);
     match env.kind.as_str() {
@@ -83,7 +56,7 @@ pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     }
 }
 
-/// Compile a generated typst source and rasterize the first page to PNG.
+/// Compile a generated Typst source and rasterize its single card to PNG.
 /// Shared by every card renderer; the templates differ, the pipeline does
 /// not.
 pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
@@ -123,6 +96,12 @@ pub(super) fn compile_png(source: String, scale: f32) -> anyhow::Result<(Vec<u8>
         }
         anyhow!("typst compile failed: {detail}")
     })?;
+    if doc.pages.len() != 1 {
+        return Err(anyhow!(
+            "card must contain exactly one page, got {}",
+            doc.pages.len()
+        ));
+    }
     let page = doc
         .pages
         .first()
@@ -210,8 +189,8 @@ mod tests {
     #[test]
     fn checks_normal_page_dimensions() {
         assert_eq!(
-            checked_pixel_dimensions(920.0, 1436.0, 3.0).unwrap(),
-            (2760, 4308, 11_890_080)
+            checked_pixel_dimensions(390.0, 844.0, 3.0).unwrap(),
+            (1170, 2532, 2_962_440)
         );
     }
 
@@ -220,5 +199,14 @@ mod tests {
         assert!(checked_pixel_dimensions(f64::NAN, 10.0, 3.0).is_err());
         assert!(checked_pixel_dimensions(20_000.0, 1.0, 1.0).is_err());
         assert!(checked_pixel_dimensions(10_000.0, 10_000.0, 4.0).is_err());
+    }
+
+    #[test]
+    fn rejects_multiple_pages_instead_of_losing_content() {
+        let source = "#set page(width: 390pt, height: 200pt)\nFirst\n#pagebreak()\nSecond";
+        let error = super::compile_png(source.into(), 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("exactly one page, got 2"), "{error}");
     }
 }

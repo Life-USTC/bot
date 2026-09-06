@@ -86,20 +86,20 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 	if got := gotPayload.Tables[0].HeaderEmphasis; len(got) != 4 || got[0] || got[1] || got[2] || got[3] {
 		t.Fatalf("first table header_emphasis = %#v, want [false false false false]", got)
 	}
-	if got := gotPayload.Tables[0].ColumnWidths; len(got) != 4 {
-		t.Fatalf("first table column widths = %#v", got)
+	if len(gotPayload.Tables[0].Rows) != 2 || !gotPayload.Tables[0].Rows[0].Highlight || gotPayload.Tables[0].Rows[0].Departed {
+		t.Fatalf("first table semantic rows = %#v, want next row highlighted and not departed", gotPayload.Tables[0].Rows)
 	}
-	if len(gotPayload.RowsOfTables) != 2 || len(gotPayload.RowsOfTables[0]) != 1 || gotPayload.RowsOfTables[0][0] != 0 || gotPayload.RowsOfTables[1][0] != 1 {
-		t.Fatalf("rows_of_tables = %#v, want [[0] [1]]", gotPayload.RowsOfTables)
-	}
-	if gotPayload.ContentWidth <= 0 {
-		t.Fatalf("content_width = %d, want > 0", gotPayload.ContentWidth)
+	if got := gotPayload.Tables[1].Rows; len(got) != 2 || !got[0].Highlight || got[0].Departed {
+		t.Fatalf("second table semantic rows = %#v, want explicit highlight preserved", got)
 	}
 	if len(gotPayload.Footer) != 2 || gotPayload.Footer[1] != "Life @ USTC" {
 		t.Fatalf("footer = %#v", gotPayload.Footer)
 	}
 	if gotPayload.NextTime == "" {
 		t.Fatalf("request next_time empty, want next bus hint")
+	}
+	if raw := string(gotRequest.Payload); strings.Contains(raw, "content_width") || strings.Contains(raw, "column_widths") || strings.Contains(raw, "rows_of_tables") {
+		t.Fatalf("payload contains obsolete geometry: %s", raw)
 	}
 }
 
@@ -236,97 +236,6 @@ func TestRemoteRendererRejectsNonPNGImage(t *testing.T) {
 	}
 }
 
-func TestRemoteRendererGridPayload(t *testing.T) {
-	var gotRequest remoteRenderRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("X-Image-Width", "8")
-		w.Header().Set("X-Image-Height", "6")
-		_, _ = w.Write(testRemotePNG(t))
-	}))
-	defer server.Close()
-
-	grid := testScheduleGrid()
-	grid.Items = append(grid.Items,
-		ScheduleGridItem{
-			Day:         2,
-			StartPeriod: 1,
-			EndPeriod:   2,
-			Course:      "Introduction to Computational Thinking and Programming Methodology",
-			Location:    "东区",
-		},
-		ScheduleGridItem{Day: -1, StartPeriod: 1, EndPeriod: 1, Course: "invalid day"},
-		ScheduleGridItem{Day: 1, StartPeriod: 0, EndPeriod: 1, Course: "invalid period"},
-	)
-	img := NewScheduleGridImage("schedule", "  ", grid, "本周课表")
-	if img == nil {
-		t.Fatal("NewScheduleGridImage returned nil")
-	}
-	renderer := RemoteRenderer{
-		Endpoint: server.URL + "/render",
-		Now: func() time.Time {
-			return time.Date(2026, 7, 17, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60))
-		},
-	}
-	if _, width, height, err := renderer.RenderPNG(img); err != nil {
-		t.Fatalf("RenderPNG: %v", err)
-	} else if width != 8 || height != 6 {
-		t.Fatalf("dimensions = %dx%d, want 8x6", width, height)
-	}
-
-	if gotRequest.Kind != "grid" {
-		t.Fatalf("request kind = %q, want grid", gotRequest.Kind)
-	}
-	var got remoteGridPayload
-	if err := json.Unmarshal(gotRequest.Payload, &got); err != nil {
-		t.Fatalf("decode grid payload: %v", err)
-	}
-	if got.Title != "课表" {
-		t.Fatalf("title = %q, want fallback title", got.Title)
-	}
-	if got.Summary != "周日–周六 · 第 1–13 节" {
-		t.Fatalf("summary = %q", got.Summary)
-	}
-	if got.DayWidth != 156 || got.LabelWidth != 120 || got.RowHeight != 56 || got.HeaderHeight != 54 {
-		t.Fatalf("metrics = %d/%d/%d/%d, want 156/120/56/54", got.DayWidth, got.LabelWidth, got.RowHeight, got.HeaderHeight)
-	}
-	if len(got.Days) != 7 || !got.Days[5].Today || !strings.HasSuffix(got.Days[5].Label, " · 今天") {
-		t.Fatalf("today day = %#v", got.Days[5])
-	}
-	if len(got.Dividers) != 2 || got.Dividers[0] != 5 || got.Dividers[1] != 10 {
-		t.Fatalf("dividers = %#v, want [5 10]", got.Dividers)
-	}
-	if len(got.Items) != 3 {
-		t.Fatalf("items = %d, want 3 valid items", len(got.Items))
-	}
-	merged := got.Items[0]
-	if merged.Day != 0 || merged.Start != 3 || merged.End != 4 || !merged.Large {
-		t.Fatalf("merged item = %#v", merged)
-	}
-	if merged.Course != "数据库系统" || merged.Location != "高新区 · GT-B112" {
-		t.Fatalf("merged text = %#v", merged)
-	}
-	if merged.CourseSize != scheduleGridLargeCourseFontSize || merged.MetaSize != scheduleGridLargeMetaFontSize {
-		t.Fatalf("merged sizes = %d/%d, want %d/%d", merged.CourseSize, merged.MetaSize, scheduleGridLargeCourseFontSize, scheduleGridLargeMetaFontSize)
-	}
-	if merged.Color != scheduleGridColorHex(scheduleGridCourseColor(grid.Items[0])) {
-		t.Fatalf("merged color = %q", merged.Color)
-	}
-	long := got.Items[2]
-	if long.CourseSize != scheduleGridCourseFontSize || long.MetaSize != scheduleGridLargeMetaFontSize {
-		t.Fatalf("long item sizes = %d/%d, want %d/%d", long.CourseSize, long.MetaSize, scheduleGridCourseFontSize, scheduleGridLargeMetaFontSize)
-	}
-	if !strings.HasSuffix(long.Course, "…") || richTextWidth(long.Course, long.CourseSize) > 144 {
-		t.Fatalf("long course = %q, want truncated to <= 144px", long.Course)
-	}
-	if len(got.Footer) != 2 || got.Footer[1] != "Life @ USTC" {
-		t.Fatalf("footer = %#v", got.Footer)
-	}
-}
-
 func TestRemoteRendererRichPayload(t *testing.T) {
 	payload := testRemotePNG(t)
 	var gotRequest remoteRenderRequest
@@ -372,9 +281,6 @@ func TestRemoteRendererRichPayload(t *testing.T) {
 	if gotPayload.Title != "待办" {
 		t.Fatalf("payload title = %q", gotPayload.Title)
 	}
-	if gotPayload.CompactFirstBlock {
-		t.Fatalf("compact_first_block = true, want false")
-	}
 	if len(gotPayload.Blocks) != 1 || gotPayload.Blocks[0].Table == nil {
 		t.Fatalf("blocks = %#v, want a single table block", gotPayload.Blocks)
 	}
@@ -395,15 +301,11 @@ func TestRemoteRendererRichPayload(t *testing.T) {
 	if got := table.Rows[0].Cells; len(got) != 2 || got[0] != "提交数据库实验报告" || got[1] != "07-10" {
 		t.Fatalf("first row cells = %#v", got)
 	}
-	widthSum := 0
-	for _, w := range table.ColumnWidths {
-		widthSum += w
-	}
-	if widthSum != gotPayload.ContentWidth {
-		t.Fatalf("column widths sum = %d, want content_width %d", widthSum, gotPayload.ContentWidth)
-	}
 	if len(gotPayload.Footer) != 2 || gotPayload.Footer[0] != "13:00 · 工作日" || gotPayload.Footer[1] != "Life @ USTC" {
 		t.Fatalf("footer = %#v", gotPayload.Footer)
+	}
+	if raw := string(gotRequest.Payload); strings.Contains(raw, "content_width") || strings.Contains(raw, "column_widths") || strings.Contains(raw, "wrapped") {
+		t.Fatalf("payload contains obsolete geometry: %s", raw)
 	}
 }
 
@@ -452,20 +354,20 @@ func TestRemoteRendererRichTextWrap(t *testing.T) {
 		t.Fatalf("blocks = %d, want 1", len(gotPayload.Blocks))
 	}
 	block := gotPayload.Blocks[0]
-	if block.Table != nil || !block.Wrapped {
-		t.Fatalf("block = %#v, want a wrapped text block", block)
+	if block.Table != nil {
+		t.Fatalf("block = %#v, want a text block", block)
 	}
-	// Two short lines plus the long paragraph wrapped into four segments.
-	if len(block.Lines) != 6 {
-		t.Fatalf("block lines = %d, want 6: %q", len(block.Lines), block.Lines)
+	if len(block.Lines) != 3 {
+		t.Fatalf("block lines = %d, want 3 source lines: %q", len(block.Lines), block.Lines)
 	}
 	if block.Lines[0] != "发送「帮助 课表」可以查看「课表」命令的具体用法。" {
 		t.Fatalf("first line = %q", block.Lines[0])
 	}
-	for i, line := range block.Lines {
-		if richTextWidth(line, 13) > gotPayload.ContentWidth-16 {
-			t.Fatalf("line %d wider than wrap width: %q", i, line)
-		}
+	if !strings.Contains(block.Lines[2], "这是一段用于触发自动换行的较长的说明文字") || strings.Contains(block.Lines[2], "…") {
+		t.Fatalf("long source line was changed: %q", block.Lines[2])
+	}
+	if raw := string(gotRequest.Payload); strings.Contains(raw, "content_width") || strings.Contains(raw, "wrapped") {
+		t.Fatalf("payload contains obsolete layout fields: %s", raw)
 	}
 }
 

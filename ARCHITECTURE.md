@@ -434,29 +434,37 @@ post-start schema audit fails.
 ## Image rendering
 
 Image responses are rendered by the `renderd` sidecar. The bot keeps domain
-and layout decisions in Go, sends a validated JSON envelope to
+semantics in Go, sends a validated JSON envelope to
 `BOT_RENDER_ENDPOINT`, and receives a PNG from the Rust/Typst renderer. The
 Compose deployment starts `renderd` first and waits for its `/healthz` probe;
 the bot does not silently retry with a legacy renderer when the endpoint is
 unavailable, so an operational failure remains visible while the normal text
 response is preserved.
 
-`renderd` rasterizes at 3x by default. `RENDERD_SCALE` can be set between 1x
-and 4x, and a request may provide a per-request scale. Its runtime image
-includes Fira Code and Noto CJK. The Typst world exposes only embedded card
-templates and watermark assets; it cannot read arbitrary files or access the
+All card families use the shared Typst style: a 390-point canvas, 20-point
+side margins, 17-point body text, and 13-point captions. Tables and paragraphs
+wrap to their available width, and schedules use day sections so course names
+stay readable on a phone. Page height follows the content. The renderer checks
+the actual page dimensions before rasterization and rejects multi-page cards
+instead of silently dropping content.
+
+`renderd` rasterizes at 3x by default, producing 1170-pixel-wide images.
+`RENDERD_SCALE` can be set between 1x and 4x, and a request may provide a
+per-request scale. Its runtime image includes Fira Code and Noto CJK. The Typst
+world exposes only embedded card templates; it cannot read files or access the
 network during compilation.
 
 For local development, start `renderd` and point the bot at
-`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`, or compare all card
-kinds with:
+`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`, or render all card
+examples with:
 
 ```sh
 RENDERD_ADDR=127.0.0.1:9123 renderd/target/release/renderd
-go run ./cmd/render-parity -endpoint http://127.0.0.1:9123/render -out /tmp/parity
+go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bot-examples
 ```
 
-The comparison uses a fixed clock for both renderers, including departure
-highlights and the current schedule column. Any render or output-write failure
-exits nonzero. CI runs all seven fixtures against the release-built sidecar;
-the Go renderer is retained only as a visual reference for this comparison.
+The seven fixtures use a fixed clock and sample data, including departure
+highlights and the current schedule day. The command writes original PNGs and
+a phone-width HTML gallery, and exits nonzero on a render, output-write, or
+image-width failure. CI renders every fixture against the release-built sidecar
+and uploads the gallery and images as the `typst-phone-examples` artifact.

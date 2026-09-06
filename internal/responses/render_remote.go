@@ -42,25 +42,21 @@ const (
 	maxRemoteImagePixels    = 32 << 20
 )
 
-// remoteBusPayload is the payload for kind "bus". It mirrors the geometry of
-// the legacy renderRichPNG bus branch: the sidecar only has to lay the tables
-// out at the given widths, not re-measure anything.
+// remoteBusPayload is the semantic payload for kind "bus". The sidecar owns
+// the fixed phone canvas and lays every route table out in normal flow.
 type remoteBusPayload struct {
-	Title        string           `json:"title"`
-	ContentWidth int              `json:"content_width"`
-	NextTime     string           `json:"next_time,omitempty"`
-	NextWait     string           `json:"next_wait,omitempty"`
-	Footer       []string         `json:"footer,omitempty"`
-	RowsOfTables [][]int          `json:"rows_of_tables,omitempty"`
-	Tables       []remoteBusTable `json:"tables,omitempty"`
+	Title    string           `json:"title"`
+	NextTime string           `json:"next_time,omitempty"`
+	NextWait string           `json:"next_wait,omitempty"`
+	Footer   []string         `json:"footer,omitempty"`
+	Tables   []remoteBusTable `json:"tables"`
 }
 
 type remoteBusTable struct {
 	Label          string         `json:"label,omitempty"`
 	Header         []string       `json:"header,omitempty"`
 	HeaderEmphasis []bool         `json:"header_emphasis,omitempty"`
-	ColumnWidths   []int          `json:"column_widths,omitempty"`
-	Rows           []remoteBusRow `json:"rows,omitempty"`
+	Rows           []remoteBusRow `json:"rows"`
 }
 
 type remoteBusRow struct {
@@ -69,32 +65,25 @@ type remoteBusRow struct {
 	Departed  bool     `json:"departed,omitempty"`
 }
 
-// remoteRichPayload is the payload for kind "rich" (every non-bus rich text
-// card). It mirrors the legacy renderRichPNG general branch: the Go side runs
-// layoutRichText and serializes each richLayoutNode into a block, so the
-// sidecar draws final geometry without re-measuring.
+// remoteRichPayload is the semantic payload for kind "rich". Text remains
+// whole so Typst can wrap it at the shared phone width.
 type remoteRichPayload struct {
-	Title             string            `json:"title"`
-	ContentWidth      int               `json:"content_width"`
-	CompactFirstBlock bool              `json:"compact_first_block"`
-	Footer            []string          `json:"footer,omitempty"`
-	Blocks            []remoteRichBlock `json:"blocks"`
+	Title  string            `json:"title"`
+	Footer []string          `json:"footer,omitempty"`
+	Blocks []remoteRichBlock `json:"blocks"`
 }
 
-// remoteRichBlock is one layout node: either a text block (Lines, already
-// wrapped by wrapRichText — hence Wrapped) or a table block.
+// remoteRichBlock is one semantic document block: either text lines or a table.
 type remoteRichBlock struct {
 	Heading string           `json:"heading,omitempty"`
 	Lines   []string         `json:"lines,omitempty"`
-	Wrapped bool             `json:"wrapped,omitempty"`
 	Table   *remoteRichTable `json:"table,omitempty"`
 }
 
 type remoteRichTable struct {
 	Header         []string        `json:"header,omitempty"`
 	HeaderEmphasis []bool          `json:"header_emphasis,omitempty"`
-	ColumnWidths   []int           `json:"column_widths,omitempty"`
-	Rows           []remoteRichRow `json:"rows,omitempty"`
+	Rows           []remoteRichRow `json:"rows"`
 }
 
 type remoteRichRow struct {
@@ -257,136 +246,90 @@ func (r RemoteRenderer) RenderPNGContext(parent context.Context, img *Image) ([]
 	return png, width, height, nil
 }
 
-// buildBusRequest mirrors the legacy renderRichPNG bus branch: parse the rich
-// text, mark departed/highlighted rows, and run the same layout pass so the
-// sidecar receives final geometry (column widths, table pairing, content
-// width) instead of re-deriving it.
+// buildBusRequest parses the rich bus document, preserves its table content,
+// and applies the same departure/highlight semantics as the local renderer.
+// Geometry stays in the Typst template so long stop names and times can wrap
+// at the shared phone width.
 func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	doc := parseRichText(img.RichText)
-	tables := []busRenderTable{}
-	for i := range doc.Blocks {
-		if doc.Blocks[i].Table != nil {
-			tables = append(tables, *doc.Blocks[i].Table)
+	tables := make([]busRenderTable, 0, len(doc.Blocks))
+	for _, block := range doc.Blocks {
+		if block.Table != nil {
+			tables = append(tables, *block.Table)
 		}
 	}
 	markBusRowsByTime(tables, doc.Title, now)
-	tableIndex := 0
-	for i := range doc.Blocks {
-		if doc.Blocks[i].Table != nil {
-			*doc.Blocks[i].Table = tables[tableIndex]
-			tableIndex++
-		}
-	}
-	layout := layoutRichText(doc, now)
-
+	nextTime, nextWait := busNextWait(tables, doc.Title, now)
 	req := remoteBusPayload{
-		// renderRichPNG draws layout.Title directly. Keep the sidecar title
-		// byte-for-byte identical to the parsed rich document, including the
-		// all-routes and route-specific forms.
-		Title:        layout.Title,
-		ContentWidth: layout.Space.Width - 2*layout.Metrics.MarginX,
-		NextTime:     layout.NextTime,
-		NextWait:     layout.NextWait,
+		// Keep the sidecar title byte-for-byte identical to the parsed rich
+		// document, including all-routes and route-specific forms.
+		Title:    doc.Title,
+		NextTime: nextTime,
+		NextWait: nextWait,
 	}
 	footer := richFooterLines(now)
 	req.Footer = []string{footer[0], footer[1]}
-
-	// Nodes are laid out row-major; group them back into visual rows and map
-	// each table node to its index in doc order.
-	indexOf := map[*busRenderTable]int{}
-	for i := range doc.Blocks {
-		if doc.Blocks[i].Table != nil {
-			indexOf[doc.Blocks[i].Table] = len(req.Tables)
-			req.Tables = append(req.Tables, remoteBusTable{})
-		}
-	}
-	rowIndexByY := map[int]int{}
-	for _, node := range layout.Nodes {
-		if node.Table == nil {
+	for _, block := range doc.Blocks {
+		if block.Table == nil {
 			continue
 		}
-		idx, ok := indexOf[node.Table]
-		if !ok {
-			continue
+		table := tables[len(req.Tables)]
+		label := strings.TrimSpace(block.Heading)
+		// The all-routes response has no markdown section heading. A compact
+		// route label keeps the individual vertically stacked tables
+		// identifiable without changing any table cells.
+		if label == "" && strings.TrimSpace(doc.Title) == "校车" {
+			label = strings.ReplaceAll(table.directionKey(), "→", " → ")
 		}
-		rt := &req.Tables[idx]
-		rt.Label = node.Heading
-		rt.ColumnWidths = append([]int(nil), node.ColumnWidths...)
-		for _, h := range node.Header {
-			rt.Header = append(rt.Header, h.Text)
-			rt.HeaderEmphasis = append(rt.HeaderEmphasis, h.Emphasize)
+		rows := make([]remoteBusRow, 0, len(table.Rows))
+		for _, row := range table.Rows {
+			rows = append(rows, remoteBusRow{
+				Cells:     append([]string(nil), row.Cells...),
+				Highlight: row.Highlight,
+				Departed:  row.Departed,
+			})
 		}
-		for _, row := range node.Table.Rows {
-			rt.Rows = append(rt.Rows, remoteBusRow(row))
-		}
-		y := node.Bounds.Min.Y
-		rowIdx, seen := rowIndexByY[y]
-		if !seen {
-			rowIdx = len(req.RowsOfTables)
-			rowIndexByY[y] = rowIdx
-			req.RowsOfTables = append(req.RowsOfTables, nil)
-		}
-		req.RowsOfTables[rowIdx] = append(req.RowsOfTables[rowIdx], idx)
+		req.Tables = append(req.Tables, remoteBusTable{
+			Label:          label,
+			Header:         append([]string(nil), table.Header...),
+			HeaderEmphasis: append([]bool(nil), table.HeaderEmphasis...),
+			Rows:           rows,
+		})
 	}
 	return req
 }
 
-// buildRichRequest mirrors the legacy renderRichPNG non-bus branch: parse the
-// rich text, run the same layoutRichText pass, and serialize each layout node
-// into a block carrying final geometry (pre-wrapped lines, fitted cells,
-// column widths) so the sidecar only draws.
+// buildRichRequest preserves the parsed rich document and leaves wrapping and
+// table sizing to Typst's normal-flow layout at the shared phone width.
 func (r RemoteRenderer) buildRichRequest(img *Image) remoteRichPayload {
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	doc := parseRichText(img.RichText)
-	layout := layoutRichText(doc, now)
-	m := layout.Metrics
-
 	req := remoteRichPayload{
-		Title:             layout.Title,
-		ContentWidth:      layout.Space.Width - 2*m.MarginX,
-		CompactFirstBlock: richDocumentHasCompactHelpIntro(doc),
+		Title: doc.Title,
 	}
 	footer := richFooterLines(now)
 	req.Footer = []string{footer[0], footer[1]}
-
-	for _, node := range layout.Nodes {
-		block := remoteRichBlock{
-			Heading: fitRichTextToWidth(node.Heading, node.Bounds.Dx()-2*m.TextPaddingX, 13),
-		}
-		if node.Table == nil {
-			block.Lines = node.Lines
-			block.Wrapped = true
+	for _, source := range doc.Blocks {
+		block := remoteRichBlock{Heading: strings.TrimSpace(source.Heading)}
+		if source.Table == nil {
+			block.Lines = append([]string(nil), source.Lines...)
 			req.Blocks = append(req.Blocks, block)
 			continue
 		}
-		table := &remoteRichTable{
-			ColumnWidths: append([]int(nil), node.ColumnWidths...),
+		table := source.Table
+		rows := make([]remoteRichRow, 0, len(table.Rows))
+		for _, row := range table.Rows {
+			rows = append(rows, remoteRichRow{
+				Cells:     append([]string(nil), row.Cells...),
+				Highlight: row.Highlight,
+			})
 		}
-		for i, header := range node.Header {
-			width := 0
-			if i < len(node.ColumnWidths) {
-				width = node.ColumnWidths[i]
-			}
-			table.Header = append(table.Header, fitRichTextToWidth(header.Text, width-2*m.TableCellPaddingX, 13))
-			table.HeaderEmphasis = append(table.HeaderEmphasis, header.Emphasize)
+		block.Table = &remoteRichTable{
+			Header:         append([]string(nil), table.Header...),
+			HeaderEmphasis: append([]bool(nil), table.HeaderEmphasis...),
+			Rows:           rows,
 		}
-		for _, row := range node.Table.Rows {
-			cells := make([]string, len(table.Header))
-			for i := range cells {
-				cell := ""
-				if i < len(row.Cells) {
-					cell = row.Cells[i]
-				}
-				width := 0
-				if i < len(node.ColumnWidths) {
-					width = node.ColumnWidths[i]
-				}
-				cells[i] = fitRichTextToWidth(cell, width-2*m.TableCellPaddingX, 14)
-			}
-			table.Rows = append(table.Rows, remoteRichRow{Cells: cells, Highlight: row.Highlight})
-		}
-		block.Table = table
 		req.Blocks = append(req.Blocks, block)
 	}
 	return req
