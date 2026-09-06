@@ -251,7 +251,7 @@
   }
   card-surface[
     #table(
-      columns: (72pt, 38pt, 1fr, 38pt),
+      columns: (72pt, auto, 1fr, auto),
       align: left + horizon,
       stroke: none,
       ..cells,
@@ -268,8 +268,7 @@
   }
   card-surface(fill: weather-alert-bg)[
     #table(
-      columns: (8pt, 1fr),
-      column-gutter: 10pt,
+      columns: (auto, 1fr),
       align: left + top,
       stroke: none,
       ..cells,
