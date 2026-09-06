@@ -1,34 +1,26 @@
 //! Weather card rendering: validated JSON payload -> Typst source -> PNG.
 //!
-//! The Go renderer owns the weather semantics (location selection, labels,
-//! provider text, and the structured `WeatherCard`).  This module keeps the
-//! same logical canvas and row metrics as `weather_render.go`, then delegates
-//! the drawing to the embedded Typst template.  All strings are escaped before
-//! they become source code; the sidecar never gives Typst filesystem or network
-//! access.
+//! Weather semantics stay in the Go response layer. This module validates the
+//! structured values, computes the chart coordinates for the shared phone
+//! canvas, and hands the remaining layout to the flow-based Typst template.
+//! Strings are escaped before they become source code; the sidecar never gives
+//! Typst filesystem or network access.
 
 use anyhow::{bail, Context};
 use serde::Deserialize;
 
 use crate::escape::typst_str;
 
-const CANVAS_WIDTH: f64 = 920.0;
-const MARGIN_X: f64 = 52.0;
-const TITLE_BASELINE: f64 = 52.0;
-const TITLE_GAP: f64 = 12.0;
-const NAME_ROW: f64 = 34.0;
-const HERO_ROW: f64 = 110.0;
-const TILE_ROW: f64 = 68.0;
-const HEADING_ROW: f64 = 32.0;
-const CHART_ROW: f64 = 158.0;
-const CHART_LABELS: f64 = 20.0;
-const DAY_ROW: f64 = 30.0;
-const ALERT_ROW: f64 = 24.0;
-const BLOCK_GAP: f64 = 30.0;
-const FOOTER_ROW: f64 = 48.0;
-const CONTENT_WIDTH: f64 = CANVAS_WIDTH - 2.0 * MARGIN_X;
-const CHART_PLOT_BOTTOM: f64 = CHART_ROW - 34.0;
+// Keep these values in step with the shared common.typ card style. They are
+// renderer constants for chart coordinates, not payload geometry.
+const CARD_WIDTH: f64 = 390.0;
+const CONTENT_WIDTH: f64 = 350.0;
+const CHART_PLOT_LEFT: f64 = 22.0;
+const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH - CHART_PLOT_LEFT;
+const CHART_PLOT_BOTTOM: f64 = 120.0;
+const CHART_TEMP_RANGE: f64 = 88.0;
 const CHART_MAX_BAR_HEIGHT: f64 = 34.0;
+const DAILY_TRACK_WIDTH: f64 = 1.0;
 
 const MAX_LOCATIONS: usize = 16;
 const MAX_HOURLY_POINTS: usize = 168;
@@ -39,6 +31,7 @@ const MAX_LABEL_BYTES: usize = 256;
 const MAX_NUMERIC_VALUE: f64 = 1_000_000.0;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WeatherPayload {
     #[serde(default)]
     pub title: String,
@@ -46,10 +39,6 @@ pub struct WeatherPayload {
     pub meta: String,
     #[serde(default)]
     pub footer: Vec<String>,
-    #[serde(default = "default_canvas_width")]
-    pub canvas_width: f64,
-    #[serde(default)]
-    pub height: f64,
     #[serde(default)]
     pub locations: Vec<WeatherLocation>,
 }
@@ -112,10 +101,6 @@ pub struct WeatherDay {
     pub condition_text: String,
 }
 
-fn default_canvas_width() -> f64 {
-    CANVAS_WIDTH
-}
-
 impl WeatherPayload {
     fn validate(&self) -> anyhow::Result<()> {
         if self.title.trim().is_empty() {
@@ -132,15 +117,6 @@ impl WeatherPayload {
         for (index, line) in self.footer.iter().enumerate() {
             check_text(&format!("footer[{index}]"), line, MAX_TEXT_BYTES)?;
         }
-        if !self.canvas_width.is_finite() || self.canvas_width <= 0.0 {
-            bail!("weather payload canvas_width must be finite and positive");
-        }
-        if (self.canvas_width - CANVAS_WIDTH).abs() > f64::EPSILON {
-            bail!(
-                "weather payload canvas_width must be {CANVAS_WIDTH}, got {}",
-                self.canvas_width
-            );
-        }
         if self.locations.is_empty() {
             bail!("weather render requires at least one location");
         }
@@ -154,16 +130,6 @@ impl WeatherPayload {
             location.validate(index)?;
         }
         self.validate_text_budget()?;
-        if self.height != 0.0 && (!self.height.is_finite() || self.height <= 0.0) {
-            bail!("weather payload height must be zero or a finite positive number");
-        }
-        let expected = logical_height(self);
-        if self.height != 0.0 && (self.height - expected).abs() > f64::EPSILON {
-            bail!(
-                "weather payload height does not match location rows (expected {expected}, got {})",
-                self.height
-            );
-        }
         Ok(())
     }
 
@@ -350,46 +316,17 @@ fn finite(field: &str, value: f64) -> anyhow::Result<()> {
 }
 
 /// Render a validated weather payload. Returns `(png_bytes, width_px,
-/// height_px)` just like the other card renderers.
+/// height_px)` just like the other card renderers. The Typst page owns its
+/// height, so there is no caller-supplied geometry to trust or preserve.
 pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let req: WeatherPayload =
         serde_json::from_value(payload.clone()).context("invalid weather payload")?;
     req.validate()?;
-    super::check_render_dimensions(CANVAS_WIDTH, logical_height(&req), scale)?;
+    // Guard the fixed shared width and requested raster scale before Typst
+    // compilation. The page height is intentionally discovered from flow.
+    super::check_render_dimensions(CARD_WIDTH, 1.0, scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
-}
-
-fn logical_height(req: &WeatherPayload) -> f64 {
-    TITLE_BASELINE
-        + TITLE_GAP
-        + req
-            .locations
-            .iter()
-            .map(location_height_with_gap)
-            .sum::<f64>()
-        + FOOTER_ROW
-}
-
-fn location_height_with_gap(location: &WeatherLocation) -> f64 {
-    location_height(location) + BLOCK_GAP
-}
-
-fn location_height(location: &WeatherLocation) -> f64 {
-    let mut height = NAME_ROW + HERO_ROW;
-    if !location.current.humidity_text.is_empty() || !location.current.wind_text.is_empty() {
-        height += TILE_ROW;
-    }
-    if !location.hourly.is_empty() {
-        height += HEADING_ROW + CHART_ROW + CHART_LABELS;
-    }
-    if !location.daily.is_empty() {
-        height += HEADING_ROW + DAY_ROW * location.daily.len() as f64;
-    }
-    if !location.alerts.is_empty() {
-        height += HEADING_ROW + ALERT_ROW * location.alerts.len() as f64;
-    }
-    height
 }
 
 fn build_source(req: &WeatherPayload) -> String {
@@ -397,20 +334,10 @@ fn build_source(req: &WeatherPayload) -> String {
 }
 
 fn data_literal(req: &WeatherPayload) -> String {
-    let height = if req.height == 0.0 {
-        logical_height(req)
-    } else {
-        req.height
-    };
     let mut out = String::new();
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
     out.push_str(&format!("meta: {}, ", typst_str(&req.meta)));
-    out.push_str(&format!(
-        "canvas_width: {}, ",
-        super::fmt_num(req.canvas_width)
-    ));
-    out.push_str(&format!("height: {}, ", super::fmt_num(height)));
     out.push_str("footer: (");
     for line in &req.footer {
         out.push_str(&typst_str(line));
@@ -444,27 +371,29 @@ fn location_literal(out: &mut String, location: &WeatherLocation) {
         typst_str(&current.wind_text),
     ));
 
-    out.push_str("hourly: (");
     let plot = hourly_plot(&location.hourly);
+    out.push_str("hourly: (");
     for (index, hour) in location.hourly.iter().enumerate() {
         let point = &plot.points[index];
         out.push_str(&format!(
-            "(label: {}, temperature_text: {}, precipitation: {}, bar_height: {}, \
-             bar_width: {}, x: {}, y: {}, precipitation_label: {}, precipitation_label_y: {}, \
-             precipitation_inside: {}), ",
+            "(label: {}, temperature: {}, temperature_text: {}, \
+             precipitation_probability: {}, bar_height: {}, bar_width: {}, \
+             x: {}, y: {}, show_temperature: {}, show_axis_label: {}), ",
             typst_str(&hour.label),
+            super::fmt_num(hour.temperature),
             typst_str(&format_temp(hour.temperature)),
             super::fmt_num(hour.precipitation_probability),
             super::fmt_num(point.bar_height),
             super::fmt_num(point.bar_width),
             super::fmt_num(point.x),
             super::fmt_num(point.y),
-            typst_str(point.precipitation_label.as_deref().unwrap_or("")),
-            super::fmt_num(point.precipitation_label_y),
-            point.precipitation_inside,
+            point.show_temperature,
+            point.show_axis_label,
         ));
     }
-    out.push_str("), plot: (");
+    out.push_str("), precipitation_summary: ");
+    out.push_str(&typst_str(&precipitation_summary(&location.hourly)));
+    out.push_str(", plot: (");
     out.push_str("segments: (");
     for segment in &plot.segments {
         out.push_str(&format!(
@@ -512,15 +441,23 @@ fn format_temp(value: f64) -> String {
     format!("{}°", value.round() as i64)
 }
 
+fn format_probability(value: f64) -> String {
+    let rounded = value.round() as i64;
+    if rounded == 0 && value > 0.0 {
+        "<1%".to_string()
+    } else {
+        format!("{rounded}%")
+    }
+}
+
 #[derive(Debug)]
 struct PlotPoint {
     x: f64,
     y: f64,
     bar_height: f64,
     bar_width: f64,
-    precipitation_label: Option<String>,
-    precipitation_label_y: f64,
-    precipitation_inside: bool,
+    show_temperature: bool,
+    show_axis_label: bool,
 }
 
 #[derive(Debug)]
@@ -538,9 +475,20 @@ struct HourlyPlot {
     area: Vec<(f64, f64)>,
 }
 
-/// Match the Go Catmull-Rom chart geometry.  The template receives line
-/// segments and polygon vertices, so it does not need floating-point helpers
-/// or any data-dependent layout decisions.
+/// Keep labels at least three points apart for normal 24-point forecasts and
+/// increase the step for unusually dense input. The curve and all bars remain
+/// based on every point regardless of this presentation choice.
+fn axis_label_step(point_count: usize, slot_width: f64) -> usize {
+    if point_count <= 6 {
+        return 1;
+    }
+    let min_spacing = 38.0;
+    let width_step = (min_spacing / slot_width).ceil() as usize;
+    width_step.max(3)
+}
+
+/// Match the legacy Catmull-Rom chart's temperature scaling while giving the
+/// phone chart side insets for readable first and last labels.
 fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     if hours.is_empty() {
         return HourlyPlot {
@@ -549,7 +497,8 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
             area: Vec::new(),
         };
     }
-    let slot_width = CONTENT_WIDTH / hours.len() as f64;
+    let plot_width = CHART_PLOT_RIGHT - CHART_PLOT_LEFT;
+    let slot_width = plot_width / hours.len() as f64;
     let mut min_temp = hours[0].temperature;
     let mut max_temp = hours[0].temperature;
     for hour in hours {
@@ -563,61 +512,39 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     max_temp += 1.0;
     let temp_y = |temperature: f64| {
         let ratio = (temperature - min_temp) / (max_temp - min_temp);
-        // Keep the ten-point label clearance introduced by the legacy
-        // renderer's current chart implementation.
-        CHART_PLOT_BOTTOM - ratio * (CHART_ROW - 58.0)
+        CHART_PLOT_BOTTOM - ratio * CHART_TEMP_RANGE
     };
+    let label_step = axis_label_step(hours.len(), slot_width);
 
     let mut points = Vec::with_capacity(hours.len());
     for (index, hour) in hours.iter().enumerate() {
-        let x = slot_width * (index as f64 + 0.5);
+        let x = CHART_PLOT_LEFT + slot_width * (index as f64 + 0.5);
         let bar_height = if hour.precipitation_probability > 0.0 {
             (hour.precipitation_probability / 100.0 * CHART_MAX_BAR_HEIGHT).max(2.0)
         } else {
             0.0
         };
-        let precipitation_label = if hour.precipitation_probability >= 30.0 {
-            Some(format!(
-                "{}%",
-                hour.precipitation_probability.round() as i64
-            ))
-        } else {
-            None
-        };
-        let precipitation_inside = bar_height >= 14.0;
-        let mut precipitation_label_y = CHART_PLOT_BOTTOM - bar_height / 2.0 + 3.0;
-        if !precipitation_inside {
-            precipitation_label_y = CHART_PLOT_BOTTOM - bar_height - 4.0;
-            // The Go renderer skips a short-bar label when it would collide
-            // with the temperature label.  The exact collision check needs
-            // font metrics, so use the conservative plot-safe position here.
-            if precipitation_label_y - 10.0 < temp_y(hour.temperature) - 6.0 {
-                precipitation_label_y = -100.0;
-            }
-        }
+        let show_label = index % label_step == 0;
         points.push(PlotPoint {
             x,
             y: temp_y(hour.temperature),
             bar_height,
-            bar_width: slot_width * 0.44,
-            precipitation_label,
-            precipitation_label_y,
-            precipitation_inside,
+            bar_width: (slot_width * 0.5).clamp(2.0, 10.0),
+            show_temperature: show_label,
+            show_axis_label: show_label,
         });
     }
 
-    let sampled = catmull_rom(
-        &hours
-            .iter()
-            .map(|hour| hour.temperature)
-            .collect::<Vec<_>>(),
-        12,
-    );
+    let temperatures = hours
+        .iter()
+        .map(|hour| hour.temperature)
+        .collect::<Vec<_>>();
+    let sampled = catmull_rom(&temperatures, 12);
     let step_x = slot_width / 12.0;
     let mut segments = Vec::with_capacity(sampled.len().saturating_sub(1));
     let mut area = Vec::with_capacity(sampled.len() + 2);
     for (index, temperature) in sampled.iter().enumerate() {
-        let x = slot_width * 0.5 + index as f64 * step_x;
+        let x = CHART_PLOT_LEFT + slot_width * 0.5 + index as f64 * step_x;
         area.push((x, temp_y(*temperature)));
         if index > 0 {
             let previous = sampled[index - 1];
@@ -643,6 +570,58 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     }
 }
 
+/// Format non-zero precipitation bars as a readable text summary. Adjacent
+/// hours with the same probability are grouped, while the chart still keeps
+/// every original bar and probability value.
+fn precipitation_summary(hours: &[WeatherHour]) -> String {
+    #[derive(Debug)]
+    struct Group {
+        first_index: usize,
+        last_index: usize,
+        probability: String,
+    }
+
+    let mut groups: Vec<Group> = Vec::new();
+    for (index, hour) in hours.iter().enumerate() {
+        if hour.precipitation_probability <= 0.0 {
+            continue;
+        }
+        let probability = format_probability(hour.precipitation_probability);
+        if let Some(previous) = groups.last_mut() {
+            if previous.last_index + 1 == index && previous.probability == probability {
+                previous.last_index = index;
+                continue;
+            }
+        }
+        groups.push(Group {
+            first_index: index,
+            last_index: index,
+            probability,
+        });
+    }
+    if groups.is_empty() {
+        return "无降水".to_string();
+    }
+    groups
+        .into_iter()
+        .map(|group| {
+            if group.first_index == group.last_index {
+                format!("{} {}", hours[group.first_index].label, group.probability)
+            } else {
+                format!(
+                    "{}–{} {}",
+                    hours[group.first_index].label,
+                    hours[group.last_index].label,
+                    group.probability
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// Compute normalized daily bar positions. A constant range gets a centered
+/// marker instead of a zero-width bar, and all values remain in the track.
 fn daily_bar_geometry(days: &[WeatherDay]) -> Vec<(f64, f64)> {
     if days.is_empty() {
         return Vec::new();
@@ -653,14 +632,19 @@ fn daily_bar_geometry(days: &[WeatherDay]) -> Vec<(f64, f64)> {
         week_low = week_low.min(day.low);
         week_high = week_high.max(day.high);
     }
-    let span = (week_high - week_low).max(1.0);
-    let bar_left = 56.0 + 44.0 + 16.0;
-    let bar_right = CONTENT_WIDTH - 44.0 - 8.0;
-    let bar_width = bar_right - bar_left;
+    let mut span = week_high - week_low;
+    if span < 1.0 {
+        let padding = (1.0 - span) / 2.0;
+        week_low -= padding;
+        week_high += padding;
+        span = week_high - week_low;
+    }
     days.iter()
         .map(|day| {
-            let left = bar_left + (day.low - week_low) / span * bar_width;
-            let right = bar_left + (day.high - week_low) / span * bar_width;
+            let left =
+                ((day.low - week_low) / span * DAILY_TRACK_WIDTH).clamp(0.0, DAILY_TRACK_WIDTH);
+            let right =
+                ((day.high - week_low) / span * DAILY_TRACK_WIDTH).clamp(0.0, DAILY_TRACK_WIDTH);
             (left, (right - left).max(0.0))
         })
         .collect()
@@ -711,7 +695,7 @@ mod tests {
     fn valid_payload() -> serde_json::Value {
         json!({
             "title": "天气",
-            "meta": "更新于 15:04",
+            "meta": "更新于 15:04 · 数据来源：和风天气",
             "footer": ["15:04 · 工作日", "Life @ USTC"],
             "locations": [{
                 "name": "本部",
@@ -725,7 +709,12 @@ mod tests {
                     "humidityText": "78%",
                     "windText": "东北风 3 级"
                 },
-                "hourly": [{"label": "16:00", "temperature": 25, "precipitationProbability": 60}],
+                "hourly": [
+                    {"label": "16:00", "temperature": 25, "precipitationProbability": 60},
+                    {"label": "17:00", "temperature": 25.5, "precipitationProbability": 60},
+                    {"label": "18:00", "temperature": 24, "precipitationProbability": 30},
+                    {"label": "19:00", "temperature": 23, "precipitationProbability": 0}
+                ],
                 "daily": [{"label": "今天", "low": 20, "high": 27, "conditionText": "阴"}],
                 "alerts": ["高温黄色预警"]
             }]
@@ -733,14 +722,22 @@ mod tests {
     }
 
     #[test]
-    fn validates_and_computes_legacy_height() {
+    fn validates_phone_payload_without_legacy_geometry() {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
-        assert_eq!(
-            logical_height(&req),
-            64.0 + (34.0 + 110.0 + 68.0 + 32.0 + 158.0 + 20.0 + 32.0 + 30.0 + 32.0 + 24.0 + 30.0)
-                + 48.0
-        );
+        let source = build_source(&req);
+        assert!(source.contains("card-page"));
+        assert!(!source.contains("canvas_width:"));
+    }
+
+    #[test]
+    fn rejects_legacy_geometry_fields() {
+        let mut value = valid_payload();
+        value["canvas_width"] = json!(920);
+        let error = serde_json::from_value::<WeatherPayload>(value)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown field"), "unexpected error: {error}");
     }
 
     #[test]
@@ -770,7 +767,37 @@ mod tests {
     }
 
     #[test]
-    fn plot_is_finite_for_flat_and_single_point_series() {
+    fn plot_keeps_full_data_with_sparse_phone_labels() {
+        let hours = (0..24)
+            .map(|index| WeatherHour {
+                label: format!("{index:02}:00"),
+                temperature: 20.0 + (index % 5) as f64,
+                precipitation_probability: if index % 4 == 0 { 50.0 } else { 0.0 },
+            })
+            .collect::<Vec<_>>();
+        let plot = hourly_plot(&hours);
+        assert_eq!(plot.points.len(), 24);
+        assert_eq!(
+            plot.points
+                .iter()
+                .filter(|point| point.show_axis_label)
+                .count(),
+            8
+        );
+        assert!(plot
+            .points
+            .iter()
+            .all(|point| point.x >= CHART_PLOT_LEFT && point.x <= CHART_PLOT_RIGHT));
+        assert_eq!(plot.segments.len(), (hours.len() - 1) * 12);
+        assert!(plot
+            .points
+            .iter()
+            .all(|point| point.bar_height.is_finite() && point.bar_width.is_finite()));
+    }
+
+    #[test]
+    fn plot_is_finite_for_empty_flat_and_single_point_series() {
+        assert!(hourly_plot(&[]).points.is_empty());
         let one = vec![WeatherHour {
             label: "now".into(),
             temperature: 20.0,
@@ -798,45 +825,96 @@ mod tests {
                 assert!(segment.x1.is_finite() && segment.y1.is_finite());
             }
         }
+        let constant_days = vec![
+            WeatherDay {
+                label: "今天".into(),
+                low: 20.0,
+                high: 20.0,
+                condition_text: String::new(),
+            },
+            WeatherDay {
+                label: "明天".into(),
+                low: 20.0,
+                high: 20.0,
+                condition_text: String::new(),
+            },
+        ];
+        let bars = daily_bar_geometry(&constant_days);
+        assert_eq!(bars.len(), 2);
+        assert!(bars.iter().all(|(left, width)| {
+            left.is_finite() && width.is_finite() && *left >= 0.0 && *left <= DAILY_TRACK_WIDTH
+        }));
     }
 
     #[test]
-    fn renders_typst_fixture_at_requested_scale() {
+    fn renders_empty_sparse_and_constant_chart_cases() {
+        let mut empty = valid_payload();
+        empty["locations"][0]["hourly"] = json!([]);
+        empty["locations"][0]["daily"] = json!([]);
+        empty["locations"][0]["alerts"] = json!([]);
+        let (_, empty_width, empty_height) = render(&empty, 1.0).unwrap();
+        assert_eq!(empty_width, CARD_WIDTH as u32);
+        assert!(empty_height > 0);
+
+        let mut constant = valid_payload();
+        constant["locations"][0]["hourly"] = json!([
+            {"label": "现在", "temperature": 20, "precipitationProbability": 0},
+            {"label": "一小时后", "temperature": 20, "precipitationProbability": 100}
+        ]);
+        constant["locations"][0]["daily"] = json!([
+            {"label": "今天", "low": 20, "high": 20, "conditionText": "晴"},
+            {"label": "明天", "low": 20, "high": 20, "conditionText": "晴"}
+        ]);
+        let (_, constant_width, constant_height) = render(&constant, 1.0).unwrap();
+        assert_eq!(constant_width, CARD_WIDTH as u32);
+        assert!(constant_height > empty_height);
+    }
+
+    #[test]
+    fn rejects_non_finite_and_out_of_bound_values() {
+        let mut req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
+        req.locations[0].current.temperature = f64::INFINITY;
+        assert!(req.validate().unwrap_err().to_string().contains("finite"));
+
+        let mut req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
+        req.locations[0].current.temperature = MAX_NUMERIC_VALUE + 1.0;
+        assert!(req.validate().unwrap_err().to_string().contains("within"));
+    }
+
+    #[test]
+    fn renders_phone_width_and_expands_for_long_content() {
         let payload = valid_payload();
         let (png, width, height) = render(&payload, 1.0).expect("weather template should compile");
         assert!(!png.is_empty());
-        assert_eq!(width, CANVAS_WIDTH as u32);
-        assert_eq!(
-            height,
-            logical_height(&serde_json::from_value(payload).unwrap()) as u32
+        assert_eq!(width, CARD_WIDTH as u32);
+
+        let mut long = valid_payload();
+        long["locations"][0]["name"] = json!("中国科学技术大学高新校区气象观测点");
+        long["locations"][0]["current"]["windText"] =
+            json!("东南偏东风 3 级，阵风 5 级，体感舒适但请注意道路湿滑");
+        long["locations"][0]["alerts"] = json!([
+            "高温黄色预警：未来六小时最高气温将超过三十五摄氏度，请减少户外活动并及时补水。"
+        ]);
+        let (_, long_width, long_height) =
+            render(&long, 1.0).expect("long weather template should compile");
+        assert_eq!(long_width, CARD_WIDTH as u32);
+        assert!(
+            long_height > height,
+            "long content did not increase page height"
         );
     }
 
     #[test]
-    fn separates_locations_with_one_block_gap() {
+    fn separates_multiple_locations_with_one_flow_divider() {
         let mut payload = valid_payload();
         let location = payload["locations"][0].clone();
-        payload["locations"] = json!([location, location, location]);
-        let req: WeatherPayload = serde_json::from_value(payload.clone()).unwrap();
-        let (png, _, _) = render(&payload, 1.0).unwrap();
-        let pixmap = tiny_skia::Pixmap::decode_png(&png).unwrap();
-
-        let mut cursor = TITLE_BASELINE + TITLE_GAP;
-        for location in &req.locations[..req.locations.len() - 1] {
-            cursor += location_height(location);
-            let divider_y = (cursor + BLOCK_GAP / 2.0) as u32;
-            for x in [
-                MARGIN_X + 1.0,
-                CANVAS_WIDTH / 2.0,
-                CANVAS_WIDTH - MARGIN_X - 1.0,
-            ] {
-                let pixel = pixmap.pixel(x as u32, divider_y).unwrap();
-                assert!(
-                    pixel.red() < 245 && pixel.green() < 245 && pixel.blue() < 248,
-                    "missing location divider at ({x}, {divider_y}): {pixel:?}"
-                );
-            }
-            cursor += BLOCK_GAP;
-        }
+        payload["locations"] = json!([location.clone(), location]);
+        let (_, width, height) = render(&payload, 1.0).expect("weather template should compile");
+        let single_height = render(&valid_payload(), 1.0).unwrap().2;
+        assert_eq!(width, CARD_WIDTH as u32);
+        assert!(height > single_height);
+        let req: WeatherPayload = serde_json::from_value(payload).unwrap();
+        let source = build_source(&req);
+        assert_eq!(source.matches("line(length: 100%").count(), 1);
     }
 }

@@ -7,18 +7,14 @@ import (
 
 // remoteWeatherPayload is intentionally a flat, renderer-facing view of the
 // structured weather card. The sidecar receives the same labels and values the
-// legacy renderer displays; only fixed canvas geometry is added so the Typst
-// template can preserve the legacy pixel dimensions.
+// legacy renderer displays; page width and height belong to the shared Typst
+// card style and are therefore not part of this payload.
 type remoteWeatherPayload struct {
-	Title       string                `json:"title"`
-	Meta        string                `json:"meta,omitempty"`
-	Footer      []string              `json:"footer,omitempty"`
-	CanvasWidth int                   `json:"canvas_width"`
-	Height      int                   `json:"height"`
-	Locations   []WeatherCardLocation `json:"locations"`
+	Title     string                `json:"title"`
+	Meta      string                `json:"meta,omitempty"`
+	Footer    []string              `json:"footer,omitempty"`
+	Locations []WeatherCardLocation `json:"locations"`
 }
-
-const remoteWeatherCanvasWidth = 920
 
 // buildWeatherRequest converts the structured image into the sidecar
 // envelope payload. It does not call the legacy renderer and therefore keeps
@@ -35,38 +31,9 @@ func (r RemoteRenderer) buildWeatherRequest(img *Image) (remoteWeatherPayload, e
 	return remoteWeatherPayload{
 		// The legacy weather renderer always uses the fixed card title,
 		// regardless of the caller-provided image title.
-		Title:       "天气",
-		Meta:        img.Weather.Meta,
-		Footer:      []string{footer[0], footer[1]},
-		CanvasWidth: remoteWeatherCanvasWidth,
-		Height:      remoteWeatherLogicalHeight(img.Weather),
-		Locations:   append([]WeatherCardLocation(nil), img.Weather.Locations...),
+		Title:     "天气",
+		Meta:      img.Weather.Meta,
+		Footer:    []string{footer[0], footer[1]},
+		Locations: append([]WeatherCardLocation(nil), img.Weather.Locations...),
 	}, nil
-}
-
-// Keep the same fixed metrics and trailing gap as renderWeatherCardPNG. The
-// sidecar validates this value, which prevents a caller from accidentally
-// changing the page dimensions without changing the legacy layout contract.
-func remoteWeatherLogicalHeight(card *WeatherCard) int {
-	if card == nil {
-		return 0
-	}
-	height := 52 + 12
-	for _, location := range card.Locations {
-		locationHeight := 34 + 110
-		if location.Current.HumidityText != "" || location.Current.WindText != "" {
-			locationHeight += 68
-		}
-		if len(location.Hourly) > 0 {
-			locationHeight += 32 + 158 + 20
-		}
-		if len(location.Daily) > 0 {
-			locationHeight += 32 + 30*len(location.Daily)
-		}
-		if len(location.Alerts) > 0 {
-			locationHeight += 32 + 24*len(location.Alerts)
-		}
-		height += locationHeight + 30
-	}
-	return height + 48
 }

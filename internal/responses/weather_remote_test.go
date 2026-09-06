@@ -71,9 +71,6 @@ func TestRemoteRendererWeatherPayload(t *testing.T) {
 	if payload.Title != "天气" || payload.Meta != card.Meta {
 		t.Fatalf("title/meta = %q/%q", payload.Title, payload.Meta)
 	}
-	if payload.CanvasWidth != remoteWeatherCanvasWidth || payload.Height != remoteWeatherLogicalHeight(card) {
-		t.Fatalf("geometry = %dx%d, want %dx%d", payload.CanvasWidth, payload.Height, remoteWeatherCanvasWidth, remoteWeatherLogicalHeight(card))
-	}
 	if len(payload.Footer) != 2 || payload.Footer[0] != "15:04 · 工作日" || payload.Footer[1] != "Life @ USTC" {
 		t.Fatalf("footer = %#v", payload.Footer)
 	}
@@ -89,24 +86,38 @@ func TestRemoteRendererWeatherPayload(t *testing.T) {
 	}
 }
 
+func TestRemoteRendererWeatherPayloadOmitsLegacyGeometry(t *testing.T) {
+	card := &WeatherCard{Locations: []WeatherCardLocation{{
+		Name:    "本部",
+		Current: WeatherCardCurrent{Temperature: 24, ConditionText: "晴"},
+	}}}
+	renderer := RemoteRenderer{Now: func() time.Time {
+		return time.Date(2026, 9, 2, 15, 4, 0, 0, time.FixedZone("CST", 8*60*60))
+	}}
+	payload, err := renderer.buildWeatherRequest(NewWeatherCardImage(card, "天气"))
+	if err != nil {
+		t.Fatalf("buildWeatherRequest: %v", err)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("decode payload object: %v", err)
+	}
+	for _, obsolete := range []string{"canvas_width", "height"} {
+		if _, ok := fields[obsolete]; ok {
+			t.Fatalf("payload contains obsolete %q field: %s", obsolete, encoded)
+		}
+	}
+}
+
 func TestRemoteRendererRejectsEmptyWeatherCard(t *testing.T) {
 	renderer := RemoteRenderer{Endpoint: "http://127.0.0.1:1/render"}
 	img := &Image{Kind: "weather", AltText: "天气", Weather: &WeatherCard{}}
 	_, _, _, err := renderer.RenderPNG(img)
 	if err == nil || !strings.Contains(err.Error(), "no locations") {
 		t.Fatalf("err = %v, want no-locations validation error", err)
-	}
-}
-
-func TestRemoteWeatherLogicalHeightMatchesLegacyRows(t *testing.T) {
-	card := &WeatherCard{Locations: []WeatherCardLocation{{Name: "空"}}}
-	if got, want := remoteWeatherLogicalHeight(card), 64+34+110+30+48; got != want {
-		t.Fatalf("height = %d, want %d", got, want)
-	}
-	card.Locations[0].Current.HumidityText = "50%"
-	card.Locations[0].Hourly = []WeatherCardHourPoint{{Label: "now", Temperature: 20}}
-	card.Locations[0].Daily = []WeatherCardDayPoint{{Label: "今天", Low: 18, High: 22}}
-	if got, want := remoteWeatherLogicalHeight(card), 64+34+110+68+(32+158+20)+(32+30)+30+48; got != want {
-		t.Fatalf("height with sections = %d, want %d", got, want)
 	}
 }
