@@ -12,10 +12,10 @@ import (
 	"testing"
 )
 
-func exampleServer(t *testing.T, width int) *httptest.Server {
+func exampleServer(t *testing.T, width, height int) *httptest.Server {
 	t.Helper()
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, width, 80))); err != nil {
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, width, height))); err != nil {
 		t.Fatal(err)
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +25,7 @@ func exampleServer(t *testing.T, width int) *httptest.Server {
 }
 
 func TestRunRejectsInconsistentCardWidth(t *testing.T) {
-	server := exampleServer(t, 1140)
+	server := exampleServer(t, 1140, exampleMinHeight)
 	defer server.Close()
 	err := run(server.URL, t.TempDir(), "bus-single")
 	if err == nil || !strings.Contains(err.Error(), "image width 1140, want 1170") {
@@ -33,8 +33,17 @@ func TestRunRejectsInconsistentCardWidth(t *testing.T) {
 	}
 }
 
+func TestRunRejectsCardShorterThanPhoneScreen(t *testing.T) {
+	server := exampleServer(t, exampleWidth, 1200)
+	defer server.Close()
+	err := run(server.URL, t.TempDir(), "bus-single")
+	if err == nil || !strings.Contains(err.Error(), "image height 1200, want at least 2532") {
+		t.Fatalf("run error = %v, want a phone-height regression failure", err)
+	}
+}
+
 func TestRunWritesEveryExampleAndGallery(t *testing.T) {
-	server := exampleServer(t, exampleWidth)
+	server := exampleServer(t, exampleWidth, exampleMinHeight)
 	defer server.Close()
 	dir := t.TempDir()
 	if err := run(server.URL, dir, ""); err != nil {

@@ -1,6 +1,6 @@
 // Command render-examples renders all phone card fixtures through Typst.
-// It checks the shared default 1170px width and writes PNGs plus a gallery
-// that displays each image at its intended 390-point phone size.
+// It checks the shared 1170px width and minimum 2532px height and writes PNGs
+// plus a gallery with 390×844-point phone viewports.
 //
 // Usage:
 //
@@ -21,7 +21,10 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 )
 
-const exampleWidth = 390 * 3
+const (
+	exampleWidth     = 390 * 3
+	exampleMinHeight = 844 * 3
+)
 
 type fixture struct {
 	name  string
@@ -265,6 +268,10 @@ func run(endpoint, out, only string) error {
 		}
 		if width != exampleWidth {
 			failures = append(failures, fmt.Errorf("%s: image width %d, want %d (390pt at default 3x scale)", f.name, width, exampleWidth))
+			continue
+		}
+		if height < exampleMinHeight {
+			failures = append(failures, fmt.Errorf("%s: image height %d, want at least %d (844pt at default 3x scale)", f.name, height, exampleMinHeight))
 			continue
 		}
 		filename := f.name + ".png"

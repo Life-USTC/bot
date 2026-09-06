@@ -92,9 +92,6 @@ func TestRemoteRendererGridPayloadPreservesReadableAgendaData(t *testing.T) {
 	if got.Title != "课表" {
 		t.Fatalf("title = %q, want fallback title", got.Title)
 	}
-	if got.Summary != "周日–周六 · 第 1–4 节" {
-		t.Fatalf("summary = %q", got.Summary)
-	}
 	if len(got.Days) != 7 || !got.Days[5].Today {
 		t.Fatalf("days = %#v, want day 5 highlighted", got.Days)
 	}
@@ -154,7 +151,7 @@ func encodedItem(t *testing.T, item remoteGridItem) []byte {
 	return data
 }
 
-func TestRemoteRendererGridSummaryModesAndTodayLabels(t *testing.T) {
+func TestRemoteRendererGridDatesAndTodayLabels(t *testing.T) {
 	periods := remoteSchedulePeriods()[:2]
 	location := time.FixedZone("CST", 8*60*60)
 	renderer := RemoteRenderer{Now: func() time.Time {
@@ -166,8 +163,8 @@ func TestRemoteRendererGridSummaryModesAndTodayLabels(t *testing.T) {
 		Periods: periods,
 	}
 	dailyReq := renderer.buildGridRequest(NewScheduleGridImage("schedule", "今天", daily, "今天课表"))
-	if dailyReq.Summary != "今天 · 第 1–2 节" {
-		t.Fatalf("daily summary = %q", dailyReq.Summary)
+	if dailyReq.Days[0].Date != "07-17" || !dailyReq.Days[0].Today {
+		t.Fatalf("daily context = %#v", dailyReq.Days[0])
 	}
 	if dailyReq.Days[0].Label != "今天" {
 		t.Fatalf("daily label = %q, want no duplicate", dailyReq.Days[0].Label)
@@ -181,8 +178,8 @@ func TestRemoteRendererGridSummaryModesAndTodayLabels(t *testing.T) {
 		Periods: periods,
 	}
 	weeklyReq := renderer.buildGridRequest(NewScheduleGridImage("schedule", "整学期", weeklyNoDates, "整学期课表"))
-	if weeklyReq.Summary != "整学期 · 第 1–2 节" {
-		t.Fatalf("whole-semester summary = %q", weeklyReq.Summary)
+	if weeklyReq.Title != "整学期" {
+		t.Fatalf("whole-semester title = %q", weeklyReq.Title)
 	}
 	if len(weeklyReq.Days) != 7 {
 		t.Fatalf("whole-semester days = %d, want 7", len(weeklyReq.Days))

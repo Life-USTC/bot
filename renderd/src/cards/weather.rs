@@ -1,8 +1,8 @@
 //! Weather card rendering: validated JSON payload -> Typst source -> PNG.
 //!
 //! Weather semantics stay in the Go response layer. This module validates the
-//! structured values, computes the chart coordinates for the shared phone
-//! canvas, and hands the remaining layout to the flow-based Typst template.
+//! structured values, computes the chart coordinates for the inset forecast
+//! panel, and hands the remaining layout to the flow-based Typst template.
 //! Strings are escaped before they become source code; the sidecar never gives
 //! Typst filesystem or network access.
 
@@ -11,11 +11,12 @@ use serde::Deserialize;
 
 use crate::escape::typst_str;
 
-// Keep these values in step with the shared common.typ card style. They are
-// renderer constants for chart coordinates, not payload geometry.
-const CONTENT_WIDTH: f64 = 350.0;
-const CHART_PLOT_LEFT: f64 = 22.0;
-const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH - CHART_PLOT_LEFT;
+// The weather chart lives inside a 16pt-inset surface. Keep these values in
+// step with weather.typ; they are renderer constants for chart coordinates,
+// not caller-controlled page geometry.
+const CHART_CONTENT_WIDTH: f64 = 318.0;
+const CHART_PLOT_LEFT: f64 = 18.0;
+const CHART_PLOT_RIGHT: f64 = CHART_CONTENT_WIDTH - CHART_PLOT_LEFT;
 const CHART_PLOT_BOTTOM: f64 = 120.0;
 const CHART_TEMP_RANGE: f64 = 88.0;
 const CHART_MAX_BAR_HEIGHT: f64 = 34.0;
@@ -478,7 +479,10 @@ fn axis_label_step(point_count: usize, slot_width: f64) -> usize {
     if point_count <= 6 {
         return 1;
     }
-    let min_spacing = 38.0;
+    // A 42pt label box and this gap leave enough room for 13pt time labels at
+    // the narrowest normal phone layout. Every bar and curve point is still
+    // retained; only the axis labels are sparse.
+    let min_spacing = 44.0;
     let width_step = (min_spacing / slot_width).ceil() as usize;
     width_step.max(3)
 }
@@ -723,6 +727,7 @@ mod tests {
         req.validate().unwrap();
         let source = build_source(&req);
         assert!(source.contains("card-page"));
+        assert!(source.contains("chart-content-width = 318pt"));
         assert!(!source.contains("canvas_width:"));
     }
 
@@ -778,7 +783,7 @@ mod tests {
                 .iter()
                 .filter(|point| point.show_axis_label)
                 .count(),
-            8
+            6
         );
         assert!(plot
             .points
@@ -850,7 +855,7 @@ mod tests {
         empty["locations"][0]["alerts"] = json!([]);
         let (_, empty_width, empty_height) = render(&empty, 1.0).unwrap();
         assert_eq!(empty_width, 390);
-        assert!(empty_height > 0);
+        assert_eq!(empty_height, 844);
 
         let mut constant = valid_payload();
         constant["locations"][0]["hourly"] = json!([
@@ -863,7 +868,45 @@ mod tests {
         ]);
         let (_, constant_width, constant_height) = render(&constant, 1.0).unwrap();
         assert_eq!(constant_width, 390);
+        assert!(constant_height >= 844);
         assert!(constant_height > empty_height);
+    }
+
+    #[test]
+    fn renders_single_humidity_or_wind_values_in_compact_surfaces() {
+        let mut humidity_first = valid_payload();
+        humidity_first["locations"][0]["current"]["windText"] = json!("");
+        humidity_first["locations"][0]["current"]["humidityText"] = json!("41%");
+        humidity_first["locations"][0]["hourly"] = json!([]);
+        humidity_first["locations"][0]["daily"] = json!([]);
+        humidity_first["locations"][0]["alerts"] = json!([]);
+        let humidity_second = {
+            let mut value = humidity_first.clone();
+            value["locations"][0]["current"]["humidityText"] =
+                json!("89%，未来数小时仍将维持较高湿度");
+            value
+        };
+        let (humidity_png_first, humidity_width, humidity_height) =
+            render(&humidity_first, 1.0).unwrap();
+        let (humidity_png_second, _, _) = render(&humidity_second, 1.0).unwrap();
+        assert_eq!((humidity_width, humidity_height), (390, 844));
+        assert_ne!(humidity_png_first, humidity_png_second);
+
+        let mut wind_first = valid_payload();
+        wind_first["locations"][0]["current"]["humidityText"] = json!("");
+        wind_first["locations"][0]["current"]["windText"] = json!("东风 1 级");
+        wind_first["locations"][0]["hourly"] = json!([]);
+        wind_first["locations"][0]["daily"] = json!([]);
+        wind_first["locations"][0]["alerts"] = json!([]);
+        let wind_second = {
+            let mut value = wind_first.clone();
+            value["locations"][0]["current"]["windText"] = json!("东南偏东风 5 级，阵风 7 级");
+            value
+        };
+        let (wind_png_first, wind_width, wind_height) = render(&wind_first, 1.0).unwrap();
+        let (wind_png_second, _, _) = render(&wind_second, 1.0).unwrap();
+        assert_eq!((wind_width, wind_height), (390, 844));
+        assert_ne!(wind_png_first, wind_png_second);
     }
 
     #[test]
@@ -911,6 +954,7 @@ mod tests {
         assert!(height > single_height);
         let req: WeatherPayload = serde_json::from_value(payload).unwrap();
         let source = build_source(&req);
-        assert_eq!(source.matches("line(length: 100%").count(), 1);
+        assert!(source.contains("name: \"本部\""));
+        assert_eq!(source.matches("name: \"本部\"").count(), 2);
     }
 }

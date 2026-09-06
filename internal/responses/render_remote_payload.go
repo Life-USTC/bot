@@ -12,7 +12,6 @@ import (
 // The card template owns all widths, spacing, font sizes, and text wrapping.
 type remoteGridPayload struct {
 	Title   string             `json:"title"`
-	Summary string             `json:"summary"`
 	Days    []remoteGridDay    `json:"days"`
 	Periods []remoteGridPeriod `json:"periods"`
 	Items   []remoteGridItem   `json:"items,omitempty"`
@@ -53,18 +52,9 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 		title = "课表"
 	}
 
-	periodRange := "第 1–" + fmt.Sprint(len(grid.Periods)) + " 节"
-	summary := "周日–周六 · " + periodRange
-	if len(grid.Days) == 1 {
-		summary = strings.TrimSpace(grid.Days[0].Label) + " · " + periodRange
-	} else if scheduleGridHasNoDates(grid) {
-		summary = "整学期 · " + periodRange
-	}
-
 	todayIndex := scheduleGridTodayIndex(grid, now)
 	req := remoteGridPayload{
-		Title:   title,
-		Summary: summary,
+		Title: title,
 		Footer: func() []string {
 			footer := richFooterLines(now)
 			return []string{footer[0], footer[1]}

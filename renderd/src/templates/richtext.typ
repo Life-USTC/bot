@@ -27,13 +27,20 @@
 #let rich-header-cell(value, emphasized) = {
   let content = break-long-tokens(value)
   if emphasized {
-    text(weight: "bold")[#content]
+    text(size: subhead-size, weight: "semibold", fill: ink)[#content]
+  } else {
+    text(size: subhead-size, fill: muted)[#content]
+  }
+}
+
+#let rich-body-cell(value, highlighted: false) = {
+  let content = break-long-tokens(value)
+  if highlighted {
+    text(weight: "semibold")[#content]
   } else {
     content
   }
 }
-
-#let rich-body-cell(value) = break-long-tokens(value)
 
 #let rich-standard-table(t) = {
   let count = t.header.len()
@@ -46,13 +53,16 @@
   }
   for row in t.rows {
     for index in range(0, count) {
-      cells.push(rich-body-cell(row.cells.at(index, default: "")))
+      cells.push(rich-body-cell(
+        row.cells.at(index, default: ""),
+        highlighted: row.highlight,
+      ))
     }
   }
   table(
     columns: table-columns(count),
     stroke: none,
-    inset: (x: cell-pad-x, y: cell-pad-y),
+    inset: (x: 8pt, y: 10pt),
     align: left + horizon,
     fill: (_, y) => {
       if y > 0 and y - 1 < t.rows.len() and t.rows.at(y - 1).highlight {
@@ -62,7 +72,7 @@
       }
     },
     ..(range(1, t.rows.len() + 1).map(k =>
-      table.hline(y: k, stroke: 0.6pt + line-c)
+      table.hline(y: k, stroke: 0.7pt + line-c)
     )),
     ..cells,
   )
@@ -73,18 +83,19 @@
 // value, and row highlight.
 #let rich-record-table(t) = {
   if t.rows.len() == 0 {
-    block(width: 100%)[
-      #table(
-        columns: (1fr, 2fr),
-        stroke: none,
-        inset: (x: cell-pad-x, y: cell-pad-y),
-        align: (left + horizon, left + horizon),
-        ..(range(0, t.header.len()).map(index => (
-          rich-header-cell(t.header.at(index), t.header_emphasis.at(index, default: false)),
-          rich-body-cell(""),
-        )).flatten()),
-      )
-    ]
+    table(
+      columns: (1fr, 2fr),
+      stroke: none,
+      inset: (x: 8pt, y: 9pt),
+      align: (left + horizon, left + horizon),
+      ..(range(0, t.header.len()).map(index => (
+        rich-header-cell(
+          t.header.at(index),
+          t.header_emphasis.at(index, default: false),
+        ),
+        rich-body-cell(""),
+      )).flatten()),
+    )
   } else {
     for (row-index, row) in t.rows.enumerate() {
       if row-index > 0 {
@@ -98,11 +109,20 @@
         #table(
           columns: (1fr, 2fr),
           stroke: none,
-          inset: (x: cell-pad-x, y: cell-pad-y),
+          inset: (x: 8pt, y: 8pt),
           align: (left + horizon, left + horizon),
+          ..(range(1, t.header.len()).map(k =>
+            table.hline(y: k, stroke: 0.7pt + line-c)
+          )),
           ..(range(0, t.header.len()).map(index => (
-            rich-header-cell(t.header.at(index), t.header_emphasis.at(index, default: false)),
-            rich-body-cell(row.cells.at(index, default: "")),
+            rich-header-cell(
+              t.header.at(index),
+              t.header_emphasis.at(index, default: false),
+            ),
+            rich-body-cell(
+              row.cells.at(index, default: ""),
+              highlighted: row.highlight,
+            ),
           )).flatten()),
         )
       ]
@@ -119,11 +139,19 @@
 }
 
 #let rich-text-block(lines) = {
-  for (index, line) in lines.enumerate() {
-    if index > 0 {
-      v(8pt)
+  for (index, line) in lines.enumerate() [
+    #if index > 0 {
+      v(10pt)
     }
-    block(width: 100%)[#break-long-tokens(line)]
+    #block(width: 100%)[#break-long-tokens(line)]
+  ]
+}
+
+#let rich-block-content(block) = {
+  if block.table != none {
+    rich-table(block.table)
+  } else {
+    rich-text-block(block.lines)
   }
 }
 
@@ -136,11 +164,7 @@
   #if block.heading != "" {
     card-section(break-long-tokens(block.heading))
   }
-  #if block.table != none {
-    rich-table(block.table)
-  } else {
-    rich-text-block(block.lines)
-  }
+  #card-surface(rich-block-content(block), inset: (x: 16pt, y: 14pt))
 ]
 
 #card-footer(data.footer.map(line => break-long-tokens(line)))
