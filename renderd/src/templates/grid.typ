@@ -7,13 +7,6 @@
 
 #show: card-page
 
-// Preserve the characters in long identifiers while giving Typst sensible
-// break opportunities for values that contain no spaces.
-#let break-long-tokens(value) = {
-  show regex("[A-Za-z0-9]{24,}"): it => [#it.text.split("").join("\u{200b}")]
-  [#value]
-}
-
 #let entry-count(count) = str(count) + " 项课程安排"
 
 #let weekly-summary(days, count) = {
@@ -55,15 +48,9 @@
   }
 }
 
-#let detail-line(label, value) = {
-  grid(
-    columns: (auto, 1fr),
-    column-gutter: 6pt,
-    align: (left + horizon, left + horizon),
-    text(size: caption-size, fill: muted)[#label],
-    text(size: caption-size, fill: muted)[#break-long-tokens(value)],
-  )
-}
+#let detail-line(label, value) = text(size: caption-size, fill: muted)[
+  #label #break-long-tokens(value)
+]
 
 #let schedule-item(item) = {
   grid(
@@ -76,37 +63,28 @@
         #break-long-tokens(item.course)
       ]
       #if item.period != "" or item.time != "" {
-        v(5pt)
+        linebreak()
         schedule-meta(item)
       }
       #if item.location != "" {
-        v(8pt)
+        linebreak()
         detail-line("地点", item.location)
       }
       #if item.weeks != "" {
-        v(3pt)
+        linebreak()
         detail-line("周次", item.weeks)
       }
     ],
   )
 }
 
-#let list-divider() = block(width: 100%, height: 1pt, fill: line-c)
-
-#let day-badge(day) = {
+#let day-date(day) = {
   if day.date == "" {
     none
   } else {
-    let badge-fill = if day.today { highlight-bg } else { surface }
     let badge-color = if day.today { accent } else { muted }
-    block(
-      fill: badge-fill,
-      radius: 10pt,
-      inset: (x: 9pt, y: 4pt),
-    )[
-      #text(size: caption-size, weight: if day.today { "semibold" } else { "regular" }, fill: badge-color)[
-        #break-long-tokens(day.date)
-      ]
+    text(size: caption-size, weight: if day.today { "semibold" } else { "regular" }, fill: badge-color)[
+      #break-long-tokens(day.date)
     ]
   }
 }
@@ -117,32 +95,16 @@
     column-gutter: 8pt,
     align: (left + horizon, right + horizon),
     text(size: section-size, weight: "semibold")[#break-long-tokens(day.label)],
-    day-badge(day),
+    day-date(day),
   )
 }
 
 #let empty-day() = card-surface(
-  grid(
-    columns: (12pt, 1fr),
-    column-gutter: 10pt,
-    align: (center + horizon, left + horizon),
-    box(width: 12pt, height: 12pt)[
-      #align(center + horizon)[
-        #circle(radius: 3pt, fill: line-c, stroke: none)
-      ]
-    ],
-    text(size: subhead-size, fill: muted)[暂无课程],
-  ),
-  inset: (x: surface-pad, y: 11pt),
+  text(size: subhead-size, fill: muted)[暂无课程],
 )
 
 #let schedule-list(entries) = {
-  for (item-index, item) in entries.enumerate() {
-    if item-index > 0 {
-      v(13pt)
-      list-divider()
-      v(13pt)
-    }
+  for item in entries {
     schedule-item(item)
   }
 }
@@ -150,15 +112,11 @@
 #let day-group(day, entries, show-heading: true) = {
   if show-heading {
     day-heading(day)
-    v(10pt)
   }
   if entries.len() == 0 {
     empty-day()
   } else {
-    card-surface(
-      schedule-list(entries),
-      inset: (x: surface-pad, y: surface-pad),
-    )
+    card-surface(schedule-list(entries))
   }
 }
 
@@ -173,7 +131,6 @@
 #card-header(break-long-tokens(data.title), subtitle: header-summary)
 
 #for (day-index, day) in data.days.enumerate() [
-  #if day-index > 0 { v(22pt) }
   #let entries = data.items.filter(item => item.day == day-index)
   #day-group(day, entries, show-heading: data.days.len() != 1)
 ]

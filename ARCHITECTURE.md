@@ -446,8 +446,10 @@ All card families use the shared Typst style: a 390-point canvas with a minimum
 text, and 13-point captions. Grouped surfaces and restrained color establish
 the hierarchy of a static iPhone information screen. Tables and paragraphs
 wrap to their available width, and schedules use day sections so course names
-stay readable on a phone. Typst measures the content to choose the page height,
-preserving at least one screen and placing the footer at its bottom. Longer
+stay readable on a phone. Text metrics, line leading, paragraph and block
+spacing, and table cell insets use Typst defaults. The footer follows the
+content in normal flow. Typst measures the content to choose the page height,
+preserving at least one screen. Longer
 content extends the page instead of shrinking the text. The renderer checks
 the actual page dimensions before rasterization and rejects multi-page cards
 instead of silently dropping content.

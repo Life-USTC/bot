@@ -6,14 +6,6 @@
 
 #show: card-page
 
-// Keep ordinary words and headings untouched. Only unusually long ASCII runs
-// get invisible break opportunities, which lets URLs and identifiers wrap
-// without changing the characters sent in the semantic payload.
-#let break-long-tokens(value) = {
-  show regex("[A-Za-z0-9]{24,}"): it => [#it.text.split("").join("\u{200b}")]
-  [#value]
-}
-
 #let table-columns(count) = range(0, count).map(_ => 1fr)
 
 #let bus-header-cell(value, emphasized) = {
@@ -57,7 +49,6 @@
   table(
     columns: table-columns(count),
     stroke: none,
-    inset: (x: 8pt, y: 10pt),
     align: center + horizon,
     fill: (_, y) => {
       if y > 0 and y - 1 < t.rows.len() and t.rows.at(y - 1).highlight {
@@ -81,7 +72,6 @@
     table(
       columns: (1fr, 2fr),
       stroke: none,
-      inset: (x: 8pt, y: 9pt),
       align: (left + horizon, left + horizon),
       ..(range(0, t.header.len()).map(index => (
         bus-header-cell(
@@ -92,19 +82,14 @@
       )).flatten()),
     )
   } else {
-    for (row-index, row) in t.rows.enumerate() {
-      if row-index > 0 {
-        v(8pt)
-      }
+    for row in t.rows {
       block(
         width: 100%,
         fill: if row.highlight { highlight-bg } else { none },
-        inset: 0pt,
       )[
         #table(
           columns: (1fr, 2fr),
           stroke: none,
-          inset: (x: 8pt, y: 8pt),
           align: (left + horizon, left + horizon),
           ..(range(1, t.header.len()).map(k =>
             table.hline(y: k, stroke: 0.7pt + line-c)
@@ -128,17 +113,16 @@
 
 #let bus-route-panel(t) = card-surface([
   #if t.label != "" {
-    text(size: subhead-size, weight: "semibold", fill: ink)[
+    block(text(size: subhead-size, weight: "semibold", fill: ink)[
       #break-long-tokens(t.label)
-    ]
-    v(10pt)
+    ])
   }
   #if t.header.len() <= 4 {
     bus-standard-table(t)
   } else {
     bus-record-table(t)
   }
-], inset: (x: 16pt, y: 14pt))
+])
 
 #let bus-header() = {
   if data.title.starts-with("校车 ") {
@@ -152,36 +136,31 @@
 #let bus-summary() = card-surface([
   #grid(
     columns: (1fr, auto),
-    column-gutter: 12pt,
     align: left + top,
     [
       #text(size: caption-size, weight: "semibold", fill: muted)[下一班]
-      #v(3pt)
+      #linebreak()
       #text(size: title-size, weight: "bold", fill: accent)[
         #break-long-tokens(data.next_time)
       ]
     ],
     align(right + top)[
       #text(size: caption-size, fill: muted)[等待时间]
-      #v(3pt)
+      #linebreak()
       #text(size: body-size, weight: "semibold", fill: accent)[
         #break-long-tokens(data.next_wait)
       ]
     ],
   )
-], inset: (x: 16pt, y: 14pt), fill: highlight-bg)
+], fill: highlight-bg)
 
 #bus-header()
 
 #if data.next_time != none {
   bus-summary()
-  v(16pt)
 }
 
-#for (index, route) in data.tables.enumerate() [
-  #if index > 0 {
-    v(16pt)
-  }
+#for route in data.tables [
   #bus-route-panel(route)
 ]
 
