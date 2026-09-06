@@ -14,8 +14,6 @@ pub struct GridPayload {
     #[serde(default)]
     pub title: String,
     #[serde(default)]
-    pub summary: String,
-    #[serde(default)]
     pub days: Vec<GridDay>,
     #[serde(default)]
     pub periods: Vec<GridPeriod>,
@@ -91,8 +89,6 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
     }
     super::check_text("title", &req.title, super::MAX_TEXT_BYTES)?;
     super::check_text_budget(&mut text_budget, "title", &req.title)?;
-    super::check_text("summary", &req.summary, super::MAX_TEXT_BYTES)?;
-    super::check_text_budget(&mut text_budget, "summary", &req.summary)?;
     if req.footer.len() > 2 {
         return Err(anyhow!("grid payload supports at most 2 footer lines"));
     }
@@ -202,7 +198,6 @@ fn data_literal(req: &GridPayload) -> String {
     let mut out = String::new();
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
-    out.push_str(&format!("summary: {}, ", typst_str(&req.summary)));
 
     out.push_str("days: (");
     for day in &req.days {
@@ -259,7 +254,6 @@ mod tests {
     fn valid_payload() -> GridPayload {
         GridPayload {
             title: "课表".into(),
-            summary: "周日–周六 · 第 1–12 节".into(),
             days: vec![GridDay {
                 label: "周一".into(),
                 date: "09-07".into(),
@@ -343,7 +337,6 @@ mod tests {
     fn renders_phone_width_and_grows_for_wrapped_content() {
         let short = json!({
             "title": "今天课表",
-            "summary": "周一 · 第 1–2 节",
             "days": [{"label": "周一", "date": "09-07", "today": true}],
             "periods": [
                 {"label": "第 1 节", "time": "08:00–08:45"},
@@ -371,7 +364,6 @@ mod tests {
         let long_weeks = "第 1–16 周（单周与双周均有安排） ".repeat(3);
         let long = json!({
             "title": "本周课表",
-            "summary": "周日–周六 · 第 1–2 节",
             "days": [{"label": "周一", "date": "09-07", "today": false}],
             "periods": [
                 {"label": "第 1 节", "time": "08:00–08:45"},
