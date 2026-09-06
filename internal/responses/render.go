@@ -2,6 +2,7 @@ package responses
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -26,6 +27,29 @@ var embeddedBusLogoPNG []byte
 
 type Renderer struct {
 	FontPath string
+	// Now fixes the reference renderer's clock for visual comparisons.
+	Now func() time.Time
+}
+
+func (r Renderer) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
+}
+
+// RenderPNGContext provides the renderer contract used by cancellable
+// application workflows. The legacy renderer cannot interrupt an in-progress
+// rasterization, but it observes cancellation before starting work.
+func (r Renderer) RenderPNGContext(ctx context.Context, img *Image) ([]byte, int, int, error) {
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return nil, 0, 0, ctx.Err()
+		default:
+		}
+	}
+	return r.RenderPNG(img)
 }
 
 type responseCardTheme struct {

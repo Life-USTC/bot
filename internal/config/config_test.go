@@ -153,7 +153,7 @@ func TestFromEnvParsesImageResponseConfig(t *testing.T) {
 	t.Setenv("BOT_ENABLE_IMAGE_RESPONSES", "true")
 	t.Setenv("BOT_PUBLIC_BASE_URL", " https://bot.example/// ")
 	t.Setenv("BOT_MEDIA_ADDR", " 127.0.0.1:2281 ")
-	t.Setenv("BOT_IMAGE_FONT_PATH", " /fonts/NotoSansCJK-Regular.ttc ")
+	t.Setenv("BOT_RENDER_ENDPOINT", " http://renderd:9123/render ")
 	t.Setenv("BOT_MEDIA_TTL_SECONDS", "180")
 
 	cfg := FromEnv()
@@ -166,8 +166,8 @@ func TestFromEnvParsesImageResponseConfig(t *testing.T) {
 	if cfg.MediaAddr != "127.0.0.1:2281" {
 		t.Fatalf("MediaAddr = %q", cfg.MediaAddr)
 	}
-	if cfg.ImageFontPath != "/fonts/NotoSansCJK-Regular.ttc" {
-		t.Fatalf("ImageFontPath = %q", cfg.ImageFontPath)
+	if cfg.RenderEndpoint != "http://renderd:9123/render" {
+		t.Fatalf("RenderEndpoint = %q", cfg.RenderEndpoint)
 	}
 	if cfg.MediaTTL != 180*time.Second {
 		t.Fatalf("MediaTTL = %s", cfg.MediaTTL)

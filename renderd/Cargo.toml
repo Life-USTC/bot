@@ -1,0 +1,21 @@
+[package]
+name = "renderd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+typst = { version = "0.13.1", default-features = false }
+typst-render = "0.13.1"
+# Re-expose tiny-skia's PNG encoder (feature-gated off by typst-render).
+tiny-skia = { version = "0.11", features = ["png-format"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

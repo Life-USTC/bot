@@ -619,7 +619,7 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 
 func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	doc := parseRichText(text)
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	tables := []busRenderTable{}
 	if richDocumentIsBus(doc) {
 		for i := range doc.Blocks {

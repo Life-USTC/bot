@@ -30,7 +30,7 @@ type Publisher interface {
 }
 
 type ImageRenderer interface {
-	RenderPNG(*responses.Image) ([]byte, int, int, error)
+	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
 }
 
 type pollFailure struct {
@@ -250,7 +250,7 @@ func overviewItems(overview map[string]any, key string) []map[string]any {
 func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) {
 	content := message.Content{Text: text}
 	if image != nil && p.Renderer != nil {
-		png, _, _, err := p.Renderer.RenderPNG(image)
+		png, _, _, err := p.Renderer.RenderPNGContext(ctx, image)
 		if err != nil {
 			p.logf("render %s notification failed: %v", kind, err)
 		} else {

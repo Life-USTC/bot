@@ -93,7 +93,7 @@ func main() {
 		Store:      stateStore,
 	}
 	var mediaStore *responses.MediaStore
-	renderer := responses.Renderer{FontPath: cfg.ImageFontPath}
+	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
 	if cfg.EnableImageResponses && cfg.PublicBaseURL != "" {
 		mediaStore = responses.NewMediaStore(strings.TrimRight(cfg.PublicBaseURL, "/")+"/media", cfg.MediaTTL)
 		mediaServer := &http.Server{Addr: cfg.MediaAddr, Handler: mediaStore}

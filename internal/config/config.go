@@ -37,7 +37,7 @@ type Config struct {
 	EnableImageResponses  bool
 	PublicBaseURL         string
 	MediaAddr             string
-	ImageFontPath         string
+	RenderEndpoint        string
 	MediaTTL              time.Duration
 	LLMAPIKey             string
 	LLMBaseURL            string
@@ -82,7 +82,7 @@ func FromEnv() Config {
 		EnableImageResponses:  envBool("BOT_ENABLE_IMAGE_RESPONSES", false),
 		PublicBaseURL:         envTrimRight("BOT_PUBLIC_BASE_URL", "", "/"),
 		MediaAddr:             envString("BOT_MEDIA_ADDR", "127.0.0.1:2281"),
-		ImageFontPath:         envOptionalString("BOT_IMAGE_FONT_PATH"),
+		RenderEndpoint:        envString("BOT_RENDER_ENDPOINT", "http://127.0.0.1:9123/render"),
 		MediaTTL:              time.Duration(envPositiveInt("BOT_MEDIA_TTL_SECONDS", 300)) * time.Second,
 		LLMAPIKey:             envOptionalString("OPENAI_API_KEY"),
 		LLMBaseURL:            envOptionalString("OPENAI_BASE_URL"),
