@@ -209,4 +209,23 @@ mod tests {
             .to_string();
         assert!(error.contains("exactly one page, got 2"), "{error}");
     }
+
+    #[test]
+    fn phone_screen_has_minimum_height_and_grows_without_pagination() {
+        let source = |rows: usize| {
+            format!(
+                "#import \"common.typ\": *\n#show: card-page\n\
+                 #card-header(\"课程安排\")\n\
+                 #for _ in range({rows}) {{ block[课程名称与地点]; v(12pt) }}\n\
+                 #card-footer((\"15:04 · 工作日\", \"Life @ USTC\"))"
+            )
+        };
+        for scale in [1.0, 3.0] {
+            let (_, width, height) = super::compile_png(source(2), scale).unwrap();
+            assert_eq!((width, height), (390 * scale as u32, 844 * scale as u32));
+        }
+        let (_, width, height) = super::compile_png(source(48), 3.0).unwrap();
+        assert_eq!(width, 1170);
+        assert!(height > 2532, "long content must extend beyond one screen");
+    }
 }

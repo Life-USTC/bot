@@ -441,14 +441,18 @@ the bot does not silently retry with a legacy renderer when the endpoint is
 unavailable, so an operational failure remains visible while the normal text
 response is preserved.
 
-All card families use the shared Typst style: a 390-point canvas, 20-point
-side margins, 17-point body text, and 13-point captions. Tables and paragraphs
+All card families use the shared Typst style: a 390-point canvas with a minimum
+844-point height, 20-point side margins, 34-point large titles, 17-point body
+text, and 13-point captions. Grouped surfaces and restrained color establish
+the hierarchy of a static iPhone information screen. Tables and paragraphs
 wrap to their available width, and schedules use day sections so course names
-stay readable on a phone. Page height follows the content. The renderer checks
+stay readable on a phone. Typst measures the content to choose the page height,
+preserving at least one screen and placing the footer at its bottom. Longer
+content extends the page instead of shrinking the text. The renderer checks
 the actual page dimensions before rasterization and rejects multi-page cards
 instead of silently dropping content.
 
-`renderd` rasterizes at 3x by default, producing 1170-pixel-wide images.
+`renderd` rasterizes at 3x by default, producing images at least 1170×2532 pixels.
 `RENDERD_SCALE` can be set between 1x and 4x, and a request may provide a
 per-request scale. Its runtime image includes Fira Code and Noto CJK. The Typst
 world exposes only embedded card templates; it cannot read files or access the
@@ -465,6 +469,6 @@ go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bo
 
 The seven fixtures use a fixed clock and sample data, including departure
 highlights and the current schedule day. The command writes original PNGs and
-a phone-width HTML gallery, and exits nonzero on a render, output-write, or
-image-width failure. CI renders every fixture against the release-built sidecar
+a gallery with 390×844-pixel scrollable viewports, and exits nonzero on a render,
+output-write, image-width, or minimum-height failure. CI renders every fixture against the release-built sidecar
 and uploads the gallery and images as the `typst-phone-examples` artifact.
