@@ -19,16 +19,18 @@
 #let bus-header-cell(value, emphasized) = {
   let content = break-long-tokens(value)
   if emphasized {
-    text(weight: "bold")[#content]
+    text(size: subhead-size, weight: "semibold", fill: ink)[#content]
   } else {
-    content
+    text(size: subhead-size, fill: muted)[#content]
   }
 }
 
-#let bus-body-cell(value, departed: false) = {
+#let bus-body-cell(value, departed: false, highlighted: false) = {
   let content = break-long-tokens(value)
   if departed {
     text(fill: muted)[#content]
+  } else if highlighted {
+    text(weight: "semibold", fill: ink)[#content]
   } else {
     content
   }
@@ -48,13 +50,14 @@
       cells.push(bus-body-cell(
         row.cells.at(index, default: ""),
         departed: row.departed,
+        highlighted: row.highlight,
       ))
     }
   }
   table(
     columns: table-columns(count),
     stroke: none,
-    inset: (x: cell-pad-x, y: cell-pad-y),
+    inset: (x: 8pt, y: 10pt),
     align: center + horizon,
     fill: (_, y) => {
       if y > 0 and y - 1 < t.rows.len() and t.rows.at(y - 1).highlight {
@@ -64,7 +67,7 @@
       }
     },
     ..(range(1, t.rows.len() + 1).map(k =>
-      table.hline(y: k, stroke: 0.6pt + line-c)
+      table.hline(y: k, stroke: 0.7pt + line-c)
     )),
     ..cells,
   )
@@ -75,18 +78,19 @@
 // values, and highlight state.
 #let bus-record-table(t) = {
   if t.rows.len() == 0 {
-    block(width: 100%)[
-      #table(
-        columns: (1fr, 2fr),
-        stroke: none,
-        inset: (x: cell-pad-x, y: cell-pad-y),
-        align: (left + horizon, center + horizon),
-        ..(range(0, t.header.len()).map(index => (
-          text(weight: "bold")[#break-long-tokens(t.header.at(index))],
-          bus-body-cell(""),
-        )).flatten()),
-      )
-    ]
+    table(
+      columns: (1fr, 2fr),
+      stroke: none,
+      inset: (x: 8pt, y: 9pt),
+      align: (left + horizon, left + horizon),
+      ..(range(0, t.header.len()).map(index => (
+        bus-header-cell(
+          t.header.at(index),
+          t.header_emphasis.at(index, default: false),
+        ),
+        bus-body-cell(""),
+      )).flatten()),
+    )
   } else {
     for (row-index, row) in t.rows.enumerate() {
       if row-index > 0 {
@@ -100,11 +104,21 @@
         #table(
           columns: (1fr, 2fr),
           stroke: none,
-          inset: (x: cell-pad-x, y: cell-pad-y),
-          align: (left + horizon, center + horizon),
+          inset: (x: 8pt, y: 8pt),
+          align: (left + horizon, left + horizon),
+          ..(range(1, t.header.len()).map(k =>
+            table.hline(y: k, stroke: 0.7pt + line-c)
+          )),
           ..(range(0, t.header.len()).map(index => (
-            text(weight: "bold")[#break-long-tokens(t.header.at(index))],
-            bus-body-cell(row.cells.at(index, default: ""), departed: row.departed),
+            bus-header-cell(
+              t.header.at(index),
+              t.header_emphasis.at(index, default: false),
+            ),
+            bus-body-cell(
+              row.cells.at(index, default: ""),
+              departed: row.departed,
+              highlighted: row.highlight,
+            ),
           )).flatten()),
         )
       ]
@@ -112,42 +126,63 @@
   }
 }
 
-#let bus-table(t) = {
-  if t.label != "" {
-    card-section(break-long-tokens(t.label))
+#let bus-route-panel(t) = card-surface([
+  #if t.label != "" {
+    text(size: subhead-size, weight: "semibold", fill: ink)[
+      #break-long-tokens(t.label)
+    ]
+    v(10pt)
   }
-  if t.header.len() <= 4 {
+  #if t.header.len() <= 4 {
     bus-standard-table(t)
   } else {
     bus-record-table(t)
   }
+], inset: (x: 16pt, y: 14pt))
+
+#let bus-header() = {
+  if data.title.starts-with("校车 ") {
+    let route = data.title.split(" ").slice(1).join(" ")
+    card-header("校车", subtitle: break-long-tokens(route))
+  } else {
+    card-header(break-long-tokens(data.title))
+  }
 }
 
-#card-header(break-long-tokens(data.title))
+#let bus-summary() = card-surface([
+  #grid(
+    columns: (1fr, auto),
+    column-gutter: 12pt,
+    align: left + top,
+    [
+      #text(size: caption-size, weight: "semibold", fill: muted)[下一班]
+      #v(3pt)
+      #text(size: title-size, weight: "bold", fill: accent)[
+        #break-long-tokens(data.next_time)
+      ]
+    ],
+    align(right + top)[
+      #text(size: caption-size, fill: muted)[等待时间]
+      #v(3pt)
+      #text(size: body-size, weight: "semibold", fill: accent)[
+        #break-long-tokens(data.next_wait)
+      ]
+    ],
+  )
+], inset: (x: 16pt, y: 14pt), fill: highlight-bg)
+
+#bus-header()
 
 #if data.next_time != none {
-  block(
-    width: 100%,
-    fill: highlight-bg,
-    inset: (x: cell-pad-x, y: cell-pad-y),
-    radius: 6pt,
-  )[
-    #grid(
-      columns: (1fr, auto),
-      column-gutter: 8pt,
-      align: horizon,
-      [下一班 #break-long-tokens(data.next_time)],
-      align(right)[#text(fill: accent)[#break-long-tokens(data.next_wait)]],
-    )
-  ]
-  v(section-gap)
+  bus-summary()
+  v(16pt)
 }
 
-#for (index, table) in data.tables.enumerate() [
+#for (index, route) in data.tables.enumerate() [
   #if index > 0 {
-    v(section-gap)
+    v(16pt)
   }
-  #bus-table(table)
+  #bus-route-panel(route)
 ]
 
 #card-footer(data.footer.map(line => break-long-tokens(line)))
