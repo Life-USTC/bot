@@ -90,6 +90,11 @@ fn validate(req: &BusPayload) -> anyhow::Result<()> {
         super::check_text("next_wait", next_wait, super::MAX_LABEL_BYTES)?;
         super::check_text_budget(&mut text_budget, "next_wait", next_wait)?;
     }
+    if req.next_time.is_some() != req.next_wait.is_some() {
+        return Err(anyhow!(
+            "bus next_time and next_wait must be provided together"
+        ));
+    }
     if req.tables.is_empty() {
         return Err(anyhow!("bus render requires at least one table"));
     }
@@ -391,6 +396,23 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("out of range"));
+    }
+
+    #[test]
+    fn rejects_unpaired_next_bus_fields() {
+        let mut payload = valid_payload();
+        payload.next_wait = None;
+        assert!(validate(&payload)
+            .unwrap_err()
+            .to_string()
+            .contains("provided together"));
+
+        let mut payload = valid_payload();
+        payload.next_time = None;
+        assert!(validate(&payload)
+            .unwrap_err()
+            .to_string()
+            .contains("provided together"));
     }
 
     #[test]

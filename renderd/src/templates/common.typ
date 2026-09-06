@@ -41,18 +41,20 @@
 // both baselines off their box bottoms); footer-dy then shifts both boxes so
 // line 2's baseline lands at -32pt (descent of the 9pt faces is ~2pt).
 #let card-footer(lines) = {
+  if lines.len() > 0 {
+    place(
+      bottom + right,
+      dx: -margin-x,
+      dy: -30pt,
+      text(size: 9pt, fill: muted)[#lines.at(lines.len() - 1)],
+    )
+  }
   if lines.len() > 1 {
     place(
       bottom + right,
       dx: -margin-x,
       dy: -30pt - 14pt,
-      text(size: 9pt, fill: muted)[#lines.at(0)],
-    )
-    place(
-      bottom + right,
-      dx: -margin-x,
-      dy: -30pt,
-      text(size: 9pt, fill: muted)[#lines.at(1)],
+      text(size: 9pt, fill: muted)[#lines.at(lines.len() - 2)],
     )
   }
 }

@@ -43,18 +43,20 @@
 )
 
 #let grid-footer(lines) = {
+  if lines.len() > 0 {
+    place(
+      bottom + right,
+      dx: -margin,
+      dy: -30pt,
+      text(size: 9pt, fill: muted)[#lines.at(lines.len() - 1)],
+    )
+  }
   if lines.len() > 1 {
     place(
       bottom + right,
       dx: -margin,
       dy: -30pt - 14pt,
-      text(size: 9pt, fill: muted)[#lines.at(0)],
-    )
-    place(
-      bottom + right,
-      dx: -margin,
-      dy: -30pt,
-      text(size: 9pt, fill: muted)[#lines.at(1)],
+      text(size: 9pt, fill: muted)[#lines.at(lines.len() - 2)],
     )
   }
 }

@@ -236,7 +236,7 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
             ("course_size", item.course_size),
             ("meta_size", item.meta_size),
         ] {
-            if !value.is_finite() || value < 0.0 || value > MAX_FONT_SIZE {
+            if !value.is_finite() || !(0.0..=MAX_FONT_SIZE).contains(&value) {
                 return Err(anyhow!(
                     "grid item {name} must be finite and in the range [0, {MAX_FONT_SIZE}]"
                 ));

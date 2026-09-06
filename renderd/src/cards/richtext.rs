@@ -489,7 +489,7 @@ mod tests {
         let payload = serde_json::json!({
             "title": "标题",
             "content_width": 480,
-            "footer": ["13:00 · 工作日", "Life @ USTC"],
+            "footer": ["13:00 · 工作日"],
             "blocks": []
         });
         let (png, width, height) = render(&payload, 1.0).unwrap();
