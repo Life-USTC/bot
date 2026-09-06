@@ -361,6 +361,14 @@ mod tests {
         assert_eq!(short_width, 1170);
         assert!(short_height > 0);
 
+        // The shared page intentionally stays at the 844pt minimum for short
+        // schedules. Keep this fixture substantially longer so the assertion
+        // still verifies natural page growth rather than merely positive size.
+        let long_course =
+            "Introduction to Computational Thinking and Programming Methodology 数据库系统 "
+                .repeat(12);
+        let long_location = "东区教学楼与高新区 GT-B112 之间的综合教学地点 ".repeat(3);
+        let long_weeks = "第 1–16 周（单周与双周均有安排） ".repeat(3);
         let long = json!({
             "title": "本周课表",
             "summary": "周日–周六 · 第 1–2 节",
@@ -372,9 +380,9 @@ mod tests {
             "items": [{
                 "day": 0, "start": 1, "end": 2,
                 "period": "第 1 节–第 2 节", "time": "08:00–09:35",
-                "course": "Introduction to Computational Thinking and Programming Methodology 数据库系统",
-                "location": "东区教学楼与高新区 GT-B112 之间的综合教学地点",
-                "weeks": "第 1–16 周（单周与双周均有安排）", "color": "#dbeafe"
+                "course": long_course,
+                "location": long_location,
+                "weeks": long_weeks, "color": "#dbeafe"
             }],
             "footer": ["更新时间", "Life @ USTC"]
         });

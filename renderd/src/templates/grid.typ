@@ -1,90 +1,155 @@
 // Phone agenda card for daily and weekly schedules. The shared card helpers
-// provide the 390pt page, margins, type scale, and footer flow; this template
-// only arranges semantic schedule content.
+// provide the 390pt page, margins, type scale, and footer flow. This template
+// uses a grouped-list composition so each day's schedule reads as one unit.
 #import "common.typ": *
 
 #let data = __DATA__
 
 #show: card-page
 
-#let day-title(day) = {
+// Preserve the characters in long identifiers while giving Typst sensible
+// break opportunities for values that contain no spaces.
+#let break-long-tokens(value) = {
+  show regex("[A-Za-z0-9]{24,}"): it => [#it.text.split("").join("\u{200b}")]
+  [#value]
+}
+
+#let course-marker(item) = {
+  let color = if item.color == "" { accent } else { rgb(item.color) }
+  box(width: 12pt, height: 12pt)[
+    #align(center + horizon)[
+      #circle(radius: 4pt, fill: color, stroke: none)
+    ]
+  ]
+}
+
+#let schedule-meta(item) = {
+  if item.period != "" {
+    text(size: caption-size, fill: muted)[#break-long-tokens(item.period)]
+  }
+  if item.time != "" {
+    if item.period != "" [#text(size: caption-size, fill: muted)[ · ]]
+    text(size: subhead-size, weight: "medium", fill: accent)[
+      #break-long-tokens(item.time)
+    ]
+  }
+}
+
+#let detail-line(label, value) = {
+  grid(
+    columns: (auto, 1fr),
+    column-gutter: 6pt,
+    align: (left + horizon, left + horizon),
+    text(size: caption-size, fill: muted)[#label],
+    text(size: caption-size, fill: muted)[#break-long-tokens(value)],
+  )
+}
+
+#let schedule-item(item) = {
+  grid(
+    columns: (12pt, 1fr),
+    column-gutter: 10pt,
+    align: (center + top, left + top),
+    course-marker(item),
+    block(width: 100%)[
+      #text(size: body-size, weight: "semibold")[
+        #break-long-tokens(item.course)
+      ]
+      #if item.period != "" or item.time != "" {
+        v(5pt)
+        schedule-meta(item)
+      }
+      #if item.location != "" {
+        v(8pt)
+        detail-line("地点", item.location)
+      }
+      #if item.weeks != "" {
+        v(3pt)
+        detail-line("周次", item.weeks)
+      }
+    ],
+  )
+}
+
+#let list-divider() = block(width: 100%, height: 1pt, fill: line-c)
+
+#let day-badge(day) = {
   if day.date == "" {
-    day.label
+    none
   } else {
-    day.label + " · " + day.date
+    let badge-fill = if day.today { highlight-bg } else { surface }
+    let badge-color = if day.today { accent } else { muted }
+    block(
+      fill: badge-fill,
+      radius: 10pt,
+      inset: (x: 9pt, y: 4pt),
+    )[
+      #text(size: caption-size, weight: if day.today { "semibold" } else { "regular" }, fill: badge-color)[
+        #break-long-tokens(day.date)
+      ]
+    ]
   }
 }
 
 #let day-heading(day) = {
-  let title = day-title(day)
-  if day.today {
-    block(
-      width: 100%,
-      fill: highlight-bg,
-      stroke: 1pt + accent,
-      radius: 6pt,
-      inset: (x: 12pt, y: 8pt),
-    )[
-      #text(size: section-size, weight: "bold", fill: accent)[#title]
-    ]
-    v(12pt)
-  } else {
-    card-section(title)
+  grid(
+    columns: (1fr, auto),
+    column-gutter: 8pt,
+    align: (left + horizon, right + horizon),
+    text(size: section-size, weight: "semibold")[#break-long-tokens(day.label)],
+    day-badge(day),
+  )
+}
+
+#let empty-day() = card-surface(
+  grid(
+    columns: (12pt, 1fr),
+    column-gutter: 10pt,
+    align: (center + horizon, left + horizon),
+    box(width: 12pt, height: 12pt)[
+      #align(center + horizon)[
+        #circle(radius: 3pt, fill: line-c, stroke: none)
+      ]
+    ],
+    text(size: subhead-size, fill: muted)[暂无课程],
+  ),
+  inset: (x: surface-pad, y: 11pt),
+)
+
+#let schedule-list(entries) = {
+  for (item-index, item) in entries.enumerate() {
+    if item-index > 0 {
+      v(13pt)
+      list-divider()
+      v(13pt)
+    }
+    schedule-item(item)
   }
 }
 
-#let course-fill(item) = if item.color == "" {
-  rgb("#f4f4f5")
-} else {
-  rgb(item.color)
-}
-
-#let schedule-item(item) = block(
-  width: 100%,
-  fill: course-fill(item),
-  stroke: 1pt + line-c,
-  radius: 6pt,
-  inset: (x: 12pt, y: 10pt),
-)[
-  #text(size: caption-size, weight: "bold", fill: accent)[#item.period]
-  #if item.time != "" [
-    #text(size: caption-size, fill: muted)[ · #item.time]
-  ]
-  #v(6pt)
-  #text(size: body-size, weight: "bold")[#item.course]
-  #if item.location != "" {
-    v(4pt)
-    text(size: caption-size, fill: muted)[地点：#item.location]
-  }
-  #if item.weeks != "" {
-    v(3pt)
-    text(size: caption-size, fill: accent)[周次：#item.weeks]
-  }
-]
-
-#let empty-day() = block(
-  width: 100%,
-  fill: rgb("#f4f4f5"),
-  inset: (x: 12pt, y: 8pt),
-  radius: 6pt,
-)[
-  #text(size: caption-size, fill: muted)[暂无课程]
-]
-
-#card-header(data.title, subtitle: data.summary)
-
-#for (day-index, day) in data.days.enumerate() [
-  #if day-index > 0 { v(section-gap) }
-  #day-heading(day)
-  #let entries = data.items.filter(item => item.day == day-index)
-  #if entries.len() == 0 {
+#let day-group(day, entries) = {
+  day-heading(day)
+  v(10pt)
+  if entries.len() == 0 {
     empty-day()
   } else {
-    for (item-index, item) in entries.enumerate() [
-      #if item-index > 0 { v(8pt) }
-      #schedule-item(item)
-    ]
+    card-surface(
+      schedule-list(entries),
+      inset: (x: surface-pad, y: surface-pad),
+    )
   }
+}
+
+#let header-summary = if data.summary == "" { "" } else {
+  break-long-tokens(data.summary)
+}
+
+#card-header(break-long-tokens(data.title), subtitle: header-summary)
+
+#for (day-index, day) in data.days.enumerate() [
+  #if day-index > 0 { v(22pt) }
+  #let entries = data.items.filter(item => item.day == day-index)
+  #day-group(day, entries)
 ]
 
-#card-footer(data.footer)
+#card-footer(data.footer.map(line => break-long-tokens(line)))
