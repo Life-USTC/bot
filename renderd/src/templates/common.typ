@@ -25,10 +25,7 @@
 #let card-fonts = ("Noto Sans CJK SC", "Source Han Sans CN", "Fira Code")
 
 #let card-page(body) = {
-  set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false,
-    top-edge: "bounds", bottom-edge: "bounds")
-  set par(leading: 5pt, spacing: 0pt)
-  set block(spacing: 0pt)
+  set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false)
   context {
     let natural-height = measure(body, width: content-width).height
     set page(width: card-width,
@@ -38,36 +35,29 @@
   }
 }
 
-#let card-header(title, subtitle: none) = {
-  text(size: title-size, weight: "bold")[#title]
-  if subtitle != none and subtitle != "" {
-    v(10pt)
+#let card-header(title, subtitle: none) = block[
+  #text(size: title-size, weight: "bold")[#title]
+  #if subtitle != none and subtitle != "" {
+    linebreak()
     text(size: subhead-size, fill: muted)[#subtitle]
   }
-  v(section-gap)
-}
+]
 
-#let card-section(title) = {
-  text(size: section-size, weight: "semibold")[#title]
-  v(12pt)
-}
+#let card-section(title) = block(text(size: section-size, weight: "semibold")[#title])
 
 #let card-surface(body, inset: surface-pad, fill: surface) = block(
   width: 100%, fill: fill, radius: surface-radius, inset: inset,
   breakable: false,
 )[#body]
 
-// Flexible space anchors the footer to the screen bottom on short cards.
-// Its measured natural height is zero, so long cards retain normal flow.
-#let card-footer(lines, meta: none) = {
-  v(1fr)
-  v(28pt)
-  set text(size: caption-size, fill: muted)
-  if meta != none and meta != "" {
+// Footer follows the content using Typst's normal block spacing.
+#let card-footer(lines, meta: none) = block[
+  #set text(size: caption-size, fill: muted)
+  #if meta != none and meta != "" {
     [#meta]
-    v(10pt)
+    parbreak()
   }
-  if lines.len() == 1 {
+  #if lines.len() == 1 {
     [#lines.first()]
   } else if lines.len() > 1 {
     grid(
@@ -75,4 +65,4 @@
       [#lines.last()], align(right)[#lines.at(lines.len() - 2)],
     )
   }
-}
+]
