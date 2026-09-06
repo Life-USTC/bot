@@ -227,7 +227,11 @@ func TestRemoteRendererGridPreservesWhitespaceAroundContentOnly(t *testing.T) {
 			Course: "  Long English Course Name  ", Location: "  教室  ", Weeks: "  第 1 周  ",
 		}},
 	}
-	got := (RemoteRenderer{}).buildGridRequest(NewScheduleGridImage("schedule", "课表", grid, "课表"))
+	got := (RemoteRenderer{
+		Now: func() time.Time {
+			return time.Date(2026, 7, 17, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}).buildGridRequest(NewScheduleGridImage("schedule", "课表", grid, "课表"))
 	if got.Days[0].Label != "周一" || got.Days[0].Date != "09-07" {
 		t.Fatalf("day whitespace = %#v", got.Days[0])
 	}
