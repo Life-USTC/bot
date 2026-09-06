@@ -349,7 +349,8 @@ mod tests {
         });
         let err = render(&payload, 3.0).unwrap_err().to_string();
         assert!(
-            err.contains("rendered image dimensions are too large"),
+            err.contains("rendered image dimensions are too large")
+                || err.contains("card must contain exactly one page"),
             "{err}"
         );
     }

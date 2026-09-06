@@ -6,14 +6,6 @@
 
 #show: card-page
 
-// Keep ordinary words and headings untouched. Only unusually long ASCII runs
-// get invisible break opportunities, which lets URLs and identifiers wrap
-// without changing the characters sent in the semantic payload.
-#let break-long-tokens(value) = {
-  show regex("[A-Za-z0-9]{24,}"): it => [#it.text.split("").join("\u{200b}")]
-  [#value]
-}
-
 #let table-columns(count) = if count == 2 {
   (2fr, 1fr)
 } else if count == 3 {
@@ -62,7 +54,6 @@
   table(
     columns: table-columns(count),
     stroke: none,
-    inset: (x: 8pt, y: 10pt),
     align: left + horizon,
     fill: (_, y) => {
       if y > 0 and y - 1 < t.rows.len() and t.rows.at(y - 1).highlight {
@@ -86,7 +77,6 @@
     table(
       columns: (1fr, 2fr),
       stroke: none,
-      inset: (x: 8pt, y: 9pt),
       align: (left + horizon, left + horizon),
       ..(range(0, t.header.len()).map(index => (
         rich-header-cell(
@@ -97,19 +87,14 @@
       )).flatten()),
     )
   } else {
-    for (row-index, row) in t.rows.enumerate() {
-      if row-index > 0 {
-        v(8pt)
-      }
+    for row in t.rows {
       block(
         width: 100%,
         fill: if row.highlight { highlight-bg } else { none },
-        inset: 0pt,
       )[
         #table(
           columns: (1fr, 2fr),
           stroke: none,
-          inset: (x: 8pt, y: 8pt),
           align: (left + horizon, left + horizon),
           ..(range(1, t.header.len()).map(k =>
             table.hline(y: k, stroke: 0.7pt + line-c)
@@ -139,11 +124,13 @@
 }
 
 #let rich-text-block(lines) = {
-  for (index, line) in lines.enumerate() [
-    #if index > 0 {
-      v(10pt)
-    }
-    #block(width: 100%)[#break-long-tokens(line)]
+  block(width: 100%)[
+    #for (index, line) in lines.enumerate() [
+      #if index > 0 {
+        parbreak()
+      }
+      #break-long-tokens(line)
+    ]
   ]
 }
 
@@ -157,14 +144,11 @@
 
 #card-header(break-long-tokens(data.title))
 
-#for (index, block) in data.blocks.enumerate() [
-  #if index > 0 {
-    v(section-gap)
-  }
+#for block in data.blocks [
   #if block.heading != "" {
     card-section(break-long-tokens(block.heading))
   }
-  #card-surface(rich-block-content(block), inset: (x: 16pt, y: 14pt))
+  #card-surface(rich-block-content(block))
 ]
 
 #card-footer(data.footer.map(line => break-long-tokens(line)))
