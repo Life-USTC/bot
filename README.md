@@ -50,7 +50,7 @@ MCP 对齐（见
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
 图卡由 Typst `renderd` 服务渲染。所有卡片以 390 × 844pt 的 iPhone 竖屏为基础，
-默认 3× 输出至少 1170 × 2532px 的 PNG；宽度固定，短内容保留一屏构图，长内容向下延伸。
+默认 3× 输出宽 1170px、高至少 2532px 的 PNG；短内容保留一屏构图，长内容向下延伸。
 设计参考 Apple HIG 的[排版](https://developer.apple.com/design/human-interface-guidelines/typography)
 和[分组列表](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables)：
 大标题 34pt、正文 17pt、注释和页脚 13pt，

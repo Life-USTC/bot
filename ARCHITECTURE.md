@@ -452,7 +452,8 @@ content extends the page instead of shrinking the text. The renderer checks
 the actual page dimensions before rasterization and rejects multi-page cards
 instead of silently dropping content.
 
-`renderd` rasterizes at 3x by default, producing images at least 1170×2532 pixels.
+`renderd` rasterizes at 3x by default, producing 1170-pixel-wide images with a
+minimum height of 2532 pixels.
 `RENDERD_SCALE` can be set between 1x and 4x, and a request may provide a
 per-request scale. Its runtime image includes Fira Code and Noto CJK. The Typst
 world exposes only embedded card templates; it cannot read files or access the
@@ -470,5 +471,6 @@ go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bo
 The seven fixtures use a fixed clock and sample data, including departure
 highlights and the current schedule day. The command writes original PNGs and
 a gallery with 390×844-pixel scrollable viewports, and exits nonzero on a render,
-output-write, image-width, or minimum-height failure. CI renders every fixture against the release-built sidecar
-and uploads the gallery and images as the `typst-phone-examples` artifact.
+output-write, image-width, or minimum-height failure. CI renders every fixture
+against the release-built sidecar and uploads the gallery and images as the
+`typst-phone-examples` artifact.
