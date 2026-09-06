@@ -14,6 +14,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -36,6 +37,10 @@ const (
 type fixture struct {
 	name  string
 	build func() *responses.Image
+}
+
+func fixtureNow() time.Time {
+	return time.Date(2026, 9, 2, 15, 4, 0, 0, time.FixedZone("CST", 8*60*60))
 }
 
 // fixtures mirrors the sample data used by internal/responses tests; test
@@ -106,10 +111,10 @@ func richTextImage() *responses.Image {
 }
 
 // gridWeekImage is a 7-day × 12-period schedule with merged multi-period
-// blocks, today's column highlighted (one Days[].Date set to the current
-// MM-DD), and an overlong course name that triggers truncation.
+// blocks, today's column highlighted at the fixture date, and an overlong
+// course name that triggers truncation.
 func gridWeekImage() *responses.Image {
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	now := fixtureNow()
 	todayIndex := int(now.Weekday()) // index 0 is 周日, matching day labels below
 	labels := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 	days := make([]responses.ScheduleGridDay, 7)
@@ -132,7 +137,7 @@ func gridWeekImage() *responses.Image {
 
 // gridDayImage is a single-day schedule (DayWidth=360 layout branch).
 func gridDayImage() *responses.Image {
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	now := fixtureNow()
 	return responses.NewScheduleGridImage("schedule", now.Format("01-02")+" 课表", &responses.ScheduleGrid{
 		Days: []responses.ScheduleGridDay{
 			{Label: "今天", Date: now.Format("01-02")},
@@ -229,27 +234,35 @@ func weatherImage() *responses.Image {
 }
 
 func main() {
-	endpoint := flag.String("endpoint", envOr("RENDERD_ADDR", "http://127.0.0.1:9123/render"), "renderd endpoint URL")
+	endpoint := flag.String("endpoint", envOr("BOT_RENDER_ENDPOINT", "http://127.0.0.1:9123/render"), "renderd endpoint URL")
 	out := flag.String("out", "parity", "output directory for side-by-side PNGs")
 	only := flag.String("only", "", "only run fixtures whose name has this prefix (e.g. -only bus)")
 	flag.Parse()
 
-	if err := os.MkdirAll(*out, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "create output dir: %v\n", err)
+	if err := run(*endpoint, *out, *only); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
 
-	legacy := responses.Renderer{}
-	remote := responses.RemoteRenderer{Endpoint: *endpoint}
+func run(endpoint, out, only string) error {
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	legacy := responses.Renderer{Now: fixtureNow}
+	remote := responses.RemoteRenderer{Endpoint: endpoint, Now: fixtureNow}
 	expectedRatio := remoteScale / legacyScale
+	var failures []error
+	matched := 0
 
 	for _, f := range fixtures() {
-		if *only != "" && !strings.HasPrefix(f.name, *only) {
+		if only != "" && !strings.HasPrefix(f.name, only) {
 			continue
 		}
+		matched++
 		img := f.build()
 		if img == nil {
-			fmt.Printf("%s fixture build failed\n", f.name)
+			failures = append(failures, fmt.Errorf("%s fixture build failed", f.name))
 			continue
 		}
 
@@ -257,18 +270,18 @@ func main() {
 		legacyW, legacyH := 0, 0
 		png, w, h, err := legacy.RenderPNG(img)
 		if err != nil {
-			report += fmt.Sprintf(" legacy=skipped(%v)", err)
+			failures = append(failures, fmt.Errorf("%s legacy: %w", f.name, err))
 		} else {
 			legacyW, legacyH = w, h
-			writePNG(*out, f.name+"-legacy.png", png)
+			failures = append(failures, writePNG(out, f.name+"-legacy.png", png))
 			report += fmt.Sprintf(" legacy=%dx%d", w, h)
 		}
 
 		png, w, h, err = remote.RenderPNG(img)
 		if err != nil {
-			report += fmt.Sprintf(" remote=skipped(%v)", err)
+			failures = append(failures, fmt.Errorf("%s remote: %w", f.name, err))
 		} else {
-			writePNG(*out, f.name+"-remote.png", png)
+			failures = append(failures, writePNG(out, f.name+"-remote.png", png))
 			report += fmt.Sprintf(" remote=%dx%d", w, h)
 			if legacyW > 0 && legacyH > 0 {
 				ratio := float64(w) / float64(legacyW)
@@ -279,13 +292,18 @@ func main() {
 		}
 		fmt.Println(report)
 	}
+	if matched == 0 {
+		return fmt.Errorf("no fixtures match %q", only)
+	}
+	return errors.Join(failures...)
 }
 
-func writePNG(dir, name string, data []byte) {
+func writePNG(dir, name string, data []byte) error {
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "write %s: %v\n", path, err)
+		return fmt.Errorf("write %s: %w", path, err)
 	}
+	return nil
 }
 
 func envOr(key, fallback string) string {

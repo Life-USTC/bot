@@ -162,7 +162,7 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
 	space := metrics.space()
 	s := space.px
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	todayIndex := scheduleGridTodayIndex(grid, now)
 	faces, err := r.richFaces(space.Scale)
 	if err != nil {

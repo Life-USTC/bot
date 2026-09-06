@@ -202,7 +202,7 @@ func (r RemoteRenderer) RenderPNGContext(parent context.Context, img *Image) ([]
 		}
 		return nil, 0, 0, fmt.Errorf("render sidecar unavailable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -318,11 +318,7 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 			rt.HeaderEmphasis = append(rt.HeaderEmphasis, h.Emphasize)
 		}
 		for _, row := range node.Table.Rows {
-			rt.Rows = append(rt.Rows, remoteBusRow{
-				Cells:     row.Cells,
-				Highlight: row.Highlight,
-				Departed:  row.Departed,
-			})
+			rt.Rows = append(rt.Rows, remoteBusRow(row))
 		}
 		y := node.Bounds.Min.Y
 		rowIdx, seen := rowIndexByY[y]

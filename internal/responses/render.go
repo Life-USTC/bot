@@ -27,6 +27,15 @@ var embeddedBusLogoPNG []byte
 
 type Renderer struct {
 	FontPath string
+	// Now fixes the reference renderer's clock for visual comparisons.
+	Now func() time.Time
+}
+
+func (r Renderer) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 // RenderPNGContext provides the renderer contract used by cancellable

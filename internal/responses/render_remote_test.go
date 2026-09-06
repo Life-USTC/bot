@@ -46,7 +46,7 @@ func TestRemoteRendererRenderPNG(t *testing.T) {
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("X-Image-Width", "8")
 		w.Header().Set("X-Image-Height", "6")
-		w.Write(payload)
+		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
 
@@ -337,7 +337,7 @@ func TestRemoteRendererRichPayload(t *testing.T) {
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("X-Image-Width", "8")
 		w.Header().Set("X-Image-Height", "6")
-		w.Write(payload)
+		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
 
@@ -416,7 +416,7 @@ func TestRemoteRendererRichTextWrap(t *testing.T) {
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("X-Image-Width", "8")
 		w.Header().Set("X-Image-Height", "6")
-		w.Write(testRemotePNG(t))
+		_, _ = w.Write(testRemotePNG(t))
 	}))
 	defer server.Close()
 

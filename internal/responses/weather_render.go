@@ -183,7 +183,7 @@ func (r Renderer) renderWeatherCardPNG(card *WeatherCard) ([]byte, int, int, err
 		cursor = r.drawWeatherLocation(canvas, s, faces, m, loc, left, right, contentWidth, cursor)
 	}
 
-	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	footerY := s(cursor + m.FooterRow - 20)
 	if card.Meta != "" {
 		drawMixedText(canvas, faces.Meta, faces.MetaMono, s(left), footerY+s(6), card.Meta, weatherMuted)

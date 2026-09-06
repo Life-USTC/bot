@@ -72,8 +72,10 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	// This test covers group routing; select the fixture's schedule explicitly
+	// so the reply does not depend on the current weekday or departure cutoff.
 	groupInput := Input{
-		Text: "东区到西区校车还有吗",
+		Text: "工作日 东区到西区校车还有吗",
 		Identity: store.Identity{
 			Platform:         "napcat",
 			UserID:           "42",
@@ -107,7 +109,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 		t.Fatalf("group image reply = %q, ok = %v", reply, ok)
 	}
 
-	groupInput.Text = "[CQ:image,file=1.png] 校车"
+	groupInput.Text = "[CQ:image,file=1.png] 校车 工作日"
 	reply, ok = handler.Handle(context.Background(), groupInput)
 	if !ok || !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") {
 		t.Fatalf("group image caption reply = %q, ok = %v", reply, ok)

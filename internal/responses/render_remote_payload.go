@@ -94,10 +94,7 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 		})
 	}
 	for _, period := range grid.Periods {
-		req.Periods = append(req.Periods, remoteGridPeriod{
-			Label: period.Label,
-			Time:  period.Time,
-		})
+		req.Periods = append(req.Periods, remoteGridPeriod(period))
 	}
 	for _, boundary := range []int{5, 10} {
 		if _, ok := scheduleGridDividerBounds(boundary, metrics); ok {

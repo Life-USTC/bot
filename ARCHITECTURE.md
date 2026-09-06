@@ -455,3 +455,8 @@ kinds with:
 RENDERD_ADDR=127.0.0.1:9123 renderd/target/release/renderd
 go run ./cmd/render-parity -endpoint http://127.0.0.1:9123/render -out /tmp/parity
 ```
+
+The comparison uses a fixed clock for both renderers, including departure
+highlights and the current schedule column. Any render or output-write failure
+exits nonzero. CI runs all seven fixtures against the release-built sidecar;
+the Go renderer is retained only as a visual reference for this comparison.
