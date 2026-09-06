@@ -284,10 +284,10 @@
     ]
   }
   weather-location(location)
-  // The legacy height includes one block gap after every location, including
-  // the final location before the footer zone.
-  block(height: block-gap)
 }
+// Inter-location gaps were already drawn with the dividers above. Reserve
+// only the final gap here, matching the height supplied by Go.
+#block(height: block-gap)
 
 #if data.meta != "" {
   place(bottom + left, dx: margin, dy: -30pt,

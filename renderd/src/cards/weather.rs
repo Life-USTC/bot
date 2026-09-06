@@ -811,4 +811,32 @@ mod tests {
             logical_height(&serde_json::from_value(payload).unwrap()) as u32
         );
     }
+
+    #[test]
+    fn separates_locations_with_one_block_gap() {
+        let mut payload = valid_payload();
+        let location = payload["locations"][0].clone();
+        payload["locations"] = json!([location, location, location]);
+        let req: WeatherPayload = serde_json::from_value(payload.clone()).unwrap();
+        let (png, _, _) = render(&payload, 1.0).unwrap();
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).unwrap();
+
+        let mut cursor = TITLE_BASELINE + TITLE_GAP;
+        for location in &req.locations[..req.locations.len() - 1] {
+            cursor += location_height(location);
+            let divider_y = (cursor + BLOCK_GAP / 2.0) as u32;
+            for x in [
+                MARGIN_X + 1.0,
+                CANVAS_WIDTH / 2.0,
+                CANVAS_WIDTH - MARGIN_X - 1.0,
+            ] {
+                let pixel = pixmap.pixel(x as u32, divider_y).unwrap();
+                assert!(
+                    pixel.red() < 245 && pixel.green() < 245 && pixel.blue() < 248,
+                    "missing location divider at ({x}, {divider_y}): {pixel:?}"
+                );
+            }
+            cursor += BLOCK_GAP;
+        }
+    }
 }
