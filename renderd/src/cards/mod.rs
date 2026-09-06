@@ -216,7 +216,7 @@ mod tests {
             format!(
                 "#import \"common.typ\": *\n#show: card-page\n\
                  #card-header(\"课程安排\")\n\
-                 #for _ in range({rows}) {{ block[课程名称与地点]; v(12pt) }}\n\
+                 #for _ in range({rows}) {{ block[课程名称与地点] }}\n\
                  #card-footer((\"15:04 · 工作日\", \"Life @ USTC\"))"
             )
         };

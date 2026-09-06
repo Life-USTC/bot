@@ -24,6 +24,12 @@
 #let highlight-bg = rgb("#edf5ff")
 #let card-fonts = ("Noto Sans CJK SC", "Source Han Sans CN", "Fira Code")
 
+// Allow long identifiers to wrap without dropping or replacing characters.
+#let break-long-tokens(value) = {
+  show regex("[A-Za-z0-9]{24,}"): it => [#it.text.split("").join("\u{200b}")]
+  [#value]
+}
+
 #let card-page(body) = {
   set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false)
   context {
