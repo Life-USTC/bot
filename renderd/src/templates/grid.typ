@@ -14,6 +14,26 @@
   [#value]
 }
 
+#let entry-count(count) = str(count) + " 项课程安排"
+
+#let weekly-summary(days, count) = {
+  let first-date = days.first().date
+  let last-date = days.last().date
+  if first-date != "" and last-date != "" {
+    if first-date == last-date {
+      [#break-long-tokens(first-date) · #entry-count(count)]
+    } else {
+      [#break-long-tokens(first-date) 至 #break-long-tokens(last-date) · #entry-count(count)]
+    }
+  } else if first-date != "" {
+    [#break-long-tokens(first-date) · #entry-count(count)]
+  } else if last-date != "" {
+    [#break-long-tokens(last-date) · #entry-count(count)]
+  } else {
+    [#entry-count(count)]
+  }
+}
+
 #let course-marker(item) = {
   let color = if item.color == "" { accent } else { rgb(item.color) }
   box(width: 12pt, height: 12pt)[
@@ -127,9 +147,11 @@
   }
 }
 
-#let day-group(day, entries) = {
-  day-heading(day)
-  v(10pt)
+#let day-group(day, entries, show-heading: true) = {
+  if show-heading {
+    day-heading(day)
+    v(10pt)
+  }
   if entries.len() == 0 {
     empty-day()
   } else {
@@ -140,8 +162,12 @@
   }
 }
 
-#let header-summary = if data.summary == "" { "" } else {
-  break-long-tokens(data.summary)
+#let header-summary = if data.days.len() == 1 {
+  let day = data.days.first()
+  let entries = data.items.filter(item => item.day == 0)
+  [#break-long-tokens(day.label) · #entry-count(entries.len())]
+} else {
+  weekly-summary(data.days, data.items.len())
 }
 
 #card-header(break-long-tokens(data.title), subtitle: header-summary)
@@ -149,7 +175,7 @@
 #for (day-index, day) in data.days.enumerate() [
   #if day-index > 0 { v(22pt) }
   #let entries = data.items.filter(item => item.day == day-index)
-  #day-group(day, entries)
+  #day-group(day, entries, show-heading: data.days.len() != 1)
 ]
 
 #card-footer(data.footer.map(line => break-long-tokens(line)))
