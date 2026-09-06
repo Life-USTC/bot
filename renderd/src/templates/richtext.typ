@@ -123,22 +123,11 @@
   }
 }
 
-#let rich-text-block(lines) = {
-  block(width: 100%)[
-    #for (index, line) in lines.enumerate() [
-      #if index > 0 {
-        parbreak()
-      }
-      #break-long-tokens(line)
-    ]
-  ]
-}
-
 #let rich-block-content(block) = {
   if block.table != none {
     rich-table(block.table)
   } else {
-    rich-text-block(block.lines)
+    block.lines.map(break-long-tokens).join(parbreak())
   }
 }
 

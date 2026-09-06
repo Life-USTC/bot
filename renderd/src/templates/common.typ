@@ -11,7 +11,6 @@
 #let subhead-size = 15pt
 #let title-size = 34pt
 #let section-size = 22pt
-#let section-gap = 28pt
 #let surface-pad = 16pt
 #let surface-radius = 18pt
 
@@ -51,18 +50,14 @@
 
 #let card-section(title) = block(text(size: section-size, weight: "semibold")[#title])
 
-#let card-surface(body, inset: surface-pad, fill: surface) = block(
-  width: 100%, fill: fill, radius: surface-radius, inset: inset,
+#let card-surface(body, fill: surface) = block(
+  width: 100%, fill: fill, radius: surface-radius, inset: surface-pad,
   breakable: false,
 )[#body]
 
 // Footer follows the content using Typst's normal block spacing.
-#let card-footer(lines, meta: none) = block[
+#let card-footer(lines) = block[
   #set text(size: caption-size, fill: muted)
-  #if meta != none and meta != "" {
-    [#meta]
-    parbreak()
-  }
   #if lines.len() == 1 {
     [#lines.first()]
   } else if lines.len() > 1 {
