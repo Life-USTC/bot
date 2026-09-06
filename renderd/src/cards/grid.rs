@@ -1,8 +1,8 @@
-//! Schedule-grid rendering: JSON payload -> fixed-position Typst source -> PNG.
+//! Schedule rendering: semantic JSON payload -> phone-sized Typst card -> PNG.
 //!
-//! All schedule semantics (today selection, course colors, bounds, text
-//! fitting, and font-size choices) are resolved by the Go caller.  This
-//! renderer only paints the rectangles and strings it receives.
+//! Go owns schedule semantics such as today selection, course colors, and
+//! item validity. Typst owns the phone card's flow layout so long text wraps
+//! naturally and each card can grow with its content.
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
@@ -19,16 +19,6 @@ pub struct GridPayload {
     pub days: Vec<GridDay>,
     #[serde(default)]
     pub periods: Vec<GridPeriod>,
-    #[serde(default)]
-    pub day_width: f64,
-    #[serde(default)]
-    pub label_width: f64,
-    #[serde(default)]
-    pub row_height: f64,
-    #[serde(default)]
-    pub header_height: f64,
-    #[serde(default)]
-    pub dividers: Vec<i64>,
     #[serde(default)]
     pub items: Vec<GridItem>,
     #[serde(default)]
@@ -58,6 +48,8 @@ pub struct GridItem {
     pub day: i64,
     pub start: i64,
     pub end: i64,
+    pub period: String,
+    pub time: String,
     #[serde(default)]
     pub course: String,
     #[serde(default)]
@@ -66,39 +58,19 @@ pub struct GridItem {
     pub weeks: String,
     #[serde(default)]
     pub color: String,
-    #[serde(default)]
-    pub large: bool,
-    /// Explicit sizes preserve the legacy renderer's mixed case where a
-    /// merged block can use a compact course face but a large metadata face.
-    #[serde(default)]
-    pub course_size: f64,
-    #[serde(default)]
-    pub meta_size: f64,
 }
 
 const MAX_DAYS: usize = 14;
 const MAX_PERIODS: usize = 64;
 const MAX_ITEMS: usize = 512;
-const MAX_DIVIDERS: usize = 64;
-const MAX_DIMENSION: f64 = 4096.0;
-const MAX_FONT_SIZE: f64 = 72.0;
-const MARGIN: f64 = 36.0;
-const GRID_TOP: f64 = 82.0;
-const FOOTER_GAP: f64 = 28.0;
-const BOTTOM_MARGIN: f64 = 28.0;
 
-/// Render a grid payload to PNG. Returns `(png_bytes, width_px, height_px)`.
+/// Render a schedule payload to PNG. The shared card template fixes the
+/// logical width at 390pt; compile_png checks the compiled page dimensions
+/// before allocating a raster pixmap.
 pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let req: GridPayload =
         serde_json::from_value(payload.clone()).context("invalid grid payload")?;
     validate(&req)?;
-    let logical_width = 2.0 * MARGIN + req.label_width + req.days.len() as f64 * req.day_width;
-    let logical_height = GRID_TOP
-        + req.header_height
-        + req.periods.len() as f64 * req.row_height
-        + FOOTER_GAP
-        + BOTTOM_MARGIN;
-    super::check_render_dimensions(logical_width, logical_height, scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
 }
@@ -117,9 +89,6 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
     if req.items.len() > MAX_ITEMS {
         return Err(anyhow!("grid payload has too many items"));
     }
-    if req.dividers.len() > MAX_DIVIDERS {
-        return Err(anyhow!("grid payload has too many dividers"));
-    }
     super::check_text("title", &req.title, super::MAX_TEXT_BYTES)?;
     super::check_text_budget(&mut text_budget, "title", &req.title)?;
     super::check_text("summary", &req.summary, super::MAX_TEXT_BYTES)?;
@@ -130,14 +99,6 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
     for (index, line) in req.footer.iter().enumerate() {
         super::check_text(&format!("footer[{index}]"), line, super::MAX_TEXT_BYTES)?;
         super::check_text_budget(&mut text_budget, &format!("footer[{index}]"), line)?;
-    }
-    for (name, value) in [
-        ("day_width", req.day_width),
-        ("label_width", req.label_width),
-        ("row_height", req.row_height),
-        ("header_height", req.header_height),
-    ] {
-        super::check_positive_dimension(name, value, MAX_DIMENSION)?;
     }
     for (index, day) in req.days.iter().enumerate() {
         super::check_text(
@@ -195,6 +156,15 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
                 item.end
             ));
         }
+        for (name, value, max_bytes) in [
+            ("period", &item.period, super::MAX_TEXT_BYTES),
+            ("time", &item.time, super::MAX_TEXT_BYTES),
+            ("location", &item.location, super::MAX_LABEL_BYTES),
+            ("weeks", &item.weeks, super::MAX_LABEL_BYTES),
+        ] {
+            super::check_text(&format!("items[{index}].{name}"), value, max_bytes)?;
+            super::check_text_budget(&mut text_budget, &format!("items[{index}].{name}"), value)?;
+        }
         super::check_text(
             &format!("items[{index}].course"),
             &item.course,
@@ -205,26 +175,6 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
             &format!("items[{index}].course"),
             &item.course,
         )?;
-        super::check_text(
-            &format!("items[{index}].location"),
-            &item.location,
-            super::MAX_LABEL_BYTES,
-        )?;
-        super::check_text_budget(
-            &mut text_budget,
-            &format!("items[{index}].location"),
-            &item.location,
-        )?;
-        super::check_text(
-            &format!("items[{index}].weeks"),
-            &item.weeks,
-            super::MAX_LABEL_BYTES,
-        )?;
-        super::check_text_budget(
-            &mut text_budget,
-            &format!("items[{index}].weeks"),
-            &item.weeks,
-        )?;
         if !item.color.is_empty()
             && (item.color.len() != 7
                 || !item.color.starts_with('#')
@@ -232,21 +182,16 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
         {
             return Err(anyhow!("grid item color must be a #rrggbb value"));
         }
-        for (name, value) in [
-            ("course_size", item.course_size),
-            ("meta_size", item.meta_size),
-        ] {
-            if !value.is_finite() || !(0.0..=MAX_FONT_SIZE).contains(&value) {
-                return Err(anyhow!(
-                    "grid item {name} must be finite and in the range [0, {MAX_FONT_SIZE}]"
-                ));
-            }
-        }
-    }
-    for divider in &req.dividers {
-        if *divider <= 0 || *divider >= period_count {
-            return Err(anyhow!("grid divider out of range: {divider}"));
-        }
+        super::check_text(
+            &format!("items[{index}].color"),
+            &item.color,
+            super::MAX_LABEL_BYTES,
+        )?;
+        super::check_text_budget(
+            &mut text_budget,
+            &format!("items[{index}].color"),
+            &item.color,
+        )?;
     }
     Ok(())
 }
@@ -258,23 +203,12 @@ fn data_literal(req: &GridPayload) -> String {
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
     out.push_str(&format!("summary: {}, ", typst_str(&req.summary)));
-    out.push_str(&format!("day_width: {}, ", super::fmt_num(req.day_width)));
-    out.push_str(&format!(
-        "label_width: {}, ",
-        super::fmt_num(req.label_width)
-    ));
-    out.push_str(&format!("row_height: {}, ", super::fmt_num(req.row_height)));
-    out.push_str(&format!(
-        "header_height: {}, ",
-        super::fmt_num(req.header_height)
-    ));
 
     out.push_str("days: (");
     for day in &req.days {
         out.push_str(&format!(
             "(label: {}, date: {}, today: {}), ",
             typst_str(&day.label),
-            // The legacy renderer treats whitespace-only dates as absent.
             typst_str(day.date.trim()),
             day.today
         ));
@@ -287,24 +221,19 @@ fn data_literal(req: &GridPayload) -> String {
             typst_str(&period.time)
         ));
     }
-    out.push_str("), dividers: (");
-    for divider in &req.dividers {
-        out.push_str(&format!("{divider}, "));
-    }
     out.push_str("), items: (");
     for item in &req.items {
         out.push_str(&format!(
-            "(day: {}, start: {}, end: {}, course: {}, location: {}, weeks: {}, color: {}, large: {}, course_size: {}, meta_size: {}), ",
+            "(day: {}, start: {}, end: {}, period: {}, time: {}, course: {}, location: {}, weeks: {}, color: {}), ",
             item.day,
             item.start,
             item.end,
+            typst_str(&item.period),
+            typst_str(&item.time),
             typst_str(&item.course),
             typst_str(&item.location),
             typst_str(&item.weeks),
             typst_str(&item.color),
-            item.large,
-            super::fmt_num(item.course_size),
-            super::fmt_num(item.meta_size),
         ));
     }
     out.push_str("), footer: (");
@@ -325,6 +254,7 @@ const TEMPLATE: &str = include_str!("../templates/grid.typ");
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn valid_payload() -> GridPayload {
         GridPayload {
@@ -336,25 +266,19 @@ mod tests {
                 today: false,
             }],
             periods: vec![GridPeriod {
-                label: "1".into(),
-                time: "08:00".into(),
+                label: "第 1 节".into(),
+                time: "08:00–08:45".into(),
             }],
-            day_width: 360.0,
-            label_width: 120.0,
-            row_height: 56.0,
-            header_height: 54.0,
-            dividers: vec![],
             items: vec![GridItem {
                 day: 0,
                 start: 1,
                 end: 1,
+                period: "第 1 节".into(),
+                time: "08:00–08:45".into(),
                 course: "课程".into(),
                 location: "教室".into(),
                 weeks: "1-16 周".into(),
                 color: "#e2e8f0".into(),
-                large: false,
-                course_size: 14.0,
-                meta_size: 10.0,
             }],
             footer: vec!["更新时间".into(), "Life @ USTC".into()],
         }
@@ -366,14 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_extreme_dimensions_and_bounds() {
-        let mut payload = valid_payload();
-        payload.day_width = f64::NAN;
-        assert!(validate(&payload)
-            .unwrap_err()
-            .to_string()
-            .contains("finite"));
-
+    fn rejects_invalid_bounds_and_color() {
         let mut payload = valid_payload();
         payload.items[0].day = 1;
         assert!(validate(&payload)
@@ -400,9 +317,69 @@ mod tests {
     }
 
     #[test]
+    fn source_keeps_full_text_and_has_no_geometry_fields() {
+        let mut payload = valid_payload();
+        payload.items[0].course =
+            "Introduction to Computational Thinking and Programming Methodology 数据库系统".into();
+        payload.items[0].location = "东区 · 高新区 GT-B112".into();
+        payload.items[0].weeks = "第 1–16 周（单周）".into();
+        let source = build_source(&payload);
+        assert!(source.contains(&payload.items[0].course));
+        assert!(source.contains(&payload.items[0].location));
+        assert!(source.contains(&payload.items[0].weeks));
+        assert!(!source.contains("day_width"));
+        assert!(!source.contains("course_size"));
+        assert!(!source.contains("dividers"));
+    }
+
+    #[test]
     fn normalizes_whitespace_only_dates_in_source() {
         let mut payload = valid_payload();
         payload.days[0].date = "   ".into();
         assert!(build_source(&payload).contains("date: \"\""));
+    }
+
+    #[test]
+    fn renders_phone_width_and_grows_for_wrapped_content() {
+        let short = json!({
+            "title": "今天课表",
+            "summary": "周一 · 第 1–2 节",
+            "days": [{"label": "周一", "date": "09-07", "today": true}],
+            "periods": [
+                {"label": "第 1 节", "time": "08:00–08:45"},
+                {"label": "第 2 节", "time": "08:50–09:35"}
+            ],
+            "items": [{
+                "day": 0, "start": 1, "end": 1,
+                "period": "第 1 节", "time": "08:00–08:45",
+                "course": "数据库系统", "location": "高新区 · GT-B112",
+                "weeks": "第 1–16 周", "color": "#dbeafe"
+            }],
+            "footer": ["更新时间", "Life @ USTC"]
+        });
+        let (_, short_width, short_height) = render(&short, 3.0).unwrap();
+        assert_eq!(short_width, 1170);
+        assert!(short_height > 0);
+
+        let long = json!({
+            "title": "本周课表",
+            "summary": "周日–周六 · 第 1–2 节",
+            "days": [{"label": "周一", "date": "09-07", "today": false}],
+            "periods": [
+                {"label": "第 1 节", "time": "08:00–08:45"},
+                {"label": "第 2 节", "time": "08:50–09:35"}
+            ],
+            "items": [{
+                "day": 0, "start": 1, "end": 2,
+                "period": "第 1 节–第 2 节", "time": "08:00–09:35",
+                "course": "Introduction to Computational Thinking and Programming Methodology 数据库系统",
+                "location": "东区教学楼与高新区 GT-B112 之间的综合教学地点",
+                "weeks": "第 1–16 周（单周与双周均有安排）", "color": "#dbeafe"
+            }],
+            "footer": ["更新时间", "Life @ USTC"]
+        });
+        let (_, long_width, long_height) = render(&long, 3.0).unwrap();
+        assert_eq!(long_width, 1170);
+        assert!(long_height > short_height);
     }
 }
