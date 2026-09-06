@@ -132,6 +132,7 @@
 #let stat-tile(label, value) = rect(
   width: 100%,
   height: 56pt,
+  inset: 0pt,
   fill: weather-tile,
   stroke: 1pt + weather-line,
 )[
@@ -215,6 +216,7 @@
     #place(top + left, dx: 0pt, dy: 22pt, placed-text(location.name, size: 16pt, color: ink, weight: "bold"))
   ]
   #block(height: hero-row)[
+    #v(18pt)
     #grid(
       columns: (64pt, auto, 1fr),
       column-gutter: (24pt, 16pt),
