@@ -851,7 +851,7 @@ mod tests {
         empty["locations"][0]["daily"] = json!([]);
         empty["locations"][0]["alerts"] = json!([]);
         let (_, empty_width, empty_height) = render(&empty, 1.0).unwrap();
-        assert_eq!(empty_width, CARD_WIDTH as u32);
+        assert_eq!(empty_width, 390);
         assert!(empty_height > 0);
 
         let mut constant = valid_payload();
@@ -864,7 +864,7 @@ mod tests {
             {"label": "明天", "low": 20, "high": 20, "conditionText": "晴"}
         ]);
         let (_, constant_width, constant_height) = render(&constant, 1.0).unwrap();
-        assert_eq!(constant_width, CARD_WIDTH as u32);
+        assert_eq!(constant_width, 390);
         assert!(constant_height > empty_height);
     }
 
@@ -884,7 +884,7 @@ mod tests {
         let payload = valid_payload();
         let (png, width, height) = render(&payload, 1.0).expect("weather template should compile");
         assert!(!png.is_empty());
-        assert_eq!(width, CARD_WIDTH as u32);
+        assert_eq!(width, 390);
 
         let mut long = valid_payload();
         long["locations"][0]["name"] = json!("中国科学技术大学高新校区气象观测点");
@@ -895,7 +895,7 @@ mod tests {
         ]);
         let (_, long_width, long_height) =
             render(&long, 1.0).expect("long weather template should compile");
-        assert_eq!(long_width, CARD_WIDTH as u32);
+        assert_eq!(long_width, 390);
         assert!(
             long_height > height,
             "long content did not increase page height"
@@ -909,7 +909,7 @@ mod tests {
         payload["locations"] = json!([location.clone(), location]);
         let (_, width, height) = render(&payload, 1.0).expect("weather template should compile");
         let single_height = render(&valid_payload(), 1.0).unwrap().2;
-        assert_eq!(width, CARD_WIDTH as u32);
+        assert_eq!(width, 390);
         assert!(height > single_height);
         let req: WeatherPayload = serde_json::from_value(payload).unwrap();
         let source = build_source(&req);
