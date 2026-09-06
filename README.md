@@ -51,7 +51,9 @@ MCP 对齐（见
 
 图卡由 Typst `renderd` 服务渲染。所有卡片以 390 × 844pt 的 iPhone 竖屏为基础，
 默认 3× 输出至少 1170 × 2532px 的 PNG；宽度固定，短内容保留一屏构图，长内容向下延伸。
-设计参考 Apple HIG 的信息层级和分组列表：大标题 34pt、正文 17pt、注释和页脚 13pt，
+设计参考 Apple HIG 的[排版](https://developer.apple.com/design/human-interface-guidelines/typography)
+和[分组列表](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables)：
+大标题 34pt、正文 17pt、注释和页脚 13pt，
 浅灰画布配白色分组，页脚在短卡片中靠底部排列。课表按天纵向排列，长课程名、表格单元格
 和天气预警完整换行。
 该排版以手机上按宽度查看为目标；QQ 聊天气泡的缩略图尺寸仍由客户端控制。
