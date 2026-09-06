@@ -1,8 +1,8 @@
 //! Weather card rendering: validated JSON payload -> Typst source -> PNG.
 //!
 //! Weather semantics stay in the Go response layer. This module validates the
-//! structured values, computes the chart coordinates for the shared phone
-//! canvas, and hands the remaining layout to the flow-based Typst template.
+//! structured values, computes the chart coordinates for the inset forecast
+//! panel, and hands the remaining layout to the flow-based Typst template.
 //! Strings are escaped before they become source code; the sidecar never gives
 //! Typst filesystem or network access.
 
@@ -11,11 +11,12 @@ use serde::Deserialize;
 
 use crate::escape::typst_str;
 
-// Keep these values in step with the shared common.typ card style. They are
-// renderer constants for chart coordinates, not payload geometry.
-const CONTENT_WIDTH: f64 = 350.0;
-const CHART_PLOT_LEFT: f64 = 22.0;
-const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH - CHART_PLOT_LEFT;
+// The weather chart lives inside a 16pt-inset surface. Keep these values in
+// step with weather.typ; they are renderer constants for chart coordinates,
+// not caller-controlled page geometry.
+const CHART_CONTENT_WIDTH: f64 = 318.0;
+const CHART_PLOT_LEFT: f64 = 18.0;
+const CHART_PLOT_RIGHT: f64 = CHART_CONTENT_WIDTH - CHART_PLOT_LEFT;
 const CHART_PLOT_BOTTOM: f64 = 120.0;
 const CHART_TEMP_RANGE: f64 = 88.0;
 const CHART_MAX_BAR_HEIGHT: f64 = 34.0;
@@ -478,7 +479,10 @@ fn axis_label_step(point_count: usize, slot_width: f64) -> usize {
     if point_count <= 6 {
         return 1;
     }
-    let min_spacing = 38.0;
+    // A 42pt label box and this gap leave enough room for 13pt time labels at
+    // the narrowest normal phone layout. Every bar and curve point is still
+    // retained; only the axis labels are sparse.
+    let min_spacing = 44.0;
     let width_step = (min_spacing / slot_width).ceil() as usize;
     width_step.max(3)
 }
@@ -723,6 +727,7 @@ mod tests {
         req.validate().unwrap();
         let source = build_source(&req);
         assert!(source.contains("card-page"));
+        assert!(source.contains("chart-content-width = 318pt"));
         assert!(!source.contains("canvas_width:"));
     }
 
@@ -778,7 +783,7 @@ mod tests {
                 .iter()
                 .filter(|point| point.show_axis_label)
                 .count(),
-            8
+            6
         );
         assert!(plot
             .points
@@ -850,7 +855,7 @@ mod tests {
         empty["locations"][0]["alerts"] = json!([]);
         let (_, empty_width, empty_height) = render(&empty, 1.0).unwrap();
         assert_eq!(empty_width, 390);
-        assert!(empty_height > 0);
+        assert_eq!(empty_height, 844);
 
         let mut constant = valid_payload();
         constant["locations"][0]["hourly"] = json!([
@@ -863,6 +868,7 @@ mod tests {
         ]);
         let (_, constant_width, constant_height) = render(&constant, 1.0).unwrap();
         assert_eq!(constant_width, 390);
+        assert!(constant_height >= 844);
         assert!(constant_height > empty_height);
     }
 
@@ -911,6 +917,7 @@ mod tests {
         assert!(height > single_height);
         let req: WeatherPayload = serde_json::from_value(payload).unwrap();
         let source = build_source(&req);
-        assert_eq!(source.matches("line(length: 100%").count(), 1);
+        assert!(source.contains("name: \"本部\""));
+        assert_eq!(source.matches("name: \"本部\"").count(), 2);
     }
 }

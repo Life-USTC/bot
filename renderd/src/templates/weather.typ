@@ -1,5 +1,6 @@
-// Phone-readable weather card. Width, type scale, page flow, and footer
-// styling come from the shared common.typ helpers.
+// Static iPhone weather screen. The shared page and type tokens come from
+// common.typ; this template only arranges the weather data into grouped
+// surfaces that remain readable as their text grows.
 #import "common.typ": *
 
 #let data = __DATA__
@@ -7,8 +8,8 @@
 #let chart-height = 160pt
 #let chart-plot-bottom = 120
 #let chart-label-y = 137
-#let chart-label-width = 46pt
-#let chart-content-width = content-width
+#let chart-label-width = 42pt
+#let chart-content-width = 318pt
 #let daily-track-width = 100%
 
 #let weather-sun = rgb("#f59e0b")
@@ -16,18 +17,13 @@
 #let weather-drop = rgb("#0ea5e9")
 #let weather-sky = rgb("#7dd3fc")
 #let weather-drop-text = rgb("#075985")
-#let weather-bolt = rgb("#92400e")
+#let weather-warning = rgb("#c2410c")
 #let weather-hail = rgb("#475569")
-#let weather-line = rgb("#d4d4d8")
-#let weather-tile = rgb("#ffffff")
+#let weather-line = line-c
 #let weather-chart-fill = weather-sun.transparentize(86%)
 #let weather-bar-fill = weather-sky.transparentize(25%)
 #let weather-alert-bg = rgb("#fff7ed")
 #let weather-alert-line = rgb("#fdba74")
-
-#let placed-text(value, size: body-size, color: ink, weight: "regular") = {
-  text(size: size, fill: color, weight: weight)[#value]
-}
 
 #let glyph-dot(x, y, radius, color) = {
   place(top + left, dx: x, dy: y,
@@ -71,73 +67,92 @@
       fill: color, stroke: none)))
 }
 
-#let weather-glyph(icon) = box(width: 64pt, height: 64pt)[
+#let weather-glyph(icon, size: 64pt) = box(width: size, height: size)[
   #if icon == "sun" {
-    glyph-sun()
+    glyph-sun(size: size)
   } else if icon == "cloud-sun" {
-    glyph-sun(x: -6pt, y: -5pt, size: 40pt)
-    glyph-cloud(x: 9pt, y: 10pt, size: 55pt)
+    glyph-sun(x: -6pt, y: -5pt, size: size * 0.63)
+    glyph-cloud(x: size * 0.14, y: size * 0.16, size: size * 0.86)
   } else if icon == "cloud-fog" {
-    glyph-cloud(y: -5pt, size: 64pt)
-    place(top + left, dx: 17pt, dy: 51pt,
-      line(length: 31pt, stroke: 3pt + weather-cloud))
-    place(top + left, dx: 22pt, dy: 59pt,
-      line(length: 21pt, stroke: 3pt + weather-cloud))
+    glyph-cloud(y: -5pt, size: size)
+    place(top + left, dx: size * 0.27, dy: size * 0.80,
+      line(length: size * 0.48, stroke: 3pt + weather-cloud))
+    place(top + left, dx: size * 0.34, dy: size * 0.92,
+      line(length: size * 0.33, stroke: 3pt + weather-cloud))
   } else if icon == "cloud-drizzle" {
-    glyph-cloud(y: -5pt, size: 64pt)
-    glyph-dot(20pt, 53pt, 2.5pt, weather-drop)
-    glyph-dot(32pt, 53pt, 2.5pt, weather-drop)
-    glyph-dot(44pt, 53pt, 2.5pt, weather-drop)
+    glyph-cloud(y: -5pt, size: size)
+    glyph-dot(size * 0.31, size * 0.83, 2.5pt, weather-drop)
+    glyph-dot(size * 0.50, size * 0.83, 2.5pt, weather-drop)
+    glyph-dot(size * 0.69, size * 0.83, 2.5pt, weather-drop)
   } else if icon == "cloud-rain" {
-    glyph-cloud(y: -5pt, size: 64pt)
-    glyph-drop(22pt, 48pt)
-    glyph-drop(34pt, 48pt)
-    glyph-drop(46pt, 48pt)
+    glyph-cloud(y: -5pt, size: size)
+    glyph-drop(size * 0.34, size * 0.75)
+    glyph-drop(size * 0.53, size * 0.75)
+    glyph-drop(size * 0.72, size * 0.75)
   } else if icon == "cloud-snow" {
-    glyph-cloud(y: -5pt, size: 64pt)
-    glyph-dot(19pt, 53pt, 3pt, weather-drop)
-    glyph-dot(32pt, 53pt, 3pt, weather-drop)
-    glyph-dot(45pt, 53pt, 3pt, weather-drop)
+    glyph-cloud(y: -5pt, size: size)
+    glyph-dot(size * 0.30, size * 0.83, 3pt, weather-drop)
+    glyph-dot(size * 0.50, size * 0.83, 3pt, weather-drop)
+    glyph-dot(size * 0.70, size * 0.83, 3pt, weather-drop)
   } else if icon == "cloud-hail" {
-    glyph-cloud(y: -5pt, size: 64pt)
-    glyph-dot(19pt, 53pt, 3pt, weather-hail)
-    glyph-dot(32pt, 53pt, 3pt, weather-hail)
-    glyph-dot(45pt, 53pt, 3pt, weather-hail)
+    glyph-cloud(y: -5pt, size: size)
+    glyph-dot(size * 0.30, size * 0.83, 3pt, weather-hail)
+    glyph-dot(size * 0.50, size * 0.83, 3pt, weather-hail)
+    glyph-dot(size * 0.70, size * 0.83, 3pt, weather-hail)
   } else if icon == "cloud-lightning" {
-    glyph-cloud(y: -6pt, size: 64pt)
-    polygon(fill: weather-bolt, stroke: none,
-      (35pt, 37pt), (28pt, 51pt), (36pt, 51pt), (29pt, 64pt),
-      (43pt, 47pt), (36pt, 47pt))
+    glyph-cloud(y: -6pt, size: size)
+    polygon(fill: weather-warning, stroke: none,
+      (size * 0.55, size * 0.58), (size * 0.44, size * 0.80),
+      (size * 0.56, size * 0.80), (size * 0.45, size),
+      (size * 0.67, size * 0.73), (size * 0.56, size * 0.73))
   } else {
-    glyph-cloud(size: 64pt)
+    glyph-cloud(size: size)
   }
 ]
 
-#let stat-tile(label, value) = block(
-  width: 100%,
-  fill: weather-tile,
-  stroke: 0.7pt + weather-line,
-  inset: (left: cell-pad-x, right: cell-pad-x,
-          top: cell-pad-y, bottom: cell-pad-y),
-)[
+#let stat-cell(label, value) = block(width: 100%)[
   #text(size: caption-size, fill: muted)[#label]
   #v(4pt)
   #text(size: body-size, fill: ink)[#value]
 ]
 
-#let hero-details(current) = {
-  text(size: 44pt, weight: "bold")[#current.temperature_text]
-  if current.condition_text != "" {
-    v(5pt)
-    text(size: body-size, weight: "bold")[#current.condition_text]
-  }
-  if current.has_range {
-    v(3pt)
-    text(size: caption-size, fill: muted)[
-      #(current.high_text + " / " + current.low_text)
+#let weather-stats(current) = {
+  let has-humidity = current.humidity_text != ""
+  let has-wind = current.wind_text != ""
+  if has-humidity and has-wind {
+    card-surface[
+      #grid(
+        columns: (1fr, 1fr), column-gutter: 12pt,
+        stat-cell("湿度", current.humidity_text),
+        stat-cell("风", current.wind_text),
+      )
     ]
+  } else if has-humidity {
+    card-surface[stat-cell("湿度", current.humidity_text)]
+  } else if has-wind {
+    card-surface[stat-cell("风", current.wind_text)]
   }
 }
+
+#let weather-hero(current) = card-surface[
+  #grid(
+    columns: (64pt, 1fr), column-gutter: 16pt, align: left + top,
+    weather-glyph(current.icon),
+    block(width: 100%)[
+      #text(size: 52pt, weight: "bold")[#current.temperature_text]
+      #if current.condition_text != "" {
+        v(4pt)
+        text(size: body-size, weight: "semibold")[#current.condition_text]
+      }
+      #if current.has_range {
+        v(3pt)
+        text(size: subhead-size, fill: muted)[
+          #("最高 " + current.high_text + " · 最低 " + current.low_text)
+        ]
+      }
+    ],
+  )
+]
 
 #let centered-label(value, x, y, color: muted) = {
   place(top + left,
@@ -148,10 +163,8 @@
         text(size: caption-size, fill: color)[#value])))
 }
 
-#let hourly-chart(location) = {
-  v(section-gap)
-  card-section("逐小时预报")
-  block(width: chart-content-width, height: chart-height)[
+#let hourly-panel(location) = card-surface[
+  #box(width: chart-content-width, height: chart-height)[
     #if location.plot.area.len() > 2 {
       place(top + left,
         polygon(fill: weather-chart-fill, stroke: none,
@@ -163,8 +176,7 @@
           end: (segment.x1 * 1pt, segment.y1 * 1pt),
           stroke: 2pt + weather-sun))
     }
-    // Bars retain every precipitation probability; only their text summary
-    // is sparse enough to read at phone width.
+    // Every hourly point remains represented by its bar and curve position.
     #for point in location.hourly {
       if point.bar_height > 0 {
         place(top + left,
@@ -188,123 +200,121 @@
       }
     }
   ]
-  grid(
-    columns: (10pt, 1fr),
-    column-gutter: 8pt,
-    align: left + horizon,
-    rect(width: 10pt, height: 10pt, fill: weather-bar-fill, stroke: none),
+  #grid(
+    columns: (10pt, 1fr), column-gutter: 8pt, align: left + horizon,
+    rect(width: 10pt, height: 10pt, radius: 2pt,
+      fill: weather-bar-fill, stroke: none),
     text(size: caption-size, fill: weather-drop-text)[降水概率（蓝柱）],
   )
-  v(5pt)
-  text(size: caption-size, fill: muted)[#location.precipitation_summary]
-}
+  #if location.precipitation_summary != "" {
+    v(5pt)
+    text(size: caption-size, fill: muted)[#location.precipitation_summary]
+  }
+]
 
-#let daily-label(day) = {
-  text(size: body-size, weight: "bold")[#day.label]
-  if day.condition_text != "" {
+#let daily-label(day) = block(width: 100%)[
+  #text(size: body-size, weight: "semibold")[#day.label]
+  #if day.condition_text != "" {
     v(2pt)
     text(size: caption-size, fill: muted)[#day.condition_text]
   }
-}
+]
 
-#let daily-bar(day) = box(width: 100%, height: 14pt)[
-  #place(top + left, dx: 0pt, dy: 4pt,
+#let daily-temperature(label, value, color) = block(width: 100%)[
+  #text(size: caption-size, fill: muted)[#label]
+  #v(2pt)
+  #text(size: body-size, fill: color, weight: "semibold")[#value]
+]
+
+#let daily-bar(day) = box(width: 100%, height: 18pt)[
+  #place(top + left, dx: 0pt, dy: 6pt,
     rect(width: 100%, height: 6pt, radius: 3pt,
       fill: weather-line, stroke: none))
   #if day.fill_width > 0 {
-    place(top + left, dx: day.fill_left * daily-track-width, dy: 4pt,
+    place(top + left, dx: day.fill_left * daily-track-width, dy: 6pt,
       rect(width: day.fill_width * daily-track-width, height: 6pt,
         radius: 3pt,
         fill: gradient.linear(weather-sky, weather-sun, angle: 0deg),
         stroke: none))
   } else {
-    place(top + left, dx: day.fill_left * daily-track-width - 3pt, dy: 3pt,
+    place(top + left, dx: day.fill_left * daily-track-width - 3pt, dy: 4pt,
       circle(radius: 3pt, fill: weather-sun, stroke: none))
   }
 ]
 
-#let daily-temperature(value, color: ink) = {
-  text(size: body-size, fill: color)[#value]
-}
-
-#let daily-bars(days) = {
-  for (index, day) in days.enumerate() {
+#let daily-forecast(days) = card-surface[
+  #for (index, day) in days.enumerate() {
     grid(
-      columns: (62pt, 1fr, auto, auto),
-      column-gutter: 8pt,
-      align: left + horizon,
+      columns: (72pt, 38pt, 1fr, 38pt), column-gutter: 8pt,
+      align: left + top,
       daily-label(day),
+      daily-temperature("低", day.low_text, muted),
       daily-bar(day),
-      daily-temperature(day.low_text, color: muted),
-      daily-temperature(day.high_text, color: ink),
+      daily-temperature("高", day.high_text, ink),
     )
     if index + 1 < days.len() {
-      v(8pt)
+      v(10pt)
+      line(length: 100%, stroke: 0.6pt + line-c)
+      v(10pt)
     }
   }
+]
+
+#let alert-row(alert) = {
+  grid(
+    columns: (8pt, 1fr), column-gutter: 10pt, align: left + top,
+    align(center + horizon, circle(radius: 3.5pt, fill: weather-warning,
+      stroke: none)),
+    text(size: body-size, fill: ink)[#alert],
+  )
 }
 
-#let weather-alert(alert) = block(
-  fill: weather-alert-bg,
-  stroke: 0.7pt + weather-alert-line,
-  inset: (left: cell-pad-x, right: cell-pad-x,
-          top: cell-pad-y, bottom: cell-pad-y),
-)[
-  #text(size: body-size, fill: weather-bolt)[#alert]
+#let alert-panel(alerts) = card-surface(fill: weather-alert-bg)[
+  #for (index, alert) in alerts.enumerate() {
+    alert-row(alert)
+    if index + 1 < alerts.len() {
+      v(10pt)
+      line(length: 100%, stroke: 0.6pt + weather-alert-line)
+      v(10pt)
+    }
+  }
 ]
 
 #let weather-location(location) = {
   card-section(location.name)
-  grid(
-    columns: (64pt, 1fr),
-    column-gutter: 16pt,
-    align: left + top,
-    weather-glyph(location.current.icon),
-    block(width: 100%)[#hero-details(location.current)],
-  )
+  weather-hero(location.current)
 
   if location.current.humidity_text != "" or location.current.wind_text != "" {
-    v(16pt)
-    if location.current.humidity_text != "" {
-      stat-tile("湿度", location.current.humidity_text)
-    }
-    if location.current.humidity_text != "" and location.current.wind_text != "" {
-      v(8pt)
-    }
-    if location.current.wind_text != "" {
-      stat-tile("风", location.current.wind_text)
-    }
+    v(12pt)
+    weather-stats(location.current)
   }
 
   if location.hourly.len() > 0 {
-    hourly-chart(location)
+    v(section-gap)
+    card-section("逐小时预报")
+    hourly-panel(location)
   }
   if location.daily.len() > 0 {
     v(section-gap)
     card-section("每日预报")
-    daily-bars(location.daily)
+    daily-forecast(location.daily)
   }
   if location.alerts.len() > 0 {
     v(section-gap)
     card-section("天气预警")
-    for (index, alert) in location.alerts.enumerate() {
-      weather-alert(alert)
-      if index + 1 < location.alerts.len() {
-        v(8pt)
-      }
-    }
+    alert-panel(location.alerts)
   }
 }
 
 #card-page[
-  #card-header(data.title)
+  #card-header(data.title, subtitle: data.meta)
   #for (index, location) in data.locations.enumerate() {
     if index > 0 {
-      v(12pt)
-      line(length: 100%, stroke: 0.8pt + weather-line)
-      v(12pt)
+      v(section-gap)
+      line(length: 100%, stroke: 0.8pt + line-c)
+      v(section-gap)
     }
     weather-location(location)
   }
-  #card-footer(data.footer, meta: data.meta)
+  #card-footer(data.footer)
 ]
