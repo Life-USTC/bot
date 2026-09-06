@@ -13,7 +13,6 @@ use crate::escape::typst_str;
 
 // Keep these values in step with the shared common.typ card style. They are
 // renderer constants for chart coordinates, not payload geometry.
-const CARD_WIDTH: f64 = 390.0;
 const CONTENT_WIDTH: f64 = 350.0;
 const CHART_PLOT_LEFT: f64 = 22.0;
 const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH - CHART_PLOT_LEFT;
@@ -324,7 +323,6 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     req.validate()?;
     // Guard the fixed shared width and requested raster scale before Typst
     // compilation. The page height is intentionally discovered from flow.
-    super::check_render_dimensions(CARD_WIDTH, 1.0, scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
 }

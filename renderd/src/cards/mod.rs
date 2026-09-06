@@ -45,33 +45,6 @@ pub(crate) fn check_text_budget(total: &mut usize, field: &str, value: &str) -> 
     Ok(())
 }
 
-pub(crate) fn check_finite(field: &str, value: f64) -> anyhow::Result<()> {
-    if !value.is_finite() {
-        return Err(anyhow!("{field} must be finite"));
-    }
-    Ok(())
-}
-
-pub(crate) fn check_positive_dimension(field: &str, value: f64, max: f64) -> anyhow::Result<()> {
-    if !value.is_finite() || value <= 0.0 || value > max {
-        return Err(anyhow!(
-            "{field} must be finite and in the range (0, {max}]"
-        ));
-    }
-    Ok(())
-}
-
-/// Reject a page whose dimensions would exceed the rasterizer limits before
-/// Typst compilation starts. Auto-height templates otherwise make it possible
-/// for a bounded request body to force a very large intermediate document.
-pub(crate) fn check_render_dimensions(
-    logical_width: f64,
-    logical_height: f64,
-    scale: f32,
-) -> anyhow::Result<()> {
-    checked_pixel_dimensions(logical_width, logical_height, scale).map(|_| ())
-}
-
 pub fn render_png(env: &RenderEnvelope) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let scale = crate::request::resolve_scale(env.scale);
     match env.kind.as_str() {
@@ -216,8 +189,8 @@ mod tests {
     #[test]
     fn checks_normal_page_dimensions() {
         assert_eq!(
-            checked_pixel_dimensions(920.0, 1436.0, 3.0).unwrap(),
-            (2760, 4308, 11_890_080)
+            checked_pixel_dimensions(390.0, 844.0, 3.0).unwrap(),
+            (1170, 2532, 2_962_440)
         );
     }
 
