@@ -321,8 +321,6 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     let req: WeatherPayload =
         serde_json::from_value(payload.clone()).context("invalid weather payload")?;
     req.validate()?;
-    // Guard the fixed shared width and requested raster scale before Typst
-    // compilation. The page height is intentionally discovered from flow.
     let source = build_source(&req);
     super::compile_png(source, scale)
 }

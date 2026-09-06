@@ -22,7 +22,10 @@
 
 #let card-page(body) = {
   set page(width: card-width, height: auto, margin: margin-x, fill: bg)
-  set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false)
+  // Include the full glyph bounds so CJK text does not intrude into the
+  // explicit gaps between titles, body text, and captions.
+  set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false,
+    top-edge: "bounds", bottom-edge: "bounds")
   set par(leading: 0.5em, spacing: 0pt)
   set block(spacing: 0pt)
   body
