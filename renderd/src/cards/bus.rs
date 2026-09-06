@@ -44,21 +44,11 @@ pub struct BusRow {
     pub departed: bool,
 }
 
-const CARD_WIDTH: f64 = 390.0;
-const CONTENT_WIDTH: f64 = 350.0;
 const MAX_TABLES: usize = 32;
 const MAX_COLUMNS: usize = 32;
 const MAX_ROWS: usize = 512;
 const MAX_RENDERED_ROWS: usize = 2048;
 const MAX_TABLE_COLUMNS: usize = 4;
-const CELL_PADDING: f64 = 10.0;
-const BODY_SIZE: f64 = 17.0;
-const BODY_LINE_HEIGHT: f64 = 28.0;
-const TITLE_LINE_HEIGHT: f64 = 32.0;
-const SECTION_LINE_HEIGHT: f64 = 26.0;
-const SECTION_GAP: f64 = 24.0;
-const HEADER_GAP: f64 = 8.0;
-const FOOTER_HEIGHT: f64 = 80.0;
 
 fn validate(req: &BusPayload) -> anyhow::Result<()> {
     let mut text_budget = 0usize;
@@ -95,6 +85,7 @@ fn validate(req: &BusPayload) -> anyhow::Result<()> {
     }
 
     let mut row_count = 0usize;
+    let mut rendered_row_count = 0usize;
     for (table_index, table) in req.tables.iter().enumerate() {
         if table.header.is_empty() || table.header.len() > MAX_COLUMNS {
             return Err(anyhow!(
@@ -132,6 +123,19 @@ fn validate(req: &BusPayload) -> anyhow::Result<()> {
             return Err(anyhow!("bus payload has too many rows"));
         }
         row_count += table.rows.len();
+        let expanded_rows = table
+            .rows
+            .len()
+            .checked_mul(if table.header.len() > MAX_TABLE_COLUMNS {
+                table.header.len()
+            } else {
+                1
+            })
+            .ok_or_else(|| anyhow!("bus rendered row count overflowed"))?;
+        if expanded_rows > MAX_RENDERED_ROWS.saturating_sub(rendered_row_count) {
+            return Err(anyhow!("bus payload expands to too many rendered rows"));
+        }
+        rendered_row_count += expanded_rows;
         for (row_index, row) in table.rows.iter().enumerate() {
             if row.cells.len() > MAX_COLUMNS {
                 return Err(anyhow!(
@@ -157,9 +161,6 @@ fn validate(req: &BusPayload) -> anyhow::Result<()> {
             }
         }
     }
-    if row_count > MAX_RENDERED_ROWS {
-        return Err(anyhow!("bus payload expands to too many rendered rows"));
-    }
     Ok(())
 }
 
@@ -167,86 +168,8 @@ fn validate(req: &BusPayload) -> anyhow::Result<()> {
 pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let req: BusPayload = serde_json::from_value(payload.clone()).context("invalid bus payload")?;
     validate(&req)?;
-    // This is a conservative bound used before compilation. The compiler and
-    // rasterizer still validate the actual auto-height frame in compile_png.
-    super::check_render_dimensions(CARD_WIDTH, logical_height(&req), scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
-}
-
-fn estimated_lines(value: &str, width: f64) -> usize {
-    let width = width.max(1.0);
-    let mut lines = 1usize;
-    let mut used = 0.0;
-    for ch in value.chars() {
-        let glyph = if ch.is_ascii() {
-            BODY_SIZE * 0.62
-        } else {
-            BODY_SIZE
-        };
-        if used > 0.0 && used + glyph > width {
-            lines += 1;
-            used = glyph;
-        } else {
-            used += glyph;
-        }
-    }
-    lines
-}
-
-fn standard_row_height(table: &BusTable, row: Option<&BusRow>) -> f64 {
-    let columns = table.header.len().max(1) as f64;
-    let cell_width = (CONTENT_WIDTH / columns - CELL_PADDING * 2.0).max(1.0);
-    let line_count = row.map_or(1, |row| {
-        (0..table.header.len())
-            .map(|index| {
-                row.cells
-                    .get(index)
-                    .map_or(1, |cell| estimated_lines(cell, cell_width))
-            })
-            .max()
-            .unwrap_or(1)
-    });
-    line_count as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0
-}
-
-fn logical_height(req: &BusPayload) -> f64 {
-    let title_lines = estimated_lines(&req.title, CONTENT_WIDTH);
-    let mut height = title_lines as f64 * TITLE_LINE_HEIGHT + SECTION_GAP;
-    if req.next_time.is_some() {
-        let wait_width = CONTENT_WIDTH - CELL_PADDING * 2.0;
-        let next_lines = estimated_lines(req.next_time.as_deref().unwrap_or(""), wait_width)
-            + estimated_lines(req.next_wait.as_deref().unwrap_or(""), wait_width);
-        height += next_lines as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0 + SECTION_GAP;
-    }
-    for (index, table) in req.tables.iter().enumerate() {
-        if index > 0 {
-            height += SECTION_GAP;
-        }
-        if !table.label.trim().is_empty() {
-            height += SECTION_LINE_HEIGHT + HEADER_GAP;
-        }
-        height += standard_row_height(table, None);
-        if table.header.len() > MAX_TABLE_COLUMNS {
-            // The template reflows wide tables as two-column records. A
-            // record has one row per field and uses a wider value column.
-            let value_width = CONTENT_WIDTH * 2.0 / 3.0 - CELL_PADDING * 2.0;
-            for row in &table.rows {
-                for index in 0..table.header.len() {
-                    let lines = row
-                        .cells
-                        .get(index)
-                        .map_or(1, |cell| estimated_lines(cell, value_width));
-                    height += lines as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0;
-                }
-            }
-        } else {
-            for row in &table.rows {
-                height += standard_row_height(table, Some(row));
-            }
-        }
-    }
-    height + FOOTER_HEIGHT
 }
 
 /// Serialize the request into a Typst dictionary literal.
@@ -378,14 +301,6 @@ mod tests {
         assert!(source.contains("highlight: true, departed: true"));
         assert!(!source.contains("content_width:"));
         assert!(!source.contains("column_widths:"));
-    }
-
-    #[test]
-    fn estimates_wrapping_height_for_long_cells() {
-        let mut short = valid_payload();
-        let short_height = logical_height(&short);
-        short.tables[0].rows[0].cells[1] = "西区".repeat(40);
-        assert!(logical_height(&short) > short_height);
     }
 
     #[test]

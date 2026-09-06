@@ -48,23 +48,12 @@ pub struct RichRow {
     pub highlight: bool,
 }
 
-const CARD_WIDTH: f64 = 390.0;
-const CONTENT_WIDTH: f64 = 350.0;
 const MAX_BLOCKS: usize = 64;
 const MAX_COLUMNS: usize = 32;
 const MAX_ROWS: usize = 512;
 const MAX_LINES: usize = 512;
 const MAX_RENDERED_ROWS: usize = 2048;
 const MAX_TABLE_COLUMNS: usize = 4;
-const CELL_PADDING: f64 = 10.0;
-const BODY_SIZE: f64 = 17.0;
-const BODY_LINE_HEIGHT: f64 = 28.0;
-const TITLE_LINE_HEIGHT: f64 = 32.0;
-const SECTION_LINE_HEIGHT: f64 = 26.0;
-const SECTION_GAP: f64 = 24.0;
-const HEADER_GAP: f64 = 8.0;
-const PARAGRAPH_GAP: f64 = 8.0;
-const FOOTER_HEIGHT: f64 = 80.0;
 
 fn validate(req: &RichPayload) -> anyhow::Result<()> {
     let mut text_budget = 0usize;
@@ -85,6 +74,7 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
     }
 
     let mut row_count = 0usize;
+    let mut rendered_row_count = 0usize;
     for (block_index, block) in req.blocks.iter().enumerate() {
         super::check_text(
             &format!("blocks[{block_index}].heading"),
@@ -102,7 +92,13 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
             ));
         }
         if let Some(table) = &block.table {
-            validate_table(table, block_index, &mut text_budget, &mut row_count)?;
+            validate_table(
+                table,
+                block_index,
+                &mut text_budget,
+                &mut row_count,
+                &mut rendered_row_count,
+            )?;
         } else {
             if block.lines.len() > MAX_LINES {
                 return Err(anyhow!("rich block {block_index} has too many lines"));
@@ -127,7 +123,7 @@ fn validate(req: &RichPayload) -> anyhow::Result<()> {
             }
         }
     }
-    if row_count > MAX_RENDERED_ROWS {
+    if rendered_row_count > MAX_RENDERED_ROWS {
         return Err(anyhow!("rich payload expands to too many rendered rows"));
     }
     Ok(())
@@ -138,6 +134,7 @@ fn validate_table(
     block_index: usize,
     text_budget: &mut usize,
     row_count: &mut usize,
+    rendered_row_count: &mut usize,
 ) -> anyhow::Result<()> {
     if table.header.is_empty() || table.header.len() > MAX_COLUMNS {
         return Err(anyhow!(
@@ -165,6 +162,19 @@ fn validate_table(
         return Err(anyhow!("rich payload has too many rows"));
     }
     *row_count += table.rows.len();
+    let expanded_rows = table
+        .rows
+        .len()
+        .checked_mul(if table.header.len() > MAX_TABLE_COLUMNS {
+            table.header.len()
+        } else {
+            1
+        })
+        .ok_or_else(|| anyhow!("rich rendered row count overflowed"))?;
+    if expanded_rows > MAX_RENDERED_ROWS.saturating_sub(*rendered_row_count) {
+        return Err(anyhow!("rich payload expands to too many rendered rows"));
+    }
+    *rendered_row_count += expanded_rows;
     for (row_index, row) in table.rows.iter().enumerate() {
         if row.cells.len() > MAX_COLUMNS {
             return Err(anyhow!(
@@ -197,92 +207,8 @@ pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8
     let req: RichPayload =
         serde_json::from_value(payload.clone()).context("invalid rich payload")?;
     validate(&req)?;
-    // This is a conservative bound before compilation. compile_png checks the
-    // actual auto-height frame after Typst has wrapped every value.
-    super::check_render_dimensions(CARD_WIDTH, logical_height(&req), scale)?;
     let source = build_source(&req);
     super::compile_png(source, scale)
-}
-
-fn estimated_lines(value: &str, width: f64) -> usize {
-    let width = width.max(1.0);
-    let mut lines = 1usize;
-    let mut used = 0.0;
-    for ch in value.chars() {
-        let glyph = if ch.is_ascii() {
-            BODY_SIZE * 0.62
-        } else {
-            BODY_SIZE
-        };
-        if used > 0.0 && used + glyph > width {
-            lines += 1;
-            used = glyph;
-        } else {
-            used += glyph;
-        }
-    }
-    lines
-}
-
-fn standard_row_height(table: &RichTable, row: Option<&RichRow>) -> f64 {
-    let columns = table.header.len().max(1) as f64;
-    let cell_width = (CONTENT_WIDTH / columns - CELL_PADDING * 2.0).max(1.0);
-    let line_count = row.map_or(1, |row| {
-        (0..table.header.len())
-            .map(|index| {
-                row.cells
-                    .get(index)
-                    .map_or(1, |cell| estimated_lines(cell, cell_width))
-            })
-            .max()
-            .unwrap_or(1)
-    });
-    line_count as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0
-}
-
-fn table_height(table: &RichTable) -> f64 {
-    let mut height = standard_row_height(table, None);
-    if table.header.len() > MAX_TABLE_COLUMNS {
-        let value_width = CONTENT_WIDTH * 2.0 / 3.0 - CELL_PADDING * 2.0;
-        for row in &table.rows {
-            for index in 0..table.header.len() {
-                let lines = row
-                    .cells
-                    .get(index)
-                    .map_or(1, |cell| estimated_lines(cell, value_width));
-                height += lines as f64 * BODY_LINE_HEIGHT + CELL_PADDING * 2.0;
-            }
-        }
-    } else {
-        for row in &table.rows {
-            height += standard_row_height(table, Some(row));
-        }
-    }
-    height
-}
-
-fn logical_height(req: &RichPayload) -> f64 {
-    let mut height = estimated_lines(&req.title, CONTENT_WIDTH) as f64 * TITLE_LINE_HEIGHT;
-    height += SECTION_GAP;
-    for (index, block) in req.blocks.iter().enumerate() {
-        if index > 0 {
-            height += SECTION_GAP;
-        }
-        if !block.heading.trim().is_empty() {
-            height += SECTION_LINE_HEIGHT + HEADER_GAP;
-        }
-        if let Some(table) = &block.table {
-            height += table_height(table);
-        } else {
-            for (line_index, line) in block.lines.iter().enumerate() {
-                if line_index > 0 {
-                    height += PARAGRAPH_GAP;
-                }
-                height += estimated_lines(line, CONTENT_WIDTH) as f64 * BODY_LINE_HEIGHT;
-            }
-        }
-    }
-    height + FOOTER_HEIGHT
 }
 
 /// Serialize the request into a Typst dictionary literal.
@@ -416,17 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn estimates_wrapping_height_for_long_paragraphs() {
-        let mut short = valid_payload();
-        short.blocks[0].table = None;
-        short.blocks[0].lines = vec!["短文本".into()];
-        let short_height = logical_height(&short);
-        short.blocks[0].lines = vec!["长文本".repeat(80)];
-        assert!(logical_height(&short) > short_height);
-    }
-
-    #[test]
-    fn rejects_page_that_exceeds_output_dimension_bound() {
+    fn rejects_page_that_exceeds_actual_output_bound() {
         let payload = serde_json::json!({
             "title": "stress",
             "blocks": [{"lines": vec!["line"; 512]}]
