@@ -128,9 +128,9 @@
       )
     ]
   } else if has-humidity {
-    card-surface[stat-cell("湿度", current.humidity_text)]
+    card-surface[#stat-cell("湿度", current.humidity_text)]
   } else if has-wind {
-    card-surface[stat-cell("风", current.wind_text)]
+    card-surface[#stat-cell("风", current.wind_text)]
   }
 }
 
@@ -220,12 +220,6 @@
   }
 ]
 
-#let daily-temperature(label, value, color) = block(width: 100%)[
-  #text(size: caption-size, fill: muted)[#label]
-  #v(2pt)
-  #text(size: body-size, fill: color, weight: "semibold")[#value]
-]
-
 #let daily-bar(day) = box(width: 100%, height: 18pt)[
   #place(top + left, dx: 0pt, dy: 6pt,
     rect(width: 100%, height: 6pt, radius: 3pt,
@@ -243,14 +237,23 @@
 ]
 
 #let daily-forecast(days) = card-surface[
+  #grid(
+    columns: (72pt, 38pt, 1fr, 38pt), column-gutter: 8pt,
+    align: left + horizon,
+    [],
+    text(size: caption-size, fill: muted)[最低],
+    [],
+    text(size: caption-size, fill: muted)[最高],
+  )
+  #v(8pt)
   #for (index, day) in days.enumerate() {
     grid(
       columns: (72pt, 38pt, 1fr, 38pt), column-gutter: 8pt,
-      align: left + top,
+      align: left + horizon,
       daily-label(day),
-      daily-temperature("低", day.low_text, muted),
+      text(size: body-size, fill: muted, weight: "semibold")[#day.low_text],
       daily-bar(day),
-      daily-temperature("高", day.high_text, ink),
+      text(size: body-size, fill: ink, weight: "semibold")[#day.high_text],
     )
     if index + 1 < days.len() {
       v(10pt)
@@ -289,6 +292,12 @@
     weather-stats(location.current)
   }
 
+  if location.alerts.len() > 0 {
+    v(section-gap)
+    card-section("天气预警")
+    alert-panel(location.alerts)
+  }
+
   if location.hourly.len() > 0 {
     v(section-gap)
     card-section("逐小时预报")
@@ -298,11 +307,6 @@
     v(section-gap)
     card-section("每日预报")
     daily-forecast(location.daily)
-  }
-  if location.alerts.len() > 0 {
-    v(section-gap)
-    card-section("天气预警")
-    alert-panel(location.alerts)
   }
 }
 

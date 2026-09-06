@@ -873,6 +873,43 @@ mod tests {
     }
 
     #[test]
+    fn renders_single_humidity_or_wind_values_in_compact_surfaces() {
+        let mut humidity_first = valid_payload();
+        humidity_first["locations"][0]["current"]["windText"] = json!("");
+        humidity_first["locations"][0]["current"]["humidityText"] = json!("41%");
+        humidity_first["locations"][0]["hourly"] = json!([]);
+        humidity_first["locations"][0]["daily"] = json!([]);
+        humidity_first["locations"][0]["alerts"] = json!([]);
+        let humidity_second = {
+            let mut value = humidity_first.clone();
+            value["locations"][0]["current"]["humidityText"] =
+                json!("89%，未来数小时仍将维持较高湿度");
+            value
+        };
+        let (humidity_png_first, humidity_width, humidity_height) =
+            render(&humidity_first, 1.0).unwrap();
+        let (humidity_png_second, _, _) = render(&humidity_second, 1.0).unwrap();
+        assert_eq!((humidity_width, humidity_height), (390, 844));
+        assert_ne!(humidity_png_first, humidity_png_second);
+
+        let mut wind_first = valid_payload();
+        wind_first["locations"][0]["current"]["humidityText"] = json!("");
+        wind_first["locations"][0]["current"]["windText"] = json!("东风 1 级");
+        wind_first["locations"][0]["hourly"] = json!([]);
+        wind_first["locations"][0]["daily"] = json!([]);
+        wind_first["locations"][0]["alerts"] = json!([]);
+        let wind_second = {
+            let mut value = wind_first.clone();
+            value["locations"][0]["current"]["windText"] = json!("东南偏东风 5 级，阵风 7 级");
+            value
+        };
+        let (wind_png_first, wind_width, wind_height) = render(&wind_first, 1.0).unwrap();
+        let (wind_png_second, _, _) = render(&wind_second, 1.0).unwrap();
+        assert_eq!((wind_width, wind_height), (390, 844));
+        assert_ne!(wind_png_first, wind_png_second);
+    }
+
+    #[test]
     fn rejects_non_finite_and_out_of_bound_values() {
         let mut req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.locations[0].current.temperature = f64::INFINITY;
