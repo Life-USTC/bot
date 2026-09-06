@@ -12,8 +12,6 @@
 #let title-size = 34pt
 #let section-size = 22pt
 #let section-gap = 28pt
-#let cell-pad-x = 12pt
-#let cell-pad-y = 14pt
 #let surface-pad = 16pt
 #let surface-radius = 18pt
 
@@ -25,7 +23,6 @@
 #let accent = rgb("#0066cc")
 #let highlight-bg = rgb("#edf5ff")
 #let card-fonts = ("Noto Sans CJK SC", "Source Han Sans CN", "Fira Code")
-#let mono-fonts = ("Fira Code", "Noto Sans CJK SC", "Source Han Sans CN")
 
 #let card-page(body) = {
   set text(font: card-fonts, size: body-size, fill: ink, lang: "zh", hyphenate: false,
