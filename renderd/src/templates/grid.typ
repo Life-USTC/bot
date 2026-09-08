@@ -3,26 +3,25 @@
 #let data = __DATA__
 
 #let period-width = 120pt
-#let course-body(item, width) = {
+#let course-body(item) = {
   let large = item.end > item.start
-  let size = if large and measure(flow-text(size: 18pt, item.course)).width <= width - 16pt { 18pt } else { 14pt }
-  flow-text(size: size, weight: "bold", item.course)
-  if item.location != "" { v(8pt); flow-text(size: 13pt, fill: muted, item.location) }
-  if item.weeks != "" { v(8pt); flow-text(size: 13pt, fill: accent, item.weeks) }
+  let size = if large { 18pt } else { 14pt }
+  text(size: size, weight: "bold", item.course)
+  if item.location != "" { v(8pt); text(size: 13pt, fill: muted, item.location) }
+  if item.weeks != "" { v(8pt); text(size: 13pt, fill: accent, item.weeks) }
 }
 
-#let interval-body(group, width) = {
+#let interval-body(group) = {
   for (index, item) in group.items.enumerate() {
     if index > 0 { v(12pt) }
     if group.items.len() > 1 { caption-text(item.period + " · " + item.time); v(4pt) }
-    course-body(item, width)
+    course-body(item)
   }
 }
 
-#context {
+#{
   let day-width = if data.days.len() == 1 { 360pt } else { 156pt }
   let width = period-width + day-width * data.days.len()
-  let heights = (54pt,) + (56pt,) * data.periods.len()
   let cells = (grid.cell(x: 0, y: 0, body-text("节次", weight: "bold")),)
   for (i, day) in data.days.enumerate() {
     cells.push(grid.cell(x: i + 1, y: 0, {
@@ -55,19 +54,14 @@
       cells.push(grid.cell(x: day + 1, y: group.start, rowspan: group.end - group.start + 1,
         fill: if item.color == "" { rgb("#e2e8f0") } else { rgb(item.color) },
         stroke: 1pt + accent,
-        interval-body(group, day-width)))
-      let content-height = measure(block(width: day-width - 16pt, interval-body(group, day-width))).height + 16pt
-      let per-row = content-height / (group.end - group.start + 1)
-      for period in range(group.start, group.end + 1) {
-        heights.at(period) = calc.max(heights.at(period), per-row)
-      }
+        interval-body(group)))
     }
   }
   let summary = (if data.days.len() == 1 { data.days.first().label } else if data.days.all(d => d.date == "") { "整学期" } else { "周日–周六" }) + " · 第 1–" + str(data.periods.len()) + " 节"
-  card-sheet(width, min-width: width, max-width: width, margin: 36pt, {
+  card-sheet(width: width, margin: 36pt, {
     card-header(data.title, subtitle: summary)
     v(28pt)
-    grid(columns: (period-width,) + (day-width,) * data.days.len(), rows: heights,
+    grid(columns: (period-width,) + (day-width,) * data.days.len(), rows: auto,
       align: center + horizon, inset: 8pt,
       fill: (x, y) => if y == 0 {
         if x > 0 and data.days.at(x - 1).today { rgb("#ccfbf1") } else { rgb("#f4f4f5") }

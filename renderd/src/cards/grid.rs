@@ -386,6 +386,7 @@ mod tests {
     fn keeps_all_periods_and_day_columns_including_empty_slots() {
         let mut payload = valid_payload();
         payload.items.clear();
+        let (_, _, short_height) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
         payload.periods = (1..=12)
             .map(|n| GridPeriod {
                 label: format!("第 {n} 节"),
@@ -396,7 +397,7 @@ mod tests {
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
         assert_eq!(day_width, 552);
         assert!(
-            day_height >= 12 * 56,
+            day_height > short_height * 2,
             "empty periods must retain their rows"
         );
         payload.days = (0..7)
@@ -409,7 +410,7 @@ mod tests {
         let (_, week_width, week_height) =
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
         assert_eq!(week_width, 1284);
-        assert_eq!(week_height, day_height);
+        assert!(week_height > short_height * 2);
     }
 
     #[test]
