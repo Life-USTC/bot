@@ -21,7 +21,7 @@
 #let plain-table(t, bus: false) = {
   let cells = ()
   for (i, label) in t.header.enumerate() {
-    cells.push(table.cell(align: center + horizon,
+    cells.push(table.cell(align: if bus { center + horizon } else { left + horizon },
       body-text(label, weight: if t.header_emphasis.at(i, default: false) { "bold" } else { "regular" })))
   }
   for row in t.rows {
@@ -32,7 +32,7 @@
           row.cells.at(index, default: ""))))
     }
   }
-  table(columns: t.header.len(),
+  table(columns: if bus { t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
     inset: (x: pad, y: 10pt), align: left + horizon,
     stroke: (x, y) => (top: if y > 0 { hairline + border } else { none }),
     ..cells)

@@ -444,14 +444,19 @@ response is preserved.
 The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
 `#27272a` text, thin horizontal table rules, 18pt titles, 13pt body text, and 9pt
 right-aligned footer lines. Tokens and shared table/page components are separate.
-Bus and rich-text cards use a 480pt content width. Native tables size their
-columns and rows automatically; reverse bus routes are paired horizontally.
-Rich text uses ordinary paragraphs with native line breaking and spacing. The schedule
+Bus cards use a 380pt content width; rich-text cards use 480pt. Bus tables use
+automatic columns, while rich tables give their first column the remaining
+width with a native fractional track. Rows are automatic, and reverse bus
+routes are paired horizontally. Rich text uses ordinary paragraphs with native
+line breaking and 16pt paragraph spacing. The schedule
 uses a full period grid with 120pt period labels, 156pt day columns (360pt for a
 single day), original pastel course colors, and teal current-day emphasis.
+Course names use consistent 14pt proportional type; metadata is 11pt.
 Overlapping classes share their occupied interval, with enough height for all
-content. Weather retains the original 920pt canvas, current-condition summary,
-small metrics, hourly temperature/precipitation chart, and daily range bars.
+content. Weather uses a 600pt canvas with 32pt margins and vertically stacked
+humidity/wind tiles. It retains the current-condition summary, hourly
+temperature/precipitation chart, and daily range bars. Chart labels are sampled
+more sparsely to fit the narrower canvas; all curve and bar data is retained.
 
 Typst handles glyph shaping, line breaking, and automatic table/grid row sizing.
 Templates do not insert break characters, measure text to allocate tracks, or

@@ -4,11 +4,9 @@
 
 #let period-width = 120pt
 #let course-body(item) = {
-  let large = item.end > item.start
-  let size = if large { 18pt } else { 14pt }
-  text(size: size, weight: "bold", item.course)
-  if item.location != "" { v(8pt); text(size: 13pt, fill: muted, item.location) }
-  if item.weeks != "" { v(8pt); text(size: 13pt, fill: accent, item.weeks) }
+  text(font: ("Source Han Sans CN", "Noto Sans CJK SC"), size: 14pt, weight: "bold", item.course)
+  if item.location != "" { v(8pt); text(size: 11pt, fill: muted, item.location) }
+  if item.weeks != "" { v(8pt); text(size: 11pt, fill: accent, item.weeks) }
 }
 
 #let interval-body(group) = {
@@ -68,7 +66,7 @@
       } else if x > 0 and data.days.at(x - 1).today { rgb("#f0fdfa") }
       else if calc.even(y) { rgb("#f8fafc") } else { ground },
       stroke: 1pt + rgb("#cbd5e1"), ..cells,
-      ..(5, 10).filter(n => n < data.periods.len()).map(n => grid.hline(y: n + 1, stroke: 4pt + rgb("#64748b"))),
+      ..(5, 10).filter(n => n < data.periods.len()).map(n => grid.hline(y: n + 1, stroke: 2pt + rgb("#64748b"))),
       ..data.days.enumerate().filter(((i, day)) => day.today).map(((i, day)) => (
         grid.vline(x: i + 1, stroke: 2pt + accent),
         grid.vline(x: i + 2, stroke: 2pt + accent))).flatten())
