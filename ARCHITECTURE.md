@@ -493,9 +493,12 @@ go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out example
 ```
 
 The reference script archives the last pre-Typst commit into a temporary
-directory, injects the current seven fixture definitions and a fixed clock,
+directory, injects seven fixture definitions pinned at commit `9679327` and a fixed clock,
 and renders through the historical Go implementation. It leaves no legacy
 execution path in the bot. `examples/reference` holds the original 2x PNGs;
 `examples/index.html` compares them with the new 3x PNGs at equal display widths.
 The command fails on rendering, output-write, or dimension errors. CI builds
 both sets and uploads the gallery as `typst-render-examples`.
+
+Pinning the reference inputs keeps newer semantic payload fields from changing
+or breaking historical captures.
