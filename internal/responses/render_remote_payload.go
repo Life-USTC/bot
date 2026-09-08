@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// remoteGridPayload contains schedule semantics for the phone agenda template.
+// remoteGridPayload contains schedule semantics for the Typst timetable.
 // The card template owns all widths, spacing, font sizes, and text wrapping.
 type remoteGridPayload struct {
 	Title   string             `json:"title"`
@@ -43,7 +43,7 @@ type remoteGridItem struct {
 
 // buildGridRequest mirrors the semantic decisions in renderScheduleGridPNG.
 // The Go renderer keeps ownership of validity bounds, colors, and the
-// current-day decision; the sidecar lays the resulting agenda out in flow.
+// current-day decision; the sidecar lays the resulting timetable out.
 func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 	grid := img.Grid
 	now := r.now().In(time.FixedZone("CST", 8*60*60))

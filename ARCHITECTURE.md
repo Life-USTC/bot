@@ -441,38 +441,37 @@ the bot does not silently retry with a legacy renderer when the endpoint is
 unavailable, so an operational failure remains visible while the normal text
 response is preserved.
 
-All card families use the shared Typst style: a 390-point canvas with a minimum
-844-point height, 20-point side margins, 34-point large titles, 17-point body
-text, and 13-point captions. Grouped surfaces and restrained color establish
-the hierarchy of a static iPhone information screen. Tables and paragraphs
-wrap to their available width, and schedules use day sections so course names
-stay readable on a phone. Text metrics, line leading, paragraph and block
-spacing, and table cell insets use Typst defaults. The footer follows the
-content in normal flow. Typst measures the content to choose the page height,
-preserving at least one screen. Longer
-content extends the page instead of shrinking the text. The renderer checks
-the actual page dimensions before rasterization and rejects multi-page cards
-instead of silently dropping content.
+The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
+`#27272a` text, thin horizontal table rules, 18pt titles, 13pt body text, and 9pt
+right-aligned footer lines. Tokens and shared table/page components are separate.
+Bus tables keep intrinsic column widths and group reverse routes horizontally;
+rich text keeps its 480–640pt content width and ruled paragraphs. The schedule
+uses a full period grid with 120pt period labels, 156pt day columns (360pt for a
+single day), original pastel course colors, and teal current-day emphasis.
+Overlapping classes share their occupied interval, with enough height for all
+content. Weather retains the original 920pt canvas, current-condition summary,
+small metrics, hourly temperature/precipitation chart, and daily range bars.
 
-`renderd` rasterizes at 3x by default, producing 1170-pixel-wide images with a
-minimum height of 2532 pixels.
-`RENDERD_SCALE` can be set between 1x and 4x, and a request may provide a
-per-request scale. Its runtime image includes Fira Code and Noto CJK. The Typst
-world exposes only embedded card templates; it cannot read files or access the
-network during compilation.
+Typst handles glyph shaping and wrapping. Pages grow with their content instead
+of reserving a phone screen. Before rasterization, the renderer checks actual
+page dimensions and rejects oversized or multi-page output. `renderd` rasterizes
+at 3x by default; `RENDERD_SCALE` and the per-request scale support 1x–4x.
+Its runtime image includes Fira Code and Noto CJK. The Typst world exposes only
+embedded card templates; it cannot read files or access the network during
+compilation.
 
 For local development, start `renderd` and point the bot at
-`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`, or render all card
-examples with:
+`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`. In another terminal:
 
 ```sh
-RENDERD_ADDR=127.0.0.1:9123 renderd/target/release/renderd
-go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bot-examples
+./scripts/render-reference.sh
+go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out examples
 ```
 
-The seven fixtures use a fixed clock and sample data, including departure
-highlights and the current schedule day. The command writes original PNGs and
-a gallery with 390×844-pixel scrollable viewports, and exits nonzero on a render,
-output-write, image-width, or minimum-height failure. CI renders every fixture
-against the release-built sidecar and uploads the gallery and images as the
-`typst-phone-examples` artifact.
+The reference script archives the last pre-Typst commit into a temporary
+directory, injects the current seven fixture definitions and a fixed clock,
+and renders through the historical Go implementation. It leaves no legacy
+execution path in the bot. `examples/reference` holds the original 2x PNGs;
+`examples/index.html` compares them with the new 3x PNGs at equal display widths.
+The command fails on rendering, output-write, or dimension errors. CI builds
+both sets and uploads the gallery as `typst-render-examples`.

@@ -1,7 +1,7 @@
 //! Generic rich text card rendering: semantic JSON payload -> Typst -> PNG.
 //!
-//! The Go side preserves the parsed document. Typst owns the shared 390pt
-//! phone canvas, natural paragraph wrapping, table sizing, and auto-height.
+//! The Go side preserves the parsed document. Typst owns the content-sized
+//! paper canvas, natural paragraph wrapping, table sizing, and auto-height.
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
@@ -19,7 +19,7 @@ pub struct RichPayload {
 }
 
 /// One document block: either text lines or a table. Text is deliberately
-/// kept whole so Typst can wrap it at the shared phone width.
+/// kept whole so Typst can wrap it at the content width.
 #[derive(Debug, Deserialize)]
 pub struct RichBlock {
     #[serde(default)]
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_phone_width_and_wraps_long_content() {
+    fn renders_content_width_and_wraps_long_content() {
         let payload = serde_json::json!({
             "title": "一个很长的手机卡片标题，也应该完整换行显示",
             "footer": ["13:00 · 工作日", "Life @ USTC"],
@@ -403,7 +403,11 @@ mod tests {
         });
         let (png, width, height) = render(&payload, 3.0).expect("rich template should compile");
         assert!(!png.is_empty());
-        assert_eq!(width, 1170);
+        assert!(
+            (super::super::SHEET_MIN_WIDTH_PT * 3..=super::super::SHEET_MAX_WIDTH_PT * 3)
+                .contains(&width),
+            "width {width} outside the sheet's range"
+        );
         assert!(height > 0);
     }
 }

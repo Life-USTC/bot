@@ -19,6 +19,12 @@ pub(crate) const MAX_TEXT_BYTES: usize = 4096;
 pub(crate) const MAX_LABEL_BYTES: usize = 256;
 pub(crate) const MAX_PAYLOAD_TEXT_BYTES: usize = 512 * 1024;
 
+/// Bus and rich-text cards use intrinsic widths with a 32pt paper margin.
+#[cfg(test)]
+pub(crate) const SHEET_MIN_WIDTH_PT: u32 = 304;
+#[cfg(test)]
+pub(crate) const SHEET_MAX_WIDTH_PT: u32 = 704;
+
 pub(crate) fn check_text(field: &str, value: &str, max_bytes: usize) -> anyhow::Result<()> {
     if value.len() > max_bytes {
         return Err(anyhow!(
@@ -211,21 +217,41 @@ mod tests {
     }
 
     #[test]
-    fn phone_screen_has_minimum_height_and_grows_without_pagination() {
+    fn sheet_is_content_sized_and_grows_without_pagination() {
         let source = |rows: usize| {
             format!(
-                "#import \"common.typ\": *\n#show: card-page\n\
-                 #card-header(\"课程安排\")\n\
-                 #for _ in range({rows}) {{ block[课程名称与地点] }}\n\
-                 #card-footer((\"15:04 · 工作日\", \"Life @ USTC\"))"
+                "#import \"styling.typ\": *\n\
+                 #import \"ui-component.typ\": *\n\
+                 #card-sheet(360pt, {{\n\
+                 card-header(\"课程安排\")\n\
+                 for _ in range({rows}) {{ block[课程名称与地点] }}\n\
+                 card-footer((\"15:04 · 工作日\", \"Life @ USTC\"))\n\
+                 }})"
             )
         };
-        for scale in [1.0, 3.0] {
-            let (_, width, height) = super::compile_png(source(2), scale).unwrap();
-            assert_eq!((width, height), (390 * scale as u32, 844 * scale as u32));
-        }
+        // The sheet is sized to its content in both directions: a short card
+        // stays short, and the width is chosen from the design's range.
+        let (_, base_width, base_height) = super::compile_png(source(2), 1.0).unwrap();
+        assert!(
+            (super::SHEET_MIN_WIDTH_PT..=super::SHEET_MAX_WIDTH_PT).contains(&base_width),
+            "width {base_width} outside the sheet's range"
+        );
+        assert!(
+            base_height < 400,
+            "a two-line card should not reserve a screen: {base_height}pt"
+        );
+        let (_, width, height) = super::compile_png(source(2), 3.0).unwrap();
+        assert_eq!(width, base_width * 3);
+        assert!(
+            height.abs_diff(base_height * 3) <= 2,
+            "raster rounding differs by more than a pixel per scale"
+        );
+
         let (_, width, height) = super::compile_png(source(48), 3.0).unwrap();
-        assert_eq!(width, 1170);
-        assert!(height > 2532, "long content must extend beyond one screen");
+        assert_eq!(width, base_width * 3);
+        assert!(
+            height > base_height * 3,
+            "long content must extend the sheet"
+        );
     }
 }
