@@ -1081,6 +1081,7 @@ func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
 		"07-12 至 07-18 课表：",
+		"课表信息：学期：2026 春季学期 · 教学周：第 20 周",
 		"周日 07-12：",
 		"高新区 GT-B112\t09:50-11:25\t数据库系统",
 		"",
@@ -1109,6 +1110,12 @@ func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 	}
 	if len(img.Grid.Days) != 7 || img.Grid.Days[0].Label != "周日" || img.Grid.Days[6].Label != "周六" {
 		t.Fatalf("days = %#v", img.Grid.Days)
+	}
+	if img.Title != "周课表" {
+		t.Fatalf("weekly title = %q, want 周课表", img.Title)
+	}
+	if img.Grid.Semester != "2026 春季学期" || img.Grid.Week != "第 20 周" || img.Grid.DateRange != "07/12-07/18" {
+		t.Fatalf("metadata = semester=%q week=%q date_range=%q", img.Grid.Semester, img.Grid.Week, img.Grid.DateRange)
 	}
 	if len(img.Grid.Periods) != 13 {
 		t.Fatalf("periods = %#v", img.Grid.Periods)
@@ -2871,7 +2878,7 @@ func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/catalog/semesters/current":
-			_, _ = w.Write([]byte(`{"startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
+			_, _ = w.Write([]byte(`{"nameCn":"2026年春季学期","startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
 		case "/api/workspace/schedules":
 			if got := r.URL.Query().Get("dateFrom"); got != "2026-03-07T16:00:00Z" {
 				t.Fatalf("dateFrom = %q", got)
@@ -2887,9 +2894,39 @@ func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
+	handler.EnableImageResponses = true
 	reply := handler.curriculumAt(ctx, ident, []string{"week-number:3"}, time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation()))
 	if !strings.Contains(reply, "03-08 至 03-14 课表：") {
 		t.Fatalf("reply = %q", reply)
+	}
+	image := handler.imageResponseFor(Invocation{Name: "schedule", Args: []string{"week-number:3"}}, reply)
+	if image == nil || image.Grid == nil {
+		t.Fatalf("image = %#v", image)
+	}
+	if got := image.Grid.Semester; got != "2026 春季学期" {
+		t.Fatalf("semester = %q, want 2026 春季学期", got)
+	}
+	if got := image.Grid.Week; got != "第 3 周" {
+		t.Fatalf("week = %q, want 第 3 周", got)
+	}
+	if got := image.Grid.DateRange; got != "03/08-03/14" {
+		t.Fatalf("date range = %q, want 03/08-03/14", got)
+	}
+}
+
+func TestScheduleGridWeekMetadataOmitsSemesterOutsideServerRange(t *testing.T) {
+	semester := map[string]any{
+		"nameCn":    "2026年秋季学期",
+		"startDate": "2026-09-07T00:00:00+08:00",
+		"endDate":   "2027-01-17T23:59:59+08:00",
+	}
+	start := time.Date(2026, 8, 30, 0, 0, 0, 0, lifedata.ChinaLocation())
+	metadata := (Handler{}).scheduleGridWeekMetadata(context.Background(), start, start.AddDate(0, 0, 6), semester)
+	if metadata.semester != "" || metadata.week != "" {
+		t.Fatalf("outside-semester metadata = %#v, want no semester/week", metadata)
+	}
+	if metadata.dateRange != "08/30-09/05" {
+		t.Fatalf("outside-semester date range = %q", metadata.dateRange)
 	}
 }
 
@@ -2946,6 +2983,9 @@ func TestCurriculumRendersMatchedSemesterWithTeachingWeeks(t *testing.T) {
 	}
 	if response.Image == nil || response.Image.Grid == nil {
 		t.Fatalf("image = %#v", response.Image)
+	}
+	if grid := response.Image.Grid; grid.Semester != "2026 秋季学期" || grid.Week != "" || grid.DateRange != "" {
+		t.Fatalf("semester grid metadata = %#v", grid)
 	}
 	if len(response.Image.Grid.Items) != 1 || response.Image.Grid.Items[0].Weeks != "2-4、6 周" {
 		t.Fatalf("grid items = %#v", response.Image.Grid.Items)

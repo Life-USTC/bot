@@ -4,9 +4,7 @@
 #let ground = rgb("#fafafa")
 #let ink = rgb("#27272a")
 #let muted = rgb("#71717a")
-#let border = rgb("#d4d4d8")
 #let accent = rgb("#0f766e")
-#let accent-soft = rgb("#f4f4f5")
 #let text-fonts = ("Fira Code", "Source Han Sans CN", "Noto Sans CJK SC")
 #let type-scale = (
   caption: (size: 9pt, weight: "regular", fill: muted),
@@ -22,4 +20,11 @@
 #let body-text(body, ..args) = styled("body", body, ..args)
 #let title-text(body, ..args) = styled("title", body, ..args)
 #let pad = 8pt
-#let hairline = 1pt
+
+// Tables share the timetable's quiet grid, neutral stripes, and teal focus.
+#let table-stroke = 1pt + rgb("#cbd5e1")
+#let table-header = rgb("#f4f4f5")
+#let table-stripe-a = ground
+#let table-stripe-b = rgb("#f8fafc")
+#let table-highlight = rgb("#f0fdfa")
+#let table-highlight-strong = rgb("#ccfbf1")

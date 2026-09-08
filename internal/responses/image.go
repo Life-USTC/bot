@@ -21,9 +21,12 @@ type Image struct {
 }
 
 type ScheduleGrid struct {
-	Days    []ScheduleGridDay
-	Periods []ScheduleGridPeriod
-	Items   []ScheduleGridItem
+	Semester  string
+	Week      string
+	DateRange string
+	Days      []ScheduleGridDay
+	Periods   []ScheduleGridPeriod
+	Items     []ScheduleGridItem
 }
 
 type ScheduleGridDay struct {

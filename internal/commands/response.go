@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +92,9 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "课表")
 		if grid := weeklyScheduleGrid(plainText); grid != nil {
+			if grid.DateRange != "" {
+				title = "周课表"
+			}
 			return responses.NewScheduleGridImage("schedule", title, grid, imageText)
 		}
 		if firstArgIn(cmd.Args, "today", "tomorrow") {
@@ -311,9 +315,88 @@ func scheduleLocationNote(campus, room string) string {
 
 var weeklyScheduleDayLabels = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 
+var scheduleGridSemesterPattern = regexp.MustCompile(`^(\d{4})年?(春|秋)(季)?学期?$`)
+
+type scheduleGridMetadata struct {
+	semester  string
+	week      string
+	dateRange string
+}
+
+const scheduleGridMetadataPrefix = "课表信息："
+
+func formatScheduleGridMetadata(metadata scheduleGridMetadata) string {
+	parts := make([]string, 0, 3)
+	if value := strings.TrimSpace(metadata.semester); value != "" {
+		parts = append(parts, "学期："+value)
+	}
+	if value := strings.TrimSpace(metadata.week); value != "" {
+		parts = append(parts, "教学周："+value)
+	}
+	if value := strings.TrimSpace(metadata.dateRange); value != "" {
+		parts = append(parts, "日期："+value)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return scheduleGridMetadataPrefix + strings.Join(parts, " · ")
+}
+
+func parseScheduleGridMetadata(line string) (scheduleGridMetadata, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, scheduleGridMetadataPrefix) {
+		return scheduleGridMetadata{}, false
+	}
+	line = strings.TrimSpace(strings.TrimPrefix(line, scheduleGridMetadataPrefix))
+	if line == "" {
+		return scheduleGridMetadata{}, true
+	}
+	metadata := scheduleGridMetadata{}
+	for _, part := range strings.Split(line, " · ") {
+		part = strings.TrimSpace(part)
+		switch {
+		case strings.HasPrefix(part, "学期："):
+			metadata.semester = strings.TrimSpace(strings.TrimPrefix(part, "学期："))
+		case strings.HasPrefix(part, "教学周："):
+			metadata.week = strings.TrimSpace(strings.TrimPrefix(part, "教学周："))
+		case strings.HasPrefix(part, "日期："):
+			metadata.dateRange = strings.TrimSpace(strings.TrimPrefix(part, "日期："))
+		}
+	}
+	return metadata, true
+}
+
+func scheduleGridDateRange(days []responses.ScheduleGridDay) string {
+	first, last := "", ""
+	for _, day := range days {
+		date := strings.TrimSpace(day.Date)
+		if date == "" {
+			continue
+		}
+		if first == "" {
+			first = date
+		}
+		last = date
+	}
+	if first == "" || last == "" {
+		return ""
+	}
+	return strings.ReplaceAll(first, "-", "/") + "-" + strings.ReplaceAll(last, "-", "/")
+}
+
+func scheduleGridSemesterLabel(value string) string {
+	value = strings.TrimSpace(value)
+	match := scheduleGridSemesterPattern.FindStringSubmatch(strings.Join(strings.Fields(value), ""))
+	if len(match) != 4 {
+		return value
+	}
+	return match[1] + " " + match[2] + "季学期"
+}
+
 func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
 	days := make([]responses.ScheduleGridDay, 0, len(weeklyScheduleDayLabels))
 	items := []responses.ScheduleGridItem{}
+	metadata := scheduleGridMetadata{}
 	currentDay := -1
 	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -321,6 +404,10 @@ func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
 			continue
 		}
 		if trimmed == calendarSubscriptionHint {
+			continue
+		}
+		if parsed, ok := parseScheduleGridMetadata(trimmed); ok {
+			metadata = parsed
 			continue
 		}
 		if day, ok := weeklyScheduleGridDay(trimmed, len(days)); ok {
@@ -340,10 +427,16 @@ func weeklyScheduleGrid(text string) *responses.ScheduleGrid {
 	if len(days) != len(weeklyScheduleDayLabels) {
 		return nil
 	}
+	if metadata.dateRange == "" {
+		metadata.dateRange = scheduleGridDateRange(days)
+	}
 	return &responses.ScheduleGrid{
-		Days:    days,
-		Periods: weeklyScheduleGridPeriods(),
-		Items:   items,
+		Semester:  metadata.semester,
+		Week:      metadata.week,
+		DateRange: metadata.dateRange,
+		Days:      days,
+		Periods:   weeklyScheduleGridPeriods(),
+		Items:     items,
 	}
 }
 
@@ -372,6 +465,9 @@ func dailyScheduleGrid(text string) *responses.ScheduleGrid {
 	for _, line := range lines[1:] {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || trimmed == "没有课。" {
+			continue
+		}
+		if _, ok := parseScheduleGridMetadata(trimmed); ok {
 			continue
 		}
 		item, ok := weeklyScheduleGridItem(line, 0)

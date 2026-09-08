@@ -118,8 +118,11 @@ func gridWeekImage() *responses.Image {
 		days[i] = responses.ScheduleGridDay{Label: labels[i], Date: date.Format("01-02")}
 	}
 	return responses.NewScheduleGridImage("schedule", "本周课表", &responses.ScheduleGrid{
-		Days:    days,
-		Periods: schedulePeriods(),
+		Semester:  "2026 秋季学期",
+		Week:      "第 1 周",
+		DateRange: "08/30-09/05",
+		Days:      days,
+		Periods:   schedulePeriods(),
 		Items: []responses.ScheduleGridItem{
 			{Day: 1, StartPeriod: 3, EndPeriod: 4, Course: "数据库系统", Location: "西区 · 3A204", Weeks: "2-16 周"},
 			{Day: 2, StartPeriod: 6, EndPeriod: 7, Course: "Computer Networks", Location: "西区 · 3A204"},

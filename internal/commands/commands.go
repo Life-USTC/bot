@@ -2753,25 +2753,25 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	day = day.In(lifedata.ChinaLocation())
 	switch {
 	case target == "this-week":
-		return h.curriculumWeek(ctx, ident, weekStartSunday(day))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day), nil)
 	case target == "next-week":
-		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7), nil)
 	case strings.HasPrefix(target, "week-date:"):
 		parsed, ok := parseScheduleDateToken(strings.TrimPrefix(target, "week-date:"), day)
 		if !ok {
 			return h.invalidInput("日期格式不太对。可以发：课表 7.20周")
 		}
-		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed), nil)
 	case strings.HasPrefix(target, "week-number:"):
 		week, err := strconv.Atoi(strings.TrimPrefix(target, "week-number:"))
 		if err != nil || week < 1 {
 			return h.invalidInput("周次格式不太对。可以发：课表 第3周")
 		}
-		start, err := h.academicWeekStart(ctx, week)
+		start, semester, err := h.academicWeekContext(ctx, week)
 		if err != nil {
 			return h.commandError("学期周次查不到：", err)
 		}
-		return h.curriculumWeek(ctx, ident, start)
+		return h.curriculumWeek(ctx, ident, start, semester)
 	case strings.HasPrefix(target, "semester:"):
 		return h.curriculumSemester(ctx, ident, target)
 	}
@@ -2826,19 +2826,19 @@ func weekStartSunday(day time.Time) time.Time {
 	return start.AddDate(0, 0, -int(start.Weekday()))
 }
 
-func (h Handler) academicWeekStart(ctx context.Context, week int) (time.Time, error) {
+func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, map[string]any, error) {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, nil, err
 	}
 	start, ok := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
 	if !ok {
-		return time.Time{}, errors.New("当前学期缺少开始日期")
+		return time.Time{}, nil, errors.New("当前学期缺少开始日期")
 	}
-	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), nil
+	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), semester, nil
 }
 
-func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time) string {
+func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time, semester map[string]any) string {
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -2850,6 +2850,11 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		return h.commandError("课表查不到：", err)
 	}
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
+	if h.EnableImageResponses {
+		if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
+			lines = append(lines, formatScheduleGridMetadata(metadata))
+		}
+	}
 	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 	for offset := 0; offset < 7; offset++ {
 		if offset > 0 {
@@ -2861,6 +2866,42 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		lines = append(lines, formatScheduleDay(weekdays[day.Weekday()]+" "+day.Format("01-02"), daySchedules)...)
 	}
 	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
+}
+
+func (h Handler) scheduleGridWeekMetadata(ctx context.Context, start, end time.Time, semester map[string]any) scheduleGridMetadata {
+	metadata := scheduleGridMetadata{
+		dateRange: fmt.Sprintf("%02d/%02d-%02d/%02d", start.Month(), start.Day(), end.Month(), end.Day()),
+	}
+	if semester == nil {
+		if h.Life == nil {
+			return metadata
+		}
+		var err error
+		semester, err = h.Life.CurrentSemester(ctx)
+		if err != nil {
+			return metadata
+		}
+	}
+	name := scheduleGridSemesterLabel(lifedata.FirstString(semester, "nameCn", "namePrimary", "name", "code"))
+	semesterStart, startOK := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
+	semesterEnd, endOK := lifedata.ParseAPITime(lifedata.FirstString(semester, "endDate"))
+	if name == "" || !startOK || !endOK {
+		return metadata
+	}
+	selectedStart := weekStartSunday(start)
+	selectedEnd := selectedStart.AddDate(0, 0, 6)
+	semesterStart = semesterStart.In(lifedata.ChinaLocation())
+	semesterEnd = semesterEnd.In(lifedata.ChinaLocation())
+	if selectedEnd.Before(semesterStart) || selectedStart.After(semesterEnd) {
+		return metadata
+	}
+	metadata.semester = name
+	weekOneStart := weekStartSunday(semesterStart)
+	days := int(selectedStart.Sub(weekOneStart).Hours() / 24)
+	if days >= 0 && days%7 == 0 {
+		metadata.week = fmt.Sprintf("第 %d 周", days/7+1)
+	}
+	return metadata
 }
 
 type semesterScheduleEntry struct {
@@ -3088,6 +3129,9 @@ func aggregateSemesterSchedules(schedules []map[string]any, semesterStart, semes
 
 func formatSemesterSchedule(name string, entries []semesterScheduleEntry) string {
 	lines := []string{strings.TrimSpace(name) + "课表："}
+	if metadata := formatScheduleGridMetadata(scheduleGridMetadata{semester: scheduleGridSemesterLabel(name)}); metadata != "" {
+		lines = append(lines, metadata)
+	}
 	entryIndex := 0
 	for day := 0; day < len(weeklyScheduleDayLabels); day++ {
 		if day > 0 {

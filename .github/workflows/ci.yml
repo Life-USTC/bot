@@ -116,7 +116,7 @@ jobs:
           trap 'kill "$renderd_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/renderd.log"' EXIT
           curl --fail --silent --show-error --retry 20 --retry-connrefused \
             --retry-delay 1 --retry-max-time 30 --max-time 2 http://127.0.0.1:9123/healthz
-          git fetch --no-tags origin b62f863fda82f9ddc1002de2ea89555f49eede8a
+          git fetch --no-tags origin b62f863fda82f9ddc1002de2ea89555f49eede8a 967932782ccda31aefe6d8405e860dc5cb2e5426
           ./scripts/render-reference.sh "$RUNNER_TEMP/render-examples/reference"
           go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render \
             -out "$RUNNER_TEMP/render-examples"

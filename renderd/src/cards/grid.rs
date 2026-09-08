@@ -14,6 +14,12 @@ pub struct GridPayload {
     #[serde(default)]
     pub title: String,
     #[serde(default)]
+    pub semester: String,
+    #[serde(default)]
+    pub week: String,
+    #[serde(default)]
+    pub date_range: String,
+    #[serde(default)]
     pub days: Vec<GridDay>,
     #[serde(default)]
     pub periods: Vec<GridPeriod>,
@@ -89,6 +95,14 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
     }
     super::check_text("title", &req.title, super::MAX_TEXT_BYTES)?;
     super::check_text_budget(&mut text_budget, "title", &req.title)?;
+    for (name, value) in [
+        ("semester", &req.semester),
+        ("week", &req.week),
+        ("date_range", &req.date_range),
+    ] {
+        super::check_text(name, value, super::MAX_LABEL_BYTES)?;
+        super::check_text_budget(&mut text_budget, name, value)?;
+    }
     if req.footer.len() > 2 {
         return Err(anyhow!("grid payload supports at most 2 footer lines"));
     }
@@ -198,6 +212,9 @@ fn data_literal(req: &GridPayload) -> String {
     let mut out = String::new();
     out.push('(');
     out.push_str(&format!("title: {}, ", typst_str(&req.title)));
+    out.push_str(&format!("semester: {}, ", typst_str(&req.semester)));
+    out.push_str(&format!("week: {}, ", typst_str(&req.week)));
+    out.push_str(&format!("date_range: {}, ", typst_str(&req.date_range)));
 
     out.push_str("days: (");
     for day in &req.days {
@@ -254,6 +271,9 @@ mod tests {
     fn valid_payload() -> GridPayload {
         GridPayload {
             title: "课表".into(),
+            semester: "2026 秋季学期".into(),
+            week: "第 1 周".into(),
+            date_range: "08/30-09/05".into(),
             days: vec![GridDay {
                 label: "周一".into(),
                 date: "09-07".into(),
@@ -321,6 +341,9 @@ mod tests {
         assert!(source.contains(&payload.items[0].course));
         assert!(source.contains(&payload.items[0].location));
         assert!(source.contains(&payload.items[0].weeks));
+        assert!(source.contains(&payload.semester));
+        assert!(source.contains(&payload.week));
+        assert!(source.contains(&payload.date_range));
         assert!(!source.contains("day_width"));
         assert!(!source.contains("course_size"));
         assert!(!source.contains("dividers"));
@@ -331,6 +354,88 @@ mod tests {
         let mut payload = valid_payload();
         payload.days[0].date = "   ".into();
         assert!(build_source(&payload).contains("date: \"\""));
+    }
+
+    #[test]
+    fn rejects_oversized_header_metadata() {
+        let mut payload = valid_payload();
+        payload.semester = "x".repeat(super::super::MAX_LABEL_BYTES + 1);
+        assert!(validate(&payload)
+            .unwrap_err()
+            .to_string()
+            .contains("semester"));
+
+        let mut payload = valid_payload();
+        payload.week = "x".repeat(super::super::MAX_LABEL_BYTES + 1);
+        assert!(validate(&payload).unwrap_err().to_string().contains("week"));
+
+        let mut payload = valid_payload();
+        payload.date_range = "x".repeat(super::super::MAX_LABEL_BYTES + 1);
+        assert!(validate(&payload)
+            .unwrap_err()
+            .to_string()
+            .contains("date_range"));
+    }
+
+    #[test]
+    fn escapes_header_metadata_in_typst_source() {
+        let mut payload = valid_payload();
+        payload.semester = "2026 \"秋\" 学期\n".into();
+        payload.week = "第 1 周 \\ 备注".into();
+        payload.date_range = "08/30-09/05".into();
+        let source = build_source(&payload);
+        assert!(source.contains(r#"semester: "2026 \"秋\" 学期\n""#));
+        assert!(source.contains(r#"week: "第 1 周 \\ 备注""#));
+    }
+
+    #[test]
+    fn chooses_title_size_from_native_wrapping_without_losing_text() {
+        use typst::layout::{Frame, FrameItem, PagedDocument};
+
+        fn collect_titles(frame: &Frame, runs: &mut Vec<(String, f64)>) {
+            for (_, item) in frame.items() {
+                match item {
+                    FrameItem::Group(group) => collect_titles(&group.frame, runs),
+                    FrameItem::Text(text) if text.text.chars().all(|ch| ch == '课') => {
+                        runs.push((text.text.to_string(), text.size.to_pt()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Identical glyphs make the assertion independent of automatic English
+        // hyphenation. The same long title returns to 14pt in a wider day cell.
+        for (count, days, expected_size) in
+            [(4, 7, 14.0), (21, 7, 12.0), (80, 7, 10.0), (80, 1, 14.0)]
+        {
+            let mut payload = valid_payload();
+            payload.title = "Schedule".into();
+            payload.days = (0..days)
+                .map(|n| GridDay {
+                    label: format!("周{n}"),
+                    date: String::new(),
+                    today: false,
+                })
+                .collect();
+            payload.items[0].course = "课".repeat(count);
+            let world = crate::world::SandboxWorld::new(build_source(&payload));
+            let doc = typst::compile::<PagedDocument>(&world).output.unwrap();
+            assert_eq!(doc.pages.len(), 1);
+            let mut runs = Vec::new();
+            collect_titles(&doc.pages[0].frame, &mut runs);
+            assert_eq!(
+                runs.iter()
+                    .map(|(text, _)| text.chars().count())
+                    .sum::<usize>(),
+                count,
+                "course text must be retained for {count} glyphs in {days} day columns"
+            );
+            assert!(
+                runs.iter().all(|(_, size)| *size == expected_size),
+                "{count} glyphs in {days} day columns: expected {expected_size}pt, got {runs:?}"
+            );
+        }
     }
 
     #[test]

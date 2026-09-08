@@ -17,24 +17,34 @@
   block(inset: (x: pad, y: 7pt), body-text(title, weight: "bold"))
 }
 
-// Headers and rows sit directly on the paper, with horizontal rules only.
+// Keep true tabular content aligned with the timetable's full-cell grid.
 #let plain-table(t, bus: false) = {
   let cells = ()
   for (i, label) in t.header.enumerate() {
-    cells.push(table.cell(align: if bus { center + horizon } else { left + horizon },
-      body-text(label, weight: if t.header_emphasis.at(i, default: false) { "bold" } else { "regular" })))
+    cells.push(table.cell(
+      fill: table-header,
+      align: if bus { center + horizon } else { left + horizon },
+      body-text(label, weight: "bold",
+        fill: if t.header_emphasis.at(i, default: false) { accent } else { ink })))
   }
-  for row in t.rows {
+  for (row-index, row) in t.rows.enumerate() {
     for index in range(t.header.len()) {
-      cells.push(table.cell(fill: if row.highlight { accent-soft } else { none },
+      cells.push(table.cell(fill: if row.highlight {
+          table-highlight
+        } else if calc.even(row-index) {
+          table-stripe-a
+        } else {
+          table-stripe-b
+        },
         text(size: if bus { 14pt } else { 13pt },
           fill: if bus and row.departed and not row.highlight { muted } else { ink },
           row.cells.at(index, default: ""))))
     }
   }
   table(columns: if bus { (1fr,) * t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
-    inset: (x: pad, y: if bus { 24pt } else { 30pt }), align: left + horizon,
-    stroke: (x, y) => (top: if y > 0 { hairline + border } else { none }),
+    inset: (x: pad, y: if bus { 24pt } else { 30pt }),
+    align: if bus { center + horizon } else { left + horizon },
+    stroke: table-stroke,
     ..cells)
 }
 
