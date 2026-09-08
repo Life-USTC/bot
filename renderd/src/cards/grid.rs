@@ -100,8 +100,8 @@ fn validate(req: &GridPayload) -> anyhow::Result<()> {
         ("week", &req.week),
         ("date_range", &req.date_range),
     ] {
-        super::check_text(&name, value, super::MAX_LABEL_BYTES)?;
-        super::check_text_budget(&mut text_budget, &name, value)?;
+        super::check_text(name, value, super::MAX_LABEL_BYTES)?;
+        super::check_text_budget(&mut text_budget, name, value)?;
     }
     if req.footer.len() > 2 {
         return Err(anyhow!("grid payload supports at most 2 footer lines"));
@@ -367,10 +367,7 @@ mod tests {
 
         let mut payload = valid_payload();
         payload.week = "x".repeat(super::super::MAX_LABEL_BYTES + 1);
-        assert!(validate(&payload)
-            .unwrap_err()
-            .to_string()
-            .contains("week"));
+        assert!(validate(&payload).unwrap_err().to_string().contains("week"));
 
         let mut payload = valid_payload();
         payload.date_range = "x".repeat(super::super::MAX_LABEL_BYTES + 1);
@@ -389,6 +386,56 @@ mod tests {
         let source = build_source(&payload);
         assert!(source.contains(r#"semester: "2026 \"秋\" 学期\n""#));
         assert!(source.contains(r#"week: "第 1 周 \\ 备注""#));
+    }
+
+    #[test]
+    fn chooses_title_size_from_native_wrapping_without_losing_text() {
+        use typst::layout::{Frame, FrameItem, PagedDocument};
+
+        fn collect_titles(frame: &Frame, runs: &mut Vec<(String, f64)>) {
+            for (_, item) in frame.items() {
+                match item {
+                    FrameItem::Group(group) => collect_titles(&group.frame, runs),
+                    FrameItem::Text(text) if text.text.chars().all(|ch| ch == '课') => {
+                        runs.push((text.text.to_string(), text.size.to_pt()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Identical glyphs make the assertion independent of automatic English
+        // hyphenation. The same long title returns to 14pt in a wider day cell.
+        for (count, days, expected_size) in
+            [(4, 7, 14.0), (21, 7, 12.0), (80, 7, 10.0), (80, 1, 14.0)]
+        {
+            let mut payload = valid_payload();
+            payload.title = "Schedule".into();
+            payload.days = (0..days)
+                .map(|n| GridDay {
+                    label: format!("周{n}"),
+                    date: String::new(),
+                    today: false,
+                })
+                .collect();
+            payload.items[0].course = "课".repeat(count);
+            let world = crate::world::SandboxWorld::new(build_source(&payload));
+            let doc = typst::compile::<PagedDocument>(&world).output.unwrap();
+            assert_eq!(doc.pages.len(), 1);
+            let mut runs = Vec::new();
+            collect_titles(&doc.pages[0].frame, &mut runs);
+            assert_eq!(
+                runs.iter()
+                    .map(|(text, _)| text.chars().count())
+                    .sum::<usize>(),
+                count,
+                "course text must be retained for {count} glyphs in {days} day columns"
+            );
+            assert!(
+                runs.iter().all(|(_, size)| *size == expected_size),
+                "{count} glyphs in {days} day columns: expected {expected_size}pt, got {runs:?}"
+            );
+        }
     }
 
     #[test]

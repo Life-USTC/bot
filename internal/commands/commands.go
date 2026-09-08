@@ -2753,15 +2753,15 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	day = day.In(lifedata.ChinaLocation())
 	switch {
 	case target == "this-week":
-		return h.curriculumWeek(ctx, ident, weekStartSunday(day))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day), nil)
 	case target == "next-week":
-		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(day).AddDate(0, 0, 7), nil)
 	case strings.HasPrefix(target, "week-date:"):
 		parsed, ok := parseScheduleDateToken(strings.TrimPrefix(target, "week-date:"), day)
 		if !ok {
 			return h.invalidInput("日期格式不太对。可以发：课表 7.20周")
 		}
-		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed))
+		return h.curriculumWeek(ctx, ident, weekStartSunday(parsed), nil)
 	case strings.HasPrefix(target, "week-number:"):
 		week, err := strconv.Atoi(strings.TrimPrefix(target, "week-number:"))
 		if err != nil || week < 1 {
@@ -2771,7 +2771,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 		if err != nil {
 			return h.commandError("学期周次查不到：", err)
 		}
-		return h.curriculumWeekWithSemester(ctx, ident, start, semester)
+		return h.curriculumWeek(ctx, ident, start, semester)
 	case strings.HasPrefix(target, "semester:"):
 		return h.curriculumSemester(ctx, ident, target)
 	}
@@ -2838,11 +2838,7 @@ func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, 
 	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), semester, nil
 }
 
-func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time) string {
-	return h.curriculumWeekWithSemester(ctx, ident, start, nil)
-}
-
-func (h Handler) curriculumWeekWithSemester(ctx context.Context, ident store.Identity, start time.Time, semester map[string]any) string {
+func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time, semester map[string]any) string {
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()

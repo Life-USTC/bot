@@ -42,7 +42,8 @@
     }
   }
   table(columns: if bus { (1fr,) * t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
-    inset: (x: pad, y: if bus { 24pt } else { 30pt }), align: left + horizon,
+    inset: (x: pad, y: if bus { 24pt } else { 30pt }),
+    align: if bus { center + horizon } else { left + horizon },
     stroke: table-stroke,
     ..cells)
 }

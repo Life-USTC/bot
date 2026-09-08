@@ -2984,6 +2984,9 @@ func TestCurriculumRendersMatchedSemesterWithTeachingWeeks(t *testing.T) {
 	if response.Image == nil || response.Image.Grid == nil {
 		t.Fatalf("image = %#v", response.Image)
 	}
+	if grid := response.Image.Grid; grid.Semester != "2026 秋季学期" || grid.Week != "" || grid.DateRange != "" {
+		t.Fatalf("semester grid metadata = %#v", grid)
+	}
 	if len(response.Image.Grid.Items) != 1 || response.Image.Grid.Items[0].Weeks != "2-4、6 周" {
 		t.Fatalf("grid items = %#v", response.Image.Grid.Items)
 	}

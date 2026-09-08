@@ -3,10 +3,26 @@
 #let data = __DATA__
 
 #let period-width = 90pt
+// Typst measures wrapped titles at the actual cell width. Only the title's
+// font size changes; normal grid rows and text layout remain content-driven.
+#let course-title(value) = layout(bounds => {
+  let title(size) = text(font: ("Source Han Sans CN", "Noto Sans CJK SC"),
+    size: size, weight: "bold", lang: "en", hyphenate: true, value)
+  let selected = title(10pt)
+  for size in (14pt, 12pt) {
+    let candidate = title(size)
+    if measure(candidate, width: bounds.width).height <= 80pt {
+      selected = candidate
+      break
+    }
+  }
+  selected
+})
+
 #let course-body(item) = {
   set par(leading: 0.55em)
   stack(spacing: 12pt,
-    text(font: ("Source Han Sans CN", "Noto Sans CJK SC"), size: 14pt, weight: "bold", lang: "en", hyphenate: true, item.course),
+    course-title(item.course),
     ..(if item.location == "" { () } else { (text(size: 11pt, fill: muted, item.location),) }),
     ..(if item.weeks == "" { () } else { (text(size: 11pt, fill: accent, item.weeks),) }))
 }
@@ -56,21 +72,23 @@
         interval-body(group)))
     }
   }
-  let summary = (if data.days.len() == 1 { data.days.first().label } else if data.days.all(d => d.date == "") { "整学期" } else { "周日–周六" }) + " · 第 1–" + str(data.periods.len()) + " 节"
+  let summary = if data.days.len() == 1 {
+    data.days.first().label + " · 第 1–" + str(data.periods.len()) + " 节"
+  } else {
+    let lines = (data.semester, data.week, data.date_range).filter(value => value != "")
+    if lines.len() == 0 { none } else { stack(spacing: 6pt, ..lines.map(caption-text)) }
+  }
   card-sheet(width: width, margin: 36pt, {
     card-header(data.title, subtitle: summary)
     v(28pt)
     grid(columns: (period-width,) + (day-width,) * data.days.len(), rows: auto,
       align: center + horizon, inset: 8pt,
       fill: (x, y) => if y == 0 {
-        if x > 0 and data.days.at(x - 1).today { rgb("#ccfbf1") } else { rgb("#f4f4f5") }
-      } else if x > 0 and data.days.at(x - 1).today { rgb("#f0fdfa") }
-      else if calc.even(y) { rgb("#f8fafc") } else { ground },
-      stroke: 1pt + rgb("#cbd5e1"), ..cells,
-      ..(5, 10).filter(n => n < data.periods.len()).map(n => grid.hline(y: n + 1, stroke: 2pt + rgb("#64748b"))),
-      ..data.days.enumerate().filter(((i, day)) => day.today).map(((i, day)) => (
-        grid.vline(x: i + 1, stroke: 2pt + accent),
-        grid.vline(x: i + 2, stroke: 2pt + accent))).flatten())
+        if x > 0 and data.days.at(x - 1).today { table-highlight-strong } else { table-header }
+      } else if x > 0 and data.days.at(x - 1).today { table-highlight }
+      else if calc.even(y) { table-stripe-b } else { table-stripe-a },
+      stroke: table-stroke, ..cells,
+      ..(5, 10).filter(n => n < data.periods.len()).map(n => grid.hline(y: n + 1, stroke: 2pt + rgb("#64748b"))))
     card-footer(data.footer)
   })
 }
