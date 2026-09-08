@@ -21,7 +21,7 @@ pub(crate) const MAX_PAYLOAD_TEXT_BYTES: usize = 512 * 1024;
 
 /// Paper-card width bounds used by render tests.
 #[cfg(test)]
-pub(crate) const SHEET_MIN_WIDTH_PT: u32 = 304;
+pub(crate) const SHEET_MIN_WIDTH_PT: u32 = 268;
 #[cfg(test)]
 pub(crate) const SHEET_MAX_WIDTH_PT: u32 = 704;
 

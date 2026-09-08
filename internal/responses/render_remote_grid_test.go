@@ -190,7 +190,7 @@ func TestRemoteRendererGridDatesAndTodayLabels(t *testing.T) {
 		Periods: periods,
 	}
 	datedReq := renderer.buildGridRequest(NewScheduleGridImage("schedule", "本周", dated, "本周课表"))
-	if datedReq.Days[0].Label != "周五 · 今天" {
+	if datedReq.Days[0].Label != "周五" {
 		t.Fatalf("dated today label = %q", datedReq.Days[0].Label)
 	}
 }

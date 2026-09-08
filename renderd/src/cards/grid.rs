@@ -351,7 +351,7 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, short_width, short_height) = render(&short, 3.0).unwrap();
-        assert_eq!(short_width, 552 * 3);
+        assert_eq!(short_width, 522 * 3);
         assert!(short_height > 0);
 
         // Keep this fixture substantially longer than the short one so the
@@ -379,7 +379,7 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, long_width, long_height) = render(&long, 3.0).unwrap();
-        assert_eq!(long_width, 552 * 3);
+        assert_eq!(long_width, 522 * 3);
         assert!(long_height > short_height);
     }
     #[test]
@@ -395,7 +395,7 @@ mod tests {
             .collect();
         let (_, day_width, day_height) =
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
-        assert_eq!(day_width, 552);
+        assert_eq!(day_width, 522);
         assert!(
             day_height > short_height * 2,
             "empty periods must retain their rows"
@@ -409,7 +409,7 @@ mod tests {
             .collect();
         let (_, week_width, week_height) =
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
-        assert_eq!(week_width, 1284);
+        assert_eq!(week_width, 792);
         assert!(week_height > short_height * 2);
     }
 

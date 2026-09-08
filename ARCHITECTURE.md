@@ -444,19 +444,26 @@ response is preserved.
 The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
 `#27272a` text, thin horizontal table rules, 18pt titles, 13pt body text, and 9pt
 right-aligned footer lines. Tokens and shared table/page components are separate.
-Bus cards use a 380pt content width; rich-text cards use 480pt. Bus tables use
-automatic columns, while rich tables give their first column the remaining
-width with a native fractional track. Rows are automatic, and reverse bus
-routes are paired horizontally. Rich text uses ordinary paragraphs with native
-line breaking and 16pt paragraph spacing. The schedule
-uses a full period grid with 120pt period labels, 156pt day columns (360pt for a
-single day), original pastel course colors, and teal current-day emphasis.
-Course names use consistent 14pt proportional type; metadata is 11pt.
+Cards favor portrait proportions around 9:16 while retaining native content-driven
+height. Bus cards use a 280pt content width and stack routes vertically; rich-text
+cards use 204pt. Bus tables use equal fractional columns, while rich tables give
+their first column the remaining width. Symmetric cell padding keeps table text
+centered vertically. Rich text uses ordinary paragraphs with native line breaking
+and 16pt paragraph spacing.
+
+The schedule retains every period and day, original pastel course colors, and
+teal current-day emphasis. Period columns are 90pt wide; day columns are 90pt in
+a week and 360pt in a single-day view. Native stacks keep weekday/date and
+period/time pairs 12pt apart and centered. Course names use 14pt proportional type with native English
+hyphenation; metadata is 11pt. Symmetric period-cell padding gives ordinary rows
+a consistent height and a portrait rhythm; unusually long or overlapping courses
+can still grow their rows naturally. Current-day emphasis uses color without
+adding a redundant “今天” to weekday labels.
 Overlapping classes share their occupied interval, with enough height for all
-content. Weather uses a 600pt canvas with 32pt margins and vertically stacked
+content. Weather uses an 840pt canvas with 32pt margins and vertically stacked
 humidity/wind tiles. It retains the current-condition summary, hourly
 temperature/precipitation chart, and daily range bars. Chart labels are sampled
-more sparsely to fit the narrower canvas; all curve and bar data is retained.
+for legibility; all curve and bar data is retained.
 
 Typst handles glyph shaping, line breaking, and automatic table/grid row sizing.
 Templates do not insert break characters, measure text to allocate tracks, or

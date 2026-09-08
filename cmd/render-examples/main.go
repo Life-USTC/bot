@@ -24,8 +24,8 @@ import (
 // The fixtures range from an intrinsic bus table to a full seven-day grid.
 // These bounds include their paper margins at the default 3x raster scale.
 const (
-	exampleMinWidth  = 304 * 3
-	exampleMaxWidth  = 1284 * 3
+	exampleMinWidth  = 268 * 3
+	exampleMaxWidth  = 864 * 3
 	exampleMinHeight = 120 * 3
 )
 
