@@ -2,7 +2,7 @@
 
 // Measure the actual fonts; short columns retain their intrinsic widths.
 #let column-widths(rows, count) = range(count).map(index => calc.max(
-  0pt, ..rows.map(cells => measure(text(font: text-fonts, size: 14pt, cells.at(index, default: ""))).width)) + 2 * pad)
+  0pt, ..rows.map(cells => measure(flow-text(font: text-fonts, size: 14pt, cells.at(index, default: ""))).width)) + 2 * pad)
 #let table-natural-width(rows, count) = column-widths(rows, count).sum()
 #let text-natural-width(body, style: "body") = measure(styled(style, body)).width
 #let column-tracks(rows, count, width) = {
@@ -45,7 +45,7 @@
   for row in t.rows {
     for index in range(t.header.len()) {
       cells.push(table.cell(fill: if row.highlight { accent-soft } else { none },
-        text(size: if bus { 14pt } else { 13pt },
+        flow-text(size: if bus { 14pt } else { 13pt },
           fill: if bus and row.departed and not row.highlight { muted } else { ink },
           row.cells.at(index, default: ""))))
     }

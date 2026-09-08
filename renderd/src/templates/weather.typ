@@ -36,7 +36,7 @@
 #set block(spacing: 0pt)
 
 #let placed-text(value, size: 13pt, color: ink, weight: "regular") = {
-  text(size: size, fill: color, weight: weight)[#value]
+  flow-text(size: size, fill: color, weight: weight)[#value]
 }
 
 #let glyph-dot(x, y, radius, color) = {

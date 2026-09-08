@@ -13,9 +13,14 @@
   caption: (size: 9pt, weight: "regular", fill: muted),
   body: (size: 13pt, weight: "regular", fill: ink),
   title: (size: 18pt, weight: "bold", fill: ink))
+// Break opportunities preserve long identifiers without changing glyph spacing.
+#let flow-text(body, ..args) = {
+  show regex("[A-Za-z0-9_]{24,}"): token => [#token.text.split("").join("\u{200b}")]
+  text(..args, body)
+}
 #let styled(role, body, weight: auto, fill: auto) = {
   let spec = type-scale.at(role)
-  text(font: text-fonts, size: spec.size,
+  flow-text(font: text-fonts, size: spec.size,
     weight: if weight == auto { spec.weight } else { weight },
     fill: if fill == auto { spec.fill } else { fill }, body)
 }

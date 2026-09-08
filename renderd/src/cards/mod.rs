@@ -254,4 +254,19 @@ mod tests {
             "long content must extend the sheet"
         );
     }
+    #[test]
+    fn long_identifiers_wrap_instead_of_spilling_past_the_page() {
+        let source = |value: &str| {
+            format!(
+            "#import \"styling.typ\": *\n#import \"ui-component.typ\": *\n#card-sheet(480pt, body-text(\"{value}\"))"
+        )
+        };
+        let (_, width, short) = super::compile_png(source("short"), 1.0).unwrap();
+        let (_, long_width, tall) = super::compile_png(source(&"A".repeat(300)), 1.0).unwrap();
+        assert_eq!(width, long_width);
+        assert!(
+            tall > short + 40,
+            "an unbroken identifier must wrap into several lines"
+        );
+    }
 }

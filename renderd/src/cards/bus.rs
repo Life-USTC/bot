@@ -330,4 +330,16 @@ mod tests {
         );
         assert!(height > 0);
     }
+    #[test]
+    fn explicit_headings_and_long_identifiers_take_layout_space() {
+        let mut payload = valid_payload();
+        payload.tables[0].label.clear();
+        let (_, _, plain) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        payload.tables[0].label = "晚间加班车".into();
+        let (_, _, headed) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert!(headed > plain, "explicit route headings must be drawn");
+        payload.tables[0].rows[0].cells[0] = "A".repeat(300);
+        let (_, _, tall) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert!(tall > headed + 30, "long cell identifiers must wrap");
+    }
 }

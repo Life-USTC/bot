@@ -5,10 +5,10 @@
 #let period-width = 120pt
 #let course-body(item, width) = {
   let large = item.end > item.start
-  let size = if large and measure(text(size: 18pt, item.course)).width <= width - 16pt { 18pt } else { 14pt }
-  text(size: size, weight: "bold", item.course)
-  if item.location != "" { v(8pt); text(size: 13pt, fill: muted, item.location) }
-  if item.weeks != "" { v(8pt); text(size: 13pt, fill: accent, item.weeks) }
+  let size = if large and measure(flow-text(size: 18pt, item.course)).width <= width - 16pt { 18pt } else { 14pt }
+  flow-text(size: size, weight: "bold", item.course)
+  if item.location != "" { v(8pt); flow-text(size: 13pt, fill: muted, item.location) }
+  if item.weeks != "" { v(8pt); flow-text(size: 13pt, fill: accent, item.weeks) }
 }
 
 #let interval-body(group, width) = {
