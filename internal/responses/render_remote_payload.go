@@ -11,11 +11,14 @@ import (
 // remoteGridPayload contains schedule semantics for the Typst timetable.
 // The card template owns all widths, spacing, font sizes, and text wrapping.
 type remoteGridPayload struct {
-	Title   string             `json:"title"`
-	Days    []remoteGridDay    `json:"days"`
-	Periods []remoteGridPeriod `json:"periods"`
-	Items   []remoteGridItem   `json:"items,omitempty"`
-	Footer  []string           `json:"footer,omitempty"`
+	Title     string             `json:"title"`
+	Semester  string             `json:"semester,omitempty"`
+	Week      string             `json:"week,omitempty"`
+	DateRange string             `json:"date_range,omitempty"`
+	Days      []remoteGridDay    `json:"days"`
+	Periods   []remoteGridPeriod `json:"periods"`
+	Items     []remoteGridItem   `json:"items,omitempty"`
+	Footer    []string           `json:"footer,omitempty"`
 }
 
 type remoteGridDay struct {
@@ -54,7 +57,10 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 
 	todayIndex := scheduleGridTodayIndex(grid, now)
 	req := remoteGridPayload{
-		Title: title,
+		Title:     title,
+		Semester:  strings.TrimSpace(grid.Semester),
+		Week:      strings.TrimSpace(grid.Week),
+		DateRange: strings.TrimSpace(grid.DateRange),
 		Footer: func() []string {
 			footer := richFooterLines(now)
 			return []string{footer[0], footer[1]}

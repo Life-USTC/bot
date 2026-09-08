@@ -74,8 +74,11 @@ func TestRemoteRendererGridPayloadPreservesReadableAgendaData(t *testing.T) {
 	longLocation := "东区教学楼与高新区 GT-B112 之间的综合教学地点"
 	longWeeks := "第 1–16 周（单周与双周均有安排）"
 	grid := &ScheduleGrid{
-		Days:    remoteScheduleDays(),
-		Periods: remoteSchedulePeriods(),
+		Semester:  "2026 秋季学期",
+		Week:      "第 1 周",
+		DateRange: "08/30-09/05",
+		Days:      remoteScheduleDays(),
+		Periods:   remoteSchedulePeriods(),
 		Items: []ScheduleGridItem{
 			// Deliberately unsorted: the payload should be chronological within
 			// each vertically stacked day section.
@@ -91,6 +94,9 @@ func TestRemoteRendererGridPayloadPreservesReadableAgendaData(t *testing.T) {
 	got := captureRemoteGridPayload(t, grid, "  ", time.Date(2026, 7, 17, 13, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
 	if got.Title != "课表" {
 		t.Fatalf("title = %q, want fallback title", got.Title)
+	}
+	if got.Semester != "2026 秋季学期" || got.Week != "第 1 周" || got.DateRange != "08/30-09/05" {
+		t.Fatalf("metadata = semester=%q week=%q date_range=%q", got.Semester, got.Week, got.DateRange)
 	}
 	if len(got.Days) != 7 || !got.Days[5].Today {
 		t.Fatalf("days = %#v, want day 5 highlighted", got.Days)
