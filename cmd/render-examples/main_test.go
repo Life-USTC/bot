@@ -24,26 +24,28 @@ func exampleServer(t *testing.T, width, height int) *httptest.Server {
 	}))
 }
 
-func TestRunRejectsInconsistentCardWidth(t *testing.T) {
-	server := exampleServer(t, 1140, exampleMinHeight)
+func TestRunRejectsCardWidthOutOfRange(t *testing.T) {
+	server := exampleServer(t, 600, exampleMinHeight)
 	defer server.Close()
 	err := run(server.URL, t.TempDir(), "bus-single")
-	if err == nil || !strings.Contains(err.Error(), "image width 1140, want 1170") {
-		t.Fatalf("run error = %v, want a phone-width regression failure", err)
+	if err == nil || !strings.Contains(err.Error(), "image width 600, want between 912 and 3852") {
+		t.Fatalf("run error = %v, want a card-width regression failure", err)
 	}
 }
 
-func TestRunRejectsCardShorterThanPhoneScreen(t *testing.T) {
-	server := exampleServer(t, exampleWidth, 1200)
+func TestRunRejectsEmptyLookingCard(t *testing.T) {
+	// Cards are sized to their content, so only an implausibly short render
+	// signals a regression.
+	server := exampleServer(t, exampleMinWidth, 90)
 	defer server.Close()
 	err := run(server.URL, t.TempDir(), "bus-single")
-	if err == nil || !strings.Contains(err.Error(), "image height 1200, want at least 2532") {
-		t.Fatalf("run error = %v, want a phone-height regression failure", err)
+	if err == nil || !strings.Contains(err.Error(), "image height 90, want at least 360") {
+		t.Fatalf("run error = %v, want a card-height regression failure", err)
 	}
 }
 
 func TestRunWritesEveryExampleAndGallery(t *testing.T) {
-	server := exampleServer(t, exampleWidth, exampleMinHeight)
+	server := exampleServer(t, exampleMinWidth, exampleMinHeight)
 	defer server.Close()
 	dir := t.TempDir()
 	if err := run(server.URL, dir, ""); err != nil {

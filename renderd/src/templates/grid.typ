@@ -1,138 +1,83 @@
-// Phone agenda card for daily and weekly schedules. The shared card helpers
-// provide the 390pt page, margins, type scale, and footer flow. This template
-// uses a grouped-list composition so each day's schedule reads as one unit.
-#import "common.typ": *
-
+#import "styling.typ": *
+#import "ui-component.typ": *
 #let data = __DATA__
 
-#show: card-page
+#let period-width = 120pt
+#let course-body(item, width) = {
+  let large = item.end > item.start
+  let size = if large and measure(flow-text(size: 18pt, item.course)).width <= width - 16pt { 18pt } else { 14pt }
+  flow-text(size: size, weight: "bold", item.course)
+  if item.location != "" { v(8pt); flow-text(size: 13pt, fill: muted, item.location) }
+  if item.weeks != "" { v(8pt); flow-text(size: 13pt, fill: accent, item.weeks) }
+}
 
-#let entry-count(count) = str(count) + " 项课程安排"
+#let interval-body(group, width) = {
+  for (index, item) in group.items.enumerate() {
+    if index > 0 { v(12pt) }
+    if group.items.len() > 1 { caption-text(item.period + " · " + item.time); v(4pt) }
+    course-body(item, width)
+  }
+}
 
-#let weekly-summary(days, count) = {
-  let first-date = days.first().date
-  let last-date = days.last().date
-  if first-date != "" and last-date != "" {
-    if first-date == last-date {
-      [#break-long-tokens(first-date) · #entry-count(count)]
-    } else {
-      [#break-long-tokens(first-date) 至 #break-long-tokens(last-date) · #entry-count(count)]
+#context {
+  let day-width = if data.days.len() == 1 { 360pt } else { 156pt }
+  let width = period-width + day-width * data.days.len()
+  let heights = (54pt,) + (56pt,) * data.periods.len()
+  let cells = (grid.cell(x: 0, y: 0, body-text("节次", weight: "bold")),)
+  for (i, day) in data.days.enumerate() {
+    cells.push(grid.cell(x: i + 1, y: 0, {
+      body-text(day.label, weight: "bold", fill: if day.today { accent } else { ink })
+      if day.date != "" { v(8pt); caption-text(day.date, fill: if day.today { accent } else { muted }) }
+    }))
+  }
+  for (i, period) in data.periods.enumerate() {
+    cells.push(grid.cell(x: 0, y: i + 1, {
+      body-text(period.label, weight: "bold")
+      v(8pt)
+      caption-text(period.time)
+    }))
+  }
+  // Rowspan retains each class's actual period. Overlaps share their occupied
+  // interval instead of being moved to a different time or silently dropped.
+  for day in range(data.days.len()) {
+    let items = data.items.filter(item => item.day == day).sorted(key: item => item.start)
+    let groups = ()
+    for item in items {
+      if groups.len() > 0 and item.start <= groups.last().end {
+        let last = groups.pop()
+        groups.push((start: last.start, end: calc.max(last.end, item.end), items: last.items + (item,)))
+      } else {
+        groups.push((start: item.start, end: item.end, items: (item,)))
+      }
     }
-  } else if first-date != "" {
-    [#break-long-tokens(first-date) · #entry-count(count)]
-  } else if last-date != "" {
-    [#break-long-tokens(last-date) · #entry-count(count)]
-  } else {
-    [#entry-count(count)]
-  }
-}
-
-#let course-marker(item) = {
-  let color = if item.color == "" { accent } else { rgb(item.color) }
-  box(width: 12pt, height: 12pt)[
-    #align(center + horizon)[
-      #circle(radius: 4pt, fill: color, stroke: none)
-    ]
-  ]
-}
-
-#let schedule-meta(item) = {
-  if item.period != "" {
-    text(size: caption-size, fill: muted)[#break-long-tokens(item.period)]
-  }
-  if item.time != "" {
-    if item.period != "" [#text(size: caption-size, fill: muted)[ · ]]
-    text(size: subhead-size, weight: "medium", fill: accent)[
-      #break-long-tokens(item.time)
-    ]
-  }
-}
-
-#let detail-line(label, value) = text(size: caption-size, fill: muted)[
-  #label #break-long-tokens(value)
-]
-
-#let schedule-item(item) = {
-  grid(
-    columns: (12pt, 1fr),
-    column-gutter: 10pt,
-    align: (center + top, left + top),
-    course-marker(item),
-    block(width: 100%)[
-      #text(size: body-size, weight: "semibold")[
-        #break-long-tokens(item.course)
-      ]
-      #if item.period != "" or item.time != "" {
-        linebreak()
-        schedule-meta(item)
+    for group in groups {
+      let item = group.items.first()
+      cells.push(grid.cell(x: day + 1, y: group.start, rowspan: group.end - group.start + 1,
+        fill: if item.color == "" { rgb("#e2e8f0") } else { rgb(item.color) },
+        stroke: 1pt + accent,
+        interval-body(group, day-width)))
+      let content-height = measure(block(width: day-width - 16pt, interval-body(group, day-width))).height + 16pt
+      let per-row = content-height / (group.end - group.start + 1)
+      for period in range(group.start, group.end + 1) {
+        heights.at(period) = calc.max(heights.at(period), per-row)
       }
-      #if item.location != "" {
-        linebreak()
-        detail-line("地点", item.location)
-      }
-      #if item.weeks != "" {
-        linebreak()
-        detail-line("周次", item.weeks)
-      }
-    ],
-  )
-}
-
-#let day-date(day) = {
-  if day.date == "" {
-    none
-  } else {
-    let badge-color = if day.today { accent } else { muted }
-    text(size: caption-size, weight: if day.today { "semibold" } else { "regular" }, fill: badge-color)[
-      #break-long-tokens(day.date)
-    ]
+    }
   }
+  let summary = (if data.days.len() == 1 { data.days.first().label } else if data.days.all(d => d.date == "") { "整学期" } else { "周日–周六" }) + " · 第 1–" + str(data.periods.len()) + " 节"
+  card-sheet(width, min-width: width, max-width: width, margin: 36pt, {
+    card-header(data.title, subtitle: summary)
+    v(28pt)
+    grid(columns: (period-width,) + (day-width,) * data.days.len(), rows: heights,
+      align: center + horizon, inset: 8pt,
+      fill: (x, y) => if y == 0 {
+        if x > 0 and data.days.at(x - 1).today { rgb("#ccfbf1") } else { rgb("#f4f4f5") }
+      } else if x > 0 and data.days.at(x - 1).today { rgb("#f0fdfa") }
+      else if calc.even(y) { rgb("#f8fafc") } else { ground },
+      stroke: 1pt + rgb("#cbd5e1"), ..cells,
+      ..(5, 10).filter(n => n < data.periods.len()).map(n => grid.hline(y: n + 1, stroke: 4pt + rgb("#64748b"))),
+      ..data.days.enumerate().filter(((i, day)) => day.today).map(((i, day)) => (
+        grid.vline(x: i + 1, stroke: 2pt + accent),
+        grid.vline(x: i + 2, stroke: 2pt + accent))).flatten())
+    card-footer(data.footer)
+  })
 }
-
-#let day-heading(day) = {
-  grid(
-    columns: (1fr, auto),
-    column-gutter: 8pt,
-    align: (left + horizon, right + horizon),
-    text(size: section-size, weight: "semibold")[#break-long-tokens(day.label)],
-    day-date(day),
-  )
-}
-
-#let empty-day() = card-surface(
-  text(size: subhead-size, fill: muted)[暂无课程],
-)
-
-#let schedule-list(entries) = {
-  for item in entries {
-    schedule-item(item)
-  }
-}
-
-#let day-group(day, entries, show-heading: true) = {
-  if show-heading {
-    day-heading(day)
-  }
-  if entries.len() == 0 {
-    empty-day()
-  } else {
-    card-surface(schedule-list(entries))
-  }
-}
-
-#let header-summary = if data.days.len() == 1 {
-  let day = data.days.first()
-  let entries = data.items.filter(item => item.day == 0)
-  [#break-long-tokens(day.label) · #entry-count(entries.len())]
-} else {
-  weekly-summary(data.days, data.items.len())
-}
-
-#card-header(break-long-tokens(data.title), subtitle: header-summary)
-
-#for (day-index, day) in data.days.enumerate() [
-  #let entries = data.items.filter(item => item.day == day-index)
-  #day-group(day, entries, show-heading: data.days.len() != 1)
-]
-
-#card-footer(data.footer.map(line => break-long-tokens(line)))

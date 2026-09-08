@@ -1,6 +1,6 @@
-// Command render-examples renders all phone card fixtures through Typst.
-// It checks the shared 1170px width and minimum 2532px height and writes PNGs
-// plus a gallery with 390×844-point phone viewports.
+// Command render-examples renders all card fixtures through Typst.
+// It checks content-sized dimensions, writes PNGs, and builds a gallery that
+// shows each card at its natural height.
 //
 // Usage:
 //
@@ -21,9 +21,12 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 )
 
+// The fixtures range from an intrinsic bus table to a full seven-day grid.
+// These bounds include their paper margins at the default 3x raster scale.
 const (
-	exampleWidth     = 390 * 3
-	exampleMinHeight = 844 * 3
+	exampleMinWidth  = 304 * 3
+	exampleMaxWidth  = 1284 * 3
+	exampleMinHeight = 120 * 3
 )
 
 type fixture struct {
@@ -233,7 +236,7 @@ func weatherImage() *responses.Image {
 
 func main() {
 	endpoint := flag.String("endpoint", envOr("BOT_RENDER_ENDPOINT", "http://127.0.0.1:9123/render"), "renderd endpoint URL")
-	out := flag.String("out", "examples", "output directory for PNGs and a phone-size gallery")
+	out := flag.String("out", "examples", "output directory for PNGs and a comparison gallery")
 	only := flag.String("only", "", "only run fixtures whose name has this prefix (e.g. -only bus)")
 	flag.Parse()
 
@@ -266,12 +269,12 @@ func run(endpoint, out, only string) error {
 			failures = append(failures, fmt.Errorf("%s: %w", f.name, err))
 			continue
 		}
-		if width != exampleWidth {
-			failures = append(failures, fmt.Errorf("%s: image width %d, want %d (390pt at default 3x scale)", f.name, width, exampleWidth))
+		if width < exampleMinWidth || width > exampleMaxWidth {
+			failures = append(failures, fmt.Errorf("%s: image width %d, want between %d and %d (at default 3x scale)", f.name, width, exampleMinWidth, exampleMaxWidth))
 			continue
 		}
 		if height < exampleMinHeight {
-			failures = append(failures, fmt.Errorf("%s: image height %d, want at least %d (844pt at default 3x scale)", f.name, height, exampleMinHeight))
+			failures = append(failures, fmt.Errorf("%s: image height %d, want at least %d (a card is never this short)", f.name, height, exampleMinHeight))
 			continue
 		}
 		filename := f.name + ".png"

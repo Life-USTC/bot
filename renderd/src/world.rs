@@ -164,9 +164,8 @@ impl World for SandboxWorld {
     fn source(&self, id: FileId) -> FileResult<Source> {
         if id == self.main_id {
             Ok(self.main.clone())
-        } else if id.vpath().as_rootless_path().to_str() == Some("common.typ") {
-            // Shared canvas, typography, and flow helpers imported by every card.
-            Ok(Source::new(id, COMMON_TYP.to_string()))
+        } else if let Some(text) = shared_template(id) {
+            Ok(Source::new(id, text.to_string()))
         } else {
             Err(FileError::NotFound(id.vpath().as_rootless_path().into()))
         }
@@ -189,8 +188,18 @@ impl World for SandboxWorld {
     }
 }
 
-/// Shared template fragment, served to card templates as `common.typ`.
-const COMMON_TYP: &str = include_str!("templates/common.typ");
+/// Shared fragments the card templates import: the design tokens and the
+/// pieces built from them.
+const STYLING_TYP: &str = include_str!("templates/styling.typ");
+const UI_COMPONENT_TYP: &str = include_str!("templates/ui-component.typ");
+
+fn shared_template(id: FileId) -> Option<&'static str> {
+    match id.vpath().as_rootless_path().to_str()? {
+        "styling.typ" => Some(STYLING_TYP),
+        "ui-component.typ" => Some(UI_COMPONENT_TYP),
+        _ => None,
+    }
+}
 
 /// Howard Hinnant's civil-from-days algorithm.
 fn civil_from_days(z: i64) -> (i32, u8, u8) {

@@ -1,7 +1,7 @@
-//! Schedule rendering: semantic JSON payload -> phone-sized Typst card -> PNG.
+//! Schedule rendering: semantic JSON payload -> Typst timetable -> PNG.
 //!
 //! Go owns schedule semantics such as today selection, course colors, and
-//! item validity. Typst owns the phone card's flow layout so long text wraps
+//! item validity. Typst owns the timetable's layout so long text wraps
 //! naturally and each card can grow with its content.
 
 use anyhow::{anyhow, Context};
@@ -62,8 +62,8 @@ const MAX_DAYS: usize = 14;
 const MAX_PERIODS: usize = 64;
 const MAX_ITEMS: usize = 512;
 
-/// Render a schedule payload to PNG. The shared card template fixes the
-/// logical width at 390pt; compile_png checks the compiled page dimensions
+/// Render a schedule payload to PNG. Day columns determine its width;
+/// compile_png checks the compiled page dimensions
 /// before allocating a raster pixmap.
 pub fn render(payload: &serde_json::Value, scale: f32) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     let req: GridPayload =
@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_phone_width_and_grows_for_wrapped_content() {
+    fn renders_content_width_and_grows_for_wrapped_content() {
         let short = json!({
             "title": "今天课表",
             "days": [{"label": "周一", "date": "09-07", "today": true}],
@@ -351,12 +351,12 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, short_width, short_height) = render(&short, 3.0).unwrap();
-        assert_eq!(short_width, 1170);
+        assert_eq!(short_width, 552 * 3);
         assert!(short_height > 0);
 
-        // The shared page intentionally stays at the 844pt minimum for short
-        // schedules. Keep this fixture substantially longer so the assertion
-        // still verifies natural page growth rather than merely positive size.
+        // Keep this fixture substantially longer than the short one so the
+        // assertion verifies natural page growth rather than merely positive
+        // size.
         let long_course =
             "Introduction to Computational Thinking and Programming Methodology 数据库系统 "
                 .repeat(12);
@@ -379,7 +379,61 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, long_width, long_height) = render(&long, 3.0).unwrap();
-        assert_eq!(long_width, 1170);
+        assert_eq!(long_width, 552 * 3);
         assert!(long_height > short_height);
+    }
+    #[test]
+    fn keeps_all_periods_and_day_columns_including_empty_slots() {
+        let mut payload = valid_payload();
+        payload.items.clear();
+        payload.periods = (1..=12)
+            .map(|n| GridPeriod {
+                label: format!("第 {n} 节"),
+                time: "08:00–08:45".into(),
+            })
+            .collect();
+        let (_, day_width, day_height) =
+            super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert_eq!(day_width, 552);
+        assert!(
+            day_height >= 12 * 56,
+            "empty periods must retain their rows"
+        );
+        payload.days = (0..7)
+            .map(|n| GridDay {
+                label: format!("周{n}"),
+                date: String::new(),
+                today: n == 3,
+            })
+            .collect();
+        let (_, week_width, week_height) =
+            super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert_eq!(week_width, 1284);
+        assert_eq!(week_height, day_height);
+    }
+
+    #[test]
+    fn overlapping_classes_expand_their_actual_period() {
+        let mut payload = valid_payload();
+        let (_, _, short) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        let original = payload.items.pop().unwrap();
+        payload.items = (0..5)
+            .map(|n| GridItem {
+                day: original.day,
+                start: original.start,
+                end: original.end,
+                period: original.period.clone(),
+                time: original.time.clone(),
+                course: format!("课程 {n} {}", "完整课程名称".repeat(8)),
+                location: original.location.clone(),
+                weeks: original.weeks.clone(),
+                color: original.color.clone(),
+            })
+            .collect();
+        let (_, _, tall) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert!(
+            tall > short * 2,
+            "overlapping content must not be clipped or dropped"
+        );
     }
 }

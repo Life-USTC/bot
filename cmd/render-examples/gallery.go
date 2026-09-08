@@ -9,14 +9,21 @@ import (
 )
 
 type example struct {
-	Name   string
-	Title  string
-	File   string
-	Width  int
-	Height int
+	Name          string
+	Title         string
+	File          string
+	Width         int
+	Height        int
+	ReferenceFile string
 }
 
 func writeGallery(dir string, examples []example) error {
+	for i := range examples {
+		file := filepath.Join("reference", examples[i].Name+".png")
+		if _, err := os.Stat(filepath.Join(dir, file)); err == nil {
+			examples[i].ReferenceFile = filepath.ToSlash(file)
+		}
+	}
 	var output bytes.Buffer
 	if err := galleryTemplate.Execute(&output, examples); err != nil {
 		return fmt.Errorf("build example gallery: %w", err)
@@ -31,31 +38,33 @@ var galleryTemplate = template.Must(template.New("gallery").Parse(`<!doctype htm
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bot · Typst 手机图卡</title>
+<title>Bot · 渲染对照</title>
 <style>
 * { box-sizing: border-box; }
-body { margin: 0; padding: 24px; background: #e5e5ea; color: #1c1c1e; font: 15px/1.5 system-ui, sans-serif; }
-header { max-width: 1218px; margin: 0 auto 24px; }
-h1 { font-size: 24px; margin: 0 0 8px; }
-p { margin: 0; color: #52525b; }
-main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 390px)); gap: 24px; justify-content: center; align-items: start; }
-figure { width: 100%; margin: 0; background: #f2f2f7; }
-figcaption { padding: 12px 20px; border-bottom: 1px solid #d4d4d8; }
-figcaption span { display: block; font-size: 13px; color: #52525b; }
+body { margin: 0; padding: 32px; background: #eee; color: #27272a; font: 14px/1.6 system-ui, sans-serif; }
+header, main { max-width: 1500px; margin: auto; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+p { margin: 0 0 32px; color: #71717a; }
+section { margin-bottom: 48px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 24px; align-items: start; }
+figure { margin: 0; min-width: 0; }
+figcaption { margin-bottom: 8px; color: #71717a; }
 a { color: inherit; }
-img { display: block; width: 100%; height: auto; }
-.screen { width: 100%; aspect-ratio: 390 / 844; overflow-y: auto; scrollbar-width: none; }
-.screen::-webkit-scrollbar { display: none; }
-@media (max-width: 438px) { body { padding: 0; } header { padding: 20px; } }
+img { display: block; width: 100%; height: auto; background: #fafafa; }
+@media (max-width: 640px) { body { padding: 16px; } }
 </style>
 <header>
-<h1>Bot · Typst 手机图卡</h1>
-<p>固定示例数据 · 390 × 844pt 起 · 3× 清晰度。每个预览框为一屏，长图可向下滚动；点击尺寸可查看完整 PNG。</p>
+<h1>Bot · 渲染对照</h1>
+<p>相同示例数据与时间 · 原始 Go 渲染 / Typst · 点击图片查看完整 PNG。原图为 2×，Typst 为 3×；按相同显示宽度对照。</p>
 </header>
 <main>
-{{range .}}<figure id="{{.Name}}">
-<figcaption>{{.Title}}<span><a href="{{.File}}">{{.Width}} × {{.Height}} px · 完整图片</a></span></figcaption>
-<div class="screen" tabindex="0" aria-label="{{.Title}}，可纵向滚动"><img src="{{.File}}" alt="{{.Title}}" width="{{.Width}}" height="{{.Height}}"></div>
-</figure>{{end}}
+{{range .}}<section id="{{.Name}}">
+<h2>{{.Title}}</h2>
+<div class="pair">
+{{if .ReferenceFile}}<figure><figcaption>原始 Go 渲染</figcaption><a href="{{.ReferenceFile}}"><img src="{{.ReferenceFile}}" alt="{{.Title}} · 原始 Go 渲染"></a></figure>{{end}}
+<figure><figcaption>Typst · {{.Width}} × {{.Height}} px</figcaption><a href="{{.File}}"><img src="{{.File}}" alt="{{.Title}} · Typst" width="{{.Width}}" height="{{.Height}}"></a></figure>
+</div>
+</section>{{end}}
 </main>
 </html>`))

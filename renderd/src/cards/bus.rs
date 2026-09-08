@@ -1,7 +1,7 @@
 //! Bus timetable card rendering: semantic JSON payload -> Typst -> PNG.
 //!
 //! The Go side supplies the route and timing semantics. Typst owns the
-//! shared 390pt phone canvas, wrapping, and auto-height layout.
+//! intrinsic paper canvas, wrapping, and auto-height layout.
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_phone_width_and_wraps_long_content() {
+    fn renders_content_width_and_wraps_long_content() {
         let payload = serde_json::json!({
             "title": "校车 东区 → 西区",
             "next_time": "14:30",
@@ -323,7 +323,23 @@ mod tests {
         });
         let (png, width, height) = render(&payload, 3.0).expect("bus template should compile");
         assert!(!png.is_empty());
-        assert_eq!(width, 1170);
+        assert!(
+            (super::super::SHEET_MIN_WIDTH_PT * 3..=super::super::SHEET_MAX_WIDTH_PT * 3)
+                .contains(&width),
+            "width {width} outside the sheet's range"
+        );
         assert!(height > 0);
+    }
+    #[test]
+    fn explicit_headings_and_long_identifiers_take_layout_space() {
+        let mut payload = valid_payload();
+        payload.tables[0].label.clear();
+        let (_, _, plain) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        payload.tables[0].label = "晚间加班车".into();
+        let (_, _, headed) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert!(headed > plain, "explicit route headings must be drawn");
+        payload.tables[0].rows[0].cells[0] = "A".repeat(300);
+        let (_, _, tall) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
+        assert!(tall > headed + 30, "long cell identifiers must wrap");
     }
 }

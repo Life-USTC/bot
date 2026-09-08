@@ -66,7 +66,7 @@ type remoteBusRow struct {
 }
 
 // remoteRichPayload is the semantic payload for kind "rich". Text remains
-// whole so Typst can wrap it at the shared phone width.
+// whole so Typst can wrap it at the content width.
 type remoteRichPayload struct {
 	Title  string            `json:"title"`
 	Footer []string          `json:"footer,omitempty"`
@@ -249,7 +249,7 @@ func (r RemoteRenderer) RenderPNGContext(parent context.Context, img *Image) ([]
 // buildBusRequest parses the rich bus document, preserves its table content,
 // and applies the same departure/highlight semantics as the local renderer.
 // Geometry stays in the Typst template so long stop names and times can wrap
-// at the shared phone width.
+// at the content width.
 func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	doc := parseRichText(img.RichText)
@@ -276,12 +276,6 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 		}
 		table := tables[len(req.Tables)]
 		label := strings.TrimSpace(block.Heading)
-		// The all-routes response has no markdown section heading. A compact
-		// route label keeps the individual vertically stacked tables
-		// identifiable without changing any table cells.
-		if label == "" && strings.TrimSpace(doc.Title) == "校车" {
-			label = strings.ReplaceAll(table.directionKey(), "→", " → ")
-		}
 		rows := make([]remoteBusRow, 0, len(table.Rows))
 		for _, row := range table.Rows {
 			rows = append(rows, remoteBusRow{
@@ -301,7 +295,7 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 }
 
 // buildRichRequest preserves the parsed rich document and leaves wrapping and
-// table sizing to Typst's normal-flow layout at the shared phone width.
+// table sizing to Typst's normal-flow layout at the content width.
 func (r RemoteRenderer) buildRichRequest(img *Image) remoteRichPayload {
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	doc := parseRichText(img.RichText)

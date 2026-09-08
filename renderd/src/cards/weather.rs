@@ -1,8 +1,8 @@
 //! Weather card rendering: validated JSON payload -> Typst source -> PNG.
 //!
 //! Weather semantics stay in the Go response layer. This module validates the
-//! structured values, computes the chart coordinates for the inset forecast
-//! panel, and hands the remaining layout to the flow-based Typst template.
+//! structured values, computes the legacy chart coordinates, and hands the
+//! remaining layout to the fixed-width Typst weather template.
 //! Strings are escaped before they become source code; the sidecar never gives
 //! Typst filesystem or network access.
 
@@ -11,16 +11,19 @@ use serde::Deserialize;
 
 use crate::escape::typst_str;
 
-// The weather chart lives inside a 16pt-inset surface. Keep these values in
-// step with weather.typ; they are renderer constants for chart coordinates,
-// not caller-controlled page geometry.
-const CHART_CONTENT_WIDTH: f64 = 318.0;
-const CHART_PLOT_LEFT: f64 = 18.0;
-const CHART_PLOT_RIGHT: f64 = CHART_CONTENT_WIDTH - CHART_PLOT_LEFT;
-const CHART_PLOT_BOTTOM: f64 = 120.0;
-const CHART_TEMP_RANGE: f64 = 88.0;
+// Keep these values in step with weather.typ and the legacy Go renderer. They
+// are renderer constants for chart coordinates, not caller-controlled page
+// geometry.
+const CANVAS_WIDTH: f64 = 920.0;
+const MARGIN_X: f64 = 52.0;
+const CONTENT_WIDTH: f64 = CANVAS_WIDTH - 2.0 * MARGIN_X;
+const CHART_PLOT_LEFT: f64 = 0.0;
+const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH;
+const CHART_PLOT_BOTTOM: f64 = 124.0;
+const CHART_TEMP_RANGE: f64 = 100.0;
 const CHART_MAX_BAR_HEIGHT: f64 = 34.0;
-const DAILY_TRACK_WIDTH: f64 = 1.0;
+const DAILY_TRACK_LEFT: f64 = 116.0;
+const DAILY_TRACK_RIGHT: f64 = CONTENT_WIDTH - 52.0;
 
 const MAX_LOCATIONS: usize = 16;
 const MAX_HOURLY_POINTS: usize = 168;
@@ -375,7 +378,8 @@ fn location_literal(out: &mut String, location: &WeatherLocation) {
         out.push_str(&format!(
             "(label: {}, temperature: {}, temperature_text: {}, \
              precipitation_probability: {}, bar_height: {}, bar_width: {}, \
-             x: {}, y: {}, show_temperature: {}, show_axis_label: {}), ",
+             x: {}, y: {}, precipitation_label: {}, precipitation_label_y: {}, \
+             precipitation_inside: {}), ",
             typst_str(&hour.label),
             super::fmt_num(hour.temperature),
             typst_str(&format_temp(hour.temperature)),
@@ -384,13 +388,12 @@ fn location_literal(out: &mut String, location: &WeatherLocation) {
             super::fmt_num(point.bar_width),
             super::fmt_num(point.x),
             super::fmt_num(point.y),
-            point.show_temperature,
-            point.show_axis_label,
+            typst_str(point.precipitation_label.as_deref().unwrap_or("")),
+            super::fmt_num(point.precipitation_label_y),
+            point.precipitation_inside,
         ));
     }
-    out.push_str("), precipitation_summary: ");
-    out.push_str(&typst_str(&precipitation_summary(&location.hourly)));
-    out.push_str(", plot: (");
+    out.push_str("), plot: (");
     out.push_str("segments: (");
     for segment in &plot.segments {
         out.push_str(&format!(
@@ -438,23 +441,15 @@ fn format_temp(value: f64) -> String {
     format!("{}°", value.round() as i64)
 }
 
-fn format_probability(value: f64) -> String {
-    let rounded = value.round() as i64;
-    if rounded == 0 && value > 0.0 {
-        "<1%".to_string()
-    } else {
-        format!("{rounded}%")
-    }
-}
-
 #[derive(Debug)]
 struct PlotPoint {
     x: f64,
     y: f64,
     bar_height: f64,
     bar_width: f64,
-    show_temperature: bool,
-    show_axis_label: bool,
+    precipitation_label: Option<String>,
+    precipitation_label_y: f64,
+    precipitation_inside: bool,
 }
 
 #[derive(Debug)]
@@ -472,23 +467,9 @@ struct HourlyPlot {
     area: Vec<(f64, f64)>,
 }
 
-/// Keep labels at least three points apart for normal 24-point forecasts and
-/// increase the step for unusually dense input. The curve and all bars remain
-/// based on every point regardless of this presentation choice.
-fn axis_label_step(point_count: usize, slot_width: f64) -> usize {
-    if point_count <= 6 {
-        return 1;
-    }
-    // A 42pt label box and this gap leave enough room for 13pt time labels at
-    // the narrowest normal phone layout. Every bar and curve point is still
-    // retained; only the axis labels are sparse.
-    let min_spacing = 44.0;
-    let width_step = (min_spacing / slot_width).ceil() as usize;
-    width_step.max(3)
-}
-
-/// Match the legacy Catmull-Rom chart's temperature scaling while giving the
-/// phone chart side insets for readable first and last labels.
+/// Match the legacy Catmull-Rom chart geometry. The template receives line
+/// segments and polygon vertices, so it does not need floating-point helpers
+/// or any data-dependent layout decisions.
 fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     if hours.is_empty() {
         return HourlyPlot {
@@ -497,8 +478,7 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
             area: Vec::new(),
         };
     }
-    let plot_width = CHART_PLOT_RIGHT - CHART_PLOT_LEFT;
-    let slot_width = plot_width / hours.len() as f64;
+    let slot_width = (CHART_PLOT_RIGHT - CHART_PLOT_LEFT) / hours.len() as f64;
     let mut min_temp = hours[0].temperature;
     let mut max_temp = hours[0].temperature;
     for hour in hours {
@@ -514,8 +494,6 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
         let ratio = (temperature - min_temp) / (max_temp - min_temp);
         CHART_PLOT_BOTTOM - ratio * CHART_TEMP_RANGE
     };
-    let label_step = axis_label_step(hours.len(), slot_width);
-
     let mut points = Vec::with_capacity(hours.len());
     for (index, hour) in hours.iter().enumerate() {
         let x = CHART_PLOT_LEFT + slot_width * (index as f64 + 0.5);
@@ -524,14 +502,32 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
         } else {
             0.0
         };
-        let show_label = index % label_step == 0;
+        let precipitation_label = if hour.precipitation_probability >= 30.0 {
+            Some(format!(
+                "{}%",
+                hour.precipitation_probability.round() as i64
+            ))
+        } else {
+            None
+        };
+        let precipitation_inside = bar_height >= 14.0;
+        let mut precipitation_label_y = CHART_PLOT_BOTTOM - bar_height / 2.0 + 3.0;
+        if !precipitation_inside {
+            precipitation_label_y = CHART_PLOT_BOTTOM - bar_height - 4.0;
+            // Match the Go renderer's conservative collision avoidance for a
+            // short precipitation bar and its nearby temperature label.
+            if precipitation_label_y - 10.0 < temp_y(hour.temperature) - 6.0 {
+                precipitation_label_y = -100.0;
+            }
+        }
         points.push(PlotPoint {
             x,
             y: temp_y(hour.temperature),
             bar_height,
-            bar_width: (slot_width * 0.5).clamp(2.0, 10.0),
-            show_temperature: show_label,
-            show_axis_label: show_label,
+            bar_width: slot_width * 0.44,
+            precipitation_label,
+            precipitation_label_y,
+            precipitation_inside,
         });
     }
 
@@ -544,7 +540,7 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     let mut segments = Vec::with_capacity(sampled.len().saturating_sub(1));
     let mut area = Vec::with_capacity(sampled.len() + 2);
     for (index, temperature) in sampled.iter().enumerate() {
-        let x = CHART_PLOT_LEFT + slot_width * 0.5 + index as f64 * step_x;
+        let x = slot_width * 0.5 + index as f64 * step_x;
         area.push((x, temp_y(*temperature)));
         if index > 0 {
             let previous = sampled[index - 1];
@@ -570,58 +566,8 @@ fn hourly_plot(hours: &[WeatherHour]) -> HourlyPlot {
     }
 }
 
-/// Format non-zero precipitation bars as a readable text summary. Adjacent
-/// hours with the same probability are grouped, while the chart still keeps
-/// every original bar and probability value.
-fn precipitation_summary(hours: &[WeatherHour]) -> String {
-    #[derive(Debug)]
-    struct Group {
-        first_index: usize,
-        last_index: usize,
-        probability: String,
-    }
-
-    let mut groups: Vec<Group> = Vec::new();
-    for (index, hour) in hours.iter().enumerate() {
-        if hour.precipitation_probability <= 0.0 {
-            continue;
-        }
-        let probability = format_probability(hour.precipitation_probability);
-        if let Some(previous) = groups.last_mut() {
-            if previous.last_index + 1 == index && previous.probability == probability {
-                previous.last_index = index;
-                continue;
-            }
-        }
-        groups.push(Group {
-            first_index: index,
-            last_index: index,
-            probability,
-        });
-    }
-    if groups.is_empty() {
-        return "无降水".to_string();
-    }
-    groups
-        .into_iter()
-        .map(|group| {
-            if group.first_index == group.last_index {
-                format!("{} {}", hours[group.first_index].label, group.probability)
-            } else {
-                format!(
-                    "{}–{} {}",
-                    hours[group.first_index].label,
-                    hours[group.last_index].label,
-                    group.probability
-                )
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" · ")
-}
-
-/// Compute normalized daily bar positions. A constant range gets a centered
-/// marker instead of a zero-width bar, and all values remain in the track.
+/// Compute the legacy daily range bar's absolute position inside the weather
+/// chart row. A constant range gets a zero-width marker at its true position.
 fn daily_bar_geometry(days: &[WeatherDay]) -> Vec<(f64, f64)> {
     if days.is_empty() {
         return Vec::new();
@@ -632,19 +578,12 @@ fn daily_bar_geometry(days: &[WeatherDay]) -> Vec<(f64, f64)> {
         week_low = week_low.min(day.low);
         week_high = week_high.max(day.high);
     }
-    let mut span = week_high - week_low;
-    if span < 1.0 {
-        let padding = (1.0 - span) / 2.0;
-        week_low -= padding;
-        week_high += padding;
-        span = week_high - week_low;
-    }
+    let span = (week_high - week_low).max(1.0);
+    let bar_width = DAILY_TRACK_RIGHT - DAILY_TRACK_LEFT;
     days.iter()
         .map(|day| {
-            let left =
-                ((day.low - week_low) / span * DAILY_TRACK_WIDTH).clamp(0.0, DAILY_TRACK_WIDTH);
-            let right =
-                ((day.high - week_low) / span * DAILY_TRACK_WIDTH).clamp(0.0, DAILY_TRACK_WIDTH);
+            let left = DAILY_TRACK_LEFT + (day.low - week_low) / span * bar_width;
+            let right = DAILY_TRACK_LEFT + (day.high - week_low) / span * bar_width;
             (left, (right - left).max(0.0))
         })
         .collect()
@@ -722,12 +661,12 @@ mod tests {
     }
 
     #[test]
-    fn validates_phone_payload_without_legacy_geometry() {
+    fn validates_weather_payload_without_caller_geometry() {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
         let source = build_source(&req);
-        assert!(source.contains("card-page"));
-        assert!(source.contains("chart-content-width = 318pt"));
+        assert!(source.contains("canvas-width = 920pt"));
+        assert!(source.contains("content-width = canvas-width - 2 * margin"));
         assert!(!source.contains("canvas_width:"));
     }
 
@@ -768,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn plot_keeps_full_data_with_sparse_phone_labels() {
+    fn plot_keeps_full_data_with_legacy_labels() {
         let hours = (0..24)
             .map(|index| WeatherHour {
                 label: format!("{index:02}:00"),
@@ -778,13 +717,12 @@ mod tests {
             .collect::<Vec<_>>();
         let plot = hourly_plot(&hours);
         assert_eq!(plot.points.len(), 24);
-        assert_eq!(
-            plot.points
-                .iter()
-                .filter(|point| point.show_axis_label)
-                .count(),
-            6
-        );
+        assert!(plot
+            .points
+            .iter()
+            .all(|point| point.precipitation_label.is_some()
+                || point.precipitation_inside
+                || point.bar_height == 0.0));
         assert!(plot
             .points
             .iter()
@@ -794,6 +732,8 @@ mod tests {
             .points
             .iter()
             .all(|point| point.bar_height.is_finite() && point.bar_width.is_finite()));
+        assert_eq!(plot.points[0].x, CONTENT_WIDTH / 48.0);
+        assert_eq!(plot.points[0].bar_width, CONTENT_WIDTH / 24.0 * 0.44);
     }
 
     #[test]
@@ -843,7 +783,10 @@ mod tests {
         let bars = daily_bar_geometry(&constant_days);
         assert_eq!(bars.len(), 2);
         assert!(bars.iter().all(|(left, width)| {
-            left.is_finite() && width.is_finite() && *left >= 0.0 && *left <= DAILY_TRACK_WIDTH
+            left.is_finite()
+                && width.is_finite()
+                && *left >= DAILY_TRACK_LEFT
+                && *left <= DAILY_TRACK_RIGHT
         }));
     }
 
@@ -854,8 +797,8 @@ mod tests {
         empty["locations"][0]["daily"] = json!([]);
         empty["locations"][0]["alerts"] = json!([]);
         let (_, empty_width, empty_height) = render(&empty, 1.0).unwrap();
-        assert_eq!(empty_width, 390);
-        assert_eq!(empty_height, 844);
+        assert_eq!(empty_width, CANVAS_WIDTH as u32);
+        assert!(empty_height > 0);
 
         let mut constant = valid_payload();
         constant["locations"][0]["hourly"] = json!([
@@ -867,13 +810,12 @@ mod tests {
             {"label": "明天", "low": 20, "high": 20, "conditionText": "晴"}
         ]);
         let (_, constant_width, constant_height) = render(&constant, 1.0).unwrap();
-        assert_eq!(constant_width, 390);
-        assert!(constant_height >= 844);
+        assert_eq!(constant_width, CANVAS_WIDTH as u32);
         assert!(constant_height > empty_height);
     }
 
     #[test]
-    fn renders_single_humidity_or_wind_values_in_compact_surfaces() {
+    fn renders_single_humidity_or_wind_values_in_compact_tiles() {
         let mut humidity_first = valid_payload();
         humidity_first["locations"][0]["current"]["windText"] = json!("");
         humidity_first["locations"][0]["current"]["humidityText"] = json!("41%");
@@ -889,7 +831,8 @@ mod tests {
         let (humidity_png_first, humidity_width, humidity_height) =
             render(&humidity_first, 1.0).unwrap();
         let (humidity_png_second, _, _) = render(&humidity_second, 1.0).unwrap();
-        assert_eq!((humidity_width, humidity_height), (390, 844));
+        assert_eq!(humidity_width, CANVAS_WIDTH as u32);
+        assert!(humidity_height > 0);
         assert_ne!(humidity_png_first, humidity_png_second);
 
         let mut wind_first = valid_payload();
@@ -905,7 +848,8 @@ mod tests {
         };
         let (wind_png_first, wind_width, wind_height) = render(&wind_first, 1.0).unwrap();
         let (wind_png_second, _, _) = render(&wind_second, 1.0).unwrap();
-        assert_eq!((wind_width, wind_height), (390, 844));
+        assert_eq!(wind_width, CANVAS_WIDTH as u32);
+        assert!(wind_height > 0);
         assert_ne!(wind_png_first, wind_png_second);
     }
 
@@ -921,26 +865,28 @@ mod tests {
     }
 
     #[test]
-    fn renders_phone_width_and_expands_for_long_content() {
+    fn renders_legacy_width_with_long_content() {
         let payload = valid_payload();
         let (png, width, height) = render(&payload, 1.0).expect("weather template should compile");
         assert!(!png.is_empty());
-        assert_eq!(width, 390);
+        assert_eq!(width, CANVAS_WIDTH as u32);
 
         let mut long = valid_payload();
-        long["locations"][0]["name"] = json!("中国科学技术大学高新校区气象观测点");
+        long["locations"][0]["name"] = json!("中国科学技术大学高新校区气象观测点".repeat(4));
         long["locations"][0]["current"]["windText"] =
-            json!("东南偏东风 3 级，阵风 5 级，体感舒适但请注意道路湿滑");
+            json!("东南偏东风 3 级，阵风 5 级，体感舒适但请注意道路湿滑".repeat(3));
         long["locations"][0]["alerts"] = json!([
             "高温黄色预警：未来六小时最高气温将超过三十五摄氏度，请减少户外活动并及时补水。"
+                .repeat(4)
         ]);
         let (_, long_width, long_height) =
             render(&long, 1.0).expect("long weather template should compile");
-        assert_eq!(long_width, 390);
+        assert_eq!(long_width, CANVAS_WIDTH as u32);
         assert!(
             long_height > height,
-            "long content did not increase page height"
+            "long weather text must increase page height"
         );
+        assert_eq!(long_width, width);
     }
 
     #[test]
@@ -950,7 +896,7 @@ mod tests {
         payload["locations"] = json!([location.clone(), location]);
         let (_, width, height) = render(&payload, 1.0).expect("weather template should compile");
         let single_height = render(&valid_payload(), 1.0).unwrap().2;
-        assert_eq!(width, 390);
+        assert_eq!(width, CANVAS_WIDTH as u32);
         assert!(height > single_height);
         let req: WeatherPayload = serde_json::from_value(payload).unwrap();
         let source = build_source(&req);

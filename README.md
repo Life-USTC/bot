@@ -49,23 +49,21 @@ MCP 对齐（见
 进程在 `BOT_HEALTH_ADDR`（默认 `127.0.0.1:2282`）提供 `/live`，只检查进程初始化和本地 SQLite，外部消息渠道断线不会触发容器重启。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
-图卡由 Typst `renderd` 服务渲染。所有卡片以 390 × 844pt 的 iPhone 竖屏为基础，
-默认 3× 输出宽 1170px、高至少 2532px 的 PNG；短内容保留一屏构图，长内容向下延伸。
-设计参考 Apple HIG 的[排版](https://developer.apple.com/design/human-interface-guidelines/typography)
-和[分组列表](https://developer.apple.com/design/human-interface-guidelines/lists-and-tables)：
-大标题 34pt、正文 17pt、注释和页脚 13pt，
-浅灰画布配白色分组。文字边界、行距、段距、块间距和表格单元格内边距使用 Typst 默认值，
-页脚随正文排列。课表按天纵向排列，长课程名、表格单元格和天气预警完整换行。
-该排版以手机上按宽度查看为目标；QQ 聊天气泡的缩略图尺寸仍由客户端控制。
+图卡由 Typst `renderd` 服务渲染，延续迁移前的简洁排版：近白画布、细横线、
+18pt 标题、13pt 正文、9pt 页脚，拉丁文字使用 Fira Code，中文使用思源黑体 / Noto CJK。
+校车表按内容定宽，往返路线并排，下一班信息放在标题右侧；待办与帮助保留平面表格和文本横线。
+课表保留完整节次和日期列，今天使用淡青色，课程使用原有浅色；长课程名自然换行。
+天气保留温度曲线、降水概率和每日温度范围条。高度随内容变化，默认以 3× 输出 PNG。
 
-启动 `renderd` 后可生成全部示例及按 390 × 844px 显示的本地预览页，长图可在预览框中滚动：
+启动 `renderd` 后可重新生成旧版原图和 Typst 对照页（旧版代码仅在临时目录内执行）：
 
 ```sh
-go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out /tmp/bot-examples
+./scripts/render-reference.sh
+go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out examples
 ```
 
-打开 `/tmp/bot-examples/index.html` 即可查看。示例使用固定测试数据；该命令及 CI
-会校验每张图片的默认输出宽度，渲染失败或宽度不一致时返回非零退出码。
+打开 `examples/index.html` 查看七组固定数据、固定时间的对照图；点击图片查看完整 PNG。
+仅生成 Typst 图卡时可省略第一步。该命令及 CI 校验图片尺寸范围，渲染或文件写入失败时返回非零退出码。
 
 `make build` 会先校验 `api/openapi.provenance`，再从仓库内固定的
 `api/openapi.json` 重新生成客户端，因此构建不依赖网络且可复现。更新契约时需提供
