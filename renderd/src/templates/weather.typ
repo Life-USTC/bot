@@ -3,7 +3,7 @@
 #import "styling.typ": *
 
 #let data = __DATA__
-#let canvas-width = 600pt
+#let canvas-width = 840pt
 #let margin = 32pt
 #let content-width = canvas-width - 2 * margin
 #let chart-row = 158pt

@@ -1,5 +1,5 @@
 // The pre-Typst cards use a flat paper canvas, quiet type and table rules.
-#let content-width = 480pt
+#let content-width = 204pt
 #let page-margin = 32pt
 #let ground = rgb("#fafafa")
 #let ink = rgb("#27272a")

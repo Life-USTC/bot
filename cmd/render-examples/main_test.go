@@ -28,7 +28,7 @@ func TestRunRejectsCardWidthOutOfRange(t *testing.T) {
 	server := exampleServer(t, 600, exampleMinHeight)
 	defer server.Close()
 	err := run(server.URL, t.TempDir(), "bus-single")
-	if err == nil || !strings.Contains(err.Error(), "image width 600, want between 912 and 3852") {
+	if err == nil || !strings.Contains(err.Error(), "image width 600, want between 804 and 2592") {
 		t.Fatalf("run error = %v, want a card-width regression failure", err)
 	}
 }

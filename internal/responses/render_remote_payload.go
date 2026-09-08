@@ -61,15 +61,10 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 		}(),
 	}
 	for i, day := range grid.Days {
-		label := strings.TrimSpace(day.Label)
-		today := i == todayIndex
-		if today && !strings.Contains(label, "今天") {
-			label += " · 今天"
-		}
 		req.Days = append(req.Days, remoteGridDay{
-			Label: label,
+			Label: strings.TrimSpace(day.Label),
 			Date:  strings.TrimSpace(day.Date),
-			Today: today,
+			Today: i == todayIndex,
 		})
 	}
 	for _, period := range grid.Periods {

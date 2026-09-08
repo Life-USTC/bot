@@ -2,11 +2,13 @@
 #import "ui-component.typ": *
 #let data = __DATA__
 
-#let period-width = 120pt
+#let period-width = 90pt
 #let course-body(item) = {
-  text(font: ("Source Han Sans CN", "Noto Sans CJK SC"), size: 14pt, weight: "bold", item.course)
-  if item.location != "" { v(8pt); text(size: 11pt, fill: muted, item.location) }
-  if item.weeks != "" { v(8pt); text(size: 11pt, fill: accent, item.weeks) }
+  set par(leading: 0.55em)
+  stack(spacing: 12pt,
+    text(font: ("Source Han Sans CN", "Noto Sans CJK SC"), size: 14pt, weight: "bold", lang: "en", hyphenate: true, item.course),
+    ..(if item.location == "" { () } else { (text(size: 11pt, fill: muted, item.location),) }),
+    ..(if item.weeks == "" { () } else { (text(size: 11pt, fill: accent, item.weeks),) }))
 }
 
 #let interval-body(group) = {
@@ -18,21 +20,20 @@
 }
 
 #{
-  let day-width = if data.days.len() == 1 { 360pt } else { 156pt }
+  let day-width = if data.days.len() == 1 { 360pt } else { 90pt }
   let width = period-width + day-width * data.days.len()
   let cells = (grid.cell(x: 0, y: 0, body-text("节次", weight: "bold")),)
   for (i, day) in data.days.enumerate() {
-    cells.push(grid.cell(x: i + 1, y: 0, {
-      body-text(day.label, weight: "bold", fill: if day.today { accent } else { ink })
-      if day.date != "" { v(8pt); caption-text(day.date, fill: if day.today { accent } else { muted }) }
-    }))
+    cells.push(grid.cell(x: i + 1, y: 0,
+      stack(spacing: 12pt,
+        body-text(day.label, weight: "bold", fill: if day.today { accent } else { ink }),
+        ..(if day.date == "" { () } else { (caption-text(day.date, fill: if day.today { accent } else { muted }),) }))))
   }
   for (i, period) in data.periods.enumerate() {
-    cells.push(grid.cell(x: 0, y: i + 1, {
-      body-text(period.label, weight: "bold")
-      v(8pt)
-      caption-text(period.time)
-    }))
+    cells.push(grid.cell(x: 0, y: i + 1, inset: (x: 8pt, y: if data.days.len() == 1 { 17pt } else { 38pt }),
+      stack(spacing: 12pt,
+        body-text(period.label, weight: "bold"),
+        caption-text(period.time))))
   }
   // Rowspan retains each class's actual period. Overlaps share their occupied
   // interval instead of being moved to a different time or silently dropped.

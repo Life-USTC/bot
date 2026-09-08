@@ -32,8 +32,8 @@
           row.cells.at(index, default: ""))))
     }
   }
-  table(columns: if bus { t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
-    inset: (x: pad, y: 10pt), align: left + horizon,
+  table(columns: if bus { (1fr,) * t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
+    inset: (x: pad, y: if bus { 24pt } else { 30pt }), align: left + horizon,
     stroke: (x, y) => (top: if y > 0 { hairline + border } else { none }),
     ..cells)
 }

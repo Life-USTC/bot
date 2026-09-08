@@ -13,7 +13,7 @@ use crate::escape::typst_str;
 
 // Keep these values in step with weather.typ. They are renderer constants for
 // chart coordinates, not caller-controlled page geometry.
-const CANVAS_WIDTH: f64 = 600.0;
+const CANVAS_WIDTH: f64 = 840.0;
 const MARGIN_X: f64 = 32.0;
 const CONTENT_WIDTH: f64 = CANVAS_WIDTH - 2.0 * MARGIN_X;
 const CHART_PLOT_LEFT: f64 = 0.0;
@@ -664,7 +664,7 @@ mod tests {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
         let source = build_source(&req);
-        assert!(source.contains("canvas-width = 600pt"));
+        assert!(source.contains("canvas-width = 840pt"));
         assert!(source.contains("content-width = canvas-width - 2 * margin"));
         assert!(!source.contains("canvas_width:"));
     }
