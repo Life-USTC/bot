@@ -1,12 +1,10 @@
-// Faithful Typst counterpart of internal/responses/weather_render.go. The
-// logical canvas is intentionally wider than the other cards because this is
-// the legacy weather card's established 920-point composition.
+// Faithful Typst counterpart of internal/responses/weather_render.go.
 
 #import "styling.typ": *
 
 #let data = __DATA__
-#let canvas-width = 920pt
-#let margin = 52pt
+#let canvas-width = 600pt
+#let margin = 32pt
 #let content-width = canvas-width - 2 * margin
 #let chart-row = 158pt
 #let chart-labels = 20pt
@@ -137,8 +135,8 @@
 }
 
 #let hourly-chart(points, plot) = {
-  let label-step = calc.max(1, int(calc.ceil(points.len() / 24)))
-  let axis-step = calc.max(3, int(calc.ceil(points.len() / 8)))
+  let label-step = calc.max(1, int(calc.ceil(points.len() / 12)))
+  let axis-step = calc.max(1, int(calc.ceil(points.len() / 6)))
   block(width: content-width, height: chart-row + chart-labels)[
     // The area and curve use the same sampled Catmull-Rom vertices as Go.
     #if plot.area.len() > 2 {
@@ -221,7 +219,7 @@
   ]
   #if location.current.humidity_text != "" or location.current.wind_text != "" {
     if location.current.humidity_text != "" and location.current.wind_text != "" {
-      grid(columns: (1fr, 1fr), column-gutter: 12pt,
+      stack(spacing: 12pt,
         stat-tile("湿度", location.current.humidity_text),
         stat-tile("风", location.current.wind_text))
     } else if location.current.humidity_text != "" {

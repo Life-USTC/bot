@@ -11,11 +11,10 @@ use serde::Deserialize;
 
 use crate::escape::typst_str;
 
-// Keep these values in step with weather.typ and the legacy Go renderer. They
-// are renderer constants for chart coordinates, not caller-controlled page
-// geometry.
-const CANVAS_WIDTH: f64 = 920.0;
-const MARGIN_X: f64 = 52.0;
+// Keep these values in step with weather.typ. They are renderer constants for
+// chart coordinates, not caller-controlled page geometry.
+const CANVAS_WIDTH: f64 = 600.0;
+const MARGIN_X: f64 = 32.0;
 const CONTENT_WIDTH: f64 = CANVAS_WIDTH - 2.0 * MARGIN_X;
 const CHART_PLOT_LEFT: f64 = 0.0;
 const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH;
@@ -665,7 +664,7 @@ mod tests {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
         let source = build_source(&req);
-        assert!(source.contains("canvas-width = 920pt"));
+        assert!(source.contains("canvas-width = 600pt"));
         assert!(source.contains("content-width = canvas-width - 2 * margin"));
         assert!(!source.contains("canvas_width:"));
     }
@@ -707,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn plot_keeps_full_data_with_legacy_labels() {
+    fn plot_keeps_full_data_with_narrow_labels() {
         let hours = (0..24)
             .map(|index| WeatherHour {
                 label: format!("{index:02}:00"),
@@ -865,7 +864,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_legacy_width_with_long_content() {
+    fn renders_narrow_width_with_long_content() {
         let payload = valid_payload();
         let (png, width, height) = render(&payload, 1.0).expect("weather template should compile");
         assert!(!png.is_empty());
