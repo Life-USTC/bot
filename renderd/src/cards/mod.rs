@@ -19,7 +19,7 @@ pub(crate) const MAX_TEXT_BYTES: usize = 4096;
 pub(crate) const MAX_LABEL_BYTES: usize = 256;
 pub(crate) const MAX_PAYLOAD_TEXT_BYTES: usize = 512 * 1024;
 
-/// Bus and rich-text cards use intrinsic widths with a 32pt paper margin.
+/// Paper-card width bounds used by render tests.
 #[cfg(test)]
 pub(crate) const SHEET_MIN_WIDTH_PT: u32 = 304;
 #[cfg(test)]
@@ -222,15 +222,14 @@ mod tests {
             format!(
                 "#import \"styling.typ\": *\n\
                  #import \"ui-component.typ\": *\n\
-                 #card-sheet(360pt, {{\n\
+                 #card-sheet(width: 360pt, {{\n\
                  card-header(\"课程安排\")\n\
                  for _ in range({rows}) {{ block[课程名称与地点] }}\n\
                  card-footer((\"15:04 · 工作日\", \"Life @ USTC\"))\n\
                  }})"
             )
         };
-        // The sheet is sized to its content in both directions: a short card
-        // stays short, and the width is chosen from the design's range.
+        // The sheet has a styled width and native content-driven height.
         let (_, base_width, base_height) = super::compile_png(source(2), 1.0).unwrap();
         assert!(
             (super::SHEET_MIN_WIDTH_PT..=super::SHEET_MAX_WIDTH_PT).contains(&base_width),
@@ -252,21 +251,6 @@ mod tests {
         assert!(
             height > base_height * 3,
             "long content must extend the sheet"
-        );
-    }
-    #[test]
-    fn long_identifiers_wrap_instead_of_spilling_past_the_page() {
-        let source = |value: &str| {
-            format!(
-            "#import \"styling.typ\": *\n#import \"ui-component.typ\": *\n#card-sheet(480pt, body-text(\"{value}\"))"
-        )
-        };
-        let (_, width, short) = super::compile_png(source("short"), 1.0).unwrap();
-        let (_, long_width, tall) = super::compile_png(source(&"A".repeat(300)), 1.0).unwrap();
-        assert_eq!(width, long_width);
-        assert!(
-            tall > short + 40,
-            "an unbroken identifier must wrap into several lines"
         );
     }
 }

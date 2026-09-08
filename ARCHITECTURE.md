@@ -444,16 +444,19 @@ response is preserved.
 The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
 `#27272a` text, thin horizontal table rules, 18pt titles, 13pt body text, and 9pt
 right-aligned footer lines. Tokens and shared table/page components are separate.
-Bus tables keep intrinsic column widths and group reverse routes horizontally;
-rich text keeps its 480–640pt content width and ruled paragraphs. The schedule
+Bus and rich-text cards use a 480pt content width. Native tables size their
+columns and rows automatically; reverse bus routes are paired horizontally.
+Rich text uses ordinary paragraphs with native line breaking and spacing. The schedule
 uses a full period grid with 120pt period labels, 156pt day columns (360pt for a
 single day), original pastel course colors, and teal current-day emphasis.
 Overlapping classes share their occupied interval, with enough height for all
 content. Weather retains the original 920pt canvas, current-condition summary,
 small metrics, hourly temperature/precipitation chart, and daily range bars.
 
-Typst handles glyph shaping and wrapping. Pages grow with their content instead
-of reserving a phone screen. Before rasterization, the renderer checks actual
+Typst handles glyph shaping, line breaking, and automatic table/grid row sizing.
+Templates do not insert break characters, measure text to allocate tracks, or
+estimate paragraph heights. Unbroken identifiers follow Typst's default behavior.
+Pages grow with their content. Before rasterization, the renderer checks actual
 page dimensions and rejects oversized or multi-page output. `renderd` rasterizes
 at 3x by default; `RENDERD_SCALE` and the per-request scale support 1x–4x.
 Its runtime image includes Fira Code and Noto CJK. The Typst world exposes only

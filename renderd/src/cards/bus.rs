@@ -1,7 +1,7 @@
 //! Bus timetable card rendering: semantic JSON payload -> Typst -> PNG.
 //!
 //! The Go side supplies the route and timing semantics. Typst owns the
-//! intrinsic paper canvas, wrapping, and auto-height layout.
+//! fixed-width paper canvas, wrapping, and auto-height layout.
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
@@ -331,15 +331,15 @@ mod tests {
         assert!(height > 0);
     }
     #[test]
-    fn explicit_headings_and_long_identifiers_take_layout_space() {
+    fn explicit_headings_and_long_text_take_layout_space() {
         let mut payload = valid_payload();
         payload.tables[0].label.clear();
         let (_, _, plain) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
         payload.tables[0].label = "晚间加班车".into();
         let (_, _, headed) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
         assert!(headed > plain, "explicit route headings must be drawn");
-        payload.tables[0].rows[0].cells[0] = "A".repeat(300);
+        payload.tables[0].rows[0].cells[0] = "高新校区到站说明".repeat(30);
         let (_, _, tall) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
-        assert!(tall > headed + 30, "long cell identifiers must wrap");
+        assert!(tall > headed + 30, "long cell text must wrap naturally");
     }
 }
