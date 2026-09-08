@@ -3,6 +3,7 @@
 #let data = __DATA__
 
 #card-sheet({
+  set par(spacing: 16pt)
   card-header(data.title)
   v(30pt)
   for (index, item) in data.blocks.enumerate() {
