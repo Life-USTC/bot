@@ -1,0 +1,133 @@
+[
+  {
+    "id": 179747,
+    "code": "MATH1006.12",
+    "name": "数学分析(B1)",
+    "campus": "西区",
+    "sourceSchedule": "3C201: 1(3,4);3C201: 3(3,4);3C201: 5(3,4)",
+    "sessions": [
+      {
+        "day": 1,
+        "start": 3,
+        "end": 4,
+        "room": "3C201",
+        "weeks": "2–18 周"
+      },
+      {
+        "day": 3,
+        "start": 3,
+        "end": 4,
+        "room": "3C201",
+        "weeks": "2–18 周"
+      },
+      {
+        "day": 5,
+        "start": 3,
+        "end": 4,
+        "room": "3C201",
+        "weeks": "2–18 周"
+      }
+    ]
+  },
+  {
+    "id": 179909,
+    "code": "MATH1009.06",
+    "name": "线性代数(B1)",
+    "campus": "西区",
+    "sourceSchedule": "3C201: 2(3,4);3C201: 4(3,4)",
+    "sessions": [
+      {
+        "day": 2,
+        "start": 3,
+        "end": 4,
+        "room": "3C201",
+        "weeks": "2–18 周"
+      },
+      {
+        "day": 4,
+        "start": 3,
+        "end": 4,
+        "room": "3C201",
+        "weeks": "2–18 周"
+      }
+    ]
+  },
+  {
+    "id": 177386,
+    "code": "CS1003.15",
+    "name": "计算机程序设计",
+    "campus": "西区",
+    "sourceSchedule": "3A113: 1(6,7);3A113: 3(1,2);西活二楼机房: 3(11,12,13)",
+    "sessions": [
+      {
+        "day": 1,
+        "start": 6,
+        "end": 7,
+        "room": "3A113",
+        "weeks": "2–14 周"
+      },
+      {
+        "day": 3,
+        "start": 1,
+        "end": 2,
+        "room": "3A113",
+        "weeks": "2–14(双) 周"
+      },
+      {
+        "day": 3,
+        "start": 11,
+        "end": 13,
+        "room": "西活二楼机房",
+        "weeks": "4–14 周"
+      }
+    ]
+  },
+  {
+    "id": 179077,
+    "code": "MARX1014.16",
+    "name": "习近平新时代中国特色社会主义思想概论",
+    "campus": "西区",
+    "sourceSchedule": "3C203: 2(8,9,10)",
+    "sessions": [
+      {
+        "day": 2,
+        "start": 8,
+        "end": 10,
+        "room": "3C203",
+        "weeks": "2–18 周"
+      }
+    ]
+  },
+  {
+    "id": 178643,
+    "code": "PE00001.04",
+    "name": "基础体育",
+    "campus": "西区",
+    "sourceSchedule": "西区操场（男生）: 4(6,7)",
+    "sessions": [
+      {
+        "day": 4,
+        "start": 6,
+        "end": 7,
+        "room": "西区操场（男生）",
+        "weeks": "2–18 周"
+      }
+    ]
+  },
+  {
+    "id": 180161,
+    "code": "FL1013.01",
+    "name": "大学英语交流",
+    "campus": "西区",
+    "sourceSchedule": "3A204: 2(1,2)",
+    "sessions": [
+      {
+        "day": 2,
+        "start": 1,
+        "end": 2,
+        "room": "3A204",
+        "weeks": "2–9 周"
+      }
+    ]
+  }
+]

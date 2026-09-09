@@ -447,8 +447,9 @@ right-aligned footer lines. Tokens and shared table/page components are separate
 Bus, rich-text, and timetable tables share 1pt full-cell rules, gray bold headers,
 alternating pale rows, and teal highlights.
 Cards retain native content-driven height: portrait proportions are a preference,
-not a reason to stretch empty rows. Bus cards use a 360pt content width and stack
-routes vertically; rich cards use 280pt when they contain tables and 204pt for
+not a reason to stretch empty rows. Bus route tables use 360pt columns: one or two
+tables stack vertically, while larger overviews use a native two-column grid with
+a 30pt gutter. All trips remain visible. Rich cards use 280pt when they contain tables and 204pt for
 prose. Wider columns and shorter ordinary rows give cells more balanced horizontal
 and vertical breathing room. Bus tables use equal fractional columns, while rich
 tables give their first column twice the width of each remaining column so short
@@ -499,7 +500,10 @@ The reference script archives the last pre-Typst commit into a temporary
 directory, injects seven fixture definitions pinned at commit `9679327` and a fixed clock,
 and renders through the historical Go implementation. It leaves no legacy
 execution path in the bot. `examples/reference` holds the original 2x PNGs;
-`examples/index.html` compares them with the new 3x PNGs at equal display widths.
+`examples/index.html` presents them beside the new 3x PNGs as historical style
+references, explicitly labeled as different input data. Current examples embed
+public course and complete bus snapshots with provenance in
+`cmd/render-examples/testdata/README.md`; they require no network during rendering.
 The command fails on rendering, output-write, or dimension errors. CI builds
 both sets and uploads the gallery as `typst-render-examples`.
 
