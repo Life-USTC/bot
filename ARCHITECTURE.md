@@ -282,47 +282,49 @@ nor turns a login message into evidence of a successful operation.
 
 ## Tool discovery
 
-The model sees stable meta-tools rather than the entire command and MCP
-catalog:
+The model sees one Bot entry point and the campus tools the server publishes:
 
-- `search_bot_commands` searches descriptor-backed documentation and returns
-  exact capability IDs, arguments, examples, effect, and scope. Confirmation
-  mechanics are intentionally absent.
-- `invoke_bot_capability` executes one normalized descriptor through the host
-  state machine.
-- `search_campus_tools` and `call_campus_tool` lazily initialize MCP only when
-  supplementary campus data is needed. Only exact tool names in the host-owned
-  read allowlist are exposed; remote MCP annotations cannot grant access.
-  Because remote tools are never registered directly with the provider, they
-  need none of the namespacing, sanitization, and collision hashing a harness
-  like Codex applies to `server__tool` names. `tools/list` is paged to
-  exhaustion: reading only the first page silently hides a later-page tool and
-  looks to the user like the tool does not exist (the same defect is open as
-  openai/codex#28858).
+- `run_bot_command` takes a command line written exactly as a user would type
+  it and parses it with the same tri-state parser, so normalization is shared
+  with humans and any documented example is literally callable. Its description
+  carries the complete command reference: the manual is static, so it rides in
+  the cached prompt prefix, and handing the model the same reference a user
+  reads lets it tell a user which command to type. Its result envelope reports
+  `delivered_to_user` `"image"` when the host has already sent a rendered card,
+  with that card's content in `result`; the host renders and sends, so without
+  this the model would answer as if the user had seen only text.
+- Campus tools are registered under their own names with the server's own JSON
+  Schemas. Nothing is re-declared in the host: the enums, defaults and
+  descriptions the server publishes are exactly the constraints a hand-written
+  copy cannot reproduce and will eventually contradict. The Bot's own weather
+  capability accepted `高新` and rejected `高新区` with nothing written down,
+  while the server publishes `enum: ["ustc-main", "ustc-gaoxin"]`.
+- A remote tool's effect comes from the server's `readOnlyHint` and
+  `destructiveHint`, which it derives from the same OAuth scope registry that
+  enforces access. An unannotated tool counts as a write: silence is not a
+  promise of safety. Destructive remote tools are not registered with the
+  model, because destructive consent still runs through the Bot capability
+  confirmation path; those operations remain reachable as Bot commands.
+- The remote catalog is cached process-wide with a short TTL, so registering
+  tools natively costs an OAuth exchange and a `tools/list` only when the cache
+  has expired. Anonymous and authenticated catalogs are cached apart because
+  the server filters by scope. A catalog failure removes the campus tools for
+  that turn and is logged; it never fails the turn, because Bot commands are
+  the larger surface and a logged-out user still needs them.
 
-Search ignores generic request verbs, politeness, and standalone numbers. A
-fuzzy Chinese match needs domain-bearing evidence in the capability ID, title,
-accepted forms, or multiple documentation fragments; words such as “查询”,
-“列出”, and “列表” cannot make an unrelated command look relevant. A valid empty Bot search
-result is evidence that the registry has no match and allows the model to try
-MCP. A malformed search result is not evidence and cannot unlock invocation.
+`tools/list` is paged to exhaustion: reading only the first page silently hides
+a later-page tool and looks to the user like the tool does not exist (the same
+defect is open as openai/codex#28858). One server publishes flat, unique names,
+so none of the namespacing, sanitization and collision hashing a harness like
+Codex applies to `server__tool` names is needed.
 
 An explicit request for the complete command/tool/capability inventory bypasses
 the model. The host constructs the response from the current descriptor
-registry, its fixed meta-tools, and the intersection of the live remote MCP
-catalog with the host read allowlist. This keeps the answer complete and
-truthful even when a model would otherwise browse one tool family at a time.
-The shortcut requires explicit inventory wording and refuses mutation wording,
-so it cannot preempt the normal confirmation path for an operation.
-
-The host prefetches rather than enforces. Before the first provider request it
-searches the descriptor registry itself and appends the result after the current
-user turn as a real assistant `search_bot_commands` call and its tool result.
-The transcript then reads exactly as if the model had searched first, so nothing
-has to be explained in the system prompt. It is appended rather than inserted,
-so the cached history prefix is untouched, and it is never persisted:
-documentation is cheap to rebuild and a stale copy would misdescribe a later
-turn.
+registry, its fixed host tools, and the campus tools actually registered this
+turn. This keeps the answer complete and truthful even when a model would
+otherwise browse one tool family at a time. The shortcut requires explicit
+inventory wording and refuses mutation wording, so it cannot preempt the normal
+confirmation path for an operation.
 
 The host does not restrict which tool the model may call, does not force a
 search-then-invoke sequence, and does not discard a model answer that arrived
