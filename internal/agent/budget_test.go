@@ -43,18 +43,51 @@ func TestRunBudgetCountsRetryReservationsCumulatively(t *testing.T) {
 	budget := newRunBudget(time.Now(), metrics)
 	ctx := withRunBudget(context.Background(), budget)
 
-	firstContext := agentRunTokenBudget - kimiMaxCompletionTokens
-	if err := admitModelRequest(ctx, firstContext); err != nil {
-		t.Fatalf("first model admission error = %v", err)
+	// A single request wider than the provider window is a context error.
+	if err := admitModelRequest(ctx, agentRequestTokenLimit); !errors.Is(err, errAgentContextBudget) {
+		t.Fatalf("oversized single request error = %v", err)
 	}
-	if err := admitModelRequest(ctx, 1); !errors.Is(err, errAgentContextBudget) {
-		t.Fatalf("second model admission error = %v", err)
+	// Full-window requests still accumulate, but against the run-wide cost
+	// ceiling rather than against a single context window.
+	fullWindow := agentRequestTokenLimit - kimiMaxCompletionTokens
+	admitted := 0
+	for admitted < 100 {
+		err := admitModelRequest(ctx, fullWindow)
+		if err == nil {
+			admitted++
+			continue
+		}
+		if !errors.Is(err, errAgentRunTokenBudget) {
+			t.Fatalf("admission %d error = %v", admitted+1, err)
+		}
+		break
 	}
-	if got := metrics.snapshot().modelRequests; got != 1 {
-		t.Fatalf("model requests = %d, want 1", got)
+	if admitted < 2 {
+		t.Fatalf("run token budget must allow more than one full window, admitted=%d", admitted)
 	}
-	if got := metrics.snapshot().contextTokens; got != firstContext {
-		t.Fatalf("observed context tokens = %d, want %d", got, firstContext)
+	if got := metrics.snapshot().modelRequests; got != int64(admitted) {
+		t.Fatalf("model requests = %d, want %d", got, admitted)
+	}
+}
+
+// TestRunBudgetAllowsTheDocumentedToolLoop pins the bug that made the tool-call
+// bound unreachable: at a realistic prompt size the run stopped on a context
+// error around the sixth request, long before 12 tool calls.
+func TestRunBudgetAllowsTheDocumentedToolLoop(t *testing.T) {
+	metrics := newRunMetrics()
+	budget := newRunBudget(time.Now(), metrics)
+	ctx := withRunBudget(context.Background(), budget)
+
+	const realisticPromptTokens = 13_000
+	for request := 1; request <= agentRunMaxToolCalls+1; request++ {
+		if err := admitModelRequest(ctx, realisticPromptTokens); err != nil {
+			t.Fatalf("request %d of the documented loop rejected: %v", request, err)
+		}
+		if request <= agentRunMaxToolCalls {
+			if err := admitToolCall(ctx); err != nil {
+				t.Fatalf("tool call %d rejected: %v", request, err)
+			}
+		}
 	}
 }
 

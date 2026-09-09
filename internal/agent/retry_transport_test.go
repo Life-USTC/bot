@@ -359,7 +359,7 @@ func TestRunBudgetRetriesDoNotReserveTokensAgain(t *testing.T) {
 	metrics := newRunMetrics()
 	budget := newRunBudget(time.Now(), metrics)
 	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	firstContext := agentRunTokenBudget - kimiMaxCompletionTokens
+	firstContext := agentRequestTokenLimit - kimiMaxCompletionTokens
 	if err := admitModelRequest(ctx, firstContext); err != nil {
 		t.Fatalf("first model admission error = %v", err)
 	}
