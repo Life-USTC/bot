@@ -41,8 +41,8 @@
           row.cells.at(index, default: ""))))
     }
   }
-  table(columns: if bus { (1fr,) * t.header.len() } else { (1fr,) + (auto,) * (t.header.len() - 1) },
-    inset: (x: pad, y: if bus { 24pt } else { 30pt }),
+  table(columns: if bus { (1fr,) * t.header.len() } else { (2fr,) + (1fr,) * (t.header.len() - 1) },
+    inset: (x: pad, y: 10pt),
     align: if bus { center + horizon } else { left + horizon },
     stroke: table-stroke,
     ..cells)

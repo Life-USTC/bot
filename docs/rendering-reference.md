@@ -1,6 +1,7 @@
 # Pre-Typst renderer references
 
-Generated from the seven fixtures in `cmd/render-examples/main.go` using the
+Generated from the seven fixtures in `cmd/render-examples/main.go` at
+`967932782ccda31aefe6d8405e860dc5cb2e5426` using the
 in-process `responses.Renderer` at legacy commit
 `b62f863fda82f9ddc1002de2ea89555f49eede8a`. The clock is fixed to
 `2026-09-02 15:04 +0800`; output scale is 2×.
@@ -56,5 +57,6 @@ lines 48–67, 92–116, 222–280, 397–412, 522–538, and 557–705;
 `internal/responses/schedule_grid.go` lines 31–74 and 161–360;
 `internal/responses/weather_render.go` lines 15–66 and 136–395;
 `internal/responses/weather_glyph.go` lines 9–79. Run `./scripts/render-reference.sh` to
-recreate the PNGs from the current fixture source by archiving the fixed
-legacy commit into a temporary checkout.
+recreate the PNGs by archiving both the fixed legacy renderer and fixed historical
+fixture source into a temporary checkout. Current production-derived examples use
+different inputs; see `cmd/render-examples/testdata/README.md` for their sources.

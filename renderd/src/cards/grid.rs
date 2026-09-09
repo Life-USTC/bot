@@ -405,10 +405,14 @@ mod tests {
         }
 
         // Identical glyphs make the assertion independent of automatic English
-        // hyphenation. The same long title returns to 14pt in a wider day cell.
-        for (count, days, expected_size) in
-            [(4, 7, 14.0), (21, 7, 12.0), (80, 7, 10.0), (80, 1, 14.0)]
-        {
+        // hyphenation. Wider day cells need less reduction than week cells.
+        for (count, days, expected_size) in [
+            (4, 7, 14.0),
+            (21, 7, 12.0),
+            (80, 7, 10.0),
+            (80, 1, 12.0),
+            (60, 1, 14.0),
+        ] {
             let mut payload = valid_payload();
             payload.title = "Schedule".into();
             payload.days = (0..days)
@@ -456,7 +460,7 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, short_width, short_height) = render(&short, 3.0).unwrap();
-        assert_eq!(short_width, 522 * 3);
+        assert_eq!(short_width, 444 * 3);
         assert!(short_height > 0);
 
         // Keep this fixture substantially longer than the short one so the
@@ -484,7 +488,7 @@ mod tests {
             "footer": ["更新时间", "Life @ USTC"]
         });
         let (_, long_width, long_height) = render(&long, 3.0).unwrap();
-        assert_eq!(long_width, 522 * 3);
+        assert_eq!(long_width, 444 * 3);
         assert!(long_height > short_height);
     }
     #[test]
@@ -500,7 +504,7 @@ mod tests {
             .collect();
         let (_, day_width, day_height) =
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
-        assert_eq!(day_width, 522);
+        assert_eq!(day_width, 444);
         assert!(
             day_height > short_height * 2,
             "empty periods must retain their rows"
@@ -514,7 +518,7 @@ mod tests {
             .collect();
         let (_, week_width, week_height) =
             super::super::compile_png(build_source(&payload), 1.0).unwrap();
-        assert_eq!(week_width, 792);
+        assert_eq!(week_width, 814);
         assert!(week_height > short_height * 2);
     }
 

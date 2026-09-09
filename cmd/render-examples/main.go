@@ -14,7 +14,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,54 +32,25 @@ type fixture struct {
 	name  string
 	title string
 	build func() *responses.Image
+	now   func() time.Time
 }
 
 func fixtureNow() time.Time {
-	return time.Date(2026, 9, 2, 15, 4, 0, 0, time.FixedZone("CST", 8*60*60))
+	return time.Date(2026, 10, 21, 15, 4, 0, 0, time.FixedZone("CST", 8*60*60))
 }
 
-// fixtures mirrors the sample data used by internal/responses tests; test
-// helpers live in _test.go files so the literals are copied here.
+// Public-data snapshots are embedded so local and CI renders are reproducible.
 func fixtures() []fixture {
 	return []fixture{
-		{"bus-single", "校车 · 单条路线", busSingleImage},
-		{"bus-all", "校车 · 全部路线", busAllImage},
-		{"rich-table", "待办表格", richTableImage},
-		{"rich-text", "帮助与长文本", richTextImage},
-		{"grid-week", "本周课表", gridWeekImage},
-		{"grid-day", "今日课表", gridDayImage},
-		{"weather", "多城市天气", weatherImage},
+		{"bus-single", "校车 · 东西区往返", busSingleImage, fixtureNow},
+		{"bus-all", "校车 · 工作日全部路线", busAllImage, fixtureNow},
+		{"bus-weekend", "校车 · 周六全部路线", busWeekendImage, func() time.Time { return fixtureNow().AddDate(0, 0, 3) }},
+		{"rich-table", "待办表格 · 合成数据", richTableImage, fixtureNow},
+		{"rich-text", "帮助与长文本", richTextImage, fixtureNow},
+		{"grid-week", "周课表 · 公开教学班组合", gridWeekImage, fixtureNow},
+		{"grid-day", "日课表 · 与周课表相同课程", gridDayImage, fixtureNow},
+		{"weather", "多城市天气 · 合成数据", weatherImage, fixtureNow},
 	}
-}
-
-// busSingleImage mirrors testBusImage in internal/responses/render_test.go.
-func busSingleImage() *responses.Image {
-	return responses.NewTextImage("bus", "校车 东区 → 西区", strings.Join([]string{
-		"东区\t西区\t先研院\t高新区",
-		"14:30\t14:40\t14:52\t15:05",
-		"16:00\t16:10\t16:22\t16:35",
-		"",
-		"东区\t北区\t西区",
-		"15:30\t15:35\t15:40\t✨",
-		"15:50\t15:55\t16:00",
-	}, "\n"))
-}
-
-// busAllImage mirrors testBusAllImage in internal/responses/render_test.go.
-func busAllImage() *responses.Image {
-	return responses.NewTextImage("bus", "校车", strings.Join([]string{
-		"东区\t西区\t先研院\t高新区",
-		"14:30\t14:40\t14:52\t15:05",
-		"16:00\t16:10\t16:22\t16:35",
-		"",
-		"东区\t北区\t西区",
-		"15:30\t15:35\t15:40\t✨",
-		"15:50\t15:55\t16:00",
-		"",
-		"西区\t北区\t东区",
-		"15:40\t15:45\t16:00",
-		"16:10\t16:15\t16:30",
-	}, "\n"))
 }
 
 // richTableImage is a non-bus rich card: todo kind with a section heading, a
@@ -104,62 +74,6 @@ func richTextImage() *responses.Image {
 发送「帮助 课表」可以查看「课表」命令的具体用法。
 直接发送「课表」即可查看今天的课程安排，发送「校车」查看校车时刻表。
 `+strings.Repeat("这是一段用于触发自动换行的较长的说明文字，", 8), "Bot 帮助")
-}
-
-// gridWeekImage exercises seven day sections, full English course names,
-// multiple classes on one day, current-day emphasis, and empty days.
-func gridWeekImage() *responses.Image {
-	now := fixtureNow()
-	todayIndex := int(now.Weekday()) // index 0 is 周日, matching day labels below
-	labels := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
-	days := make([]responses.ScheduleGridDay, 7)
-	for i := range days {
-		date := now.AddDate(0, 0, i-todayIndex)
-		days[i] = responses.ScheduleGridDay{Label: labels[i], Date: date.Format("01-02")}
-	}
-	return responses.NewScheduleGridImage("schedule", "本周课表", &responses.ScheduleGrid{
-		Semester:  "2026 秋季学期",
-		Week:      "第 1 周",
-		DateRange: "08/30-09/05",
-		Days:      days,
-		Periods:   schedulePeriods(),
-		Items: []responses.ScheduleGridItem{
-			{Day: 1, StartPeriod: 3, EndPeriod: 4, Course: "数据库系统", Location: "西区 · 3A204", Weeks: "2-16 周"},
-			{Day: 2, StartPeriod: 6, EndPeriod: 7, Course: "Computer Networks", Location: "西区 · 3A204"},
-			{Day: 3, StartPeriod: 1, EndPeriod: 2, Course: "Introduction to Computational Thinking and Programming Methodology", Location: "东区 · 5教5201"},
-			{Day: 4, StartPeriod: 9, EndPeriod: 10, Course: "线性代数", Location: "东区 · 2教2210"},
-			{Day: todayIndex, StartPeriod: 11, EndPeriod: 12, Course: "体育（太极拳）", Location: "中区 · 体育馆"},
-		},
-	}, "本周课表")
-}
-
-// gridDayImage exercises a compact single-day agenda.
-func gridDayImage() *responses.Image {
-	now := fixtureNow()
-	return responses.NewScheduleGridImage("schedule", now.Format("01-02")+" 课表", &responses.ScheduleGrid{
-		Days: []responses.ScheduleGridDay{
-			{Label: "今天", Date: now.Format("01-02")},
-		},
-		Periods: schedulePeriods(),
-		Items: []responses.ScheduleGridItem{
-			{Day: 0, StartPeriod: 3, EndPeriod: 4, Course: "数据库系统", Location: "西区 · 3A204", Weeks: "2-16 周"},
-			{Day: 0, StartPeriod: 8, EndPeriod: 9, Course: "计算机网络实验", Location: "西区 · 电三楼 314"},
-		},
-	}, "今日课表")
-}
-
-// Distinct example lesson times, not a live university timetable.
-func schedulePeriods() []responses.ScheduleGridPeriod {
-	times := []string{
-		"08:00–08:45", "08:50–09:35", "09:55–10:40", "10:45–11:30",
-		"11:35–12:20", "14:00–14:45", "14:50–15:35", "15:55–16:40",
-		"16:45–17:30", "17:35–18:20", "19:30–20:15", "20:20–21:05",
-	}
-	periods := make([]responses.ScheduleGridPeriod, len(times))
-	for i, lessonTime := range times {
-		periods[i] = responses.ScheduleGridPeriod{Label: "第 " + strconv.Itoa(i+1) + " 节", Time: lessonTime}
-	}
-	return periods
 }
 
 // weatherImage is a two-location weather card: the first location has 24
@@ -253,7 +167,7 @@ func run(endpoint, out, only string) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
-	renderer := responses.RemoteRenderer{Endpoint: endpoint, Now: fixtureNow}
+	renderer := responses.RemoteRenderer{Endpoint: endpoint}
 	var failures []error
 	var examples []example
 	matched := 0
@@ -262,6 +176,7 @@ func run(endpoint, out, only string) error {
 			continue
 		}
 		matched++
+		renderer.Now = f.now
 		img := f.build()
 		if img == nil {
 			failures = append(failures, fmt.Errorf("%s fixture build failed", f.name))

@@ -56,13 +56,15 @@ img { display: block; width: 100%; height: auto; background: #fafafa; }
 </style>
 <header>
 <h1>Bot · 渲染对照</h1>
-<p>相同示例数据与时间 · 原始 Go 渲染 / Typst · 点击图片查看完整 PNG。原图为 2×，Typst 为 3×；按相同显示宽度对照。</p>
+<p>课表使用 2026 秋季公开教学班组合，校车保留公开时刻表的全部班次；数据快照采集于 2026-09-09。课表固定展示第 8 周，工作日校车时钟为周三 15:04，周末为周六 15:04。天气和待办使用合成数据。点击图片查看完整 PNG。</p>
+<p>来源：<a href="https://catalog.ustc.edu.cn/api/teach/lesson/list-for-teach/461">学校公开教学班</a> · <a href="https://www.teach.ustc.edu.cn/calendar/20135.html">教学日历与上课时间</a> · <a href="https://static.life-ustc.tiankaima.dev/bus_data_v3.json">校车生产数据源</a>。</p>
+<p>左侧旧版图片仅作历史样式参考，使用不同的旧示例数据与时间，并非同数据对照。原图为 2×，Typst 为 3×。</p>
 </header>
 <main>
 {{range .}}<section id="{{.Name}}">
 <h2>{{.Title}}</h2>
 <div class="pair">
-{{if .ReferenceFile}}<figure><figcaption>原始 Go 渲染</figcaption><a href="{{.ReferenceFile}}"><img src="{{.ReferenceFile}}" alt="{{.Title}} · 原始 Go 渲染"></a></figure>{{end}}
+{{if .ReferenceFile}}<figure><figcaption>历史样式参考 · 旧示例数据</figcaption><a href="{{.ReferenceFile}}"><img src="{{.ReferenceFile}}" alt="{{.Title}} · 原始 Go 渲染"></a></figure>{{end}}
 <figure><figcaption>Typst · {{.Width}} × {{.Height}} px</figcaption><a href="{{.File}}"><img src="{{.File}}" alt="{{.Title}} · Typst" width="{{.Width}}" height="{{.Height}}"></a></figure>
 </div>
 </section>{{end}}

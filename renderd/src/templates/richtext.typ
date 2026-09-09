@@ -2,7 +2,7 @@
 #import "ui-component.typ": *
 #let data = __DATA__
 
-#card-sheet({
+#card-sheet(width: if data.blocks.any(item => item.table != none) { 280pt } else { content-width }, {
   set par(spacing: 16pt)
   card-header(data.title)
   v(30pt)

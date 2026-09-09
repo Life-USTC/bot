@@ -446,23 +446,27 @@ The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
 right-aligned footer lines. Tokens and shared table/page components are separate.
 Bus, rich-text, and timetable tables share 1pt full-cell rules, gray bold headers,
 alternating pale rows, and teal highlights.
-Cards favor portrait proportions around 9:16 while retaining native content-driven
-height. Bus cards use a 280pt content width and stack routes vertically; rich-text
-cards use 204pt. Bus tables use equal fractional columns, while rich tables give
-their first column the remaining width. Symmetric cell padding keeps table text
-centered vertically. Rich text uses ordinary paragraphs with native line breaking
-and 16pt paragraph spacing.
+Cards retain native content-driven height: portrait proportions are a preference,
+not a reason to stretch empty rows. Bus route tables use 360pt columns: one or two
+tables stack vertically, while larger overviews use a native two-column grid with
+a 30pt gutter. All trips remain visible. Rich cards use 280pt when they contain tables and 204pt for
+prose. Wider columns and shorter ordinary rows give cells more balanced horizontal
+and vertical breathing room. Bus tables use equal fractional columns, while rich
+tables give their first column twice the width of each remaining column so short
+date/time columns also retain horizontal space. Native horizon alignment
+centers cells vertically. Rich text uses ordinary paragraphs with native line
+breaking and 16pt paragraph spacing.
 
 The schedule retains every period and day, original pastel course colors, and
-teal current-day emphasis. Period columns are 90pt wide; day columns are 90pt in
-a week and 360pt in a single-day view. Native stacks keep weekday/date and
+teal current-day emphasis. Period columns are 112pt wide; day columns are 90pt in
+a week and 260pt in a single-day view. Native stacks keep weekday/date and
 period/time pairs 12pt apart and centered. Course titles use Typst's native
 `layout` and `measure` at the actual cell width to choose 14pt, 12pt, or 10pt
 proportional type against an 80pt title-height budget. The smallest size is a
 readability limit, not a clipping boundary: longer content still grows naturally.
-Native English hyphenation is enabled; location/week metadata stays at 11pt. Symmetric period-cell padding gives ordinary rows
-a consistent height and a portrait rhythm; unusually long or overlapping courses
-can still grow their rows naturally. Current-day emphasis uses color without
+Native English hyphenation is enabled; location/week metadata stays at 11pt.
+Day and week views use the same compact period rows; unusually long or overlapping
+courses can still grow their rows naturally. Current-day emphasis uses color without
 adding a redundant “今天” to weekday labels or thickening the column borders.
 Weekly headers show the server semester name, the selected academic week, and
 the displayed date range. These are semantic payload fields, independent of
@@ -496,7 +500,10 @@ The reference script archives the last pre-Typst commit into a temporary
 directory, injects seven fixture definitions pinned at commit `9679327` and a fixed clock,
 and renders through the historical Go implementation. It leaves no legacy
 execution path in the bot. `examples/reference` holds the original 2x PNGs;
-`examples/index.html` compares them with the new 3x PNGs at equal display widths.
+`examples/index.html` presents them beside the new 3x PNGs as historical style
+references, explicitly labeled as different input data. Current examples embed
+public course and complete bus snapshots with provenance in
+`cmd/render-examples/testdata/README.md`; they require no network during rendering.
 The command fails on rendering, output-write, or dimension errors. CI builds
 both sets and uploads the gallery as `typst-render-examples`.
 
