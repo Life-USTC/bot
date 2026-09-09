@@ -3,13 +3,13 @@
 #import "styling.typ": *
 
 #let data = __DATA__
-#let canvas-width = 840pt
-#let margin = 32pt
-#let content-width = canvas-width - 2 * margin
+#let canvas-width = 420pt
+#let margin = 24pt
+#let column-gap = 28pt
+#let content-width = (canvas-width - 2 * margin - column-gap) / 2
 #let chart-row = 158pt
 #let chart-labels = 20pt
 #let chart-plot-bottom = 124
-#let block-gap = 30pt
 
 #let weather-sun = rgb("#f59e0b")
 #let weather-cloud = rgb("#a1a1aa")
@@ -129,14 +129,14 @@
 #let section-heading(value) = block(inset: (top: 12pt, bottom: 10pt),
   placed-text(value, weight: "bold"))
 
-#let centered-label(value, x, y, width: 60pt, size: 9pt, color: muted) = {
-  place(top + left, dx: x * 1pt - width / 2, dy: y * 1pt,
+#let centered-label(value, x, y, width: 36pt, size: 9pt, color: muted) = {
+  place(top + left, dx: calc.clamp(x - width / 2 / 1pt, 0, (content-width - width) / 1pt) * 1pt, dy: y * 1pt,
     box(width: width, align(center + horizon, placed-text(value, size: size, color: color))))
 }
 
 #let hourly-chart(points, plot) = {
-  let label-step = calc.max(1, int(calc.ceil(points.len() / 12)))
-  let axis-step = calc.max(1, int(calc.ceil(points.len() / 6)))
+  let label-step = calc.max(1, int(calc.ceil(points.len() / 4)))
+  let axis-step = calc.max(1, int(calc.ceil(points.len() / 3)))
   block(width: content-width, height: chart-row + chart-labels)[
     // The area and curve use the same sampled Catmull-Rom vertices as Go.
     #if plot.area.len() > 2 {
@@ -181,14 +181,13 @@
 }
 
 #let daily-bars(days) = {
-  let track-left = 116pt
-  let track-right = content-width - 52pt
+  let track-left = 62pt
   for day in days {
-    grid(columns: (56pt, 44pt, 16pt, 1fr, 52pt), rows: (auto,),
+    grid(columns: (28pt, 26pt, 8pt, 1fr, 28pt), rows: (auto,),
       align: (left + horizon, right + horizon, center + horizon, left + horizon, right + horizon),
       inset: (y: 9pt),
-      placed-text(day.label),
-      placed-text(day.low_text, color: muted), [],
+      placed-text(day.label, size: 11pt),
+      placed-text(day.low_text, size: 11pt, color: muted), [],
       box(width: 100%, height: 7pt, {
         rect(width: 100%, height: 7pt, fill: weather-line, stroke: none)
         if day.fill_width > 0 {
@@ -197,25 +196,24 @@
               fill: gradient.linear(weather-sky, weather-sun, angle: 0deg), stroke: none))
         }
       }),
-      placed-text(day.high_text))
+      placed-text(day.high_text, size: 11pt))
   }
 }
 
-#let weather-location(location) = block(inset: (left: margin, right: margin))[
+#let weather-location(location) = block(width: 100%)[
   #block(inset: (top: 8pt, bottom: 14pt),
     placed-text(location.name, size: 16pt, weight: "bold"))
-  #block(inset: (top: 18pt, bottom: 28pt))[
-    #grid(columns: (64pt, auto, 1fr), column-gutter: (24pt, 16pt), align: left + horizon,
-      weather-glyph(location.current.icon),
-      move(dy: 8pt, placed-text(location.current.temperature_text, size: 56pt)),
-      move(dy: 18pt, stack(spacing: 14pt,
-        ..(if location.current.condition_text == "" { () } else {
-          (placed-text(location.current.condition_text, size: 18pt),)
-        }),
-        ..(if not location.current.has_range { () } else {
-          (placed-text(location.current.high_text + " / " + location.current.low_text,
-            color: muted),)
-        }))))
+  #block(inset: (top: 12pt, bottom: 24pt))[
+    #grid(columns: (48pt, 1fr), column-gutter: 12pt, align: left + horizon,
+      scale(75%, reflow: true, weather-glyph(location.current.icon)),
+      placed-text(location.current.temperature_text, size: 42pt))
+    #v(14pt)
+    #grid(columns: (1fr, auto), column-gutter: 8pt, align: left + horizon,
+      placed-text(location.current.condition_text, size: 12pt),
+      if location.current.has_range {
+        placed-text(location.current.high_text + " / " + location.current.low_text,
+          size: 11pt, color: muted)
+      })
   ]
   #if location.current.humidity_text != "" or location.current.wind_text != "" {
     if location.current.humidity_text != "" and location.current.wind_text != "" {
@@ -247,15 +245,11 @@
 
 #block(inset: (left: margin, right: margin, top: 35pt, bottom: 15pt),
   placed-text(data.title, size: 18pt, weight: "bold"))
-#for (index, location) in data.locations.enumerate() {
-  weather-location(location)
-  block(height: block-gap, inset: (left: margin, right: margin))[
-    #if index < data.locations.len() - 1 {
-      place(top + left, dy: block-gap / 2,
-        line(length: content-width, stroke: 1pt + weather-line))
-    }
-  ]
-}
+#block(inset: (left: margin, right: margin, bottom: 24pt))[
+  #grid(columns: (1fr, 1fr), column-gutter: column-gap, row-gutter: 30pt,
+    align: left + top,
+    ..data.locations.map(weather-location))
+]
 #block(inset: (left: margin, right: margin, top: 8pt, bottom: 16pt))[
   #grid(columns: (1fr, auto), column-gutter: 24pt, align: left + bottom,
     placed-text(data.meta, size: 9pt, color: muted),
