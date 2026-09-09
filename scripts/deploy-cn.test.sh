@@ -18,6 +18,18 @@ bash -n "$root/scripts/deploy-cn.sh"
 awk '/^ssh .*REMOTE_DEPLOY.*/ {capture=1; next} capture && /^REMOTE_DEPLOY$/ {exit} capture {print}' \
 	"$root/scripts/deploy-cn.sh" >"$remote_script"
 bash -n "$remote_script"
+! grep -F 'compose_stage build' "$remote_script" >/dev/null
+
+run_remote() {
+	local bot_image="${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}"
+	local renderd_image="$DEPLOY_TEST_NEW_IMAGE"
+	if [[ "$7" == custom-bot ]]; then
+		bot_image="$DEPLOY_TEST_NEW_BOT_IMAGE"
+		renderd_image="$DEPLOY_TEST_NEW_RENDERD_IMAGE"
+	fi
+	: >"$2/images.tar"
+	bash "$remote_script" "${@:1:8}" "$bot_image" "$renderd_image" "${9}"
+}
 
 # Extract and execute the parser heredoc itself. This catches indentation or
 # quoting regressions that a shell-only syntax check cannot see.
@@ -65,7 +77,7 @@ export DEPLOY_TEST_FIXTURE="$fixture"
 export DEPLOY_TEST_PHASE=running
 export DEPLOY_TEST_OLD_CONTAINER=0123456789abcdef
 export DEPLOY_TEST_OLD_IMAGE=sha256:$(printf '1%.0s' {1..64})
-export DEPLOY_TEST_OLD_IMAGE_REFERENCE=life-ustc-bot:same-revision
+export DEPLOY_TEST_OLD_IMAGE_REFERENCE=life-ustc-bot:0123456789012345678901234567890123456789
 export DEPLOY_TEST_NEW_IMAGE=sha256:$(printf '2%.0s' {1..64})
 docker() {
 	local command="${1:-}"
@@ -92,6 +104,7 @@ docker() {
 			return 0
 		fi
 		if [[ "$arguments" == *" stop "* ]]; then
+			: >"$DEPLOY_TEST_FIXTURE/service-stopped"
 			DEPLOY_TEST_PHASE=stopped
 			return 0
 		fi
@@ -112,6 +125,11 @@ docker() {
 			return 0
 		fi
 		return 0
+	fi
+	if [[ "$command" == load ]]; then
+		[[ -f "$DEPLOY_TEST_FIXTURE/rollback-image-tagged" ]] || return 43
+		: >"$DEPLOY_TEST_FIXTURE/images-loaded"
+		[[ "${DEPLOY_TEST_FAIL_LOAD:-0}" != 1 ]]
 	fi
 	if [[ "$command" == image && "${2:-}" == inspect ]]; then
 		if [[ "${3:-}" == --format ]]; then
@@ -143,7 +161,7 @@ docker() {
 			return 44
 		fi
 		[[ "${2:-}" == "$DEPLOY_TEST_OLD_IMAGE" ]]
-		[[ ! -f "$DEPLOY_TEST_FIXTURE/build-ran" ]]
+		[[ ! -f "$DEPLOY_TEST_FIXTURE/images-loaded" ]]
 		: >"$DEPLOY_TEST_FIXTURE/rollback-image-tagged"
 		return 0
 	fi
@@ -159,14 +177,14 @@ docker() {
 chown() { return 0; }
 export -f docker chown
 set +e
-	bash "$remote_script" "$test_root" "$test_stage" "$test_rollback" \
+	run_remote "$test_root" "$test_stage" "$test_rollback" \
 		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd test \
 	>"$fixture/output" 2>&1
 failure_status=$?
 set -e
 [[ "$failure_status" -ne 0 ]]
 [[ -f "$fixture/rollback-image-tagged" ]]
-[[ -f "$fixture/build-ran" ]]
+[[ ! -f "$fixture/build-ran" ]]
 [[ -f "$fixture/migration-ran" ]]
 [[ ! -f "$fixture/active-started" ]]
 [[ -f "$fixture/rollback-started" ]]
@@ -189,7 +207,7 @@ PY
 ! grep -F 'not-printed' "$fixture/output" >/dev/null
 
 # A staged Compose file that omits the renderd service must fail before any
-# image preservation, build, stop, or database operation is attempted.
+# image preservation, stop, or database operation is attempted.
 validation_root="$fixture/validation-root"
 validation_stage="$validation_root/.deploy-staging/validation"
 validation_rollback="$validation_root/.deploy-rollback/validation"
@@ -200,7 +218,7 @@ export DEPLOY_TEST_FIXTURE="$fixture/validation"
 mkdir -p "$DEPLOY_TEST_FIXTURE"
 export DEPLOY_TEST_MISSING_RENDERD=1
 set +e
-bash "$remote_script" "$validation_root" "$validation_stage" "$validation_rollback" \
+run_remote "$validation_root" "$validation_stage" "$validation_rollback" \
 	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd validation \
 	>"$fixture/validation-output" 2>&1
 validation_status=$?
@@ -212,7 +230,7 @@ unset DEPLOY_TEST_MISSING_RENDERD
 
 # A missing active Compose file makes any existing project container
 # untrustworthy: there is no configuration or image state to capture for
-# rollback, so the first-deployment path must refuse it before building.
+# rollback, so the first-deployment path must refuse it before quiescing.
 orphan_root="$fixture/orphan-root"
 orphan_stage="$orphan_root/.deploy-staging/orphan"
 orphan_rollback="$orphan_root/.deploy-rollback/orphan"
@@ -222,7 +240,7 @@ printf 'services:\n  bot:\n    image: new\n  renderd:\n    image: new-renderd\n'
 export DEPLOY_TEST_FIXTURE="$fixture/orphan"
 mkdir -p "$DEPLOY_TEST_FIXTURE"
 set +e
-bash "$remote_script" "$orphan_root" "$orphan_stage" "$orphan_rollback" \
+run_remote "$orphan_root" "$orphan_stage" "$orphan_rollback" \
 	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd orphan \
 	>"$fixture/orphan-output" 2>&1
 orphan_status=$?
@@ -245,7 +263,7 @@ printf 'services:\n  bot:\n    image: old\n' >"$preflight_root/compose.yaml"
 printf 'services:\n  bot:\n    image: new\n  renderd:\n    image: new-renderd\n' >"$preflight_stage/compose.yaml"
 set +e
 DEPLOY_TEST_FIXTURE="$fixture/preflight" DEPLOY_TEST_FAIL_TAG=1 DEPLOY_TEST_PHASE=running \
-	bash "$remote_script" "$preflight_root" "$preflight_stage" "$preflight_rollback" \
+	run_remote "$preflight_root" "$preflight_stage" "$preflight_rollback" \
 		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd preflight \
 	>"$fixture/preflight-output" 2>&1
 preflight_status=$?
@@ -254,6 +272,40 @@ set -e
 grep -F 'running service and database were not changed' "$fixture/preflight-output" >/dev/null
 ! grep -F 'automatic rollback was incomplete' "$fixture/preflight-output" >/dev/null
 ! grep -F 'not-printed' "$fixture/preflight-output" >/dev/null
+
+# Loading failure or an unexpected image ID must preserve the old image and
+# fail before any stop/migration, including a same-revision redeployment.
+for failure in load mismatch; do
+	failure_root="$fixture/$failure-root"
+	failure_stage="$failure_root/.deploy-staging/$failure"
+	failure_rollback="$failure_root/.deploy-rollback/$failure"
+	mkdir -p "$failure_root/data" "$failure_stage/src" "$failure_stage/diagnostics" "$failure_rollback"
+	cp "$preflight_root/.env" "$failure_root/.env"
+	cp "$preflight_root/.env" "$failure_stage/.env"
+	cp "$preflight_root/compose.yaml" "$failure_root/compose.yaml"
+	cp "$preflight_stage/compose.yaml" "$failure_stage/compose.yaml"
+	export DEPLOY_TEST_FIXTURE="$fixture/$failure-events"
+	mkdir -p "$DEPLOY_TEST_FIXTURE"
+	if [[ "$failure" == load ]]; then
+		export DEPLOY_TEST_FAIL_LOAD=1
+	else
+		export DEPLOY_TEST_EXPECTED_IMAGE="sha256:$(printf '9%.0s' {1..64})"
+	fi
+	set +e
+	run_remote "$failure_root" "$failure_stage" "$failure_rollback" \
+		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "$failure" \
+		>"$fixture/$failure-output" 2>&1
+	failure_rc=$?
+	set -e
+	[[ "$failure_rc" -ne 0 ]]
+	[[ -f "$DEPLOY_TEST_FIXTURE/rollback-image-tagged" && -f "$DEPLOY_TEST_FIXTURE/images-loaded" ]]
+	[[ ! -e "$DEPLOY_TEST_FIXTURE/service-stopped" && ! -e "$DEPLOY_TEST_FIXTURE/migration-ran" ]]
+	grep -F 'running service and database were not changed' "$fixture/$failure-output" >/dev/null
+	if [[ "$failure" == mismatch ]]; then
+		grep -F 'transferred bot image id does not match local build' "$fixture/$failure-output" >/dev/null
+	fi
+	unset DEPLOY_TEST_FAIL_LOAD DEPLOY_TEST_EXPECTED_IMAGE
+done
 
 # A post-promotion failure must stop both newly-created services and restore
 # the exact bot/renderd images that were running before the transaction.
@@ -325,10 +377,8 @@ docker() {
 				return 0
 			fi
 			if [[ "$arguments" == *" build" ]]; then
-				[[ -f "$DEPLOY_TEST_FIXTURE/bot-image-tagged" ]] || return 43
-				[[ -f "$DEPLOY_TEST_FIXTURE/renderd-image-tagged" ]] || return 43
 				: >"$DEPLOY_TEST_FIXTURE/build-ran"
-				return 0
+				return 43
 			fi
 			if [[ "$arguments" == *" stop "* ]]; then
 				: >"$DEPLOY_TEST_FIXTURE/old-bot-stopped"
@@ -474,7 +524,14 @@ docker() {
 			esac
 			return 0
 		;;
+		load)
+			[[ -f "$DEPLOY_TEST_FIXTURE/bot-image-tagged" ]] || return 43
+			[[ -f "$DEPLOY_TEST_FIXTURE/renderd-image-tagged" ]] || return 43
+			: >"$DEPLOY_TEST_FIXTURE/images-loaded"
+			return 0
+		;;
 		tag)
+			[[ ! -f "$DEPLOY_TEST_FIXTURE/images-loaded" ]] || return 43
 			case "${3:-}" in
 				custom-bot:rollback-*) [[ "${2:-}" == "$DEPLOY_TEST_OLD_BOT_IMAGE" ]] && : >"$DEPLOY_TEST_FIXTURE/bot-image-tagged" ;;
 				custom-renderd:rollback-*) [[ "${2:-}" == "$DEPLOY_TEST_OLD_RENDERD_IMAGE" ]] && : >"$DEPLOY_TEST_FIXTURE/renderd-image-tagged" ;;
@@ -535,7 +592,7 @@ mv() {
 export -f mv
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 set +e
-bash "$remote_script" "$promotion_root" "$promotion_stage" "$promotion_rollback" \
+run_remote "$promotion_root" "$promotion_stage" "$promotion_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd promotion \
 	>"$fixture/promotion-output" 2>&1 &
 promotion_pid=$!
@@ -571,7 +628,7 @@ mkdir -p "$DEPLOY_TEST_FIXTURE"
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 export DEPLOY_TEST_FAIL_NEW_REMOVE=1
 set +e
-bash "$remote_script" "$incomplete_root" "$incomplete_stage" "$incomplete_rollback" \
+run_remote "$incomplete_root" "$incomplete_stage" "$incomplete_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd incomplete \
 	>"$fixture/incomplete-output" 2>&1
 incomplete_status=$?
@@ -584,7 +641,7 @@ unset DEPLOY_TEST_FAIL_NEW_REMOVE
 
 export DEPLOY_TEST_FIXTURE="$fixture/sidecar"
 set +e
-bash "$remote_script" "$sidecar_root" "$sidecar_stage" "$sidecar_rollback" \
+run_remote "$sidecar_root" "$sidecar_stage" "$sidecar_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd sidecar \
 	>"$fixture/sidecar-output" 2>&1
 sidecar_status=$?
@@ -637,7 +694,7 @@ export DEPLOY_TEST_FAIL_ACTIVE_START=1
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running"
 rm -f "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 set +e
-bash "$remote_script" "$stopped_root" "$stopped_stage" "$stopped_rollback" \
+run_remote "$stopped_root" "$stopped_stage" "$stopped_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd stopped \
 	>"$fixture/stopped-output" 2>&1
 stopped_status=$?
@@ -691,7 +748,7 @@ unset DEPLOY_TEST_FAIL_ACTIVE_START DEPLOY_TEST_FAIL_RENDERD_START
 export DEPLOY_TEST_HANG_HEALTH=1
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 set +e
-bash "$remote_script" "$signal_root" "$signal_stage" "$signal_rollback" \
+run_remote "$signal_root" "$signal_stage" "$signal_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd signal \
 	>"$fixture/signal-output" 2>&1 &
 signal_pid=$!
@@ -769,7 +826,7 @@ mv() {
 export -f mv
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 set +e
-bash "$remote_script" "$state_root" "$state_stage" "$state_rollback" \
+run_remote "$state_root" "$state_stage" "$state_rollback" \
 	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd state \
 	>"$fixture/state-output" 2>&1 &
 state_pid=$!
@@ -794,6 +851,121 @@ grep -F 'revision=previous-state' "$state_root/.deploy-state" >/dev/null
 [[ -f "$state_rollback/previous-state.snapshot" ]]
 unset -f mv
 unset DEPLOY_TEST_STATE_ROOT DEPLOY_TEST_EXPECT_NEW_ENV
+
+# Local image builds use a fresh git fixture so the archive and ignored secret
+# handling are exercised without touching this checkout. The SSH mock records
+# every remote command; build and transfer failures must happen before any
+# remote deployment command is attempted.
+local_root="$fixture/local-root"
+mkdir -p "$local_root/scripts" "$local_root/renderd"
+cp -- "$root/scripts/deploy-cn.sh" "$local_root/scripts/deploy-cn.sh"
+cp -- "$root/compose.yaml" "$local_root/compose.yaml"
+cp -- "$root/Dockerfile" "$local_root/Dockerfile"
+cp -- "$root/renderd/Dockerfile" "$local_root/renderd/Dockerfile"
+printf '.env\n' >"$local_root/.gitignore"
+printf 'SECRET=local-secret\nBOT_DB_PATH=/data/life-ustc-bot.db\n' >"$local_root/.env"
+git -C "$local_root" init -q
+git -C "$local_root" add .gitignore compose.yaml Dockerfile renderd/Dockerfile scripts/deploy-cn.sh
+git -C "$local_root" -c user.name=deploy-test -c user.email=deploy-test@example.invalid commit -q -m fixture
+production_marker="$fixture/production-marker"
+printf 'old production\n' >"$production_marker"
+local_events="$fixture/local-events"
+
+docker() {
+	local command="${1:-}"
+	local arguments="$*"
+	local context
+	case "$command" in
+		buildx)
+			printf 'docker %s\n' "$arguments" >>"$DEPLOY_TEST_LOCAL_EVENTS"
+			context="${!#}"
+			[[ "$arguments" == *'--platform linux/amd64'* ]]
+			[[ -f "$context/Dockerfile" ]]
+			[[ ! -e "$context/.env" ]]
+			if [[ "$arguments" == *'renderd/Dockerfile'* ]]; then
+				[[ "$context" == */renderd ]]
+			else
+				[[ "$context" != */renderd ]]
+			fi
+			[[ "${DEPLOY_TEST_LOCAL_FAIL_BUILD:-0}" != 1 ]]
+			return
+		;;
+		image)
+			[[ "${2:-}" == inspect && "${3:-}" == --format ]]
+			if [[ "${5:-}" == *renderd* ]]; then
+				printf 'sha256:%s\n' "$(printf '2%.0s' {1..64})"
+			else
+				printf 'sha256:%s\n' "$(printf '1%.0s' {1..64})"
+			fi
+			return
+		;;
+		save)
+			printf 'docker %s\n' "$arguments" >>"$DEPLOY_TEST_LOCAL_EVENTS"
+			printf 'complete image archive\n'
+			return
+		;;
+	esac
+	return 0
+}
+
+ssh() {
+	local host="$1"
+	shift
+	local command="$*"
+	printf 'ssh %s %s\n' "$host" "$command" >>"$DEPLOY_TEST_LOCAL_EVENTS"
+	cat >/dev/null
+	if [[ "$command" == *'/images.tar'* ]]; then
+		[[ "${DEPLOY_TEST_LOCAL_FAIL_TRANSFER:-0}" != 1 ]]
+	fi
+}
+
+scp() {
+	printf 'scp %s\n' "$*" >>"$DEPLOY_TEST_LOCAL_EVENTS"
+}
+
+export DEPLOY_TEST_LOCAL_EVENTS="$local_events"
+export -f docker ssh scp
+
+export REMOTE_HOST=deploy@example
+export REMOTE_DIR=/srv/life-ustc
+export DEPLOY_IMAGE_REPOSITORY=life-ustc-bot
+export DEPLOY_RENDERD_IMAGE_REPOSITORY=life-ustc-renderd
+export DEPLOY_HEALTH_TIMEOUT=1
+export DEPLOY_TEST_LOCAL_FAIL_BUILD=1
+set +e
+"$local_root/scripts/deploy-cn.sh" >"$fixture/local-build-failure-output" 2>&1
+local_build_failure_rc=$?
+set -e
+[[ "$local_build_failure_rc" -ne 0 ]]
+grep -F 'docker buildx build' "$local_events" >/dev/null
+! grep -F 'docker load' "$local_events" >/dev/null
+! grep -F 'bash -s --' "$local_events" >/dev/null
+grep -F 'old production' "$production_marker" >/dev/null
+unset DEPLOY_TEST_LOCAL_FAIL_BUILD
+
+: >"$local_events"
+export DEPLOY_TEST_LOCAL_FAIL_TRANSFER=1
+set +e
+"$local_root/scripts/deploy-cn.sh" >"$fixture/local-transfer-failure-output" 2>&1
+local_transfer_failure_rc=$?
+set -e
+[[ "$local_transfer_failure_rc" -ne 0 ]]
+grep -F 'docker save' "$local_events" >/dev/null
+grep -F '/images.tar' "$local_events" >/dev/null
+[[ "$(grep -Fc 'bash -s --' "$local_events")" -eq 1 ]]
+grep -F 'old production' "$production_marker" >/dev/null
+unset DEPLOY_TEST_LOCAL_FAIL_TRANSFER
+
+: >"$local_events"
+"$local_root/scripts/deploy-cn.sh" >"$fixture/local-success-output" 2>&1
+[[ "$(grep -Fc 'docker buildx build' "$local_events")" -eq 2 ]]
+grep -F 'docker save life-ustc-bot:' "$local_events" >/dev/null
+grep -F '/images.tar' "$local_events" >/dev/null
+grep -F 'bash -s --' "$local_events" >/dev/null
+! grep -F 'compose_stage build' "$local_events" >/dev/null
+grep -F 'old production' "$production_marker" >/dev/null
+unset -f docker ssh scp
+unset DEPLOY_TEST_LOCAL_EVENTS REMOTE_HOST REMOTE_DIR DEPLOY_IMAGE_REPOSITORY DEPLOY_RENDERD_IMAGE_REPOSITORY DEPLOY_HEALTH_TIMEOUT
 
 output="$(
 	DEPLOY_DRY_RUN=1 \

@@ -5,8 +5,7 @@ services:
     image: life-ustc-renderd:${BOT_BUILD_VERSION:-dev}
     environment:
       RENDERD_SCALE: ${RENDERD_SCALE:-3}
-    build:
-      context: ./src/renderd
+    mem_limit: 768m
     restart: unless-stopped
     stop_grace_period: 10s
     expose:
@@ -18,8 +17,7 @@ services:
       retries: 3
       start_period: 10s
   bot:
-    build:
-      context: ./src
+    image: life-ustc-bot:${BOT_BUILD_VERSION:-dev}
     env_file:
       - .env
     environment:
