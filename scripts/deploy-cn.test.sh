@@ -20,17 +20,6 @@ awk '/^ssh .*REMOTE_DEPLOY.*/ {capture=1; next} capture && /^REMOTE_DEPLOY$/ {ex
 bash -n "$remote_script"
 ! grep -F 'compose_stage build' "$remote_script" >/dev/null
 
-run_remote() {
-	local bot_image="${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}"
-	local renderd_image="$DEPLOY_TEST_NEW_IMAGE"
-	if [[ "$7" == custom-bot ]]; then
-		bot_image="$DEPLOY_TEST_NEW_BOT_IMAGE"
-		renderd_image="$DEPLOY_TEST_NEW_RENDERD_IMAGE"
-	fi
-	: >"$2/images.tar"
-	bash "$remote_script" "${@:1:8}" "$bot_image" "$renderd_image" "${9}"
-}
-
 # Extract and execute the parser heredoc itself. This catches indentation or
 # quoting regressions that a shell-only syntax check cannot see.
 awk '
@@ -176,9 +165,10 @@ docker() {
 }
 chown() { return 0; }
 export -f docker chown
+: >"$test_stage/images.tar"
 set +e
-	run_remote "$test_root" "$test_stage" "$test_rollback" \
-		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd test \
+	bash "$remote_script" "$test_root" "$test_stage" "$test_rollback" \
+		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}" "$DEPLOY_TEST_NEW_IMAGE" test \
 	>"$fixture/output" 2>&1
 failure_status=$?
 set -e
@@ -217,9 +207,10 @@ printf 'services:\n  bot:\n    image: new\n' >"$validation_stage/compose.yaml"
 export DEPLOY_TEST_FIXTURE="$fixture/validation"
 mkdir -p "$DEPLOY_TEST_FIXTURE"
 export DEPLOY_TEST_MISSING_RENDERD=1
+: >"$validation_stage/images.tar"
 set +e
-run_remote "$validation_root" "$validation_stage" "$validation_rollback" \
-	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd validation \
+bash "$remote_script" "$validation_root" "$validation_stage" "$validation_rollback" \
+	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}" "$DEPLOY_TEST_NEW_IMAGE" validation \
 	>"$fixture/validation-output" 2>&1
 validation_status=$?
 set -e
@@ -239,9 +230,10 @@ printf 'SECRET=not-printed\nBOT_DB_PATH=/data/life-ustc-bot.db\n' >"$orphan_stag
 printf 'services:\n  bot:\n    image: new\n  renderd:\n    image: new-renderd\n' >"$orphan_stage/compose.yaml"
 export DEPLOY_TEST_FIXTURE="$fixture/orphan"
 mkdir -p "$DEPLOY_TEST_FIXTURE"
+: >"$orphan_stage/images.tar"
 set +e
-run_remote "$orphan_root" "$orphan_stage" "$orphan_rollback" \
-	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd orphan \
+bash "$remote_script" "$orphan_root" "$orphan_stage" "$orphan_rollback" \
+	0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}" "$DEPLOY_TEST_NEW_IMAGE" orphan \
 	>"$fixture/orphan-output" 2>&1
 orphan_status=$?
 set -e
@@ -261,10 +253,11 @@ printf 'SECRET=not-printed\nBOT_DB_PATH=/data/life-ustc-bot.db\n' >"$preflight_r
 cp -- "$preflight_root/.env" "$preflight_stage/.env"
 printf 'services:\n  bot:\n    image: old\n' >"$preflight_root/compose.yaml"
 printf 'services:\n  bot:\n    image: new\n  renderd:\n    image: new-renderd\n' >"$preflight_stage/compose.yaml"
+: >"$preflight_stage/images.tar"
 set +e
 DEPLOY_TEST_FIXTURE="$fixture/preflight" DEPLOY_TEST_FAIL_TAG=1 DEPLOY_TEST_PHASE=running \
-	run_remote "$preflight_root" "$preflight_stage" "$preflight_rollback" \
-		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd preflight \
+	bash "$remote_script" "$preflight_root" "$preflight_stage" "$preflight_rollback" \
+		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}" "$DEPLOY_TEST_NEW_IMAGE" preflight \
 	>"$fixture/preflight-output" 2>&1
 preflight_status=$?
 set -e
@@ -291,9 +284,10 @@ for failure in load mismatch; do
 	else
 		export DEPLOY_TEST_EXPECTED_IMAGE="sha256:$(printf '9%.0s' {1..64})"
 	fi
+	: >"$failure_stage/images.tar"
 	set +e
-	run_remote "$failure_root" "$failure_stage" "$failure_rollback" \
-		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "$failure" \
+	bash "$remote_script" "$failure_root" "$failure_stage" "$failure_rollback" \
+		0123456789012345678901234567890123456789 bot 1 life-ustc-bot life-ustc-renderd "${DEPLOY_TEST_EXPECTED_IMAGE:-$DEPLOY_TEST_NEW_IMAGE}" "$DEPLOY_TEST_NEW_IMAGE" "$failure" \
 		>"$fixture/$failure-output" 2>&1
 	failure_rc=$?
 	set -e
@@ -591,9 +585,10 @@ mv() {
 }
 export -f mv
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
+: >"$promotion_stage/images.tar"
 set +e
-run_remote "$promotion_root" "$promotion_stage" "$promotion_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd promotion \
+bash "$remote_script" "$promotion_root" "$promotion_stage" "$promotion_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" promotion \
 	>"$fixture/promotion-output" 2>&1 &
 promotion_pid=$!
 set -e
@@ -627,9 +622,10 @@ export DEPLOY_TEST_FIXTURE="$fixture/incomplete"
 mkdir -p "$DEPLOY_TEST_FIXTURE"
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
 export DEPLOY_TEST_FAIL_NEW_REMOVE=1
+: >"$incomplete_stage/images.tar"
 set +e
-run_remote "$incomplete_root" "$incomplete_stage" "$incomplete_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd incomplete \
+bash "$remote_script" "$incomplete_root" "$incomplete_stage" "$incomplete_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" incomplete \
 	>"$fixture/incomplete-output" 2>&1
 incomplete_status=$?
 set -e
@@ -640,9 +636,10 @@ grep -F 'automatic rollback was incomplete' "$fixture/incomplete-output" >/dev/n
 unset DEPLOY_TEST_FAIL_NEW_REMOVE
 
 export DEPLOY_TEST_FIXTURE="$fixture/sidecar"
+: >"$sidecar_stage/images.tar"
 set +e
-run_remote "$sidecar_root" "$sidecar_stage" "$sidecar_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd sidecar \
+bash "$remote_script" "$sidecar_root" "$sidecar_stage" "$sidecar_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" sidecar \
 	>"$fixture/sidecar-output" 2>&1
 sidecar_status=$?
 set -e
@@ -693,9 +690,10 @@ mkdir -p "$DEPLOY_TEST_FIXTURE"
 export DEPLOY_TEST_FAIL_ACTIVE_START=1
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running"
 rm -f "$DEPLOY_TEST_FIXTURE/old-renderd-running"
+: >"$stopped_stage/images.tar"
 set +e
-run_remote "$stopped_root" "$stopped_stage" "$stopped_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd stopped \
+bash "$remote_script" "$stopped_root" "$stopped_stage" "$stopped_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" stopped \
 	>"$fixture/stopped-output" 2>&1
 stopped_status=$?
 set -e
@@ -747,9 +745,10 @@ mkdir -p "$DEPLOY_TEST_FIXTURE"
 unset DEPLOY_TEST_FAIL_ACTIVE_START DEPLOY_TEST_FAIL_RENDERD_START
 export DEPLOY_TEST_HANG_HEALTH=1
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
+: >"$signal_stage/images.tar"
 set +e
-run_remote "$signal_root" "$signal_stage" "$signal_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd signal \
+bash "$remote_script" "$signal_root" "$signal_stage" "$signal_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" signal \
 	>"$fixture/signal-output" 2>&1 &
 signal_pid=$!
 set -e
@@ -825,9 +824,10 @@ mv() {
 }
 export -f mv
 touch "$DEPLOY_TEST_FIXTURE/old-bot-running" "$DEPLOY_TEST_FIXTURE/old-renderd-running"
+: >"$state_stage/images.tar"
 set +e
-run_remote "$state_root" "$state_stage" "$state_rollback" \
-	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd state \
+bash "$remote_script" "$state_root" "$state_stage" "$state_rollback" \
+	1111111111111111111111111111111111111111 bot 1 custom-bot custom-renderd "$DEPLOY_TEST_NEW_BOT_IMAGE" "$DEPLOY_TEST_NEW_RENDERD_IMAGE" state \
 	>"$fixture/state-output" 2>&1 &
 state_pid=$!
 set -e
