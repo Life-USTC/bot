@@ -124,6 +124,10 @@ type messageEvent struct {
 	SelfID      int64  `json:"self_id"`
 	Time        int64  `json:"time"`
 	MessageID   int64  `json:"message_id"`
+	Sender      struct {
+		Nickname string `json:"nickname"`
+		Card     string `json:"card"`
+	} `json:"sender"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
 	forwardImageURLs   []string
@@ -370,13 +374,22 @@ func (e messageEvent) inbound() message.Inbound {
 		replyTo = &message.ReplyRef{MessageID: messageID}
 	}
 	return message.Inbound{
-		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID},
+		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID, DisplayName: e.displayName()},
 		Conversation: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
 		Source:       message.ReplyRef{MessageID: napcatEventMessageID(e.MessageID), EventID: e.sourceEventID(), TransportID: e.reverseTransportID},
 		ReplyTo:      replyTo,
 		Text:         cleanNapCatMessageText(e.RawMessage), ImageURLs: e.imageURLs(),
 		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
 	}
+}
+
+// displayName prefers the per-group card over the global nickname, which is
+// how the same person appears to everyone else in that group.
+func (e messageEvent) displayName() string {
+	if card := strings.TrimSpace(e.Sender.Card); card != "" {
+		return card
+	}
+	return strings.TrimSpace(e.Sender.Nickname)
 }
 
 var napcatCQCodeRE = regexp.MustCompile(`(?i)\[CQ:[^\]]+\]`)

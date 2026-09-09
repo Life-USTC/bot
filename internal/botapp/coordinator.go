@@ -390,7 +390,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	var hostResponses []commands.Response
 	result := c.agent.Run(ctx, agent.Input{
 		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
-		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
+		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken, SpeakerName: inbound.Actor.DisplayName,
 		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
 			_ = ctx
 			outputMu.Lock()

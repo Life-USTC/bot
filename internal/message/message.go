@@ -7,6 +7,10 @@ import "time"
 type Actor struct {
 	Platform string
 	UserID   string
+	// DisplayName is how this person appears to the other participants. It is
+	// presentation only: identity and authorization always use UserID. Platforms
+	// that do not expose a name leave it empty.
+	DisplayName string
 }
 
 // Conversation is a platform delivery address.

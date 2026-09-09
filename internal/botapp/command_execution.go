@@ -61,7 +61,7 @@ func (c *Coordinator) executeCommandRoute(
 	invocation commands.Invocation,
 	commit responseCommitter,
 ) {
-	if err := c.appendCommandEvent(ctx, job, store.ConversationEventUser, "user", strings.TrimSpace(inbound.Text)); err != nil {
+	if err := c.appendCommandEvent(ctx, job, store.ConversationEventUser, "user", strings.TrimSpace(inbound.Text), inbound.Actor.DisplayName); err != nil {
 		c.fail(ctx, job, err)
 		return
 	}
@@ -333,7 +333,7 @@ func (c *Coordinator) executeClaimedCommand(
 			return
 		}
 		if text := strings.TrimSpace(finished.Result); text != "" {
-			if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text); err != nil {
+			if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text, ""); err != nil {
 				c.fail(ctx, job, err)
 				return
 			}
@@ -350,7 +350,7 @@ func (c *Coordinator) executeClaimedCommand(
 		return
 	}
 	if text := strings.TrimSpace(outcome.Response.Text); text != "" {
-		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text); err != nil {
+		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text, ""); err != nil {
 			c.fail(ctx, job, err)
 			return
 		}
@@ -437,7 +437,7 @@ func (c *Coordinator) finishCommandWithoutExecution(
 		transition = store.ConversationJobTransition{State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth}
 	}
 	if text := strings.TrimSpace(response.Text); text != "" {
-		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, "result", text); err != nil {
+		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, "result", text, ""); err != nil {
 			c.fail(ctx, job, err)
 			return
 		}
@@ -462,6 +462,7 @@ func (c *Coordinator) appendCommandEvent(
 	eventType store.ConversationEventType,
 	suffix string,
 	content string,
+	speaker string,
 ) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -470,7 +471,7 @@ func (c *Coordinator) appendCommandEvent(
 	_, _, err := c.jobs.AppendConversationEvent(ctx, store.ConversationEvent{
 		Identity: job.Identity, JobID: job.ID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:command:%s", job.ID, strings.TrimSpace(suffix)),
-		Type:      eventType, Content: content,
+		Type:      eventType, Content: content, Name: strings.TrimSpace(speaker),
 	})
 	return markConversationPersistenceError(err)
 }
