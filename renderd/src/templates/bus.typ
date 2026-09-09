@@ -2,7 +2,7 @@
 #import "ui-component.typ": *
 #let data = __DATA__
 
-#card-sheet(width: 280pt, {
+#card-sheet(width: 360pt, {
   card-header(data.title, subtitle: if data.next_time == none { none } else {
     stack(spacing: 7pt,
       text(size: 11pt, fill: muted, "下一班 " + data.next_time),

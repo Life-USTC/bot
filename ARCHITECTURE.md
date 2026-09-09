@@ -446,23 +446,26 @@ The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
 right-aligned footer lines. Tokens and shared table/page components are separate.
 Bus, rich-text, and timetable tables share 1pt full-cell rules, gray bold headers,
 alternating pale rows, and teal highlights.
-Cards favor portrait proportions around 9:16 while retaining native content-driven
-height. Bus cards use a 280pt content width and stack routes vertically; rich-text
-cards use 204pt. Bus tables use equal fractional columns, while rich tables give
-their first column the remaining width. Symmetric cell padding keeps table text
-centered vertically. Rich text uses ordinary paragraphs with native line breaking
-and 16pt paragraph spacing.
+Cards retain native content-driven height: portrait proportions are a preference,
+not a reason to stretch empty rows. Bus cards use a 360pt content width and stack
+routes vertically; rich cards use 280pt when they contain tables and 204pt for
+prose. Wider columns and shorter ordinary rows give cells more balanced horizontal
+and vertical breathing room. Bus tables use equal fractional columns, while rich
+tables give their first column twice the width of each remaining column so short
+date/time columns also retain horizontal space. Native horizon alignment
+centers cells vertically. Rich text uses ordinary paragraphs with native line
+breaking and 16pt paragraph spacing.
 
 The schedule retains every period and day, original pastel course colors, and
-teal current-day emphasis. Period columns are 90pt wide; day columns are 90pt in
-a week and 360pt in a single-day view. Native stacks keep weekday/date and
+teal current-day emphasis. Period columns are 112pt wide; day columns are 90pt in
+a week and 260pt in a single-day view. Native stacks keep weekday/date and
 period/time pairs 12pt apart and centered. Course titles use Typst's native
 `layout` and `measure` at the actual cell width to choose 14pt, 12pt, or 10pt
 proportional type against an 80pt title-height budget. The smallest size is a
 readability limit, not a clipping boundary: longer content still grows naturally.
-Native English hyphenation is enabled; location/week metadata stays at 11pt. Symmetric period-cell padding gives ordinary rows
-a consistent height and a portrait rhythm; unusually long or overlapping courses
-can still grow their rows naturally. Current-day emphasis uses color without
+Native English hyphenation is enabled; location/week metadata stays at 11pt.
+Day and week views use the same compact period rows; unusually long or overlapping
+courses can still grow their rows naturally. Current-day emphasis uses color without
 adding a redundant “今天” to weekday labels or thickening the column borders.
 Weekly headers show the server semester name, the selected academic week, and
 the displayed date range. These are semantic payload fields, independent of

@@ -2,7 +2,7 @@
 #import "ui-component.typ": *
 #let data = __DATA__
 
-#let period-width = 90pt
+#let period-width = 112pt
 // Typst measures wrapped titles at the actual cell width. Only the title's
 // font size changes; normal grid rows and text layout remain content-driven.
 #let course-title(value) = layout(bounds => {
@@ -36,7 +36,7 @@
 }
 
 #{
-  let day-width = if data.days.len() == 1 { 360pt } else { 90pt }
+  let day-width = if data.days.len() == 1 { 260pt } else { 90pt }
   let width = period-width + day-width * data.days.len()
   let cells = (grid.cell(x: 0, y: 0, body-text("节次", weight: "bold")),)
   for (i, day) in data.days.enumerate() {
@@ -46,7 +46,7 @@
         ..(if day.date == "" { () } else { (caption-text(day.date, fill: if day.today { accent } else { muted }),) }))))
   }
   for (i, period) in data.periods.enumerate() {
-    cells.push(grid.cell(x: 0, y: i + 1, inset: (x: 8pt, y: if data.days.len() == 1 { 17pt } else { 38pt }),
+    cells.push(grid.cell(x: 0, y: i + 1, inset: (x: 8pt, y: 20pt),
       stack(spacing: 12pt,
         body-text(period.label, weight: "bold"),
         caption-text(period.time))))
