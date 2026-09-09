@@ -49,6 +49,18 @@ MCP 对齐（见
 进程在 `BOT_HEALTH_ADDR`（默认 `127.0.0.1:2282`）提供 `/live`，只检查进程初始化和本地 SQLite，外部消息渠道断线不会触发容器重启。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
+### cn 生产部署
+
+生产部署唯一入口是 `scripts/deploy-cn.sh`。它从当前提交的 Git 跟踪文件归档创建本地构建上下文，使用 Docker Buildx 为 `linux/amd64` 构建 bot 和 `renderd` 镜像，再通过 SSH 上传完整镜像归档；远端在部署锁内保留旧镜像后执行 `docker load`，核对镜像 ID，再执行迁移、健康检查和事务回滚。Compose 只声明已构建镜像，不提供远端构建入口；`renderd` 的内存上限为 768 MB。`.env` 单独传到远端，不会进入镜像构建归档。
+
+```sh
+REMOTE_HOST=deploy@example \
+REMOTE_DIR=/srv/life-ustc \
+./scripts/deploy-cn.sh
+```
+
+先检查当前提交而不执行 Docker、SSH 或远端改动时，设置 `DEPLOY_DRY_RUN=1` 运行同一命令。
+
 图卡由 Typst `renderd` 服务渲染，延续迁移前的简洁排版：近白画布、细横线、
 18pt 标题、13pt 正文、9pt 页脚，数字与代码使用 Fira Code，中文及课程名称使用思源黑体 / Noto CJK。
 校车正文宽 380pt，文字图卡正文宽 480pt；表格行高及段落换行交由 Typst 自动处理，不插入额外断行字符。

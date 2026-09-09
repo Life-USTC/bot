@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy one committed revision to the remote Compose project. The remote
-# transaction deliberately keeps its staging and rollback directories so that
-# an operator can inspect the exact source, image, database backup, and
-# diagnostics for each deployment.
+# Deploy one committed revision to the remote Compose project. Images are
+# built locally from one tracked archive and loaded into the remote daemon
+# before the remote transaction starts. The transaction deliberately keeps
+# its staging and rollback directories so that an operator can inspect the
+# exact source, image, database backup, and diagnostics for each deployment.
 
 REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST to the SSH host}"
 REMOTE_DIR="${REMOTE_DIR:?set REMOTE_DIR to the remote deploy directory}"
@@ -79,6 +80,8 @@ fi
 
 require_command ssh
 require_command scp
+require_command docker
+require_command tar
 
 quote_remote_arg() {
 	local value="$1"
@@ -92,6 +95,39 @@ REMOTE_ROLLBACK="$REMOTE_DIR/.deploy-rollback/$DEPLOY_ID"
 REMOTE_ROOT_ARG="$(quote_remote_arg "$REMOTE_DIR")"
 REMOTE_STAGE_ARG="$(quote_remote_arg "$REMOTE_STAGE")"
 REMOTE_ROLLBACK_ARG="$(quote_remote_arg "$REMOTE_ROLLBACK")"
+
+LOCAL_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-cn.XXXXXXXX")"
+LOCAL_SOURCE_ARCHIVE="$LOCAL_WORK_DIR/source.tar.gz"
+LOCAL_SOURCE_ROOT="$LOCAL_WORK_DIR/src"
+mkdir "$LOCAL_SOURCE_ROOT"
+trap 'rm -rf -- "$LOCAL_WORK_DIR"' EXIT
+
+# Keep the build context independent from the checkout. The archive contains
+# exactly the tracked revision, so ignored files and local secrets cannot enter
+# either image build.
+git -C "$ROOT" archive --format=tar.gz --prefix=src/ "$REVISION" >"$LOCAL_SOURCE_ARCHIVE"
+tar -xzf "$LOCAL_SOURCE_ARCHIVE" -C "$LOCAL_WORK_DIR"
+[[ -f "$LOCAL_SOURCE_ROOT/Dockerfile" ]] || die "tracked archive is missing Dockerfile"
+[[ -f "$LOCAL_SOURCE_ROOT/renderd/Dockerfile" ]] || die "tracked archive is missing renderd/Dockerfile"
+
+NEW_IMAGE="$IMAGE_REPOSITORY:$REVISION"
+NEW_RENDERD_IMAGE="$RENDERD_IMAGE_REPOSITORY:$REVISION"
+
+echo "deploy-cn: building $NEW_IMAGE locally for linux/amd64"
+docker buildx build --load --platform linux/amd64 \
+	--file "$LOCAL_SOURCE_ROOT/Dockerfile" \
+	--tag "$NEW_IMAGE" \
+	"$LOCAL_SOURCE_ROOT"
+echo "deploy-cn: building $NEW_RENDERD_IMAGE locally for linux/amd64"
+docker buildx build --load --platform linux/amd64 \
+	--file "$LOCAL_SOURCE_ROOT/renderd/Dockerfile" \
+	--tag "$NEW_RENDERD_IMAGE" \
+	"$LOCAL_SOURCE_ROOT/renderd"
+
+LOCAL_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_IMAGE")" || die "could not inspect locally built bot image"
+LOCAL_RENDERD_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_RENDERD_IMAGE")" || die "could not inspect locally built renderd image"
+[[ "$LOCAL_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || die "locally built bot image id is invalid"
+[[ "$LOCAL_RENDERD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || die "locally built renderd image id is invalid"
 
 # Prepare only explicit, revision-scoped directories. In particular, the
 # currently running src directory and data directory are not touched here.
@@ -115,10 +151,15 @@ chown 10001:10001 "$root/data"
 chmod 700 "$root" "$root/data" "$root/.deploy-staging" "$root/.deploy-rollback" "$stage" "$stage/diagnostics" "$rollback"
 REMOTE_PREPARE
 
-# The archive contains exactly REVISION, including only tracked files. It is
-# extracted into the unique stage while the previous service keeps running.
-git -C "$ROOT" archive --format=tar.gz --prefix=src/ "$REVISION" \
-	| ssh "$REMOTE_HOST" "tar -xzf - -C $REMOTE_STAGE_ARG"
+# Upload bytes only. Loading revision tags must happen under the deployment
+# lock after the running images have been preserved for same-revision rollback.
+echo "deploy-cn: transferring locally built images to $REMOTE_HOST"
+docker save "$NEW_IMAGE" "$NEW_RENDERD_IMAGE" \
+	| ssh "$REMOTE_HOST" "umask 077; cat >$REMOTE_STAGE_ARG/images.tar"
+
+# The same archive used for local image builds is extracted into the unique
+# stage while the previous service keeps running.
+ssh "$REMOTE_HOST" "tar -xzf - -C $REMOTE_STAGE_ARG" <"$LOCAL_SOURCE_ARCHIVE"
 
 scp -q "$ROOT/$ENV_FILE" "$REMOTE_HOST:$REMOTE_STAGE/.env"
 scp -q "$ROOT/compose.yaml" "$REMOTE_HOST:$REMOTE_STAGE/compose.yaml"
@@ -128,11 +169,13 @@ REMOTE_SERVICE_ARG="$(quote_remote_arg "$SERVICE")"
 REMOTE_TIMEOUT_ARG="$(quote_remote_arg "$HEALTH_TIMEOUT")"
 REMOTE_IMAGE_REPOSITORY_ARG="$(quote_remote_arg "$IMAGE_REPOSITORY")"
 REMOTE_RENDERD_IMAGE_REPOSITORY_ARG="$(quote_remote_arg "$RENDERD_IMAGE_REPOSITORY")"
+REMOTE_IMAGE_ID_ARG="$(quote_remote_arg "$LOCAL_IMAGE_ID")"
+REMOTE_RENDERD_IMAGE_ID_ARG="$(quote_remote_arg "$LOCAL_RENDERD_IMAGE_ID")"
 REMOTE_DEPLOY_ID_ARG="$(quote_remote_arg "$DEPLOY_ID")"
 
 # All remote command output is retained under a mode-700 stage directory. FD
 # 3 is the only channel used for concise, non-secret operator status.
-ssh "$REMOTE_HOST" "bash -s -- $REMOTE_ROOT_ARG $REMOTE_STAGE_ARG $REMOTE_ROLLBACK_ARG $REMOTE_REVISION_ARG $REMOTE_SERVICE_ARG $REMOTE_TIMEOUT_ARG $REMOTE_IMAGE_REPOSITORY_ARG $REMOTE_RENDERD_IMAGE_REPOSITORY_ARG $REMOTE_DEPLOY_ID_ARG" <<'REMOTE_DEPLOY'
+ssh "$REMOTE_HOST" "bash -s -- $REMOTE_ROOT_ARG $REMOTE_STAGE_ARG $REMOTE_ROLLBACK_ARG $REMOTE_REVISION_ARG $REMOTE_SERVICE_ARG $REMOTE_TIMEOUT_ARG $REMOTE_IMAGE_REPOSITORY_ARG $REMOTE_RENDERD_IMAGE_REPOSITORY_ARG $REMOTE_IMAGE_ID_ARG $REMOTE_RENDERD_IMAGE_ID_ARG $REMOTE_DEPLOY_ID_ARG" <<'REMOTE_DEPLOY'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
@@ -146,7 +189,9 @@ RENDERD_SERVICE="renderd"
 HEALTH_TIMEOUT="$6"
 IMAGE_REPOSITORY="$7"
 RENDERD_IMAGE_REPOSITORY="$8"
-DEPLOY_ID="$9"
+EXPECTED_IMAGE_ID="${9}"
+EXPECTED_RENDERD_IMAGE_ID="${10}"
+DEPLOY_ID="${11}"
 
 exec 3>&1
 mkdir -p "$STAGE/diagnostics"
@@ -194,6 +239,8 @@ is_container_id() {
 [[ "$IMAGE_REPOSITORY" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]] || fail "invalid image repository"
 [[ "$RENDERD_IMAGE_REPOSITORY" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]] || fail "invalid renderd image repository"
 [[ "$IMAGE_REPOSITORY" != "$RENDERD_IMAGE_REPOSITORY" ]] || fail "bot and renderd image repositories must differ"
+[[ "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid expected bot image id"
+[[ "$EXPECTED_RENDERD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid expected renderd image id"
 [[ "$DEPLOY_ID" =~ ^[0-9A-Za-z_.-]+$ ]] || fail "invalid deployment id"
 
 DATA_DIR="$ROOT/data"
@@ -356,8 +403,8 @@ assert_no_symlink_components "$DB_PARENT"
 [[ ! -L "$DB_PARENT" && ! -L "$DB_PATH" && ! -L "$DB_PATH-wal" && ! -L "$DB_PATH-shm" ]] || fail "database path contains a symlink"
 
 # Supply immutable image references for both services in this revision-scoped
-# overlay. Keeping the sidecar explicit means a same-revision rebuild cannot
-# overwrite the image that a rollback needs.
+# overlay. Keeping the sidecar explicit makes the loaded image references
+# revision-scoped throughout the transaction.
 cat >"$STAGE_IMAGE_FILE" <<EOF
 services:
   bot:
@@ -457,7 +504,7 @@ collect_diagnostics() {
 		compose_active_new logs --no-color --tail=200 "$RENDERD_SERVICE" >"$DIAGNOSTIC_DIR/renderd.log" 2>&1 || true
 		chmod 600 "$DIAGNOSTIC_DIR/renderd.log" 2>/dev/null || true
 	fi
-	for log_name in deploy.log config.log build.log stop.log start.log migration.log rollback-start.log; do
+	for log_name in deploy.log config.log load.log stop.log start.log migration.log rollback-start.log; do
 		if [[ -f "$STAGE/$log_name" ]]; then
 			cp -- "$STAGE/$log_name" "$DIAGNOSTIC_DIR/$log_name" || true
 			chmod 600 "$DIAGNOSTIC_DIR/$log_name" 2>/dev/null || true
@@ -932,10 +979,8 @@ if [[ ! -e "$ACTIVE_COMPOSE" && ! -L "$ACTIVE_COMPOSE" ]]; then
 	[[ -z "$UNTRACKED_CONTAINER_IDS" ]] || fail "active Compose file is missing but project containers already exist"
 fi
 
-# Preserve the exact image references before building. A same-revision build
-# replaces revision tags with new OCI manifests; after that Docker can no
-# longer tag the manifests used by the running containers even though those
-# containers remain healthy.
+# Preserve the exact running images before loading new revision tags. This
+# must precede docker load even when the same revision is deployed again.
 PREVIOUS_SERVICES=""
 if [[ -e "$ACTIVE_COMPOSE" || -L "$ACTIVE_COMPOSE" ]]; then
 	[[ -f "$ACTIVE_COMPOSE" && ! -L "$ACTIVE_COMPOSE" ]] || fail "active compose file is not a regular file"
@@ -989,14 +1034,18 @@ if (( PREVIOUS_HAS_RENDERD == 1 )); then
 	fi
 fi
 
-# Build both immutable images only after all rollback tags are safe. The
-# running services are still untouched throughout this step.
-compose_stage build >"$STAGE/build.log" 2>&1
-NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_IMAGE")"
-[[ "$NEW_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "built image id is invalid"
-NEW_RENDERD_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_RENDERD_IMAGE")"
-[[ "$NEW_RENDERD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "built renderd image id is invalid"
-chmod 600 "$STAGE/build.log"
+[[ -f "$STAGE/images.tar" && ! -L "$STAGE/images.tar" ]] || fail "staged image archive is missing or invalid"
+log "loading locally built images"
+docker load --input "$STAGE/images.tar" >"$STAGE/load.log" 2>&1
+chmod 600 "$STAGE/load.log"
+NEW_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_IMAGE" 2>/dev/null)" || fail "transferred bot image is missing"
+[[ "$NEW_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "transferred bot image id is invalid"
+[[ "$NEW_IMAGE_ID" == "$EXPECTED_IMAGE_ID" ]] || fail "transferred bot image id does not match local build"
+NEW_RENDERD_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$NEW_RENDERD_IMAGE" 2>/dev/null)" || fail "transferred renderd image is missing"
+[[ "$NEW_RENDERD_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "transferred renderd image id is invalid"
+[[ "$NEW_RENDERD_IMAGE_ID" == "$EXPECTED_RENDERD_IMAGE_ID" ]] || fail "transferred renderd image id does not match local build"
+
+rm -- "$STAGE/images.tar"
 
 if [[ -e "$ROOT/src" || -L "$ROOT/src" ]]; then
 	[[ -d "$ROOT/src" && ! -L "$ROOT/src" ]] || fail "active source path is not a directory"
