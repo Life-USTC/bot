@@ -421,11 +421,16 @@ func TestAgentToolConstruction(t *testing.T) {
 		auth:      &auth.Manager{Store: db},
 		mcpClient: botmcp.New(mcpURL, mcpHTTPClient),
 	}
+	// Every non-destructive remote tool is registered under its own name with
+	// the server's own schema; the destructive one is withheld.
 	assertAgentToolNames(t, svc,
-		"call_campus_tool",
 		"get_current_time",
 		"run_bot_command",
-		"search_campus_tools",
+		"list_my_homeworks",
+		"search_courses",
+		"get_current_semester",
+		"catalog_young_event_list",
+		"catalog_young_event_get",
 	)
 }
 
@@ -441,7 +446,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	mcpURL, mcpHTTPClient, closeMCP, calls := newAgentMCPTestServer(t)
+	mcpURL, mcpHTTPClient, closeMCP, _ := newAgentMCPTestServer(t)
 	defer closeMCP()
 	svc := &Service{
 		handler: commands.Handler{Store: db}, auth: &auth.Manager{Store: db},
@@ -450,109 +455,46 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	lazy := newLazyMCPSession(svc, ident, 0)
 	defer func() { _ = lazy.Close() }()
 
-	docs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "homework"})
+	registered, err := lazy.appendTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(docs, "list_my_homeworks") || strings.Contains(docs, "delete_my_homework") {
-		t.Fatalf("read-only MCP docs = %s", docs)
-	}
-	for _, query := range []string{"第二课堂 活动", "查询第二课堂平台活动", "二课活动"} {
-		youngDocs, err := lazy.search(context.Background(), campusToolSearchInput{Query: query})
+	names := map[string]*schema.ToolInfo{}
+	for _, candidate := range registered {
+		info, err := candidate.Info(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(youngDocs, "catalog_young_event_list") || !strings.Contains(youngDocs, "catalog_young_event_get") {
-			t.Fatalf("young-event MCP docs for %q = %s", query, youngDocs)
+		names[info.Name] = info
+	}
+	for _, want := range []string{"list_my_homeworks", "search_courses", "get_current_semester", "catalog_young_event_list", "catalog_young_event_get"} {
+		if names[want] == nil {
+			t.Fatalf("remote tool %q was not registered: %#v", want, names)
 		}
 	}
-	allDocs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "*"})
+	// A destructive remote call has to be confirmed with the user, and that
+	// path is still shaped around a Bot capability, so it is not offered.
+	if names["delete_my_homework"] != nil {
+		t.Fatal("destructive remote tool was offered to the model")
+	}
+	// The server's own schema reaches the provider rather than a host rewrite.
+	if info := names["catalog_young_event_list"]; info == nil || info.ParamsOneOf == nil {
+		t.Fatalf("remote tool lost its schema: %#v", info)
+	}
+
+	invokable, ok := registered[0].(einotool.InvokableTool)
+	if !ok {
+		t.Fatalf("remote tool is not invokable: %T", registered[0])
+	}
+	result, err := invokable.InvokableRun(context.Background(), `{"query":"math"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"get_current_semester", "list_my_homeworks", "search_courses", "catalog_young_event_list", "catalog_young_event_get"} {
-		if !strings.Contains(allDocs, name) {
-			t.Fatalf("complete MCP inventory omitted %q: %s", name, allDocs)
-		}
-	}
-	if strings.Contains(allDocs, "delete_my_homework") {
-		t.Fatalf("complete MCP inventory exposed mutation: %s", allDocs)
-	}
-	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "catalog_young_event_list", Arguments: map[string]any{"active": true}}); err != nil {
-		t.Fatal(err)
-	}
-	if calls["catalog_young_event_list"].Load() != 1 {
-		t.Fatal("allowed young-event lookup did not reach the remote server")
-	}
-	result, err := lazy.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}})
-	// The envelope is host scaffolding; the remote body is carried through as
-	// JSON rather than buried in an escaped string.
-	if err != nil || !strings.Contains(result, `"result":{"ok":true}`) || !strings.Contains(result, `"outcome":"succeeded"`) {
-		t.Fatalf("lazy MCP call result=%q err=%v", result, err)
+	if !strings.Contains(result, `"outcome":"succeeded"`) || !strings.Contains(result, `"result":`) {
+		t.Fatalf("remote tool result = %q", result)
 	}
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "delete_my_homework"}); err == nil {
-		t.Fatal("hidden MCP mutation was callable")
-	}
-	if calls["delete_my_homework"].Load() != 0 {
-		t.Fatal("hidden MCP mutation reached the remote server")
-	}
-
-	job, _, err := db.EnqueueConversationJob(context.Background(), store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "lazy-mcp-receipt", ExpiresAt: time.Now().Add(time.Hour),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	claimed, err := db.ClaimConversationJob(context.Background(), ident)
-	if err != nil || claimed == nil || claimed.ID != job.ID {
-		t.Fatalf("claim MCP job=%#v err=%v", claimed, err)
-	}
-	trackedCtx := store.WithConversationJobLease(context.Background(), job.ID, claimed.LeaseToken)
-	tracked := newLazyMCPSession(svc, ident, job.ID)
-	defer func() { _ = tracked.Close() }()
-	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "delete_my_homework", Arguments: map[string]any{"id": 1}}); err == nil {
-		t.Fatal("misannotated MCP mutation was callable in a tracked job")
-	}
-	if executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID); err != nil || len(executions) != 0 {
-		t.Fatalf("hidden MCP mutation created executions=%#v err=%v", executions, err)
-	}
-	if calls["delete_my_homework"].Load() != 0 {
-		t.Fatal("tracked hidden MCP mutation reached the remote server")
-	}
-	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err != nil {
-		t.Fatal(err)
-	}
-	executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID)
-	if err != nil || len(executions) != 1 {
-		t.Fatalf("MCP executions=%#v err=%v", executions, err)
-	}
-	if executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Receipt.Action != "查询" ||
-		executions[0].Receipt.Resource != "课程" || executions[0].Receipt.Subject != "math" {
-		t.Fatalf("MCP execution receipt = %#v", executions[0])
-	}
-	if ok, err := db.CompleteConversationJob(context.Background(), job.ID, claimed.LeaseToken); err != nil || !ok {
-		t.Fatalf("complete first MCP job ok=%v err=%v", ok, err)
-	}
-
-	secondJob, _, err := db.EnqueueConversationJob(context.Background(), store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "lazy-mcp-same-lease", ExpiresAt: time.Now().Add(time.Hour),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondClaim, err := db.ClaimConversationJob(context.Background(), ident)
-	if err != nil || secondClaim == nil || secondClaim.ID != secondJob.ID {
-		t.Fatalf("claim second MCP job=%#v err=%v", secondClaim, err)
-	}
-	secondCtx := store.WithConversationJobLease(context.Background(), secondJob.ID, secondClaim.LeaseToken)
-	secondSession := newLazyMCPSession(svc, ident, secondJob.ID)
-	defer func() { _ = secondSession.Close() }()
-	prepared, trackedExecution, execute, err := secondSession.prepareExecution(secondCtx, "search_courses", map[string]any{"query": "math"})
-	if err != nil || !trackedExecution || !execute || prepared.State != store.CapabilityExecutionRunning {
-		t.Fatalf("prepare same-lease MCP read=%#v tracked=%v execute=%v err=%v", prepared, trackedExecution, execute, err)
-	}
-	if _, err := secondSession.call(secondCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err == nil || !strings.Contains(err.Error(), "already running") {
-		t.Fatalf("same-live MCP read was replayed: %v", err)
+		t.Fatal("destructive remote tool must be refused at call time too")
 	}
 }
 
@@ -595,19 +537,12 @@ func TestSecondClassroomRequestReachesTheLiteralMCPResult(t *testing.T) {
 		switch request {
 		case 1:
 			_, _ = io.WriteString(w, `{
-				"id":"young-search-mcp","object":"chat.completion","created":0,"model":"test-model",
+				"id":"young-call-mcp","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"young-search-mcp-call","type":"function","function":{"name":"search_campus_tools","arguments":"{\"query\":\"二课活动 报名\"}"}
+					"id":"young-call-mcp-call","type":"function","function":{"name":"catalog_young_event_list","arguments":"{\"active\":true,\"page\":1,\"limit\":3}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`)
 		case 2:
-			_, _ = io.WriteString(w, `{
-				"id":"young-call-mcp","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"young-call-mcp-call","type":"function","function":{"name":"call_campus_tool","arguments":"{\"name\":\"catalog_young_event_list\",\"arguments\":{\"active\":true,\"page\":1,\"limit\":3}}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`)
-		case 3:
 			_, _ = io.WriteString(w, `{
 				"id":"young-final","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"目前可以报名：第二课堂示例活动，地点为东区图书馆。"},"finish_reason":"stop"}]
@@ -629,17 +564,17 @@ func TestSecondClassroomRequestReachesTheLiteralMCPResult(t *testing.T) {
 	if !result.Handled || result.State != RunStateCompleted || result.Response.Text != "目前可以报名：第二课堂示例活动，地点为东区图书馆。" {
 		t.Fatalf("young-event result = %#v", result)
 	}
-	if got := modelRequests.Load(); got != 3 {
-		t.Fatalf("model requests = %d, want 3", got)
+	if got := modelRequests.Load(); got != 2 {
+		t.Fatalf("model requests = %d, want 2", got)
 	}
 	if calls["catalog_young_event_list"].Load() != 1 {
 		t.Fatalf("young-event MCP calls = %d, want 1", calls["catalog_young_event_list"].Load())
 	}
-	// The model receives the campus documentation, then the campus tool's own
-	// payload; neither is summarised or wrapped away by the host.
-	if len(requestBodies) != 3 || !bytes.Contains(requestBodies[1], []byte("catalog_young_event_list")) ||
-		!bytes.Contains(requestBodies[2], []byte("youngId")) || !bytes.Contains(requestBodies[2], []byte("第二课堂示例活动")) {
-		t.Fatalf("model did not receive the campus docs/result sequence: %q", requestBodies)
+	// The campus tool's own payload reaches the model, neither summarised nor
+	// wrapped away by the host.
+	if len(requestBodies) != 2 || !bytes.Contains(requestBodies[1], []byte("youngId")) ||
+		!bytes.Contains(requestBodies[1], []byte("第二课堂示例活动")) {
+		t.Fatalf("model did not receive the campus result: %q", requestBodies)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(executions) != 1 || executions[0].Capability != "mcp:catalog_young_event_list" ||
@@ -693,12 +628,14 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
 	if !names["run_bot_command"] {
 		t.Fatalf("host capability tool is missing: %#v", names)
 	}
-	if !names["search_campus_tools"] || logs.Len() != 0 {
-		t.Fatalf("MCP was initialized before a tool request: names=%#v logs=%q", names, logs.String())
+	// An unreachable campus service leaves the turn with Bot commands rather
+	// than failing it, and says so once in the log.
+	if names["catalog_young_event_list"] || !strings.Contains(logs.String(), "campus tools unavailable") {
+		t.Fatalf("campus outage did not degrade cleanly: names=%#v logs=%q", names, logs.String())
 	}
 	session := newLazyMCPSession(svc, ident, 0)
-	if _, err := session.search(context.Background(), campusToolSearchInput{Query: "course"}); !errors.Is(err, auth.ErrNotLoggedIn) {
-		t.Fatalf("lazy MCP search error = %v", err)
+	if _, err := session.appendTools(context.Background(), nil); !errors.Is(err, auth.ErrNotLoggedIn) {
+		t.Fatalf("campus catalog error = %v", err)
 	}
 }
 
@@ -753,12 +690,14 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T)
 	if !names["run_bot_command"] {
 		t.Fatalf("host capability tool is missing: %#v", names)
 	}
-	if logs.Len() != 0 {
-		t.Fatalf("MCP initialized while only constructing tools: %q", logs.String())
+	// An unapproved resource is the same kind of outage: campus tools are simply
+	// absent and the credential is left untouched.
+	if !strings.Contains(logs.String(), "campus tools unavailable") {
+		t.Fatalf("unapproved campus resource did not degrade cleanly: %q", logs.String())
 	}
 	session := newLazyMCPSession(svc, ident, 0)
-	if _, err := session.search(context.Background(), campusToolSearchInput{Query: "course"}); err == nil {
-		t.Fatal("lazy MCP search unexpectedly succeeded with an unapproved resource")
+	if _, err := session.appendTools(context.Background(), nil); err == nil {
+		t.Fatal("campus catalog unexpectedly succeeded with an unapproved resource")
 	}
 	credential, err := db.Credential(context.Background(), ident)
 	if err != nil || credential != nil {
@@ -865,8 +804,10 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
-		readOnly := true
+		readOnly := !strings.HasPrefix(tool.Name, "delete_")
+		destructive := !readOnly
 		tool.Annotations.ReadOnlyHint = &readOnly
+		tool.Annotations.DestructiveHint = &destructive
 		calls[tool.Name] = &atomic.Int32{}
 		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			calls[tool.Name].Add(1)

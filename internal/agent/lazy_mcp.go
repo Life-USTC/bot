@@ -12,44 +12,28 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
-	"github.com/Life-USTC/Bot/internal/textutil"
 )
-
-const maxCampusToolSearchResults = 5
-
-func campusReadToolAllowed(name string) bool {
-	switch name {
-	case "get_current_semester", "list_my_homeworks", "search_courses",
-		"catalog_young_event_list", "catalog_young_event_get":
-		return true
-	default:
-		return false
-	}
-}
-
-type campusToolSearchInput struct {
-	Query string `json:"query" jsonschema_description:"Words describing the campus data lookup you need"`
-}
 
 type campusToolCallInput struct {
 	Name      string         `json:"name" jsonschema_description:"Exact read-only tool name returned by search_campus_tools"`
 	Arguments map[string]any `json:"arguments,omitempty" jsonschema_description:"Arguments matching that tool's inputSchema exactly"`
 }
 
-type campusToolDocumentation struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema"`
-}
-
-// lazyMCPSession exposes only two stable meta-tools to the model. OAuth,
-// MCP initialization, and tools/list happen only if the model actually asks
-// for campus-tool documentation or invokes a campus read.
+// lazyMCPSession registers the server's own tools with the model, with the
+// server's own JSON Schemas. Nothing is re-declared here: the enums,
+// descriptions and defaults the server publishes are the constraints a
+// hand-written host copy cannot reproduce and, as the weather location names
+// showed, will eventually contradict.
+//
+// The catalog is cached process-wide, so a turn pays OAuth and tools/list only
+// when the cache has expired rather than on every request.
 type lazyMCPSession struct {
 	service  *Service
 	identity store.Identity
@@ -57,6 +41,7 @@ type lazyMCPSession struct {
 
 	once    sync.Once
 	session *botmcp.Session
+	listed  []mcpgo.Tool
 	tools   map[string]mcpgo.Tool
 	err     error
 }
@@ -65,13 +50,72 @@ func newLazyMCPSession(service *Service, identity store.Identity, jobID int64) *
 	return &lazyMCPSession{service: service, identity: identity, jobID: jobID}
 }
 
-func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, error) {
-	var err error
-	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first. Use the exact query * only when the user asks for a complete inventory of approved campus tools.", s.search)
+func (s *lazyMCPSession) appendTools(ctx context.Context, tools []tool.BaseTool) ([]tool.BaseTool, error) {
+	catalog, err := s.catalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. Returns a JSON envelope whose result field carries the campus tool's own payload.", s.call)
+	for _, remote := range catalog {
+		if campusEffectOf(remote) == campusEffectDestructive {
+			// A destructive remote call must be confirmed with the user, and the
+			// confirmation machinery is still shaped around a Bot capability.
+			// Until that path accepts a remote tool, the destructive operations
+			// stay reachable through their Bot commands, which do confirm.
+			s.service.logf("campus tool withheld pending destructive confirmation: name=%s", remote.Name)
+			continue
+		}
+		name, description, rawSchema, err := campusToolInfo(remote)
+		if err != nil {
+			return nil, err
+		}
+		parsed := &jsonschema.Schema{}
+		if err := json.Unmarshal(rawSchema, parsed); err != nil {
+			return nil, fmt.Errorf("decode campus tool %s input schema: %w", name, err)
+		}
+		tools = append(tools, &campusTool{session: s, name: name, info: &schema.ToolInfo{
+			Name: name, Desc: description, ParamsOneOf: schema.NewParamsOneOfByJSONSchema(parsed),
+		}})
+	}
+	return tools, nil
+}
+
+// catalog lists the remote tools, preferring the process-wide cache. Anonymous
+// and authenticated listings are cached apart because the server filters the
+// catalog by the caller's scopes, and this Bot requests one fixed scope set, so
+// every logged-in caller sees the same catalog.
+func (s *lazyMCPSession) catalog(ctx context.Context) ([]mcpgo.Tool, error) {
+	key := "anonymous"
+	if store.HasUserIdentity(s.identity) {
+		key = "authenticated"
+	}
+	if cached, found := s.service.campusCatalog.get(key); found {
+		return cached, nil
+	}
+	if err := s.ensure(ctx); err != nil {
+		return nil, err
+	}
+	s.service.campusCatalog.put(key, s.listed)
+	return s.listed, nil
+}
+
+// campusTool is one remote tool presented to the model under its own name and
+// schema.
+type campusTool struct {
+	session *lazyMCPSession
+	name    string
+	info    *schema.ToolInfo
+}
+
+func (t *campusTool) Info(context.Context) (*schema.ToolInfo, error) { return t.info, nil }
+
+func (t *campusTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	arguments := map[string]any{}
+	if trimmed := strings.TrimSpace(argumentsInJSON); trimmed != "" && trimmed != "null" {
+		if err := json.Unmarshal([]byte(trimmed), &arguments); err != nil {
+			return "", botmcp.NewRecoverableToolError(t.name, "arguments must be a JSON object matching this tool's inputSchema")
+		}
+	}
+	return t.session.call(ctx, campusToolCallInput{Name: t.name, Arguments: arguments})
 }
 
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
@@ -96,16 +140,13 @@ func (s *lazyMCPSession) ensure(ctx context.Context) error {
 			s.err = err
 			return
 		}
-		readOnly := make(map[string]mcpgo.Tool)
+		available := make(map[string]mcpgo.Tool, len(listed))
 		for _, candidate := range listed {
-			if !campusReadToolAllowed(candidate.Name) {
-				s.service.logf("MCP tool outside host read allowlist hidden from agent: name=%s", candidate.Name)
-				continue
-			}
-			readOnly[candidate.Name] = candidate
+			available[candidate.Name] = candidate
 		}
 		s.session = session
-		s.tools = readOnly
+		s.listed = listed
+		s.tools = available
 	})
 	return s.err
 }
@@ -117,83 +158,6 @@ func (s *lazyMCPSession) Close() error {
 	return s.session.Close()
 }
 
-func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput) (string, error) {
-	query := strings.ToLower(strings.TrimSpace(input.Query))
-	if query == "" {
-		return "", botmcp.NewRecoverableToolError("search_campus_tools", "query is required")
-	}
-	if err := s.ensure(ctx); err != nil {
-		return "", err
-	}
-	tokens := strings.Fields(query)
-	listAll := query == "*"
-	type match struct {
-		name  string
-		score int
-	}
-	matches := make([]match, 0, len(s.tools))
-	for name, candidate := range s.tools {
-		haystack := strings.ToLower(name + " " + candidate.Description + " " + campusToolSearchAliases(name))
-		score := 0
-		if listAll {
-			score = 1
-		} else {
-			for _, token := range tokens {
-				score += textutil.MeaningfulSearchTokenMatches(token, haystack)
-			}
-		}
-		if score > 0 {
-			matches = append(matches, match{name: name, score: score})
-		}
-	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
-		}
-		return matches[i].name < matches[j].name
-	})
-	if !listAll && len(matches) > maxCampusToolSearchResults {
-		matches = matches[:maxCampusToolSearchResults]
-	}
-	docs := make([]campusToolDocumentation, 0, len(matches))
-	for _, matched := range matches {
-		candidate := s.tools[matched.name]
-		schemaJSON, err := campusToolInputSchema(candidate)
-		if err != nil {
-			return "", err
-		}
-		docs = append(docs, campusToolDocumentation{
-			Name: candidate.Name, Description: candidate.Description, InputSchema: schemaJSON,
-		})
-	}
-	data, err := json.Marshal(docs)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func campusToolInputSchema(candidate mcpgo.Tool) (json.RawMessage, error) {
-	if len(candidate.RawInputSchema) > 0 {
-		if !json.Valid(candidate.RawInputSchema) {
-			return nil, fmt.Errorf("campus tool %s has an invalid input schema", candidate.Name)
-		}
-		return append(json.RawMessage(nil), candidate.RawInputSchema...), nil
-	}
-	data, err := json.Marshal(candidate.InputSchema)
-	if err != nil {
-		return nil, fmt.Errorf("encode campus tool %s input schema: %w", candidate.Name, err)
-	}
-	return data, nil
-}
-
-func campusToolSearchAliases(name string) string {
-	if strings.Contains(strings.ToLower(name), "young_event") {
-		return "第二课堂 二课 活动 报名"
-	}
-	return ""
-}
-
 func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (string, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -202,8 +166,12 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 	if err := s.ensure(ctx); err != nil {
 		return "", err
 	}
-	if _, found := s.tools[name]; !found {
-		return "", botmcp.NewRecoverableToolError(name, "the requested read-only campus tool was not found")
+	remote, found := s.tools[name]
+	if !found {
+		return "", botmcp.NewRecoverableToolError(name, "no campus tool by that name is available in this turn")
+	}
+	if campusEffectOf(remote) == campusEffectDestructive {
+		return "", botmcp.NewRecoverableToolError(name, "destructive campus calls are not available to the model; use the corresponding Bot command")
 	}
 
 	execution, tracked, execute, err := s.prepareExecution(ctx, name, input.Arguments)

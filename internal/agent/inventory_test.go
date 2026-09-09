@@ -83,13 +83,15 @@ func TestCapabilityInventoryIsHostGeneratedFromActualRegistries(t *testing.T) {
 		t.Fatalf("inventory result = %#v", result)
 	}
 	response := result.Response
-	for _, expected := range []string{"search_bot_commands", "invoke_bot_capability", "weather", "catalog_young_event_list", "catalog_young_event_get"} {
+	for _, expected := range []string{"run_bot_command", "weather", "catalog_young_event_list", "catalog_young_event_get"} {
 		if !strings.Contains(response.Text, expected) {
 			t.Errorf("inventory omitted %q: %s", expected, response.Text)
 		}
 	}
+	// A destructive remote tool is not registered with the model, so listing it
+	// as callable would be a lie.
 	if strings.Contains(response.Text, "delete_my_homework") {
-		t.Fatalf("inventory exposed hidden mutation: %s", response.Text)
+		t.Fatalf("inventory exposed a withheld destructive tool: %s", response.Text)
 	}
 	if modelRequests.Load() != 0 {
 		t.Fatalf("deterministic inventory made %d model requests", modelRequests.Load())

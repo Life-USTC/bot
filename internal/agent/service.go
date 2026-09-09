@@ -56,6 +56,11 @@ type Service struct {
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
+
+	// campusCatalog keeps remote tool definitions process-wide so registering
+	// them natively does not cost an OAuth exchange and a tools/list on every
+	// turn.
+	campusCatalog *campusCatalogCache
 }
 
 type Input struct {
@@ -114,7 +119,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		mcpClient = botmcp.New(mcpBaseURL, httpClient)
 	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
+		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager, campusCatalog: newCampusCatalogCache()}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -137,15 +142,16 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 	service := &Service{
-		handler:    handler,
-		model:      chatModel,
-		modelName:  modelName,
-		enabled:    true,
-		timeout:    timeout,
-		logger:     cfg.Logger,
-		httpClient: agentHTTPClient,
-		mcpClient:  mcpClient,
-		auth:       authManager,
+		handler:       handler,
+		model:         chatModel,
+		modelName:     modelName,
+		enabled:       true,
+		timeout:       timeout,
+		logger:        cfg.Logger,
+		httpClient:    agentHTTPClient,
+		mcpClient:     mcpClient,
+		auth:          authManager,
+		campusCatalog: newCampusCatalogCache(),
 	}
 	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
 		premiumName := strings.TrimSpace(cfg.PremiumModel)
@@ -963,10 +969,19 @@ func (s *Service) toolsFor(
 	var mcpSession *lazyMCPSession
 	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
 		mcpSession = newLazyMCPSession(s, ident, jobID)
-		tools, err = mcpSession.appendTools(tools)
-		if err != nil {
+		// Registering remote tools natively means listing the catalog before the
+		// first model request, so an unavailable or unauthorized campus service
+		// must not take the turn down with it: Bot commands are the larger and
+		// more common surface, and a logged-out user still needs them. The turn
+		// continues with campus tools simply absent.
+		withCampus, campusErr := mcpSession.appendTools(ctx, tools)
+		if campusErr != nil {
+			s.logf("campus tools unavailable this turn: platform=%s conversation_type=%s error=%v",
+				ident.Platform, ident.ConversationType, campusErr)
 			_ = mcpSession.Close()
-			return nil, nil, err
+			mcpSession = nil
+		} else {
+			tools = withCampus
 		}
 	}
 

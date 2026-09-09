@@ -59,18 +59,11 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 	lines := []string{
 		"Agent 当前能力（主机实时配置）：",
 		"",
-		"一、LLM 直接看到的主机元工具",
-		"search_bot_commands：检索 Bot 能力文档",
-		"invoke_bot_capability：执行已检索的 Bot 能力",
+		"一、LLM 直接看到的主机工具",
+		"run_bot_command：按用户写法执行一条 Bot 命令（完整命令手册在工具描述里）",
 		"get_current_time：查询 Asia/Shanghai 当前时间",
 	}
 	privateMCP := !store.IsSharedConversation(ident) && s != nil && s.mcpClient != nil && s.auth != nil
-	if privateMCP {
-		lines = append(lines,
-			"search_campus_tools：检索获准的只读 MCP 工具",
-			"call_campus_tool：执行已检索的只读 MCP 工具",
-		)
-	}
 
 	lines = append(lines, "", "二、Bot 能力注册表")
 	documentation := commands.SearchCapabilityDocumentation("", commands.CapabilitySearchOptions{
@@ -81,7 +74,7 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 		lines = append(lines, fmt.Sprintf("%s（%s）：%s", item.ID, forms, item.Summary))
 	}
 
-	lines = append(lines, "", "三、当前可调用的只读 MCP 工具")
+	lines = append(lines, "", "三、当前注册给模型的校园工具（来自服务端目录）")
 	switch {
 	case store.IsSharedConversation(ident):
 		lines = append(lines, "群聊不开放 MCP 工具；请在私聊中检查或使用。")
@@ -98,12 +91,16 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 			break
 		}
 		names := make([]string, 0, len(session.tools))
-		for name := range session.tools {
+		for name, remote := range session.tools {
+			if campusEffectOf(remote) == campusEffectDestructive {
+				// Withheld from the model, so it must not be listed as callable.
+				continue
+			}
 			names = append(names, name)
 		}
 		sort.Strings(names)
 		if len(names) == 0 {
-			lines = append(lines, "远端当前没有同时通过主机只读白名单的工具。")
+			lines = append(lines, "服务端当前没有返回可注册的校园工具。")
 		}
 		for _, name := range names {
 			description := strings.TrimSpace(session.tools[name].Description)
@@ -117,7 +114,7 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 
 	lines = append(lines,
 		"",
-		"结构说明：Bot 能力由主机负责参数校验、确认、持久化和回执；MCP 只作为显式白名单内的补充只读数据源。天气属于 Bot 能力，当前时间属于主机元工具，不是 MCP。",
+		"结构说明：Bot 命令由主机负责解析、确认、持久化和回执；校园工具直接来自服务端目录，参数以服务端 schema 为准。破坏性校园操作不注册给模型，请改用对应的 Bot 命令。",
 	)
 	return strings.Join(lines, "\n"), nil
 }
