@@ -77,12 +77,34 @@ func (s *Session) Close() error {
 	return s.client.Close()
 }
 
+// maxToolListPages bounds a server that keeps handing back cursors. The host
+// allowlist is small, but a tool that only appears on a later page must still
+// be discovered: reading page one alone silently hid it and looked to the user
+// like the campus tool did not exist.
+const maxToolListPages = 20
+
 func (s *Session) Tools(ctx context.Context) ([]mcpgo.Tool, error) {
-	result, err := s.client.ListTools(ctx, mcpgo.ListToolsRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("list mcp tools: %w", err)
+	var tools []mcpgo.Tool
+	var cursor mcpgo.Cursor
+	seen := make(map[mcpgo.Cursor]struct{}, maxToolListPages)
+	for page := 0; page < maxToolListPages; page++ {
+		req := mcpgo.ListToolsRequest{}
+		req.Params.Cursor = cursor
+		result, err := s.client.ListTools(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("list mcp tools: %w", err)
+		}
+		tools = append(tools, result.Tools...)
+		if result.NextCursor == "" {
+			return tools, nil
+		}
+		if _, repeated := seen[result.NextCursor]; repeated {
+			return nil, fmt.Errorf("list mcp tools: server repeated pagination cursor")
+		}
+		seen[result.NextCursor] = struct{}{}
+		cursor = result.NextCursor
 	}
-	return result.Tools, nil
+	return nil, fmt.Errorf("list mcp tools: more than %d pages", maxToolListPages)
 }
 
 func (s *Session) Call(ctx context.Context, name string, arguments map[string]any) (string, error) {
