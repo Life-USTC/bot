@@ -295,7 +295,7 @@ func (h Handler) parseResult(text string) ParseResult {
 	if len(fields) == 0 {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	if isHelpToken(fields[0]) {
+	if isHelpCommandToken(fields[0]) {
 		return acceptedCommandResult(raw, string(CapabilityHelp), fields[1:])
 	}
 
@@ -312,12 +312,11 @@ func (h Handler) parseResult(text string) ParseResult {
 
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
-		if strings.HasPrefix(fields[0], "/") {
-			unknown := strings.TrimSpace(strings.TrimPrefix(fields[0], "/"))
-			if unknown != "" {
-				return acceptedCommandResult(raw, string(CapabilityHelp), []string{unknown})
-			}
-		}
+		// An unrecognized slash token is not a help topic. Turning it into one
+		// made every stray "/中午吃什么" a public, explicitly-typed command, so a
+		// shared conversation answered it without being addressed. Leave it
+		// unrecognized: a direct chat falls through to the Agent and a shared
+		// chat ignores it unless the Bot was mentioned or replied to.
 		return parseNaturalReadIntent(raw)
 	}
 	result := acceptedCommandResult(raw, name, args)
@@ -386,7 +385,7 @@ func isNaturalCalendarLinkRequest(raw string) bool {
 
 func normalizeCommand(name string, args []string) (string, []string) {
 	key := commandToken(name)
-	if isHelpToken(key) {
+	if isHelpCommandToken(key) {
 		return "help", args
 	}
 	if normalized, normalizedArgs, ok := normalizeHierarchicalCommand(key, args); ok {
@@ -1055,6 +1054,18 @@ func isHelpToken(value string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// isHelpCommandToken is the stricter form used to start a command. A bare "?"
+// is a normal thing to type in a group and must not activate the Bot on its
+// own; it still selects help as a sub-token, as in "校车 ?".
+func isHelpCommandToken(value string) bool {
+	switch normToken(value) {
+	case "?", "？":
+		return false
+	default:
+		return isHelpToken(value)
 	}
 }
 

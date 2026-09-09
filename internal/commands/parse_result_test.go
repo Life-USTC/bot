@@ -41,14 +41,24 @@ func TestParseCommandNormalizesChineseOrdinalWeek(t *testing.T) {
 	}
 }
 
-func TestUnknownSlashCommandReturnsStaticHelpInsteadOfAgentFallback(t *testing.T) {
-	result := ParseCommand("/not-a-command ignored arguments")
-	if result.Status != ParseStatusValid || result.Invocation.ID() != CapabilityHelp || strings.Join(result.Invocation.Args, " ") != "not-a-command" {
-		t.Fatalf("unknown slash parse=%#v", result)
+func TestUnknownSlashCommandStaysUnrecognized(t *testing.T) {
+	// A stray slash token must not become a public help invocation: that made a
+	// shared conversation answer "/中午吃什么" without being addressed.
+	for _, text := range []string{"/not-a-command ignored arguments", "/中午吃什么", "？", "?"} {
+		if result := ParseCommand(text); result.Recognized() {
+			t.Fatalf("%q should stay unrecognized: %#v", text, result)
+		}
 	}
-	response, ok := (Handler{}).HandleResponse(t.Context(), Input{Text: "/not-a-command"})
-	if !ok || !strings.Contains(response.Text, "没有找到一级命令“not-a-command”") || !strings.Contains(response.Text, "发送“帮助”查看命令总览") {
-		t.Fatalf("unknown slash response=%#v handled=%v", response, ok)
+	// A question mark still selects help as a sub-token of a real command.
+	if result := ParseCommand("校车 ?"); result.Status != ParseStatusValid || result.Invocation.ID() != CapabilityHelp {
+		t.Fatalf("bus help sub-token parse=%#v", result)
+	}
+	// Explicit help forms keep working.
+	for _, text := range []string{"帮助", "help", "/help", "菜单"} {
+		result := ParseCommand(text)
+		if result.Status != ParseStatusValid || result.Invocation.ID() != CapabilityHelp {
+			t.Fatalf("%q help parse=%#v", text, result)
+		}
 	}
 }
 
