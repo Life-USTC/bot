@@ -3,7 +3,7 @@
 #import "styling.typ": *
 
 #let data = __DATA__
-#let canvas-width = 420pt
+#let canvas-width = 630pt
 #let margin = 24pt
 #let column-gap = 28pt
 #let content-width = (canvas-width - 2 * margin - column-gap) / 2
