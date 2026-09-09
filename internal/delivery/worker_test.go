@@ -13,6 +13,7 @@ type workerRepository struct {
 	completed    []Outcome
 	nextAttempts []time.Time
 	recoveredAt  time.Time
+	prunedAt     time.Time
 	expiredAt    time.Time
 }
 
@@ -39,6 +40,11 @@ func (r *workerRepository) ExpireDue(_ context.Context, now time.Time) error {
 
 func (r *workerRepository) RecoverStale(_ context.Context, before time.Time) error {
 	r.recoveredAt = before
+	return nil
+}
+
+func (r *workerRepository) PruneOutgoingMessages(_ context.Context, now time.Time) error {
+	r.prunedAt = now
 	return nil
 }
 

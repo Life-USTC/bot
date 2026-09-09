@@ -1741,6 +1741,17 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 	})
 }
 
+// outgoingStatusIsTerminal reports whether no further send can consume the
+// stored payload.
+func outgoingStatusIsTerminal(status delivery.Status) bool {
+	switch status {
+	case delivery.StatusAccepted, delivery.StatusRejected, delivery.StatusUnknown, delivery.StatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
 	now = now.UTC()
 	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
@@ -1751,6 +1762,73 @@ func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
 			"error_code": "expired",
 			"updated_at": now,
 		}).Error
+}
+
+// OutgoingMessageRetention is how long a terminal outbox row is kept as the
+// delivery audit trail.
+const OutgoingMessageRetention = 30 * 24 * time.Hour
+
+// outgoingAttachmentSlimThreshold skips rows that were never large enough to
+// matter, so pruning does not rewrite every short text message.
+const outgoingAttachmentSlimThreshold = 16 << 10
+
+// PruneOutgoingMessages bounds what the outbox retains. It deletes terminal
+// rows past the retention window and strips attachment bytes from the rest.
+//
+// The payload cannot simply be cleared: an accepted row is still read to
+// resolve a user's reply back to the Bot message and its invocation. Only the
+// rendered bytes are dropped, and only once no retry can consume them. A single
+// rendered bus card is nearly 3 MB of base64, which is how 335 rows grew into
+// 37 MB of a 45 MB production database.
+func (s *Store) PruneOutgoingMessages(ctx context.Context, now time.Time) error {
+	terminal := []string{
+		string(delivery.StatusAccepted), string(delivery.StatusRejected),
+		string(delivery.StatusUnknown), string(delivery.StatusExpired),
+	}
+	if err := s.db.WithContext(ctx).
+		Where("status IN ? AND updated_at <= ?", terminal, now.UTC().Add(-OutgoingMessageRetention)).
+		Delete(&outgoingMessageRow{}).Error; err != nil {
+		return err
+	}
+	var rows []outgoingMessageRow
+	if err := s.db.WithContext(ctx).
+		Where("status IN ? AND length(payload_json) > ?", terminal, outgoingAttachmentSlimThreshold).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		slimmed, changed, err := payloadWithoutAttachmentData(row.PayloadJSON)
+		if err != nil || !changed {
+			continue
+		}
+		if err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).
+			Where("id = ? AND status IN ?", row.ID, terminal).
+			Update("payload_json", slimmed).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// payloadWithoutAttachmentData drops the rendered bytes while keeping every
+// field a reply lookup or an audit needs, including the attachment's type and
+// alt text.
+func payloadWithoutAttachmentData(payloadJSON string) (string, bool, error) {
+	var outbound message.Outbound
+	if err := json.Unmarshal([]byte(payloadJSON), &outbound); err != nil {
+		return "", false, err
+	}
+	if outbound.Content.Attachment == nil || len(outbound.Content.Attachment.Data) == 0 {
+		return "", false, nil
+	}
+	attachment := *outbound.Content.Attachment
+	attachment.Data = nil
+	outbound.Content.Attachment = &attachment
+	encoded, err := json.Marshal(outbound)
+	if err != nil {
+		return "", false, err
+	}
+	return string(encoded), true, nil
 }
 
 func (s *Store) RecoverStale(ctx context.Context, before time.Time) error {

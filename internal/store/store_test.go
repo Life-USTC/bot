@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1935,5 +1937,90 @@ func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 	}
 	if outgoingCount != 0 {
 		t.Fatalf("outgoing count after rollback = %d", outgoingCount)
+	}
+}
+
+func TestPruneOutgoingMessagesDropsAttachmentBytesButKeepsReplyContext(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	outbound := message.Outbound{
+		Kind:   "bus",
+		Target: message.Conversation{Platform: "napcat", Type: "group", ID: "g"},
+		Content: message.Content{
+			Text: "东区 06:50",
+			Attachment: &message.Attachment{
+				MIMEType: "image/png", AltText: "校车", Data: bytes.Repeat([]byte{7}, 64<<10),
+			},
+		},
+		DedupeKey: "prune-1",
+	}
+	record, _, err := db.Enqueue(ctx, outbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ClaimDue(ctx, time.Now(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Complete(ctx, record.ID, delivery.Outcome{
+		State: delivery.OutcomeAccepted, Receipt: message.Receipt{PlatformMessageID: "m-1"},
+	}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PruneOutgoingMessages(ctx, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var row outgoingMessageRow
+	if err := db.db.WithContext(ctx).Where("id = ?", record.ID).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(row.PayloadJSON) > 4<<10 {
+		t.Fatalf("attachment bytes were retained: payload=%d bytes", len(row.PayloadJSON))
+	}
+	// Everything a reply lookup or an audit needs must survive.
+	var kept message.Outbound
+	if err := json.Unmarshal([]byte(row.PayloadJSON), &kept); err != nil {
+		t.Fatalf("pruned payload is not decodable: %v", err)
+	}
+	if kept.Kind != "bus" || kept.Content.Text != "东区 06:50" {
+		t.Fatalf("pruned payload lost reply context: %#v", kept)
+	}
+	if kept.Content.Attachment == nil || kept.Content.Attachment.MIMEType != "image/png" ||
+		kept.Content.Attachment.AltText != "校车" || len(kept.Content.Attachment.Data) != 0 {
+		t.Fatalf("attachment metadata not preserved without bytes: %#v", kept.Content.Attachment)
+	}
+}
+
+func TestPruneOutgoingMessagesKeepsPendingPayloadsIntact(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	record, _, err := db.Enqueue(ctx, message.Outbound{
+		Kind:   "bus",
+		Target: message.Conversation{Platform: "napcat", Type: "group", ID: "g"},
+		Content: message.Content{Text: "待发送", Attachment: &message.Attachment{
+			MIMEType: "image/png", Data: bytes.Repeat([]byte{7}, 64<<10),
+		}},
+		DedupeKey: "prune-pending",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PruneOutgoingMessages(ctx, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// A message that can still be sent must keep the exact bytes to send.
+	records, err := db.ClaimDue(ctx, time.Now(), 10)
+	if err != nil || len(records) != 1 || records[0].ID != record.ID {
+		t.Fatalf("claim after prune: records=%#v err=%v", records, err)
+	}
+	if records[0].Message.Content.Attachment == nil || len(records[0].Message.Content.Attachment.Data) != 64<<10 {
+		t.Fatal("pending attachment bytes were pruned")
 	}
 }
