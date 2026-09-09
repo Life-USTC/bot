@@ -13,16 +13,17 @@ use crate::escape::typst_str;
 
 // Keep these values in step with weather.typ. They are renderer constants for
 // chart coordinates, not caller-controlled page geometry.
-const CANVAS_WIDTH: f64 = 840.0;
-const MARGIN_X: f64 = 32.0;
-const CONTENT_WIDTH: f64 = CANVAS_WIDTH - 2.0 * MARGIN_X;
+const CANVAS_WIDTH: f64 = 420.0;
+const MARGIN_X: f64 = 24.0;
+const COLUMN_GAP: f64 = 28.0;
+const CONTENT_WIDTH: f64 = (CANVAS_WIDTH - 2.0 * MARGIN_X - COLUMN_GAP) / 2.0;
 const CHART_PLOT_LEFT: f64 = 0.0;
 const CHART_PLOT_RIGHT: f64 = CONTENT_WIDTH;
 const CHART_PLOT_BOTTOM: f64 = 124.0;
 const CHART_TEMP_RANGE: f64 = 100.0;
 const CHART_MAX_BAR_HEIGHT: f64 = 34.0;
-const DAILY_TRACK_LEFT: f64 = 116.0;
-const DAILY_TRACK_RIGHT: f64 = CONTENT_WIDTH - 52.0;
+const DAILY_TRACK_LEFT: f64 = 62.0;
+const DAILY_TRACK_RIGHT: f64 = CONTENT_WIDTH - 28.0;
 
 const MAX_LOCATIONS: usize = 16;
 const MAX_HOURLY_POINTS: usize = 168;
@@ -664,8 +665,8 @@ mod tests {
         let req: WeatherPayload = serde_json::from_value(valid_payload()).unwrap();
         req.validate().unwrap();
         let source = build_source(&req);
-        assert!(source.contains("canvas-width = 840pt"));
-        assert!(source.contains("content-width = canvas-width - 2 * margin"));
+        assert!(source.contains("canvas-width = 420pt"));
+        assert!(source.contains("content-width = (canvas-width - 2 * margin - column-gap) / 2"));
         assert!(!source.contains("canvas_width:"));
     }
 
@@ -889,17 +890,20 @@ mod tests {
     }
 
     #[test]
-    fn renders_multiple_locations_in_one_flow() {
+    fn renders_locations_in_two_columns() {
         let mut payload = valid_payload();
         let location = payload["locations"][0].clone();
-        payload["locations"] = json!([location.clone(), location]);
+        payload["locations"] = json!([location.clone(), location.clone()]);
         let (_, width, height) = render(&payload, 1.0).expect("weather template should compile");
         let single_height = render(&valid_payload(), 1.0).unwrap().2;
         assert_eq!(width, CANVAS_WIDTH as u32);
-        assert!(height > single_height);
+        assert_eq!(height, single_height, "two locations share one row");
+        payload["locations"].as_array_mut().unwrap().push(location);
+        let (_, _, three_height) = render(&payload, 1.0).unwrap();
+        assert!(three_height > height, "a third location starts a new row");
         let req: WeatherPayload = serde_json::from_value(payload).unwrap();
         let source = build_source(&req);
         assert!(source.contains("name: \"本部\""));
-        assert_eq!(source.matches("name: \"本部\"").count(), 2);
+        assert_eq!(source.matches("name: \"本部\"").count(), 3);
     }
 }
