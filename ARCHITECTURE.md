@@ -199,10 +199,19 @@ cancellation atomically close the entire operation batch.
    before natural-language matching or Agent fallback.
 3. `botapp` stores the exact route and normalized invocation. Execution uses
    that stored decision; it does not reparse or fall through to another route.
+   An unrecognized slash token and a bare question mark are not commands. Mapping
+   them onto help made every stray `/中午吃什么` a public, explicitly-typed command,
+   so a shared conversation answered it without being addressed.
 4. One actor/conversation lane is processed FIFO. A waiting confirmation or
    login therefore cannot be overtaken by a later event from the same lane.
 5. Responses are transactionally written to the outbox. Platform I/O happens
    later and has no path back to capability execution.
+
+A shared conversation stores one transcript for every participant, so each
+replayed user message carries its speaker as a `[名字]` prefix in the message body.
+The provider `name` field is not used for this: OpenAI-compatible name fields
+accept only `[A-Za-z0-9_-]` and would reject an ordinary Chinese nickname. The
+name is presentation only; identity and authorization always use the actor ID.
 
 In shared conversations, only strict public commands, high-confidence public
 natural routes, mentions, or verified replies activate the Bot. Personal
@@ -249,9 +258,26 @@ The rule is entirely origin-and-effect based:
   with only its literal domain result. A denial is fed back as a typed tool
   denial because that is relevant evidence for the model's next response.
 
-Capability results have a typed host status, but the model receives the
-descriptor's literal result text. There is no generic `{ok,status,text}`
-wrapper. Authentication is also host-owned: the model neither handles a code
+Host scaffolding around a tool call is a JSON envelope stated in English:
+`capability`, `arguments`, `effect`, `outcome`, `observed_at`, and an optional
+`detail`. Only the domain payload in `result` is user-language text, because
+that text is the answer rather than something the host is saying about the call.
+The envelope reports; it does not instruct the model how to phrase a reply.
+
+`observed_at` is recorded when the result is produced and persisted with it.
+Stamping at production time rather than during replay keeps replayed history
+byte-identical, so the provider prompt cache still hits while the model can tell
+how old the evidence is.
+
+Confirmation prompts and the user's answer are not model-visible events, so this
+envelope is the model's entire account of what happened. Every terminal state
+therefore carries its own `outcome`. An earlier build returned the bare fragment
+`用户拒绝执行` and relied on the host to overwrite the model's wording afterwards.
+Codex has the same defect and the same consequence: its approval denial is a
+plain `"exec command rejected by user"` string with `success: None`, and models
+are reported to treat it as an error to route around
+(openai/codex#17745). Supplying complete evidence is the fix;
+correcting the output of a model that was handed an ambiguous fragment is not. Authentication is also host-owned: the model neither handles a code
 nor turns a login message into evidence of a successful operation.
 
 ## Tool discovery
@@ -267,6 +293,12 @@ catalog:
 - `search_campus_tools` and `call_campus_tool` lazily initialize MCP only when
   supplementary campus data is needed. Only exact tool names in the host-owned
   read allowlist are exposed; remote MCP annotations cannot grant access.
+  Because remote tools are never registered directly with the provider, they
+  need none of the namespacing, sanitization, and collision hashing a harness
+  like Codex applies to `server__tool` names. `tools/list` is paged to
+  exhaustion: reading only the first page silently hides a later-page tool and
+  looks to the user like the tool does not exist (the same defect is open as
+  openai/codex#28858).
 
 Search ignores generic request verbs, politeness, and standalone numbers. A
 fuzzy Chinese match needs domain-bearing evidence in the capability ID, title,
@@ -283,33 +315,38 @@ truthful even when a model would otherwise browse one tool family at a time.
 The shortcut requires explicit inventory wording and refuses mutation wording,
 so it cannot preempt the normal confirmation path for an operation.
 
-The compact system instruction tells the model to search before invoking and
-to preserve all user constraints. Mutation improvisation through MCP is not
-possible.
+The host prefetches rather than enforces. Before the first provider request it
+searches the descriptor registry itself and appends the result after the current
+user turn as a real assistant `search_bot_commands` call and its tool result.
+The transcript then reads exactly as if the model had searched first, so nothing
+has to be explained in the system prompt. It is appended rather than inserted,
+so the cached history prefix is untouched, and it is never persisted:
+documentation is cheap to rebuild and a stale copy would misdescribe a later
+turn.
 
-For a personal-data request, a verification follow-up, or an explicit public
-Bot capability request, the runtime also enforces the sequence instead of
-relying on the instruction alone. The first provider request is offered only
-`search_bot_commands`; after a nonempty result, the next request is offered
-only `invoke_bot_capability`. A capability is accepted only when its ID is the
-returned descriptor ID or one of that descriptor's executable examples.
-Provisional assistant text is neither persisted nor eligible for delivery. If
-the provider returns prose instead of
-the sole offered tool, the host makes one additional tool-only semantic
-attempt. If that still produces no evidence, the deterministic failure shown
-to the user is also persisted as the assistant turn. A successful relevant
-result unlocks the final answer; a relevant failure, unknown outcome, or denial
-is returned to the user as its literal tool result rather than allowing later
-model prose to turn it into a success claim.
+The host does not restrict which tool the model may call, does not force a
+search-then-invoke sequence, and does not discard a model answer that arrived
+without a capability result. That earlier contract was removed because its
+trigger and its escape hatch shared one fuzzy matcher: any request whose
+documentation search hit a private capability was locked into the sequence, and
+the same looseness kept the "no capability matched" exit closed. Unrelated
+chatter therefore received a deterministic failure message instead of a reply.
+Over-triggering the prefetch now costs only the tokens of an ignored block.
 
-Known supplementary campus domains use the same host-enforced evidence chain.
-For a second-classroom lookup, completion of the required Bot search always
-forces an MCP search, even if a loosely reformulated Bot search happened to
-return unrelated documentation. The model is not offered Bot invocation for
-that turn. A nonempty MCP search then forces `call_campus_tool`, and only a name
-returned by that search can satisfy the turn. The model may format the literal
-read result, but it cannot replace any required stage with an unsupported
-factual answer.
+Every capability and MCP result is stamped with the time it was produced,
+before it is stored and returned. Stamping at production time rather than during
+replay keeps replayed history byte-identical, so the provider prompt cache still
+hits while the model can tell how old the evidence is and re-query when the user
+asks for current data.
+
+A refused tool call is reported the same way. A repeat the host declined to run
+returns `{"outcome":"rejected", ...}` rather than aborting the turn, so the model
+can choose another plan; a run may spend at most three round trips this way.
+
+A shared conversation asking for personal data is still answered deterministically
+by the host, without a provider call. That is a privacy boundary rather than a
+guess about what the model should look up, and it remains the only host decision
+that replaces a model turn besides the capability-inventory shortcut.
 
 ## Exact conversation evidence
 
@@ -372,7 +409,20 @@ job without losing or duplicating the operation.
 - Each logical provider request gets at most five physical HTTP attempts. One
   Agent job gets at most 65 physical attempts in total (12 tool calls plus a
   final model turn, each with that retry window) across authentication resumes,
-  confirmation resumes, and process restarts. The Agent-run row and each
+  confirmation resumes, and process restarts.
+- Two separate token limits keep that bound reachable. One logical request may
+  not exceed the provider input window; the run-wide ceiling is a cost guard
+  across the whole tool loop. Sizing the run-wide ceiling as a single input
+  window instead made the twelfth tool call unreachable: at a realistic
+  twelve-thousand-token prompt the run stopped on a context error at the sixth
+  request.
+- A repeated or already-failed tool call is refused inside the tool channel and
+  the refusal is returned to the model, which can then change plan. A run may
+  spend at most three round trips on such refusals before it stops.
+- An attachment that cannot be fetched is skipped and the model is told, rather
+  than failing the turn: platform media URLs expire routinely. An image the user
+  actually sent wrongly (too large, unsupported address) still fails before any
+  provider call, because that message is worth more than a model turn. The Agent-run row and each
   attempt reservation must commit durably before network I/O; persistence
   failure retries the job without contacting the provider.
 - The whole Agent run remains bounded by two minutes. Its conversation-job
@@ -387,6 +437,12 @@ job without losing or duplicating the operation.
   instead of dropping the reply.
 - A deterministic outbox key makes output persistence idempotent. Business
   work and final output/receipt state commit together.
+- Terminal outbox rows keep their delivery audit trail but not their rendered
+  bytes. The payload cannot simply be cleared, because an accepted row is still
+  read to resolve a user reply back to the Bot message and its invocation, so
+  pruning strips only the attachment data and keeps its type and alt text. Rows
+  are deleted after thirty days. A single rendered bus card is nearly 3 MB of
+  base64; without this, 335 rows grew into 37 MB of a 45 MB database.
 - A definite mutation transport timeout is `unknown`, not `failed`, because
   replay could duplicate an external effect. Reads remain safe to repeat.
 - Message polling and stale-lease recovery have separate cadences. The
@@ -427,7 +483,10 @@ post-start schema audit fails.
 - `internal/auth`, `internal/feedback`, `internal/notify`: feature state owned
   independently of conversation and delivery state.
 - `internal/delivery`: platform selection and outbox worker.
-- `internal/napcat`, `internal/qqbot`: protocol parsing and platform I/O.
+- `internal/napcat`, `internal/qqbot`: protocol parsing and platform I/O. The
+  QQ gateway keeps its session id and last sequence across reconnects and
+  answers opcode 7 with a resume; re-identifying would silently drop every event
+  buffered across the gap. An invalid-session opcode clears the resume point.
 - `internal/store`: SQLite CAS transitions and transactional outbox writes.
 - `cmd/life-ustc-bot`: dependency composition and process lifecycle only.
 
