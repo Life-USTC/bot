@@ -194,3 +194,39 @@ func existingCampusToolResult(execution store.CapabilityExecution) string {
 	}
 	return encodeToolResult(envelope)
 }
+
+// botCommandToolResult is the envelope for run_bot_command. It names the exact
+// command line that ran, so the model can repeat it back to a user verbatim,
+// and states when the host delivered a rendered card: the image is produced and
+// sent by the host, so without this the model would answer as if the user had
+// seen only text.
+type botCommandToolResult struct {
+	Command    string `json:"command"`
+	Capability string `json:"capability,omitempty"`
+	Effect     string `json:"effect,omitempty"`
+	Outcome    string `json:"outcome"`
+	ObservedAt string `json:"observed_at"`
+	Result     string `json:"result,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	// DeliveredToUser is "image" when the host already sent a rendered card to
+	// the user; Result then holds that card's content as text.
+	DeliveredToUser string `json:"delivered_to_user,omitempty"`
+}
+
+// botCommandResultFrom re-frames a capability envelope as a command envelope,
+// keeping the outcome the durable execution row recorded.
+func botCommandResultFrom(command string, encoded string, deliveredImage bool) string {
+	var inner capabilityToolResult
+	if json.Unmarshal([]byte(encoded), &inner) != nil {
+		return encoded
+	}
+	result := botCommandToolResult{
+		Command: command, Capability: inner.Capability, Effect: inner.Effect,
+		Outcome: inner.Outcome, ObservedAt: inner.ObservedAt,
+		Result: inner.Result, Detail: inner.Detail,
+	}
+	if deliveredImage {
+		result.DeliveredToUser = "image"
+	}
+	return encodeToolResult(result)
+}

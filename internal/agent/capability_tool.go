@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -37,9 +38,9 @@ func init() {
 	gob.Register(capabilityInterruptInfo{})
 }
 
-func (s *Service) invokeHostCapability(
+func (s *Service) runBotCommand(
 	ctx context.Context,
-	input hostCapabilityInput,
+	input botCommandInput,
 	ident store.Identity,
 	jobID int64,
 	sendResponse func(context.Context, store.Identity, commands.Response) error,
@@ -48,22 +49,41 @@ func (s *Service) invokeHostCapability(
 		if !hasState || len(state.ExecutionIDs) == 0 || strings.TrimSpace(state.ToolCallID) == "" {
 			return "", errors.New("confirmed capability checkpoint has no operation state")
 		}
-		return s.resolveHostCapability(ctx, state, ident, sendResponse, true)
+		result, err := s.resolveHostCapability(ctx, state, ident, sendResponse, true)
+		return s.botCommandResult(ctx, strings.TrimSpace(input.Command), result, err)
 	}
 
-	id := commands.CapabilityID(strings.TrimSpace(input.Capability))
-	invocation, valid := commands.NewInvocation(id, input.Arguments)
-	if !valid {
-		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, id, input.Arguments)
+	// The model types a command line, exactly as a user would, and it is parsed
+	// by the same tri-state parser. Normalization is therefore shared with
+	// humans: "课表 第二周" resolves the same way for both, and the manual's
+	// examples are literally callable.
+	command := strings.TrimSpace(input.Command)
+	parsed := commands.ParseCommand(command)
+	switch parsed.Status {
+	case commands.ParseStatusUnknown:
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		return encodeToolResult(botCommandToolResult{
+			Command: command, Outcome: toolOutcomeRejected, ObservedAt: observedAt(time.Now()),
+			Detail: "not a Bot command; see the command reference in this tool's description",
+		}), nil
+	case commands.ParseStatusInvalid:
+		// Recognized command, unusable arguments: the descriptor's own usage
+		// text is the most useful thing the model can be handed.
+		outcome, err := s.handler.ExecuteCapability(ctx, commands.Input{
+			Identity: ident, Text: command, SuppressLog: true, Origin: commands.InvocationOriginAgent,
+		}, parsed.Invocation.ID(), parsed.Invocation.Args)
 		if err != nil {
 			return "", err
 		}
-		if capabilityOutcomeIsToolError(outcome.Status) {
-			toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
-		}
-		presentation := s.handler.PresentCapabilityOutcome(commands.Invocation{Name: string(id), Args: append([]string(nil), input.Arguments...)}, outcome)
-		return capabilityOutcomeToolResult(id, input.Arguments, "", outcome.Status, presentation.Text), nil
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		presentation := s.handler.PresentCapabilityOutcome(parsed.Invocation, outcome)
+		return encodeToolResult(botCommandToolResult{
+			Command: command, Capability: string(parsed.Invocation.ID()),
+			Outcome: toolOutcomeFailed, ObservedAt: observedAt(time.Now()),
+			Result: strings.TrimSpace(presentation.Text),
+		}), nil
 	}
+	invocation := parsed.Invocation
 	policy := invocation.Policy()
 	// Only a destructive operation is preflighted for confirmation. The server's
 	// scope registry already decides whether the user may perform a write; the
@@ -75,7 +95,7 @@ func (s *Service) invokeHostCapability(
 		callID := capabilityToolCallID(ctx, jobID)
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, callID, sendResponse)
 		if err != nil || !authWait {
-			return result, err
+			return s.botCommandResult(ctx, command, result, err)
 		}
 		state := capabilityInterruptState{ExecutionIDs: []string{executionID}, ToolCallID: callID}
 		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
@@ -127,7 +147,19 @@ func (s *Service) invokeHostCapability(
 	for _, execution := range executions {
 		state.ExecutionIDs = append(state.ExecutionIDs, execution.ID)
 	}
-	return s.resolveHostCapability(ctx, state, ident, sendResponse, false)
+	result, err := s.resolveHostCapability(ctx, state, ident, sendResponse, false)
+	return s.botCommandResult(ctx, command, result, err)
+}
+
+// botCommandResult re-frames the capability envelope as a command envelope so
+// the model sees the exact command line that ran and learns when the host has
+// already put a rendered card in front of the user.
+func (s *Service) botCommandResult(ctx context.Context, command, result string, err error) (string, error) {
+	if err != nil || strings.TrimSpace(result) == "" {
+		return result, err
+	}
+	delivered := toolOutcomesFromContext(ctx).deliveredMedia(compose.GetToolCallID(ctx))
+	return botCommandResultFrom(command, result, delivered), nil
 }
 
 func capabilityToolCallID(ctx context.Context, jobID int64) string {
@@ -437,7 +469,7 @@ func (s *Service) persistResumedCapabilityResult(
 		Identity: ident, JobID: jobID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		DedupeKey: agentToolResultDedupeKey(jobID, toolCallID),
 		Type:      s.toolEventType(ctx, jobID, toolCallID), Content: result,
-		ToolCallID: toolCallID, ToolName: capabilityToolName,
+		ToolCallID: toolCallID, ToolName: botCommandToolName,
 	})
 	return markDurableAgentStateError("persist resumed capability result", err)
 }
@@ -588,6 +620,9 @@ func (s *Service) executeApprovedCapability(
 			finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
 			return finished, false, markDurableAgentStateError("record missing host response sender", err)
 		}
+		if presentation.Response.Image != nil {
+			toolOutcomesFromContext(ctx).markDeliveredMedia(compose.GetToolCallID(ctx))
+		}
 		if err := sendResponse(ctx, ident, presentation.Response); err != nil {
 			if capabilityOutcomeIsUnknown(outcome) {
 				finished, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
@@ -624,6 +659,9 @@ func deliverCapabilityPresentation(
 	}
 	if err := sendResponse(ctx, ident, presentation.Response); err != nil {
 		return "", err
+	}
+	if presentation.Response.Image != nil {
+		toolOutcomesFromContext(ctx).markDeliveredMedia(compose.GetToolCallID(ctx))
 	}
 	return text, nil
 }

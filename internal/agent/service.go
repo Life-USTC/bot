@@ -80,10 +80,6 @@ type Input struct {
 	imageDataURLs []string
 	runState      *RunState
 	runErr        *error
-	// prefetch is what the host looked up for this turn. It reaches the model as
-	// a seeded tool call and is never persisted: documentation is cheap to
-	// rebuild and a stale copy would misdescribe a later turn.
-	prefetch prefetchPolicy
 	// skippedImages counts attachments that could not be downloaded or decoded.
 	// The model is told, so it can say an image was unreadable instead of
 	// silently answering as if it had seen it.
@@ -303,9 +299,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusCompleted, reply, nil)
 		return agentTextResponse(reply), true
 	}
-	prefetch := prefetchPolicyFor(input.Text, input.Identity)
-	input.prefetch = prefetch
-	if prefetch.privateUnavailable {
+	if sharedConversationPolicyFor(input.Text, input.Identity).privateUnavailable {
 		reply := "这个问题涉及个人数据，请私聊 Presto 查询。"
 		if err := s.persistCurrentUserEvent(ctx, input); err != nil {
 			markAgentInfrastructureFailure(input, err)
@@ -680,12 +674,12 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	// checkpoint-less retry therefore restores the persisted turn exactly once
 	// instead of appending it to history a second time.
 	if hasCurrentEvent {
-		return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
+		return messages, nil
 	}
 	currentText := strings.TrimSpace(input.Text)
 	if len(input.ImageURLs) == 0 {
 		messages = append(messages, schema.UserMessage(withSpeakerPrefix(withCurrentTimePrefix(currentText), input.SpeakerName, input.Identity)))
-		return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
+		return messages, nil
 	}
 	if currentText == "" {
 		currentText = "请描述并分析这张图片。"
@@ -723,7 +717,7 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 		})
 	}
 	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
-	return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
+	return messages, nil
 }
 
 // withSpeakerPrefix attributes the live turn the same way replayed history is
@@ -934,36 +928,28 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 
 type emptyInput struct{}
 
-type hostCapabilityInput struct {
-	Capability string   `json:"capability" jsonschema_description:"Exact stable capability ID returned by search_bot_commands"`
-	Arguments  []string `json:"arguments,omitempty" jsonschema_description:"Capability arguments only; do not repeat the capability name"`
+type botCommandInput struct {
+	Command string `json:"command" jsonschema_description:"One complete Bot command line, exactly as a user would type it in QQ, for example: 课表 下周"`
 }
 
-type commandSearchInput struct {
-	Query string `json:"query" jsonschema_description:"Concrete user intent, command name, or capability ID to search for"`
-}
-
-func hostCapabilityToolDescription(shared bool) string {
-	description := "Invoke one exact Bot capability by its stable ID. Returns a JSON envelope: outcome is succeeded, failed, unknown, denied, cancelled or expired, observed_at is when the call ran, and result carries the capability's own text. Use only that envelope as evidence."
+// botCommandToolDescription carries the entire command reference. The manual is
+// static, so it sits in the cached prompt prefix; a per-turn search would cost
+// an uncached block plus a round trip and still leave every form it did not
+// return to guesswork. Handing the model the same reference a user reads also
+// lets it tell a user which command to type.
+func botCommandToolDescription(shared bool) string {
+	var b strings.Builder
+	b.WriteString("Run one Bot command, written exactly as a user would type it in QQ. ")
+	b.WriteString("Arguments are parsed the same way as for a human, so a documented example can be used verbatim. ")
+	b.WriteString("Returns a JSON envelope: outcome is succeeded, failed, unknown, denied, cancelled, expired or rejected, ")
+	b.WriteString("observed_at is when the command ran, result carries the command's own output, ")
+	b.WriteString("and delivered_to_user is \"image\" when the host has already sent the user a rendered card whose content is in result.\n")
 	if shared {
-		description += " This is a shared conversation; private capabilities are unavailable."
+		b.WriteString("This is a shared conversation: only the public commands below exist here.\n")
 	}
-	return description
-}
-
-func searchCommandDocumentation(ident store.Identity, input commandSearchInput) (string, error) {
-	if strings.TrimSpace(input.Query) == "" {
-		return "", botmcp.NewRecoverableToolError(commandSearchToolName, "请提供具体查询意图，例如：本学期已选课程、明天课表、关闭作业提醒。")
-	}
-	documentation := commands.SearchCapabilityDocumentation(input.Query, commands.CapabilitySearchOptions{
-		SharedConversation: store.IsSharedConversation(ident),
-		Limit:              1,
-	})
-	encoded, err := json.Marshal(documentation)
-	if err != nil {
-		return "", fmt.Errorf("encode command documentation: %w", err)
-	}
-	return string(encoded), nil
+	b.WriteString("\nCommand reference:\n")
+	b.WriteString(commands.CommandManual(shared))
+	return b.String()
 }
 
 func (s *Service) toolsFor(
@@ -984,17 +970,8 @@ func (s *Service) toolsFor(
 		}
 	}
 
-	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, effect, and audience scope. An empty JSON array means no Bot command matched: never substitute an unrelated command, and search search_campus_tools next when the request is a read-only campus-data lookup. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
-		return searchCommandDocumentation(ident, input)
-	})
-	if err != nil {
-		if mcpSession != nil {
-			_ = mcpSession.Close()
-		}
-		return nil, nil, err
-	}
-	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), func(ctx context.Context, input hostCapabilityInput) (string, error) {
-		return s.invokeHostCapability(ctx, input, ident, jobID, sendResponse)
+	tools, err = appendInferredTool(tools, botCommandToolName, botCommandToolDescription(store.IsSharedConversation(ident)), func(ctx context.Context, input botCommandInput) (string, error) {
+		return s.runBotCommand(ctx, input, ident, jobID, sendResponse)
 	})
 	if err != nil {
 		if mcpSession != nil {
@@ -1235,9 +1212,9 @@ Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. A tool result carries the time it was produced: an older result is still usable context, but when the user asks for current data or asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence.
-Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
-An empty search_bot_commands result means that no Bot command matched. Never substitute a loosely related command. For a read-only campus-data request, search search_campus_tools next; say the overall request is unsupported only if neither registry has a relevant tool.
-When the user asks for a complete capability or tool inventory, search Bot commands for “help” and invoke that exact help capability, then call search_campus_tools with query "*" when that tool is available. Report only those actual results plus the host meta-tools visible in this turn; never reconstruct an inventory from memory.
+run_bot_command carries the full command reference in its description. Use a command from it verbatim, preserving every user constraint such as dates, times, filters, targets, and direction, and run it yourself; never ask the user to type or repeat a command. A command that reference does not contain does not exist: for a read-only campus-data request use the campus tools instead, and say the request is unsupported only when neither layer covers it.
+When run_bot_command reports delivered_to_user "image", the user already has that card; describe or extend it rather than repeating it as text.
+When the user asks for a complete capability or tool inventory, report the commands in that reference plus the tools visible in this turn; never reconstruct an inventory from memory.
 Tool results are literal evidence: a JSON envelope whose outcome and observed_at describe the call, and whose result field is the actual domain text. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
 MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so; never improvise a write through another tool.
