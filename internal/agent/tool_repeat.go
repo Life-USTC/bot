@@ -8,11 +8,18 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 )
 
 var errRepeatedToolCall = errors.New("agent repeated an identical tool call")
 
 const toolFailureRepeatLimit = 1
+
+// maxRepeatRefusals bounds how often one run may tell the model that its call
+// was refused. A model that adapts needs one or two of these; a model stuck in
+// a loop would otherwise keep paying for full-size requests until the agent
+// framework's own iteration cap, so the run aborts once the budget is spent.
+const maxRepeatRefusals = 3
 
 // toolRepeatGuard stops an agent from executing the same logical call twice in
 // one model turn and stops a failed logical plan from being retried in a later
@@ -24,6 +31,7 @@ type toolRepeatGuard struct {
 	mu       sync.Mutex
 	seen     map[string]struct{}
 	failures map[string]int
+	refusals int
 }
 
 func newToolRepeatGuard() *toolRepeatGuard {
@@ -42,7 +50,16 @@ func (g *toolRepeatGuard) Reset() {
 func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		if err := g.admit(input); err != nil {
-			return nil, err
+			// A rejected repeat is the model's planning problem, not a run
+			// failure. Returning it as a tool error lets the model pick a
+			// different plan; returning a Go error would abort the whole turn
+			// and replace a usable answer with "AI 助手出错". A model that keeps
+			// repeating still hits the refusal budget and ends the run.
+			if !g.admitRefusal() {
+				return nil, err
+			}
+			toolOutcomesFromContext(ctx).markError(input.CallID)
+			return &compose.ToolOutput{Result: repeatGuardToolResult(input, err)}, nil
 		}
 		out, err := next(ctx, input)
 		g.recordResult(ctx, input, err)
@@ -53,7 +70,13 @@ func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint
 func (g *toolRepeatGuard) streamableMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 		if err := g.admit(input); err != nil {
-			return nil, err
+			if !g.admitRefusal() {
+				return nil, err
+			}
+			toolOutcomesFromContext(ctx).markError(input.CallID)
+			return &compose.StreamToolOutput{
+				Result: schema.StreamReaderFromArray([]string{repeatGuardToolResult(input, err)}),
+			}, nil
 		}
 		out, err := next(ctx, input)
 		g.recordStreamResult(input, out, err)
@@ -73,6 +96,18 @@ func (g *toolRepeatGuard) admit(input *compose.ToolInput) error {
 	}
 	g.seen[key] = struct{}{}
 	return nil
+}
+
+// admitRefusal reports whether this run may still spend a model round trip on
+// telling the model that its call was refused.
+func (g *toolRepeatGuard) admitRefusal() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.refusals >= maxRepeatRefusals {
+		return false
+	}
+	g.refusals++
+	return true
 }
 
 func (g *toolRepeatGuard) recordResult(ctx context.Context, input *compose.ToolInput, err error) {
@@ -100,6 +135,24 @@ func (g *toolRepeatGuard) recordFailure(input *compose.ToolInput) {
 	g.mu.Lock()
 	g.failures[key]++
 	g.mu.Unlock()
+}
+
+// repeatGuardToolResult reports the refusal in the tool channel, in the same
+// machine-readable shape as any other host result.
+func repeatGuardToolResult(input *compose.ToolInput, err error) string {
+	rejection := hostToolRejection{Outcome: toolOutcomeRejected}
+	if input != nil {
+		rejection.Tool = strings.TrimSpace(input.Name)
+	}
+	switch {
+	case errors.Is(err, errRepeatedToolCall):
+		rejection.Detail = "an identical call already ran in this turn; the host did not repeat it"
+	case errors.Is(err, errAgentNonProgress):
+		rejection.Detail = "an identical call already failed in this turn; the host did not retry it"
+	default:
+		rejection.Detail = err.Error()
+	}
+	return encodeToolResult(rejection)
 }
 
 func toolCallKey(input *compose.ToolInput) string {
@@ -146,6 +199,7 @@ func toolResultFailed(ctx context.Context, input *compose.ToolInput, err error) 
 		return !errors.Is(err, errAgentToolCallBudget) &&
 			!errors.Is(err, errAgentRunDeadline) &&
 			!errors.Is(err, errAgentContextBudget) &&
+			!errors.Is(err, errAgentRunTokenBudget) &&
 			!errors.Is(err, context.Canceled)
 	}
 	if input == nil {

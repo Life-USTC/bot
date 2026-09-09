@@ -46,20 +46,44 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 }
 
 func TestEmptyTerminalCapabilityResultsRemainExplicitEvidence(t *testing.T) {
+	// A terminal state that produced no domain result must still report itself:
+	// the confirmation prompt and the user's answer are not model-visible.
+	execution := store.CapabilityExecution{Capability: "notify", Arguments: []string{"homework", "on"}, Effect: "write"}
 	for _, test := range []struct {
-		state store.CapabilityExecutionState
-		want  string
+		state   store.CapabilityExecutionState
+		outcome string
+		detail  bool
 	}{
-		{state: store.CapabilityExecutionSucceeded, want: "操作已完成，但没有返回内容。"},
-		{state: store.CapabilityExecutionFailed, want: "操作失败，未返回可用结果。"},
-		{state: store.CapabilityExecutionUnknown, want: "操作结果未知，系统没有自动重试。"},
+		{state: store.CapabilityExecutionSucceeded, outcome: "succeeded"},
+		{state: store.CapabilityExecutionFailed, outcome: "failed"},
+		{state: store.CapabilityExecutionUnknown, outcome: "unknown", detail: true},
+		{state: store.CapabilityExecutionDenied, outcome: "denied", detail: true},
+		{state: store.CapabilityExecutionCancelled, outcome: "cancelled", detail: true},
+		{state: store.CapabilityExecutionExpired, outcome: "expired", detail: true},
 	} {
-		if got := capabilityExecutionModelResult(store.CapabilityExecution{State: test.state}); got != test.want {
-			t.Fatalf("state %s evidence=%q want=%q", test.state, got, test.want)
+		execution.State = test.state
+		var envelope capabilityToolResult
+		if err := json.Unmarshal([]byte(capabilityExecutionModelResult(execution)), &envelope); err != nil {
+			t.Fatalf("state %s: %v", test.state, err)
+		}
+		if envelope.Outcome != test.outcome {
+			t.Fatalf("state %s outcome=%q want %q", test.state, envelope.Outcome, test.outcome)
+		}
+		if test.detail && envelope.Detail == "" {
+			t.Fatalf("state %s carries no detail", test.state)
+		}
+		if envelope.ObservedAt == "" || envelope.Capability != "notify" {
+			t.Fatalf("state %s envelope=%#v", test.state, envelope)
 		}
 	}
-	if got := existingCampusToolResult(store.CapabilityExecution{State: store.CapabilityExecutionUnknown}); got != "校园查询结果未知，系统没有自动重试。" {
-		t.Fatalf("empty campus unknown evidence=%q", got)
+	var campus campusToolResult
+	if err := json.Unmarshal([]byte(existingCampusToolResult(store.CapabilityExecution{
+		Capability: "mcp:search_courses", State: store.CapabilityExecutionUnknown,
+	})), &campus); err != nil {
+		t.Fatal(err)
+	}
+	if campus.Tool != "search_courses" || campus.Outcome != "unknown" || campus.Detail == "" {
+		t.Fatalf("campus unknown envelope=%#v", campus)
 	}
 }
 
@@ -238,232 +262,6 @@ func TestGroupPersonalDataRequestIsRefusedWithoutCallingModel(t *testing.T) {
 	}
 	if requests.Load() != 0 {
 		t.Fatalf("model requests=%d want=0", requests.Load())
-	}
-}
-
-func TestGroundedTurnFallsBackToLiteralToolResultInsteadOfProvisionalText(t *testing.T) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		request := requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		switch request {
-		case 1:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-search","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"未经核实的旧答案","tool_calls":[{
-					"id":"search-help","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"帮助\"}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 2:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-invoke","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"仍然未经核实","tool_calls":[{
-					"id":"invoke-help","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"help\",\"arguments\":[]}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 3:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-empty","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}]
-			}`))
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}))
-	defer server.Close()
-	svc, err := New(t.Context(), Config{
-		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-	}, commands.Handler{}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, ok := svc.HandleResponse(t.Context(), Input{
-		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
-	})
-	if !ok || !strings.Contains(response.Text, "Bot 帮助：") || strings.Contains(response.Text, "未经核实") {
-		t.Fatalf("response=%#v ok=%v", response, ok)
-	}
-	if requests.Load() != 3 {
-		t.Fatalf("model requests=%d want=3", requests.Load())
-	}
-}
-
-func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testing.T) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		request := requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		switch request {
-		case 1:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-search-schedule","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-schedule","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"课表\"}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 2:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-invalid-schedule","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"invoke-schedule","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"schedule\",\"arguments\":[\"someday\"]}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 3:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-false-success","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"课表已经查询成功。"},"finish_reason":"stop"}]
-			}`))
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}))
-	defer server.Close()
-	svc, err := New(t.Context(), Config{
-		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-	}, commands.Handler{}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, ok := svc.HandleResponse(t.Context(), Input{
-		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
-	})
-	if !ok || !strings.Contains(response.Text, "课表的参数无法识别") || !strings.Contains(response.Text, "可以这样发送") || strings.Contains(response.Text, "查询成功") {
-		t.Fatalf("response=%#v ok=%v", response, ok)
-	}
-	if requests.Load() != 3 {
-		t.Fatalf("model requests=%d want=3", requests.Load())
-	}
-}
-
-func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.T) {
-	ctx := t.Context()
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "missing-subscription-target", Input: store.ConversationJobInput{Text: "帮我订阅 MISSING.01"},
-		ExpiresAt: time.Now().Add(time.Hour),
-	})
-	if err != nil || !created {
-		t.Fatalf("enqueue job: created=%v err=%v", created, err)
-	}
-	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/catalog/semesters/current":
-			_, _ = w.Write([]byte(`{"id":42,"nameCn":"2026年秋季学期"}`))
-		case "/api/catalog/sections":
-			if r.URL.Query().Get("search") != "MISSING.01" || r.URL.Query().Get("semesterId") != "42" {
-				t.Errorf("unexpected Life request: %s?%s", r.URL.Path, r.URL.RawQuery)
-			}
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		default:
-			t.Errorf("unexpected Life request: %s?%s", r.URL.Path, r.URL.RawQuery)
-		}
-	}))
-	t.Cleanup(lifeServer.Close)
-	var requests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		request := requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		switch request {
-		case 1:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-search-subscription","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-subscription","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"subscription\"}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 2:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-subscribe-missing","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"invoke-subscription","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"import\",\"MISSING.01\"]}"}
-				}]} ,"finish_reason":"tool_calls"}]
-			}`))
-		case 3:
-			_, _ = w.Write([]byte(`{
-				"id":"chatcmpl-false-subscription","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"订阅成功。"},"finish_reason":"stop"}]
-			}`))
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}))
-	t.Cleanup(modelServer.Close)
-	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: modelServer.URL, Model: "test-model"},
-		commands.Handler{Life: life.NewClient(lifeServer.URL, lifeServer.Client()), Store: db}, modelServer.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := svc.Run(ctx, claimAgentInput(t, db, ident, Input{Text: "帮我订阅 MISSING.01", Identity: ident, JobID: job.ID}))
-	if !result.Handled || result.State != RunStateCompleted || !strings.Contains(result.Response.Text, "没有找到要操作的课程或教学班") ||
-		!strings.Contains(result.Response.Text, "教学班 搜索") || strings.Contains(result.Response.Text, "订阅成功") {
-		t.Fatalf("result=%#v", result)
-	}
-	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 0 {
-		t.Fatalf("preflight created operations=%#v err=%v", operations, err)
-	}
-	if requests.Load() != 3 {
-		t.Fatalf("model requests=%d want=3", requests.Load())
-	}
-}
-
-func TestGroundingFailureIsPersistedAsTheVisibleAssistantTurn(t *testing.T) {
-	ctx := t.Context()
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "grounding-fallback-history", ExpiresAt: time.Now().Add(time.Hour),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	claimed, err := db.ClaimConversationJob(ctx, ident)
-	if err != nil || claimed == nil {
-		t.Fatalf("claim=%#v err=%v", claimed, err)
-	}
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"chatcmpl-ungrounded","object":"chat.completion","created":0,"model":"test-model",
-			"choices":[{"index":0,"message":{"role":"assistant","content":"上次操作没有确认。"},"finish_reason":"stop"}],
-			"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
-		}`))
-	}))
-	t.Cleanup(server.Close)
-	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
-		commands.Handler{Store: db}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := svc.Run(ctx, Input{
-		Text: "帮我看一下我今年的选课", Identity: ident, JobID: job.ID,
-		JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
-	})
-	if !result.Handled || result.State != RunStateCompleted || !strings.Contains(result.Response.Text, "没有拿到可验证的实时查询") {
-		t.Fatalf("result=%#v", result)
-	}
-	if requests.Load() != 2 {
-		t.Fatalf("semantic grounding attempts=%d want=2", requests.Load())
-	}
-	events, err := db.RecentConversationEvents(ctx, ident, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 2 || events[0].Type != store.ConversationEventUser || events[1].Type != store.ConversationEventAssistant ||
-		events[1].Content != result.Response.Text || strings.Contains(events[1].Content, "上次操作没有确认") {
-		t.Fatalf("visible fallback history=%#v", events)
 	}
 }
 
@@ -690,7 +488,9 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 		t.Fatal("allowed young-event lookup did not reach the remote server")
 	}
 	result, err := lazy.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}})
-	if err != nil || result != `{"ok":true}` {
+	// The envelope is host scaffolding; the remote body is carried through as
+	// JSON rather than buried in an escaped string.
+	if err != nil || !strings.Contains(result, `"result":{"ok":true}`) || !strings.Contains(result, `"outcome":"succeeded"`) {
 		t.Fatalf("lazy MCP call result=%q err=%v", result, err)
 	}
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "delete_my_homework"}); err == nil {
@@ -1208,9 +1008,9 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 		}
 	}
 	if !strings.Contains(instruction, "Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results") ||
-		!strings.Contains(instruction, "Chat history is not fresh evidence") ||
-		!strings.Contains(instruction, "unless a domain tool actually returned that evidence in this turn") {
-		t.Fatalf("instruction lacks grounding rule: %q", instruction)
+		!strings.Contains(instruction, "A tool result carries the time it was produced") ||
+		!strings.Contains(instruction, "unless a domain tool actually returned that evidence") {
+		t.Fatalf("instruction lacks the evidence rule: %q", instruction)
 	}
 	if !strings.Contains(instruction, "preserving every user constraint") || !strings.Contains(instruction, "dates, times, filters, targets, and direction") {
 		t.Fatalf("instruction lacks universal argument-preservation rule: %q", instruction)
@@ -1363,12 +1163,14 @@ func TestHostReadCapabilityReportsLoginRequirementWithoutHostSideEffect(t *testi
 
 func TestHostCapabilityDescriptionIsSmallAndCommandSearchReturnsExactCalls(t *testing.T) {
 	description := hostCapabilityToolDescription(false)
-	for _, expected := range []string{"search_bot_commands", "actual domain result", "literal result"} {
+	// The envelope shape is part of the contract the model is handed, but the
+	// registry itself must stay out of the description.
+	for _, expected := range []string{"envelope", "outcome", "observed_at", "result"} {
 		if !strings.Contains(description, expected) {
 			t.Fatalf("description lacks %q: %q", expected, description)
 		}
 	}
-	if strings.Contains(description, `{"capability"`) || strings.Contains(description, "invalid_input") || strings.Contains(description, "ok:false") {
+	if strings.Contains(description, "invalid_input") || strings.Contains(description, "ok:false") {
 		t.Fatalf("description retained eager registry/status protocol: %q", description)
 	}
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
@@ -1646,17 +1448,22 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	if !ok {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
+	// The first identical calls are refused inside the tool channel so the model
+	// can change plan; a model that keeps repeating exhausts the refusal budget
+	// and the run still stops with the same user-visible message.
 	if !strings.Contains(response.Text, "重复调用了相同工具") {
 		t.Fatalf("response = %#v", response)
 	}
-	if got := int(requests.Load()); got != 2 {
-		t.Fatalf("model requests = %d, want 2", got)
+	if got := int(requests.Load()); got < 2 || got > maxRepeatRefusals+2 {
+		t.Fatalf("model requests = %d, want between 2 and %d", got, maxRepeatRefusals+2)
 	}
 	total, err := db.ConversationSpending(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total.ModelRequests != 2 || total.ToolCalls != 1 {
+	// One admitted tool call plus the bounded refusals; the durable spending row
+	// must stay bounded rather than running to the framework iteration cap.
+	if total.ToolCalls != 1 || total.ModelRequests < 2 || total.ModelRequests > int64(maxRepeatRefusals)+2 {
 		t.Fatalf("spending = %#v", total)
 	}
 }
@@ -1891,6 +1698,48 @@ func TestApprovedAgentLoginStartsOnlyAfterConfirmation(t *testing.T) {
 	}
 }
 
+// destructiveHandlerForTest wires 订阅 移除, the Store+Life capability the
+// registry classifies as destructive, so the confirmation machinery can be
+// exercised independently of any particular ordinary write. Ordinary writes no
+// longer confirm: the server's scope registry decides whether a user may write,
+// and the confirmation gate now exists only for destructive consent.
+func destructiveHandlerForTest(t *testing.T, ctx context.Context, db *store.Store, ident store.Identity) (commands.Handler, *atomic.Int32) {
+	t.Helper()
+	removals := &atomic.Int32{}
+	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"id":42,"jwId":202602,"nameCn":"2026年秋季学期"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/sections":
+			code := r.URL.Query().Get("search")
+			_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"` + code + `","course":{"namePrimary":"编译原理"},"teacher":{"namePrimary":"程老师"},"semester":{"nameCn":"2026年秋季学期"}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/subscriptions/batch":
+			removals.Add(1)
+			var body struct {
+				Codes []string `json:"codes"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write([]byte(`{"semester":{"nameCn":"2026年秋季学期"},"removedCount":1,"unchangedCount":0,"sections":[{"code":"` + strings.Join(body.Codes, ",") + `","course":{"namePrimary":"编译原理"},"semester":{"nameCn":"2026年秋季学期"}}]}`))
+		default:
+			t.Errorf("unexpected Life request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(lifeServer.Close)
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(time.Hour), Resource: lifeServer.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return commands.Handler{
+		Life:  life.NewClient(lifeServer.URL, lifeServer.Client()),
+		Auth:  &auth.Manager{Server: lifeServer.URL, HTTPClient: lifeServer.Client(), Store: db},
+		Store: db,
+	}, removals
+}
+
 func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
@@ -1899,8 +1748,9 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	handler, removals := destructiveHandlerForTest(t, ctx, db, ident)
 	job, created, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "checkpoint-confirm", Input: store.ConversationJobInput{Text: "开启作业通知"},
+		Identity: ident, SourceEventID: "checkpoint-confirm", Input: store.ConversationJobInput{Text: "退订 COMP6212P.02"},
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil || !created {
@@ -1920,20 +1770,20 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-confirm-search","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+					"id":"search-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消订阅课程\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}
 			}`))
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) {
 				t.Errorf("capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
 			}`))
@@ -1944,7 +1794,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		if !bytes.Contains(body, []byte("call-confirm")) || !bytes.Contains(body, []byte("作业提醒：开")) {
+		if !bytes.Contains(body, []byte("call-confirm")) || !bytes.Contains(body, []byte("COMP6212P.02")) {
 			t.Errorf("resumed model request lacks exact tool result: %s", body)
 		}
 		if bytes.Contains(body, []byte(`"content":"ok"`)) || bytes.Contains(body, []byte(`"content":"确认"`)) {
@@ -1959,18 +1809,17 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	defer server.Close()
 
 	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
-		commands.Handler{Store: db}, server.Client())
+		handler, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstInput := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	firstInput := claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
 	first := svc.Run(ctx, firstInput)
 	if !first.Handled || first.State != RunStateInterrupted || first.Response.Text != "" {
 		t.Fatalf("first run = %#v", first)
 	}
-	settings, err := db.NotificationSettings(ctx, ident)
-	if err != nil || settings.HomeworkEnabled {
-		t.Fatalf("mutation ran before approval: settings=%#v err=%v", settings, err)
+	if got := removals.Load(); got != 0 {
+		t.Fatalf("mutation ran before approval: removals=%d", got)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionAwaitingConfirmation {
@@ -1988,18 +1837,17 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		t.Fatalf("approve operation: released=%#v err=%v", released, err)
 	}
 
-	secondInput := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	secondInput := claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
 	second := svc.Run(ctx, secondInput)
 	if !second.Handled || second.State != RunStateCompleted || second.Response.Text != "已处理。" {
 		t.Fatalf("second run = %#v", second)
 	}
-	settings, err = db.NotificationSettings(ctx, ident)
-	if err != nil || !settings.HomeworkEnabled {
-		t.Fatalf("approved mutation settings=%#v err=%v", settings, err)
+	if got := removals.Load(); got != 1 {
+		t.Fatalf("approved mutation: removals=%d", got)
 	}
 	operations, err = db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionSucceeded ||
-		!strings.Contains(operations[0].Result, "作业提醒：开") {
+		!strings.Contains(operations[0].Result, "编译原理") {
 		t.Fatalf("completed operations=%#v err=%v", operations, err)
 	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
@@ -2186,9 +2034,9 @@ func TestMutationExecutionDedupeSurvivesFreshToolCallID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invocation, ok := commands.NewInvocation(commands.CapabilityNotify, []string{"homework", "on"})
+	invocation, ok := commands.NewInvocation(commands.CapabilityID("subscription"), []string{"remove", "COMP6212P.02"})
 	if !ok {
-		t.Fatal("notify invocation is invalid")
+		t.Fatal("subscription invocation is invalid")
 	}
 	firstKey := capabilityExecutionDedupeKey(job.ID, "first-model-call", invocation)
 	secondKey := capabilityExecutionDedupeKey(job.ID, "fresh-model-call", invocation)
@@ -2223,18 +2071,29 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "terminal-replay", ConversationType: "private", ConversationID: "terminal-replay"}
+	handler, _ := destructiveHandlerForTest(t, ctx, db, ident)
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "terminal-replay", Input: store.ConversationJobInput{Text: "开启作业通知"},
+		Identity: ident, SourceEventID: "terminal-replay", Input: store.ConversationJobInput{Text: "退订 COMP6212P.02"},
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
-	invocation, ok := commands.NewInvocation(commands.CapabilityNotify, []string{"homework", "on"})
+	input := claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
+	// A mutation's dedupe key is a content hash of the operation the host will
+	// actually prepare, which is the described (resolved) invocation rather than
+	// the raw one. Seed through the same preflight so the keys agree.
+	raw, ok := commands.NewInvocation(commands.CapabilityID("subscription"), []string{"remove", "COMP6212P.02"})
 	if !ok {
-		t.Fatal("notify invocation is invalid")
+		t.Fatal("subscription invocation is invalid")
 	}
+	described, err := handler.DescribeInvocation(ctx, commands.Input{
+		Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent,
+	}, raw.ID(), raw.Args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation := described.Invocation
 	execution, created, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 		Identity: ident, JobID: job.ID, LeaseToken: input.JobLeaseToken,
 		DedupeKey:  capabilityExecutionDedupeKey(job.ID, "old-terminal-call", invocation),
@@ -2262,14 +2121,14 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-terminal-search","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-terminal-first","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+					"id":"search-terminal-first","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消订阅课程\"}"}
 				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 		case 2:
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-terminal-first","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-terminal-replay","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-terminal-replay","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
 				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 		case 3:
@@ -2289,7 +2148,7 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 	defer server.Close()
 
 	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
-		commands.Handler{Store: db}, server.Client())
+		handler, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2307,7 +2166,9 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 	}
 	currentResult := false
 	for _, event := range events {
-		if event.ToolCallID == "call-terminal-replay" && event.Type == store.ConversationEventToolResult && event.Content == "之前已经完成" {
+		if event.ToolCallID == "call-terminal-replay" && event.Type == store.ConversationEventToolResult &&
+			strings.Contains(event.Content, `"result":"之前已经完成"`) {
+			// The durable row's own result is replayed, not a fresh execution.
 			currentResult = true
 		}
 	}
@@ -2367,6 +2228,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "parallel", ConversationType: "private", ConversationID: "parallel"}
+	handler, removals := destructiveHandlerForTest(t, ctx, db, ident)
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "parallel-confirm", Input: store.ConversationJobInput{Text: "打开两种通知"},
 		ExpiresAt: time.Now().Add(time.Hour),
@@ -2383,21 +2245,21 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-parallel-search","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-parallel","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"打开通知\"}"}
+					"id":"search-parallel","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消订阅课程\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}
 			}`))
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) {
 				t.Errorf("parallel capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-parallel","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[
-					{"id":"call-classes","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"classes\",\"on\"]}"}},
-					{"id":"call-homework","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}}
+					{"id":"call-classes","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"MATH1001.01\"]}"}},
+					{"id":"call-homework","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}}
 				]},"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}
 			}`))
@@ -2415,7 +2277,7 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	defer server.Close()
 	var runLog bytes.Buffer
 	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model", Logger: log.New(&runLog, "", 0)},
-		commands.Handler{Store: db}, server.Client())
+		handler, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2453,9 +2315,8 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if requests.Load() != 2 {
 		t.Fatalf("model ran while a sibling confirmation was pending: %d requests", requests.Load())
 	}
-	settings, err := db.NotificationSettings(ctx, ident)
-	if err != nil || !settings.ClassesEnabled || settings.HomeworkEnabled {
-		t.Fatalf("only first mutation should run: settings=%#v err=%v", settings, err)
+	if got := removals.Load(); got != 1 {
+		t.Fatalf("exactly the approved sibling should have run: removals=%d", got)
 	}
 	if ok, err := db.TransitionConversationJob(ctx, claimed.ID, claimed.LeaseToken, store.ConversationJobTransition{
 		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
@@ -2470,9 +2331,8 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "两项都已处理。" {
 		t.Fatalf("final run = %#v", final)
 	}
-	settings, err = db.NotificationSettings(ctx, ident)
-	if err != nil || !settings.ClassesEnabled || !settings.HomeworkEnabled {
-		t.Fatalf("both approved mutations should run: settings=%#v err=%v", settings, err)
+	if got := removals.Load(); got != 2 {
+		t.Fatalf("both approved mutations should run: removals=%d", got)
 	}
 	operations, err = db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(operations) != 2 {
@@ -2496,6 +2356,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "denied", ConversationType: "private", ConversationID: "denied"}
+	handler, removals := destructiveHandlerForTest(t, ctx, db, ident)
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "denied-confirm", ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -2503,6 +2364,8 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
+	var deniedToolResult atomic.Value
+	deniedToolResult.Store([]byte(nil))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
@@ -2511,20 +2374,20 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-deny-search","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-deny","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+					"id":"search-deny","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消订阅课程\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) {
 				t.Errorf("denied capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-deny","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-deny","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-deny","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
 				}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return
@@ -2532,7 +2395,8 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		if request != 3 {
 			t.Errorf("unexpected model request %d", request)
 		}
-		if !bytes.Contains(body, []byte(`"content":"用户拒绝执行"`)) {
+		deniedToolResult.Store(append([]byte(nil), body...))
+		if !bytes.Contains(body, []byte(`outcome\":\"denied`)) {
 			t.Errorf("denial missing from resumed transcript: %s", body)
 		}
 		_, _ = w.Write([]byte(`{
@@ -2543,11 +2407,11 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	}))
 	defer server.Close()
 	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
-		commands.Handler{Store: db}, server.Client())
+		handler, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	input := claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
 	}
@@ -2559,13 +2423,18 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Reason: "用户拒绝执行"}); err != nil || released == nil {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
-	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
-	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "用户拒绝执行" {
+	input = claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
+	if final := svc.Run(ctx, input); final.State != RunStateCompleted {
 		t.Fatalf("final run = %#v", final)
 	}
-	settings, err := db.NotificationSettings(ctx, ident)
-	if err != nil || settings.HomeworkEnabled {
-		t.Fatalf("denied mutation ran: settings=%#v err=%v", settings, err)
+	// The host does not rewrite what the model says; it makes sure the model was
+	// told the whole outcome. The denial the model receives must state the
+	// operation, that nothing ran, and that it must not claim success.
+	if !bytes.Contains(deniedToolResult.Load().([]byte), []byte("nothing was changed")) {
+		t.Fatalf("denial fed to the model is not self-describing: %s", deniedToolResult.Load())
+	}
+	if got := removals.Load(); got != 0 {
+		t.Fatalf("denied mutation ran: removals=%d", got)
 	}
 	events, err := db.RecentConversationEvents(ctx, ident, 20)
 	if err != nil {
@@ -2573,9 +2442,15 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	}
 	foundDenial := false
 	for _, event := range events {
-		if event.Type == store.ConversationEventToolDenial && strings.Contains(event.Content, "用户拒绝") {
-			foundDenial = true
+		if event.Type != store.ConversationEventToolDenial {
+			continue
 		}
+		for _, fragment := range []string{`"outcome":"denied"`, "nothing was changed"} {
+			if !strings.Contains(event.Content, fragment) {
+				t.Fatalf("denial evidence %q lacks %q", event.Content, fragment)
+			}
+		}
+		foundDenial = true
 	}
 	if !foundDenial {
 		t.Fatalf("typed denial event missing: %#v", events)
@@ -2590,6 +2465,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "retry-resume", ConversationType: "private", ConversationID: "retry-resume"}
+	handler, _ := destructiveHandlerForTest(t, ctx, db, ident)
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "retry-resume", ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -2605,20 +2481,20 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-retry-search","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"search-retry-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"开启作业通知\"}"}
+					"id":"search-retry-confirm","type":"function","function":{"name":"search_bot_commands","arguments":"{\"query\":\"取消订阅课程\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) {
 				t.Errorf("retry capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-retry-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-retry-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-retry-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
 				}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return
@@ -2629,11 +2505,11 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 	}))
 	defer server.Close()
 	svc, err := New(ctx, Config{Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model"},
-		commands.Handler{Store: db}, server.Client())
+		handler, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	input := claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
 	}
@@ -2645,7 +2521,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
 		t.Fatalf("approve confirmation: released=%#v err=%v", released, err)
 	}
-	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
+	input = claimAgentInput(t, db, ident, Input{Text: "退订 COMP6212P.02", Identity: ident, JobID: job.ID})
 	second := svc.Run(ctx, input)
 	if !second.Handled || !strings.Contains(second.Response.Text, "连续 5 次") {
 		t.Fatalf("second run = %#v", second)

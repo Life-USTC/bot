@@ -17,21 +17,25 @@ const (
 
 // conversationEventMessages restores exact role-bearing history. It never
 // turns host receipts, approval state, or generated summaries into user text.
-func conversationEventMessages(events []store.ConversationEvent) []*schema.Message {
+func conversationEventMessages(events []store.ConversationEvent, shared bool) []*schema.Message {
 	events = exactConversationEventWindow(events, conversationHistoryTokenLimit)
-	return messagesFromConversationEvents(events)
+	return messagesFromConversationEventsFor(events, shared)
 }
 
 func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.Message {
+	return messagesFromConversationEventsFor(events, false)
+}
+
+func messagesFromConversationEventsFor(events []store.ConversationEvent, shared bool) []*schema.Message {
 	messages := make([]*schema.Message, 0, len(events))
 	for _, event := range events {
 		switch event.Type {
 		case store.ConversationEventUser:
-			parts := inputMessageParts(event.Parts)
+			parts := attributedInputParts(inputMessageParts(event.Parts), event.Name, shared)
 			if len(parts) > 0 {
 				messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
 			} else if strings.TrimSpace(event.Content) != "" {
-				messages = append(messages, schema.UserMessage(event.Content))
+				messages = append(messages, schema.UserMessage(speakerPrefixed(event.Content, event.Name, shared)))
 			}
 		case store.ConversationEventAssistant:
 			calls := make([]schema.ToolCall, 0, len(event.ToolCalls))
@@ -63,6 +67,50 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 		}
 	}
 	return messages
+}
+
+// speakerPrefixed attributes a message in a shared conversation. One group
+// transcript is replayed to every member, so an unattributed history made
+// dozens of different people look like one continuous speaker. The name goes in
+// the body rather than the provider name field: OpenAI-compatible name fields
+// are restricted to [A-Za-z0-9_-] and would reject an ordinary Chinese nickname.
+func speakerPrefixed(text, speaker string, shared bool) string {
+	speaker = strings.TrimSpace(speaker)
+	if !shared || speaker == "" {
+		return text
+	}
+	return "[" + sanitizedSpeakerName(speaker) + "] " + text
+}
+
+func attributedInputParts(parts []schema.MessageInputPart, speaker string, shared bool) []schema.MessageInputPart {
+	if len(parts) == 0 || !shared || strings.TrimSpace(speaker) == "" {
+		return parts
+	}
+	for index, part := range parts {
+		if part.Type != schema.ChatMessagePartTypeText {
+			continue
+		}
+		parts[index].Text = speakerPrefixed(part.Text, speaker, shared)
+		return parts
+	}
+	return append([]schema.MessageInputPart{{
+		Type: schema.ChatMessagePartTypeText, Text: "[" + sanitizedSpeakerName(speaker) + "]",
+	}}, parts...)
+}
+
+// sanitizedSpeakerName keeps a nickname from forging the attribution marker or
+// spilling across lines.
+func sanitizedSpeakerName(speaker string) string {
+	replacer := strings.NewReplacer("[", "(", "]", ")", "\n", " ", "\r", " ")
+	speaker = strings.TrimSpace(replacer.Replace(speaker))
+	runes := []rune(speaker)
+	if len(runes) > 24 {
+		speaker = string(runes[:24]) + "…"
+	}
+	if speaker == "" {
+		return "群成员"
+	}
+	return speaker
 }
 
 func inputMessageParts(parts []store.ConversationMessagePart) []schema.MessageInputPart {

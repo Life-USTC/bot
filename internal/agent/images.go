@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -48,18 +49,48 @@ func newImageInputError(message string) error {
 	return &imageInputError{message: message}
 }
 
+// prepareInputImages drops images it cannot fetch instead of failing the turn.
+// QQ multimedia URLs expire, and a forwarded message routinely carries one
+// stale image; losing the whole reply because one attachment 400s is worse than
+// answering the text and saying which image could not be read.
+//
+// An imageInputError is different: it describes what the user actually sent
+// (too large, unsupported address) in words worth showing them, and it is
+// detected before any model request. Those still fail the turn rather than
+// spending a provider call to say less. Cancellation and budget errors abort
+// too, because they describe the run rather than the image.
 func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 	if input == nil || len(input.ImageURLs) == 0 {
 		return nil
 	}
-	input.imageDataURLs = make([]string, 0, len(input.ImageURLs))
+	loadedURLs := make([]string, 0, len(input.ImageURLs))
+	dataURLs := make([]string, 0, len(input.ImageURLs))
+	var lastErr error
 	for _, rawURL := range input.ImageURLs {
 		dataURL, err := s.loadImageDataURL(ctx, rawURL)
 		if err != nil {
-			return err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return err
+			}
+			var inputErr *imageInputError
+			if isAgentBudgetError(err) || errors.As(err, &inputErr) {
+				return err
+			}
+			lastErr = err
+			input.skippedImages++
+			s.logf("input image skipped: error=%v", err)
+			continue
 		}
-		input.imageDataURLs = append(input.imageDataURLs, dataURL)
+		loadedURLs = append(loadedURLs, rawURL)
+		dataURLs = append(dataURLs, dataURL)
 	}
+	// Nothing usable is left and there is no text to answer: report the real
+	// image failure instead of pretending the turn had no content.
+	if len(dataURLs) == 0 && strings.TrimSpace(input.Text) == "" && lastErr != nil {
+		return lastErr
+	}
+	input.ImageURLs = loadedURLs
+	input.imageDataURLs = dataURLs
 	return nil
 }
 

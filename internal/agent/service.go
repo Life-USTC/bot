@@ -68,6 +68,10 @@ type Input struct {
 	// rejected unless both still identify the same worker revision.
 	JobRevision   int
 	JobLeaseToken string
+	// SpeakerName is how the actor appears to the other participants. A shared
+	// conversation stores one transcript for everyone in it, so without this the
+	// model saw dozens of different people as a single anonymous "user".
+	SpeakerName string
 	// SendResponse lets a local tool hand an already formatted host response
 	// directly to the application when its presentation cannot be reproduced
 	// from plain model text (for example, an image).
@@ -76,6 +80,14 @@ type Input struct {
 	imageDataURLs []string
 	runState      *RunState
 	runErr        *error
+	// prefetch is what the host looked up for this turn. It reaches the model as
+	// a seeded tool call and is never persisted: documentation is cheap to
+	// rebuild and a stale copy would misdescribe a later turn.
+	prefetch prefetchPolicy
+	// skippedImages counts attachments that could not be downloaded or decoded.
+	// The model is told, so it can say an image was unreadable instead of
+	// silently answering as if it had seen it.
+	skippedImages int
 }
 
 type RunState string
@@ -291,8 +303,9 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusCompleted, reply, nil)
 		return agentTextResponse(reply), true
 	}
-	grounding := groundingPolicyFor(input.Text, input.Identity)
-	if grounding.privateUnavailable {
+	prefetch := prefetchPolicyFor(input.Text, input.Identity)
+	input.prefetch = prefetch
+	if prefetch.privateUnavailable {
 		reply := "这个问题涉及个人数据，请私聊 Presto 查询。"
 		if err := s.persistCurrentUserEvent(ctx, input); err != nil {
 			markAgentInfrastructureFailure(input, err)
@@ -388,13 +401,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	ctx = withToolOutcomes(ctx, newToolOutcomeRegistry())
 	repeatGuard := newToolRepeatGuard()
-	agentModel := newGroundingModel(model, grounding)
-	grounder, _ := agentModel.(*groundingModel)
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "presto_assistant",
 		Description:   "Presto, a Life @ USTC QQ assistant",
-		Instruction:   groundingInstruction(currentInstruction(), grounding),
-		Model:         agentModel,
+		Instruction:   currentInstruction(),
+		Model:         model,
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
@@ -410,7 +421,9 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 						return "", err
 					}
 					recordToolCall(ctx)
-					result := fmt.Sprintf("未知工具：%s", name)
+					result := encodeToolResult(hostToolRejection{
+						Outcome: toolOutcomeRejected, Tool: name, Detail: "no such tool is available in this turn",
+					})
 					toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 					// An unknown tool cannot satisfy the plan; retain its canonical
 					// failure so a follow-up cannot retry it forever.
@@ -551,17 +564,13 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 		content := strings.TrimSpace(msg.Content)
 		candidateAnswer := msg.Role == schema.Assistant && len(msg.ToolCalls) == 0 && content != ""
-		ungroundedAnswer := candidateAnswer && grounder != nil && !grounder.hasRequiredEvidence()
-		if !ungroundedAnswer {
-			persistedMessage := groundedMessageForPersistence(msg, grounder != nil)
-			if err := s.persistAgentMessage(ctx, input, persistedMessage); err != nil {
-				markAgentInfrastructureFailure(input, err)
-				reply := agentFailureReply(runID, err)
-				finishRun(store.AgentRunStatusFailed, reply, err)
-				return agentTextResponse(reply), true
-			}
+		if err := s.persistAgentMessage(ctx, input, msg); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
 		}
-		if candidateAnswer && !ungroundedAnswer {
+		if candidateAnswer {
 			reply = content
 		}
 	}
@@ -578,33 +587,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if hostResponseDelivered.Load() {
 		finishRun(store.AgentRunStatusCompleted, "", nil)
 		return commands.Response{}, true
-	}
-	if grounder != nil && !grounder.hasRequiredEvidence() {
-		if result, returned := grounder.groundedToolResult(); returned && result != "" {
-			if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(result, nil)); err != nil {
-				markAgentInfrastructureFailure(input, err)
-				reply := agentFailureReply(runID, err)
-				finishRun(store.AgentRunStatusFailed, reply, err)
-				return agentTextResponse(reply), true
-			}
-			finishRun(store.AgentRunStatusCompleted, result, nil)
-			return agentTextResponse(result), true
-		}
-		groundingErr := errors.New("agent produced no capability result for a grounded turn")
-		reply := groundingFailureReply(runID)
-		if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(reply, nil)); err != nil {
-			markAgentInfrastructureFailure(input, err)
-			failure := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, failure, err)
-			return agentTextResponse(failure), true
-		}
-		finishRun(store.AgentRunStatusFailed, reply, groundingErr)
-		return agentTextResponse(reply), true
-	}
-	if reply == "" {
-		if result, returned := grounder.groundedToolResult(); returned && result != "" {
-			reply = result
-		}
 	}
 	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
@@ -631,26 +613,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
-}
-
-// A provider may emit speculative text in the same assistant message that
-// requests a required grounding tool. Keep the exact tool call needed by the
-// transcript, but do not turn that provisional text into future evidence.
-func groundedMessageForPersistence(message *schema.Message, grounded bool) *schema.Message {
-	if !grounded || message == nil || message.Role != schema.Assistant || len(message.ToolCalls) == 0 {
-		return message
-	}
-	sanitized := *message
-	sanitized.Content = ""
-	if len(message.AssistantGenMultiContent) > 0 {
-		sanitized.AssistantGenMultiContent = make([]schema.MessageOutputPart, 0, len(message.AssistantGenMultiContent))
-		for _, part := range message.AssistantGenMultiContent {
-			if part.Type != schema.ChatMessagePartTypeText {
-				sanitized.AssistantGenMultiContent = append(sanitized.AssistantGenMultiContent, part)
-			}
-		}
-	}
-	return &sanitized
 }
 
 func capabilityInterruptKind(info *adk.InterruptInfo) string {
@@ -712,23 +674,23 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 				}
 			}
 		}
-		messages = append(messages, conversationEventMessages(events)...)
+		messages = append(messages, conversationEventMessages(events, store.IsSharedConversation(input.Identity))...)
 	}
 	// The current user event is persisted before this function is called. A
 	// checkpoint-less retry therefore restores the persisted turn exactly once
 	// instead of appending it to history a second time.
 	if hasCurrentEvent {
-		return messages, nil
+		return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
 	}
 	currentText := strings.TrimSpace(input.Text)
 	if len(input.ImageURLs) == 0 {
-		messages = append(messages, schema.UserMessage(withCurrentTimePrefix(currentText)))
-		return messages, nil
+		messages = append(messages, schema.UserMessage(withSpeakerPrefix(withCurrentTimePrefix(currentText), input.SpeakerName, input.Identity)))
+		return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
 	}
 	if currentText == "" {
 		currentText = "请描述并分析这张图片。"
 	}
-	currentText = withCurrentTimePrefix(currentText)
+	currentText = withSpeakerPrefix(withCurrentTimePrefix(currentText), input.SpeakerName, input.Identity)
 	parts := []schema.MessageInputPart{{
 		Type: schema.ChatMessagePartTypeText,
 		Text: currentText,
@@ -752,8 +714,22 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 			},
 		})
 	}
+	if input.skippedImages > 0 {
+		// A host fact about the user's turn, stated once and without direction:
+		// platform media URLs expire, so an attachment can simply be missing.
+		parts = append(parts, schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: fmt.Sprintf("[host] %d attached image(s) could not be downloaded and are not included.", input.skippedImages),
+		})
+	}
 	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
-	return messages, nil
+	return append(messages, input.prefetch.seededToolCall(input.Text)...), nil
+}
+
+// withSpeakerPrefix attributes the live turn the same way replayed history is
+// attributed, so the current speaker is not the only anonymous one.
+func withSpeakerPrefix(text, speaker string, ident store.Identity) string {
+	return speakerPrefixed(text, speaker, store.IsSharedConversation(ident))
 }
 
 func agentCheckpointID(jobID int64) string {
@@ -772,6 +748,7 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
 		Type:      store.ConversationEventUser, Content: content,
+		Name:  strings.TrimSpace(input.SpeakerName),
 		Parts: currentUserMessageParts(input),
 	})
 	return err
@@ -967,7 +944,7 @@ type commandSearchInput struct {
 }
 
 func hostCapabilityToolDescription(shared bool) string {
-	description := "Invoke the exact best-matched Bot capability returned by search_bot_commands. The result is the actual domain result, without a status wrapper. Use only that literal result as evidence."
+	description := "Invoke one exact Bot capability by its stable ID. Returns a JSON envelope: outcome is succeeded, failed, unknown, denied, cancelled or expired, observed_at is when the call ran, and result carries the capability's own text. Use only that envelope as evidence."
 	if shared {
 		description += " This is a shared conversation; private capabilities are unavailable."
 	}
@@ -1257,11 +1234,11 @@ func currentInstructionAt(now time.Time) string {
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
-Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
+Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. A tool result carries the time it was produced: an older result is still usable context, but when the user asks for current data or asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence.
 Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
 An empty search_bot_commands result means that no Bot command matched. Never substitute a loosely related command. For a read-only campus-data request, search search_campus_tools next; say the overall request is unsupported only if neither registry has a relevant tool.
 When the user asks for a complete capability or tool inventory, search Bot commands for “help” and invoke that exact help capability, then call search_campus_tools with query "*" when that tool is available. Report only those actual results plus the host meta-tools visible in this turn; never reconstruct an inventory from memory.
-Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
+Tool results are literal evidence: a JSON envelope whose outcome and observed_at describe the call, and whose result field is the actual domain text. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
 MCP tools are read-only supplements. Prefer a Bot capability when both layers cover the request. If no capability supports a requested mutation, say so; never improvise a write through another tool.
 You can answer questions about prior messages using the exact chat history in this run. Treat multiple paragraphs in the latest user turn as one turn.
@@ -1304,6 +1281,8 @@ func agentFailureReply(runID int64, err error) string {
 		reply = "AI 处理超过 2 分钟，未能生成完整回复，已停止本次处理。请稍后重新发送；如果查询结果较多，可指定数量或筛选条件。"
 	} else if errors.Is(err, errAgentContextBudget) {
 		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
+	} else if errors.Is(err, errAgentRunTokenBudget) {
+		reply = "本次处理步骤过多，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentToolCallBudget) {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentModelAttemptBudget) {
@@ -1330,14 +1309,6 @@ func agentFailureReply(runID int64, err error) string {
 func isExhaustedRetryableProviderError(err error) bool {
 	var apiErr *einoopenai.APIError
 	return errors.As(err, &apiErr) && isRetryableLLMStatus(apiErr.HTTPStatusCode)
-}
-
-func groundingFailureReply(runID int64) string {
-	reply := "这次没有拿到可验证的实时查询或操作结果，所以我不会确认或重复未经工具核实的数据。请稍后重试，或把具体对象和时间范围说清楚。"
-	if runID > 0 {
-		reply += fmt.Sprintf("\n记录 #%d", runID)
-	}
-	return reply
 }
 
 func imageFailureReply(runID int64, err error) string {

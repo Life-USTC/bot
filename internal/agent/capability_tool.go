@@ -62,10 +62,16 @@ func (s *Service) invokeHostCapability(
 			toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 		}
 		presentation := s.handler.PresentCapabilityOutcome(commands.Invocation{Name: string(id), Args: append([]string(nil), input.Arguments...)}, outcome)
-		return strings.TrimSpace(presentation.Text), nil
+		return capabilityOutcomeToolResult(id, input.Arguments, "", outcome.Status, presentation.Text), nil
 	}
 	policy := invocation.Policy()
-	if policy.Effect == commands.EffectRead {
+	// Only a destructive operation is preflighted for confirmation. The server's
+	// scope registry already decides whether the user may perform a write; the
+	// confirmation gate exists for consent, and asking before every ordinary
+	// write turned routine requests into two round trips. Replay safety is a
+	// separate question and still keys on read vs non-read below: an
+	// interrupted non-read never re-runs, confirmed or not.
+	if policy.Effect != commands.EffectDestructive {
 		callID := capabilityToolCallID(ctx, jobID)
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, callID, sendResponse)
 		if err != nil || !authWait {
@@ -257,20 +263,23 @@ func (s *Service) executeUnconfirmedHostCapability(
 	}
 	if tracked {
 		if capabilityOutcomeIsUnknown(outcome) {
-			if _, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome"); err != nil {
+			finished, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
+			if err != nil {
 				return "", executionID, false, markDurableAgentStateError("record unknown capability outcome", err)
 			}
-			return text, executionID, false, nil
+			return capabilityExecutionModelResult(finished), executionID, false, nil
 		}
 		var outcomeErr error
 		if outcome.Status != commands.CapabilityOutcomeSuccess {
 			outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 		}
-		if _, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, text, outcomeErr); err != nil {
+		finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, text, outcomeErr)
+		if err != nil {
 			return "", executionID, false, markDurableAgentStateError("finish capability execution", err)
 		}
+		return capabilityExecutionModelResult(finished), executionID, false, nil
 	}
-	return text, executionID, false, nil
+	return capabilityOutcomeToolResult(invocation.ID(), invocation.Args, invocation.Policy().Effect, outcome.Status, text), executionID, false, nil
 }
 
 func (s *Service) resolveHostCapability(
@@ -617,40 +626,6 @@ func deliverCapabilityPresentation(
 		return "", err
 	}
 	return text, nil
-}
-
-func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作结果未知，系统没有自动重试。"
-	case store.CapabilityExecutionDenied:
-		reason := strings.TrimSpace(execution.Error)
-		if reason == "" {
-			reason = "用户拒绝执行"
-		}
-		return reason
-	case store.CapabilityExecutionCancelled:
-		return "操作已取消"
-	case store.CapabilityExecutionExpired:
-		return "操作已过期"
-	case store.CapabilityExecutionRunning:
-		return ""
-	default:
-		return "操作尚未执行"
-	}
 }
 
 func capabilityExecutionDedupeKey(jobID int64, toolCallID string, invocation commands.Invocation) string {

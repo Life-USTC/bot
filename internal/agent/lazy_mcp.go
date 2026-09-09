@@ -71,7 +71,7 @@ func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, er
 	if err != nil {
 		return nil, err
 	}
-	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. The result is the campus tool's actual result, without a status wrapper.", s.call)
+	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. Returns a JSON envelope whose result field carries the campus tool's own payload.", s.call)
 }
 
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
@@ -250,7 +250,17 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 			return "", markDurableAgentStateError("finish campus read", err)
 		}
 	}
-	return result, callErr
+	// A tool-reported failure is evidence the model can act on and is returned
+	// as a result. A transport or authorization failure is the host's problem
+	// and still aborts the run.
+	if callErr != nil {
+		detail, recoverable := botmcp.ModelToolErrorResult(callErr)
+		if !recoverable {
+			return "", callErr
+		}
+		return campusCallToolResult(name, input.Arguments, result, errors.New(detail)), nil
+	}
+	return campusCallToolResult(name, input.Arguments, result, nil), nil
 }
 
 func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, bool, error) {
@@ -278,28 +288,6 @@ func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, argu
 		Receipt: store.CapabilityReceipt{Action: "查询", Resource: campusReceiptResource(name), Subject: campusReceiptSubject(name, arguments, "")},
 	})
 	return execution, true, created, markDurableAgentStateError("prepare campus read", err)
-}
-
-func existingCampusToolResult(execution store.CapabilityExecution) string {
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询结果未知，系统没有自动重试。"
-	default:
-		return "the campus query has not completed"
-	}
 }
 
 func campusReceiptResource(name string) string {

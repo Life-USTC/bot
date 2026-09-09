@@ -16,7 +16,7 @@ func TestConversationEventMessagesPreserveExactRolesAndToolEvidence(t *testing.T
 		{Type: store.ConversationEventToolResult, ToolCallID: "call-1", ToolName: "invoke_bot_capability", Content: "数学分析（程艺，2026春）"},
 		{Type: store.ConversationEventAssistant, Content: "程艺老师在 2026 春开课。"},
 	}
-	messages := conversationEventMessages(events)
+	messages := conversationEventMessages(events, false)
 	if len(messages) != 4 {
 		t.Fatalf("messages = %#v", messages)
 	}
@@ -60,7 +60,7 @@ func TestConversationEventMessagesDropsIncompleteLeadingToolExchange(t *testing.
 		{Type: store.ConversationEventUser, Content: "new turn"},
 		{Type: store.ConversationEventAssistant, Content: "new reply"},
 	}
-	messages := conversationEventMessages(events)
+	messages := conversationEventMessages(events, false)
 	if len(messages) != 2 || messages[0].Content != "new turn" || messages[1].Content != "new reply" {
 		t.Fatalf("messages = %#v", messages)
 	}
@@ -75,7 +75,7 @@ func TestConversationEventMessagesDropsHistoricalTurnWithUnansweredToolCall(t *t
 		{JobID: 2, Type: store.ConversationEventUser, Content: "你还在吗"},
 	}
 
-	messages := conversationEventMessages(events)
+	messages := conversationEventMessages(events, false)
 	if len(messages) != 1 || messages[0].Role != schema.User || messages[0].Content != "你还在吗" {
 		t.Fatalf("provider transcript retained an unanswered historical tool call: %#v", messages)
 	}
@@ -93,7 +93,7 @@ func TestConversationEventMessagesPreservesCompleteParallelToolExchange(t *testi
 		{Type: store.ConversationEventAssistant, Content: "完成"},
 	}
 
-	messages := conversationEventMessages(events)
+	messages := conversationEventMessages(events, false)
 	if len(messages) != 5 || messages[1].Role != schema.Assistant || len(messages[1].ToolCalls) != 2 ||
 		messages[2].ToolCallID != "call-b" || messages[3].ToolCallID != "call-a" || messages[4].Content != "完成" {
 		t.Fatalf("complete parallel exchange was changed: %#v", messages)
@@ -108,7 +108,7 @@ func TestConversationEventMessagesKeepsLatestUserAndDropsItsIncompleteToolSuffix
 		}}},
 	}
 
-	messages := conversationEventMessages(events)
+	messages := conversationEventMessages(events, false)
 	if len(messages) != 1 || messages[0].Role != schema.User || messages[0].Content != "继续处理" {
 		t.Fatalf("latest user input was not recovered exactly: %#v", messages)
 	}

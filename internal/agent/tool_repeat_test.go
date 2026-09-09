@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/compose"
@@ -22,8 +22,11 @@ func TestToolRepeatGuardCanonicalizesArgumentsAndDoesNotRepeatSideEffects(t *tes
 		t.Fatal(err)
 	}
 	second := &compose.ToolInput{Name: "side_effect", Arguments: `{ "meta": {"a":1,"b":2}, "content":"hello" }`}
-	if _, err := endpoint(context.Background(), second); !errors.Is(err, errRepeatedToolCall) {
-		t.Fatalf("repeat error = %v", err)
+	// The refusal reaches the model as a tool result rather than aborting the
+	// run, so the model can change plan and still answer.
+	out, err := endpoint(withToolOutcomes(context.Background(), newToolOutcomeRegistry()), second)
+	if err != nil || out == nil || !strings.Contains(out.Result, `"outcome":"rejected"`) || !strings.Contains(out.Result, "did not repeat") {
+		t.Fatalf("repeat output = %#v err = %v", out, err)
 	}
 	if calls != 1 {
 		t.Fatalf("side-effect calls = %d, want 1", calls)
@@ -63,8 +66,12 @@ func TestToolRepeatGuardStopsEquivalentFailingPlanAcrossRounds(t *testing.T) {
 	}
 	guard.Reset()
 	second := &compose.ToolInput{Name: "search_courses", CallID: "call-2", Arguments: `{ "limit": 10, "query": "数学分析" }`}
-	if _, err := endpoint(ctx, second); !errors.Is(err, errAgentNonProgress) {
-		t.Fatalf("equivalent failing plan error = %v", err)
+	out, err := endpoint(ctx, second)
+	if err != nil || out == nil || !strings.Contains(out.Result, `"outcome":"rejected"`) || !strings.Contains(out.Result, "did not retry") {
+		t.Fatalf("equivalent failing plan output = %#v err = %v", out, err)
+	}
+	if !toolOutcomesFromContext(ctx).isError("call-2") {
+		t.Fatal("refused repeat must count as a failed tool outcome")
 	}
 }
 
