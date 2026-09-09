@@ -3,6 +3,9 @@ FROM rust:1.89-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88
 
 WORKDIR /src
 
+# Avoid stalled HTTP/2 registry downloads through build-network proxies.
+ENV CARGO_HTTP_MULTIPLEXING=false
+
 # Keep the dependency compilation layer stable when only renderer sources
 # change. The real source is copied and built in the following layer.
 COPY Cargo.toml Cargo.lock ./
