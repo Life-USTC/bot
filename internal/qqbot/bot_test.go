@@ -879,3 +879,32 @@ func waitInteractionCount(t *testing.T, db *store.Store, want int64) {
 	}
 	t.Fatalf("interaction count = %d, want %d", last, want)
 }
+
+func TestGatewayRemembersSessionForResume(t *testing.T) {
+	// Opcode 7 means "come back to this session". Re-identifying instead starts a
+	// new one and loses every event the gateway buffered across the gap, which in
+	// production happened on a roughly thirty-minute cycle.
+	bot := &Bot{}
+	if id, seq := bot.resumePoint(); id != "" || seq != 0 {
+		t.Fatalf("a fresh bot must identify, not resume: id=%q seq=%d", id, seq)
+	}
+	bot.logReady(gatewayPayload{D: json.RawMessage(`{"session_id":"session-a","user":{"id":"1"}}`)})
+	bot.rememberSeq(7)
+	bot.rememberSeq(4) // out-of-order frames must not rewind the resume point
+	id, seq := bot.resumePoint()
+	if id != "session-a" || seq != 7 {
+		t.Fatalf("resume point = %q/%d, want session-a/7", id, seq)
+	}
+	// A rejected session must not be replayed on the next attempt.
+	bot.forgetSession()
+	if id, seq := bot.resumePoint(); id != "" || seq != 0 {
+		t.Fatalf("invalidated session survived: id=%q seq=%d", id, seq)
+	}
+	// A different session id resets the sequence it is counted against.
+	bot.logReady(gatewayPayload{D: json.RawMessage(`{"session_id":"session-b","user":{"id":"1"}}`)})
+	bot.rememberSeq(3)
+	bot.logReady(gatewayPayload{D: json.RawMessage(`{"session_id":"session-c","user":{"id":"1"}}`)})
+	if id, seq := bot.resumePoint(); id != "session-c" || seq != 0 {
+		t.Fatalf("new session kept the old sequence: id=%q seq=%d", id, seq)
+	}
+}
