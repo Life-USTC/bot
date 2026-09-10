@@ -642,10 +642,10 @@ func TestUnreachableCampusServiceFailsTheTurn(t *testing.T) {
 	if !strings.Contains(logs.String(), "campus catalog attempt") {
 		t.Fatalf("campus listing was not retried: %q", logs.String())
 	}
-	// A caller with no usable token still reads the server's public tools, so
-	// being logged out is not itself an outage.
-	if !strings.Contains(logs.String(), "listed anonymously") {
-		t.Fatalf("missing token did not fall back to the public catalog: %q", logs.String())
+	// This caller holds no grant, so there is no token to retry; the listing
+	// itself is what is retried before the turn is failed.
+	if !strings.Contains(logs.String(), "campus catalog attempt") {
+		t.Fatalf("campus listing was not retried: %q", logs.String())
 	}
 }
 

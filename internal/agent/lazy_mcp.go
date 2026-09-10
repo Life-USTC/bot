@@ -120,21 +120,31 @@ func (t *campusTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 // model can do.
 const campusCatalogAttempts = 3
 
-// accessTokenOrAnonymous returns a user token when one can be obtained, and the
-// empty string otherwise. A transient failure is retried, because a token
-// endpoint hiccup should not quietly reduce a logged-in user to public tools.
-func (s *lazyMCPSession) accessTokenOrAnonymous(ctx context.Context) string {
+// accessToken obtains the caller's token, or reports that the campus service is
+// unusable this turn.
+//
+// Only one outcome is not a failure: ErrNotLoggedIn means the store holds no
+// grant at all, so there is nothing to retry and the public half of the catalog
+// — which needs no token — is exactly what this caller is entitled to.
+//
+// Everything else is a failure and is treated as one. A refused grant is
+// reported immediately so the user is told to log in again; a transient error
+// is retried, because a token endpoint hiccup is precisely what retries are
+// for. A logged-in caller is never quietly reduced to public tools: their
+// personal tools missing would look to them like the Bot forgot they exist.
+func (s *lazyMCPSession) accessToken(ctx context.Context) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= campusCatalogAttempts; attempt++ {
 		token, err := s.service.auth.MCPAccessToken(ctx, s.identity)
 		if err == nil {
-			return token
+			return token, nil
 		}
 		lastErr = err
-		// Not being logged in, and a grant the server refuses, are answers
-		// rather than failures: retrying cannot change either.
-		if errors.Is(err, auth.ErrNotLoggedIn) || isMCPAuthorizationError(err) {
-			break
+		if errors.Is(err, auth.ErrNotLoggedIn) {
+			return "", nil
+		}
+		if isMCPAuthorizationError(err) {
+			return "", err
 		}
 		if attempt < campusCatalogAttempts {
 			s.service.logf("campus token attempt %d failed, retrying: error=%v", attempt, err)
@@ -143,9 +153,7 @@ func (s *lazyMCPSession) accessTokenOrAnonymous(ctx context.Context) string {
 			}
 		}
 	}
-	s.service.logf("campus catalog listed anonymously: platform=%s conversation_type=%s reason=%v",
-		s.identity.Platform, s.identity.ConversationType, lastErr)
-	return ""
+	return "", fmt.Errorf("get MCP access token: %w", lastErr)
 }
 
 func (s *lazyMCPSession) openCatalog(ctx context.Context, token string) (*botmcp.Session, []mcpgo.Tool, error) {
@@ -184,12 +192,11 @@ func (s *lazyMCPSession) ensure(ctx context.Context) error {
 			s.err = errors.New("campus tool service is unavailable")
 			return
 		}
-		// The public half of the catalog needs no token, so failing to get one is
-		// never a reason to have no campus tools at all. Being logged out, an
-		// expired grant and a token endpoint returning 503 all end the same way:
-		// list anonymously and let the personal tools be the ones that are
-		// missing. Only a catalog that cannot be listed at all fails the turn.
-		token := s.accessTokenOrAnonymous(ctx)
+		token, err := s.accessToken(ctx)
+		if err != nil {
+			s.err = err
+			return
+		}
 		session, listed, err := s.openCatalog(ctx, token)
 		if err != nil {
 			s.err = err

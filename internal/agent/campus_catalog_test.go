@@ -183,11 +183,13 @@ func TestDestructiveCampusCallWaitsForConfirmation(t *testing.T) {
 	}
 }
 
-func TestTransientTokenFailureStillListsPublicTools(t *testing.T) {
-	// Production run #331: the OAuth endpoint returned 503 for a moment and a
-	// question that needed no token at all — "从东区去西区坐校车要多久" — failed with
-	// "校园工具暂时不可用". The public half of the catalog needs no token, so a
-	// token failure must never be the reason there are no campus tools.
+func TestTokenOutageFailsTheTurnForALoggedInCaller(t *testing.T) {
+	// Production run #331 came from the opposite rule. The OAuth endpoint
+	// returned 503 for a moment and the turn failed, which was right — a
+	// logged-in caller must not be quietly reduced to public tools, because
+	// their personal tools going missing looks like the Bot forgot them. What
+	// was missing is the retry: the token fetch had none, though the listing
+	// around it did.
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -218,9 +220,40 @@ func TestTransientTokenFailureStillListsPublicTools(t *testing.T) {
 		campusCatalog: newCampusCatalogCache(),
 		logger:        log.New(&logs, "", 0),
 	}
+	if _, _, err := svc.toolsFor(ctx, ident, 0, nil); err == nil {
+		t.Fatal("a token outage for a logged-in caller must fail the turn")
+	}
+	if tokenRequests.Load() < 2 {
+		t.Fatalf("token fetch was not retried: %d attempts", tokenRequests.Load())
+	}
+	if !strings.Contains(logs.String(), "campus token attempt") {
+		t.Fatalf("token retry was not recorded: %q", logs.String())
+	}
+}
+
+func TestLoggedOutCallerStillGetsThePublicTools(t *testing.T) {
+	// Having no grant is not a failure and there is nothing to retry: the public
+	// half of the catalog needs no token, and that is exactly what this caller
+	// is entitled to.
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	mcpURL, mcpHTTPClient, closeMCP, _ := newAgentMCPTestServer(t)
+	defer closeMCP()
+
+	svc := &Service{
+		handler:       commands.Handler{Store: db},
+		auth:          &auth.Manager{Store: db},
+		mcpClient:     botmcp.New(mcpURL, mcpHTTPClient),
+		campusCatalog: newCampusCatalogCache(),
+	}
 	tools, _, err := svc.toolsFor(ctx, ident, 0, nil)
 	if err != nil {
-		t.Fatalf("a token outage must not fail the turn: %v", err)
+		t.Fatalf("a logged-out caller must still get the public tools: %v", err)
 	}
 	names := map[string]bool{}
 	for _, candidate := range tools {
@@ -231,12 +264,6 @@ func TestTransientTokenFailureStillListsPublicTools(t *testing.T) {
 		names[info.Name] = true
 	}
 	if !names["search_courses"] || !names["run_bot_command"] {
-		t.Fatalf("public campus tools were lost with the token: %#v", names)
-	}
-	if tokenRequests.Load() < 2 {
-		t.Fatalf("token fetch was not retried: %d attempts", tokenRequests.Load())
-	}
-	if !strings.Contains(logs.String(), "listed anonymously") {
-		t.Fatalf("anonymous fallback was not recorded: %q", logs.String())
+		t.Fatalf("public tools missing for a logged-out caller: %#v", names)
 	}
 }
