@@ -342,4 +342,31 @@ mod tests {
         let (_, _, tall) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
         assert!(tall > headed + 30, "long cell text must wrap naturally");
     }
+
+    #[test]
+    fn uneven_timetables_pack_without_reserving_empty_grid_rows() {
+        let table = |rows: usize| {
+            serde_json::json!({
+                "header": ["东区", "西区", "先研院", "高新区"],
+                "rows": (0..rows).map(|_| serde_json::json!({
+                    "cells": ["08:00", "08:10", "", "09:00"]
+                })).collect::<Vec<_>>()
+            })
+        };
+        let payload = |tables| serde_json::json!({"title": "校车", "tables": tables});
+        let (_, pair_width, pair_height) =
+            render(&payload(vec![table(16), table(16)]), 1.0).unwrap();
+        let (_, mixed_width, mixed_height) = render(
+            &payload(vec![table(16), table(2), table(2), table(16)]),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(mixed_width, pair_width);
+        // Four extra trips and two headers should add only their own space,
+        // not another complete 16-trip row of the taller neighbouring table.
+        assert!(
+            mixed_height * 10 < pair_height * 16,
+            "uneven tables reserve too much whitespace: pair={pair_height}, mixed={mixed_height}"
+        );
+    }
 }
