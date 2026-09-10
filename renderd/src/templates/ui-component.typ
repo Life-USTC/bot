@@ -44,7 +44,7 @@
     }
   }
   table(columns: if bus { (1fr,) * t.header.len() } else { (2fr,) + (1fr,) * (t.header.len() - 1) },
-    inset: (x: pad, y: if bus { 5pt } else { 10pt }),
+    inset: (x: pad, y: if bus { 8pt } else { 10pt }),
     align: if bus { center + horizon } else { left + horizon },
     stroke: table-stroke,
     ..cells)
