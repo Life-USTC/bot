@@ -369,11 +369,6 @@ func (h Handler) busReplyForOptions(ctx context.Context, ident store.Identity, d
 	if options.ShowDeparted && !options.After {
 		items = markNextBusItem(items, effectiveBusNow(now, options))
 	}
-	if options.ExplicitRoute {
-		if campuses := busCampusesFromArgs(routeArgs); len(campuses) >= 2 {
-			items = projectBusItemsToCampuses(items, campuses[:2])
-		}
-	}
 	reply := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
 	if len(options.Schedules) > 0 && options.Schedules[0].label() != "" {
 		reply = "查询日期：" + options.Schedules[0].label() + "\n" + reply
@@ -1191,63 +1186,6 @@ func formatBusItemsAsStopTimeTable(items []busItem) []string {
 		EmptyWidthText: busMissingTimePlaceholder,
 		EmptyCell:      busTableBlankCell,
 	})
-}
-
-func projectBusItemsToCampuses(items []busItem, campuses []string) []busItem {
-	if len(campuses) < 2 {
-		return items
-	}
-	from := campusName(campuses[0])
-	to := campusName(campuses[1])
-	if from == "" || to == "" || from == to {
-		return items
-	}
-	out := make([]busItem, 0, len(items))
-	for _, item := range items {
-		fromIdx, toIdx := busStopIndexes(item.Stops, from, to)
-		if fromIdx < 0 || toIdx < 0 {
-			continue
-		}
-		lo, hi := fromIdx, toIdx
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		segment := make([]busStop, 0, hi-lo+1)
-		for _, stop := range item.Stops[lo : hi+1] {
-			segment = append(segment, busStop{Name: campusName(stop.Name), Time: stop.Time})
-		}
-		next := item
-		next.Stops = segment
-		out = append(out, next)
-	}
-	if len(out) == 0 {
-		return items
-	}
-	return out
-}
-
-func busStopIndexes(stops []busStop, from, to string) (int, int) {
-	fromIdx := -1
-	for i, stop := range stops {
-		name := campusName(stop.Name)
-		if name == from && fromIdx < 0 {
-			fromIdx = i
-		}
-		if fromIdx >= 0 && name == to {
-			return fromIdx, i
-		}
-	}
-	fromIdx = -1
-	for i, stop := range stops {
-		name := campusName(stop.Name)
-		if name == to && fromIdx < 0 {
-			fromIdx = i
-		}
-		if fromIdx >= 0 && name == from {
-			return fromIdx, i
-		}
-	}
-	return -1, -1
 }
 
 func busTableBlankCell(width int) string {
