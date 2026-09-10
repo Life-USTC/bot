@@ -33,7 +33,7 @@
   }
   if data.tables.any(t => t.rows.any(row => row.cells.any(cell => cell == ""))) {
     v(12pt)
-    caption-text("— 时刻未公布")
+    caption-text("— 即停")
   }
   card-footer(data.footer)
 })
