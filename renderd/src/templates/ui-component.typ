@@ -38,11 +38,13 @@
         },
         text(size: if bus { 14pt } else { 13pt },
           fill: if bus and row.departed and not row.highlight { muted } else { ink },
-          row.cells.at(index, default: ""))))
+          if bus and row.cells.at(index, default: "") == "" { "—" } else {
+            row.cells.at(index, default: "")
+          })))
     }
   }
   table(columns: if bus { (1fr,) * t.header.len() } else { (2fr,) + (1fr,) * (t.header.len() - 1) },
-    inset: (x: pad, y: 10pt),
+    inset: (x: pad, y: if bus { 8pt } else { 10pt }),
     align: if bus { center + horizon } else { left + horizon },
     stroke: table-stroke,
     ..cells)
