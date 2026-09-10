@@ -19,7 +19,7 @@ func TestBusSnapshotsReachRendererWithoutLosingTripsOrEmptyStops(t *testing.T) {
 		tables int
 		trips  int
 	}{
-		{"east-west", busSingleImage, 2, 28},
+		{"east-west", busSingleImage, 4, 44},
 		{"weekday", busAllImage, 10, 105},
 		{"saturday", busWeekendImage, 10, 49},
 	} {
@@ -54,6 +54,8 @@ func TestBusSnapshotsReachRendererWithoutLosingTripsOrEmptyStops(t *testing.T) {
 			}
 			trips, highlights := 0, 0
 			foundNorthStop := false
+			foundHighTechToEast := false
+			foundEastToHighTech := false
 			for _, table := range request.Payload.Tables {
 				trips += len(table.Rows)
 				for _, row := range table.Rows {
@@ -70,9 +72,28 @@ func TestBusSnapshotsReachRendererWithoutLosingTripsOrEmptyStops(t *testing.T) {
 						t.Errorf("unknown North Campus time shifted the West Campus arrival: %v", table.Rows[0].Cells)
 					}
 				}
+				if reflect.DeepEqual(table.Header, []string{"高新区", "先研院", "西区", "东区"}) {
+					foundHighTechToEast = true
+					if len(table.Rows) == 0 || len(table.Rows[0].Cells) != 4 || table.Rows[0].Cells[2] != "" {
+						t.Errorf("unknown West Campus time was interpolated on route 7: %v", table.Rows)
+					}
+					if tc.name == "east-west" && !reflect.DeepEqual(table.Rows[0].Cells, []string{"06:40", "06:45", "", "07:25"}) {
+						t.Errorf("weekday route 7 cells = %v", table.Rows[0].Cells)
+					}
+				}
+				if reflect.DeepEqual(table.Header, []string{"东区", "西区", "先研院", "高新区"}) {
+					foundEastToHighTech = true
+					if len(table.Rows) == 0 || len(table.Rows[0].Cells) != 4 || table.Rows[0].Cells[2] != "" {
+						t.Errorf("unknown Advanced Institute time was interpolated on route 8: %v", table.Rows)
+					}
+					if tc.name == "east-west" && !reflect.DeepEqual(table.Rows[0].Cells, []string{"06:50", "07:00", "", "07:40"}) {
+						t.Errorf("weekday route 8 cells = %v", table.Rows[0].Cells)
+					}
+				}
 			}
-			if trips != tc.trips || highlights != 1 || !foundNorthStop {
-				t.Errorf("trips=%d highlights=%d north-stop=%v", trips, highlights, foundNorthStop)
+			if trips != tc.trips || highlights != 1 || !foundNorthStop ||
+				(tc.name == "east-west" && (!foundHighTechToEast || !foundEastToHighTech)) {
+				t.Errorf("trips=%d highlights=%d north-stop=%v hightech-east=%v east-hightech=%v", trips, highlights, foundNorthStop, foundHighTechToEast, foundEastToHighTech)
 			}
 		})
 	}

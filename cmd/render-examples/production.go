@@ -73,7 +73,7 @@ func busSnapshotImage(title, service string, routeIDs ...int) *responses.Image {
 }
 
 func busSingleImage() *responses.Image {
-	return busSnapshotImage("校车 东区 ⇄ 西区", "weekday_routes", 1, 2)
+	return busSnapshotImage("校车 东区 ⇄ 西区", "weekday_routes", 1, 2, 7, 8)
 }
 
 func busAllImage() *responses.Image {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const busPreferenceTestData = `{
@@ -201,6 +203,119 @@ func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
 		if strings.Contains(reply, unwanted) {
 			t.Fatalf("reply contains unrelated route %s: %q", unwanted, reply)
 		}
+	}
+}
+
+func TestBusAtImageModeKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) {
+	data := realisticEastWestBusTestData()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 9, 9, 10, 0, 0, 0, lifedata.ChinaLocation())
+	items := nextBusItemsWithOptions(data, []string{"东区", "西区"}, now, busQueryOptions{
+		ExplicitRoute:      true,
+		BidirectionalRoute: true,
+		ShowAll:            true,
+		ShowDeparted:       true,
+	})
+	if len(items) != 8 {
+		t.Fatalf("selected items = %d, want 8: %#v", len(items), items)
+	}
+	counts := map[string]int{}
+	for _, item := range items {
+		counts[item.RouteID]++
+	}
+	for _, routeID := range []string{"1", "2", "7", "8"} {
+		if counts[routeID] != 2 {
+			t.Fatalf("route %s selected %d trips, want 2: counts=%v items=%#v", routeID, counts[routeID], counts, items)
+		}
+	}
+	for _, item := range items {
+		switch item.RouteID {
+		case "7":
+			if got := busItemStopNames(item); !slices.Equal(got, []string{"高新区", "先研院", "西区", "东区"}) {
+				t.Fatalf("route 7 stops = %#v", got)
+			}
+			if item.Stops[2].Time != "" {
+				t.Fatalf("route 7 West Campus time = %q, want unknown", item.Stops[2].Time)
+			}
+		case "8":
+			if got := busItemStopNames(item); !slices.Equal(got, []string{"东区", "西区", "先研院", "高新区"}) {
+				t.Fatalf("route 8 stops = %#v", got)
+			}
+		}
+	}
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	for _, query := range [][]string{{"东区", "西区"}, {"西区", "东区"}} {
+		t.Run(strings.Join(query, "-"), func(t *testing.T) {
+			reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, query, now)
+			for _, header := range []string{
+				"东区 \t北区 \t西区",
+				"西区 \t北区 \t东区",
+				"高新区\t先研院\t西区  \t东区",
+				"东区  \t西区  \t先研院\t高新区",
+			} {
+				if !strings.Contains(reply, header) {
+					t.Fatalf("reply missing complete route header %q: %q", header, reply)
+				}
+			}
+			for _, departure := range []string{"06:40", "06:50", "16:40", "16:50"} {
+				if !strings.Contains(reply, textutil.MonospaceDigits(departure)) {
+					t.Fatalf("reply missing full-timetable departure %s: %q", departure, reply)
+				}
+			}
+		})
+	}
+}
+
+func realisticEastWestBusTestData() map[string]any {
+	route := func(id int, names ...string) map[string]any {
+		stops := make([]any, 0, len(names))
+		for _, name := range names {
+			stops = append(stops, map[string]any{"campus": map[string]any{"nameCn": name}})
+		}
+		return map[string]any{"id": id, "stops": stops}
+	}
+	trip := func(routeID, departure int, departureTime, arrivalTime string, stops ...busStop) map[string]any {
+		rawStops := make([]any, 0, len(stops))
+		for _, stop := range stops {
+			timeValue := any(stop.Time)
+			if stop.Time == "" {
+				timeValue = nil
+			}
+			rawStops = append(rawStops, map[string]any{"campusName": stop.Name, "time": timeValue})
+		}
+		return map[string]any{
+			"routeId": routeID, "dayType": "weekday",
+			"departureTime": departureTime, "departureMinutes": departure,
+			"arrivalTime": arrivalTime, "stopTimes": rawStops,
+		}
+	}
+	return map[string]any{
+		"routes": []any{
+			route(1, "东区", "北区", "西区"),
+			route(2, "西区", "北区", "东区"),
+			route(7, "高新区", "先研院", "西区", "东区"),
+			route(8, "东区", "西区", "先研院", "高新区"),
+		},
+		"trips": []any{
+			trip(1, 450, "07:30", "07:40", busStop{Name: "东区", Time: "07:30"}, busStop{Name: "北区"}, busStop{Name: "西区", Time: "07:40"}),
+			trip(1, 990, "16:30", "16:40", busStop{Name: "东区", Time: "16:30"}, busStop{Name: "北区"}, busStop{Name: "西区", Time: "16:40"}),
+			trip(2, 455, "07:35", "07:45", busStop{Name: "西区", Time: "07:35"}, busStop{Name: "北区"}, busStop{Name: "东区", Time: "07:45"}),
+			trip(2, 995, "16:35", "16:45", busStop{Name: "西区", Time: "16:35"}, busStop{Name: "北区"}, busStop{Name: "东区", Time: "16:45"}),
+			trip(7, 400, "06:40", "07:25", busStop{Name: "高新区", Time: "06:40"}, busStop{Name: "先研院", Time: "06:45"}, busStop{Name: "西区"}, busStop{Name: "东区", Time: "07:25"}),
+			trip(7, 1000, "16:40", "17:25", busStop{Name: "高新区", Time: "16:40"}, busStop{Name: "先研院", Time: "16:45"}, busStop{Name: "西区"}, busStop{Name: "东区", Time: "17:25"}),
+			trip(8, 410, "06:50", "07:40", busStop{Name: "东区", Time: "06:50"}, busStop{Name: "西区", Time: "07:00"}, busStop{Name: "先研院"}, busStop{Name: "高新区", Time: "07:40"}),
+			trip(8, 1010, "16:50", "17:40", busStop{Name: "东区", Time: "16:50"}, busStop{Name: "西区", Time: "17:00"}, busStop{Name: "先研院"}, busStop{Name: "高新区", Time: "17:40"}),
+		},
 	}
 }
 
@@ -460,7 +575,7 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	}
 }
 
-func TestHandleBusExplicitRouteDropsStopsOutsideSegment(t *testing.T) {
+func TestHandleBusExplicitRouteShowsAllStops(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -489,8 +604,9 @@ func TestHandleBusExplicitRouteDropsStopsOutsideSegment(t *testing.T) {
 	if !strings.Contains(reply, "东区") || !strings.Contains(reply, "西区") || !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") {
 		t.Fatalf("reply = %q", reply)
 	}
-	if strings.Contains(reply, "先研院") || strings.Contains(reply, "高新区") {
-		t.Fatalf("explicit route should drop stops after destination: %q", reply)
+	if !strings.Contains(reply, "东区  \t西区  \t先研院\t高新区") ||
+		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶 \t𝟶𝟾:𝟷𝟶 \t𝟶𝟾:𝟹𝟶 \t𝟶𝟿:𝟶𝟶 ") {
+		t.Fatalf("explicit route should retain every stop and time: %q", reply)
 	}
 }
 
