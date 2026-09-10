@@ -969,19 +969,15 @@ func (s *Service) toolsFor(
 	var mcpSession *lazyMCPSession
 	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
 		mcpSession = newLazyMCPSession(s, ident, jobID)
-		// Registering remote tools natively means listing the catalog before the
-		// first model request, so an unavailable or unauthorized campus service
-		// must not take the turn down with it: Bot commands are the larger and
-		// more common surface, and a logged-out user still needs them. The turn
-		// continues with campus tools simply absent.
-		withCampus, campusErr := mcpSession.appendTools(ctx, tools)
-		if campusErr != nil {
-			s.logf("campus tools unavailable this turn: platform=%s conversation_type=%s error=%v",
-				ident.Platform, ident.ConversationType, campusErr)
+		// Registering remote tools natively makes the catalog a precondition of
+		// the turn. Listing is retried, and a caller without a token still reads
+		// the server's public tools, so reaching this error means the campus
+		// service is genuinely unusable. Continuing with a silently smaller tool
+		// set would answer as if those capabilities did not exist.
+		tools, err = mcpSession.appendTools(ctx, tools)
+		if err != nil {
 			_ = mcpSession.Close()
-			mcpSession = nil
-		} else {
-			tools = withCampus
+			return nil, nil, err
 		}
 	}
 

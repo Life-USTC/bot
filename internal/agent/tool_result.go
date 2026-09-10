@@ -188,7 +188,19 @@ func existingCampusToolResult(execution store.CapabilityExecution) string {
 		envelope.Detail = strings.TrimSpace(execution.Error)
 	case store.CapabilityExecutionUnknown:
 		envelope.Outcome = toolOutcomeUnknown
-		envelope.Detail = "the campus read may or may not have completed; the host does not retry it"
+		envelope.Detail = "the call may or may not have taken effect; the host does not retry it"
+	case store.CapabilityExecutionDenied:
+		envelope.Outcome = toolOutcomeDenied
+		envelope.Detail = "the user declined this operation at confirmation; nothing was changed"
+		if reason := strings.TrimSpace(execution.Error); reason != "" && reason != "用户拒绝执行" {
+			envelope.Detail += "; reason given: " + reason
+		}
+	case store.CapabilityExecutionCancelled:
+		envelope.Outcome = toolOutcomeCancelled
+		envelope.Detail = "the conversation job was cancelled before this call ran"
+	case store.CapabilityExecutionExpired:
+		envelope.Outcome = toolOutcomeExpired
+		envelope.Detail = "the confirmation window elapsed before this call ran"
 	default:
 		envelope.Outcome = toolOutcomeRunning
 	}

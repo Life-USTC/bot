@@ -451,6 +451,21 @@ func (s *Service) persistResumedCapabilityResult(
 	toolCallID string,
 	result string,
 ) error {
+	return s.persistResumedToolResult(ctx, ident, jobID, toolCallID, botCommandToolName, result)
+}
+
+// persistResumedToolResult writes the transcript entry for a tool that was
+// interrupted for confirmation and has now resolved. The tool name has to be
+// the one the model actually called, so a resumed campus call is not recorded
+// as a Bot command.
+func (s *Service) persistResumedToolResult(
+	ctx context.Context,
+	ident store.Identity,
+	jobID int64,
+	toolCallID string,
+	toolName string,
+	result string,
+) error {
 	if s.handler.Store == nil || jobID <= 0 {
 		return nil
 	}
@@ -469,7 +484,7 @@ func (s *Service) persistResumedCapabilityResult(
 		Identity: ident, JobID: jobID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		DedupeKey: agentToolResultDedupeKey(jobID, toolCallID),
 		Type:      s.toolEventType(ctx, jobID, toolCallID), Content: result,
-		ToolCallID: toolCallID, ToolName: botCommandToolName,
+		ToolCallID: toolCallID, ToolName: toolName,
 	})
 	return markDurableAgentStateError("persist resumed capability result", err)
 }

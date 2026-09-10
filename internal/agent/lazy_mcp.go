@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -16,8 +17,10 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -56,14 +59,6 @@ func (s *lazyMCPSession) appendTools(ctx context.Context, tools []tool.BaseTool)
 		return nil, err
 	}
 	for _, remote := range catalog {
-		if campusEffectOf(remote) == campusEffectDestructive {
-			// A destructive remote call must be confirmed with the user, and the
-			// confirmation machinery is still shaped around a Bot capability.
-			// Until that path accepts a remote tool, the destructive operations
-			// stay reachable through their Bot commands, which do confirm.
-			s.service.logf("campus tool withheld pending destructive confirmation: name=%s", remote.Name)
-			continue
-		}
 		name, description, rawSchema, err := campusToolInfo(remote)
 		if err != nil {
 			return nil, err
@@ -118,25 +113,64 @@ func (t *campusTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	return t.session.call(ctx, campusToolCallInput{Name: t.name, Arguments: arguments})
 }
 
+// campusCatalogAttempts bounds how hard the host tries to read the catalog
+// before giving up. Registering tools natively makes the catalog a
+// precondition of the turn rather than something fetched on demand, so a
+// transient failure must be retried instead of quietly shrinking what the
+// model can do.
+const campusCatalogAttempts = 3
+
+func (s *lazyMCPSession) openCatalog(ctx context.Context, token string) (*botmcp.Session, []mcpgo.Tool, error) {
+	var lastErr error
+	for attempt := 1; attempt <= campusCatalogAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		session, err := s.service.mcpClient.OpenSession(ctx, token)
+		if err == nil {
+			var listed []mcpgo.Tool
+			listed, err = session.Tools(ctx)
+			if err == nil {
+				return session, listed, nil
+			}
+			_ = session.Close()
+		}
+		lastErr = err
+		// An authorization failure will not fix itself by trying again.
+		if isMCPAuthorizationError(err) {
+			break
+		}
+		if attempt < campusCatalogAttempts {
+			s.service.logf("campus catalog attempt %d failed, retrying: error=%v", attempt, err)
+			if !retry.Wait(ctx, time.Duration(attempt)*250*time.Millisecond) {
+				return nil, nil, ctx.Err()
+			}
+		}
+	}
+	return nil, nil, lastErr
+}
+
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
 	s.once.Do(func() {
 		if s.service == nil || s.service.mcpClient == nil || s.service.auth == nil {
 			s.err = errors.New("campus tool service is unavailable")
 			return
 		}
+		// A caller without a usable token still gets the server's public tools.
+		// Listing anonymously is the difference between "you are logged out, so
+		// campus data needs a login" and "campus data is broken": the public
+		// half of the catalog needs no token at all.
 		token, err := s.service.auth.MCPAccessToken(ctx, s.identity)
 		if err != nil {
-			s.err = fmt.Errorf("get MCP access token: %w", err)
-			return
+			if !isMCPAuthorizationError(err) && !errors.Is(err, auth.ErrNotLoggedIn) {
+				s.err = fmt.Errorf("get MCP access token: %w", err)
+				return
+			}
+			s.service.logf("campus catalog listed anonymously: platform=%s reason=%v", s.identity.Platform, err)
+			token = ""
 		}
-		session, err := s.service.mcpClient.OpenSession(ctx, token)
+		session, listed, err := s.openCatalog(ctx, token)
 		if err != nil {
-			s.err = err
-			return
-		}
-		listed, err := session.Tools(ctx)
-		if err != nil {
-			_ = session.Close()
 			s.err = err
 			return
 		}
@@ -159,6 +193,13 @@ func (s *lazyMCPSession) Close() error {
 }
 
 func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (string, error) {
+	// A confirmed or denied destructive call re-enters here after the interrupt.
+	if wasInterrupted, hasState, state := tool.GetInterruptState[capabilityInterruptState](ctx); wasInterrupted {
+		if !hasState || len(state.ExecutionIDs) != 1 {
+			return "", errors.New("confirmed campus call checkpoint has no operation state")
+		}
+		return s.resolveCampusCall(ctx, state)
+	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return "", botmcp.NewRecoverableToolError("call_campus_tool", "name is required")
@@ -170,11 +211,14 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 	if !found {
 		return "", botmcp.NewRecoverableToolError(name, "no campus tool by that name is available in this turn")
 	}
-	if campusEffectOf(remote) == campusEffectDestructive {
-		return "", botmcp.NewRecoverableToolError(name, "destructive campus calls are not available to the model; use the corresponding Bot command")
+	effect := campusEffectOf(remote)
+	if effect == campusEffectDestructive {
+		// Same consent rule as a destructive Bot command: the server decides
+		// whether the user may do this, the host asks whether they want to.
+		return s.confirmCampusCall(ctx, name, input.Arguments)
 	}
 
-	execution, tracked, execute, err := s.prepareExecution(ctx, name, input.Arguments)
+	execution, tracked, execute, err := s.prepareExecution(ctx, name, input.Arguments, effect)
 	if err != nil {
 		return "", err
 	}
@@ -231,8 +275,11 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 	return campusCallToolResult(name, input.Arguments, result, nil), nil
 }
 
-func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, bool, error) {
+func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any, effect campusToolEffect) (store.CapabilityExecution, bool, bool, error) {
 	if s.service == nil || s.service.handler.Store == nil || s.jobID <= 0 {
+		if effect == campusEffectDestructive {
+			return store.CapabilityExecution{}, false, false, errors.New("destructive campus call requires a persisted conversation job")
+		}
 		return store.CapabilityExecution{}, false, true, nil
 	}
 	leaseCtx, err := ensureCapabilityJobLease(ctx, s.service.handler.Store, s.jobID)
@@ -252,10 +299,12 @@ func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, argu
 	execution, created, err := s.service.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 		Identity: s.identity, JobID: s.jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, s.jobID),
 		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + callID,
-		ToolCallID: callID, Capability: "mcp:" + name, Arguments: []string{string(encoded)}, Effect: string(commands.EffectRead),
-		Receipt: store.CapabilityReceipt{Action: "查询", Resource: campusReceiptResource(name), Subject: campusReceiptSubject(name, arguments, "")},
+		ToolCallID: callID, Capability: campusExecutionCapability(name), Arguments: []string{string(encoded)},
+		Effect:               campusExecutionEffect(effect),
+		RequiresConfirmation: effect == campusEffectDestructive,
+		Receipt:              store.CapabilityReceipt{Action: campusReceiptAction(effect), Resource: campusReceiptResource(name), Subject: campusReceiptSubject(name, arguments, "")},
 	})
-	return execution, true, created, markDurableAgentStateError("prepare campus read", err)
+	return execution, true, created, markDurableAgentStateError("prepare campus call", err)
 }
 
 func campusReceiptResource(name string) string {
@@ -371,4 +420,138 @@ func firstResultString(item map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func campusExecutionCapability(name string) string { return "mcp:" + name }
+
+func campusExecutionToolName(capability string) string {
+	return strings.TrimPrefix(strings.TrimSpace(capability), "mcp:")
+}
+
+func campusExecutionEffect(effect campusToolEffect) string {
+	switch effect {
+	case campusEffectDestructive:
+		return string(commands.EffectDestructive)
+	case campusEffectWrite:
+		return string(commands.EffectWrite)
+	default:
+		return string(commands.EffectRead)
+	}
+}
+
+func campusReceiptAction(effect campusToolEffect) string {
+	switch effect {
+	case campusEffectDestructive:
+		return "删除"
+	case campusEffectWrite:
+		return "修改"
+	default:
+		return "查询"
+	}
+}
+
+// confirmCampusCall records the pending destructive call and hands control back
+// to the coordinator, which shows the user exactly one operation at a time.
+func (s *lazyMCPSession) confirmCampusCall(ctx context.Context, name string, arguments map[string]any) (string, error) {
+	execution, tracked, _, err := s.prepareExecution(ctx, name, arguments, campusEffectDestructive)
+	if err != nil {
+		return "", err
+	}
+	if !tracked {
+		return "", errors.New("destructive campus call requires a persisted conversation job")
+	}
+	return s.resolveCampusExecution(ctx, execution.ID, false)
+}
+
+func (s *lazyMCPSession) resolveCampusCall(ctx context.Context, state capabilityInterruptState) (string, error) {
+	return s.resolveCampusExecution(ctx, state.ExecutionIDs[0], true)
+}
+
+// resolveCampusExecution mirrors the Bot capability resume path for a remote
+// call: the durable row is the only record of what the user decided, so the
+// outcome is read from it rather than from anything the model reports.
+func (s *lazyMCPSession) resolveCampusExecution(ctx context.Context, executionID string, persistResult bool) (string, error) {
+	db := s.service.handler.Store
+	execution, found, err := db.CapabilityExecution(ctx, executionID)
+	if err != nil {
+		return "", markDurableAgentStateError("read campus execution", err)
+	}
+	if !found {
+		return "", fmt.Errorf("campus execution %s is missing", executionID)
+	}
+	if execution.Identity != s.identity {
+		return "", fmt.Errorf("campus execution %s belongs to another conversation", executionID)
+	}
+	leaseCtx, err := ensureCapabilityJobLease(ctx, db, execution.JobID)
+	if err != nil {
+		return "", err
+	}
+	ctx = leaseCtx
+
+	if execution.State == store.CapabilityExecutionAwaitingConfirmation {
+		return "", tool.StatefulInterrupt(ctx, capabilityInterruptInfo{
+			Kind: capabilityInterruptConfirmation, ExecutionIDs: []string{execution.ID},
+		}, capabilityInterruptState{ExecutionIDs: []string{execution.ID}, ToolCallID: execution.ToolCallID})
+	}
+	if execution.State == store.CapabilityExecutionApproved {
+		claimed, execute, claimErr := db.ClaimCapabilityExecutionForJob(ctx, execution.ID, execution.JobID,
+			store.ConversationJobLeaseFromContext(ctx, execution.JobID))
+		if claimErr != nil {
+			return "", markDurableAgentStateError("claim approved campus call", claimErr)
+		}
+		if execute {
+			execution, err = s.executeApprovedCampusCall(ctx, claimed)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			execution = claimed
+		}
+	}
+	if !capabilityExecutionTerminal(execution.State) {
+		return "", fmt.Errorf("campus execution %s is not terminal: %s", execution.ID, execution.State)
+	}
+	if execution.State != store.CapabilityExecutionSucceeded {
+		toolOutcomesFromContext(ctx).markError(execution.ToolCallID)
+	}
+	result := existingCampusToolResult(execution)
+	if persistResult {
+		if err := s.service.persistResumedToolResult(ctx, s.identity, execution.JobID,
+			execution.ToolCallID, campusExecutionToolName(execution.Capability), result); err != nil {
+			return "", err
+		}
+	}
+	return result, nil
+}
+
+// executeApprovedCampusCall runs a call the user actually approved. A mutation
+// that was interrupted mid-flight is never replayed: the row is finalized as
+// unknown by the same stale-lease rules that cover Bot mutations.
+func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, execution store.CapabilityExecution) (store.CapabilityExecution, error) {
+	name := campusExecutionToolName(execution.Capability)
+	arguments := map[string]any{}
+	if len(execution.Arguments) == 1 && strings.TrimSpace(execution.Arguments[0]) != "" {
+		if err := json.Unmarshal([]byte(execution.Arguments[0]), &arguments); err != nil {
+			finished, finishErr := s.service.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "",
+				errors.New("宿主无法恢复已确认的校园操作参数"))
+			return finished, markDurableAgentStateError("record unrestorable campus call", finishErr)
+		}
+	}
+	if err := s.ensure(ctx); err != nil {
+		return execution, err
+	}
+	result, callErr := s.session.Call(ctx, name, arguments)
+	storedErr := callErr
+	if safe, ok := botmcp.ModelToolErrorResult(callErr); ok {
+		storedErr = errors.New(safe)
+	}
+	if callErr != nil && storedErr == callErr {
+		// A transport failure on a destructive call may or may not have taken
+		// effect, so it is recorded as unknown and never retried.
+		finished, finishErr := s.service.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, "",
+			"destructive campus call did not report an outcome")
+		return finished, markDurableAgentStateError("record unknown campus outcome", finishErr)
+	}
+	finished, err := s.service.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, result, storedErr)
+	return finished, markDurableAgentStateError("finish approved campus call", err)
 }

@@ -1,12 +1,18 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/Life-USTC/Bot/internal/auth"
+	"github.com/Life-USTC/Bot/internal/commands"
+	botmcp "github.com/Life-USTC/Bot/internal/mcp"
+	"github.com/Life-USTC/Bot/internal/store"
 )
 
 func boolPointer(value bool) *bool { return &value }
@@ -94,5 +100,80 @@ func TestCampusCatalogCacheExpires(t *testing.T) {
 	now = now.Add(campusCatalogTTL + time.Second)
 	if _, found := cache.get("authenticated"); found {
 		t.Fatal("expired entry was served")
+	}
+}
+
+func TestDestructiveCampusCallWaitsForConfirmation(t *testing.T) {
+	// The server decides whether the user may delete; the host asks whether they
+	// want to. Same rule as a destructive Bot command, and it must survive the
+	// interrupt: nothing may reach the remote service before approval.
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	mcpURL, mcpHTTPClient, closeMCP, calls := newAgentMCPTestServer(t)
+	defer closeMCP()
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "campus-destructive", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job: %#v err=%v", claimed, err)
+	}
+	svc := &Service{
+		handler:       commands.Handler{Store: db},
+		auth:          &auth.Manager{Store: db},
+		mcpClient:     botmcp.New(mcpURL, mcpHTTPClient),
+		campusCatalog: newCampusCatalogCache(),
+	}
+	session := newLazyMCPSession(svc, ident, job.ID)
+	defer func() { _ = session.Close() }()
+	callCtx := store.WithConversationJobLease(ctx, job.ID, claimed.LeaseToken)
+
+	if _, err := session.call(callCtx, campusToolCallInput{Name: "delete_my_homework"}); err == nil {
+		t.Fatal("destructive call should have interrupted for confirmation")
+	}
+	if calls["delete_my_homework"].Load() != 0 {
+		t.Fatal("destructive call reached the server before approval")
+	}
+	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(operations) != 1 ||
+		operations[0].State != store.CapabilityExecutionAwaitingConfirmation ||
+		operations[0].Capability != "mcp:delete_my_homework" ||
+		operations[0].Effect != string(commands.EffectDestructive) {
+		t.Fatalf("pending campus operation = %#v err=%v", operations, err)
+	}
+
+	// Denial keeps the remote service untouched and is reported as the outcome.
+	if ok, err := db.TransitionConversationJob(ctx, job.ID, claimed.LeaseToken, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil || !ok {
+		t.Fatalf("pause for confirmation: ok=%v err=%v", ok, err)
+	}
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident,
+		store.CapabilityConfirmationDecision{Reason: "用户拒绝执行"}); err != nil || released == nil {
+		t.Fatalf("deny campus operation: released=%#v err=%v", released, err)
+	}
+	// Resolution re-queues the job, so the resume runs under a fresh lease.
+	resumed, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || resumed == nil {
+		t.Fatalf("reclaim job: %#v err=%v", resumed, err)
+	}
+	resumeCtx := store.WithConversationJobLease(ctx, job.ID, resumed.LeaseToken)
+	result, err := session.resolveCampusExecution(resumeCtx, operations[0].ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls["delete_my_homework"].Load() != 0 {
+		t.Fatal("denied campus call still reached the server")
+	}
+	if !strings.Contains(result, `"outcome":"denied"`) {
+		t.Fatalf("denied campus result = %q", result)
 	}
 }

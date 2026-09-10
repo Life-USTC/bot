@@ -302,15 +302,20 @@ The model sees one Bot entry point and the campus tools the server publishes:
 - A remote tool's effect comes from the server's `readOnlyHint` and
   `destructiveHint`, which it derives from the same OAuth scope registry that
   enforces access. An unannotated tool counts as a write: silence is not a
-  promise of safety. Destructive remote tools are not registered with the
-  model, because destructive consent still runs through the Bot capability
-  confirmation path; those operations remain reachable as Bot commands.
+  promise of safety. A destructive remote call is confirmed with the user by
+  the same durable machinery as a destructive Bot command — prepared, shown one
+  at a time, and resumed from its own execution row, which is the only record
+  of what the user decided. Nothing reaches the remote service before approval,
+  and a transport failure on an approved destructive call is recorded as
+  `unknown` rather than retried.
 - The remote catalog is cached process-wide with a short TTL, so registering
   tools natively costs an OAuth exchange and a `tools/list` only when the cache
   has expired. Anonymous and authenticated catalogs are cached apart because
-  the server filters by scope. A catalog failure removes the campus tools for
-  that turn and is logged; it never fails the turn, because Bot commands are
-  the larger surface and a logged-out user still needs them.
+  the server filters by scope, and a caller with no usable token still reads
+  the public half of the catalog: being logged out is not an outage. Listing is
+  retried, and a failure that survives the retries fails the turn. Continuing
+  with a silently smaller tool set would answer as if those capabilities did
+  not exist.
 
 `tools/list` is paged to exhaustion: reading only the first page silently hides
 a later-page tool and looks to the user like the tool does not exist (the same

@@ -423,6 +423,9 @@ func TestAgentToolConstruction(t *testing.T) {
 	}
 	// Every non-destructive remote tool is registered under its own name with
 	// the server's own schema; the destructive one is withheld.
+	// Every remote tool the server publishes is registered under its own name,
+	// destructive ones included: those are gated by user confirmation at call
+	// time rather than by hiding them.
 	assertAgentToolNames(t, svc,
 		"get_current_time",
 		"run_bot_command",
@@ -431,10 +434,11 @@ func TestAgentToolConstruction(t *testing.T) {
 		"get_current_semester",
 		"catalog_young_event_list",
 		"catalog_young_event_get",
+		"delete_my_homework",
 	)
 }
 
-func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
+func TestCampusToolsAreRegisteredWithServerSchemas(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -472,10 +476,14 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 			t.Fatalf("remote tool %q was not registered: %#v", want, names)
 		}
 	}
-	// A destructive remote call has to be confirmed with the user, and that
-	// path is still shaped around a Bot capability, so it is not offered.
-	if names["delete_my_homework"] != nil {
-		t.Fatal("destructive remote tool was offered to the model")
+	// A destructive remote tool is offered, and its description says it is
+	// confirmed before it runs.
+	destructive := names["delete_my_homework"]
+	if destructive == nil {
+		t.Fatal("destructive remote tool was not registered")
+	}
+	if !strings.Contains(destructive.Desc, "confirmed with the user") {
+		t.Fatalf("destructive description = %q", destructive.Desc)
 	}
 	// The server's own schema reaches the provider rather than a host rewrite.
 	if info := names["catalog_young_event_list"]; info == nil || info.ParamsOneOf == nil {
@@ -493,8 +501,10 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if !strings.Contains(result, `"outcome":"succeeded"`) || !strings.Contains(result, `"result":`) {
 		t.Fatalf("remote tool result = %q", result)
 	}
+	// Without a conversation job there is nowhere to record consent, so a
+	// destructive call cannot run at all.
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "delete_my_homework"}); err == nil {
-		t.Fatal("destructive remote tool must be refused at call time too")
+		t.Fatal("destructive remote call ran without a durable job")
 	}
 }
 
@@ -603,7 +613,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 	)
 }
 
-func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
+func TestUnreachableCampusServiceFailsTheTurn(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -624,22 +634,22 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	svc.logger = log.New(&logs, "", 0)
-	names := agentToolNames(t, svc)
-	if !names["run_bot_command"] {
-		t.Fatalf("host capability tool is missing: %#v", names)
+	// An unreachable campus service fails the turn instead of quietly shrinking
+	// what the model can do, after retrying the listing.
+	if _, _, err := svc.toolsFor(context.Background(), ident, 0, nil); err == nil {
+		t.Fatal("unreachable campus service must fail the turn")
 	}
-	// An unreachable campus service leaves the turn with Bot commands rather
-	// than failing it, and says so once in the log.
-	if names["catalog_young_event_list"] || !strings.Contains(logs.String(), "campus tools unavailable") {
-		t.Fatalf("campus outage did not degrade cleanly: names=%#v logs=%q", names, logs.String())
+	if !strings.Contains(logs.String(), "campus catalog attempt") {
+		t.Fatalf("campus listing was not retried: %q", logs.String())
 	}
-	session := newLazyMCPSession(svc, ident, 0)
-	if _, err := session.appendTools(context.Background(), nil); !errors.Is(err, auth.ErrNotLoggedIn) {
-		t.Fatalf("campus catalog error = %v", err)
+	// A caller with no usable token still reads the server's public tools, so
+	// being logged out is not itself an outage.
+	if !strings.Contains(logs.String(), "listed anonymously") {
+		t.Fatalf("missing token did not fall back to the public catalog: %q", logs.String())
 	}
 }
 
-func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T) {
+func TestUnapprovedCampusResourceFailsTheTurn(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -686,14 +696,10 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T)
 		logger:    log.New(&logs, "", 0),
 	}
 
-	names := agentToolNames(t, svc)
-	if !names["run_bot_command"] {
-		t.Fatalf("host capability tool is missing: %#v", names)
-	}
-	// An unapproved resource is the same kind of outage: campus tools are simply
-	// absent and the credential is left untouched.
-	if !strings.Contains(logs.String(), "campus tools unavailable") {
-		t.Fatalf("unapproved campus resource did not degrade cleanly: %q", logs.String())
+	// An unapproved resource is an outage too: the turn fails rather than
+	// answering as if the campus tools did not exist.
+	if _, _, err := svc.toolsFor(context.Background(), ident, 0, nil); err == nil {
+		t.Fatal("unapproved campus resource must fail the turn")
 	}
 	session := newLazyMCPSession(svc, ident, 0)
 	if _, err := session.appendTools(context.Background(), nil); err == nil {
