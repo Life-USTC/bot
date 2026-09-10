@@ -1,9 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,5 +180,63 @@ func TestDestructiveCampusCallWaitsForConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(result, `"outcome":"denied"`) {
 		t.Fatalf("denied campus result = %q", result)
+	}
+}
+
+func TestTransientTokenFailureStillListsPublicTools(t *testing.T) {
+	// Production run #331: the OAuth endpoint returned 503 for a moment and a
+	// question that needed no token at all — "从东区去西区坐校车要多久" — failed with
+	// "校园工具暂时不可用". The public half of the catalog needs no token, so a
+	// token failure must never be the reason there are no campus tools.
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	mcpURL, mcpHTTPClient, closeMCP, _ := newAgentMCPTestServer(t)
+	defer closeMCP()
+
+	var tokenRequests atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenRequests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer tokenServer.Close()
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "stale", RefreshToken: "refresh", TokenType: "Bearer",
+		ExpiresAt: time.Now().Add(-time.Hour), Resource: tokenServer.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	svc := &Service{
+		handler:       commands.Handler{Store: db},
+		auth:          &auth.Manager{Server: tokenServer.URL, HTTPClient: tokenServer.Client(), Store: db},
+		mcpClient:     botmcp.New(mcpURL, mcpHTTPClient),
+		campusCatalog: newCampusCatalogCache(),
+		logger:        log.New(&logs, "", 0),
+	}
+	tools, _, err := svc.toolsFor(ctx, ident, 0, nil)
+	if err != nil {
+		t.Fatalf("a token outage must not fail the turn: %v", err)
+	}
+	names := map[string]bool{}
+	for _, candidate := range tools {
+		info, infoErr := candidate.Info(ctx)
+		if infoErr != nil {
+			t.Fatal(infoErr)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_courses"] || !names["run_bot_command"] {
+		t.Fatalf("public campus tools were lost with the token: %#v", names)
+	}
+	if tokenRequests.Load() < 2 {
+		t.Fatalf("token fetch was not retried: %d attempts", tokenRequests.Load())
+	}
+	if !strings.Contains(logs.String(), "listed anonymously") {
+		t.Fatalf("anonymous fallback was not recorded: %q", logs.String())
 	}
 }
