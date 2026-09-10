@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -239,34 +240,39 @@ func TestBusAtImageModeKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) {
 	for _, item := range items {
 		switch item.RouteID {
 		case "7":
-			if got := busItemStopNames(item); !sameStrings(got, []string{"高新区", "先研院", "西区", "东区"}) {
+			if got := busItemStopNames(item); !slices.Equal(got, []string{"高新区", "先研院", "西区", "东区"}) {
 				t.Fatalf("route 7 stops = %#v", got)
 			}
 			if item.Stops[2].Time != "" {
 				t.Fatalf("route 7 West Campus time = %q, want unknown", item.Stops[2].Time)
 			}
 		case "8":
-			if got := busItemStopNames(item); !sameStrings(got, []string{"东区", "西区", "先研院", "高新区"}) {
+			if got := busItemStopNames(item); !slices.Equal(got, []string{"东区", "西区", "先研院", "高新区"}) {
 				t.Fatalf("route 8 stops = %#v", got)
 			}
 		}
 	}
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
-	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "西区"}, now)
-	for _, header := range []string{
-		"东区 \t北区 \t西区",
-		"西区 \t北区 \t东区",
-		"高新区\t先研院\t西区  \t东区",
-		"东区  \t西区  \t先研院\t高新区",
-	} {
-		if !strings.Contains(reply, header) {
-			t.Fatalf("reply missing complete route header %q: %q", header, reply)
-		}
-	}
-	if !strings.Contains(reply, textutil.MonospaceDigits("16:40")) ||
-		!strings.Contains(reply, textutil.MonospaceDigits("16:50")) {
-		t.Fatalf("reply missing departed full-timetable rows: %q", reply)
+	for _, query := range [][]string{{"东区", "西区"}, {"西区", "东区"}} {
+		t.Run(strings.Join(query, "-"), func(t *testing.T) {
+			reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, query, now)
+			for _, header := range []string{
+				"东区 \t北区 \t西区",
+				"西区 \t北区 \t东区",
+				"高新区\t先研院\t西区  \t东区",
+				"东区  \t西区  \t先研院\t高新区",
+			} {
+				if !strings.Contains(reply, header) {
+					t.Fatalf("reply missing complete route header %q: %q", header, reply)
+				}
+			}
+			for _, departure := range []string{"06:40", "06:50", "16:40", "16:50"} {
+				if !strings.Contains(reply, textutil.MonospaceDigits(departure)) {
+					t.Fatalf("reply missing full-timetable departure %s: %q", departure, reply)
+				}
+			}
+		})
 	}
 }
 
@@ -311,18 +317,6 @@ func realisticEastWestBusTestData() map[string]any {
 			trip(8, 1010, "16:50", "17:40", busStop{Name: "东区", Time: "16:50"}, busStop{Name: "西区", Time: "17:00"}, busStop{Name: "先研院"}, busStop{Name: "高新区", Time: "17:40"}),
 		},
 	}
-}
-
-func sameStrings(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
