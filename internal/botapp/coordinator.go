@@ -710,10 +710,16 @@ func (c *Coordinator) presentationContent(ctx context.Context, response commands
 	}
 	attachment, err := c.renderAttachment(ctx, response.Image)
 	if err == nil {
+		if response.Image.Kind == "room-map" {
+			return message.Content{Text: response.Text, Attachment: attachment}, nil
+		}
 		return message.Content{Attachment: attachment}, nil
 	}
 	c.logf("render response image failed; persist text fallback: %v", err)
 	text := strings.TrimSpace(response.Text)
+	if response.Image.Kind == "room-map" && strings.TrimSpace(response.Image.URL) != "" && !strings.Contains(text, response.Image.URL) {
+		text = strings.TrimSpace(text + "\n地图：" + response.Image.URL)
+	}
 	if text == "" {
 		text = strings.TrimSpace(response.Image.AltText)
 	}

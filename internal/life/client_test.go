@@ -105,6 +105,48 @@ func TestClientSetsUserAgent(t *testing.T) {
 	}
 }
 
+func TestRoomMapUsesPublicBareContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/catalog/rooms/3A204/map" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("room map unexpectedly sent authorization %q", got)
+		}
+		_, _ = w.Write([]byte(`{"code":"3A204","building":"三教","floor":"2","status":"highlighted","imageUrl":"https://static.example/3A204.png","sourceImageUrl":"https://static.example/floor-2.png"}`))
+	}))
+	defer server.Close()
+
+	room, err := NewClient(server.URL, server.Client()).RoomMap(context.Background(), " ３ａ２０４ ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.Code != "3A204" || room.Building != "三教" || room.Floor != "2" || room.Status != "highlighted" || room.ImageURL == "" || room.SourceImageURL == "" {
+		t.Fatalf("room map = %#v", room)
+	}
+}
+
+func TestNormalizeRoomCodeUsesNFKCAndUppercase(t *testing.T) {
+	if got := NormalizeRoomCode(" ３ａ２０４ "); got != "3A204" {
+		t.Fatalf("NormalizeRoomCode = %q, want 3A204", got)
+	}
+}
+
+func TestRoomMapPreservesUnavailableNulls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"GT-Z999","building":null,"floor":null,"status":"unavailable","imageUrl":null,"sourceImageUrl":null}`))
+	}))
+	defer server.Close()
+
+	room, err := NewClient(server.URL, server.Client()).RoomMap(context.Background(), "GT-Z999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.Status != "unavailable" || room.Building != "" || room.Floor != "" || room.ImageURL != "" || room.SourceImageURL != "" {
+		t.Fatalf("room map = %#v", room)
+	}
+}
+
 func TestSearchTrimsQuery(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

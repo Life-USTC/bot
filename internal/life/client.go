@@ -17,6 +17,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/openapi"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Client struct {
@@ -368,6 +369,38 @@ func (c *Client) Weather(ctx context.Context, locationKey string) (map[string]an
 	)
 	err = typedJSON(resp, err, "weather", &out)
 	return out, err
+}
+
+// RoomMap is the public room map contract. Empty string fields represent the
+// JSON null values returned when the catalog has no value for that field.
+type RoomMap struct {
+	Code           string `json:"code"`
+	Building       string `json:"building"`
+	Floor          string `json:"floor"`
+	Status         string `json:"status"`
+	ImageURL       string `json:"imageUrl"`
+	SourceImageURL string `json:"sourceImageUrl"`
+}
+
+// NormalizeRoomCode applies the same Unicode and ASCII normalization used by
+// the public catalog endpoint before a room code is sent to Life.
+func NormalizeRoomCode(code string) string {
+	return strings.ToUpper(norm.NFKC.String(strings.TrimSpace(code)))
+}
+
+// RoomMap fetches the public map metadata for one normalized room code.
+func (c *Client) RoomMap(ctx context.Context, code string) (RoomMap, error) {
+	code = NormalizeRoomCode(code)
+	if code == "" {
+		return RoomMap{}, errors.New("room code is required")
+	}
+	var out RoomMap
+	resp, err := c.Typed(ctx, "").CatalogRoomsMap(ctx, code)
+	err = typedJSON(resp, err, "room map", &out)
+	if err != nil {
+		return RoomMap{}, err
+	}
+	return out, nil
 }
 
 type BusPreferences struct {

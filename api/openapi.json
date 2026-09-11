@@ -69,6 +69,10 @@
       "description": "catalog.metadata operations"
     },
     {
+      "name": "catalog.rooms",
+      "description": "catalog.rooms operations"
+    },
+    {
       "name": "catalog.schedule",
       "description": "catalog.schedule operations"
     },
@@ -87,6 +91,10 @@
     {
       "name": "catalog.weather",
       "description": "catalog.weather operations"
+    },
+    {
+      "name": "catalog.young-events",
+      "description": "catalog.young-events operations"
     },
     {
       "name": "community.comments",
@@ -149,11 +157,13 @@
         "catalog.courses",
         "catalog.link",
         "catalog.metadata",
+        "catalog.rooms",
         "catalog.schedule",
         "catalog.section",
         "catalog.semesters",
         "catalog.teachers",
-        "catalog.weather"
+        "catalog.weather",
+        "catalog.young-events"
       ]
     },
     {
@@ -2167,6 +2177,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/weatherSnapshotResponseSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/young-events": {
+      "get": {
+        "operationId": "get-api-catalog-young-events",
+        "summary": "List second-classroom (Young) signup events",
+        "tags": [
+          "catalog.young-events"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "description": "Filter by signup-open (active) events.",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Filter by signup-open (active) events."
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "schema": {
+              "description": "Exact category filter, e.g. 单次项目 or 系列项目.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": "Exact category filter, e.g. 单次项目 or 系列项目."
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "description": "Case-insensitive substring match on the event name.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": "Case-insensitive substring match on the event name."
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Number of items per page."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "deprecated": true,
+            "description": "Deprecated alias for pageSize. pageSize takes precedence when both are supplied."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/paginatedYoungEventResponseSchema"
                 }
               }
             }
@@ -5723,6 +5834,60 @@
         }
       }
     },
+    "/api/catalog/young-events/{youngId}": {
+      "get": {
+        "operationId": "get-api-catalog-young-events-youngId",
+        "summary": "Get a second-classroom (Young) signup event",
+        "tags": [
+          "catalog.young-events"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "youngId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Upstream young.ustc.edu.cn event identifier."
+            },
+            "required": true,
+            "description": "Upstream young.ustc.edu.cn event identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/youngEventDetailSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/comments/{id}": {
       "get": {
         "operationId": "getComment",
@@ -8131,6 +8296,48 @@
         }
       }
     },
+    "/api/catalog/rooms/{code}/map": {
+      "get": {
+        "operationId": "catalog_rooms_map",
+        "summary": "Look up a room's highlighted map or an available building overview",
+        "tags": [
+          "catalog.rooms"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/roomMapResponseSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/catalog/sections/{jwId}/calendar.ics": {
       "get": {
         "operationId": "getSectionCalendar",
@@ -8314,6 +8521,93 @@
           },
           "404": {
             "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/young-events/{youngId}/image": {
+      "get": {
+        "operationId": "get-api-catalog-young-events-youngId-image",
+        "summary": "Serve the cached poster image for a second-classroom (Young) signup event",
+        "tags": [
+          "catalog.young-events"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "youngId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Upstream young.ustc.edu.cn event identifier."
+            },
+            "required": true,
+            "description": "Upstream young.ustc.edu.cn event identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary response",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Response 304"
+          },
+          "400": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error response",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retrying the mutation",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -8647,110 +8941,6 @@
           },
           "404": {
             "description": "Error response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openApiErrorSchema"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ingestion/publications/objects/complete": {
-      "post": {
-        "operationId": "post-api-ingestion-publications-objects-complete",
-        "summary": "Verify and link one uploaded publication object",
-        "tags": [
-          "Api"
-        ],
-        "security": [
-          {
-            "publicationIngestionSecret": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/publicationObjectCompleteRequestSchema"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/publicationObjectCompleteResponseSchema"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Error response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openApiErrorSchema"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Error response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openApiErrorSchema"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Error response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openApiErrorSchema"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Error response",
-            "headers": {
-              "Retry-After": {
-                "description": "Seconds before retrying the mutation",
-                "schema": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openApiErrorSchema"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Error response",
-            "headers": {
-              "Retry-After": {
-                "description": "Seconds before retrying the mutation",
-                "schema": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -9124,6 +9314,136 @@
           },
           "404": {
             "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ingestion/publications/objects/{batchId}/{kind}/{sha256}": {
+      "put": {
+        "operationId": "put-api-ingestion-publications-objects-batchId-kind-sha256",
+        "summary": "Stream and verify one content-addressed publication object through the",
+        "tags": [
+          "Api"
+        ],
+        "security": [
+          {
+            "publicationIngestionSecret": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batchId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "body_html",
+                "body_markdown",
+                "media",
+                "asset",
+                "raw_page"
+              ]
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "sha256",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/publicationObjectUploadResponseSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error response",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retrying the mutation",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openApiErrorSchema"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error response",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retrying the mutation",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -14040,6 +14360,153 @@
           "daily",
           "alerts",
           "extensions"
+        ],
+        "additionalProperties": false
+      },
+      "paginatedYoungEventResponseSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "youngId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "department": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "organizer": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "status": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "registrationStatus": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "location": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "imageUrl": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "hours": {
+                  "nullable": true,
+                  "type": "number"
+                },
+                "capacity": {
+                  "nullable": true,
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "appliedCount": {
+                  "nullable": true,
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "startAt": {
+                  "nullable": true,
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "endAt": {
+                  "nullable": true,
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "applyStartAt": {
+                  "nullable": true,
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "applyEndAt": {
+                  "nullable": true,
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "isActive": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "youngId",
+                "name",
+                "category",
+                "department",
+                "organizer",
+                "status",
+                "registrationStatus",
+                "location",
+                "imageUrl",
+                "hours",
+                "capacity",
+                "appliedCount",
+                "startAt",
+                "endAt",
+                "applyStartAt",
+                "applyEndAt",
+                "isActive"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "pageSize": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "totalPages": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "total",
+              "totalPages"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
         ],
         "additionalProperties": false
       },
@@ -26992,6 +27459,110 @@
         ],
         "additionalProperties": false
       },
+      "youngEventDetailSchema": {
+        "type": "object",
+        "properties": {
+          "youngId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "department": {
+            "nullable": true,
+            "type": "string"
+          },
+          "organizer": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "registrationStatus": {
+            "nullable": true,
+            "type": "string"
+          },
+          "location": {
+            "nullable": true,
+            "type": "string"
+          },
+          "imageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hours": {
+            "nullable": true,
+            "type": "number"
+          },
+          "capacity": {
+            "nullable": true,
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "appliedCount": {
+            "nullable": true,
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "startAt": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "endAt": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "applyStartAt": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "applyEndAt": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "rawJson": {}
+        },
+        "required": [
+          "youngId",
+          "name",
+          "category",
+          "department",
+          "organizer",
+          "status",
+          "registrationStatus",
+          "location",
+          "imageUrl",
+          "hours",
+          "capacity",
+          "appliedCount",
+          "startAt",
+          "endAt",
+          "applyStartAt",
+          "applyEndAt",
+          "isActive",
+          "rawJson"
+        ],
+        "additionalProperties": false
+      },
       "commentThreadResponseSchema": {
         "type": "object",
         "properties": {
@@ -35591,6 +36162,47 @@
         ],
         "additionalProperties": false
       },
+      "roomMapResponseSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "building": {
+            "nullable": true,
+            "type": "string"
+          },
+          "floor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "highlighted",
+              "overview",
+              "unavailable"
+            ]
+          },
+          "imageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceImageUrl": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "building",
+          "floor",
+          "status",
+          "imageUrl",
+          "sourceImageUrl"
+        ],
+        "additionalProperties": false
+      },
       "commentReactionRequestSchema": {
         "type": "object",
         "properties": {
@@ -35685,72 +36297,6 @@
         ],
         "additionalProperties": false
       },
-      "publicationObjectCompleteRequestSchema": {
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "body_html",
-              "body_markdown",
-              "media",
-              "asset",
-              "raw_page"
-            ]
-          },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
-        },
-        "required": [
-          "batchId",
-          "kind",
-          "sha256"
-        ],
-        "additionalProperties": false
-      },
-      "publicationObjectCompleteResponseSchema": {
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "body_html",
-              "body_markdown",
-              "media",
-              "asset",
-              "raw_page"
-            ]
-          },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "verified",
-              "linked"
-            ]
-          }
-        },
-        "required": [
-          "batchId",
-          "kind",
-          "sha256",
-          "status"
-        ],
-        "additionalProperties": false
-      },
       "publicationObjectPlanRequestSchema": {
         "type": "object",
         "properties": {
@@ -35835,29 +36381,15 @@
                   "type": "string",
                   "format": "uri"
                 },
-                "expiresAt": {
-                  "nullable": true,
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
                 "requiredHeaders": {
                   "type": "object",
                   "properties": {
                     "Content-Type": {
                       "type": "string"
-                    },
-                    "x-amz-meta-kind": {
-                      "type": "string"
-                    },
-                    "x-amz-meta-sha256": {
-                      "type": "string"
                     }
                   },
                   "required": [
-                    "Content-Type",
-                    "x-amz-meta-kind",
-                    "x-amz-meta-sha256"
+                    "Content-Type"
                   ],
                   "additionalProperties": false
                 }
@@ -35868,7 +36400,6 @@
                 "r2Key",
                 "status",
                 "uploadUrl",
-                "expiresAt",
                 "requiredHeaders"
               ],
               "additionalProperties": false
@@ -35909,6 +36440,41 @@
         "required": [
           "completed",
           "completedAt"
+        ],
+        "additionalProperties": false
+      },
+      "publicationObjectUploadResponseSchema": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "body_html",
+              "body_markdown",
+              "media",
+              "asset",
+              "raw_page"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "linked"
+            ]
+          }
+        },
+        "required": [
+          "batchId",
+          "kind",
+          "sha256",
+          "status"
         ],
         "additionalProperties": false
       }

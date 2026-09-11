@@ -49,6 +49,7 @@ const (
 	CapabilityOverview             CapabilityID = "overview"
 	CapabilityUpcomingDeadlines    CapabilityID = "upcoming_deadlines"
 	CapabilityWeather              CapabilityID = "weather"
+	CapabilityRoomMap              CapabilityID = "room_map"
 )
 
 // CapabilityEffect describes the state transition allowed by an invocation.
@@ -447,6 +448,17 @@ func init() {
 			Input: weatherInput, Execute: weatherExecutor, Present: defaultCapabilityPresenter,
 			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
 			Help:          helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil),
+		},
+		{
+			ID: CapabilityRoomMap, Forms: []string{"room_map", "room", "教室", "教室地图", "地图"},
+			Requirements: CapabilityRequirements{Life: true, DataScope: DataScopePublic},
+			Effect:       EffectRead, Exposure: ExposureModel,
+			Input: roomMapArgsAcceptable, Normalize: normalizeRoomMapArgs,
+			Execute: roomMapExecutor, Present: defaultCapabilityPresenter,
+			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
+			Help: helpMeta("room", "教室", "查询教室位置和楼层地图", true, []HelpExample{
+				example("教室 3A204", "查询教室位置和楼层图"),
+			}, []HelpExample{example("教室 3A204", "查询教室位置和楼层图")}),
 		},
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
