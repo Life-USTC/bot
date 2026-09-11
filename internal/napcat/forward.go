@@ -14,6 +14,7 @@ type requestEvent struct {
 	SubType     string `json:"sub_type"`
 	Flag        string `json:"flag"`
 	UserID      int64  `json:"user_id"`
+	GroupID     int64  `json:"group_id"`
 	Comment     string `json:"comment"`
 }
 
@@ -54,7 +55,7 @@ func (b *Bridge) handleIncomingEvent(ctx context.Context, raw json.RawMessage, d
 			b.logf("napcat ignored invalid request event: %v", err)
 			return
 		}
-		// Approve off the read loop so reverse-WS set_friend_add_request can complete.
+		// Approve off the read loop so reverse-WS action replies can complete.
 		go b.handleRequestEvent(context.WithoutCancel(ctx), event)
 	}
 }
@@ -69,6 +70,24 @@ func isPrivateOrGroupMessage(messageType string) bool {
 }
 
 func (b *Bridge) handleRequestEvent(ctx context.Context, event requestEvent) {
+	if strings.EqualFold(strings.TrimSpace(event.RequestType), "group") {
+		if !strings.EqualFold(strings.TrimSpace(event.SubType), "invite") {
+			return
+		}
+		flag := strings.TrimSpace(event.Flag)
+		if flag == "" {
+			b.logf("group invitation missing flag: group_id=%d user_id=%d", event.GroupID, event.UserID)
+			return
+		}
+		if _, err := b.callNapCatAction(ctx, "set_group_add_request", map[string]any{
+			"flag": flag, "sub_type": "invite", "approve": true,
+		}); err != nil {
+			b.logf("auto-approve group invitation failed: group_id=%d user_id=%d error=%v", event.GroupID, event.UserID, err)
+			return
+		}
+		b.logf("auto-approved group invitation: group_id=%d user_id=%d", event.GroupID, event.UserID)
+		return
+	}
 	if !strings.EqualFold(strings.TrimSpace(event.RequestType), "friend") {
 		return
 	}

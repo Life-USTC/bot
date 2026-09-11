@@ -38,7 +38,7 @@ MCP 对齐（见
 
 ## 接入方式
 
-- **NapCat**：OneBot 11 反向 WebSocket（或出站 WS）
+- **NapCat**：OneBot 11 反向 WebSocket（或出站 WS）；自动接受所有好友申请和邀请机器人入群的请求。其他用户申请加入已有群聊仍由群管理员处理。
 - **QQ 官方 Bot**：Webhook（推荐）和/或 Gateway
 
 公开只读命令可按 TTL 缓存在本地 SQLite，部署版本参与缓存键，避免旧版本脏读。
