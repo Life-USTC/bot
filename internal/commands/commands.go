@@ -337,6 +337,9 @@ func HasRemovedCommandPrefix(text string) bool {
 }
 
 func parseNaturalReadIntent(raw string) ParseResult {
+	if result := parseNaturalRoomIntent(raw); result.Recognized() {
+		return result
+	}
 	if result := parseNaturalScheduleIntent(raw); result.Recognized() {
 		return result
 	}

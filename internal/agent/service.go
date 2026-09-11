@@ -1000,6 +1000,7 @@ func (s *Service) toolsFor(
 	var mcpSession *lazyMCPSession
 	if !store.IsSharedConversation(ident) && s.mcpClient != nil && s.auth != nil {
 		mcpSession = newLazyMCPSession(s, ident, jobID)
+		mcpSession.sendResponse = sendResponse
 		tools, err = mcpSession.appendTools(tools)
 		if err != nil {
 			_ = mcpSession.Close()

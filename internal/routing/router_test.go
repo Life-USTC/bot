@@ -25,6 +25,8 @@ func TestSharedConversationActivationMatrix(t *testing.T) {
 		wantID     commands.CapabilityID
 	}{
 		{name: "exact public command", text: "校车", wantAction: ActionCommand, wantID: commands.CapabilityBus},
+		{name: "room map command", text: "教室 3A204", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
+		{name: "room map natural query", text: "3A204 在哪里？", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
 		{name: "public command with route", text: "校车 西区 高新区", wantAction: ActionCommand, wantID: commands.CapabilityBus},
 		{name: "strict public natural query", text: "查一下周六西区到高新区的校车", wantAction: ActionCommand, wantID: commands.CapabilityBus},
 		{name: "ambient opinion", text: "今天校车好挤", wantAction: ActionIgnore},

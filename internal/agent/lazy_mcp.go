@@ -15,6 +15,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
@@ -25,7 +26,7 @@ const maxCampusToolSearchResults = 5
 func campusReadToolAllowed(name string) bool {
 	switch name {
 	case "get_current_semester", "list_my_homeworks", "search_courses",
-		"catalog_young_event_list", "catalog_young_event_get":
+		"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map":
 		return true
 	default:
 		return false
@@ -51,9 +52,10 @@ type campusToolDocumentation struct {
 // MCP initialization, and tools/list happen only if the model actually asks
 // for campus-tool documentation or invokes a campus read.
 type lazyMCPSession struct {
-	service  *Service
-	identity store.Identity
-	jobID    int64
+	service      *Service
+	identity     store.Identity
+	jobID        int64
+	sendResponse func(context.Context, store.Identity, commands.Response) error
 
 	once    sync.Once
 	session *botmcp.Session
@@ -191,6 +193,9 @@ func campusToolSearchAliases(name string) string {
 	if strings.Contains(strings.ToLower(name), "young_event") {
 		return "第二课堂 二课 活动 报名"
 	}
+	if name == "catalog_rooms_map" {
+		return "教室 房间 地图 位置 楼层 room map"
+	}
 	return ""
 }
 
@@ -234,6 +239,11 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		}
 	}
 	result, callErr := s.session.Call(ctx, name, input.Arguments)
+	if callErr == nil && name == "catalog_rooms_map" {
+		if err := s.deliverRoomMapResponse(ctx, result); err != nil {
+			callErr = err
+		}
+	}
 	if tracked {
 		receipt := execution.Receipt
 		receipt.Subject = campusReceiptSubject(name, input.Arguments, result)
@@ -251,6 +261,18 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		}
 	}
 	return result, callErr
+}
+
+func (s *lazyMCPSession) deliverRoomMapResponse(ctx context.Context, result string) error {
+	if s == nil || s.sendResponse == nil {
+		return nil
+	}
+	var room life.RoomMap
+	if err := json.Unmarshal([]byte(result), &room); err != nil {
+		return fmt.Errorf("decode catalog_rooms_map result: %w", err)
+	}
+	response := commands.RoomMapResponse(room, s.service != nil && s.service.handler.EnableImageResponses)
+	return s.sendResponse(ctx, s.identity, response)
 }
 
 func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, bool, error) {

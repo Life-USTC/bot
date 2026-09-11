@@ -1315,78 +1315,6 @@ func (e PublicationIngestionBatchResponseSchemaResultsStatus) Valid() bool {
 	}
 }
 
-// Defines values for PublicationObjectCompleteRequestSchemaKind.
-const (
-	PublicationObjectCompleteRequestSchemaKindAsset        PublicationObjectCompleteRequestSchemaKind = "asset"
-	PublicationObjectCompleteRequestSchemaKindBodyHtml     PublicationObjectCompleteRequestSchemaKind = "body_html"
-	PublicationObjectCompleteRequestSchemaKindBodyMarkdown PublicationObjectCompleteRequestSchemaKind = "body_markdown"
-	PublicationObjectCompleteRequestSchemaKindMedia        PublicationObjectCompleteRequestSchemaKind = "media"
-	PublicationObjectCompleteRequestSchemaKindRawPage      PublicationObjectCompleteRequestSchemaKind = "raw_page"
-)
-
-// Valid indicates whether the value is a known member of the PublicationObjectCompleteRequestSchemaKind enum.
-func (e PublicationObjectCompleteRequestSchemaKind) Valid() bool {
-	switch e {
-	case PublicationObjectCompleteRequestSchemaKindAsset:
-		return true
-	case PublicationObjectCompleteRequestSchemaKindBodyHtml:
-		return true
-	case PublicationObjectCompleteRequestSchemaKindBodyMarkdown:
-		return true
-	case PublicationObjectCompleteRequestSchemaKindMedia:
-		return true
-	case PublicationObjectCompleteRequestSchemaKindRawPage:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for PublicationObjectCompleteResponseSchemaKind.
-const (
-	PublicationObjectCompleteResponseSchemaKindAsset        PublicationObjectCompleteResponseSchemaKind = "asset"
-	PublicationObjectCompleteResponseSchemaKindBodyHtml     PublicationObjectCompleteResponseSchemaKind = "body_html"
-	PublicationObjectCompleteResponseSchemaKindBodyMarkdown PublicationObjectCompleteResponseSchemaKind = "body_markdown"
-	PublicationObjectCompleteResponseSchemaKindMedia        PublicationObjectCompleteResponseSchemaKind = "media"
-	PublicationObjectCompleteResponseSchemaKindRawPage      PublicationObjectCompleteResponseSchemaKind = "raw_page"
-)
-
-// Valid indicates whether the value is a known member of the PublicationObjectCompleteResponseSchemaKind enum.
-func (e PublicationObjectCompleteResponseSchemaKind) Valid() bool {
-	switch e {
-	case PublicationObjectCompleteResponseSchemaKindAsset:
-		return true
-	case PublicationObjectCompleteResponseSchemaKindBodyHtml:
-		return true
-	case PublicationObjectCompleteResponseSchemaKindBodyMarkdown:
-		return true
-	case PublicationObjectCompleteResponseSchemaKindMedia:
-		return true
-	case PublicationObjectCompleteResponseSchemaKindRawPage:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for PublicationObjectCompleteResponseSchemaStatus.
-const (
-	Linked   PublicationObjectCompleteResponseSchemaStatus = "linked"
-	Verified PublicationObjectCompleteResponseSchemaStatus = "verified"
-)
-
-// Valid indicates whether the value is a known member of the PublicationObjectCompleteResponseSchemaStatus enum.
-func (e PublicationObjectCompleteResponseSchemaStatus) Valid() bool {
-	switch e {
-	case Linked:
-		return true
-	case Verified:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for PublicationObjectPlanRequestSchemaObjectsKind.
 const (
 	PublicationObjectPlanRequestSchemaObjectsKindAsset        PublicationObjectPlanRequestSchemaObjectsKind = "asset"
@@ -1453,6 +1381,69 @@ func (e PublicationObjectPlanResponseSchemaObjectsStatus) Valid() bool {
 	case AlreadyPresent:
 		return true
 	case UploadRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicationObjectUploadResponseSchemaKind.
+const (
+	PublicationObjectUploadResponseSchemaKindAsset        PublicationObjectUploadResponseSchemaKind = "asset"
+	PublicationObjectUploadResponseSchemaKindBodyHtml     PublicationObjectUploadResponseSchemaKind = "body_html"
+	PublicationObjectUploadResponseSchemaKindBodyMarkdown PublicationObjectUploadResponseSchemaKind = "body_markdown"
+	PublicationObjectUploadResponseSchemaKindMedia        PublicationObjectUploadResponseSchemaKind = "media"
+	PublicationObjectUploadResponseSchemaKindRawPage      PublicationObjectUploadResponseSchemaKind = "raw_page"
+)
+
+// Valid indicates whether the value is a known member of the PublicationObjectUploadResponseSchemaKind enum.
+func (e PublicationObjectUploadResponseSchemaKind) Valid() bool {
+	switch e {
+	case PublicationObjectUploadResponseSchemaKindAsset:
+		return true
+	case PublicationObjectUploadResponseSchemaKindBodyHtml:
+		return true
+	case PublicationObjectUploadResponseSchemaKindBodyMarkdown:
+		return true
+	case PublicationObjectUploadResponseSchemaKindMedia:
+		return true
+	case PublicationObjectUploadResponseSchemaKindRawPage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicationObjectUploadResponseSchemaStatus.
+const (
+	Linked PublicationObjectUploadResponseSchemaStatus = "linked"
+)
+
+// Valid indicates whether the value is a known member of the PublicationObjectUploadResponseSchemaStatus enum.
+func (e PublicationObjectUploadResponseSchemaStatus) Valid() bool {
+	switch e {
+	case Linked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoomMapResponseSchemaStatus.
+const (
+	Highlighted RoomMapResponseSchemaStatus = "highlighted"
+	Overview    RoomMapResponseSchemaStatus = "overview"
+	Unavailable RoomMapResponseSchemaStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RoomMapResponseSchemaStatus enum.
+func (e RoomMapResponseSchemaStatus) Valid() bool {
+	switch e {
+	case Highlighted:
+		return true
+	case Overview:
+		return true
+	case Unavailable:
 		return true
 	default:
 		return false
@@ -2170,6 +2161,24 @@ func (e CatalogWeatherGetParamsLocationKey) Valid() bool {
 	}
 }
 
+// Defines values for GetApiCatalogYoungEventsParamsActive.
+const (
+	GetApiCatalogYoungEventsParamsActiveFalse GetApiCatalogYoungEventsParamsActive = "false"
+	GetApiCatalogYoungEventsParamsActiveTrue  GetApiCatalogYoungEventsParamsActive = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetApiCatalogYoungEventsParamsActive enum.
+func (e GetApiCatalogYoungEventsParamsActive) Valid() bool {
+	switch e {
+	case GetApiCatalogYoungEventsParamsActiveFalse:
+		return true
+	case GetApiCatalogYoungEventsParamsActiveTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListCommentsParamsTargetType.
 const (
 	ListCommentsParamsTargetTypeCourse         ListCommentsParamsTargetType = "course"
@@ -2275,6 +2284,33 @@ func (e CommunitySectionHomeworkListParamsIncludeDeleted) Valid() bool {
 	}
 }
 
+// Defines values for PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind.
+const (
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindAsset        PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind = "asset"
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindBodyHtml     PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind = "body_html"
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindBodyMarkdown PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind = "body_markdown"
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindMedia        PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind = "media"
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindRawPage      PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind = "raw_page"
+)
+
+// Valid indicates whether the value is a known member of the PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind enum.
+func (e PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind) Valid() bool {
+	switch e {
+	case PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindAsset:
+		return true
+	case PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindBodyHtml:
+		return true
+	case PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindBodyMarkdown:
+		return true
+	case PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindMedia:
+		return true
+	case PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKindRawPage:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetApiPublicationsParamsType.
 const (
 	GetApiPublicationsParamsTypeNews   GetApiPublicationsParamsType = "news"
@@ -2358,16 +2394,16 @@ func (e WorkspaceScheduleListParamsLocale) Valid() bool {
 
 // Defines values for ListTodosParamsCompleted.
 const (
-	ListTodosParamsCompletedFalse ListTodosParamsCompleted = "false"
-	ListTodosParamsCompletedTrue  ListTodosParamsCompleted = "true"
+	False ListTodosParamsCompleted = "false"
+	True  ListTodosParamsCompleted = "true"
 )
 
 // Valid indicates whether the value is a known member of the ListTodosParamsCompleted enum.
 func (e ListTodosParamsCompleted) Valid() bool {
 	switch e {
-	case ListTodosParamsCompletedFalse:
+	case False:
 		return true
-	case ListTodosParamsCompletedTrue:
+	case True:
 		return true
 	default:
 		return false
@@ -6993,6 +7029,35 @@ type PaginatedTeacherResponseSchema struct {
 	} `json:"pagination"`
 }
 
+// PaginatedYoungEventResponseSchema defines model for paginatedYoungEventResponseSchema.
+type PaginatedYoungEventResponseSchema struct {
+	Data []struct {
+		AppliedCount       *int       `json:"appliedCount"`
+		ApplyEndAt         *time.Time `json:"applyEndAt"`
+		ApplyStartAt       *time.Time `json:"applyStartAt"`
+		Capacity           *int       `json:"capacity"`
+		Category           *string    `json:"category"`
+		Department         *string    `json:"department"`
+		EndAt              *time.Time `json:"endAt"`
+		Hours              *float32   `json:"hours"`
+		ImageUrl           *string    `json:"imageUrl"`
+		IsActive           bool       `json:"isActive"`
+		Location           *string    `json:"location"`
+		Name               string     `json:"name"`
+		Organizer          *string    `json:"organizer"`
+		RegistrationStatus *string    `json:"registrationStatus"`
+		StartAt            *time.Time `json:"startAt"`
+		Status             *string    `json:"status"`
+		YoungId            string     `json:"youngId"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
 // PublicPublicationDetailSchema defines model for publicPublicationDetailSchema.
 type PublicPublicationDetailSchema struct {
 	CanonicalUrl    string                                       `json:"canonicalUrl"`
@@ -7211,30 +7276,6 @@ type PublicationIngestionBatchResponseSchema struct {
 // PublicationIngestionBatchResponseSchemaResultsStatus defines model for PublicationIngestionBatchResponseSchema.Results.Status.
 type PublicationIngestionBatchResponseSchemaResultsStatus string
 
-// PublicationObjectCompleteRequestSchema defines model for publicationObjectCompleteRequestSchema.
-type PublicationObjectCompleteRequestSchema struct {
-	BatchId string                                     `json:"batchId"`
-	Kind    PublicationObjectCompleteRequestSchemaKind `json:"kind"`
-	Sha256  string                                     `json:"sha256"`
-}
-
-// PublicationObjectCompleteRequestSchemaKind defines model for PublicationObjectCompleteRequestSchema.Kind.
-type PublicationObjectCompleteRequestSchemaKind string
-
-// PublicationObjectCompleteResponseSchema defines model for publicationObjectCompleteResponseSchema.
-type PublicationObjectCompleteResponseSchema struct {
-	BatchId string                                        `json:"batchId"`
-	Kind    PublicationObjectCompleteResponseSchemaKind   `json:"kind"`
-	Sha256  string                                        `json:"sha256"`
-	Status  PublicationObjectCompleteResponseSchemaStatus `json:"status"`
-}
-
-// PublicationObjectCompleteResponseSchemaKind defines model for PublicationObjectCompleteResponseSchema.Kind.
-type PublicationObjectCompleteResponseSchemaKind string
-
-// PublicationObjectCompleteResponseSchemaStatus defines model for PublicationObjectCompleteResponseSchema.Status.
-type PublicationObjectCompleteResponseSchemaStatus string
-
 // PublicationObjectPlanRequestSchema defines model for publicationObjectPlanRequestSchema.
 type PublicationObjectPlanRequestSchema struct {
 	BatchId string `json:"batchId"`
@@ -7251,13 +7292,10 @@ type PublicationObjectPlanRequestSchemaObjectsKind string
 type PublicationObjectPlanResponseSchema struct {
 	BatchId string `json:"batchId"`
 	Objects []struct {
-		ExpiresAt       *time.Time                                     `json:"expiresAt"`
 		Kind            PublicationObjectPlanResponseSchemaObjectsKind `json:"kind"`
 		R2Key           string                                         `json:"r2Key"`
 		RequiredHeaders struct {
-			ContentType    string `json:"Content-Type"`
-			XAmzMetaKind   string `json:"x-amz-meta-kind"`
-			XAmzMetaSha256 string `json:"x-amz-meta-sha256"`
+			ContentType string `json:"Content-Type"`
 		} `json:"requiredHeaders"`
 		Sha256    string                                           `json:"sha256"`
 		Status    PublicationObjectPlanResponseSchemaObjectsStatus `json:"status"`
@@ -7270,6 +7308,33 @@ type PublicationObjectPlanResponseSchemaObjectsKind string
 
 // PublicationObjectPlanResponseSchemaObjectsStatus defines model for PublicationObjectPlanResponseSchema.Objects.Status.
 type PublicationObjectPlanResponseSchemaObjectsStatus string
+
+// PublicationObjectUploadResponseSchema defines model for publicationObjectUploadResponseSchema.
+type PublicationObjectUploadResponseSchema struct {
+	BatchId string                                      `json:"batchId"`
+	Kind    PublicationObjectUploadResponseSchemaKind   `json:"kind"`
+	Sha256  string                                      `json:"sha256"`
+	Status  PublicationObjectUploadResponseSchemaStatus `json:"status"`
+}
+
+// PublicationObjectUploadResponseSchemaKind defines model for PublicationObjectUploadResponseSchema.Kind.
+type PublicationObjectUploadResponseSchemaKind string
+
+// PublicationObjectUploadResponseSchemaStatus defines model for PublicationObjectUploadResponseSchema.Status.
+type PublicationObjectUploadResponseSchemaStatus string
+
+// RoomMapResponseSchema defines model for roomMapResponseSchema.
+type RoomMapResponseSchema struct {
+	Building       *string                     `json:"building"`
+	Code           string                      `json:"code"`
+	Floor          *string                     `json:"floor"`
+	ImageUrl       *string                     `json:"imageUrl"`
+	SourceImageUrl *string                     `json:"sourceImageUrl"`
+	Status         RoomMapResponseSchemaStatus `json:"status"`
+}
+
+// RoomMapResponseSchemaStatus defines model for RoomMapResponseSchema.Status.
+type RoomMapResponseSchemaStatus string
 
 // SectionDetailSchema defines model for sectionDetailSchema.
 type SectionDetailSchema struct {
@@ -8321,6 +8386,28 @@ type WorkspaceLinkPinResponseSchema struct {
 	PinnedSlugs    []string `json:"pinnedSlugs"`
 }
 
+// YoungEventDetailSchema defines model for youngEventDetailSchema.
+type YoungEventDetailSchema struct {
+	AppliedCount       *int        `json:"appliedCount"`
+	ApplyEndAt         *time.Time  `json:"applyEndAt"`
+	ApplyStartAt       *time.Time  `json:"applyStartAt"`
+	Capacity           *int        `json:"capacity"`
+	Category           *string     `json:"category"`
+	Department         *string     `json:"department"`
+	EndAt              *time.Time  `json:"endAt"`
+	Hours              *float32    `json:"hours"`
+	ImageUrl           *string     `json:"imageUrl"`
+	IsActive           bool        `json:"isActive"`
+	Location           *string     `json:"location"`
+	Name               string      `json:"name"`
+	Organizer          *string     `json:"organizer"`
+	RawJson            interface{} `json:"rawJson"`
+	RegistrationStatus *string     `json:"registrationStatus"`
+	StartAt            *time.Time  `json:"startAt"`
+	Status             *string     `json:"status"`
+	YoungId            string      `json:"youngId"`
+}
+
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
@@ -8614,6 +8701,28 @@ type CatalogWeatherGetParams struct {
 // CatalogWeatherGetParamsLocationKey defines parameters for CatalogWeatherGet.
 type CatalogWeatherGetParamsLocationKey string
 
+// GetApiCatalogYoungEventsParams defines parameters for GetApiCatalogYoungEvents.
+type GetApiCatalogYoungEventsParams struct {
+	// Active Filter by signup-open (active) events.
+	Active *GetApiCatalogYoungEventsParamsActive `form:"active,omitempty" json:"active,omitempty"`
+
+	// Category Exact category filter, e.g. 单次项目 or 系列项目.
+	Category *string `form:"category,omitempty" json:"category,omitempty"`
+
+	// Search Case-insensitive substring match on the event name.
+	Search *string `form:"search,omitempty" json:"search,omitempty"`
+	Page   *int64  `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetApiCatalogYoungEventsParamsActive defines parameters for GetApiCatalogYoungEvents.
+type GetApiCatalogYoungEventsParamsActive string
+
 // ListCommentsParams defines parameters for ListComments.
 type ListCommentsParams struct {
 	TargetType       ListCommentsParamsTargetType `form:"targetType" json:"targetType"`
@@ -8686,6 +8795,9 @@ type GetApiCommunitySectionHomeworksAuditParams struct {
 	SectionIds  *string `form:"sectionIds,omitempty" json:"sectionIds,omitempty"`
 	SectionJwId *int64  `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
 }
+
+// PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind defines parameters for PutApiIngestionPublicationsObjectsBatchIdKindSha256.
+type PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind string
 
 // GetApiPublicationsParams defines parameters for GetApiPublications.
 type GetApiPublicationsParams struct {
@@ -8811,9 +8923,6 @@ type CommunitySectionHomeworkUpdateJSONRequestBody = HomeworkUpdateRequestSchema
 
 // PostApiIngestionPublicationsBatchesJSONRequestBody defines body for PostApiIngestionPublicationsBatches for application/json ContentType.
 type PostApiIngestionPublicationsBatchesJSONRequestBody = PublicationIngestionBatchRequestSchema
-
-// PostApiIngestionPublicationsObjectsCompleteJSONRequestBody defines body for PostApiIngestionPublicationsObjectsComplete for application/json ContentType.
-type PostApiIngestionPublicationsObjectsCompleteJSONRequestBody = PublicationObjectCompleteRequestSchema
 
 // PostApiIngestionPublicationsObjectsPlanJSONRequestBody defines body for PostApiIngestionPublicationsObjectsPlan for application/json ContentType.
 type PostApiIngestionPublicationsObjectsPlanJSONRequestBody = PublicationObjectPlanRequestSchema
@@ -11922,6 +12031,9 @@ type ClientInterface interface {
 	// GetMetadata request
 	GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CatalogRoomsMap request
+	CatalogRoomsMap(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSchedules request
 	ListSchedules(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -11962,6 +12074,15 @@ type ClientInterface interface {
 
 	// CatalogWeatherGet request
 	CatalogWeatherGet(ctx context.Context, params *CatalogWeatherGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiCatalogYoungEvents request
+	GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiCatalogYoungEventsYoungId request
+	GetApiCatalogYoungEventsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiCatalogYoungEventsYoungIdImage request
+	GetApiCatalogYoungEventsYoungIdImage(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListComments request
 	ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -12039,15 +12160,13 @@ type ClientInterface interface {
 
 	PostApiIngestionPublicationsBatches(ctx context.Context, body PostApiIngestionPublicationsBatchesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostApiIngestionPublicationsObjectsCompleteWithBody request with any body
-	PostApiIngestionPublicationsObjectsCompleteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostApiIngestionPublicationsObjectsComplete(ctx context.Context, body PostApiIngestionPublicationsObjectsCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// PostApiIngestionPublicationsObjectsPlanWithBody request with any body
 	PostApiIngestionPublicationsObjectsPlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostApiIngestionPublicationsObjectsPlan(ctx context.Context, body PostApiIngestionPublicationsObjectsPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiIngestionPublicationsObjectsBatchIdKindSha256 request
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256(ctx context.Context, batchId string, kind PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteApiMcp request
 	DeleteApiMcp(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -12863,6 +12982,18 @@ func (c *Client) GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn)
 	return c.Client.Do(req)
 }
 
+func (c *Client) CatalogRoomsMap(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCatalogRoomsMapRequest(c.Server, code)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListSchedules(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListSchedulesRequest(c.Server, params)
 	if err != nil {
@@ -13021,6 +13152,42 @@ func (c *Client) GetTeacher(ctx context.Context, id int64, params *GetTeacherPar
 
 func (c *Client) CatalogWeatherGet(ctx context.Context, params *CatalogWeatherGetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCatalogWeatherGetRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogYoungEventsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungEventsYoungIdRequest(c.Server, youngId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogYoungEventsYoungIdImage(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungEventsYoungIdImageRequest(c.Server, youngId)
 	if err != nil {
 		return nil, err
 	}
@@ -13367,30 +13534,6 @@ func (c *Client) PostApiIngestionPublicationsBatches(ctx context.Context, body P
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostApiIngestionPublicationsObjectsCompleteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiIngestionPublicationsObjectsCompleteRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostApiIngestionPublicationsObjectsComplete(ctx context.Context, body PostApiIngestionPublicationsObjectsCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostApiIngestionPublicationsObjectsCompleteRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) PostApiIngestionPublicationsObjectsPlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiIngestionPublicationsObjectsPlanRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -13405,6 +13548,18 @@ func (c *Client) PostApiIngestionPublicationsObjectsPlanWithBody(ctx context.Con
 
 func (c *Client) PostApiIngestionPublicationsObjectsPlan(ctx context.Context, body PostApiIngestionPublicationsObjectsPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiIngestionPublicationsObjectsPlanRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiIngestionPublicationsObjectsBatchIdKindSha256(ctx context.Context, batchId string, kind PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiIngestionPublicationsObjectsBatchIdKindSha256Request(c.Server, batchId, kind, sha256)
 	if err != nil {
 		return nil, err
 	}
@@ -16237,6 +16392,40 @@ func NewGetMetadataRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewCatalogRoomsMapRequest generates requests for CatalogRoomsMap
+func NewCatalogRoomsMapRequest(server string, code string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "code", code, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/rooms/%s/map", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListSchedulesRequest generates requests for ListSchedules
 func NewListSchedulesRequest(server string, params *ListSchedulesParams) (*http.Request, error) {
 	var err error
@@ -17372,6 +17561,188 @@ func NewCatalogWeatherGetRequest(server string, params *CatalogWeatherGetParams)
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogYoungEventsRequest generates requests for GetApiCatalogYoungEvents
+func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoungEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Active != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "active", *params.Active, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Category != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "category", *params.Category, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Search != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogYoungEventsYoungIdRequest generates requests for GetApiCatalogYoungEventsYoungId
+func NewGetApiCatalogYoungEventsYoungIdRequest(server string, youngId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "youngId", youngId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-events/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogYoungEventsYoungIdImageRequest generates requests for GetApiCatalogYoungEventsYoungIdImage
+func NewGetApiCatalogYoungEventsYoungIdImageRequest(server string, youngId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "youngId", youngId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-events/%s/image", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -18522,46 +18893,6 @@ func NewPostApiIngestionPublicationsBatchesRequestWithBody(server string, conten
 	return req, nil
 }
 
-// NewPostApiIngestionPublicationsObjectsCompleteRequest calls the generic PostApiIngestionPublicationsObjectsComplete builder with application/json body
-func NewPostApiIngestionPublicationsObjectsCompleteRequest(server string, body PostApiIngestionPublicationsObjectsCompleteJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostApiIngestionPublicationsObjectsCompleteRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewPostApiIngestionPublicationsObjectsCompleteRequestWithBody generates requests for PostApiIngestionPublicationsObjectsComplete with any type of body
-func NewPostApiIngestionPublicationsObjectsCompleteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/ingestion/publications/objects/complete")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewPostApiIngestionPublicationsObjectsPlanRequest calls the generic PostApiIngestionPublicationsObjectsPlan builder with application/json body
 func NewPostApiIngestionPublicationsObjectsPlanRequest(server string, body PostApiIngestionPublicationsObjectsPlanJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -18598,6 +18929,54 @@ func NewPostApiIngestionPublicationsObjectsPlanRequestWithBody(server string, co
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPutApiIngestionPublicationsObjectsBatchIdKindSha256Request generates requests for PutApiIngestionPublicationsObjectsBatchIdKindSha256
+func NewPutApiIngestionPublicationsObjectsBatchIdKindSha256Request(server string, batchId string, kind PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind, sha256 string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "batchId", batchId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "kind", kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "sha256", sha256, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/ingestion/publications/objects/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -20661,6 +21040,9 @@ type ClientWithResponsesInterface interface {
 	// GetMetadataWithResponse request
 	GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error)
 
+	// CatalogRoomsMapWithResponse request
+	CatalogRoomsMapWithResponse(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*CatalogRoomsMapResponse, error)
+
 	// ListSchedulesWithResponse request
 	ListSchedulesWithResponse(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error)
 
@@ -20701,6 +21083,15 @@ type ClientWithResponsesInterface interface {
 
 	// CatalogWeatherGetWithResponse request
 	CatalogWeatherGetWithResponse(ctx context.Context, params *CatalogWeatherGetParams, reqEditors ...RequestEditorFn) (*CatalogWeatherGetResponse, error)
+
+	// GetApiCatalogYoungEventsWithResponse request
+	GetApiCatalogYoungEventsWithResponse(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsResponse, error)
+
+	// GetApiCatalogYoungEventsYoungIdWithResponse request
+	GetApiCatalogYoungEventsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdResponse, error)
+
+	// GetApiCatalogYoungEventsYoungIdImageWithResponse request
+	GetApiCatalogYoungEventsYoungIdImageWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdImageResponse, error)
 
 	// ListCommentsWithResponse request
 	ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error)
@@ -20778,15 +21169,13 @@ type ClientWithResponsesInterface interface {
 
 	PostApiIngestionPublicationsBatchesWithResponse(ctx context.Context, body PostApiIngestionPublicationsBatchesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsBatchesResponse, error)
 
-	// PostApiIngestionPublicationsObjectsCompleteWithBodyWithResponse request with any body
-	PostApiIngestionPublicationsObjectsCompleteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsCompleteResponse, error)
-
-	PostApiIngestionPublicationsObjectsCompleteWithResponse(ctx context.Context, body PostApiIngestionPublicationsObjectsCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsCompleteResponse, error)
-
 	// PostApiIngestionPublicationsObjectsPlanWithBodyWithResponse request with any body
 	PostApiIngestionPublicationsObjectsPlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsPlanResponse, error)
 
 	PostApiIngestionPublicationsObjectsPlanWithResponse(ctx context.Context, body PostApiIngestionPublicationsObjectsPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsPlanResponse, error)
+
+	// PutApiIngestionPublicationsObjectsBatchIdKindSha256WithResponse request
+	PutApiIngestionPublicationsObjectsBatchIdKindSha256WithResponse(ctx context.Context, batchId string, kind PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*PutApiIngestionPublicationsObjectsBatchIdKindSha256Response, error)
 
 	// DeleteApiMcpWithResponse request
 	DeleteApiMcpWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteApiMcpResponse, error)
@@ -22405,6 +22794,37 @@ func (r GetMetadataResponse) ContentType() string {
 	return ""
 }
 
+type CatalogRoomsMapResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *RoomMapResponseSchema
+	JSON400      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r CatalogRoomsMapResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CatalogRoomsMapResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CatalogRoomsMapResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListSchedulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -22804,6 +23224,102 @@ func (r CatalogWeatherGetResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CatalogWeatherGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PaginatedYoungEventResponseSchema
+	JSON400      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungEventsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungEventsYoungIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungEventDetailSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungEventsYoungIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungEventsYoungIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungEventsYoungIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungEventsYoungIdImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON502      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungEventsYoungIdImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungEventsYoungIdImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungEventsYoungIdImageResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -23486,41 +24002,6 @@ func (r PostApiIngestionPublicationsBatchesResponse) ContentType() string {
 	return ""
 }
 
-type PostApiIngestionPublicationsObjectsCompleteResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *PublicationObjectCompleteResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON404      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r PostApiIngestionPublicationsObjectsCompleteResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostApiIngestionPublicationsObjectsCompleteResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostApiIngestionPublicationsObjectsCompleteResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 type PostApiIngestionPublicationsObjectsPlanResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -23550,6 +24031,41 @@ func (r PostApiIngestionPublicationsObjectsPlanResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostApiIngestionPublicationsObjectsPlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutApiIngestionPublicationsObjectsBatchIdKindSha256Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PublicationObjectUploadResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiIngestionPublicationsObjectsBatchIdKindSha256Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiIngestionPublicationsObjectsBatchIdKindSha256Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApiIngestionPublicationsObjectsBatchIdKindSha256Response) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -25447,6 +25963,15 @@ func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEd
 	return ParseGetMetadataResponse(rsp)
 }
 
+// CatalogRoomsMapWithResponse request returning *CatalogRoomsMapResponse
+func (c *ClientWithResponses) CatalogRoomsMapWithResponse(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*CatalogRoomsMapResponse, error) {
+	rsp, err := c.CatalogRoomsMap(ctx, code, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCatalogRoomsMapResponse(rsp)
+}
+
 // ListSchedulesWithResponse request returning *ListSchedulesResponse
 func (c *ClientWithResponses) ListSchedulesWithResponse(ctx context.Context, params *ListSchedulesParams, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error) {
 	rsp, err := c.ListSchedules(ctx, params, reqEditors...)
@@ -25570,6 +26095,33 @@ func (c *ClientWithResponses) CatalogWeatherGetWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseCatalogWeatherGetResponse(rsp)
+}
+
+// GetApiCatalogYoungEventsWithResponse request returning *GetApiCatalogYoungEventsResponse
+func (c *ClientWithResponses) GetApiCatalogYoungEventsWithResponse(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsResponse, error) {
+	rsp, err := c.GetApiCatalogYoungEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungEventsResponse(rsp)
+}
+
+// GetApiCatalogYoungEventsYoungIdWithResponse request returning *GetApiCatalogYoungEventsYoungIdResponse
+func (c *ClientWithResponses) GetApiCatalogYoungEventsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdResponse, error) {
+	rsp, err := c.GetApiCatalogYoungEventsYoungId(ctx, youngId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungEventsYoungIdResponse(rsp)
+}
+
+// GetApiCatalogYoungEventsYoungIdImageWithResponse request returning *GetApiCatalogYoungEventsYoungIdImageResponse
+func (c *ClientWithResponses) GetApiCatalogYoungEventsYoungIdImageWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdImageResponse, error) {
+	rsp, err := c.GetApiCatalogYoungEventsYoungIdImage(ctx, youngId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungEventsYoungIdImageResponse(rsp)
 }
 
 // ListCommentsWithResponse request returning *ListCommentsResponse
@@ -25816,23 +26368,6 @@ func (c *ClientWithResponses) PostApiIngestionPublicationsBatchesWithResponse(ct
 	return ParsePostApiIngestionPublicationsBatchesResponse(rsp)
 }
 
-// PostApiIngestionPublicationsObjectsCompleteWithBodyWithResponse request with arbitrary body returning *PostApiIngestionPublicationsObjectsCompleteResponse
-func (c *ClientWithResponses) PostApiIngestionPublicationsObjectsCompleteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsCompleteResponse, error) {
-	rsp, err := c.PostApiIngestionPublicationsObjectsCompleteWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiIngestionPublicationsObjectsCompleteResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostApiIngestionPublicationsObjectsCompleteWithResponse(ctx context.Context, body PostApiIngestionPublicationsObjectsCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsCompleteResponse, error) {
-	rsp, err := c.PostApiIngestionPublicationsObjectsComplete(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostApiIngestionPublicationsObjectsCompleteResponse(rsp)
-}
-
 // PostApiIngestionPublicationsObjectsPlanWithBodyWithResponse request with arbitrary body returning *PostApiIngestionPublicationsObjectsPlanResponse
 func (c *ClientWithResponses) PostApiIngestionPublicationsObjectsPlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiIngestionPublicationsObjectsPlanResponse, error) {
 	rsp, err := c.PostApiIngestionPublicationsObjectsPlanWithBody(ctx, contentType, body, reqEditors...)
@@ -25848,6 +26383,15 @@ func (c *ClientWithResponses) PostApiIngestionPublicationsObjectsPlanWithRespons
 		return nil, err
 	}
 	return ParsePostApiIngestionPublicationsObjectsPlanResponse(rsp)
+}
+
+// PutApiIngestionPublicationsObjectsBatchIdKindSha256WithResponse request returning *PutApiIngestionPublicationsObjectsBatchIdKindSha256Response
+func (c *ClientWithResponses) PutApiIngestionPublicationsObjectsBatchIdKindSha256WithResponse(ctx context.Context, batchId string, kind PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*PutApiIngestionPublicationsObjectsBatchIdKindSha256Response, error) {
+	rsp, err := c.PutApiIngestionPublicationsObjectsBatchIdKindSha256(ctx, batchId, kind, sha256, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiIngestionPublicationsObjectsBatchIdKindSha256Response(rsp)
 }
 
 // DeleteApiMcpWithResponse request returning *DeleteApiMcpResponse
@@ -27824,6 +28368,39 @@ func ParseGetMetadataResponse(rsp *http.Response) (*GetMetadataResponse, error) 
 	return response, nil
 }
 
+// ParseCatalogRoomsMapResponse parses an HTTP response from a CatalogRoomsMapWithResponse call
+func ParseCatalogRoomsMapResponse(rsp *http.Response) (*CatalogRoomsMapResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CatalogRoomsMapResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RoomMapResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListSchedulesResponse parses an HTTP response from a ListSchedulesWithResponse call
 func ParseListSchedulesResponse(rsp *http.Response) (*ListSchedulesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -28261,6 +28838,126 @@ func ParseCatalogWeatherGetResponse(rsp *http.Response) (*CatalogWeatherGetRespo
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungEventsResponse parses an HTTP response from a GetApiCatalogYoungEventsWithResponse call
+func ParseGetApiCatalogYoungEventsResponse(rsp *http.Response) (*GetApiCatalogYoungEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedYoungEventResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungEventsYoungIdResponse parses an HTTP response from a GetApiCatalogYoungEventsYoungIdWithResponse call
+func ParseGetApiCatalogYoungEventsYoungIdResponse(rsp *http.Response) (*GetApiCatalogYoungEventsYoungIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungEventsYoungIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungEventDetailSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungEventsYoungIdImageResponse parses an HTTP response from a GetApiCatalogYoungEventsYoungIdImageWithResponse call
+func ParseGetApiCatalogYoungEventsYoungIdImageResponse(rsp *http.Response) (*GetApiCatalogYoungEventsYoungIdImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungEventsYoungIdImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 502:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON502 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -29316,22 +30013,22 @@ func ParsePostApiIngestionPublicationsBatchesResponse(rsp *http.Response) (*Post
 	return response, nil
 }
 
-// ParsePostApiIngestionPublicationsObjectsCompleteResponse parses an HTTP response from a PostApiIngestionPublicationsObjectsCompleteWithResponse call
-func ParsePostApiIngestionPublicationsObjectsCompleteResponse(rsp *http.Response) (*PostApiIngestionPublicationsObjectsCompleteResponse, error) {
+// ParsePostApiIngestionPublicationsObjectsPlanResponse parses an HTTP response from a PostApiIngestionPublicationsObjectsPlanWithResponse call
+func ParsePostApiIngestionPublicationsObjectsPlanResponse(rsp *http.Response) (*PostApiIngestionPublicationsObjectsPlanResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostApiIngestionPublicationsObjectsCompleteResponse{
+	response := &PostApiIngestionPublicationsObjectsPlanResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PublicationObjectCompleteResponseSchema
+		var dest PublicationObjectPlanResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -29377,22 +30074,22 @@ func ParsePostApiIngestionPublicationsObjectsCompleteResponse(rsp *http.Response
 	return response, nil
 }
 
-// ParsePostApiIngestionPublicationsObjectsPlanResponse parses an HTTP response from a PostApiIngestionPublicationsObjectsPlanWithResponse call
-func ParsePostApiIngestionPublicationsObjectsPlanResponse(rsp *http.Response) (*PostApiIngestionPublicationsObjectsPlanResponse, error) {
+// ParsePutApiIngestionPublicationsObjectsBatchIdKindSha256Response parses an HTTP response from a PutApiIngestionPublicationsObjectsBatchIdKindSha256WithResponse call
+func ParsePutApiIngestionPublicationsObjectsBatchIdKindSha256Response(rsp *http.Response) (*PutApiIngestionPublicationsObjectsBatchIdKindSha256Response, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostApiIngestionPublicationsObjectsPlanResponse{
+	response := &PutApiIngestionPublicationsObjectsBatchIdKindSha256Response{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PublicationObjectPlanResponseSchema
+		var dest PublicationObjectUploadResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

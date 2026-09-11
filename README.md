@@ -89,6 +89,15 @@ make sync-openapi generate \
   OPENAPI_SERVER_SHA=<40-character-server-commit>
 ```
 
+### 教室地图查询
+
+在 Bot 中发送 `教室 3A204`，或直接询问 `3A204 在哪里？`，即可查询公开的教室位置。
+有单间标注时会返回高亮楼层图；只有楼层概览时会明确提示该房间位置尚未确认。
+群聊允许这类公开查询，课表和日程不会自动附加地图。
+
+私聊中的自然语言查询也可以通过 MCP 的 `catalog_rooms_map` 工具完成。工具先返回
+同一份教室地图数据，Bot 再投递高亮 PNG 和简短位置说明；没有可用图片时会保留公开地图 URL。
+
 ### 本地完整 E2E
 
 仓库旁存在 `../server` checkout 时，可以启动隔离的 PostgreSQL、真实本地

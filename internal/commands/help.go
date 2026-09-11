@@ -46,7 +46,7 @@ func generatedHelpOverviewSections() []helpSection {
 			topic: descriptor.Help.Topic, commandName: string(descriptor.ID),
 			command: command, description: descriptor.Help.Summary,
 		}
-		if descriptor.Help.Topic == "agenda" || descriptor.Help.Topic == "schedule" || descriptor.Help.Topic == "exam" || descriptor.Help.Topic == "todo" || descriptor.Help.Topic == "homework" || descriptor.Help.Topic == "bus" || descriptor.Help.Topic == "weather" {
+		if descriptor.Help.Topic == "agenda" || descriptor.Help.Topic == "schedule" || descriptor.Help.Topic == "exam" || descriptor.Help.Topic == "todo" || descriptor.Help.Topic == "homework" || descriptor.Help.Topic == "bus" || descriptor.Help.Topic == "weather" || descriptor.Help.Topic == "room" {
 			sections[0].rows = append(sections[0].rows, row)
 		} else {
 			sections[1].rows = append(sections[1].rows, row)
@@ -230,6 +230,10 @@ var helpTopicAliases = map[string]string{
 	"bus":          "bus",
 	"天气":           "weather",
 	"weather":      "weather",
+	"教室":           "room",
+	"地图":           "room",
+	"room":         "room",
+	"room_map":     "room",
 	"账户":           "account",
 	"账号":           "account",
 	"account":      "account",
@@ -281,6 +285,7 @@ var helpTopicTitles = map[string]string{
 	"subscription": "订阅",
 	"bus":          "校车",
 	"weather":      "天气",
+	"room":         "教室",
 	"account":      "账户",
 	"settings":     "设置",
 	"system":       "系统",
