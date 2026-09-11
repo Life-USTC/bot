@@ -108,7 +108,7 @@ func parseNaturalRoomIntent(raw string) ParseResult {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
 	hasRoomIntent := containsAny(strings.ToLower(compact), []string{
-		"教室", "房间", "地图", "位置", "在哪", "哪里", "怎么走", "查询", "查一下", "查",
+		"教室", "房间", "地图", "位置", "在哪", "哪里", "怎么走",
 		"room", "map", "where",
 	})
 	if !hasRoomIntent {

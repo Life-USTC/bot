@@ -90,3 +90,12 @@ func TestRoomMapResponseIncludesURLWhenImagesAreDisabled(t *testing.T) {
 		t.Fatalf("disabled image response = %#v", response)
 	}
 }
+
+func TestGenericCourseQueryDoesNotBecomeRoomLookup(t *testing.T) {
+	for _, input := range []string{"查询 CS1001", "查一下 MATH1001"} {
+		result := ParseCommand(input)
+		if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
+			t.Fatalf("generic catalog query routed as room: %s", input)
+		}
+	}
+}
