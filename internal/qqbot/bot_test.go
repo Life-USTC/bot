@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -213,18 +214,31 @@ func TestDispatchLogsMetadataWithoutMessageText(t *testing.T) {
 }
 
 func TestQQMediaCacheCoalescesConcurrentUploads(t *testing.T) {
+	pngData := testPNG(t)
 	var uploads atomic.Int32
 	uploadStarted := make(chan struct{})
 	releaseUpload := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/users/user-openid/files" {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-openid/upload_prepare":
+			if uploads.Add(1) == 1 {
+				close(uploadStarted)
+			}
+			<-releaseUpload
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"upload_id":  "cache-upload",
+				"block_size": len(pngData),
+				"parts":      []map[string]any{{"index": 0, "presigned_url": server.URL + "/cache-part", "block_size": len(pngData)}},
+			})
+		case "/cache-part":
+			_, _ = io.ReadAll(r.Body)
+		case "/v2/users/user-openid/upload_part_finish":
+		case "/v2/users/user-openid/files":
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 300})
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		if uploads.Add(1) == 1 {
-			close(uploadStarted)
-		}
-		<-releaseUpload
-		_ = json.NewEncoder(w).Encode(map[string]any{"file_info": "file-token", "ttl": 300})
 	}))
 	defer server.Close()
 
@@ -235,7 +249,7 @@ func TestQQMediaCacheCoalescesConcurrentUploads(t *testing.T) {
 		ConversationType: "private",
 		ConversationID:   "user-openid",
 	}
-	key, err := qqMediaCacheKey(ident, server.URL+"/same.png")
+	key, err := qqMediaCacheKey(ident, pngData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,14 +258,14 @@ func TestQQMediaCacheCoalescesConcurrentUploads(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, server.URL+"/same.png")
+		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, pngData)
 		errs <- err
 	}()
 	<-uploadStarted
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, server.URL+"/same.png")
+		_, err := bot.cachedOrUploadRichMedia(context.Background(), ident, key, pngData)
 		errs <- err
 	}()
 	time.Sleep(10 * time.Millisecond)

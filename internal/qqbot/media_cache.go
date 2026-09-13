@@ -2,6 +2,8 @@ package qqbot
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -36,14 +38,15 @@ type qqMediaLookup struct {
 func (b *Bot) sendCachedRichMediaContent(
 	ctx context.Context,
 	ident store.Identity,
-	imageURL, content, msgID, eventID string,
+	imageData []byte,
+	content, msgID, eventID string,
 	msgSeq int,
 ) (store.MessageAcceptance, error) {
-	key, err := qqMediaCacheKey(ident, imageURL)
+	key, err := qqMediaCacheKey(ident, imageData)
 	if err != nil {
 		return store.MessageAcceptance{}, err
 	}
-	lookup, err := b.cachedOrUploadRichMedia(ctx, ident, key, imageURL)
+	lookup, err := b.cachedOrUploadRichMedia(ctx, ident, key, imageData)
 	if err != nil {
 		return store.MessageAcceptance{}, err
 	}
@@ -65,7 +68,7 @@ func (b *Bot) sendCachedRichMediaContent(
 
 	b.mediaCache.remove(key)
 	b.logf("QQ bot media cache entry rejected; reuploading: conversation_type=%q", ident.ConversationType)
-	refreshed, err := b.uploadAndCacheRichMedia(ctx, ident, key, imageURL)
+	refreshed, err := b.uploadAndCacheRichMedia(ctx, ident, key, imageData)
 	if err != nil {
 		return store.MessageAcceptance{}, err
 	}
@@ -88,7 +91,8 @@ func isQQMediaCacheRejection(err error) bool {
 func (b *Bot) cachedOrUploadRichMedia(
 	ctx context.Context,
 	ident store.Identity,
-	key, imageURL string,
+	key string,
+	imageData []byte,
 ) (qqMediaLookup, error) {
 	if entry, ok := b.mediaCache.get(key, b.mediaNow()); ok {
 		b.logf("QQ bot media cache hit: conversation_type=%q", ident.ConversationType)
@@ -100,7 +104,7 @@ func (b *Bot) cachedOrUploadRichMedia(
 		if entry, ok := b.mediaCache.get(key, b.mediaNow()); ok {
 			return qqMediaLookup{entry: entry, hit: true}, nil
 		}
-		entry, err := b.uploadAndCacheRichMedia(ctx, ident, key, imageURL)
+		entry, err := b.uploadAndCacheRichMedia(ctx, ident, key, imageData)
 		if err != nil {
 			return nil, err
 		}
@@ -124,9 +128,10 @@ func (b *Bot) cachedOrUploadRichMedia(
 func (b *Bot) uploadAndCacheRichMedia(
 	ctx context.Context,
 	ident store.Identity,
-	key, imageURL string,
+	key string,
+	imageData []byte,
 ) (qqMediaCacheEntry, error) {
-	uploaded, err := b.uploadRichMedia(ctx, ident, imageURL)
+	uploaded, err := b.uploadRichMedia(ctx, ident, imageData)
 	if err != nil {
 		return qqMediaCacheEntry{}, err
 	}
@@ -138,7 +143,7 @@ func (b *Bot) uploadAndCacheRichMedia(
 	return entry, nil
 }
 
-func qqMediaCacheKey(ident store.Identity, imageURL string) (string, error) {
+func qqMediaCacheKey(ident store.Identity, imageData []byte) (string, error) {
 	scene := textutil.LowerTrim(ident.ConversationType)
 	switch scene {
 	case "", "private":
@@ -147,11 +152,18 @@ func qqMediaCacheKey(ident store.Identity, imageURL string) (string, error) {
 	default:
 		return "", errors.New("qq bot media cache only supports group and private conversations")
 	}
-	imageURL = strings.TrimSpace(imageURL)
-	if imageURL == "" {
-		return "", errors.New("qq bot media URL is empty")
+	target := strings.TrimSpace(ident.ConversationID)
+	if target == "" && scene == "private" {
+		target = strings.TrimSpace(ident.UserID)
 	}
-	return scene + "\x00" + imageURL, nil
+	if target == "" {
+		return "", errors.New("qq bot media target is empty")
+	}
+	if len(imageData) == 0 {
+		return "", errors.New("qq bot media bytes are empty")
+	}
+	hash := sha256.Sum256(imageData)
+	return scene + "\x00" + target + "\x00" + hex.EncodeToString(hash[:]), nil
 }
 
 func qqMediaExpiresAt(now time.Time, ttl uint) time.Time {
