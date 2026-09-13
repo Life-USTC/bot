@@ -22,7 +22,6 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
@@ -35,7 +34,6 @@ type Bridge struct {
 	App         botapp.Processor
 	HTTPClient  *http.Client
 	Logger      *log.Logger
-	MediaStore  *responses.MediaStore
 
 	reverseMu      sync.Mutex
 	reverseConn    *websocket.Conn

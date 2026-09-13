@@ -92,25 +92,7 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
-	var mediaStore *responses.MediaStore
 	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
-	if cfg.EnableImageResponses && cfg.PublicBaseURL != "" {
-		mediaStore = responses.NewMediaStore(strings.TrimRight(cfg.PublicBaseURL, "/")+"/media", cfg.MediaTTL)
-		mediaServer := &http.Server{Addr: cfg.MediaAddr, Handler: mediaStore}
-		go func() {
-			if err := mediaServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.Printf("media server stopped: %v", err)
-			}
-		}()
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = mediaServer.Shutdown(shutdownCtx)
-		}()
-		logger.Printf("Media server listening on %s", cfg.MediaAddr)
-	} else if cfg.EnableImageResponses {
-		logger.Printf("Image responses disabled: BOT_PUBLIC_BASE_URL is empty")
-	}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
 		Life:                 lifeClient,
@@ -118,7 +100,7 @@ func main() {
 		Store:                stateStore,
 		Logger:               logger,
 		Feedback:             feedbackService,
-		EnableImageResponses: cfg.EnableImageResponses && mediaStore != nil,
+		EnableImageResponses: cfg.EnableImageResponses,
 		PublicCache:          publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
@@ -176,7 +158,6 @@ func main() {
 			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			MediaStore:  mediaStore,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)
@@ -195,7 +176,6 @@ func main() {
 			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
-			MediaStore:  mediaStore,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)
@@ -221,7 +201,6 @@ func main() {
 			App:        app,
 			HTTPClient: httpClient,
 			Logger:     logger,
-			MediaStore: mediaStore,
 		}
 		if err := deliveryService.Register(qqbot.NewDeliveryAdapter(qqBot)); err != nil {
 			logger.Fatalf("register QQ delivery adapter: %v", err)
