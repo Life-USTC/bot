@@ -219,7 +219,7 @@ run_remote() {
 	DEPLOY_PYTHON="$(command -v python3)" \
 	DEPLOY_CURL=curl \
 	DEPLOY_FILE_COMMAND=file \
-	env "$@" bash "$remote_script" "$test_root" "$stage" \
+	env "$@" bash -x "$remote_script" "$test_root" "$stage" \
 		"$remote_user" 01234567890123456789012345678901234567890123 test-deployment 1 \
 		>"$output" 2>&1
 	local status=$?
