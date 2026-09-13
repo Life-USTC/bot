@@ -47,7 +47,6 @@ type richMediaUploadPart struct {
 	Index        int             `json:"index"`
 	PresignedURL string          `json:"presigned_url"`
 	BlockSize    qqFlexibleInt64 `json:"block_size"`
-	PartSize     qqFlexibleInt64 `json:"part_size"`
 }
 
 type richMediaUploadConfig struct {
@@ -205,7 +204,7 @@ func validateRichMediaPrepare(prepared richMediaPrepareResponse, dataSize int) e
 		if strings.TrimSpace(part.PresignedURL) == "" {
 			return fmt.Errorf("qq bot rich media prepare part %d has empty presigned_url", part.Index)
 		}
-		partSize := richMediaPartSize(prepared.BlockSize, part)
+		partSize := int64(part.BlockSize)
 		if partSize <= 0 {
 			return fmt.Errorf("qq bot rich media prepare part %d has invalid block_size", part.Index)
 		}
@@ -220,18 +219,8 @@ func validateRichMediaPrepare(prepared richMediaPrepareResponse, dataSize int) e
 	return nil
 }
 
-func richMediaPartSize(defaultBlockSize qqFlexibleInt64, part richMediaUploadPart) int64 {
-	if part.BlockSize > 0 {
-		return int64(part.BlockSize)
-	}
-	if part.PartSize > 0 {
-		return int64(part.PartSize)
-	}
-	return int64(defaultBlockSize)
-}
-
 func richMediaPartData(data []byte, defaultBlockSize qqFlexibleInt64, part richMediaUploadPart) ([]byte, error) {
-	partSize := richMediaPartSize(defaultBlockSize, part)
+	partSize := int64(part.BlockSize)
 	offset := int64(part.Index) * int64(defaultBlockSize)
 	if offset < 0 || offset > int64(len(data)) || partSize <= 0 || partSize > int64(len(data))-offset {
 		return nil, fmt.Errorf("qq bot rich media part %d exceeds file size", part.Index)
