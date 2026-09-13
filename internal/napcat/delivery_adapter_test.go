@@ -58,23 +58,70 @@ func TestDeliveryAdapterContractPublishesPNGAndMapsPrivateTarget(t *testing.T) {
 }
 
 func TestDeliveryAdapterContractMapsGroupAndURLAttachment(t *testing.T) {
-	var body map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/send_group_msg" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":8}}`))
-	}))
-	defer server.Close()
+	for _, kind := range []string{"private", "group"} {
+		t.Run(kind, func(t *testing.T) {
+			png := append([]byte("\x89PNG\r\n\x1a\n"), []byte("room map")...)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(png) }))
+			defer upstream.Close()
+			var body map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/send_"+kind+"_msg" {
+					t.Errorf("unexpected path %s", r.URL.Path)
+				}
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":8}}`))
+			}))
+			defer server.Close()
+			media := responses.NewMediaStore("https://bot.example/media", time.Minute)
+			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client(), MediaStore: media})
+			outcome := adapter.Deliver(t.Context(), message.Outbound{
+				Target:  message.Conversation{Platform: "napcat", Type: kind, ID: "100"},
+				Content: message.Content{Text: "3C101：三教副 1", Attachment: &message.Attachment{URL: upstream.URL + "/3C101.png"}},
+			})
+			if outcome.State != delivery.OutcomeAccepted {
+				t.Fatalf("outcome=%#v", outcome)
+			}
+			segments := body["message"].([]any)
+			if len(segments) != 2 {
+				t.Fatalf("segments=%v", segments)
+			}
+			url := segments[1].(map[string]any)["data"].(map[string]any)["file"].(string)
+			if !strings.HasPrefix(url, "https://bot.example/media/") {
+				t.Fatalf("NapCat received upstream URL: %s", url)
+			}
+			recorder := httptest.NewRecorder()
+			media.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, url, nil))
+			if recorder.Code != 200 || recorder.Body.String() != string(png) {
+				t.Fatalf("published image differs: %v", recorder)
+			}
+		})
+	}
+}
 
-	adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client()})
-	outcome := adapter.Deliver(context.Background(), message.Outbound{
-		Target:  message.Conversation{Platform: "napcat", Type: "group", ID: "100"},
-		Content: message.Content{Attachment: &message.Attachment{URL: "https://cdn.example/x.png"}},
-	})
-	if outcome.State != delivery.OutcomeAccepted || body["group_id"] != float64(100) {
-		t.Fatalf("outcome=%#v body=%#v", outcome, body)
+func TestRemoteImageDownloadFailureDoesNotSendMessage(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"upstream failure", 503, "unavailable"}, {"not PNG", 200, "<html>error</html>"},
+		{"too large", 200, "\x89PNG\r\n\x1a\n" + strings.Repeat("x", 10<<20)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Error("sent message despite download failure")
+				}
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client(), MediaStore: responses.NewMediaStore("https://bot.example/media", time.Minute)})
+			outcome := adapter.Deliver(t.Context(), message.Outbound{Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"}, Content: message.Content{Attachment: &message.Attachment{URL: server.URL}}})
+			if outcome.State != delivery.OutcomeRetryable || outcome.Code != "attachment_unavailable" {
+				t.Fatalf("outcome=%#v", outcome)
+			}
+		})
 	}
 }
 
