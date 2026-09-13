@@ -202,7 +202,6 @@ bootout_if_loaded() {
 bootstrap() {
 	local plist="$1"
 	sudo_cmd launchctl bootstrap system "$plist"
-	sudo_cmd launchctl kickstart -k "system/$(basename "$plist" .plist)"
 }
 
 wait_for_http() {

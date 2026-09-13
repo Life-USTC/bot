@@ -4,12 +4,34 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 remote_script="$(mktemp "${TMPDIR:-/tmp}/deploy-mac-remote.XXXXXXXX")"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/deploy-mac-test.XXXXXXXX")"
+test_phase="initialization"
 cleanup() {
 	rm -f "$remote_script"
 	rm -rf -- "$fixture"
 }
+debug_file() {
+	local path="$1"
+	if [[ -f "$path" ]]; then
+		sed 's/secret-value/[redacted]/g' "$path"
+	fi
+}
+on_error() {
+	local status=$?
+	trap - ERR
+	printf 'deploy-mac smoke test failed: phase=%s status=%s command=%s\n' \
+		"$test_phase" "$status" "$BASH_COMMAND" >&2
+	for output in "${success_output:-}" "${failure_output:-}" "${blocked_output:-}"; do
+		if [[ -n "$output" && -f "$output" ]]; then
+			printf '%s:\n' "$output" >&2
+			debug_file "$output" >&2
+		fi
+	done
+	exit "$status"
+}
+trap on_error ERR
 trap cleanup EXIT
 
+test_phase="shell syntax and remote script extraction"
 bash -n "$root/scripts/deploy-mac.sh"
 awk '/^ssh .*<<.*REMOTE_DEPLOY/ {capture=1; next} capture && /^REMOTE_DEPLOY$/ {exit} capture {print}' \
 	"$root/scripts/deploy-mac.sh" >"$remote_script"
@@ -17,6 +39,7 @@ bash -n "$remote_script"
 
 # The remote config is consumed by Python's JSON parser. It must never be
 # sourced as shell code, and a dry run must not contact SSH or print values.
+test_phase="dry-run and config-source checks"
 ! grep -E '(^|[[:space:]])(source|\.)[[:space:]].*config\.json' "$root/scripts/deploy-mac.sh" >/dev/null
 dry_run_output="$(DEPLOY_DRY_RUN=1 REMOTE_HOST=tkm-mac-mini "$root/scripts/deploy-mac.sh" 2>&1)"
 grep -F 'dry-run would deploy revision ' <<<"$dry_run_output" >/dev/null
@@ -201,6 +224,7 @@ run_remote() {
 	return "$status"
 }
 
+test_phase="successful deployment transaction"
 success_fixture="$(prepare_fixture success)"
 IFS='|' read -r success_root success_launchd success_stage <<<"$success_fixture"
 success_output="$fixture/success-output"
@@ -214,6 +238,8 @@ grep -F 'mock-renderd' "$success_root/bin/renderd" >/dev/null
 grep -F 'secret-value' "$success_launchd/dev.life-ustc.bot.plist" >/dev/null
 python3 - "$success_launchd/dev.life-ustc.bot.plist" "$success_launchd/dev.life-ustc.renderd.plist" <<'PY'
 import plistlib
+import os
+import stat
 import sys
 
 bot_path, renderd_path = sys.argv[1:]
@@ -235,10 +261,11 @@ assert renderd["RunAtLoad"] and renderd["KeepAlive"]
 assert renderd["EnvironmentVariables"]["RENDERD_ADDR"] == "127.0.0.1:9123"
 assert renderd["EnvironmentVariables"]["RENDERD_FONT_DIR"].endswith("/runtime-fonts")
 assert renderd["EnvironmentVariables"]["RENDERD_SCALE"] == "3"
+assert stat.S_IMODE(os.stat(bot_path).st_mode) == 0o600
+assert stat.S_IMODE(os.stat(renderd_path).st_mode) == 0o600
 PY
-[[ "$(stat -c '%a' "$success_launchd/dev.life-ustc.bot.plist")" == 600 ]]
-[[ "$(stat -c '%a' "$success_launchd/dev.life-ustc.renderd.plist")" == 600 ]]
 
+test_phase="rollback after health failure"
 failure_fixture="$(prepare_fixture failure)"
 IFS='|' read -r failure_root failure_launchd failure_stage <<<"$failure_fixture"
 failure_output="$fixture/failure-output"
@@ -264,6 +291,7 @@ finally:
 PY
 ! grep -F 'secret-value' "$failure_output" >/dev/null
 
+test_phase="rollback stop-safety failure"
 blocked_fixture="$(prepare_fixture blocked)"
 IFS='|' read -r blocked_root blocked_launchd blocked_stage <<<"$blocked_fixture"
 blocked_output="$fixture/blocked-output"
