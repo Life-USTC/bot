@@ -24,6 +24,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Test deployment transaction
+        run: bash scripts/deploy-mac.test.sh
+
       - name: Install CJK fonts
         run: |
           sudo apt-get update
@@ -61,9 +64,6 @@ jobs:
         run: |
           touch .env
           docker compose config --quiet
-
-      - name: Test deployment transaction
-        run: bash scripts/deploy-mac.test.sh
 
       - name: Check OpenAPI generated client is up-to-date
         run: |
