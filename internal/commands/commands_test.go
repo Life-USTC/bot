@@ -1099,6 +1099,46 @@ func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
 	assertResponseImageRenders(t, img)
 }
 
+func TestScheduleGridCourseAndKindSeparatesRoleSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		input  string
+		course string
+		kind   string
+	}{
+		{name: "teaching assistant", input: "数据库系统（助教）", course: "数据库系统", kind: lifedata.SubscriptionKindTeachingAssistant},
+		{name: "auditor", input: "数据库系统(旁听)", course: "数据库系统", kind: lifedata.SubscriptionKindAuditor},
+		{name: "regular", input: "数据库系统", course: "数据库系统"},
+		{name: "role-like course name", input: "助教培训（旁听）", course: "助教培训", kind: lifedata.SubscriptionKindAuditor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			course, kind := scheduleGridCourseAndKind(tc.input)
+			if course != tc.course || kind != tc.kind {
+				t.Fatalf("scheduleGridCourseAndKind(%q) = %q, %q; want %q, %q", tc.input, course, kind, tc.course, tc.kind)
+			}
+		})
+	}
+}
+
+func TestMergeScheduleGridItemPreservesOverlappingPersonalKinds(t *testing.T) {
+	items := mergeScheduleGridItem(nil, responses.ScheduleGridItem{
+		Day: 0, StartPeriod: 3, EndPeriod: 4,
+		Course: "计算机视觉", Kind: lifedata.SubscriptionKindTeachingAssistant,
+	})
+	items = mergeScheduleGridItem(items, responses.ScheduleGridItem{
+		Day: 0, StartPeriod: 3, EndPeriod: 4,
+		Course: "计算机视觉", Kind: lifedata.SubscriptionKindAuditor,
+	})
+	if len(items) != 1 {
+		t.Fatalf("merged items = %#v, want one occupied interval", items)
+	}
+	if items[0].Kind != lifedata.SubscriptionKindTeachingAssistant ||
+		len(items[0].AdditionalKinds) != 1 ||
+		items[0].AdditionalKinds[0] != lifedata.SubscriptionKindAuditor {
+		t.Fatalf("merged kinds = %#v, want both personal kinds", items[0])
+	}
+}
+
 func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	text := strings.Join([]string{
@@ -2745,6 +2785,13 @@ func TestPersonalScheduleDisplaysSubscriptionMembershipKind(t *testing.T) {
 	}
 	if response.Image == nil || !strings.Contains(response.Image.AltText, "数据库系统（助教）") {
 		t.Fatalf("image = %#v", response.Image)
+	}
+	if response.Image.Grid == nil || len(response.Image.Grid.Items) != 1 {
+		t.Fatalf("image grid = %#v", response.Image.Grid)
+	}
+	item := response.Image.Grid.Items[0]
+	if item.Course != "数据库系统" || item.Kind != lifedata.SubscriptionKindTeachingAssistant {
+		t.Fatalf("grid item = %#v, want a clean course title and teaching-assistant kind", item)
 	}
 }
 

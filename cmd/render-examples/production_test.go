@@ -126,3 +126,18 @@ func TestPublicCourseSampleKeepsOfficialPeriodsAndConsistentDayView(t *testing.T
 		t.Fatal("daily sample differs from the corresponding weekly column")
 	}
 }
+
+func TestPersonalRoleBadgeFixtureCarriesOnlyNonRegularKinds(t *testing.T) {
+	grid := gridRoleImage().Grid
+	if len(grid.Items) < 2 {
+		t.Fatalf("role fixture items = %d, want at least two", len(grid.Items))
+	}
+	if grid.Items[0].Kind != "teaching_assistant" || grid.Items[1].Kind != "auditor" {
+		t.Fatalf("role fixture kinds = %q, %q", grid.Items[0].Kind, grid.Items[1].Kind)
+	}
+	for index, item := range grid.Items[2:] {
+		if item.Kind != "" {
+			t.Fatalf("regular fixture item %d has kind %q", index+2, item.Kind)
+		}
+	}
+}

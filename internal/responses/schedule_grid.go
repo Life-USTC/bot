@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"golang.org/x/image/font"
 )
 
 type scheduleGridMetrics struct {
@@ -35,6 +37,10 @@ const (
 	scheduleGridMetaFontSize        = 10
 	scheduleGridLargeCourseFontSize = 18
 	scheduleGridLargeMetaFontSize   = 13
+	scheduleGridBadgeFontSize       = 10
+	scheduleGridBadgeHeight         = 24
+	scheduleGridBadgePaddingX       = 6
+	scheduleGridBadgeRadius         = 4
 )
 
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
@@ -200,6 +206,14 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	badgeFace, err := r.sansBoldFontFace(float64(scheduleGridBadgeFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	badgeMonoFace, err := r.monoBoldFontFace(float64(scheduleGridBadgeFontSize * space.Scale))
+	if err != nil {
+		return nil, 0, 0, err
+	}
 
 	canvas := image.NewRGBA(space.bounds())
 	background := color.RGBA{250, 250, 250, 255}
@@ -283,6 +297,18 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 		scaled := image.Rect(s(rect.Min.X+1), s(rect.Min.Y+1), s(rect.Max.X), s(rect.Max.Y))
 		drawRect(canvas, scaled, fill)
 		drawScheduleGridBorder(canvas, rect, s, accent)
+		badgeRight := rect.Max.X - 8
+		for _, label := range scheduleGridRoleLabels(item) {
+			badgeWidth := richTextWidth(label, scheduleGridBadgeFontSize) + 2*scheduleGridBadgePaddingX
+			badge := image.Rect(
+				badgeRight-badgeWidth,
+				rect.Min.Y+8,
+				badgeRight,
+				rect.Min.Y+8+scheduleGridBadgeHeight,
+			)
+			drawScheduleGridBadge(canvas, badge, s, badgeFace, badgeMonoFace, label)
+			badgeRight -= badgeWidth + 4
+		}
 
 		centerX := s(rect.Min.X + rect.Dx()/2)
 		centerY := s(rect.Min.Y + rect.Dy()/2)
@@ -355,6 +381,39 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	return buffer.Bytes(), canvas.Bounds().Dx(), canvas.Bounds().Dy(), nil
 }
 
+func scheduleGridRoleLabel(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "teaching_assistant":
+		return "助教"
+	case "auditor":
+		return "旁听"
+	default:
+		return ""
+	}
+}
+
+func scheduleGridRoleLabels(item ScheduleGridItem) []string {
+	kinds := append([]string{item.Kind}, item.AdditionalKinds...)
+	labels := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		label := scheduleGridRoleLabel(kind)
+		if label == "" || containsScheduleGridLabel(labels, label) {
+			continue
+		}
+		labels = append(labels, label)
+	}
+	return labels
+}
+
+func containsScheduleGridLabel(labels []string, target string) bool {
+	for _, label := range labels {
+		if label == target {
+			return true
+		}
+	}
+	return false
+}
+
 func scheduleGridHasNoDates(grid *ScheduleGrid) bool {
 	if grid == nil || len(grid.Days) == 0 {
 		return false
@@ -381,6 +440,58 @@ func drawScheduleGridBorder(dst *image.RGBA, rect image.Rectangle, scale func(in
 	drawRect(dst, image.Rect(left, bottom-thickness, right, bottom), border)
 	drawRect(dst, image.Rect(left, top, left+thickness, bottom), border)
 	drawRect(dst, image.Rect(right-thickness, top, right, bottom), border)
+}
+
+func drawScheduleGridBadge(dst *image.RGBA, rect image.Rectangle, scale func(int) int, textFace, monoFace font.Face, label string) {
+	scaled := image.Rect(scale(rect.Min.X), scale(rect.Min.Y), scale(rect.Max.X), scale(rect.Max.Y))
+	drawRoundedRect(dst, scaled, scale(scheduleGridBadgeRadius), color.RGBA{239, 68, 68, 255})
+	drawCenteredMixedText(
+		dst,
+		textFace,
+		monoFace,
+		scaled.Min.X+scaled.Dx()/2,
+		scaled.Min.Y+scale(17),
+		label,
+		color.RGBA{255, 255, 255, 255},
+	)
+}
+
+func drawRoundedRect(dst *image.RGBA, rect image.Rectangle, radius int, fill color.Color) {
+	if rect.Empty() {
+		return
+	}
+	if radius <= 0 {
+		drawRect(dst, rect, fill)
+		return
+	}
+	maxRadius := rect.Dx() / 2
+	if heightRadius := rect.Dy() / 2; heightRadius < maxRadius {
+		maxRadius = heightRadius
+	}
+	if radius > maxRadius {
+		radius = maxRadius
+	}
+	radiusSquared := radius * radius
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
+			cornerX := x
+			if x < rect.Min.X+radius {
+				cornerX = rect.Min.X + radius
+			} else if x >= rect.Max.X-radius {
+				cornerX = rect.Max.X - radius - 1
+			}
+			cornerY := y
+			if y < rect.Min.Y+radius {
+				cornerY = rect.Min.Y + radius
+			} else if y >= rect.Max.Y-radius {
+				cornerY = rect.Max.Y - radius - 1
+			}
+			dx, dy := x-cornerX, y-cornerY
+			if dx*dx+dy*dy <= radiusSquared {
+				dst.Set(x, y, fill)
+			}
+		}
+	}
 }
 
 func fitScheduleGridText(value string, maxWidth, fontSize int) string {

@@ -125,6 +125,19 @@ func gridWeekImage() *responses.Image {
 	}, "公开教学班组合示例")
 }
 
+func gridRoleImage() *responses.Image {
+	base := gridWeekImage()
+	grid := *base.Grid
+	grid.Items = append([]responses.ScheduleGridItem(nil), base.Grid.Items...)
+	if len(grid.Items) >= 1 {
+		grid.Items[0].Kind = "teaching_assistant"
+	}
+	if len(grid.Items) >= 2 {
+		grid.Items[1].Kind = "auditor"
+	}
+	return responses.NewScheduleGridImage("schedule", "本周课表 · 身份 Badge", &grid, "助教与旁听身份 Badge 示例")
+}
+
 func gridDayImage() *responses.Image {
 	week := gridWeekImage().Grid
 	day := int(fixtureNow().Weekday())

@@ -33,15 +33,17 @@ type remoteGridPeriod struct {
 }
 
 type remoteGridItem struct {
-	Day      int    `json:"day"`
-	Start    int    `json:"start"`
-	End      int    `json:"end"`
-	Period   string `json:"period"`
-	Time     string `json:"time"`
-	Course   string `json:"course"`
-	Location string `json:"location,omitempty"`
-	Weeks    string `json:"weeks,omitempty"`
-	Color    string `json:"color"`
+	Day             int      `json:"day"`
+	Start           int      `json:"start"`
+	End             int      `json:"end"`
+	Period          string   `json:"period"`
+	Time            string   `json:"time"`
+	Kind            string   `json:"kind,omitempty"`
+	AdditionalKinds []string `json:"additional_kinds,omitempty"`
+	Course          string   `json:"course"`
+	Location        string   `json:"location,omitempty"`
+	Weeks           string   `json:"weeks,omitempty"`
+	Color           string   `json:"color"`
 }
 
 // buildGridRequest mirrors the semantic decisions in renderScheduleGridPNG.
@@ -86,15 +88,17 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 		}
 		period, itemTime := scheduleGridItemPeriodAndTime(grid.Periods, item.StartPeriod, item.EndPeriod)
 		req.Items = append(req.Items, remoteGridItem{
-			Day:      item.Day,
-			Start:    item.StartPeriod,
-			End:      item.EndPeriod,
-			Period:   period,
-			Time:     itemTime,
-			Course:   strings.TrimSpace(item.Course),
-			Location: strings.TrimSpace(item.Location),
-			Weeks:    strings.TrimSpace(item.Weeks),
-			Color:    scheduleGridColorHex(scheduleGridCourseColor(item)),
+			Day:             item.Day,
+			Start:           item.StartPeriod,
+			End:             item.EndPeriod,
+			Period:          period,
+			Time:            itemTime,
+			Kind:            strings.TrimSpace(item.Kind),
+			AdditionalKinds: append([]string(nil), item.AdditionalKinds...),
+			Course:          strings.TrimSpace(item.Course),
+			Location:        strings.TrimSpace(item.Location),
+			Weeks:           strings.TrimSpace(item.Weeks),
+			Color:           scheduleGridColorHex(scheduleGridCourseColor(item)),
 		})
 	}
 	sort.SliceStable(req.Items, func(i, j int) bool {

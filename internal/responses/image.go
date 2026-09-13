@@ -37,9 +37,15 @@ type ScheduleGridItem struct {
 	StartPeriod int
 	EndPeriod   int
 	SectionKey  string
-	Course      string
-	Location    string
-	Weeks       string
+	// Kind is the personal subscription kind for this section. Public course
+	// data leaves it empty, which keeps the card free of a role badge.
+	Kind string
+	// AdditionalKinds keeps role labels from other courses when the text
+	// parser combines classes occupying the same interval into one card.
+	AdditionalKinds []string
+	Course          string
+	Location        string
+	Weeks           string
 }
 
 func NewRichTextImage(kind, text, altText string) *Image {

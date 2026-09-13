@@ -3,6 +3,7 @@ package responses
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"strconv"
@@ -138,8 +139,25 @@ func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
 	}
 }
 
+func TestScheduleGridRoleLabels(t *testing.T) {
+	for _, tc := range []struct {
+		kind  string
+		label string
+	}{
+		{kind: "teaching_assistant", label: "助教"},
+		{kind: "auditor", label: "旁听"},
+		{kind: "regular"},
+		{kind: "unknown"},
+	} {
+		if got := scheduleGridRoleLabel(tc.kind); got != tc.label {
+			t.Fatalf("scheduleGridRoleLabel(%q) = %q, want %q", tc.kind, got, tc.label)
+		}
+	}
+}
+
 func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	grid := testScheduleGrid()
+	grid.Items[0].Kind = "teaching_assistant"
 	grid.Items[0].Weeks = "2-16 周"
 	image := NewScheduleGridImage("schedule", "07-12 至 07-18 课表", grid, "本周课表")
 	if image == nil || image.Grid == nil {
@@ -159,6 +177,22 @@ func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	if decoded.Bounds().Dx() != width || decoded.Bounds().Dy() != height {
 		t.Fatalf("bounds = %v size=%dx%d", decoded.Bounds(), width, height)
 	}
+	if !imageContainsColor(decoded, color.RGBA{239, 68, 68, 255}) {
+		t.Fatal("teaching-assistant badge color was not rendered")
+	}
+}
+
+func imageContainsColor(img image.Image, want color.RGBA) bool {
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if r == uint32(want.R)*257 && g == uint32(want.G)*257 &&
+				b == uint32(want.B)*257 && a == uint32(want.A)*257 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestFitScheduleGridText(t *testing.T) {

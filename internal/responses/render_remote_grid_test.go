@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,29 @@ func TestRemoteRendererGridPayloadPreservesReadableAgendaData(t *testing.T) {
 		if _, ok := itemFields[obsolete]; ok {
 			t.Fatalf("item payload still contains obsolete styling field %q", obsolete)
 		}
+	}
+}
+
+func TestRemoteRendererGridPayloadCarriesSubscriptionKind(t *testing.T) {
+	grid := &ScheduleGrid{
+		Days:    []ScheduleGridDay{{Label: "周五", Date: "07-17"}},
+		Periods: []ScheduleGridPeriod{{Label: "第 3 节", Time: "09:45–10:30"}},
+		Items: []ScheduleGridItem{
+			{Day: 0, StartPeriod: 1, EndPeriod: 1, Course: "计算机视觉", Kind: "teaching_assistant", AdditionalKinds: []string{"auditor"}},
+			{Day: 0, StartPeriod: 1, EndPeriod: 1, Course: "自适应控制", Kind: "regular"},
+		},
+	}
+	got := (RemoteRenderer{}).buildGridRequest(NewScheduleGridImage("schedule", "课表", grid, "课表"))
+	if len(got.Items) != 2 {
+		t.Fatalf("items = %#v", got.Items)
+	}
+	if got.Items[0].Kind != "teaching_assistant" || got.Items[1].Kind != "regular" ||
+		!reflect.DeepEqual(got.Items[0].AdditionalKinds, []string{"auditor"}) {
+		t.Fatalf("kinds = %#v, want the personal kinds to reach renderd", got.Items)
+	}
+	encoded := string(encodedItem(t, got.Items[0]))
+	if !strings.Contains(encoded, `"kind":"teaching_assistant"`) {
+		t.Fatalf("encoded TA item = %s", encoded)
 	}
 }
 
