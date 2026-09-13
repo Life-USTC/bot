@@ -241,7 +241,7 @@ func TestGroupPersonalDataRequestIsRefusedWithoutCallingModel(t *testing.T) {
 	}
 }
 
-func TestGroundedTurnFallsBackToLiteralToolResultInsteadOfProvisionalText(t *testing.T) {
+func TestEmptyFinalAnswerDoesNotSubstituteToolResult(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
@@ -280,7 +280,7 @@ func TestGroundedTurnFallsBackToLiteralToolResultInsteadOfProvisionalText(t *tes
 	response, ok := svc.HandleResponse(t.Context(), Input{
 		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
 	})
-	if !ok || !strings.Contains(response.Text, "Bot 帮助：") || strings.Contains(response.Text, "未经核实") {
+	if ok || response.Text != "" {
 		t.Fatalf("response=%#v ok=%v", response, ok)
 	}
 	if requests.Load() != 3 {
@@ -288,7 +288,7 @@ func TestGroundedTurnFallsBackToLiteralToolResultInsteadOfProvisionalText(t *tes
 	}
 }
 
-func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testing.T) {
+func TestToolFailureDoesNotReplaceModelAnswer(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
@@ -327,7 +327,7 @@ func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testin
 	response, ok := svc.HandleResponse(t.Context(), Input{
 		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
 	})
-	if !ok || !strings.Contains(response.Text, "课表的参数无法识别") || !strings.Contains(response.Text, "可以这样发送") || strings.Contains(response.Text, "查询成功") {
+	if !ok || response.Text != "课表已经查询成功。" {
 		t.Fatalf("response=%#v ok=%v", response, ok)
 	}
 	if requests.Load() != 3 {
@@ -335,7 +335,7 @@ func TestGroundedInvalidCapabilityReturnsExactUsageInsteadOfModelClaim(t *testin
 	}
 }
 
-func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.T) {
+func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 	ctx := t.Context()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -387,7 +387,7 @@ func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.
 		case 3:
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-false-subscription","object":"chat.completion","created":0,"model":"test-model",
-				"choices":[{"index":0,"message":{"role":"assistant","content":"订阅成功。"},"finish_reason":"stop"}]
+				"choices":[{"index":0,"message":{"role":"assistant","content":"没有找到要操作的课程或教学班，请用教学班 搜索提供具体对象。"},"finish_reason":"stop"}]
 			}`))
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
@@ -413,7 +413,7 @@ func TestGroundedMissingMutationTargetReturnsActionableLiteralResult(t *testing.
 	}
 }
 
-func TestGroundingFailureIsPersistedAsTheVisibleAssistantTurn(t *testing.T) {
+func TestModelAnswerWithoutToolsIsPersistedWithoutSemanticRetry(t *testing.T) {
 	ctx := t.Context()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -422,7 +422,7 @@ func TestGroundingFailureIsPersistedAsTheVisibleAssistantTurn(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "grounding-fallback-history", ExpiresAt: time.Now().Add(time.Hour),
+		Identity: ident, SourceEventID: "model-answer-history", ExpiresAt: time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -448,22 +448,22 @@ func TestGroundingFailureIsPersistedAsTheVisibleAssistantTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := svc.Run(ctx, Input{
-		Text: "帮我看一下我今年的选课", Identity: ident, JobID: job.ID,
+		Text: "帮我把自适应控制的课程标记为旁听课程", Identity: ident, JobID: job.ID,
 		JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
 	})
-	if !result.Handled || result.State != RunStateCompleted || !strings.Contains(result.Response.Text, "没有拿到可验证的实时查询") {
+	if !result.Handled || result.State != RunStateCompleted || result.Response.Text != "上次操作没有确认。" {
 		t.Fatalf("result=%#v", result)
 	}
-	if requests.Load() != 2 {
-		t.Fatalf("semantic grounding attempts=%d want=2", requests.Load())
+	if requests.Load() != 1 {
+		t.Fatalf("model attempts=%d want=1", requests.Load())
 	}
 	events, err := db.RecentConversationEvents(ctx, ident, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(events) != 2 || events[0].Type != store.ConversationEventUser || events[1].Type != store.ConversationEventAssistant ||
-		events[1].Content != result.Response.Text || strings.Contains(events[1].Content, "上次操作没有确认") {
-		t.Fatalf("visible fallback history=%#v", events)
+		events[1].Content != result.Response.Text {
+		t.Fatalf("visible model history=%#v", events)
 	}
 }
 
@@ -2560,7 +2560,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "开启作业通知", Identity: ident, JobID: job.ID})
-	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "用户拒绝执行" {
+	if final := svc.Run(ctx, input); final.State != RunStateCompleted || final.Response.Text != "已成功打开提醒。" {
 		t.Fatalf("final run = %#v", final)
 	}
 	settings, err := db.NotificationSettings(ctx, ident)

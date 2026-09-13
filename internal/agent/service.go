@@ -291,8 +291,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusCompleted, reply, nil)
 		return agentTextResponse(reply), true
 	}
-	grounding := groundingPolicyFor(input.Text, input.Identity)
-	if grounding.privateUnavailable {
+	if sharedConversationNeedsPrivateReply(input.Text, input.Identity) {
 		reply := "这个问题涉及个人数据，请私聊 Presto 查询。"
 		if err := s.persistCurrentUserEvent(ctx, input); err != nil {
 			markAgentInfrastructureFailure(input, err)
@@ -388,13 +387,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	ctx = withToolOutcomes(ctx, newToolOutcomeRegistry())
 	repeatGuard := newToolRepeatGuard()
-	agentModel := newGroundingModel(model, grounding)
-	grounder, _ := agentModel.(*groundingModel)
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "presto_assistant",
 		Description:   "Presto, a Life @ USTC QQ assistant",
-		Instruction:   groundingInstruction(currentInstruction(), grounding),
-		Model:         agentModel,
+		Instruction:   currentInstruction(),
+		Model:         model,
 		MaxIterations: agentMaxIterations,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
@@ -551,17 +548,13 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 		content := strings.TrimSpace(msg.Content)
 		candidateAnswer := msg.Role == schema.Assistant && len(msg.ToolCalls) == 0 && content != ""
-		ungroundedAnswer := candidateAnswer && grounder != nil && !grounder.hasRequiredEvidence()
-		if !ungroundedAnswer {
-			persistedMessage := groundedMessageForPersistence(msg, grounder != nil)
-			if err := s.persistAgentMessage(ctx, input, persistedMessage); err != nil {
-				markAgentInfrastructureFailure(input, err)
-				reply := agentFailureReply(runID, err)
-				finishRun(store.AgentRunStatusFailed, reply, err)
-				return agentTextResponse(reply), true
-			}
+		if err := s.persistAgentMessage(ctx, input, msg); err != nil {
+			markAgentInfrastructureFailure(input, err)
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
 		}
-		if candidateAnswer && !ungroundedAnswer {
+		if candidateAnswer {
 			reply = content
 		}
 	}
@@ -578,33 +571,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if hostResponseDelivered.Load() {
 		finishRun(store.AgentRunStatusCompleted, "", nil)
 		return commands.Response{}, true
-	}
-	if grounder != nil && !grounder.hasRequiredEvidence() {
-		if result, returned := grounder.groundedToolResult(); returned && result != "" {
-			if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(result, nil)); err != nil {
-				markAgentInfrastructureFailure(input, err)
-				reply := agentFailureReply(runID, err)
-				finishRun(store.AgentRunStatusFailed, reply, err)
-				return agentTextResponse(reply), true
-			}
-			finishRun(store.AgentRunStatusCompleted, result, nil)
-			return agentTextResponse(result), true
-		}
-		groundingErr := errors.New("agent produced no capability result for a grounded turn")
-		reply := groundingFailureReply(runID)
-		if err := s.persistAgentMessage(ctx, input, schema.AssistantMessage(reply, nil)); err != nil {
-			markAgentInfrastructureFailure(input, err)
-			failure := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, failure, err)
-			return agentTextResponse(failure), true
-		}
-		finishRun(store.AgentRunStatusFailed, reply, groundingErr)
-		return agentTextResponse(reply), true
-	}
-	if reply == "" {
-		if result, returned := grounder.groundedToolResult(); returned && result != "" {
-			reply = result
-		}
 	}
 	if reply == "" {
 		finishRun(store.AgentRunStatusIgnored, "", nil)
@@ -631,26 +597,6 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
 	return response, true
-}
-
-// A provider may emit speculative text in the same assistant message that
-// requests a required grounding tool. Keep the exact tool call needed by the
-// transcript, but do not turn that provisional text into future evidence.
-func groundedMessageForPersistence(message *schema.Message, grounded bool) *schema.Message {
-	if !grounded || message == nil || message.Role != schema.Assistant || len(message.ToolCalls) == 0 {
-		return message
-	}
-	sanitized := *message
-	sanitized.Content = ""
-	if len(message.AssistantGenMultiContent) > 0 {
-		sanitized.AssistantGenMultiContent = make([]schema.MessageOutputPart, 0, len(message.AssistantGenMultiContent))
-		for _, part := range message.AssistantGenMultiContent {
-			if part.Type != schema.ChatMessagePartTypeText {
-				sanitized.AssistantGenMultiContent = append(sanitized.AssistantGenMultiContent, part)
-			}
-		}
-	}
-	return &sanitized
 }
 
 func capabilityInterruptKind(info *adk.InterruptInfo) string {
@@ -954,6 +900,13 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 	}
 	return bound.Delete(ctx, checkpointID)
 }
+
+const (
+	commandSearchToolName = "search_bot_commands"
+	capabilityToolName    = "invoke_bot_capability"
+	campusSearchToolName  = "search_campus_tools"
+	campusCallToolName    = "call_campus_tool"
+)
 
 type emptyInput struct{}
 
@@ -1331,14 +1284,6 @@ func agentFailureReply(runID int64, err error) string {
 func isExhaustedRetryableProviderError(err error) bool {
 	var apiErr *einoopenai.APIError
 	return errors.As(err, &apiErr) && isRetryableLLMStatus(apiErr.HTTPStatusCode)
-}
-
-func groundingFailureReply(runID int64) string {
-	reply := "这次没有拿到可验证的实时查询或操作结果，所以我不会确认或重复未经工具核实的数据。请稍后重试，或把具体对象和时间范围说清楚。"
-	if runID > 0 {
-		reply += fmt.Sprintf("\n记录 #%d", runID)
-	}
-	return reply
 }
 
 func imageFailureReply(runID int64, err error) string {

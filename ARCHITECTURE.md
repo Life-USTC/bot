@@ -287,29 +287,14 @@ The compact system instruction tells the model to search before invoking and
 to preserve all user constraints. Mutation improvisation through MCP is not
 possible.
 
-For a personal-data request, a verification follow-up, or an explicit public
-Bot capability request, the runtime also enforces the sequence instead of
-relying on the instruction alone. The first provider request is offered only
-`search_bot_commands`; after a nonempty result, the next request is offered
-only `invoke_bot_capability`. A capability is accepted only when its ID is the
-returned descriptor ID or one of that descriptor's executable examples.
-Provisional assistant text is neither persisted nor eligible for delivery. If
-the provider returns prose instead of
-the sole offered tool, the host makes one additional tool-only semantic
-attempt. If that still produces no evidence, the deterministic failure shown
-to the user is also persisted as the assistant turn. A successful relevant
-result unlocks the final answer; a relevant failure, unknown outcome, or denial
-is returned to the user as its literal tool result rather than allowing later
-model prose to turn it into a success claim.
-
-Known supplementary campus domains use the same host-enforced evidence chain.
-For a second-classroom lookup, completion of the required Bot search always
-forces an MCP search, even if a loosely reformulated Bot search happened to
-return unrelated documentation. The model is not offered Bot invocation for
-that turn. A nonempty MCP search then forces `call_campus_tool`, and only a name
-returned by that search can satisfy the turn. The model may format the literal
-read result, but it cannot replace any required stage with an unsupported
-factual answer.
+The model chooses whether to answer or call any of the available tools. The
+host does not narrow the tool catalog based on a guessed intent, inject
+per-turn tool-only instructions, or retry a successful provider response to
+force a tool call. Assistant messages are persisted unchanged, and a final
+text answer does not depend on a host-maintained evidence checklist. Tool
+failures remain available to the model as tool results; they do not replace
+its final answer. Authentication, confirmation, shared-chat privacy, execution
+budgets, and transport retries still apply at their respective boundaries.
 
 ## Exact conversation evidence
 
@@ -337,8 +322,7 @@ so the adapter cannot silently discard `Content`.
 Every event emitted by an Agent run is appended only if its job ID, revision,
 state, and lease still match the running coordinator claim in the same
 transaction. A late provider response therefore cannot write transcript into a
-resumed turn. Unsupported provisional assistant text from a grounded turn is
-not an emitted event. Direct-command routes do not manufacture an Agent tool
+resumed turn. Direct-command routes do not manufacture an Agent tool
 exchange: their actual user-visible domain response is stored as an
 `assistant` event; Agent routes preserve the real assistant/tool-call/tool-result
 roles exactly.
