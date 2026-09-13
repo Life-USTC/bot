@@ -2437,7 +2437,7 @@ func TestFormatHomeworkDisplaysNoCompletionForTeachingAssistant(t *testing.T) {
 	reply := formatHomeworkListAt([]map[string]any{
 		{"id": "ta", "title": "助教作业", "submissionDueAt": "2020-01-01T10:00:00+08:00", "completionRequired": false, "isCompleted": true},
 	}, now)
-	if !strings.Contains(reply, "无需完成：") || !strings.Contains(reply, "无需完成\t\t") || !strings.Contains(reply, "助教作业") {
+	if !strings.Contains(reply, "无需完成：") || !strings.Contains(reply, "无需完成 · 截止 𝟶𝟷-𝟶𝟷 𝟷𝟶:𝟶𝟶\t\t") || !strings.Contains(reply, "助教作业") {
 		t.Fatalf("reply = %q", reply)
 	}
 	if strings.Contains(reply, "已逾期：") || strings.Contains(reply, "已完成：") {

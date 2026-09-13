@@ -68,7 +68,7 @@ func TestFormatHomeworkDisplaysNoCompletion(t *testing.T) {
 			"course": map[string]any{"namePrimary": "数据库系统"},
 		},
 	})
-	if !strings.Contains(got, "无需完成") || !strings.Contains(got, "数据库系统") {
+	if !strings.Contains(got, "无需完成") || !strings.Contains(got, "截止 𝟶𝟷-𝟶𝟷 𝟷𝟶:𝟶𝟶") || !strings.Contains(got, "数据库系统") {
 		t.Fatalf("formatHomework = %q", got)
 	}
 }

@@ -164,7 +164,8 @@ func TestHomeworkCompletionRequiredOverridesCompletion(t *testing.T) {
 	if got := HomeworkStatusLabel(homework); got != HomeworkNoCompletionLabel {
 		t.Fatalf("status = %q", got)
 	}
-	if got := HomeworkLabel(homework); !strings.HasPrefix(got, HomeworkNoCompletionLabel+" · ") {
+	got := HomeworkLabel(homework)
+	if !strings.HasPrefix(got, HomeworkNoCompletionLabel+" · 截止 01-01 00:00 · ") {
 		t.Fatalf("label = %q", got)
 	}
 }

@@ -147,14 +147,15 @@ func HomeworkCourseLabel(homework map[string]any) string {
 
 func HomeworkLabel(homework map[string]any) string {
 	due := FormatAPITime(FirstString(homework, "submissionDueAt"))
-	dueText := ""
+	dueParts := make([]string, 0, 2)
 	if status := HomeworkStatusLabel(homework); status != "" {
-		dueText = status
-	} else if due != "" {
-		dueText = "截止 " + due
+		dueParts = append(dueParts, status)
+	}
+	if due != "" {
+		dueParts = append(dueParts, "截止 "+due)
 	}
 	parts := textutil.NonEmpty(
-		dueText,
+		strings.Join(dueParts, " · "),
 		HomeworkCourseLabel(homework),
 		FirstString(homework, "title"),
 	)

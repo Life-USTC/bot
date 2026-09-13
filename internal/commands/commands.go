@@ -2331,13 +2331,15 @@ func normalizedLookupText(value string) string {
 
 func formatHomework(homework map[string]any) string {
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
+	dueParts := make([]string, 0, 2)
 	if status := lifedata.HomeworkStatusLabel(homework); status != "" {
-		due = status
-	} else if due != "" {
-		due = "截止 " + due
+		dueParts = append(dueParts, status)
+	}
+	if due != "" {
+		dueParts = append(dueParts, "截止 "+due)
 	}
 	cells := []string{
-		due,
+		strings.Join(dueParts, " · "),
 		lifedata.HomeworkCourseLabel(homework),
 		lifedata.FirstString(homework, "title"),
 	}
