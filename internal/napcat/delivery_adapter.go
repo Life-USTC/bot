@@ -2,6 +2,7 @@ package napcat
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -43,7 +44,7 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 
 	imageURL := ""
 	if attachment := outbound.Content.Attachment; attachment != nil {
-		imageURL, err = a.imageURL(ctx, attachment)
+		imageURL, err = a.imageFile(ctx, attachment)
 		if err != nil {
 			if strings.TrimSpace(attachment.URL) != "" {
 				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: err}
@@ -78,15 +79,14 @@ func napcatEventFromConversation(target message.Conversation) (messageEvent, err
 	}
 }
 
-func (a *DeliveryAdapter) imageURL(ctx context.Context, attachment *message.Attachment) (string, error) {
+func (a *DeliveryAdapter) imageFile(ctx context.Context, attachment *message.Attachment) (string, error) {
 	if imageURL := strings.TrimSpace(attachment.URL); imageURL != "" {
-		// NapCat may not be able to reach the upstream CDN. Publish remote
-		// PNGs through the same media store as locally rendered images.
+		// Fetch on the bot host and include the bytes in the OneBot message.
 		data, err := a.downloadPNG(ctx, imageURL)
 		if err != nil {
 			return "", err
 		}
-		return a.bridge.MediaStore.PutPNG(data)
+		return "base64://" + base64.StdEncoding.EncodeToString(data), nil
 	}
 	if !strings.EqualFold(strings.TrimSpace(attachment.MIMEType), "image/png") {
 		return "", fmt.Errorf("napcat byte attachment must be image/png, got %q", attachment.MIMEType)
@@ -94,10 +94,7 @@ func (a *DeliveryAdapter) imageURL(ctx context.Context, attachment *message.Atta
 	if len(attachment.Data) == 0 {
 		return "", errors.New("napcat PNG attachment is empty")
 	}
-	if a.bridge.MediaStore == nil {
-		return "", errors.New("napcat media store is unavailable")
-	}
-	return a.bridge.MediaStore.PutPNG(attachment.Data)
+	return "base64://" + base64.StdEncoding.EncodeToString(attachment.Data), nil
 }
 
 func napcatDeliveryMessage(text, imageURL string, replyTo *message.ReplyRef) []map[string]any {

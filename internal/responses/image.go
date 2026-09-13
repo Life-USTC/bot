@@ -1,13 +1,6 @@
 package responses
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"strings"
-	"time"
-)
+import "strings"
 
 type Image struct {
 	Kind     string
@@ -47,37 +40,6 @@ type ScheduleGridItem struct {
 	Course      string
 	Location    string
 	Weeks       string
-}
-
-func (img *Image) cacheKey(now time.Time) (string, error) {
-	if img == nil {
-		return "", errors.New("response image is nil")
-	}
-	content := struct {
-		Date     string
-		Kind     string
-		Title    string
-		Lines    []string
-		RichText string
-		AltText  string
-		Grid     *ScheduleGrid
-		Weather  *WeatherCard
-	}{
-		Date:     now.In(time.FixedZone("CST", 8*60*60)).Format("2006-01-02"),
-		Kind:     img.Kind,
-		Title:    img.Title,
-		Lines:    img.Lines,
-		RichText: img.RichText,
-		AltText:  img.AltText,
-		Grid:     img.Grid,
-		Weather:  img.Weather,
-	}
-	data, err := json.Marshal(content)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func NewRichTextImage(kind, text, altText string) *Image {

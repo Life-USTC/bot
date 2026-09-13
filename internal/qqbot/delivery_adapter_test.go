@@ -1,23 +1,39 @@
 package qqbot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"testing"
-	"time"
 
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 )
 
 type deliveryRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn deliveryRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	img.SetRGBA(1, 0, color.RGBA{B: 255, A: 255})
+	if err := png.Encode(&body, img); err != nil {
+		t.Fatal(err)
+	}
+	return body.Bytes()
+}
 
 func TestDeliveryAdapterContractMapsGroupTargetAndReply(t *testing.T) {
 	var body sendMessageRequest
@@ -70,14 +86,45 @@ func TestDeliveryAdapterSupportsQQChannelAndGuildDirectTargets(t *testing.T) {
 }
 
 func TestDeliveryAdapterContractPublishesPNGWithText(t *testing.T) {
-	var uploadURL string
+	pngData := testPNG(t)
+	var prepared richMediaPrepareRequest
+	var uploaded []byte
 	var sent sendMessageRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v2/users/u-1/upload_prepare":
+			if err := json.NewDecoder(r.Body).Decode(&prepared); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"upload_id":     "upload-1",
+				"block_size":    len(pngData),
+				"parts":         []map[string]any{{"index": 0, "presigned_url": server.URL + "/part/0", "block_size": len(pngData)}},
+				"upload_config": map[string]any{"concurrency": 1, "retry_timeout": 1, "retry_delay": 0},
+			})
+		case "/part/0":
+			var err error
+			uploaded, err = io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+		case "/v2/users/u-1/upload_part_finish":
+			var body richMediaPartFinishRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.UploadID != "upload-1" || body.PartIndex != 0 || body.BlockSize != strconv.Itoa(len(pngData)) || body.MD5 == "" {
+				t.Fatalf("finish body = %#v", body)
+			}
 		case "/v2/users/u-1/files":
 			var body richMediaUploadRequest
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			uploadURL = body.URL
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.UploadID != "upload-1" || body.FileType != 1 || body.SrvSendMsg {
+				t.Fatalf("merge body = %#v", body)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": map[string]any{"id": "media"}, "ttl": 60})
 		case "/v2/users/u-1/messages":
 			_ = json.NewDecoder(r.Body).Decode(&sent)
@@ -92,29 +139,49 @@ func TestDeliveryAdapterContractPublishesPNGWithText(t *testing.T) {
 		BotToken:   "token",
 		APIBaseURL: server.URL,
 		HTTPClient: server.Client(),
-		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
 	})
 	outcome := adapter.Deliver(context.Background(), message.Outbound{
 		Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "u-1"},
 		Content: message.Content{
 			Text:       "图片说明",
-			Attachment: &message.Attachment{MIMEType: "image/png", Data: []byte("png")},
+			Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData},
 		},
 	})
 	if outcome.State != delivery.OutcomeAccepted || outcome.Receipt.PlatformMessageID != "q-media" {
 		t.Fatalf("outcome = %#v", outcome)
 	}
-	if uploadURL == "" || sent.Content != "图片说明" || sent.MsgType != 7 || sent.Media == nil {
-		t.Fatalf("uploadURL=%q sent=%#v", uploadURL, sent)
+	if !bytes.Equal(uploaded, pngData) || prepared.FileSize != strconv.Itoa(len(pngData)) || prepared.FileName != qqRichMediaFileName || prepared.MD5 == "" || prepared.SHA1 == "" || prepared.MD510M == "" {
+		t.Fatalf("prepared=%#v uploaded=%d", prepared, len(uploaded))
+	}
+	if sent.Content != "图片说明" || sent.MsgType != 7 || sent.Media == nil {
+		t.Fatalf("sent=%#v", sent)
 	}
 }
 
 func TestDeliveryAdapterContractUsesURLAttachment(t *testing.T) {
-	var uploaded richMediaUploadRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	pngData := testPNG(t)
+	var uploaded []byte
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/source.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngData)
+		case "/v2/users/u/upload_prepare":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"upload_id":  "upload-url",
+				"block_size": len(pngData),
+				"parts":      []map[string]any{{"index": 0, "presigned_url": server.URL + "/url-part", "block_size": len(pngData)}},
+			})
+		case "/url-part":
+			uploaded, _ = io.ReadAll(r.Body)
+		case "/v2/users/u/upload_part_finish":
 		case "/v2/users/u/files":
-			_ = json.NewDecoder(r.Body).Decode(&uploaded)
+			var body richMediaUploadRequest
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.UploadID != "upload-url" {
+				t.Fatalf("merge body = %#v", body)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": map[string]any{"id": "m"}, "ttl": 60})
 		case "/v2/users/u/messages":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
@@ -123,10 +190,10 @@ func TestDeliveryAdapterContractUsesURLAttachment(t *testing.T) {
 	defer server.Close()
 	outcome := NewDeliveryAdapter(&Bot{BotToken: "t", APIBaseURL: server.URL, HTTPClient: server.Client()}).Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "u"},
-		Content: message.Content{Attachment: &message.Attachment{URL: "https://cdn.example/x.png"}},
+		Content: message.Content{Attachment: &message.Attachment{URL: server.URL + "/source.png"}},
 	})
-	if outcome.State != delivery.OutcomeAccepted || uploaded.URL != "https://cdn.example/x.png" {
-		t.Fatalf("outcome=%#v uploaded=%#v", outcome, uploaded)
+	if outcome.State != delivery.OutcomeAccepted || !bytes.Equal(uploaded, pngData) {
+		t.Fatalf("outcome=%#v uploaded=%d", outcome, len(uploaded))
 	}
 }
 
@@ -180,10 +247,11 @@ func TestDeliveryAdapterErrorClassification(t *testing.T) {
 }
 
 func TestDeliveryAdapterRetriesMediaUploadFailureBeforeSend(t *testing.T) {
+	pngData := testPNG(t)
 	messageRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/users/u/files":
+		case "/v2/users/u/upload_prepare":
 			http.Error(w, "busy", http.StatusTooManyRequests)
 		case "/v2/users/u/messages":
 			messageRequests++
@@ -193,7 +261,7 @@ func TestDeliveryAdapterRetriesMediaUploadFailureBeforeSend(t *testing.T) {
 
 	outcome := NewDeliveryAdapter(&Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}).Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "u"},
-		Content: message.Content{Attachment: &message.Attachment{URL: "https://cdn.example/x.png"}},
+		Content: message.Content{Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData}},
 	})
 	if outcome.State != delivery.OutcomeRetryable || messageRequests != 0 {
 		t.Fatalf("outcome=%#v messageRequests=%d", outcome, messageRequests)

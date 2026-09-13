@@ -2,20 +2,19 @@ package napcat
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 )
 
-func TestDeliveryAdapterContractPublishesPNGAndMapsPrivateTarget(t *testing.T) {
+func TestDeliveryAdapterSendsInlinePNGAndMapsPrivateTarget(t *testing.T) {
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/send_private_msg" {
@@ -31,7 +30,6 @@ func TestDeliveryAdapterContractPublishesPNGAndMapsPrivateTarget(t *testing.T) {
 	adapter := NewDeliveryAdapter(&Bridge{
 		APIURL:     server.URL,
 		HTTPClient: server.Client(),
-		MediaStore: responses.NewMediaStore(server.URL+"/media", time.Minute),
 	})
 	outcome := adapter.Deliver(context.Background(), message.Outbound{
 		Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
@@ -52,7 +50,7 @@ func TestDeliveryAdapterContractPublishesPNGAndMapsPrivateTarget(t *testing.T) {
 	}
 	textData := segments[0].(map[string]any)["data"].(map[string]any)
 	imageData := segments[1].(map[string]any)["data"].(map[string]any)
-	if textData["text"] != "课表" || !strings.HasPrefix(imageData["file"].(string), server.URL+"/media/") {
+	if textData["text"] != "课表" || imageData["file"] != "base64://"+base64.StdEncoding.EncodeToString([]byte("png")) {
 		t.Fatalf("segments = %#v", segments)
 	}
 }
@@ -72,8 +70,7 @@ func TestDeliveryAdapterContractMapsGroupAndURLAttachment(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"message_id":8}}`))
 			}))
 			defer server.Close()
-			media := responses.NewMediaStore("https://bot.example/media", time.Minute)
-			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client(), MediaStore: media})
+			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client()})
 			outcome := adapter.Deliver(t.Context(), message.Outbound{
 				Target:  message.Conversation{Platform: "napcat", Type: kind, ID: "100"},
 				Content: message.Content{Text: "3C101：三教副 1", Attachment: &message.Attachment{URL: upstream.URL + "/3C101.png"}},
@@ -86,14 +83,11 @@ func TestDeliveryAdapterContractMapsGroupAndURLAttachment(t *testing.T) {
 				t.Fatalf("segments=%v", segments)
 			}
 			url := segments[1].(map[string]any)["data"].(map[string]any)["file"].(string)
-			if !strings.HasPrefix(url, "https://bot.example/media/") {
-				t.Fatalf("NapCat received upstream URL: %s", url)
+			data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(url, "base64://"))
+			if err != nil || !strings.HasPrefix(url, "base64://") || string(data) != string(png) {
+				t.Fatalf("inline image differs: %v", err)
 			}
-			recorder := httptest.NewRecorder()
-			media.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, url, nil))
-			if recorder.Code != 200 || recorder.Body.String() != string(png) {
-				t.Fatalf("published image differs: %v", recorder)
-			}
+
 		})
 	}
 }
@@ -116,7 +110,7 @@ func TestRemoteImageDownloadFailureDoesNotSendMessage(t *testing.T) {
 				_, _ = w.Write([]byte(test.body))
 			}))
 			defer server.Close()
-			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client(), MediaStore: responses.NewMediaStore("https://bot.example/media", time.Minute)})
+			adapter := NewDeliveryAdapter(&Bridge{APIURL: server.URL, HTTPClient: server.Client()})
 			outcome := adapter.Deliver(t.Context(), message.Outbound{Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"}, Content: message.Content{Attachment: &message.Attachment{URL: server.URL}}})
 			if outcome.State != delivery.OutcomeRetryable || outcome.Code != "attachment_unavailable" {
 				t.Fatalf("outcome=%#v", outcome)

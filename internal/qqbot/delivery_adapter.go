@@ -1,10 +1,17 @@
 package qqbot
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/png"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
@@ -40,12 +47,18 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 
 	var acceptance store.MessageAcceptance
 	if attachment := outbound.Content.Attachment; attachment != nil {
-		imageURL, imageErr := a.imageURL(attachment)
+		if _, mediaErr := richMediaUploadPath(ident); mediaErr != nil {
+			return qqRejected("invalid_attachment", mediaErr)
+		}
+		imageData, imageErr := a.imageBytes(ctx, attachment)
 		if imageErr != nil {
+			if strings.TrimSpace(attachment.URL) != "" {
+				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: imageErr}
+			}
 			return qqRejected("invalid_attachment", imageErr)
 		}
 		acceptance, err = a.bot.sendCachedRichMediaContent(
-			ctx, ident, imageURL, qqBotOutgoingMessage(ident, outbound.Content.Text), msgID, eventID, sequence,
+			ctx, ident, imageData, qqBotOutgoingMessage(ident, outbound.Content.Text), msgID, eventID, sequence,
 		)
 	} else {
 		text := qqBotOutgoingMessage(ident, outbound.Content.Text)
@@ -86,20 +99,70 @@ func qqReplyReference(ref *message.ReplyRef) (string, string, int) {
 	return strings.TrimSpace(ref.MessageID), strings.TrimSpace(ref.EventID), sequence
 }
 
-func (a *DeliveryAdapter) imageURL(attachment *message.Attachment) (string, error) {
+func (a *DeliveryAdapter) imageBytes(ctx context.Context, attachment *message.Attachment) ([]byte, error) {
 	if imageURL := strings.TrimSpace(attachment.URL); imageURL != "" {
-		return imageURL, nil
+		return a.downloadPNG(ctx, imageURL)
 	}
 	if !strings.EqualFold(strings.TrimSpace(attachment.MIMEType), "image/png") {
-		return "", fmt.Errorf("qqbot byte attachment must be image/png, got %q", attachment.MIMEType)
+		return nil, fmt.Errorf("qqbot byte attachment must be image/png, got %q", attachment.MIMEType)
 	}
 	if len(attachment.Data) == 0 {
-		return "", errors.New("qqbot PNG attachment is empty")
+		return nil, errors.New("qqbot PNG attachment is empty")
 	}
-	if a.bot.MediaStore == nil {
-		return "", errors.New("qqbot media store is unavailable")
+	if err := validatePNG(attachment.Data); err != nil {
+		return nil, err
 	}
-	return a.bot.MediaStore.PutPNG(attachment.Data)
+	return append([]byte(nil), attachment.Data...), nil
+}
+
+func (a *DeliveryAdapter) downloadPNG(ctx context.Context, imageURL string) ([]byte, error) {
+	parsed, err := url.Parse(imageURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("qqbot image URL must use http or https")
+	}
+	downloadCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, errors.New("qqbot image URL request is invalid")
+	}
+	resp, err := a.bot.httpClient().Do(req)
+	if err != nil {
+		if downloadCtx.Err() != nil {
+			return nil, downloadCtx.Err()
+		}
+		return nil, errors.New("qqbot image URL download failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("qqbot image URL returned HTTP %d", resp.StatusCode)
+	}
+	const maxDownloadBytes = 10 << 20
+	if resp.ContentLength > maxDownloadBytes {
+		return nil, errors.New("qqbot image URL exceeds 10 MiB")
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadBytes+1))
+	if err != nil {
+		return nil, errors.New("qqbot image URL download failed")
+	}
+	if len(data) > maxDownloadBytes {
+		return nil, errors.New("qqbot image URL exceeds 10 MiB")
+	}
+	if err := validatePNG(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func validatePNG(data []byte) error {
+	if len(data) == 0 {
+		return errors.New("qqbot PNG attachment is empty")
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || format != "png" || config.Width <= 0 || config.Height <= 0 {
+		return errors.New("qqbot attachment is not a valid PNG")
+	}
+	return nil
 }
 
 func classifyQQDeliveryError(err error) delivery.Outcome {
@@ -126,7 +189,10 @@ func classifyQQDeliveryError(err error) delivery.Outcome {
 
 func classifyQQPreSendError(original, cause error) delivery.Outcome {
 	var statusErr qqBotHTTPStatusError
-	if errors.As(cause, &statusErr) && isPermanentHTTPStatus(statusErr.status) {
+	if errors.As(cause, &statusErr) {
+		if statusErr.code == 40093001 || !isPermanentHTTPStatus(statusErr.status) {
+			return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "pre_send_failed", Err: original}
+		}
 		return qqRejected("platform_rejected", original)
 	}
 	var permanent *permanentGatewayError

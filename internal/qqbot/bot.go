@@ -23,7 +23,6 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/botapp"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
@@ -70,7 +69,6 @@ type Bot struct {
 	HTTPClient *http.Client
 	Dialer     *websocket.Dialer
 	Logger     *log.Logger
-	MediaStore *responses.MediaStore
 
 	tokenMu        sync.Mutex
 	accessToken    string
@@ -204,13 +202,22 @@ type sendMessageResponse struct {
 }
 
 type qqBotHTTPStatusError struct {
-	method string
-	path   string
-	status int
+	method  string
+	path    string
+	status  int
+	code    int
+	message string
 }
 
 func (e qqBotHTTPStatusError) Error() string {
-	return fmt.Sprintf("qq bot %s %s returned %d", e.method, e.path, e.status)
+	text := fmt.Sprintf("qq bot %s %s returned %d", e.method, e.path, e.status)
+	if e.code != 0 {
+		text += fmt.Sprintf(" (code %d)", e.code)
+	}
+	if strings.TrimSpace(e.message) != "" {
+		text += ": " + strings.TrimSpace(e.message)
+	}
+	return text
 }
 
 type uncertainSendError struct {
@@ -240,8 +247,9 @@ type mediaInfo struct {
 
 type richMediaUploadRequest struct {
 	FileType   int    `json:"file_type"`
-	URL        string `json:"url"`
 	SrvSendMsg bool   `json:"srv_send_msg"`
+	FileName   string `json:"file_name,omitempty"`
+	UploadID   string `json:"upload_id,omitempty"`
 }
 
 type richMediaUploadResponse struct {
@@ -822,33 +830,12 @@ func qqBotOutgoingMessage(ident store.Identity, message string) string {
 	return "\n\n" + strings.TrimLeft(message, "\r\n")
 }
 
-func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageURL string) (richMediaUploadResponse, error) {
+func (b *Bot) uploadRichMedia(ctx context.Context, ident store.Identity, imageData []byte) (richMediaUploadResponse, error) {
 	token, err := b.accessTokenForRequest(ctx)
 	if err != nil {
 		return richMediaUploadResponse{}, preSendError{err: err}
 	}
-	path, err := richMediaUploadPath(ident)
-	if err != nil {
-		return richMediaUploadResponse{}, preSendError{err: err}
-	}
-	var out richMediaUploadResponse
-	startedAt := time.Now()
-	err = b.openAPI(ctx, http.MethodPost, path, token, richMediaUploadRequest{
-		FileType:   1,
-		URL:        imageURL,
-		SrvSendMsg: false,
-	}, &out)
-	if err != nil {
-		b.logf("QQ bot media upload failed: conversation_type=%q upload_ms=%d error=%v",
-			ident.ConversationType, time.Since(startedAt).Milliseconds(), err)
-		return richMediaUploadResponse{}, preSendError{err: err}
-	}
-	if len(out.FileInfo) == 0 {
-		return richMediaUploadResponse{}, preSendError{err: errors.New("qq bot rich media upload missing file_info")}
-	}
-	b.logf("QQ bot media uploaded: conversation_type=%q ttl_seconds=%d upload_ms=%d",
-		ident.ConversationType, out.TTL, time.Since(startedAt).Milliseconds())
-	return out, nil
+	return b.uploadRichMediaBytes(ctx, ident, token, imageData)
 }
 
 func (b *Bot) sendRichMediaContentTo(ctx context.Context, ident store.Identity, fileInfo json.RawMessage, content, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
@@ -892,6 +879,22 @@ func richMediaUploadPath(ident store.Identity) (string, error) {
 	default:
 		return "", fmt.Errorf("qq bot rich media unsupported for conversation type %q", ident.ConversationType)
 	}
+}
+
+func richMediaPreparePath(ident store.Identity) (string, error) {
+	path, err := richMediaUploadPath(ident)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(path, "/files") + "/upload_prepare", nil
+}
+
+func richMediaPartFinishPath(ident store.Identity) (string, error) {
+	path, err := richMediaUploadPath(ident)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(path, "/files") + "/upload_part_finish", nil
 }
 
 func (b *Bot) sendTo(ctx context.Context, ident store.Identity, message, msgID, eventID string, msgSeq int) (store.MessageAcceptance, error) {
@@ -1027,9 +1030,9 @@ func (b *Bot) openAPI(ctx context.Context, method, path, token string, body any,
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
 		b.logf("QQ bot openapi response: method=%s path=%s status=%d", method, path, resp.StatusCode)
-		return qqBotHTTPStatusError{method: method, path: path, status: resp.StatusCode}
+		return newQQBotHTTPStatusError(method, path, resp.StatusCode, errorBody)
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -1045,6 +1048,40 @@ func (b *Bot) openAPI(ctx context.Context, method, path, token string, body any,
 		return fmt.Errorf("decode qq bot %s %s response: %w", method, path, err)
 	}
 	return nil
+}
+
+func newQQBotHTTPStatusError(method, path string, status int, body []byte) qqBotHTTPStatusError {
+	err := qqBotHTTPStatusError{method: method, path: path, status: status}
+	var payload struct {
+		Code    json.RawMessage `json:"code"`
+		Message string          `json:"message"`
+		Msg     string          `json:"msg"`
+	}
+	if json.Unmarshal(body, &payload) == nil {
+		err.code = parseQQErrorCode(payload.Code)
+		err.message = strings.TrimSpace(payload.Message)
+		if err.message == "" {
+			err.message = strings.TrimSpace(payload.Msg)
+		}
+	}
+	return err
+}
+
+func parseQQErrorCode(raw json.RawMessage) int {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return 0
+	}
+	var numeric int
+	if json.Unmarshal(raw, &numeric) == nil {
+		return numeric
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		value, _ := strconv.Atoi(strings.TrimSpace(text))
+		return value
+	}
+	return 0
 }
 
 func (b *Bot) accessTokenForRequest(ctx context.Context) (string, error) {
