@@ -61,6 +61,41 @@ REMOTE_DIR=/srv/life-ustc \
 
 先检查当前提交而不执行 Docker、SSH 或远端改动时，设置 `DEPLOY_DRY_RUN=1` 运行同一命令。
 
+### macOS 原生部署
+
+macOS 更新入口是 `scripts/deploy-mac.sh`。脚本默认通过
+`tiankaima@tkm-mac-mini` 更新 `/Users/tiankaima/Services/life-ustc-bot`，只接受干净的已提交
+版本：它用该提交创建临时源码归档，在本地临时副本中生成 Go vendor 目录，把归档传到远端，
+再在 Darwin arm64 上使用 CGO 编译 Bot 和 Rust `renderd`。远端工具查找顺序是
+`ROOT/toolchain/bin`、`/opt/homebrew/bin`、`/usr/local/bin` 和 `/usr/bin`；Rust 构建使用
+锁定的 `Cargo.lock` 和离线缓存，因此更新时需要预先准备好 Go vendor 所需的本地模块缓存以及
+远端 Cargo registry 缓存。
+
+远端的 `config.json` 是私有的 JSON 对象，键是 Bot 环境变量名。脚本只在远端用
+`/opt/homebrew/bin/python3` 读取它并写入 Bot 的 launchd plist，不会 shell-source 或打印值。
+`BOT_DB_PATH`、`BOT_RENDER_ENDPOINT`、`BOT_BUILD_VERSION` 以及本地健康地址由部署固定。部署使用
+`runtime-fonts/` 下的扁平字体目录（思源黑体 Regular/Bold TTC 和 Fira Code TTF），不要把凭据或
+完整字体树放入源码归档。
+
+部署前远端应已有 `bin/`、`data/`、`logs/`、`build/`、`runtime-fonts/`、`config.json` 和现有
+SQLite 数据库；初次生产迁移由迁移工作另行完成。脚本会在 `build/<deployment-id>/` 保留源码、
+构建产物、旧二进制、数据库备份和日志。它先停 Bot，再备份并迁移 SQLite，随后原子替换二进制和
+`/Library/LaunchDaemons/dev.life-ustc.{bot,renderd}.plist`；plist 为 root 所有、权限 600，两个
+服务均设置 `UserName=tiankaima`、`RunAtLoad`、`KeepAlive`、工作目录和标准输出/错误日志。它
+先启动并检查 `dev.life-ustc.renderd`，再启动并检查 Bot；失败时恢复二进制、数据库和 plist，并
+重新加载部署前已加载的服务。部署锁和 launchd label 可避免同一 Bot 出现重复实例。
+
+macOS 端的 `dev.life-ustc.egress` SSH SOCKS5 服务由主机迁移维护，部署脚本不会安装、重启或覆盖
+它。Bot 的 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 等配置继续放在远端 `config.json` 中。
+
+```sh
+./scripts/deploy-mac.sh
+```
+
+只检查当前提交和目标信息而不执行 SSH、构建或远端改动时，设置 `DEPLOY_DRY_RUN=1`。若使用不同
+主机或路径，可覆盖 `REMOTE_HOST`、`REMOTE_USER`、`REMOTE_ROOT`；健康检查等待时间可用
+`DEPLOY_HEALTH_TIMEOUT`（1–3600 秒）覆盖。
+
 图卡由 Typst `renderd` 服务渲染，延续迁移前的简洁排版：近白画布、细横线、
 18pt 标题、13pt 正文、9pt 页脚，数字与代码使用 Fira Code，中文及课程名称使用思源黑体 / Noto CJK。
 校车查询只筛选线路，选中的线路保留全部站点和时刻表，并突出查询站点；未公布的时刻显示「—」。
