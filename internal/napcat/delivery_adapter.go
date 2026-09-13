@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
@@ -41,8 +43,11 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 
 	imageURL := ""
 	if attachment := outbound.Content.Attachment; attachment != nil {
-		imageURL, err = a.imageURL(attachment)
+		imageURL, err = a.imageURL(ctx, attachment)
 		if err != nil {
+			if strings.TrimSpace(attachment.URL) != "" {
+				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: err}
+			}
 			return napcatRejected("invalid_attachment", err)
 		}
 	}
@@ -73,9 +78,15 @@ func napcatEventFromConversation(target message.Conversation) (messageEvent, err
 	}
 }
 
-func (a *DeliveryAdapter) imageURL(attachment *message.Attachment) (string, error) {
+func (a *DeliveryAdapter) imageURL(ctx context.Context, attachment *message.Attachment) (string, error) {
 	if imageURL := strings.TrimSpace(attachment.URL); imageURL != "" {
-		return imageURL, nil
+		// NapCat may not be able to reach the upstream CDN. Publish remote
+		// PNGs through the same media store as locally rendered images.
+		data, err := a.downloadPNG(ctx, imageURL)
+		if err != nil {
+			return "", err
+		}
+		return a.bridge.MediaStore.PutPNG(data)
 	}
 	if !strings.EqualFold(strings.TrimSpace(attachment.MIMEType), "image/png") {
 		return "", fmt.Errorf("napcat byte attachment must be image/png, got %q", attachment.MIMEType)
@@ -142,3 +153,36 @@ func napcatReceipt(acceptance store.MessageAcceptance) message.Receipt {
 }
 
 var _ delivery.Adapter = (*DeliveryAdapter)(nil)
+
+func (a *DeliveryAdapter) downloadPNG(ctx context.Context, url string) ([]byte, error) {
+	const maxBytes = 10 << 20
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := a.bridge.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download attachment: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download attachment: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxBytes {
+		return nil, errors.New("PNG attachment exceeds 10 MiB")
+	}
+	if http.DetectContentType(data) != "image/png" {
+		return nil, errors.New("remote attachment is not PNG")
+	}
+	return data, nil
+}
