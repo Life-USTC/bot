@@ -26,6 +26,9 @@ on_error() {
 			debug_file "$output" >&2
 		fi
 	done
+	for detail in "$fixture"/*/root/build/test/deploy.log; do
+		debug_file "$detail" >&2
+	done
 	exit "$status"
 }
 trap on_error ERR
