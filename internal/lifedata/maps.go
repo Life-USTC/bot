@@ -10,6 +10,12 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
+const (
+	SubscriptionKindRegular           = "regular"
+	SubscriptionKindAuditor           = "auditor"
+	SubscriptionKindTeachingAssistant = "teaching_assistant"
+)
+
 func FirstString(m map[string]any, keys ...string) string {
 	for _, key := range keys {
 		switch value := m[key].(type) {
@@ -49,25 +55,94 @@ func NestedPathString(m map[string]any, path []string, keys ...string) string {
 	return FirstString(current, keys...)
 }
 
+// SubscriptionKindLabel turns the API membership kind into the short label
+// used beside a course name. Regular membership and unknown values stay
+// unlabelled.
+func SubscriptionKindLabel(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case SubscriptionKindAuditor:
+		return "旁听"
+	case SubscriptionKindTeachingAssistant:
+		return "助教"
+	default:
+		return ""
+	}
+}
+
+// MembershipKind accepts either a section itself or an object containing a
+// section, as used by subscription, schedule, and homework payloads.
+func MembershipKind(data map[string]any) string {
+	if data == nil {
+		return ""
+	}
+	if kind := FirstString(data, "kind"); kind != "" {
+		return kind
+	}
+	section, _ := data["section"].(map[string]any)
+	return FirstString(section, "kind")
+}
+
+// MembershipLabel returns the display label for an object with a personal
+// section membership.
+func MembershipLabel(data map[string]any) string {
+	return SubscriptionKindLabel(MembershipKind(data))
+}
+
+// CourseLabel adds a personal membership label to a course name. The label is
+// deliberately part of the course text so all text and image renderers keep
+// the same wording.
+func CourseLabel(name string, data map[string]any) string {
+	name = strings.TrimSpace(name)
+	if label := MembershipLabel(data); label != "" {
+		return strings.TrimSpace(name + "（" + label + "）")
+	}
+	return name
+}
+
 func HomeworkCompleted(homework map[string]any) bool {
+	if !HomeworkCompletionRequired(homework) {
+		return false
+	}
 	if completed, ok := homework["isCompleted"].(bool); ok {
 		return completed
 	}
 	return homework["completion"] != nil
 }
 
+// HomeworkCompletionRequired defaults to true for payloads that predate the
+// field. A false value is an explicit server decision that the user's role
+// does not require completion.
+func HomeworkCompletionRequired(homework map[string]any) bool {
+	required, ok := homework["completionRequired"].(bool)
+	if !ok {
+		return true
+	}
+	return required
+}
+
+const HomeworkNoCompletionLabel = "无需完成"
+
+func HomeworkStatusLabel(homework map[string]any) string {
+	if !HomeworkCompletionRequired(homework) {
+		return HomeworkNoCompletionLabel
+	}
+	return ""
+}
+
 func HomeworkCourseLabel(homework map[string]any) string {
 	name := NestedPathString(homework, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if name != "" {
-		return name
+		return CourseLabel(name, homework)
 	}
-	return NestedPathString(homework, []string{"section", "course"}, "code")
+	return CourseLabel(NestedPathString(homework, []string{"section", "course"}, "code"), homework)
 }
 
 func HomeworkLabel(homework map[string]any) string {
 	due := FormatAPITime(FirstString(homework, "submissionDueAt"))
 	dueText := ""
-	if due != "" {
+	if status := HomeworkStatusLabel(homework); status != "" {
+		dueText = status
+	} else if due != "" {
 		dueText = "截止 " + due
 	}
 	parts := textutil.NonEmpty(
@@ -84,9 +159,9 @@ func HomeworkLabel(homework map[string]any) string {
 func ScheduleCourseLabel(schedule map[string]any) string {
 	name := NestedPathString(schedule, []string{"section", "course"}, "namePrimary", "nameCn", "name")
 	if name != "" {
-		return name
+		return CourseLabel(name, schedule)
 	}
-	return NestedString(schedule, "section", "code")
+	return CourseLabel(NestedString(schedule, "section", "code"), schedule)
 }
 
 func SchedulePlaceLabel(schedule map[string]any) string {
@@ -213,6 +288,68 @@ func SubscriptionSectionIDsForDay(data map[string]any, day time.Time) []string {
 func SubscriptionSections(data map[string]any) []map[string]any {
 	sub, _ := data["subscription"].(map[string]any)
 	return MapSlice(sub["sections"])
+}
+
+// SubscriptionSectionKinds indexes the personal section memberships by the
+// identifiers that schedule and homework payloads commonly carry.
+func SubscriptionSectionKinds(data map[string]any) map[string]string {
+	result := make(map[string]string)
+	for _, section := range SubscriptionSections(data) {
+		kind := strings.TrimSpace(FirstString(section, "kind"))
+		if kind == "" {
+			continue
+		}
+		for _, key := range subscriptionSectionKeys(section) {
+			result[key] = kind
+		}
+	}
+	return result
+}
+
+// ApplySubscriptionKinds copies membership kinds from a current subscription
+// response into schedule/homework objects that refer to those sections. It
+// preserves a kind already supplied by the endpoint itself.
+func ApplySubscriptionKinds(subscription map[string]any, items []map[string]any) {
+	kinds := SubscriptionSectionKinds(subscription)
+	if len(kinds) == 0 {
+		return
+	}
+	for _, item := range items {
+		if item == nil || MembershipKind(item) != "" {
+			continue
+		}
+		section, _ := item["section"].(map[string]any)
+		if section != nil {
+			if kind := lookupSubscriptionKind(kinds, section); kind != "" {
+				section["kind"] = kind
+				continue
+			}
+		}
+		if kind := lookupSubscriptionKind(kinds, item); kind != "" {
+			item["kind"] = kind
+		}
+	}
+}
+
+func lookupSubscriptionKind(kinds map[string]string, data map[string]any) string {
+	for _, key := range subscriptionSectionKeys(data) {
+		if kind := kinds[key]; kind != "" {
+			return kind
+		}
+	}
+	return ""
+}
+
+func subscriptionSectionKeys(section map[string]any) []string {
+	keys := make([]string, 0, 3)
+	for _, field := range []string{"id", "jwId", "code"} {
+		value := strings.TrimSpace(FirstString(section, field))
+		if value == "" {
+			continue
+		}
+		keys = append(keys, field+":"+strings.ToLower(value))
+	}
+	return keys
 }
 
 func SemesterContainsDay(semester map[string]any, day time.Time) bool {

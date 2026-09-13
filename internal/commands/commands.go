@@ -1939,6 +1939,8 @@ func (h Handler) overview(ctx context.Context, ident store.Identity) string {
 	if err != nil {
 		return h.commandError("今日安排查不到：", err)
 	}
+	lifedata.ApplySubscriptionKinds(subscription, schedules)
+	lifedata.ApplySubscriptionKinds(subscription, homeworks)
 	exams := upcomingSubscriptionExams(subscriptionExams(subscription), now)
 	return formatOverview(now, schedules, todos, dueSoonHomeworks(homeworks, now), exams)
 }
@@ -1977,6 +1979,10 @@ func appendOverviewSection[T any](lines []string, title string, items []T, forma
 func dueSoonHomeworks(homeworks []map[string]any, now time.Time) []map[string]any {
 	out := make([]map[string]any, 0, len(homeworks))
 	for _, homework := range homeworks {
+		if !lifedata.HomeworkCompletionRequired(homework) {
+			out = append(out, homework)
+			continue
+		}
 		if lifedata.HomeworkCompleted(homework) {
 			continue
 		}
@@ -2246,8 +2252,43 @@ func (h Handler) homeworks(ctx context.Context, ident store.Identity, token stri
 	homeworks, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.SubscribedHomeworks(ctx, token)
 	})
+	h.annotatePersonalKinds(ctx, ident, token, homeworks)
 	sortHomeworksForDisplay(homeworks, chinaNow())
 	return homeworks, err
+}
+
+func (h Handler) annotatePersonalKinds(ctx context.Context, ident store.Identity, token string, items []map[string]any) string {
+	if h.Life == nil || h.Auth == nil || !itemsNeedSubscriptionKinds(items) {
+		return token
+	}
+	subscription, err := h.Life.CurrentSubscription(ctx, token)
+	if refreshed, ok := h.Auth.RefreshIfUnauthorized(ctx, ident, err); ok {
+		token = refreshed
+		subscription, err = h.Life.CurrentSubscription(ctx, token)
+	}
+	if err != nil {
+		h.logf("load subscription membership kinds failed: %v", err)
+		return token
+	}
+	lifedata.ApplySubscriptionKinds(subscription, items)
+	return token
+}
+
+func itemsNeedSubscriptionKinds(items []map[string]any) bool {
+	for _, item := range items {
+		if item == nil || lifedata.MembershipKind(item) != "" {
+			continue
+		}
+		section, _ := item["section"].(map[string]any)
+		if section != nil && (lifedata.FirstString(section, "id", "jwId", "code") != "" ||
+			lifedata.FirstString(item, "sectionId", "sectionJwId") != "") {
+			return true
+		}
+		if lifedata.FirstString(item, "sectionId", "sectionJwId") != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]any {
@@ -2292,7 +2333,9 @@ func normalizedLookupText(value string) string {
 
 func formatHomework(homework map[string]any) string {
 	due := lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-	if due != "" {
+	if status := lifedata.HomeworkStatusLabel(homework); status != "" {
+		due = status
+	} else if due != "" {
 		due = "截止 " + due
 	}
 	cells := []string{
@@ -2325,6 +2368,7 @@ func formatNumberedHomeworkListAt(homeworks []numberedHomework, now time.Time, p
 		{title: "已逾期"},
 		{title: "近期"},
 		{title: "未来"},
+		{title: lifedata.HomeworkNoCompletionLabel},
 		{title: "已完成"},
 	}
 	for _, homework := range homeworks {
@@ -2358,8 +2402,11 @@ func sortHomeworksForDisplay(homeworks []map[string]any, now time.Time) {
 }
 
 func homeworkDisplayBucket(homework map[string]any, now time.Time) int {
-	if lifedata.HomeworkCompleted(homework) {
+	if !lifedata.HomeworkCompletionRequired(homework) {
 		return 3
+	}
+	if lifedata.HomeworkCompleted(homework) {
+		return 4
 	}
 	due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
 	switch {
@@ -2993,6 +3040,9 @@ func (h Handler) schedulesForSemester(ctx context.Context, ident store.Identity,
 		token = refreshed
 		all, err = h.fetchSemesterSchedulesForSections(ctx, token, sections, dateFrom, dateTo)
 	}
+	if err == nil {
+		lifedata.ApplySubscriptionKinds(subscription, all)
+	}
 	return all, token, err
 }
 
@@ -3250,6 +3300,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 	if err == nil {
 		all = lifedata.FilterSchedulesForDay(all, day)
 		lifedata.SortSchedulesByStart(all)
+		token = h.annotatePersonalKinds(ctx, ident, token, all)
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3272,6 +3323,7 @@ func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, to
 		all, err = h.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
 	}
 	if err == nil {
+		token = h.annotatePersonalKinds(ctx, ident, token, all)
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3318,6 +3370,7 @@ func (h Handler) schedulesForDayBySections(ctx context.Context, ident store.Iden
 	if err != nil {
 		return nil, token, err
 	}
+	lifedata.ApplySubscriptionKinds(sub, all)
 	all = lifedata.FilterSchedulesForDay(all, day)
 	lifedata.SortSchedulesByStart(all)
 	return all, token, nil
@@ -4141,13 +4194,13 @@ func formatNumberedLine(index int, text string) string {
 
 func formatCourse(course map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(course, "code"))
-	name := lifedata.FirstString(course, "namePrimary", "nameCn", "name")
+	name := lifedata.CourseLabel(lifedata.FirstString(course, "namePrimary", "nameCn", "name"), course)
 	return formatCodeLabelLine(code, name)
 }
 
 func formatSection(section map[string]any) string {
 	code := textutil.MonospaceASCII(lifedata.FirstString(section, "code"))
-	course := lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name")
+	course := lifedata.CourseLabel(lifedata.NestedString(section, "course", "namePrimary", "nameCn", "name"), section)
 	semester := lifedata.NestedString(section, "semester", "namePrimary", "nameCn", "name")
 	return formatCodeLabelLine(code, textutil.JoinNonEmpty(" ", course, semester))
 }
@@ -4207,7 +4260,7 @@ func upcomingSubscriptionExams(exams []subscriptionExam, now time.Time) []subscr
 func formatExam(item subscriptionExam) string {
 	date := formatExamDate(item.exam)
 	timeRange := formatExamTimeRange(item.exam)
-	course := lifedata.NestedString(item.section, "course", "namePrimary", "nameCn", "name", "code")
+	course := lifedata.CourseLabel(lifedata.NestedString(item.section, "course", "namePrimary", "nameCn", "name", "code"), item.section)
 	sectionCode := lifedata.FirstString(item.section, "code")
 	mode := lifedata.FirstString(item.exam, "examMode")
 	rooms := formatExamRooms(item.exam)

@@ -225,6 +225,9 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, homeworks []map[string]any, now time.Time) {
 	lifedata.SortHomeworksByDue(homeworks)
 	for _, homework := range homeworks {
+		if !lifedata.HomeworkCompletionRequired(homework) {
+			continue
+		}
 		if lifedata.HomeworkCompleted(homework) {
 			continue
 		}

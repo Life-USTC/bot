@@ -58,6 +58,36 @@ func TestFormatHomeworkIncludesDetails(t *testing.T) {
 	}
 }
 
+func TestFormatHomeworkDisplaysNoCompletion(t *testing.T) {
+	got := formatHomework(map[string]any{
+		"title":              "助教作业",
+		"submissionDueAt":    "2020-01-01T10:00:00+08:00",
+		"completionRequired": false,
+		"isCompleted":        true,
+		"section": map[string]any{
+			"course": map[string]any{"namePrimary": "数据库系统"},
+		},
+	})
+	if !strings.Contains(got, "无需完成") || !strings.Contains(got, "数据库系统") {
+		t.Fatalf("formatHomework = %q", got)
+	}
+}
+
+func TestPollerSkipsHomeworkWithoutCompletionRequirement(t *testing.T) {
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	publisher := &fakePublisher{}
+	poller := &Poller{Publisher: publisher}
+	poller.notifyHomeworks(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, []map[string]any{{
+		"id":                 "hw-ta",
+		"title":              "助教作业",
+		"submissionDueAt":    "2026-06-07T15:00:00+08:00",
+		"completionRequired": false,
+	}}, now)
+	if len(publisher.messages) != 0 {
+		t.Fatalf("messages = %#v, want no reminder", publisher.messages)
+	}
+}
+
 func TestFormatHomeworkFallsBackToID(t *testing.T) {
 	got := formatHomework(map[string]any{"id": "hw-1"})
 	if got != "hw-𝟷" {
