@@ -127,20 +127,22 @@ tar -C "$LOCAL_SOURCE_ROOT" -czf - . |
 REMOTE_REVISION_ARG="$(quote_remote_arg "$REVISION")"
 REMOTE_DEPLOY_ID_ARG="$(quote_remote_arg "$DEPLOY_ID")"
 REMOTE_TIMEOUT_ARG="$(quote_remote_arg "$HEALTH_TIMEOUT")"
+REMOTE_USER_ARG="$(quote_remote_arg "$REMOTE_USER")"
 
 # All remote command output is retained in a mode-600 stage log.  FD 3 is the
 # only concise status channel sent back to the operator; config values are
 # never shell-sourced or written to that channel.
-ssh "$SSH_TARGET" "bash -s -- $REMOTE_ROOT_ARG $REMOTE_STAGE_ARG $REMOTE_REVISION_ARG $REMOTE_DEPLOY_ID_ARG $REMOTE_TIMEOUT_ARG" <<'REMOTE_DEPLOY'
+ssh "$SSH_TARGET" "bash -s -- $REMOTE_ROOT_ARG $REMOTE_STAGE_ARG $REMOTE_USER_ARG $REMOTE_REVISION_ARG $REMOTE_DEPLOY_ID_ARG $REMOTE_TIMEOUT_ARG" <<'REMOTE_DEPLOY'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
 
 ROOT="$1"
 STAGE="$2"
-REVISION="$3"
-DEPLOY_ID="$4"
-HEALTH_TIMEOUT="$5"
+REMOTE_USER="$3"
+REVISION="$4"
+DEPLOY_ID="$5"
+HEALTH_TIMEOUT="$6"
 
 BOT_LABEL="dev.life-ustc.bot"
 RENDERD_LABEL="dev.life-ustc.renderd"
@@ -155,6 +157,8 @@ PYTHON="${DEPLOY_PYTHON:-/opt/homebrew/bin/python3}"
 CURL="${DEPLOY_CURL:-/usr/bin/curl}"
 FILE="${DEPLOY_FILE_COMMAND:-/usr/bin/file}"
 SUDO=(sudo -n)
+CARGO_TARGET_DIR="$ROOT/build/cargo-target"
+CARGO_BUILD_LOCK="$ROOT/build/.cargo-build.lock"
 
 exec 3>&1
 mkdir -p "$STAGE/diagnostics"
@@ -173,6 +177,8 @@ fail() {
 	return 1
 }
 
+[[ "$REMOTE_USER" =~ ^[A-Za-z0-9._-]+$ ]] || fail "remote launchd user contains unsupported characters"
+
 sudo_cmd() {
 	"${SUDO[@]}" "$@"
 }
@@ -185,8 +191,12 @@ loaded() {
 bootout_if_loaded() {
 	local label="$1"
 	if loaded "$label"; then
-		sudo_cmd launchctl bootout "system/$label"
+		sudo_cmd launchctl bootout "system/$label" || return 1
+		if loaded "$label"; then
+			return 1
+		fi
 	fi
+	return 0
 }
 
 bootstrap() {
@@ -287,16 +297,26 @@ os.replace(temporary_path, destination_path)
 PY
 }
 
+release_cargo_build_lock() {
+	if [[ -d "$CARGO_BUILD_LOCK" ]]; then
+		rm -f "$CARGO_BUILD_LOCK/deployment-id"
+		rmdir "$CARGO_BUILD_LOCK" 2>/dev/null || true
+	fi
+}
+
 write_plists() {
-	"$PYTHON" - "$ROOT/config.json" "$STAGE/bot.plist" "$STAGE/renderd.plist" "$ROOT" "$REVISION" <<'PY'
+	"$PYTHON" - "$ROOT/config.json" "$STAGE/bot.plist" "$STAGE/renderd.plist" "$ROOT" "$REVISION" "$REMOTE_USER" <<'PY'
 import json
 import os
 import plistlib
 import re
 import sys
 
-config_path, bot_path, renderd_path, root, revision = sys.argv[1:]
+config_path, bot_path, renderd_path, root, revision, remote_user = sys.argv[1:]
 key_pattern = re.compile(r"[A-Z][A-Z0-9_]*$")
+user_pattern = re.compile(r"[A-Za-z0-9._-]+$")
+if not user_pattern.fullmatch(remote_user):
+    raise ValueError("remote launchd user contains unsupported characters")
 
 def reject_duplicate_keys(pairs):
     result = {}
@@ -339,7 +359,7 @@ def write(path, label, arguments, env, stdout, stderr):
         "Label": label,
         "ProgramArguments": arguments,
         "WorkingDirectory": root,
-        "UserName": "tiankaima",
+        "UserName": remote_user,
         "RunAtLoad": True,
         "KeepAlive": True,
         "EnvironmentVariables": env,
@@ -364,8 +384,14 @@ rollback() {
 	local rollback_status=0
 	set +e
 	log "deployment failed; restoring the previous binaries, database, and launchd jobs"
-	bootout_if_loaded "$BOT_LABEL" || rollback_status=1
-	bootout_if_loaded "$RENDERD_LABEL" || rollback_status=1
+	if ! bootout_if_loaded "$BOT_LABEL"; then
+		log "rollback aborted: could not ensure the bot was stopped; database and binaries were left in place"
+		return 1
+	fi
+	if ! bootout_if_loaded "$RENDERD_LABEL"; then
+		log "rollback aborted: could not ensure renderd was stopped; database and binaries were left in place"
+		return 1
+	fi
 	if [[ -f "$ROLLBACK/database" ]]; then
 		restore_database || rollback_status=1
 	fi
@@ -418,7 +444,7 @@ on_exit() {
 [[ -d "$FONT_DIR" && ! -L "$FONT_DIR" ]] || fail "missing runtime font directory: $FONT_DIR"
 [[ -f "$ROOT/config.json" && ! -L "$ROOT/config.json" ]] || fail "missing remote config.json"
 
-export PATH="$ROOT/toolchain/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="$ROOT/toolchain/go/bin:$ROOT/toolchain/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export CGO_ENABLED=1
 command -v go >/dev/null 2>&1 || fail "missing remote Go compiler"
 command -v cargo >/dev/null 2>&1 || fail "missing remote Rust compiler"
@@ -429,10 +455,17 @@ command -v cargo >/dev/null 2>&1 || fail "missing remote Rust compiler"
 # the committed go.sum/Cargo.lock instead of allowing a remote dependency
 # update during the transaction.
 (cd "$STAGE/source" && go build -mod=vendor -trimpath -ldflags='-s -w' -o "$STAGE/bin/life-ustc-bot" ./cmd/life-ustc-bot)
-CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$STAGE/cargo-target" cargo build \
+[[ ! -L "$CARGO_TARGET_DIR" ]] || fail "Cargo target cache is a symlink"
+[[ ! -L "$CARGO_BUILD_LOCK" ]] || fail "Cargo build lock is a symlink"
+mkdir "$CARGO_BUILD_LOCK" || fail "another Cargo build is already using the target cache"
+printf '%s\n' "$DEPLOY_ID" >"$CARGO_BUILD_LOCK/deployment-id"
+trap release_cargo_build_lock EXIT
+CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$CARGO_TARGET_DIR" cargo build \
 	--manifest-path "$STAGE/source/renderd/Cargo.toml" \
 	--release --locked --offline
-cp -- "$STAGE/cargo-target/release/renderd" "$STAGE/bin/renderd"
+cp -- "$CARGO_TARGET_DIR/release/renderd" "$STAGE/bin/renderd"
+release_cargo_build_lock
+trap - EXIT
 chmod 755 "$STAGE/bin/life-ustc-bot" "$STAGE/bin/renderd"
 [[ "$("$FILE" "$STAGE/bin/life-ustc-bot")" == *"Mach-O 64-bit executable arm64"* ]] || fail "built bot is not a darwin/arm64 executable"
 [[ "$("$FILE" "$STAGE/bin/renderd")" == *"Mach-O 64-bit executable arm64"* ]] || fail "built renderd is not a darwin/arm64 executable"

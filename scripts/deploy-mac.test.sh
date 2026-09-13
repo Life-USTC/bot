@@ -33,6 +33,9 @@ mock_launchctl() {
 			;;
 		bootout)
 			label="${1#system/}"
+			if [[ "$label" == dev.life-ustc.bot && "${DEPLOY_TEST_FAIL_ROLLBACK_BOT_BOOTOUT:-0}" == 1 && -f "$DEPLOY_TEST_FIXTURE/trigger-rollback" ]]; then
+				return 1
+			fi
 			rm -f "$DEPLOY_TEST_FIXTURE/$label"
 			;;
 		bootstrap)
@@ -110,12 +113,18 @@ go() {
 		fi
 	done
 	[[ -n "$output" ]]
-	printf '%s\n' '#!/bin/sh' 'if [ "$1" = migrate ]; then exit 0; fi' 'echo mock-bot' >"$output"
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'if [ "$1" = migrate ]; then' \
+		'  python3 -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"DELETE FROM marker\"); c.execute(\"INSERT INTO marker(value) VALUES (\\\"new database\\\")\"); c.commit(); c.close()" "$BOT_DB_PATH"' \
+		'  exit 0' \
+		'fi' \
+		'echo mock-bot' >"$output"
 	chmod 755 "$output"
 }
 
 cargo() {
-	[[ "${CARGO_TARGET_DIR:-}" != "" ]]
+	[[ "${CARGO_TARGET_DIR:-}" == "$DEPLOY_TEST_ROOT/build/cargo-target" ]]
 	mkdir -p "$CARGO_TARGET_DIR/release"
 	printf '%s\n' '#!/bin/sh' 'echo mock-renderd' >"$CARGO_TARGET_DIR/release/renderd"
 	chmod 755 "$CARGO_TARGET_DIR/release/renderd"
@@ -128,6 +137,7 @@ file() {
 curl() {
 	local url="${*: -1}"
 	if [[ "${DEPLOY_TEST_FAIL_BOT_HEALTH:-0}" == 1 && "$url" == *127.0.0.1:2282/* ]]; then
+		: >"$DEPLOY_TEST_FIXTURE/trigger-rollback"
 		return 1
 	fi
 	return 0
@@ -173,16 +183,18 @@ run_remote() {
 	local test_root="$1"
 	local launchd="$2"
 	local stage="$3"
-	local output="$4"
-	shift 4
+	local remote_user="$4"
+	local output="$5"
+	shift 5
 	set +e
 	DEPLOY_TEST_FIXTURE="$(dirname "$launchd")" \
+	DEPLOY_TEST_ROOT="$test_root" \
 	DEPLOY_LAUNCHD_DIR="$launchd" \
 	DEPLOY_PYTHON="$(command -v python3)" \
 	DEPLOY_CURL=curl \
 	DEPLOY_FILE_COMMAND=file \
 	env "$@" bash "$remote_script" "$test_root" "$stage" \
-		01234567890123456789012345678901234567890123 test-deployment 1 \
+		"$remote_user" 01234567890123456789012345678901234567890123 test-deployment 1 \
 		>"$output" 2>&1
 	local status=$?
 	set -e
@@ -192,7 +204,7 @@ run_remote() {
 success_fixture="$(prepare_fixture success)"
 IFS='|' read -r success_root success_launchd success_stage <<<"$success_fixture"
 success_output="$fixture/success-output"
-run_remote "$success_root" "$success_launchd" "$success_stage" "$success_output"
+run_remote "$success_root" "$success_launchd" "$success_stage" deploy-account "$success_output"
 grep -F 'deployment succeeded: revision ' "$success_output" >/dev/null
 [[ -f "$fixture/success/dev.life-ustc.bot" ]]
 [[ -f "$fixture/success/dev.life-ustc.renderd" ]]
@@ -210,7 +222,7 @@ with open(bot_path, "rb") as stream:
 with open(renderd_path, "rb") as stream:
     renderd = plistlib.load(stream)
 assert bot["Label"] == "dev.life-ustc.bot"
-assert bot["UserName"] == "tiankaima"
+assert bot["UserName"] == "deploy-account"
 assert bot["RunAtLoad"] and bot["KeepAlive"]
 assert bot["EnvironmentVariables"]["BOT_RENDER_ENDPOINT"] == "http://127.0.0.1:9123/render"
 assert bot["EnvironmentVariables"]["BOT_BUILD_VERSION"].startswith("0123456789")
@@ -218,7 +230,7 @@ assert bot["WorkingDirectory"] == bot["EnvironmentVariables"]["BOT_DB_PATH"].rem
 assert bot["StandardOutPath"].endswith("/logs/bot.log")
 assert bot["StandardErrorPath"].endswith("/logs/bot.error.log")
 assert renderd["Label"] == "dev.life-ustc.renderd"
-assert renderd["UserName"] == "tiankaima"
+assert renderd["UserName"] == "deploy-account"
 assert renderd["RunAtLoad"] and renderd["KeepAlive"]
 assert renderd["EnvironmentVariables"]["RENDERD_ADDR"] == "127.0.0.1:9123"
 assert renderd["EnvironmentVariables"]["RENDERD_FONT_DIR"].endswith("/runtime-fonts")
@@ -230,7 +242,7 @@ PY
 failure_fixture="$(prepare_fixture failure)"
 IFS='|' read -r failure_root failure_launchd failure_stage <<<"$failure_fixture"
 failure_output="$fixture/failure-output"
-if run_remote "$failure_root" "$failure_launchd" "$failure_stage" "$failure_output" \
+if run_remote "$failure_root" "$failure_launchd" "$failure_stage" tiankaima "$failure_output" \
 	DEPLOY_TEST_FAIL_BOT_HEALTH=1; then
 	echo "expected mocked bot health failure" >&2
 	exit 1
@@ -251,5 +263,29 @@ finally:
     connection.close()
 PY
 ! grep -F 'secret-value' "$failure_output" >/dev/null
+
+blocked_fixture="$(prepare_fixture blocked)"
+IFS='|' read -r blocked_root blocked_launchd blocked_stage <<<"$blocked_fixture"
+blocked_output="$fixture/blocked-output"
+if run_remote "$blocked_root" "$blocked_launchd" "$blocked_stage" tiankaima "$blocked_output" \
+	DEPLOY_TEST_FAIL_BOT_HEALTH=1 DEPLOY_TEST_FAIL_ROLLBACK_BOT_BOOTOUT=1; then
+	echo "expected mocked rollback stop failure" >&2
+	exit 1
+fi
+grep -F 'rollback aborted: could not ensure the bot was stopped' "$blocked_output" >/dev/null
+! grep -F 'rollback complete' "$blocked_output" >/dev/null
+[[ -f "$fixture/blocked/dev.life-ustc.bot" ]]
+grep -F 'mock-bot' "$blocked_root/bin/life-ustc-bot" >/dev/null
+python3 - "$blocked_root/data/life-ustc-bot.db" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    assert connection.execute("SELECT value FROM marker").fetchone()[0] == "new database"
+finally:
+    connection.close()
+PY
+! grep -F 'secret-value' "$blocked_output" >/dev/null
 
 echo "deploy-mac smoke test passed"
