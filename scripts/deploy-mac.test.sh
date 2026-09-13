@@ -78,6 +78,8 @@ mock_launchctl() {
 	esac
 }
 
+# Return the mocked operation status explicitly: some Bash versions preserve
+# the EXIT trap's original failure status for a bare `return` here.
 sudo() {
 	if [[ "${1:-}" == -n ]]; then
 		shift
@@ -86,7 +88,7 @@ sudo() {
 	shift || true
 	if [[ "$operation" == launchctl ]]; then
 		mock_launchctl "$@"
-		return
+		return $?
 	fi
 	if [[ "$operation" == install ]]; then
 		local -a args=()
@@ -106,7 +108,7 @@ sudo() {
 			esac
 		done
 		command install "${args[@]}"
-		return
+		return $?
 	fi
 	command "$operation" "$@"
 }
@@ -126,7 +128,7 @@ go() {
 			GOARCH) printf 'arm64\n' ;;
 			*) return 1 ;;
 		esac
-		return
+		return $?
 	fi
 	[[ "${1:-}" == build ]]
 	local output=""
