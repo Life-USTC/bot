@@ -88,9 +88,9 @@ func MembershipLabel(data map[string]any) string {
 	return SubscriptionKindLabel(MembershipKind(data))
 }
 
-// CourseLabel adds a personal membership label to a course name. The label is
-// deliberately part of the course text so all text and image renderers keep
-// the same wording.
+// CourseLabel adds a personal membership label to a course name. Text
+// responses keep this suffix; structured timetable images split it into a
+// separate role badge before rendering.
 func CourseLabel(name string, data map[string]any) string {
 	name = strings.TrimSpace(name)
 	if label := MembershipLabel(data); label != "" {

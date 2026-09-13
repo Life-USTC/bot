@@ -55,6 +55,10 @@ pub struct GridItem {
     pub period: String,
     pub time: String,
     #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub additional_kinds: Vec<String>,
+    #[serde(default)]
     pub course: String,
     #[serde(default)]
     pub location: String,
@@ -236,12 +240,18 @@ fn data_literal(req: &GridPayload) -> String {
     out.push_str("), items: (");
     for item in &req.items {
         out.push_str(&format!(
-            "(day: {}, start: {}, end: {}, period: {}, time: {}, course: {}, location: {}, weeks: {}, color: {}), ",
+            "(day: {}, start: {}, end: {}, period: {}, time: {}, kind: {}, additional_kinds: ({}), course: {}, location: {}, weeks: {}, color: {}), ",
             item.day,
             item.start,
             item.end,
             typst_str(&item.period),
             typst_str(&item.time),
+            typst_str(&item.kind),
+            item.additional_kinds
+                .iter()
+                .map(|kind| typst_str(kind))
+                .collect::<Vec<_>>()
+                .join(", "),
             typst_str(&item.course),
             typst_str(&item.location),
             typst_str(&item.weeks),
@@ -289,6 +299,8 @@ mod tests {
                 end: 1,
                 period: "第 1 节".into(),
                 time: "08:00–08:45".into(),
+                kind: String::new(),
+                additional_kinds: Vec::new(),
                 course: "课程".into(),
                 location: "教室".into(),
                 weeks: "1-16 周".into(),
@@ -347,6 +359,19 @@ mod tests {
         assert!(!source.contains("day_width"));
         assert!(!source.contains("course_size"));
         assert!(!source.contains("dividers"));
+    }
+
+    #[test]
+    fn renders_personal_role_as_a_separate_badge() {
+        let mut payload = valid_payload();
+        payload.items[0].kind = "teaching_assistant".into();
+        let source = build_source(&payload);
+        assert!(source.contains("kind: \"teaching_assistant\""));
+        assert!(source.contains("role-label"));
+        assert!(source.contains("\"助教\""));
+        assert!(!source.contains("课程（助教）"));
+        let (_, width, height) = super::super::compile_png(source, 1.0).unwrap();
+        assert!(width > 0 && height > 0);
     }
 
     #[test]
@@ -534,6 +559,8 @@ mod tests {
                 end: original.end,
                 period: original.period.clone(),
                 time: original.time.clone(),
+                kind: original.kind.clone(),
+                additional_kinds: original.additional_kinds.clone(),
                 course: format!("课程 {n} {}", "完整课程名称".repeat(8)),
                 location: original.location.clone(),
                 weeks: original.weeks.clone(),

@@ -48,6 +48,7 @@ func fixtures() []fixture {
 		{"rich-table", "待办表格 · 合成数据", richTableImage, fixtureNow},
 		{"rich-text", "帮助与长文本", richTextImage, fixtureNow},
 		{"grid-week", "周课表 · 公开教学班组合", gridWeekImage, fixtureNow},
+		{"grid-role-badges", "周课表 · 个人身份 Badge", gridRoleImage, fixtureNow},
 		{"grid-day", "日课表 · 与周课表相同课程", gridDayImage, fixtureNow},
 		{"weather", "多城市天气 · 合成数据", weatherImage, fixtureNow},
 	}

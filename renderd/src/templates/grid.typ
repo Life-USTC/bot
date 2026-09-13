@@ -19,6 +19,46 @@
   selected
 })
 
+#let role-label(kind) = if kind == "teaching_assistant" {
+  "助教"
+} else if kind == "auditor" {
+  "旁听"
+} else {
+  ""
+}
+
+#let role-badge(label) = box(
+  fill: rgb("#ef4444"),
+  radius: 3pt,
+  inset: (x: 6pt, y: 2pt),
+  text(font: ("Source Han Sans CN", "Noto Sans CJK SC"), size: 10pt,
+    weight: "bold", fill: white, label))
+
+#let role-badge-labels(items) = {
+  let labels = ()
+  for item in items {
+    labels = labels + (role-label(item.kind),)
+    labels = labels + item.additional_kinds.map(role-label)
+  }
+  let unique = ()
+  for label in labels {
+    if label != "" and not unique.contains(label) {
+      unique.push(label)
+    }
+  }
+  unique
+}
+
+#let role-badges(items) = {
+  let labels = role-badge-labels(items)
+  if labels.len() == 0 {
+    []
+  } else {
+    grid(columns: (auto,) * labels.len(), column-gutter: 3pt,
+      ..labels.map(label => role-badge(label)))
+  }
+}
+
 #let course-body(item) = {
   set par(leading: 0.55em)
   stack(spacing: 12pt,
@@ -69,7 +109,13 @@
       cells.push(grid.cell(x: day + 1, y: group.start, rowspan: group.end - group.start + 1,
         fill: if item.color == "" { rgb("#e2e8f0") } else { rgb(item.color) },
         stroke: 1pt + accent,
-        interval-body(group)))
+        {
+          place(top + right, dx: -4pt, dy: 4pt, role-badges(group.items))
+          if group.start == group.end and role-badge-labels(group.items).len() > 0 {
+            v(18pt)
+          }
+          interval-body(group)
+        }))
     }
   }
   let summary = if data.days.len() == 1 {

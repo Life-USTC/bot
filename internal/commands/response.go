@@ -518,7 +518,7 @@ func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, b
 	}
 	place := strings.TrimSpace(columns[0])
 	timeRange := strings.TrimSpace(columns[1])
-	course := strings.TrimSpace(columns[2])
+	course, kind := scheduleGridCourseAndKind(columns[2])
 	weeks := strings.TrimSpace(strings.Join(columns[3:], " "))
 	start, end, ok := schedulePeriodRange(timeRange)
 	if !ok || course == "" {
@@ -529,10 +529,36 @@ func weeklyScheduleGridItem(line string, day int) (responses.ScheduleGridItem, b
 		Day:         day,
 		StartPeriod: start,
 		EndPeriod:   end,
+		Kind:        kind,
 		Course:      course,
 		Location:    scheduleLocationNote(campus, room),
 		Weeks:       weeks,
 	}, true
+}
+
+// scheduleGridCourseAndKind separates the personal role suffix used by the
+// plain-text response from the semantic data sent to both image renderers.
+// Keeping the suffix in the text response preserves the existing Bot output;
+// the grid card can now render the role as a small badge without duplicating
+// it in the course title.
+func scheduleGridCourseAndKind(value string) (course, kind string) {
+	course = strings.TrimSpace(value)
+	for _, role := range []struct {
+		label string
+		kind  string
+	}{
+		{label: "助教", kind: lifedata.SubscriptionKindTeachingAssistant},
+		{label: "旁听", kind: lifedata.SubscriptionKindAuditor},
+	} {
+		for _, pair := range []string{"（" + role.label + "）", "(" + role.label + ")"} {
+			if !strings.HasSuffix(course, pair) {
+				continue
+			}
+			course = strings.TrimSpace(strings.TrimSuffix(course, pair))
+			return course, role.kind
+		}
+	}
+	return course, ""
 }
 
 func mergeScheduleGridItem(items []responses.ScheduleGridItem, next responses.ScheduleGridItem) []responses.ScheduleGridItem {
@@ -543,9 +569,34 @@ func mergeScheduleGridItem(items []responses.ScheduleGridItem, next responses.Sc
 		items[i].Course = joinScheduleGridText(items[i].Course, next.Course)
 		items[i].Location = joinScheduleGridText(items[i].Location, next.Location)
 		items[i].Weeks = joinScheduleGridText(items[i].Weeks, next.Weeks)
+		mergeScheduleGridKinds(&items[i], next)
 		return items
 	}
 	return append(items, next)
+}
+
+func mergeScheduleGridKinds(item *responses.ScheduleGridItem, next responses.ScheduleGridItem) {
+	kinds := append([]string(nil), item.AdditionalKinds...)
+	if item.Kind != "" {
+		kinds = append([]string{item.Kind}, kinds...)
+	}
+	if next.Kind != "" {
+		kinds = append(kinds, next.Kind)
+	}
+	unique := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		if kind == "" || containsString(unique, kind) {
+			continue
+		}
+		unique = append(unique, kind)
+	}
+	if len(unique) == 0 {
+		item.Kind = ""
+		item.AdditionalKinds = nil
+		return
+	}
+	item.Kind = unique[0]
+	item.AdditionalKinds = append([]string(nil), unique[1:]...)
 }
 
 func joinScheduleGridText(left, right string) string {

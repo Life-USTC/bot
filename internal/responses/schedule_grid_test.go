@@ -3,6 +3,7 @@ package responses
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"strconv"
@@ -38,6 +39,48 @@ func TestScheduleGridItemTextSizeUsesCourseBlockHeight(t *testing.T) {
 	if scheduleGridCourseFontSize <= 13 || scheduleGridMetaFontSize <= richMetaFontSize ||
 		scheduleGridLargeCourseFontSize <= scheduleGridCourseFontSize || scheduleGridLargeMetaFontSize <= scheduleGridMetaFontSize {
 		t.Fatal("large item font sizes must exceed compact font sizes")
+	}
+}
+
+func TestScheduleGridRoleRowsReserveBadgeSpace(t *testing.T) {
+	grid := &ScheduleGrid{
+		Days:    []ScheduleGridDay{{Label: "周一"}},
+		Periods: []ScheduleGridPeriod{{}, {}, {}},
+		Items: []ScheduleGridItem{
+			{Day: 0, StartPeriod: 1, EndPeriod: 1, Kind: "teaching_assistant"},
+			{Day: 0, StartPeriod: 2, EndPeriod: 3, Kind: "auditor"},
+		},
+	}
+	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
+	metrics.RowHeights = scheduleGridRoleRowHeights(grid, metrics)
+	if got, want := metrics.rowHeight(0), scheduleGridRoleRowHeight; got != want {
+		t.Fatalf("role row height = %d, want %d", got, want)
+	}
+	if got, want := metrics.rowHeight(1), metrics.RowHeight; got != want {
+		t.Fatalf("multi-period role row height = %d, want normal height %d", got, want)
+	}
+	if got, want := metrics.rowHeight(2), metrics.RowHeight; got != want {
+		t.Fatalf("multi-period role row height = %d, want normal height %d", got, want)
+	}
+	roleRect, ok := scheduleGridItemBounds(grid.Items[0], metrics)
+	if !ok || roleRect.Dy() != scheduleGridRoleRowHeight {
+		t.Fatalf("role bounds = %v, want one reserved row", roleRect)
+	}
+	for _, tc := range []struct {
+		name    string
+		item    ScheduleGridItem
+		reserve int
+	}{
+		{name: "title only", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor"}, reserve: 0},
+		{name: "one metadata line", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor", Location: "教室"}, reserve: scheduleGridRoleTextReserve / 2},
+		{name: "full metadata", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor", Location: "教室", Weeks: "1–16 周"}, reserve: scheduleGridRoleTextReserve},
+		{name: "multi-period", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 2, Kind: "auditor", Location: "教室", Weeks: "1–16 周"}, reserve: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := scheduleGridRoleTextReserveFor(tc.item); got != tc.reserve {
+				t.Fatalf("role text reserve = %d, want %d", got, tc.reserve)
+			}
+		})
 	}
 }
 
@@ -138,8 +181,25 @@ func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
 	}
 }
 
+func TestScheduleGridRoleLabels(t *testing.T) {
+	for _, tc := range []struct {
+		kind  string
+		label string
+	}{
+		{kind: "teaching_assistant", label: "助教"},
+		{kind: "auditor", label: "旁听"},
+		{kind: "regular"},
+		{kind: "unknown"},
+	} {
+		if got := scheduleGridRoleLabel(tc.kind); got != tc.label {
+			t.Fatalf("scheduleGridRoleLabel(%q) = %q, want %q", tc.kind, got, tc.label)
+		}
+	}
+}
+
 func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	grid := testScheduleGrid()
+	grid.Items[0].Kind = "teaching_assistant"
 	grid.Items[0].Weeks = "2-16 周"
 	image := NewScheduleGridImage("schedule", "07-12 至 07-18 课表", grid, "本周课表")
 	if image == nil || image.Grid == nil {
@@ -159,6 +219,22 @@ func TestRendererCreatesScheduleGridPNG(t *testing.T) {
 	if decoded.Bounds().Dx() != width || decoded.Bounds().Dy() != height {
 		t.Fatalf("bounds = %v size=%dx%d", decoded.Bounds(), width, height)
 	}
+	if !imageContainsColor(decoded, color.RGBA{239, 68, 68, 255}) {
+		t.Fatal("teaching-assistant badge color was not rendered")
+	}
+}
+
+func imageContainsColor(img image.Image, want color.RGBA) bool {
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if r == uint32(want.R)*257 && g == uint32(want.G)*257 &&
+				b == uint32(want.B)*257 && a == uint32(want.A)*257 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestFitScheduleGridText(t *testing.T) {
