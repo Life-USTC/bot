@@ -55,7 +55,7 @@ MCP 对齐（见
 `tiankaima@tkm-mac-mini` 更新 `/Users/tiankaima/Services/life-ustc-bot`，只接受干净的已提交
 版本：它用该提交创建临时源码归档，在本地临时副本中生成 Go vendor 目录，把归档传到远端，
 再在 Darwin arm64 上使用 CGO 编译 Bot 和 Rust `renderd`。远端工具查找顺序是
-`ROOT/toolchain/bin`、`/opt/homebrew/bin`、`/usr/local/bin` 和 `/usr/bin`；Rust 构建使用
+`ROOT/toolchain/go/bin`（与 `go.mod` 对齐的 Go）、`ROOT/toolchain/bin`、`/opt/homebrew/bin`、`/usr/local/bin` 和 `/usr/bin`；Rust 构建使用
 锁定的 `Cargo.lock` 和离线缓存，因此更新时需要预先准备好 Go vendor 所需的本地模块缓存以及
 远端 Cargo registry 缓存。
 
@@ -69,7 +69,7 @@ MCP 对齐（见
 SQLite 数据库；初次生产迁移由迁移工作另行完成。脚本会在 `build/<deployment-id>/` 保留源码、
 构建产物、旧二进制、数据库备份和日志。它先停 Bot，再备份并迁移 SQLite，随后原子替换二进制和
 `/Library/LaunchDaemons/dev.life-ustc.{bot,renderd}.plist`；plist 为 root 所有、权限 600，两个
-服务均设置 `UserName=tiankaima`、`RunAtLoad`、`KeepAlive`、工作目录和标准输出/错误日志。它
+服务均设置 `UserName` 为部署用户（默认 `tiankaima`）、`RunAtLoad`、`KeepAlive`、工作目录和标准输出/错误日志。它
 先启动并检查 `dev.life-ustc.renderd`，再启动并检查 Bot；失败时恢复二进制、数据库和 plist，并
 重新加载部署前已加载的服务。部署锁和 launchd label 可避免同一 Bot 出现重复实例。
 
