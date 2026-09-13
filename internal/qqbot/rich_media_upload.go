@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -21,9 +20,12 @@ import (
 
 const (
 	qqRichMediaFileName          = "image.png"
+	qqRichMediaMD510MBytes       = 10002432
 	qqRichMediaMaxPartAttempts   = 3
-	qqRichMediaDefaultRetryLimit = 30 * time.Second
+	qqRichMediaDefaultRetryLimit = 5 * time.Minute
 )
+
+var errRichMediaRetryTimeout = errors.New("qq bot rich media retry timeout")
 
 type richMediaPrepareRequest struct {
 	FileType int    `json:"file_type"`
@@ -169,8 +171,8 @@ func richMediaHashes(data []byte) (md5HexValue, sha1HexValue, first10MiBMD5 stri
 	md5Value := md5.Sum(data)
 	sha1Value := sha1.Sum(data)
 	limit := len(data)
-	if limit > 10<<20 {
-		limit = 10 << 20
+	if limit > qqRichMediaMD510MBytes {
+		limit = qqRichMediaMD510MBytes
 	}
 	first10Value := md5.Sum(data[:limit])
 	return hex.EncodeToString(md5Value[:]), hex.EncodeToString(sha1Value[:]), hex.EncodeToString(first10Value[:])
@@ -258,26 +260,35 @@ func (b *Bot) putRichMediaPart(ctx context.Context, presignedURL string, data []
 	deadline := time.Now().Add(policy.timeout)
 	var lastErr error
 	for attempt := 1; attempt <= qqRichMediaMaxPartAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
+		attemptCtx, cancel, err := richMediaAttemptContext(ctx, deadline)
+		if err != nil {
 			return err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, presignedURL, bytes.NewReader(data))
+		req, err := http.NewRequestWithContext(attemptCtx, http.MethodPut, presignedURL, bytes.NewReader(data))
 		if err != nil {
+			cancel()
 			return errors.New("qq bot rich media part PUT request is invalid")
 		}
 		req.Header.Set("Content-Type", "application/octet-stream")
 		resp, err := b.httpClient().Do(req)
+		attemptErr := attemptCtx.Err()
+		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			if attemptErr == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) || !time.Now().Before(deadline) {
+				return errRichMediaRetryTimeout
 			}
 			if _, ok := err.(net.Error); !ok {
 				return errors.New("qq bot rich media part PUT transport failed")
 			}
 			lastErr = errors.New("qq bot rich media part PUT transport failed")
 		} else {
-			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
+			if !time.Now().Before(deadline) {
+				return errRichMediaRetryTimeout
+			}
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil
 			}
@@ -286,10 +297,10 @@ func (b *Bot) putRichMediaPart(ctx context.Context, presignedURL string, data []
 				return lastErr
 			}
 		}
-		if attempt == qqRichMediaMaxPartAttempts || time.Now().After(deadline) {
+		if attempt == qqRichMediaMaxPartAttempts {
 			return lastErr
 		}
-		if err := waitRichMediaRetry(ctx, policy.delay); err != nil {
+		if err := waitRichMediaRetry(ctx, policy.delay, deadline); err != nil {
 			return err
 		}
 	}
@@ -300,18 +311,32 @@ func (b *Bot) finishRichMediaPart(ctx context.Context, path, token string, body 
 	deadline := time.Now().Add(policy.timeout)
 	var lastErr error
 	for attempt := 1; attempt <= qqRichMediaMaxPartAttempts; attempt++ {
-		if err := b.openAPI(ctx, http.MethodPost, path, token, body, nil); err == nil {
+		attemptCtx, cancel, err := richMediaAttemptContext(ctx, deadline)
+		if err != nil {
+			return err
+		}
+		err = b.openAPI(attemptCtx, http.MethodPost, path, token, body, nil)
+		attemptErr := attemptCtx.Err()
+		cancel()
+		if err == nil && attemptErr == nil && time.Now().Before(deadline) {
 			return nil
+		}
+		if err == nil {
+			lastErr = errRichMediaRetryTimeout
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		} else if attemptErr == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) || !time.Now().Before(deadline) {
+			return errRichMediaRetryTimeout
 		} else {
 			lastErr = err
 			if !isRetryableRichMediaPartFinish(err) {
 				return err
 			}
 		}
-		if attempt == qqRichMediaMaxPartAttempts || time.Now().After(deadline) {
+		if attempt == qqRichMediaMaxPartAttempts {
 			return lastErr
 		}
-		if err := waitRichMediaRetry(ctx, policy.delay); err != nil {
+		if err := waitRichMediaRetry(ctx, policy.delay, deadline); err != nil {
 			return err
 		}
 	}
@@ -335,9 +360,31 @@ func isRetryableRichMediaStatus(status int) bool {
 	}
 }
 
-func waitRichMediaRetry(ctx context.Context, delay time.Duration) error {
+func richMediaAttemptContext(ctx context.Context, deadline time.Time) (context.Context, context.CancelFunc, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return nil, nil, errRichMediaRetryTimeout
+	}
+	attemptCtx, cancel := context.WithTimeout(ctx, remaining)
+	return attemptCtx, cancel, nil
+}
+
+func waitRichMediaRetry(ctx context.Context, delay time.Duration, deadline time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return errRichMediaRetryTimeout
+	}
 	if delay <= 0 {
 		return nil
+	}
+	if delay > remaining {
+		delay = remaining
 	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -345,6 +392,9 @@ func waitRichMediaRetry(ctx context.Context, delay time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
+		if !time.Now().Before(deadline) {
+			return errRichMediaRetryTimeout
+		}
 		return nil
 	}
 }

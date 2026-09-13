@@ -6,12 +6,14 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -108,6 +110,16 @@ func TestRichMediaUploadUsesChunkProtocolHashesAndBoundedFinishRetry(t *testing.
 	}
 }
 
+func TestRichMediaHashesUseOfficialMD510MWindow(t *testing.T) {
+	data := make([]byte, qqRichMediaMD510MBytes+1)
+	data[qqRichMediaMD510MBytes] = 1
+	_, _, got := richMediaHashes(data)
+	firstWindow := md5.Sum(data[:qqRichMediaMD510MBytes])
+	if got != hex.EncodeToString(firstWindow[:]) {
+		t.Fatalf("md5_10m = %q, want first %d bytes", got, qqRichMediaMD510MBytes)
+	}
+}
+
 func TestQQMediaCacheKeyIncludesTargetScope(t *testing.T) {
 	data := []byte("same image")
 	one, err := qqMediaCacheKey(store.Identity{ConversationType: "private", ConversationID: "u-1"}, data)
@@ -120,6 +132,48 @@ func TestQQMediaCacheKeyIncludesTargetScope(t *testing.T) {
 	}
 	if one == two {
 		t.Fatalf("cache keys collide across targets: %q", one)
+	}
+}
+
+func TestRichMediaRetryDeadlineBoundsPUTAndDelay(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		timer := time.NewTimer(200 * time.Millisecond)
+		defer timer.Stop()
+		<-timer.C
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	bot := &Bot{HTTPClient: server.Client()}
+	startedAt := time.Now()
+	err := bot.putRichMediaPart(context.Background(), server.URL, []byte("x"), richMediaRetryPolicy{
+		timeout: 25 * time.Millisecond,
+		delay:   time.Second,
+	})
+	if !errors.Is(err, errRichMediaRetryTimeout) {
+		t.Fatalf("PUT error = %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > 500*time.Millisecond {
+		t.Fatalf("PUT exceeded retry deadline: %s", elapsed)
+	}
+	startedAt = time.Now()
+	err = waitRichMediaRetry(context.Background(), time.Second, time.Now().Add(25*time.Millisecond))
+	if !errors.Is(err, errRichMediaRetryTimeout) {
+		t.Fatalf("delay error = %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > 500*time.Millisecond {
+		t.Fatalf("retry delay exceeded deadline: %s", elapsed)
+	}
+}
+
+func TestRichMediaRetryHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := (&Bot{}).putRichMediaPart(ctx, "http://127.0.0.1:1", []byte("x"), richMediaRetryPolicy{
+		timeout: time.Second,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled PUT error = %v", err)
 	}
 }
 
