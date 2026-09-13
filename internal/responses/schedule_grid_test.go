@@ -42,6 +42,48 @@ func TestScheduleGridItemTextSizeUsesCourseBlockHeight(t *testing.T) {
 	}
 }
 
+func TestScheduleGridRoleRowsReserveBadgeSpace(t *testing.T) {
+	grid := &ScheduleGrid{
+		Days:    []ScheduleGridDay{{Label: "周一"}},
+		Periods: []ScheduleGridPeriod{{}, {}, {}},
+		Items: []ScheduleGridItem{
+			{Day: 0, StartPeriod: 1, EndPeriod: 1, Kind: "teaching_assistant"},
+			{Day: 0, StartPeriod: 2, EndPeriod: 3, Kind: "auditor"},
+		},
+	}
+	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
+	metrics.RowHeights = scheduleGridRoleRowHeights(grid, metrics)
+	if got, want := metrics.rowHeight(0), scheduleGridRoleRowHeight; got != want {
+		t.Fatalf("role row height = %d, want %d", got, want)
+	}
+	if got, want := metrics.rowHeight(1), metrics.RowHeight; got != want {
+		t.Fatalf("multi-period role row height = %d, want normal height %d", got, want)
+	}
+	if got, want := metrics.rowHeight(2), metrics.RowHeight; got != want {
+		t.Fatalf("multi-period role row height = %d, want normal height %d", got, want)
+	}
+	roleRect, ok := scheduleGridItemBounds(grid.Items[0], metrics)
+	if !ok || roleRect.Dy() != scheduleGridRoleRowHeight {
+		t.Fatalf("role bounds = %v, want one reserved row", roleRect)
+	}
+	for _, tc := range []struct {
+		name    string
+		item    ScheduleGridItem
+		reserve int
+	}{
+		{name: "title only", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor"}, reserve: 0},
+		{name: "one metadata line", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor", Location: "教室"}, reserve: scheduleGridRoleTextReserve / 2},
+		{name: "full metadata", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 1, Kind: "auditor", Location: "教室", Weeks: "1–16 周"}, reserve: scheduleGridRoleTextReserve},
+		{name: "multi-period", item: ScheduleGridItem{StartPeriod: 1, EndPeriod: 2, Kind: "auditor", Location: "教室", Weeks: "1–16 周"}, reserve: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := scheduleGridRoleTextReserveFor(tc.item); got != tc.reserve {
+				t.Fatalf("role text reserve = %d, want %d", got, tc.reserve)
+			}
+		})
+	}
+}
+
 func TestScheduleGridUsesStrongDayPartDividers(t *testing.T) {
 	grid := testScheduleGrid()
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))

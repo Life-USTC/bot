@@ -26,6 +26,7 @@ type scheduleGridMetrics struct {
 	DayWidth      int
 	DayCount      int
 	PeriodCount   int
+	RowHeights    []int
 	FooterGap     int
 	BottomMargin  int
 }
@@ -41,6 +42,8 @@ const (
 	scheduleGridBadgeHeight         = 24
 	scheduleGridBadgePaddingX       = 6
 	scheduleGridBadgeRadius         = 4
+	scheduleGridRoleRowHeight       = 84
+	scheduleGridRoleTextReserve     = 16
 )
 
 func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
@@ -64,12 +67,54 @@ func defaultScheduleGridMetrics(dayCount, periodCount int) scheduleGridMetrics {
 	}
 }
 
+func scheduleGridRoleRowHeights(grid *ScheduleGrid, metrics scheduleGridMetrics) []int {
+	if grid == nil {
+		return nil
+	}
+	var heights []int
+	for _, item := range grid.Items {
+		if item.StartPeriod != item.EndPeriod || len(scheduleGridRoleLabels(item)) == 0 {
+			continue
+		}
+		period := item.StartPeriod - 1
+		if period < 0 || period >= metrics.PeriodCount {
+			continue
+		}
+		if heights == nil {
+			heights = make([]int, metrics.PeriodCount)
+		}
+		if heights[period] < scheduleGridRoleRowHeight {
+			heights[period] = scheduleGridRoleRowHeight
+		}
+	}
+	return heights
+}
+
 func (m scheduleGridMetrics) gridWidth() int {
 	return m.LabelWidth + m.DayCount*m.DayWidth
 }
 
 func (m scheduleGridMetrics) gridBottom() int {
-	return m.GridTop + m.HeaderHeight + m.PeriodCount*m.RowHeight
+	bottom := m.GridTop + m.HeaderHeight
+	for index := 0; index < m.PeriodCount; index++ {
+		bottom += m.rowHeight(index)
+	}
+	return bottom
+}
+
+func (m scheduleGridMetrics) rowHeight(index int) int {
+	if index >= 0 && index < len(m.RowHeights) && m.RowHeights[index] > 0 {
+		return m.RowHeights[index]
+	}
+	return m.RowHeight
+}
+
+func (m scheduleGridMetrics) rowTop(index int) int {
+	top := m.GridTop + m.HeaderHeight
+	for current := 0; current < index; current++ {
+		top += m.rowHeight(current)
+	}
+	return top
 }
 
 func (m scheduleGridMetrics) space() imageRenderSpace {
@@ -86,8 +131,12 @@ func scheduleGridItemBounds(item ScheduleGridItem, metrics scheduleGridMetrics) 
 		return image.Rectangle{}, false
 	}
 	left := metrics.MarginX + metrics.LabelWidth + item.Day*metrics.DayWidth
-	top := metrics.GridTop + metrics.HeaderHeight + (item.StartPeriod-1)*metrics.RowHeight
-	return image.Rect(left, top, left+metrics.DayWidth, top+(item.EndPeriod-item.StartPeriod+1)*metrics.RowHeight), true
+	top := metrics.rowTop(item.StartPeriod - 1)
+	height := 0
+	for period := item.StartPeriod - 1; period < item.EndPeriod; period++ {
+		height += metrics.rowHeight(period)
+	}
+	return image.Rect(left, top, left+metrics.DayWidth, top+height), true
 }
 
 func scheduleGridItemUsesLargeText(rect image.Rectangle, metrics scheduleGridMetrics) bool {
@@ -98,7 +147,7 @@ func scheduleGridDividerBounds(boundary int, metrics scheduleGridMetrics) (image
 	if boundary <= 0 || boundary >= metrics.PeriodCount {
 		return image.Rectangle{}, false
 	}
-	y := metrics.GridTop + metrics.HeaderHeight + boundary*metrics.RowHeight
+	y := metrics.rowTop(boundary)
 	top := y - scheduleGridDividerThickness/2
 	return image.Rect(metrics.MarginX, top, metrics.MarginX+metrics.gridWidth(), top+scheduleGridDividerThickness), true
 }
@@ -166,6 +215,7 @@ func normalizeScheduleGridCourseKey(value string) string {
 
 func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byte, int, int, error) {
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
+	metrics.RowHeights = scheduleGridRoleRowHeights(grid, metrics)
 	space := metrics.space()
 	s := space.px
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
@@ -269,22 +319,24 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	}
 
 	for periodIndex, period := range grid.Periods {
-		top := metrics.GridTop + metrics.HeaderHeight + periodIndex*metrics.RowHeight
+		top := metrics.rowTop(periodIndex)
+		rowHeight := metrics.rowHeight(periodIndex)
 		rowBackground := background
 		if periodIndex%2 == 1 {
 			rowBackground = alternateBackground
 		}
-		labelRect := image.Rect(metrics.MarginX, top, metrics.MarginX+metrics.LabelWidth, top+metrics.RowHeight)
+		labelRect := image.Rect(metrics.MarginX, top, metrics.MarginX+metrics.LabelWidth, top+rowHeight)
 		drawScheduleGridCell(canvas, labelRect, s, rowBackground, line)
-		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(labelRect.Min.X+metrics.LabelWidth/2), s(labelRect.Min.Y+22), period.Label, ink)
-		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(labelRect.Min.X+metrics.LabelWidth/2), s(labelRect.Min.Y+43), period.Time, muted)
+		labelOffset := (rowHeight - metrics.RowHeight) / 2
+		drawCenteredMixedText(canvas, faces.Bold, faces.BoldMono, s(labelRect.Min.X+metrics.LabelWidth/2), s(labelRect.Min.Y+22+labelOffset), period.Label, ink)
+		drawCenteredMixedText(canvas, faces.Meta, faces.MetaMono, s(labelRect.Min.X+metrics.LabelWidth/2), s(labelRect.Min.Y+43+labelOffset), period.Time, muted)
 		for dayIndex := range grid.Days {
 			left := metrics.MarginX + metrics.LabelWidth + dayIndex*metrics.DayWidth
 			cellBackground := rowBackground
 			if dayIndex == todayIndex {
 				cellBackground = todayBackground
 			}
-			drawScheduleGridCell(canvas, image.Rect(left, top, left+metrics.DayWidth, top+metrics.RowHeight), s, cellBackground, line)
+			drawScheduleGridCell(canvas, image.Rect(left, top, left+metrics.DayWidth, top+rowHeight), s, cellBackground, line)
 		}
 	}
 
@@ -312,6 +364,7 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 
 		centerX := s(rect.Min.X + rect.Dx()/2)
 		centerY := s(rect.Min.Y + rect.Dy()/2)
+		centerY += s(scheduleGridRoleTextReserveFor(item))
 		courseFace, courseMonoFace := itemCourseFace, itemCourseMonoFace
 		metaFace, metaMonoFace := itemMetaFace, itemMetaMonoFace
 		courseFontSize, metaFontSize := scheduleGridCourseFontSize, scheduleGridMetaFontSize
@@ -403,6 +456,19 @@ func scheduleGridRoleLabels(item ScheduleGridItem) []string {
 		labels = append(labels, label)
 	}
 	return labels
+}
+
+func scheduleGridRoleTextReserveFor(item ScheduleGridItem) int {
+	if item.StartPeriod != item.EndPeriod || len(scheduleGridRoleLabels(item)) == 0 {
+		return 0
+	}
+	if strings.TrimSpace(item.Location) == "" && strings.TrimSpace(item.Weeks) == "" {
+		return 0
+	}
+	if strings.TrimSpace(item.Location) == "" || strings.TrimSpace(item.Weeks) == "" {
+		return scheduleGridRoleTextReserve / 2
+	}
+	return scheduleGridRoleTextReserve
 }
 
 func containsScheduleGridLabel(labels []string, target string) bool {
