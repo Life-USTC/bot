@@ -158,14 +158,36 @@ func TestHomeworkCompletionRequiredOverridesCompletion(t *testing.T) {
 	if HomeworkCompletionRequired(homework) {
 		t.Fatal("completionRequired = true, want false")
 	}
-	if HomeworkCompleted(homework) {
-		t.Fatal("TA homework was treated as completed")
+	if !HomeworkCompleted(homework) {
+		t.Fatal("actual completion was discarded for TA homework")
 	}
 	if got := HomeworkStatusLabel(homework); got != HomeworkNoCompletionLabel {
 		t.Fatalf("status = %q", got)
 	}
 	if got := HomeworkLabel(homework); !strings.HasPrefix(got, HomeworkNoCompletionLabel+" · ") {
 		t.Fatalf("label = %q", got)
+	}
+}
+
+func TestHomeworkPendingForDisplayKeepsOnlyFutureOrUndatedTAWork(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	for _, tc := range []struct {
+		name     string
+		homework map[string]any
+		want     bool
+	}{
+		{name: "future", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T12:01:00+08:00"}, want: true},
+		{name: "undated", homework: map[string]any{"completionRequired": false}, want: true},
+		{name: "at deadline", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T12:00:00+08:00"}},
+		{name: "overdue", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T11:59:00+08:00"}},
+		{name: "completed overdue", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T11:59:00+08:00", "isCompleted": true}, want: false},
+		{name: "regular overdue", homework: map[string]any{"completionRequired": true, "submissionDueAt": "2026-06-07T11:59:00+08:00"}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HomeworkPendingForDisplay(tc.homework, now); got != tc.want {
+				t.Fatalf("pending = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

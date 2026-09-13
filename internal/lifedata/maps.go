@@ -100,24 +100,32 @@ func CourseLabel(name string, data map[string]any) string {
 }
 
 func HomeworkCompleted(homework map[string]any) bool {
-	if !HomeworkCompletionRequired(homework) {
-		return false
-	}
 	if completed, ok := homework["isCompleted"].(bool); ok {
 		return completed
 	}
 	return homework["completion"] != nil
 }
 
-// HomeworkCompletionRequired defaults to true for payloads that predate the
-// field. A false value is an explicit server decision that the user's role
-// does not require completion.
 func HomeworkCompletionRequired(homework map[string]any) bool {
 	required, ok := homework["completionRequired"].(bool)
 	if !ok {
 		return true
 	}
 	return required
+}
+
+// HomeworkPendingForDisplay keeps regular pending semantics and excludes an
+// uncompleted homework without a completion requirement once its deadline has
+// arrived. Missing deadlines remain pending.
+func HomeworkPendingForDisplay(homework map[string]any, now time.Time) bool {
+	if HomeworkCompleted(homework) {
+		return false
+	}
+	if HomeworkCompletionRequired(homework) {
+		return true
+	}
+	due, ok := ParseAPITime(FirstString(homework, "submissionDueAt"))
+	return !ok || due.After(now)
 }
 
 const HomeworkNoCompletionLabel = "无需完成"

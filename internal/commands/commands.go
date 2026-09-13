@@ -1979,11 +1979,7 @@ func appendOverviewSection[T any](lines []string, title string, items []T, forma
 func dueSoonHomeworks(homeworks []map[string]any, now time.Time) []map[string]any {
 	out := make([]map[string]any, 0, len(homeworks))
 	for _, homework := range homeworks {
-		if !lifedata.HomeworkCompletionRequired(homework) {
-			out = append(out, homework)
-			continue
-		}
-		if lifedata.HomeworkCompleted(homework) {
+		if !lifedata.HomeworkPendingForDisplay(homework, now) {
 			continue
 		}
 		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
@@ -2159,8 +2155,9 @@ type numberedHomework struct {
 
 func filterNumberedHomeworks(homeworks []map[string]any, args homeworkListArgs) []numberedHomework {
 	out := make([]numberedHomework, 0, len(homeworks))
+	now := chinaNow()
 	for i, homework := range homeworks {
-		if !args.all && lifedata.HomeworkCompleted(homework) {
+		if !args.all && !lifedata.HomeworkPendingForDisplay(homework, now) {
 			continue
 		}
 		if args.semesterID > 0 || args.semesterJwID > 0 {
@@ -2296,8 +2293,9 @@ func filterHomeworks(homeworks []map[string]any, pendingOnly bool) []map[string]
 		return homeworks
 	}
 	out := make([]map[string]any, 0, len(homeworks))
+	now := chinaNow()
 	for _, homework := range homeworks {
-		if !lifedata.HomeworkCompleted(homework) {
+		if lifedata.HomeworkPendingForDisplay(homework, now) {
 			out = append(out, homework)
 		}
 	}

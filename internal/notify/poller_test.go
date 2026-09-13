@@ -73,7 +73,7 @@ func TestFormatHomeworkDisplaysNoCompletion(t *testing.T) {
 	}
 }
 
-func TestPollerSkipsHomeworkWithoutCompletionRequirement(t *testing.T) {
+func TestPollerRemindsForFutureHomeworkWithoutCompletionRequirement(t *testing.T) {
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	publisher := &fakePublisher{}
 	poller := &Poller{Publisher: publisher}
@@ -83,8 +83,8 @@ func TestPollerSkipsHomeworkWithoutCompletionRequirement(t *testing.T) {
 		"submissionDueAt":    "2026-06-07T15:00:00+08:00",
 		"completionRequired": false,
 	}}, now)
-	if len(publisher.messages) != 0 {
-		t.Fatalf("messages = %#v, want no reminder", publisher.messages)
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "无需完成") {
+		t.Fatalf("messages = %#v, want a labelled reminder", publisher.messages)
 	}
 }
 

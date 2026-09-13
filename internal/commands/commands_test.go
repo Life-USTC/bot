@@ -2490,7 +2490,7 @@ func TestPersonalHomeworkDisplaysSubscriptionMembershipKind(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/workspace/homeworks":
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-ta","title":"助教作业","submissionDueAt":"2020-01-01T10:00:00+08:00","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"completionRequired":false,"isCompleted":true}]}`))
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-ta","title":"助教作业","submissionDueAt":"2099-01-01T10:00:00+08:00","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"completionRequired":false,"isCompleted":false}]}`))
 		case "/api/workspace/subscriptions/current":
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"kind":"teaching_assistant"}]}}`))
 		default:
@@ -2506,6 +2506,17 @@ func TestPersonalHomeworkDisplaysSubscriptionMembershipKind(t *testing.T) {
 	}
 	if strings.Contains(reply, "已完成：") || strings.Contains(reply, "已逾期：") {
 		t.Fatalf("TA homework was classified by completion/deadline: %q", reply)
+	}
+}
+
+func TestCompletedTeachingAssistantHomeworkIsNotPending(t *testing.T) {
+	numbered := filterNumberedHomeworks([]map[string]any{{
+		"id":                 "hw-ta",
+		"completionRequired": false,
+		"isCompleted":        true,
+	}}, homeworkListArgs{})
+	if len(numbered) != 0 {
+		t.Fatalf("numbered = %#v, want no pending TA homework", numbered)
 	}
 }
 
