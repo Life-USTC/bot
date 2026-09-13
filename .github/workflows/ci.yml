@@ -63,7 +63,7 @@ jobs:
           docker compose config --quiet
 
       - name: Test deployment transaction
-        run: bash scripts/deploy-cn.test.sh
+        run: bash scripts/deploy-mac.test.sh
 
       - name: Check OpenAPI generated client is up-to-date
         run: |

@@ -49,21 +49,9 @@ MCP 对齐（见
 进程在 `BOT_HEALTH_ADDR`（默认 `127.0.0.1:2282`）提供 `/live`，只检查进程初始化和本地 SQLite，外部消息渠道断线不会触发容器重启。
 编码约定以本仓库与 server 契约为准，不在此重复运维手册。
 
-### cn 生产部署
-
-生产部署唯一入口是 `scripts/deploy-cn.sh`。它从当前提交的 Git 跟踪文件归档创建本地构建上下文，使用 Docker Buildx 为 `linux/amd64` 构建 bot 和 `renderd` 镜像，再通过 SSH 上传完整镜像归档；远端在部署锁内保留旧镜像后执行 `docker load`，核对镜像 ID，再执行迁移、健康检查和事务回滚。Compose 只声明已构建镜像，不提供远端构建入口；`renderd` 的内存上限为 768 MB。`.env` 单独传到远端，不会进入镜像构建归档。
-
-```sh
-REMOTE_HOST=deploy@example \
-REMOTE_DIR=/srv/life-ustc \
-./scripts/deploy-cn.sh
-```
-
-先检查当前提交而不执行 Docker、SSH 或远端改动时，设置 `DEPLOY_DRY_RUN=1` 运行同一命令。
-
 ### macOS 原生部署
 
-macOS 更新入口是 `scripts/deploy-mac.sh`。脚本默认通过
+生产 Bot 与渲染服务运行在 `tkm-mac-mini`，由系统级 launchd 自动启动。更新入口是 `scripts/deploy-mac.sh`。脚本默认通过
 `tiankaima@tkm-mac-mini` 更新 `/Users/tiankaima/Services/life-ustc-bot`，只接受干净的已提交
 版本：它用该提交创建临时源码归档，在本地临时副本中生成 Go vendor 目录，把归档传到远端，
 再在 Darwin arm64 上使用 CGO 编译 Bot 和 Rust `renderd`。远端工具查找顺序是
