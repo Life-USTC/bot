@@ -17,6 +17,18 @@ func TestRoomMapCommandAndNaturalQueryArePublic(t *testing.T) {
 		input string
 		want  []string
 	}{
+		{input: "5201", want: []string{"5201"}},
+		{input: "３ａ２０４？", want: []string{"3A204"}},
+		{input: "gt-b110", want: []string{"GT-B110"}},
+		{input: "1101", want: []string{"1101"}},
+		{input: "2103", want: []string{"2103"}},
+		{input: "3C201", want: []string{"3C201"}},
+		{input: "GH-104", want: []string{"GH-104"}},
+		{input: "G2-B302", want: []string{"G2-B302"}},
+		{input: "GX-C1001", want: []string{"GX-C1001"}},
+		{input: "G3-101", want: []string{"G3-101"}},
+		{input: "Z101", want: []string{"Z101"}},
+		{input: "ARTS401", want: []string{"ARTS401"}},
 		{input: "教室 3A204", want: []string{"3A204"}},
 		{input: "教室 ３ａ２０４", want: []string{"3A204"}},
 		{input: "请帮我查一下 3a204 的地图", want: []string{"3A204"}},
@@ -50,7 +62,7 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	response, ok := handler.HandleResponse(context.Background(), Input{
-		Text:     "教室 3A204",
+		Text:     "３ａ２０４",
 		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},
 	})
 	if !ok {
@@ -96,6 +108,15 @@ func TestGenericCourseQueryDoesNotBecomeRoomLookup(t *testing.T) {
 		result := ParseCommand(input)
 		if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
 			t.Fatalf("generic catalog query routed as room: %s", input)
+		}
+	}
+}
+
+func TestBareRoomLookupDoesNotCaptureOtherMessages(t *testing.T) {
+	for _, input := range []string{"2026", "12345", "CS1001", "MATH1001", "520", "52010", "A5201", "5201A", "5 201", "G3-hello", "GX-news", "Zoom", "5201 5202", "明天在5201上课", "预约5201", "课程 5201"} {
+		result := ParseCommand(input)
+		if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
+			t.Errorf("non-room command routed as room: %q", input)
 		}
 	}
 }

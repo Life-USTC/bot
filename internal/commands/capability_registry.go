@@ -458,6 +458,7 @@ func init() {
 			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
 			Help: helpMeta("room", "教室", "查询教室位置和楼层地图", true, []HelpExample{
 				example("教室 3A204", "查询教室位置和楼层图"),
+				example("5201", "直接发送编号，自动返回教室位置图片"),
 			}, []HelpExample{example("教室 3A204", "查询教室位置和楼层图")}),
 		},
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {

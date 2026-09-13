@@ -25,6 +25,10 @@ func TestSharedConversationActivationMatrix(t *testing.T) {
 		wantID     commands.CapabilityID
 	}{
 		{name: "exact public command", text: "校车", wantAction: ActionCommand, wantID: commands.CapabilityBus},
+		{name: "bare room code", text: "5201", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
+		{name: "bare fullwidth room code", text: "ｇｔ－ｂ１１０", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
+		{name: "room announcement", text: "明天在5201上课", wantAction: ActionIgnore},
+		{name: "ordinary number", text: "2026", wantAction: ActionIgnore},
 		{name: "room map command", text: "教室 3A204", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
 		{name: "room map natural query", text: "3A204 在哪里？", wantAction: ActionCommand, wantID: commands.CapabilityRoomMap},
 		{name: "public command with route", text: "校车 西区 高新区", wantAction: ActionCommand, wantID: commands.CapabilityBus},
