@@ -11,6 +11,11 @@ import (
 )
 
 var roomCodePattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
+
+// Bare messages must follow USTC room numbering, so course codes and ordinary
+// numbers do not activate a public room lookup. Exact availability comes from Life.
+var bareRoomCodePattern = regexp.MustCompile(`^(?:1[1-3][0-9]{2}|2[1-8][0-9]{2}|5[1-5][0-9]{2}|3(?:[AB][1-5]|C[1-3])[0-9]{2}|GT-(?:A4|B[12]|C1)[0-9]{2}|GH-[1-4][0-9]{2}|G2-B[3-5][0-9]{2}|G3-[A-Z]?[0-9]{3,4}|GX-[A-Z]?[0-9]{3,4}|Z[0-9]{3}|ARTS[34][0-9]{2})$`)
+
 var roomCodeInTextPattern = regexp.MustCompile(`[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`)
 
 func roomMapArgsAcceptable(args []string) bool {
@@ -111,10 +116,10 @@ func parseNaturalRoomIntent(raw string) ParseResult {
 		"教室", "房间", "地图", "位置", "在哪", "哪里", "怎么走",
 		"room", "map", "where",
 	})
-	if !hasRoomIntent {
+	candidateText := strings.Trim(strings.TrimSpace(normalized), "，,。！？!?；;：:")
+	if !hasRoomIntent && !bareRoomCodePattern.MatchString(candidateText) {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	candidateText := strings.Trim(strings.TrimSpace(normalized), "，,。！？!?；;：:")
 	matches := roomCodeInTextPattern.FindAllString(candidateText, -1)
 	candidates := make([]string, 0, len(matches))
 	for _, match := range matches {
