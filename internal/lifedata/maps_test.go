@@ -1,6 +1,7 @@
 package lifedata
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,6 +87,53 @@ func TestLifeDataLabelsUseFallbacks(t *testing.T) {
 	}
 }
 
+func TestMembershipLabels(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		want string
+	}{
+		{kind: "regular"},
+		{kind: "auditor", want: "旁听"},
+		{kind: "teaching_assistant", want: "助教"},
+		{kind: "unknown"},
+	} {
+		section := map[string]any{"kind": tc.kind}
+		want := "数学分析"
+		if tc.want != "" {
+			want += "（" + tc.want + "）"
+		}
+		if got := CourseLabel("数学分析", section); got != want {
+			t.Fatalf("kind %q label = %q, want %q", tc.kind, got, want)
+		}
+	}
+}
+
+func TestApplySubscriptionKinds(t *testing.T) {
+	subscription := map[string]any{
+		"subscription": map[string]any{
+			"sections": []any{
+				map[string]any{"id": 101, "code": "MATH1001.01", "kind": "teaching_assistant"},
+				map[string]any{"id": 102, "code": "CS1001.01", "kind": "auditor"},
+			},
+		},
+	}
+	items := []map[string]any{
+		{"section": map[string]any{"id": 101, "course": map[string]any{"namePrimary": "数学分析"}}},
+		{"section": map[string]any{"code": "CS1001.01", "course": map[string]any{"namePrimary": "计算机导论"}}},
+		{"section": map[string]any{"id": 999, "kind": "regular"}},
+	}
+	ApplySubscriptionKinds(subscription, items)
+	if got := MembershipLabel(items[0]); got != "助教" {
+		t.Fatalf("id lookup label = %q", got)
+	}
+	if got := MembershipLabel(items[1]); got != "旁听" {
+		t.Fatalf("code lookup label = %q", got)
+	}
+	if got := MembershipLabel(items[2]); got != "" {
+		t.Fatalf("existing kind was overwritten: %q", got)
+	}
+}
+
 func TestHomeworkLabel(t *testing.T) {
 	homework := map[string]any{
 		"title":           "Problem Set 1",
@@ -97,6 +145,50 @@ func TestHomeworkLabel(t *testing.T) {
 	want := "截止 06-08 10:00 · 数据库系统 · Problem Set 1"
 	if got := HomeworkLabel(homework); got != want {
 		t.Fatalf("HomeworkLabel = %q, want %q", got, want)
+	}
+}
+
+func TestHomeworkCompletionRequiredOverridesCompletion(t *testing.T) {
+	homework := map[string]any{
+		"title":              "助教作业",
+		"submissionDueAt":    "2020-01-01T00:00:00+08:00",
+		"completionRequired": false,
+		"isCompleted":        true,
+	}
+	if HomeworkCompletionRequired(homework) {
+		t.Fatal("completionRequired = true, want false")
+	}
+	if !HomeworkCompleted(homework) {
+		t.Fatal("actual completion was discarded for TA homework")
+	}
+	if got := HomeworkStatusLabel(homework); got != HomeworkNoCompletionLabel {
+		t.Fatalf("status = %q", got)
+	}
+	got := HomeworkLabel(homework)
+	if !strings.HasPrefix(got, HomeworkNoCompletionLabel+" · 截止 01-01 00:00 · ") {
+		t.Fatalf("label = %q", got)
+	}
+}
+
+func TestHomeworkPendingForDisplayKeepsOnlyFutureOrUndatedTAWork(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, ChinaLocation())
+	for _, tc := range []struct {
+		name     string
+		homework map[string]any
+		want     bool
+	}{
+		{name: "future", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T12:01:00+08:00"}, want: true},
+		{name: "undated", homework: map[string]any{"completionRequired": false}, want: true},
+		{name: "at deadline", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T12:00:00+08:00"}},
+		{name: "overdue", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T11:59:00+08:00"}},
+		{name: "completed overdue", homework: map[string]any{"completionRequired": false, "submissionDueAt": "2026-06-07T11:59:00+08:00", "isCompleted": true}, want: false},
+		{name: "regular overdue", homework: map[string]any{"completionRequired": true, "submissionDueAt": "2026-06-07T11:59:00+08:00"}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HomeworkPendingForDisplay(tc.homework, now); got != tc.want {
+				t.Fatalf("pending = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

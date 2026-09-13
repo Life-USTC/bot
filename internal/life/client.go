@@ -746,16 +746,6 @@ func (c *Client) MatchSectionCodes(ctx context.Context, token string, codes []st
 	return out, err
 }
 
-func (c *Client) ReplaceCalendarSubscription(ctx context.Context, token string, sectionIDs []int) (map[string]any, error) {
-	var out map[string]any
-	resp, err := c.Typed(ctx, token).BatchUpdateCalendarSubscription(ctx, openapi.BatchUpdateCalendarSubscriptionJSONRequestBody{
-		Action:     openapi.CalendarSubscriptionBatchRequestSchemaActionSet,
-		SectionIds: &sectionIDs,
-	})
-	err = typedJSON(resp, err, "replace calendar subscription", &out)
-	return out, err
-}
-
 func (c *Client) Schedules(ctx context.Context, token string, values url.Values) ([]map[string]any, error) {
 	var out dataList
 	resp, err := c.Typed(ctx, token).ListSchedules(ctx, listSchedulesParams(values))

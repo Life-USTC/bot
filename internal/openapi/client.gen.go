@@ -361,11 +361,31 @@ func (e BusQueryResponseSchemaTripsDayType) Valid() bool {
 	}
 }
 
+// Defines values for CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind.
+const (
+	CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindAuditor           CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind = "auditor"
+	CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindRegular           CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind = "regular"
+	CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindTeachingAssistant CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind enum.
+func (e CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind) Valid() bool {
+	switch e {
+	case CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindAuditor:
+		return true
+	case CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindRegular:
+		return true
+	case CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CalendarSubscriptionBatchRequestSchemaAction.
 const (
 	CalendarSubscriptionBatchRequestSchemaActionAdd    CalendarSubscriptionBatchRequestSchemaAction = "add"
 	CalendarSubscriptionBatchRequestSchemaActionRemove CalendarSubscriptionBatchRequestSchemaAction = "remove"
-	CalendarSubscriptionBatchRequestSchemaActionSet    CalendarSubscriptionBatchRequestSchemaAction = "set"
 )
 
 // Valid indicates whether the value is a known member of the CalendarSubscriptionBatchRequestSchemaAction enum.
@@ -374,8 +394,6 @@ func (e CalendarSubscriptionBatchRequestSchemaAction) Valid() bool {
 	case CalendarSubscriptionBatchRequestSchemaActionAdd:
 		return true
 	case CalendarSubscriptionBatchRequestSchemaActionRemove:
-		return true
-	case CalendarSubscriptionBatchRequestSchemaActionSet:
 		return true
 	default:
 		return false
@@ -386,7 +404,6 @@ func (e CalendarSubscriptionBatchRequestSchemaAction) Valid() bool {
 const (
 	CalendarSubscriptionBatchResponseSchemaActionAdd    CalendarSubscriptionBatchResponseSchemaAction = "add"
 	CalendarSubscriptionBatchResponseSchemaActionRemove CalendarSubscriptionBatchResponseSchemaAction = "remove"
-	CalendarSubscriptionBatchResponseSchemaActionSet    CalendarSubscriptionBatchResponseSchemaAction = "set"
 )
 
 // Valid indicates whether the value is a known member of the CalendarSubscriptionBatchResponseSchemaAction enum.
@@ -396,7 +413,68 @@ func (e CalendarSubscriptionBatchResponseSchemaAction) Valid() bool {
 		return true
 	case CalendarSubscriptionBatchResponseSchemaActionRemove:
 		return true
-	case CalendarSubscriptionBatchResponseSchemaActionSet:
+	default:
+		return false
+	}
+}
+
+// Defines values for CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind.
+const (
+	CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindAuditor           CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind = "auditor"
+	CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindRegular           CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind = "regular"
+	CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindTeachingAssistant CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind enum.
+func (e CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind) Valid() bool {
+	switch e {
+	case CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindAuditor:
+		return true
+	case CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindRegular:
+		return true
+	case CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind.
+const (
+	CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindAuditor           CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind = "auditor"
+	CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindRegular           CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind = "regular"
+	CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindTeachingAssistant CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind enum.
+func (e CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind) Valid() bool {
+	switch e {
+	case CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindAuditor:
+		return true
+	case CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindRegular:
+		return true
+	case CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind.
+const (
+	CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindAuditor           CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind = "auditor"
+	CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindRegular           CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind = "regular"
+	CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindTeachingAssistant CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind enum.
+func (e CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind) Valid() bool {
+	switch e {
+	case CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindAuditor:
+		return true
+	case CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindRegular:
+		return true
+	case CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKindTeachingAssistant:
 		return true
 	default:
 		return false
@@ -724,6 +802,27 @@ func (e CompactOverviewResponseSchemaTodosItemsPriority) Valid() bool {
 	case CompactOverviewResponseSchemaTodosItemsPriorityLow:
 		return true
 	case CompactOverviewResponseSchemaTodosItemsPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind.
+const (
+	CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindAuditor           CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind = "auditor"
+	CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindRegular           CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind = "regular"
+	CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindTeachingAssistant CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind enum.
+func (e CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind) Valid() bool {
+	switch e {
+	case CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindAuditor:
+		return true
+	case CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindRegular:
+		return true
+	case CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKindTeachingAssistant:
 		return true
 	default:
 		return false
@@ -1444,6 +1543,48 @@ func (e RoomMapResponseSchemaStatus) Valid() bool {
 	case Overview:
 		return true
 	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SubscriptionKindUpdateRequestSchemaKind.
+const (
+	SubscriptionKindUpdateRequestSchemaKindAuditor           SubscriptionKindUpdateRequestSchemaKind = "auditor"
+	SubscriptionKindUpdateRequestSchemaKindRegular           SubscriptionKindUpdateRequestSchemaKind = "regular"
+	SubscriptionKindUpdateRequestSchemaKindTeachingAssistant SubscriptionKindUpdateRequestSchemaKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the SubscriptionKindUpdateRequestSchemaKind enum.
+func (e SubscriptionKindUpdateRequestSchemaKind) Valid() bool {
+	switch e {
+	case SubscriptionKindUpdateRequestSchemaKindAuditor:
+		return true
+	case SubscriptionKindUpdateRequestSchemaKindRegular:
+		return true
+	case SubscriptionKindUpdateRequestSchemaKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SubscriptionKindUpdateResponseSchemaKind.
+const (
+	Auditor           SubscriptionKindUpdateResponseSchemaKind = "auditor"
+	Regular           SubscriptionKindUpdateResponseSchemaKind = "regular"
+	TeachingAssistant SubscriptionKindUpdateResponseSchemaKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the SubscriptionKindUpdateResponseSchemaKind enum.
+func (e SubscriptionKindUpdateResponseSchemaKind) Valid() bool {
+	switch e {
+	case Auditor:
+		return true
+	case Regular:
+		return true
+	case TeachingAssistant:
 		return true
 	default:
 		return false
@@ -3306,18 +3447,19 @@ type CalendarSubscriptionAppendResponseSchema struct {
 				} `json:"type"`
 				TypeId *int `json:"typeId"`
 			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
+			CourseId                int                                                              `json:"courseId"`
+			Credits                 *float32                                                         `json:"credits"`
+			DateTimePlacePersonText interface{}                                                      `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string                                                          `json:"dateTimePlaceText"`
+			DesignPeriods           *float32                                                         `json:"designPeriods"`
+			ExamModeId              *int                                                             `json:"examModeId"`
+			ExperimentPeriods       *float32                                                         `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool                                                            `json:"graduateAndPostgraduate"`
+			Id                      int                                                              `json:"id"`
+			JwId                    int                                                              `json:"jwId"`
+			Kind                    CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind `json:"kind"`
+			LimitCount              *int                                                             `json:"limitCount"`
+			MachinePeriods          *float32                                                         `json:"machinePeriods"`
 			OpenDepartment          *struct {
 				Code          string  `json:"code"`
 				Id            int     `json:"id"`
@@ -3362,6 +3504,9 @@ type CalendarSubscriptionAppendResponseSchema struct {
 		UserId string `json:"userId"`
 	} `json:"subscription"`
 }
+
+// CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind defines model for CalendarSubscriptionAppendResponseSchema.Subscription.Sections.Kind.
+type CalendarSubscriptionAppendResponseSchemaSubscriptionSectionsKind string
 
 // CalendarSubscriptionBatchRequestSchema defines model for calendarSubscriptionBatchRequestSchema.
 type CalendarSubscriptionBatchRequestSchema struct {
@@ -3594,18 +3739,19 @@ type CalendarSubscriptionBatchResponseSchema struct {
 				} `json:"type"`
 				TypeId *int `json:"typeId"`
 			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
+			CourseId                int                                                             `json:"courseId"`
+			Credits                 *float32                                                        `json:"credits"`
+			DateTimePlacePersonText interface{}                                                     `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string                                                         `json:"dateTimePlaceText"`
+			DesignPeriods           *float32                                                        `json:"designPeriods"`
+			ExamModeId              *int                                                            `json:"examModeId"`
+			ExperimentPeriods       *float32                                                        `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool                                                           `json:"graduateAndPostgraduate"`
+			Id                      int                                                             `json:"id"`
+			JwId                    int                                                             `json:"jwId"`
+			Kind                    CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind `json:"kind"`
+			LimitCount              *int                                                            `json:"limitCount"`
+			MachinePeriods          *float32                                                        `json:"machinePeriods"`
 			OpenDepartment          *struct {
 				Code          string  `json:"code"`
 				Id            int     `json:"id"`
@@ -3659,142 +3805,8 @@ type CalendarSubscriptionBatchResponseSchema struct {
 // CalendarSubscriptionBatchResponseSchemaAction defines model for CalendarSubscriptionBatchResponseSchema.Action.
 type CalendarSubscriptionBatchResponseSchemaAction string
 
-// CalendarSubscriptionCreateRequestSchema defines model for calendarSubscriptionCreateRequestSchema.
-type CalendarSubscriptionCreateRequestSchema struct {
-	SectionIds *[]int `json:"sectionIds,omitempty"`
-}
-
-// CalendarSubscriptionCreateResponseSchema defines model for calendarSubscriptionCreateResponseSchema.
-type CalendarSubscriptionCreateResponseSchema struct {
-	Subscription *struct {
-		Note     string `json:"note"`
-		Sections []struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			Campus        *struct {
-				Code          *string `json:"code"`
-				Id            int     `json:"id"`
-				JwId          int     `json:"jwId"`
-				NameCn        string  `json:"nameCn"`
-				NameEn        *string `json:"nameEn"`
-				NamePrimary   string  `json:"namePrimary"`
-				NameSecondary *string `json:"nameSecondary"`
-			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
-				Category *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"category"`
-				CategoryId *int `json:"categoryId"`
-				ClassType  *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"classType"`
-				ClassTypeId *int `json:"classTypeId"`
-				Classify    *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"classify"`
-				ClassifyId     *int   `json:"classifyId"`
-				Code           string `json:"code"`
-				EducationLevel *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"educationLevel"`
-				EducationLevelId *int `json:"educationLevelId"`
-				Gradation        *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"gradation"`
-				GradationId   *int    `json:"gradationId"`
-				Id            int     `json:"id"`
-				JwId          int     `json:"jwId"`
-				NameCn        string  `json:"nameCn"`
-				NameEn        *string `json:"nameEn"`
-				NamePrimary   string  `json:"namePrimary"`
-				NameSecondary *string `json:"nameSecondary"`
-				Type          *struct {
-					Id            int     `json:"id"`
-					NameCn        string  `json:"nameCn"`
-					NameEn        *string `json:"nameEn"`
-					NamePrimary   string  `json:"namePrimary"`
-					NameSecondary *string `json:"nameSecondary"`
-				} `json:"type"`
-				TypeId *int `json:"typeId"`
-			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
-			OpenDepartment          *struct {
-				Code          string  `json:"code"`
-				Id            int     `json:"id"`
-				IsCollege     *bool   `json:"isCollege"`
-				JwId          *int    `json:"jwId"`
-				NameCn        string  `json:"nameCn"`
-				NameEn        *string `json:"nameEn"`
-				NamePrimary   string  `json:"namePrimary"`
-				NameSecondary *string `json:"nameSecondary"`
-			} `json:"openDepartment"`
-			OpenDepartmentId        *int            `json:"openDepartmentId"`
-			Period                  *int            `json:"period"`
-			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
-			PracticePeriods         *float32        `json:"practicePeriods"`
-			Remark                  *string         `json:"remark"`
-			RetiredAt               *time.Time      `json:"retiredAt"`
-			RoomTypeId              *int            `json:"roomTypeId"`
-			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
-			ScheduleRemark          *string         `json:"scheduleRemark"`
-			ScheduleState           *string         `json:"scheduleState"`
-			SelectedStdCount        *int            `json:"selectedStdCount"`
-			Semester                *SemesterSchema `json:"semester"`
-			SemesterId              *int            `json:"semesterId"`
-			StdCount                *int            `json:"stdCount"`
-			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
-			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
-			TeachLanguageId         *int            `json:"teachLanguageId"`
-			Teachers                []struct {
-				Code          *string `json:"code"`
-				Id            int     `json:"id"`
-				JwId          int     `json:"jwId"`
-				NameCn        string  `json:"nameCn"`
-				NameEn        *string `json:"nameEn"`
-				NamePrimary   string  `json:"namePrimary"`
-				NameSecondary *string `json:"nameSecondary"`
-				PersonId      *int    `json:"personId"`
-			} `json:"teachers"`
-			TestPeriods   *float32 `json:"testPeriods"`
-			TheoryPeriods *float32 `json:"theoryPeriods"`
-			TimesPerWeek  *int     `json:"timesPerWeek"`
-		} `json:"sections"`
-		UserId string `json:"userId"`
-	} `json:"subscription"`
-}
+// CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind defines model for CalendarSubscriptionBatchResponseSchema.Subscription.Sections.Kind.
+type CalendarSubscriptionBatchResponseSchemaSubscriptionSectionsKind string
 
 // CalendarSubscriptionImportResponseSchema defines model for calendarSubscriptionImportResponseSchema.
 type CalendarSubscriptionImportResponseSchema struct {
@@ -4252,18 +4264,19 @@ type CalendarSubscriptionImportResponseSchema struct {
 				} `json:"type"`
 				TypeId *int `json:"typeId"`
 			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
+			CourseId                int                                                              `json:"courseId"`
+			Credits                 *float32                                                         `json:"credits"`
+			DateTimePlacePersonText interface{}                                                      `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string                                                          `json:"dateTimePlaceText"`
+			DesignPeriods           *float32                                                         `json:"designPeriods"`
+			ExamModeId              *int                                                             `json:"examModeId"`
+			ExperimentPeriods       *float32                                                         `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool                                                            `json:"graduateAndPostgraduate"`
+			Id                      int                                                              `json:"id"`
+			JwId                    int                                                              `json:"jwId"`
+			Kind                    CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind `json:"kind"`
+			LimitCount              *int                                                             `json:"limitCount"`
+			MachinePeriods          *float32                                                         `json:"machinePeriods"`
 			OpenDepartment          *struct {
 				Code          string  `json:"code"`
 				Id            int     `json:"id"`
@@ -4310,6 +4323,9 @@ type CalendarSubscriptionImportResponseSchema struct {
 	Success        bool     `json:"success"`
 	UnmatchedCodes []string `json:"unmatchedCodes"`
 }
+
+// CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind defines model for CalendarSubscriptionImportResponseSchema.Subscription.Sections.Kind.
+type CalendarSubscriptionImportResponseSchemaSubscriptionSectionsKind string
 
 // CalendarSubscriptionQueryRequestSchema defines model for calendarSubscriptionQueryRequestSchema.
 type CalendarSubscriptionQueryRequestSchema struct {
@@ -4548,18 +4564,19 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 				} `json:"type"`
 				TypeId *int `json:"typeId"`
 			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
+			CourseId                int                                                              `json:"courseId"`
+			Credits                 *float32                                                         `json:"credits"`
+			DateTimePlacePersonText interface{}                                                      `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string                                                          `json:"dateTimePlaceText"`
+			DesignPeriods           *float32                                                         `json:"designPeriods"`
+			ExamModeId              *int                                                             `json:"examModeId"`
+			ExperimentPeriods       *float32                                                         `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool                                                            `json:"graduateAndPostgraduate"`
+			Id                      int                                                              `json:"id"`
+			JwId                    int                                                              `json:"jwId"`
+			Kind                    CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind `json:"kind"`
+			LimitCount              *int                                                             `json:"limitCount"`
+			MachinePeriods          *float32                                                         `json:"machinePeriods"`
 			OpenDepartment          *struct {
 				Code          string  `json:"code"`
 				Id            int     `json:"id"`
@@ -4604,6 +4621,9 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 		UserId string `json:"userId"`
 	} `json:"subscription"`
 }
+
+// CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind defines model for CalendarSubscriptionRemoveResponseSchema.Subscription.Sections.Kind.
+type CalendarSubscriptionRemoveResponseSchemaSubscriptionSectionsKind string
 
 // CatalogLinkListResponseSchema defines model for catalogLinkListResponseSchema.
 type CatalogLinkListResponseSchema struct {
@@ -5024,8 +5044,9 @@ type CompactOverviewResponseSchema struct {
 			Completion   *struct {
 				CompletedAt time.Time `json:"completedAt"`
 			} `json:"completion"`
-			CreatedAt time.Time `json:"createdAt"`
-			CreatedBy *struct {
+			CompletionRequired bool      `json:"completionRequired"`
+			CreatedAt          time.Time `json:"createdAt"`
+			CreatedBy          *struct {
 				Id       string  `json:"id"`
 				Image    *string `json:"image"`
 				Name     *string `json:"name"`
@@ -5501,18 +5522,19 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 				} `json:"type"`
 				TypeId *int `json:"typeId"`
 			} `json:"course"`
-			CourseId                int         `json:"courseId"`
-			Credits                 *float32    `json:"credits"`
-			DateTimePlacePersonText interface{} `json:"dateTimePlacePersonText"`
-			DateTimePlaceText       *string     `json:"dateTimePlaceText"`
-			DesignPeriods           *float32    `json:"designPeriods"`
-			ExamModeId              *int        `json:"examModeId"`
-			ExperimentPeriods       *float32    `json:"experimentPeriods"`
-			GraduateAndPostgraduate *bool       `json:"graduateAndPostgraduate"`
-			Id                      int         `json:"id"`
-			JwId                    int         `json:"jwId"`
-			LimitCount              *int        `json:"limitCount"`
-			MachinePeriods          *float32    `json:"machinePeriods"`
+			CourseId                int                                                               `json:"courseId"`
+			Credits                 *float32                                                          `json:"credits"`
+			DateTimePlacePersonText interface{}                                                       `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string                                                           `json:"dateTimePlaceText"`
+			DesignPeriods           *float32                                                          `json:"designPeriods"`
+			ExamModeId              *int                                                              `json:"examModeId"`
+			ExperimentPeriods       *float32                                                          `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool                                                             `json:"graduateAndPostgraduate"`
+			Id                      int                                                               `json:"id"`
+			JwId                    int                                                               `json:"jwId"`
+			Kind                    CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind `json:"kind"`
+			LimitCount              *int                                                              `json:"limitCount"`
+			MachinePeriods          *float32                                                          `json:"machinePeriods"`
 			OpenDepartment          *struct {
 				Code          string  `json:"code"`
 				Id            int     `json:"id"`
@@ -5557,6 +5579,9 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 		UserId string `json:"userId"`
 	} `json:"subscription"`
 }
+
+// CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind defines model for CurrentCalendarSubscriptionResponseSchema.Subscription.Sections.Kind.
+type CurrentCalendarSubscriptionResponseSchemaSubscriptionSectionsKind string
 
 // DescriptionUpsertRequestSchema defines model for descriptionUpsertRequestSchema.
 type DescriptionUpsertRequestSchema struct {
@@ -5924,8 +5949,9 @@ type HomeworkCreateResponseSchema struct {
 		Completion   *struct {
 			CompletedAt time.Time `json:"completedAt"`
 		} `json:"completion"`
-		CreatedAt time.Time `json:"createdAt"`
-		CreatedBy *struct {
+		CompletionRequired bool      `json:"completionRequired"`
+		CreatedAt          time.Time `json:"createdAt"`
+		CreatedBy          *struct {
 			Id       string  `json:"id"`
 			Image    *string `json:"image"`
 			Name     *string `json:"name"`
@@ -6047,8 +6073,9 @@ type HomeworkDetailResponseSchema struct {
 		Completion   *struct {
 			CompletedAt time.Time `json:"completedAt"`
 		} `json:"completion"`
-		CreatedAt time.Time `json:"createdAt"`
-		CreatedBy *struct {
+		CompletionRequired bool      `json:"completionRequired"`
+		CreatedAt          time.Time `json:"createdAt"`
+		CreatedBy          *struct {
 			Id       string  `json:"id"`
 			Image    *string `json:"image"`
 			Name     *string `json:"name"`
@@ -6201,8 +6228,9 @@ type HomeworkUpdateResponseSchema struct {
 		Completion   *struct {
 			CompletedAt time.Time `json:"completedAt"`
 		} `json:"completion"`
-		CreatedAt time.Time `json:"createdAt"`
-		CreatedBy *struct {
+		CompletionRequired bool      `json:"completionRequired"`
+		CreatedAt          time.Time `json:"createdAt"`
+		CreatedBy          *struct {
 			Id       string  `json:"id"`
 			Image    *string `json:"image"`
 			Name     *string `json:"name"`
@@ -6309,20 +6337,21 @@ type HomeworksListResponseSchema struct {
 		Completion   *struct {
 			CompletedAt time.Time `json:"completedAt"`
 		} `json:"completion"`
-		CreatedAt         time.Time  `json:"createdAt"`
-		CreatedById       *string    `json:"createdById"`
-		DeletedAt         *time.Time `json:"deletedAt"`
-		DeletedById       *string    `json:"deletedById"`
-		Id                string     `json:"id"`
-		IsMajor           bool       `json:"isMajor"`
-		PublishedAt       *time.Time `json:"publishedAt"`
-		RequiresTeam      bool       `json:"requiresTeam"`
-		SectionId         int        `json:"sectionId"`
-		SubmissionDueAt   *time.Time `json:"submissionDueAt"`
-		SubmissionStartAt *time.Time `json:"submissionStartAt"`
-		Title             string     `json:"title"`
-		UpdatedAt         time.Time  `json:"updatedAt"`
-		UpdatedById       *string    `json:"updatedById"`
+		CompletionRequired bool       `json:"completionRequired"`
+		CreatedAt          time.Time  `json:"createdAt"`
+		CreatedById        *string    `json:"createdById"`
+		DeletedAt          *time.Time `json:"deletedAt"`
+		DeletedById        *string    `json:"deletedById"`
+		Id                 string     `json:"id"`
+		IsMajor            bool       `json:"isMajor"`
+		PublishedAt        *time.Time `json:"publishedAt"`
+		RequiresTeam       bool       `json:"requiresTeam"`
+		SectionId          int        `json:"sectionId"`
+		SubmissionDueAt    *time.Time `json:"submissionDueAt"`
+		SubmissionStartAt  *time.Time `json:"submissionStartAt"`
+		Title              string     `json:"title"`
+		UpdatedAt          time.Time  `json:"updatedAt"`
+		UpdatedById        *string    `json:"updatedById"`
 	} `json:"data"`
 	Pagination struct {
 		Page       int `json:"page"`
@@ -7618,8 +7647,9 @@ type SubscribedHomeworksResponseSchema struct {
 		Completion   *struct {
 			CompletedAt time.Time `json:"completedAt"`
 		} `json:"completion"`
-		CreatedAt time.Time `json:"createdAt"`
-		CreatedBy *struct {
+		CompletionRequired bool      `json:"completionRequired"`
+		CreatedAt          time.Time `json:"createdAt"`
+		CreatedBy          *struct {
 			Id       string  `json:"id"`
 			Image    *string `json:"image"`
 			Name     *string `json:"name"`
@@ -7884,6 +7914,23 @@ type SubscribedSchedulesResponseSchema struct {
 		Weekday   int `json:"weekday"`
 	} `json:"schedules"`
 }
+
+// SubscriptionKindUpdateRequestSchema defines model for subscriptionKindUpdateRequestSchema.
+type SubscriptionKindUpdateRequestSchema struct {
+	Kind SubscriptionKindUpdateRequestSchemaKind `json:"kind"`
+}
+
+// SubscriptionKindUpdateRequestSchemaKind defines model for SubscriptionKindUpdateRequestSchema.Kind.
+type SubscriptionKindUpdateRequestSchemaKind string
+
+// SubscriptionKindUpdateResponseSchema defines model for subscriptionKindUpdateResponseSchema.
+type SubscriptionKindUpdateResponseSchema struct {
+	Kind        SubscriptionKindUpdateResponseSchemaKind `json:"kind"`
+	SectionJwId int                                      `json:"sectionJwId"`
+}
+
+// SubscriptionKindUpdateResponseSchemaKind defines model for SubscriptionKindUpdateResponseSchema.Kind.
+type SubscriptionKindUpdateResponseSchemaKind string
 
 // SuccessResponseSchema defines model for successResponseSchema.
 type SuccessResponseSchema struct {
@@ -8948,9 +8995,6 @@ type DeleteApiWorkspaceSubscriptionsJSONRequestBody = CalendarSubscriptionRemove
 // AppendCalendarSubscriptionSectionsJSONRequestBody defines body for AppendCalendarSubscriptionSections for application/json ContentType.
 type AppendCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionAppendRequestSchema
 
-// SetCalendarSubscriptionJSONRequestBody defines body for SetCalendarSubscription for application/json ContentType.
-type SetCalendarSubscriptionJSONRequestBody = CalendarSubscriptionCreateRequestSchema
-
 // BatchUpdateCalendarSubscriptionJSONRequestBody defines body for BatchUpdateCalendarSubscription for application/json ContentType.
 type BatchUpdateCalendarSubscriptionJSONRequestBody = CalendarSubscriptionBatchRequestSchema
 
@@ -8959,6 +9003,9 @@ type PostApiWorkspaceSubscriptionsImportCodesJSONRequestBody = MatchSectionCodes
 
 // QueryCalendarSubscriptionSectionsJSONRequestBody defines body for QueryCalendarSubscriptionSections for application/json ContentType.
 type QueryCalendarSubscriptionSectionsJSONRequestBody = CalendarSubscriptionQueryRequestSchema
+
+// PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody defines body for PatchApiWorkspaceSubscriptionsJwId for application/json ContentType.
+type PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody = SubscriptionKindUpdateRequestSchema
 
 // CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
 type CreateTodoJSONRequestBody = TodoCreateRequestSchema
@@ -12257,11 +12304,6 @@ type ClientInterface interface {
 
 	AppendCalendarSubscriptionSections(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// SetCalendarSubscriptionWithBody request with any body
-	SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// BatchUpdateCalendarSubscriptionWithBody request with any body
 	BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12279,6 +12321,11 @@ type ClientInterface interface {
 	QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchApiWorkspaceSubscriptionsJwIdWithBody request with any body
+	PatchApiWorkspaceSubscriptionsJwIdWithBody(ctx context.Context, jwId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchApiWorkspaceSubscriptionsJwId(ctx context.Context, jwId int64, body PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListTodos request
 	ListTodos(ctx context.Context, params *ListTodosParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -13954,30 +14001,6 @@ func (c *Client) AppendCalendarSubscriptionSections(ctx context.Context, body Ap
 	return c.Client.Do(req)
 }
 
-func (c *Client) SetCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetCalendarSubscription(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetCalendarSubscriptionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) BatchUpdateCalendarSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewBatchUpdateCalendarSubscriptionRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -14052,6 +14075,30 @@ func (c *Client) QueryCalendarSubscriptionSectionsWithBody(ctx context.Context, 
 
 func (c *Client) QueryCalendarSubscriptionSections(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewQueryCalendarSubscriptionSectionsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchApiWorkspaceSubscriptionsJwIdWithBody(ctx context.Context, jwId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApiWorkspaceSubscriptionsJwIdRequestWithBody(c.Server, jwId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchApiWorkspaceSubscriptionsJwId(ctx context.Context, jwId int64, body PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApiWorkspaceSubscriptionsJwIdRequest(c.Server, jwId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20027,46 +20074,6 @@ func NewAppendCalendarSubscriptionSectionsRequestWithBody(server string, content
 	return req, nil
 }
 
-// NewSetCalendarSubscriptionRequest calls the generic SetCalendarSubscription builder with application/json body
-func NewSetCalendarSubscriptionRequest(server string, body SetCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetCalendarSubscriptionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewSetCalendarSubscriptionRequestWithBody generates requests for SetCalendarSubscription with any type of body
-func NewSetCalendarSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/workspace/subscriptions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewBatchUpdateCalendarSubscriptionRequest calls the generic BatchUpdateCalendarSubscription builder with application/json body
 func NewBatchUpdateCalendarSubscriptionRequest(server string, body BatchUpdateCalendarSubscriptionJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -20205,6 +20212,53 @@ func NewQueryCalendarSubscriptionSectionsRequestWithBody(server string, contentT
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPatchApiWorkspaceSubscriptionsJwIdRequest calls the generic PatchApiWorkspaceSubscriptionsJwId builder with application/json body
+func NewPatchApiWorkspaceSubscriptionsJwIdRequest(server string, jwId int64, body PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchApiWorkspaceSubscriptionsJwIdRequestWithBody(server, jwId, "application/json", bodyReader)
+}
+
+// NewPatchApiWorkspaceSubscriptionsJwIdRequestWithBody generates requests for PatchApiWorkspaceSubscriptionsJwId with any type of body
+func NewPatchApiWorkspaceSubscriptionsJwIdRequestWithBody(server string, jwId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "jwId", jwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -21266,11 +21320,6 @@ type ClientWithResponsesInterface interface {
 
 	AppendCalendarSubscriptionSectionsWithResponse(ctx context.Context, body AppendCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendCalendarSubscriptionSectionsResponse, error)
 
-	// SetCalendarSubscriptionWithBodyWithResponse request with any body
-	SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
-
-	SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error)
-
 	// BatchUpdateCalendarSubscriptionWithBodyWithResponse request with any body
 	BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error)
 
@@ -21288,6 +21337,11 @@ type ClientWithResponsesInterface interface {
 	QueryCalendarSubscriptionSectionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
 
 	QueryCalendarSubscriptionSectionsWithResponse(ctx context.Context, body QueryCalendarSubscriptionSectionsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryCalendarSubscriptionSectionsResponse, error)
+
+	// PatchApiWorkspaceSubscriptionsJwIdWithBodyWithResponse request with any body
+	PatchApiWorkspaceSubscriptionsJwIdWithBodyWithResponse(ctx context.Context, jwId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApiWorkspaceSubscriptionsJwIdResponse, error)
+
+	PatchApiWorkspaceSubscriptionsJwIdWithResponse(ctx context.Context, jwId int64, body PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApiWorkspaceSubscriptionsJwIdResponse, error)
 
 	// ListTodosWithResponse request
 	ListTodosWithResponse(ctx context.Context, params *ListTodosParams, reqEditors ...RequestEditorFn) (*ListTodosResponse, error)
@@ -24869,40 +24923,6 @@ func (r AppendCalendarSubscriptionSectionsResponse) ContentType() string {
 	return ""
 }
 
-type SetCalendarSubscriptionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *CalendarSubscriptionCreateResponseSchema
-	JSON400      *OpenApiErrorSchema
-	JSON401      *OpenApiErrorSchema
-	JSON429      *OpenApiErrorSchema
-	JSON503      *OpenApiErrorSchema
-}
-
-// Status returns HTTPResponse.Status
-func (r SetCalendarSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetCalendarSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SetCalendarSubscriptionResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 type BatchUpdateCalendarSubscriptionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -25031,6 +25051,41 @@ func (r QueryCalendarSubscriptionSectionsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r QueryCalendarSubscriptionSectionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PatchApiWorkspaceSubscriptionsJwIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SubscriptionKindUpdateResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchApiWorkspaceSubscriptionsJwIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchApiWorkspaceSubscriptionsJwIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchApiWorkspaceSubscriptionsJwIdResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -26675,23 +26730,6 @@ func (c *ClientWithResponses) AppendCalendarSubscriptionSectionsWithResponse(ctx
 	return ParseAppendCalendarSubscriptionSectionsResponse(rsp)
 }
 
-// SetCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *SetCalendarSubscriptionResponse
-func (c *ClientWithResponses) SetCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
-	rsp, err := c.SetCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetCalendarSubscriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetCalendarSubscriptionWithResponse(ctx context.Context, body SetCalendarSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*SetCalendarSubscriptionResponse, error) {
-	rsp, err := c.SetCalendarSubscription(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetCalendarSubscriptionResponse(rsp)
-}
-
 // BatchUpdateCalendarSubscriptionWithBodyWithResponse request with arbitrary body returning *BatchUpdateCalendarSubscriptionResponse
 func (c *ClientWithResponses) BatchUpdateCalendarSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BatchUpdateCalendarSubscriptionResponse, error) {
 	rsp, err := c.BatchUpdateCalendarSubscriptionWithBody(ctx, contentType, body, reqEditors...)
@@ -26750,6 +26788,23 @@ func (c *ClientWithResponses) QueryCalendarSubscriptionSectionsWithResponse(ctx 
 		return nil, err
 	}
 	return ParseQueryCalendarSubscriptionSectionsResponse(rsp)
+}
+
+// PatchApiWorkspaceSubscriptionsJwIdWithBodyWithResponse request with arbitrary body returning *PatchApiWorkspaceSubscriptionsJwIdResponse
+func (c *ClientWithResponses) PatchApiWorkspaceSubscriptionsJwIdWithBodyWithResponse(ctx context.Context, jwId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApiWorkspaceSubscriptionsJwIdResponse, error) {
+	rsp, err := c.PatchApiWorkspaceSubscriptionsJwIdWithBody(ctx, jwId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApiWorkspaceSubscriptionsJwIdResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchApiWorkspaceSubscriptionsJwIdWithResponse(ctx context.Context, jwId int64, body PatchApiWorkspaceSubscriptionsJwIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApiWorkspaceSubscriptionsJwIdResponse, error) {
+	rsp, err := c.PatchApiWorkspaceSubscriptionsJwId(ctx, jwId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApiWorkspaceSubscriptionsJwIdResponse(rsp)
 }
 
 // ListTodosWithResponse request returning *ListTodosResponse
@@ -31102,60 +31157,6 @@ func ParseAppendCalendarSubscriptionSectionsResponse(rsp *http.Response) (*Appen
 	return response, nil
 }
 
-// ParseSetCalendarSubscriptionResponse parses an HTTP response from a SetCalendarSubscriptionWithResponse call
-func ParseSetCalendarSubscriptionResponse(rsp *http.Response) (*SetCalendarSubscriptionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SetCalendarSubscriptionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CalendarSubscriptionCreateResponseSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest OpenApiErrorSchema
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseBatchUpdateCalendarSubscriptionResponse parses an HTTP response from a BatchUpdateCalendarSubscriptionWithResponse call
 func ParseBatchUpdateCalendarSubscriptionResponse(rsp *http.Response) (*BatchUpdateCalendarSubscriptionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -31352,6 +31353,67 @@ func ParseQueryCalendarSubscriptionSectionsResponse(rsp *http.Response) (*QueryC
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchApiWorkspaceSubscriptionsJwIdResponse parses an HTTP response from a PatchApiWorkspaceSubscriptionsJwIdWithResponse call
+func ParsePatchApiWorkspaceSubscriptionsJwIdResponse(rsp *http.Response) (*PatchApiWorkspaceSubscriptionsJwIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchApiWorkspaceSubscriptionsJwIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SubscriptionKindUpdateResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 

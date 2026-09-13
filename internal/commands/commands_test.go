@@ -151,6 +151,28 @@ func TestFormatSectionIncludesOpenAPISemesterName(t *testing.T) {
 	}
 }
 
+func TestFormatSectionIncludesSubscriptionKindLabel(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		want string
+	}{
+		{kind: "auditor", want: "旁听"},
+		{kind: "teaching_assistant", want: "助教"},
+		{kind: "regular"},
+	} {
+		line := formatSection(map[string]any{
+			"code": "MATH1001.01", "kind": tc.kind,
+			"course": map[string]any{"namePrimary": "高等数学"},
+		})
+		if tc.want != "" && !strings.Contains(line, "高等数学（"+tc.want+"）") {
+			t.Fatalf("kind %q missing from line %q", tc.kind, line)
+		}
+		if tc.want == "" && strings.Contains(line, "（") {
+			t.Fatalf("regular section was labelled: %q", line)
+		}
+	}
+}
+
 func TestSearchSectionsTrimsKeyword(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("search") != "高等数学" {
@@ -2410,6 +2432,19 @@ func TestFormatHomeworkListSeparatesCompletedFromOverdue(t *testing.T) {
 	}
 }
 
+func TestFormatHomeworkDisplaysNoCompletionForTeachingAssistant(t *testing.T) {
+	now := time.Date(2026, 6, 7, 12, 0, 0, 0, lifedata.ChinaLocation())
+	reply := formatHomeworkListAt([]map[string]any{
+		{"id": "ta", "title": "助教作业", "submissionDueAt": "2020-01-01T10:00:00+08:00", "completionRequired": false, "isCompleted": true},
+	}, now)
+	if !strings.Contains(reply, "无需完成：") || !strings.Contains(reply, "无需完成 · 截止 𝟶𝟷-𝟶𝟷 𝟷𝟶:𝟶𝟶\t\t") || !strings.Contains(reply, "助教作业") {
+		t.Fatalf("reply = %q", reply)
+	}
+	if strings.Contains(reply, "已逾期：") || strings.Contains(reply, "已完成：") {
+		t.Fatalf("TA homework was placed in a completion bucket: %q", reply)
+	}
+}
+
 func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -2446,6 +2481,42 @@ func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("reply unexpectedly contains %q: %q", unwanted, plain)
 		}
+	}
+}
+
+func TestPersonalHomeworkDisplaysSubscriptionMembershipKind(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/workspace/homeworks":
+			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-ta","title":"助教作业","submissionDueAt":"2099-01-01T10:00:00+08:00","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"completionRequired":false,"isCompleted":false}]}`))
+		case "/api/workspace/subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"kind":"teaching_assistant"}]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "作业", Identity: ident})
+	if !ok || !strings.Contains(reply, "数据库系统（助教）") || !strings.Contains(reply, "无需完成") {
+		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+	if strings.Contains(reply, "已完成：") || strings.Contains(reply, "已逾期：") {
+		t.Fatalf("TA homework was classified by completion/deadline: %q", reply)
+	}
+}
+
+func TestCompletedTeachingAssistantHomeworkIsNotPending(t *testing.T) {
+	numbered := filterNumberedHomeworks([]map[string]any{{
+		"id":                 "hw-ta",
+		"completionRequired": false,
+		"isCompleted":        true,
+	}}, homeworkListArgs{})
+	if len(numbered) != 0 {
+		t.Fatalf("numbered = %#v, want no pending TA homework", numbered)
 	}
 }
 
@@ -2645,6 +2716,35 @@ func TestHandleTodayCurriculum(t *testing.T) {
 	}
 	if !strings.Contains(reply, "西区 𝟹𝙰𝟸𝟶𝟺\t𝟶𝟿:𝟻𝟶-𝟷𝟷:𝟸𝟻\t数据库系统") {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestPersonalScheduleDisplaysSubscriptionMembershipKind(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer access" {
+			t.Fatalf("authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
+			_, _ = w.Write([]byte(`{"schedules":[{"startTime":"09:50","endTime":"11:25","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+		case "/api/workspace/subscriptions/current":
+			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"kind":"teaching_assistant"}]}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	handler.EnableImageResponses = true
+	response, ok := handler.HandleResponse(ctx, Input{Text: "今天课表", Identity: ident})
+	if !ok || !strings.Contains(response.Text, "数据库系统（助教）") {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if response.Image == nil || !strings.Contains(response.Image.AltText, "数据库系统（助教）") {
+		t.Fatalf("image = %#v", response.Image)
 	}
 }
 
@@ -3262,6 +3362,34 @@ func TestSubscriptionListGroupsBySemester(t *testing.T) {
 	}
 }
 
+func TestSubscriptionListDisplaysMembershipKinds(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/subscriptions/current" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"subscription":{"sections":[
+			{"code":"CONT5103P.01","kind":"teaching_assistant","course":{"namePrimary":"随机过程理论"},"semester":{"nameCn":"2026年春季学期"}},
+			{"code":"CONT6104P.01","kind":"auditor","course":{"namePrimary":"组合数学"},"semester":{"nameCn":"2026年春季学期"}},
+			{"code":"MATH1001.01","kind":"regular","course":{"namePrimary":"数学分析"},"semester":{"nameCn":"2026年春季学期"}}
+		]}}`))
+	}))
+	defer server.Close()
+
+	handler := testAuthedHandler(t, server, ident)
+	reply, ok := handler.Handle(ctx, Input{Text: "订阅", Identity: ident})
+	if !ok {
+		t.Fatal("command was not handled")
+	}
+	if !strings.Contains(reply, "随机过程理论（助教）") || !strings.Contains(reply, "组合数学（旁听）") {
+		t.Fatalf("reply missing membership labels: %q", reply)
+	}
+	if strings.Contains(reply, "数学分析（") {
+		t.Fatalf("regular membership was labelled: %q", reply)
+	}
+}
+
 func TestSubscriptionSectionIDIntsSkipsNonPositiveIDs(t *testing.T) {
 	data := map[string]any{
 		"subscription": map[string]any{
@@ -3390,6 +3518,16 @@ func TestFormatScheduleUsesFixedColumns(t *testing.T) {
 		},
 	})
 	if line != "𝙶𝚃-𝙰𝟺𝟶𝟻\t𝟶𝟽:𝟻𝟶-𝟶𝟿:𝟸𝟻\t随机过程理论" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
+func TestFormatScheduleIncludesSubscriptionKindLabel(t *testing.T) {
+	line := formatSchedule(map[string]any{
+		"startTime": "07:50", "endTime": "09:25", "kind": "teaching_assistant",
+		"section": map[string]any{"course": map[string]any{"namePrimary": "随机过程理论"}},
+	})
+	if !strings.Contains(line, "随机过程理论（助教）") {
 		t.Fatalf("line = %q", line)
 	}
 }
