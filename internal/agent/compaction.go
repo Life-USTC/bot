@@ -101,6 +101,9 @@ func compactionPrefix(messages []*schema.Message) (start, end int, expectedID, c
 	}
 	previousID := expectedID
 	for i := historyStart; i < len(messages); i++ {
+		if isHistoryMetadata(messages[i]) {
+			continue
+		}
 		// Every user boundary closes the preceding complete historical turn.
 		if i > historyStart && messages[i].Role == schema.User {
 			if estimateMessagesTokens(messages[start:i]) > conversationSummaryInputTokens {

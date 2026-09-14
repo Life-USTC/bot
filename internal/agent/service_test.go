@@ -1321,12 +1321,8 @@ func TestCleanQQReplyRemovesMarkdownTables(t *testing.T) {
 	}
 }
 
-func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
-	now := time.Date(2026, 6, 7, 10, 30, 0, 0, time.UTC)
-	if got := currentTimeMessageAt(now); got != "现在是 2026-06-07 18:30，Asia/Shanghai。" {
-		t.Fatalf("currentTimeMessageAt = %q", got)
-	}
-	instruction := currentInstructionAt(now)
+func TestInstructionKeepsStableTemporalGuidance(t *testing.T) {
+	instruction := currentInstruction()
 	if !strings.HasPrefix(instruction, "You are Presto,") || strings.Contains(strings.ToLower(instruction), "signal_bot") {
 		t.Fatalf("instruction identity = %q", instruction)
 	}
@@ -1552,11 +1548,11 @@ func TestMessagesForIncludesTypedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 || messages[0].Role != schema.User || !strings.Contains(messages[0].Content, "2026-09-02T04:00:00Z") || !strings.HasSuffix(messages[0].Content, "你好") ||
+	if len(messages) != 3 || messages[0].Role != schema.User || !strings.Contains(messages[0].Content, "2026-09-02T12:00:00+08:00") || !strings.HasSuffix(messages[0].Content, "你好") ||
 		messages[1].Role != schema.Assistant || !strings.HasSuffix(messages[1].Content, "你好！\n有什么可以帮你的吗？") ||
 		len(messages[2].UserInputMultiContent) != 1 ||
 		!strings.Contains(messages[2].UserInputMultiContent[0].Text, "我上面说了什么？") ||
-		!strings.HasPrefix(messages[2].UserInputMultiContent[0].Text, "[") {
+		!strings.HasPrefix(messages[2].UserInputMultiContent[0].Text, "<message_metadata>") {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
@@ -1593,7 +1589,7 @@ func TestMessagesForDoesNotDuplicatePersistedCurrentJobEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 1 || messages[0].UserInputMultiContent[0].Text != "[2026-09-02T04:00:00Z] [current] 同一个问题" {
+	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 1 || messages[0].UserInputMultiContent[0].Text != `<message_metadata>{"occurred_at":"2026-09-02T12:00:00+08:00","timezone":"Asia/Shanghai","speaker":"current"}</message_metadata>`+"\n同一个问题" {
 		t.Fatalf("messages = %#v", messages)
 	}
 }

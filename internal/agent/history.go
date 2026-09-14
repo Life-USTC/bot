@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ func conversationEventMessages(events []store.ConversationEvent) []*schema.Messa
 
 func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.Message {
 	messages := make([]*schema.Message, 0, len(events))
+	var pendingMetadata *schema.Message
+	pendingCalls := make(map[string]bool)
 	for _, event := range events {
 		before := len(messages)
 		switch event.Type {
@@ -61,28 +64,31 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 				})
 			}
 			content, parts := providerAssistantOutput(event.Content, event.Parts)
-			// Command outcomes already carry the durable observed_at field in
-			// their JSON envelope. Prefixing that content would make it invalid
-			// JSON and would hide the structured result from the model.
-			prefix := assistantHistoryPrefix(event)
-			if event.Source == store.ConversationEventSourceCommand {
-				prefix = ""
-			}
-			content, parts = prefixAssistantOutput(content, parts, prefix)
 			if strings.TrimSpace(content) != "" || len(calls) > 0 || len(parts) > 0 {
 				message := schema.AssistantMessage(content, calls)
 				message.Name = event.Name
 				message.AssistantGenMultiContent = parts
 				messages = append(messages, message)
+				pendingMetadata = assistantHistoryMetadata(event)
+				for _, call := range calls {
+					pendingCalls[call.ID] = true
+				}
 			}
 		case store.ConversationEventToolResult, store.ConversationEventToolError, store.ConversationEventToolDenial:
 			if strings.TrimSpace(event.ToolCallID) == "" {
 				continue
 			}
 			messages = append(messages, schema.ToolMessage(event.Content, event.ToolCallID, schema.WithToolName(event.ToolName)))
+			delete(pendingCalls, event.ToolCallID)
 		}
 		if event.ID > 0 && len(messages) > before {
 			messages[len(messages)-1].Extra = map[string]any{conversationEventIDKey: fmt.Sprint(event.ID)}
+		}
+		// Never insert a metadata message between an assistant tool call and
+		// its results. Appending after the exchange also preserves its prefix.
+		if pendingMetadata != nil && len(pendingCalls) == 0 {
+			messages = append(messages, pendingMetadata)
+			pendingMetadata = nil
 		}
 	}
 	return messages
@@ -96,7 +102,7 @@ func formatHistoryTime(value time.Time) string {
 	if value.IsZero() {
 		return ""
 	}
-	return value.UTC().Format(time.RFC3339)
+	return value.In(shanghaiLocation).Format(time.RFC3339)
 }
 
 func historySpeaker(event store.ConversationEvent) string {
@@ -115,19 +121,18 @@ func historySpeaker(event store.ConversationEvent) string {
 	}
 }
 
+// These fields describe the user message; they are not user-authored text.
 func userHistoryPrefix(event store.ConversationEvent) string {
-	when := formatHistoryTime(eventHistoryTime(event))
-	speaker := historySpeaker(event)
+	when, speaker := formatHistoryTime(eventHistoryTime(event)), historySpeaker(event)
 	if when == "" && speaker == "" {
 		return ""
 	}
-	if when == "" {
-		return "[" + speaker + "] "
-	}
-	if speaker == "" {
-		return "[" + when + "] "
-	}
-	return "[" + when + "] [" + speaker + "] "
+	data, _ := json.Marshal(struct {
+		OccurredAt string `json:"occurred_at,omitempty"`
+		Timezone   string `json:"timezone"`
+		Speaker    string `json:"speaker,omitempty"`
+	}{when, "Asia/Shanghai", speaker})
+	return "<message_metadata>" + string(data) + "</message_metadata>\n"
 }
 
 func prefixInputMessageParts(parts []schema.MessageInputPart, prefix string) []schema.MessageInputPart {
@@ -145,30 +150,26 @@ func prefixInputMessageParts(parts []schema.MessageInputPart, prefix string) []s
 	return append([]schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: prefix}}, result...)
 }
 
-func assistantHistoryPrefix(event store.ConversationEvent) string {
+const historyMetadataKey = "bot_history_metadata"
+
+func assistantHistoryMetadata(event store.ConversationEvent) *schema.Message {
 	when := formatHistoryTime(eventHistoryTime(event))
 	if when == "" {
-		return ""
+		return nil
 	}
-	return "[" + when + "] "
+	data, _ := json.Marshal(struct {
+		OccurredAt string `json:"occurred_at"`
+		Timezone   string `json:"timezone"`
+	}{when, "Asia/Shanghai"})
+	// Host-generated metadata contains no assistant or user-authored content.
+	// Its position identifies the preceding assistant message / tool exchange.
+	m := schema.SystemMessage("<assistant_message_metadata>" + string(data) + "</assistant_message_metadata>")
+	m.Extra = map[string]any{historyMetadataKey: "assistant"}
+	return m
 }
 
-func prefixAssistantOutput(content string, parts []schema.MessageOutputPart, prefix string) (string, []schema.MessageOutputPart) {
-	if prefix == "" {
-		return content, parts
-	}
-	if len(parts) == 0 {
-		return prefix + content, parts
-	}
-	result := append([]schema.MessageOutputPart(nil), parts...)
-	for index := range result {
-		if result[index].Type != schema.ChatMessagePartTypeText {
-			continue
-		}
-		result[index].Text = prefix + result[index].Text
-		return content, result
-	}
-	return content, append([]schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: prefix}}, result...)
+func isHistoryMetadata(m *schema.Message) bool {
+	return m != nil && m.Role == schema.System && m.Extra[historyMetadataKey] == "assistant"
 }
 
 func inputMessageParts(parts []store.ConversationMessagePart) []schema.MessageInputPart {

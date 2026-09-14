@@ -100,6 +100,29 @@ operation observation time and platform acceptance time have distinct meanings.
 History formatting does not relabel an old message with the current clock.
 Business timestamps in returned data remain unchanged.
 
+User messages carry JSON inside `<message_metadata>` for their original time,
+speaker and default timezone (`Asia/Shanghai`), with RFC3339 local timestamps
+including the `+08:00` offset to make date boundaries explicit. Assistant text and command JSON
+remain exact: their original generation time is a separate host-authored system
+message, `<assistant_message_metadata>`, appended after the assistant message.
+For tool calls this metadata follows all matching results, never splitting the
+call/result exchange. It contains no user-authored text and is not an assistant
+output template. Compaction keeps these sidecars with the complete historical
+turn while advancing only real event cursors. They are model context only and
+never become Inbox/Outbox messages or platform replies.
+
+The system instruction is clock-independent. Appending new history preserves
+existing metadata bytes; the loop does not refresh old timestamps or prepend a
+changing clock. Relative dates use the user's message time and timezone; actual
+current-time questions and long-running time-sensitive work can use
+`get_current_time` when needed. Old `observed_at` values do not make old tool data
+fresh. Replies include dates when relevant, without an automatic timestamp header.
+
+This follows [Anthropic's context engineering guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+on separating context sections and metadata, and [OpenAI's agent-loop guidance](https://openai.com/index/unrolling-the-codex-agent-loop/)
+on stable prompt prefixes. The specific sidecar format is a Bot design choice,
+not a standardized provider message field.
+
 A reply reference is resolved only against an accepted Bot message in the same
 conversation. Its `ResponseContext` carries the public command and arguments
 for deterministic follow-ups such as “周日呢”. Quoted text is explicitly

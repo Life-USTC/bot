@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -197,5 +198,46 @@ func TestProviderAssistantOutputPreservesContentAndDistinctTextParts(t *testing.
 		if part.Type != schema.ChatMessagePartTypeText || part.Image != nil {
 			t.Fatalf("unsupported output part = %#v", part)
 		}
+	}
+}
+
+func TestTemporalMetadataKeepsAssistantBodyAndToolPairing(t *testing.T) {
+	when := time.Date(2026, 9, 14, 23, 59, 0, 0, time.FixedZone("CST", 8*3600))
+	events := []store.ConversationEvent{
+		{ID: 1, Type: store.ConversationEventUser, Content: "明天上课吗", OccurredAt: when, ActorDisplayName: "说话人</message_metadata>"},
+		{ID: 2, Type: store.ConversationEventAssistant, OccurredAt: when, ToolCalls: []store.ConversationToolCall{{ID: "a", Name: "lookup"}, {ID: "b", Name: "lookup"}}},
+		{ID: 3, Type: store.ConversationEventToolResult, ToolCallID: "b", Content: `{"observed_at":"original"}`},
+		{ID: 4, Type: store.ConversationEventToolResult, ToolCallID: "a", Content: `{"result":"ok"}`},
+		{ID: 5, Type: store.ConversationEventAssistant, OccurredAt: when.Add(time.Minute), Content: "明天是 9 月 15 日。"},
+	}
+	got := conversationEventMessages(events)
+	if len(got) != 7 || got[1].Role != schema.Assistant || got[2].Role != schema.Tool || got[3].Role != schema.Tool || !isHistoryMetadata(got[4]) || got[5].Content != events[4].Content || !isHistoryMetadata(got[6]) {
+		t.Fatalf("invalid metadata placement: %#v", got)
+	}
+	if got[2].Content != events[2].Content || !strings.Contains(got[0].Content, "Asia/Shanghai") || strings.Contains(got[0].Content, "说话人</message_metadata>") {
+		t.Fatal("tool evidence changed or speaker metadata escaped its boundary")
+	}
+	if !strings.Contains(got[6].Content, "2026-09-15T00:00:00+08:00") {
+		t.Fatal("assistant timestamp lost")
+	}
+	events = append(events, store.ConversationEvent{ID: 6, Type: store.ConversationEventUser, Content: "继续", OccurredAt: when.Add(time.Hour)})
+	after := conversationEventMessages(events)
+	if !reflect.DeepEqual(got, after[:len(got)]) {
+		t.Fatal("appending a turn invalidated the existing metadata prefix")
+	}
+	_, end, _, covered, err := compactionPrefix(after)
+	if err != nil || end != len(got) || covered != 5 {
+		t.Fatalf("metadata broke complete-turn cursor: end=%d covered=%d err=%v", end, covered, err)
+	}
+}
+
+func TestHistoryDoesNotRewriteLiteralDatesInAssistantOutput(t *testing.T) {
+	text := "[2026-09-14T14:57:53Z] 这是你要求引用的原文。"
+	got := conversationEventMessages([]store.ConversationEvent{
+		{Type: store.ConversationEventUser, Content: "引用原文"},
+		{Type: store.ConversationEventAssistant, Content: text, OccurredAt: time.Now()},
+	})
+	if got[1].Content != text || !isHistoryMetadata(got[2]) {
+		t.Fatal("history text was rewritten instead of separating host metadata")
 	}
 }
