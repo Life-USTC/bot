@@ -233,8 +233,8 @@ func (s *Service) executeUnconfirmedHostCapability(
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
 	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
 		if !tracked {
-			text, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
-			return text, "", false, deliveryErr
+			_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+			return encodeCapabilityOutcome(string(invocation.ID()), outcome), "", false, deliveryErr
 		}
 		if _, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken); err != nil {
 			return "", executionID, false, markDurableAgentStateError("defer capability for authentication", err)
@@ -669,7 +669,17 @@ func capabilityExecutionModelResult(execution store.CapabilityExecution) string 
 		}
 		err = errors.New(message)
 	}
-	return toolresult.Encode("bot", execution.Capability, string(execution.State), execution.UpdatedAt, nil, err)
+	return toolresult.Encode("bot", execution.Capability, string(execution.State), executionObservedAt(execution), nil, err)
+}
+
+func executionObservedAt(execution store.CapabilityExecution) time.Time {
+	if execution.FinishedAt != nil {
+		return *execution.FinishedAt
+	}
+	if execution.ConfirmedAt != nil {
+		return *execution.ConfirmedAt
+	}
+	return execution.CreatedAt
 }
 
 func joinCapabilityResults(results []string) string {

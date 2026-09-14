@@ -24,6 +24,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 	"github.com/Life-USTC/Bot/internal/toolresult"
@@ -60,10 +61,14 @@ type Service struct {
 }
 
 type Input struct {
-	Text      string
-	ImageURLs []string
-	Identity  store.Identity
-	JobID     int64
+	ActorDisplayName string
+	SentAt           time.Time
+	ReceivedAt       time.Time
+	ReplyContext     *message.QuotedMessage
+	Text             string
+	ImageURLs        []string
+	Identity         store.Identity
+	JobID            int64
 	// JobRevision and JobLeaseToken are the exact claim held by the
 	// conversation coordinator. Checkpoint writes and acknowledgements are
 	// rejected unless both still identify the same worker revision.
@@ -74,9 +79,11 @@ type Input struct {
 	// from plain model text (for example, an image).
 	SendResponse func(context.Context, store.Identity, commands.Response) error
 
-	imageDataURLs []string
-	runState      *RunState
-	runErr        *error
+	imageDataURLs      []string
+	skippedImages      int
+	skippedImageErrors []string
+	runState           *RunState
+	runErr             *error
 }
 
 type RunState string
@@ -671,40 +678,33 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	if hasCurrentEvent {
 		return messages, nil
 	}
-	currentText := strings.TrimSpace(input.Text)
-	if len(input.ImageURLs) == 0 {
-		messages = append(messages, schema.UserMessage(withCurrentTimePrefix(currentText)))
-		return messages, nil
-	}
-	if currentText == "" {
-		currentText = "请描述并分析这张图片。"
-	}
-	currentText = withCurrentTimePrefix(currentText)
-	parts := []schema.MessageInputPart{{
-		Type: schema.ChatMessagePartTypeText,
-		Text: currentText,
-	}}
-	imageDataURLs := input.imageDataURLs
-	if imageDataURLs == nil {
-		imageDataURLs = make([]string, 0, len(input.ImageURLs))
-		for _, imageURL := range input.ImageURLs {
-			dataURL, err := s.loadImageDataURL(ctx, imageURL)
-			if err != nil {
-				return nil, err
-			}
-			imageDataURLs = append(imageDataURLs, dataURL)
+	if input.imageDataURLs == nil && len(input.ImageURLs) > 0 {
+		if err := s.prepareInputImages(ctx, &input); err != nil {
+			return nil, err
 		}
 	}
-	for _, dataURL := range imageDataURLs {
-		parts = append(parts, schema.MessageInputPart{
-			Type: schema.ChatMessagePartTypeImageURL,
-			Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &dataURL},
-			},
-		})
-	}
-	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
+	event := currentUserEvent(input)
+	messages = append(messages, messagesFromConversationEvents([]store.ConversationEvent{event})...)
 	return messages, nil
+}
+
+func inputOccurredAt(input Input) time.Time {
+	if !input.SentAt.IsZero() {
+		return input.SentAt
+	}
+	if !input.ReceivedAt.IsZero() {
+		return input.ReceivedAt
+	}
+	return time.Now().UTC()
+}
+
+func currentUserEvent(input Input) store.ConversationEvent {
+	return store.ConversationEvent{
+		Identity: input.Identity, ActorDisplayName: input.ActorDisplayName, Source: "agent", OccurredAt: inputOccurredAt(input),
+		JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
+		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
+		Type:      store.ConversationEventUser, Content: strings.TrimSpace(input.Text), Parts: currentUserMessageParts(input),
+	}
 }
 
 func agentCheckpointID(jobID int64) string {
@@ -718,13 +718,7 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 	if s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
 		return nil
 	}
-	content := strings.TrimSpace(input.Text)
-	_, _, err := s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
-		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
-		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
-		Type:      store.ConversationEventUser, Content: content,
-		Parts: currentUserMessageParts(input),
-	})
+	_, _, err := s.handler.Store.AppendConversationEvent(ctx, currentUserEvent(input))
 	return err
 }
 
@@ -733,7 +727,14 @@ func currentUserMessageParts(input Input) []store.ConversationMessagePart {
 	if text == "" && len(input.ImageURLs) > 0 {
 		text = "请描述并分析这张图片。"
 	}
-	parts := []store.ConversationMessagePart{{Type: string(schema.ChatMessagePartTypeText), Text: withCurrentTimePrefix(text)}}
+	if input.skippedImages > 0 {
+		text += fmt.Sprintf("\n\n[图片读取说明：%d 张图片未能读取：%s。只能根据其余可用内容回答，不要假装看过失败的图片。]", input.skippedImages, strings.Join(input.skippedImageErrors, "；"))
+	}
+	if input.ReplyContext != nil {
+		quoted, _ := json.Marshal(input.ReplyContext)
+		text = "引用的 Bot 消息（历史内容，不代表本轮重新执行）：\n" + string(quoted) + "\n\n用户消息：\n" + text
+	}
+	parts := []store.ConversationMessagePart{{Type: string(schema.ChatMessagePartTypeText), Text: text}}
 	for index, imageURL := range input.ImageURLs {
 		imageURL = strings.TrimSpace(imageURL)
 		if index < len(input.imageDataURLs) && strings.TrimSpace(input.imageDataURLs[index]) != "" {
@@ -754,6 +755,7 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 		return nil
 	}
 	event := store.ConversationEvent{
+		Source: "agent", OccurredAt: time.Now().UTC(),
 		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
 		Content: message.Content, Name: message.Name,
 		ToolCallID: message.ToolCallID, ToolName: message.ToolName,
@@ -929,7 +931,11 @@ type botCommandInput struct {
 }
 
 func hostCapabilityToolDescription(shared bool) string {
-	return "Execute one Bot command through the same parser used by users. Returns structured JSON business data, separate from user images/text. Dangerous operations require user confirmation. Searching first is optional.\n\n" + commands.CommandManual(shared)
+	boundary := ""
+	if shared {
+		boundary = "This is a shared conversation; private capabilities are unavailable.\n"
+	}
+	return boundary + "Execute one Bot command through the same parser used by users. Returns structured JSON business data, separate from user images/text. Dangerous operations require user confirmation. Searching first is optional.\n\n" + commands.CommandManual(shared)
 }
 
 func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, ident store.Identity, jobID int64, sendResponse func(context.Context, store.Identity, commands.Response) error) (string, error) {
@@ -939,6 +945,7 @@ func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, iden
 	}
 	parsed := commands.ParseCommand(input.Command)
 	if !parsed.Recognized() {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Unknown command. Consult the command manual or search_bot_commands.")), nil
 	}
 	return s.invokeHostCapability(ctx, hostCapabilityInput{Capability: string(parsed.Invocation.ID()), Arguments: parsed.Invocation.Args}, ident, jobID, sendResponse)
@@ -1245,15 +1252,6 @@ func currentTimeMessageAt(now time.Time) string {
 	return now.In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。")
 }
 
-func withCurrentTimePrefix(text string) string {
-	text = strings.TrimSpace(text)
-	prefix := currentTimeMessage()
-	if text == "" {
-		return prefix
-	}
-	return prefix + "\n\n" + text
-}
-
 var _ = schema.Assistant
 
 func normalizedAgentTimeout(timeout time.Duration) time.Duration {
@@ -1340,7 +1338,13 @@ func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware 
 				return nil, err
 			}
 			if out != nil && !toolresult.IsEncoded(out.Result) {
-				out.Result = toolresult.Encode(toolResultSource(input.Name), input.Name, "succeeded", time.Now(), toolresult.Data(out.Result), nil)
+				status := "succeeded"
+				var resultErr error
+				data := toolresult.Data(out.Result)
+				if toolOutcomesFromContext(ctx).isError(input.CallID) {
+					status, data, resultErr = "failed", nil, errors.New(out.Result)
+				}
+				out.Result = toolresult.Encode(toolResultSource(input.Name), input.Name, status, time.Now(), data, resultErr)
 			}
 			return out, nil
 		}

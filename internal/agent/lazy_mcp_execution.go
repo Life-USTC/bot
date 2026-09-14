@@ -344,7 +344,7 @@ func campusExecutionModelResult(execution store.CapabilityExecution) string {
 		}
 		err = errors.New(textutil.SafeLogText(detail))
 	}
-	return toolresult.Encode("mcp", name, string(execution.State), execution.UpdatedAt, data, err)
+	return toolresult.Encode("mcp", name, string(execution.State), executionObservedAt(execution), data, err)
 }
 
 func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, execution store.CapabilityExecution) (string, store.CapabilityExecution, error) {

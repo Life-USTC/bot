@@ -40,7 +40,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 
 			var remoteCalls atomic.Int32
 			mcpServer := mcpserver.NewMCPServer("full-mcp", "1.0.0")
-			mcpServer.AddTool(mcpgo.NewTool("workspace_future_update", mcpgo.WithReadOnlyHintAnnotation(false), mcpgo.WithDestructiveHintAnnotation(false), mcpgo.WithString("value", mcpgo.Required())),
+			mcpServer.AddTool(mcpgo.NewTool("workspace_future_update", mcpgo.WithReadOnlyHintAnnotation(false), mcpgo.WithDestructiveHintAnnotation(true), mcpgo.WithString("value", mcpgo.Required())),
 				func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 					remoteCalls.Add(1)
 					if req.GetString("value", "") != "saved-value" {
