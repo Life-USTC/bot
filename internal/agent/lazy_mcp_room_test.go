@@ -30,6 +30,22 @@ func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
 	}
 }
 
+func TestCampusReadToolAllowlistContainsOnlyCurrentReadTools(t *testing.T) {
+	for _, name := range []string{"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map"} {
+		if !campusReadToolAllowed(name) {
+			t.Errorf("current read tool %q is not in the host allowlist", name)
+		}
+	}
+	for _, name := range []string{
+		"get_current_semester", "list_my_homeworks", "search_courses",
+		"delete_my_homework", "workspace_subscription_kind_update", "arbitrary_tool",
+	} {
+		if campusReadToolAllowed(name) {
+			t.Errorf("disallowed MCP tool %q is in the host allowlist", name)
+		}
+	}
+}
+
 func TestRoomMapMCPKeepsURLWhenRenderedImagesAreDisabled(t *testing.T) {
 	var delivered commands.Response
 	lazy := &lazyMCPSession{

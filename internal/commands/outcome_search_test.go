@@ -141,7 +141,7 @@ func TestCapabilitySearchUnderstandsUnsegmentedChineseIntent(t *testing.T) {
 	}
 }
 
-func TestCapabilitySearchRejectsUnrelatedChineseQueryVerbOverlap(t *testing.T) {
+func TestCapabilitySearchFindsYoungEventCommands(t *testing.T) {
 	for _, query := range []string{
 		"你能查询第二课堂平台的活动吗",
 		"查询第二课堂平台活动",
@@ -151,8 +151,8 @@ func TestCapabilitySearchRejectsUnrelatedChineseQueryVerbOverlap(t *testing.T) {
 		"查询第二课堂平台活动列表",
 		"查询第二课堂平台活动项目列表",
 	} {
-		if docs := SearchCapabilityDocumentation(query, CapabilitySearchOptions{}); len(docs) != 0 {
-			t.Errorf("SearchCapabilityDocumentation(%q) = %#v, want no supported capability", query, docs)
+		if docs := SearchCapabilityDocumentation(query, CapabilitySearchOptions{}); len(docs) == 0 || docs[0].ID != CapabilityYoungEvent {
+			t.Errorf("SearchCapabilityDocumentation(%q) = %#v, want young event capability", query, docs)
 		}
 	}
 }

@@ -4487,7 +4487,7 @@ func TestInvalidSubscriptionRemovalReturnsActionableCodeUsage(t *testing.T) {
 	}
 	if !strings.Contains(outcome.Response.Text, "订阅 帮助：") ||
 		!strings.Contains(outcome.Response.Text, "订阅 取消 CONT5103P.01") ||
-		strings.Contains(outcome.Response.Text, "JW ID") {
+		strings.Contains(outcome.Response.Text, "订阅 取消 <JW ID>") {
 		t.Fatalf("invalid removal response = %q", outcome.Response.Text)
 	}
 }

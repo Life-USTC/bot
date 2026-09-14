@@ -83,7 +83,7 @@ func TestCapabilityInventoryIsHostGeneratedFromActualRegistries(t *testing.T) {
 		t.Fatalf("inventory result = %#v", result)
 	}
 	response := result.Response
-	for _, expected := range []string{"search_bot_commands", "invoke_bot_capability", "weather", "catalog_young_event_list", "catalog_young_event_get"} {
+	for _, expected := range []string{"search_bot_commands", "invoke_bot_capability", "weather", "catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map"} {
 		if !strings.Contains(response.Text, expected) {
 			t.Errorf("inventory omitted %q: %s", expected, response.Text)
 		}
