@@ -279,7 +279,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			finishRun(store.AgentRunStatusFailed, reply, err)
 			return agentTextResponse(reply), true
 		}
-		reply := commands.CommandManual(store.IsSharedConversation(input.Identity))
+		reply := commands.HelpOverview(store.IsSharedConversation(input.Identity))
 		var err error
 		if strings.Contains(strings.ToLower(input.Text), "mcp") || strings.Contains(input.Text, "内部工具") {
 			reply, err = s.capabilityInventory(ctx, input.Identity)
@@ -942,6 +942,10 @@ func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, iden
 	// A resumed call must resolve the saved operation, never reparse model input.
 	if interrupted, _, _ := tool.GetInterruptState[capabilityInterruptState](ctx); interrupted {
 		return s.invokeHostCapability(ctx, hostCapabilityInput{}, ident, jobID, sendResponse)
+	}
+	if commands.HasAdditionalCommandLine(input.Command) {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Send exactly one command per tool call.")), nil
 	}
 	parsed := commands.ParseCommand(input.Command)
 	if !parsed.Recognized() {

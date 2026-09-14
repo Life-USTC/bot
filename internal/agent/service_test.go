@@ -139,7 +139,7 @@ func TestAgentCapabilityPersistenceFailureMarksRunRetryable(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-persistence","object":"chat.completion","created":0,"model":"test-model",
 			"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-				"id":"call-persistence","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"ping\"}"
+				"id":"call-persistence","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"help\"}"
 			}}]},"finish_reason":"tool_calls"}],
 			"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 		}`))
@@ -2919,4 +2919,12 @@ func claimAgentInput(t *testing.T, db *store.Store, ident store.Identity, input 
 	input.JobRevision = claimed.Revision
 	input.JobLeaseToken = claimed.LeaseToken
 	return input
+}
+
+func TestRunBotCommandRejectsMultipleCommandsBeforeExecution(t *testing.T) {
+	svc := &Service{}
+	result, err := svc.runBotCommand(context.Background(), botCommandInput{Command: "天气 高新区\n登出"}, store.Identity{}, 0, nil)
+	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status":"invalid_input"`) {
+		t.Fatalf("result = %s, err = %v", result, err)
+	}
 }

@@ -160,9 +160,10 @@ func TestUsageCapturePersistsObservedUsageWithoutChangingAttemptReservation(t *t
 }
 
 func TestLoadImageDataURLDownloadsAndEncodesSupportedImage(t *testing.T) {
+	fixture := testPNGBytes(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
-		_, _ = w.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+		_, _ = w.Write(fixture)
 	}))
 	defer server.Close()
 
@@ -171,7 +172,7 @@ func TestLoadImageDataURLDownloadsAndEncodesSupportedImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "data:image/png;base64,iVBORw0KGgo=" {
+	if got != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(fixture) {
 		t.Fatalf("data URL = %q", got)
 	}
 }
