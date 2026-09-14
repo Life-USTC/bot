@@ -545,6 +545,9 @@ func TestNewAgentClientDoesNotInheritSharedHTTPTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if svc.httpClient != sharedClient || svc.httpClient.Timeout != 20*time.Millisecond {
+		t.Fatal("image downloads lost the shared client timeout")
+	}
 	reply, err := svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate error = %v", err)

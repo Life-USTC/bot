@@ -140,7 +140,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		modelName:  modelName,
 		enabled:    true,
 		logger:     cfg.Logger,
-		httpClient: agentHTTPClient,
+		httpClient: httpClient,
 		mcpClient:  mcpClient,
 		auth:       authManager,
 	}

@@ -359,7 +359,7 @@ func (s *lazyMCPSession) existingCampusExecution(ctx context.Context, name strin
 		if execution.Identity != s.identity {
 			return nil, errors.New("existing campus execution belongs to another conversation")
 		}
-		if execution.ToolCallID != callID || execution.Capability != capability || len(execution.Arguments) != 1 || execution.Arguments[0] != string(encoded) {
+		if (capabilityExecutionIsRead(*execution) && execution.ToolCallID != callID) || execution.Capability != capability || len(execution.Arguments) != 1 || execution.Arguments[0] != string(encoded) {
 			continue
 		}
 		return execution, nil
@@ -572,6 +572,14 @@ func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, argu
 		return store.CapabilityExecution{}, false, false, err
 	}
 	callID := campusToolCallID(ctx, s.jobID, name, encoded)
+	operationKey := callID
+	if effect != campusEffectRead {
+		// A new model call ID must not replay the same mutation within a job.
+		// JSON map encoding is canonical, and authorization markers have already
+		// been removed from arguments above.
+		digest := sha256.Sum256(append([]byte(name+"\x00"), encoded...))
+		operationKey = fmt.Sprintf("%x", digest[:])
+	}
 	receipt := store.CapabilityReceipt{
 		Action: campusReceiptAction(effect), Resource: campusReceiptResource(name),
 		Subject: campusReceiptSubject(name, arguments, ""),
@@ -581,7 +589,7 @@ func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, argu
 	}
 	execution, created, err := s.service.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 		Identity: s.identity, JobID: s.jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, s.jobID),
-		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + callID,
+		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + operationKey,
 		ToolCallID: callID, Capability: "mcp:" + name, Arguments: []string{string(encoded)}, Effect: string(effect),
 		Receipt: receipt, RequiresConfirmation: effect == campusEffectDestructive,
 	})

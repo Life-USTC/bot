@@ -88,6 +88,11 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 					if !bytes.Contains(body, []byte("mcp-mutation")) || !bytes.Contains(body, []byte(want)) {
 						t.Errorf("resumed transcript missing literal outcome %q", want)
 					}
+					_, _ = io.WriteString(w, `{"id":"repeat","object":"chat.completion","model":"test-model","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"id":"fresh-mcp-mutation","type":"function","function":{"name":"call_campus_tool","arguments":"{\"name\":\"workspace_future_update\",\"arguments\":{\"value\":\"saved-value\"}}"}}]},"finish_reason":"tool_calls"}]}`)
+				case 4:
+					if !bytes.Contains(body, []byte("fresh-mcp-mutation")) {
+						t.Error("repeated mutation result lost the new model call ID")
+					}
 					_, _ = io.WriteString(w, `{"id":"done","object":"chat.completion","model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"处理结束。"},"finish_reason":"stop"}]}`)
 				default:
 					t.Error("unexpected model replay")
@@ -149,8 +154,8 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 			if !found {
 				t.Fatal("resumed MCP result persisted under the wrong tool name")
 			}
-			if modelCalls.Load() != 3 {
-				t.Fatalf("model calls=%d, want search/call/resume", modelCalls.Load())
+			if modelCalls.Load() != 4 {
+				t.Fatalf("model calls=%d, want search/call/resume/repeat", modelCalls.Load())
 			}
 		})
 	}
