@@ -59,6 +59,14 @@ user turns, and the model cannot approve an operation by writing a flag.
 Only `conversation_events` is replayed as LLM history. Jobs, interaction logs,
 usage rows and the delivery outbox are not read as a chat transcript.
 
+History has a separate 8,000-token target. Before dropping older dialogue,
+the selector removes the largest historical observations: complete tool-call
+exchanges or command-origin result messages. User requests and final assistant
+answers therefore survive a large query or mutation response. Retained messages
+are unchanged; removed tool calls never leave orphaned results, and the latest
+turn keeps its evidence for recovery. The full events remain in the store.
+If dialogue alone exceeds the target, complete older turns are removed.
+
 | Origin | Model representation |
 | --- | --- |
 | Accepted user input | User event with actor, original time and supported image parts |
