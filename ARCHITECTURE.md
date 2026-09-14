@@ -59,6 +59,15 @@ user turns, and the model cannot approve an operation by writing a flag.
 Only `conversation_events` is replayed as LLM history. Jobs, interaction logs,
 usage rows and the delivery outbox are not read as a chat transcript.
 
+History is paged by event ID instead of capped at 80 messages. Retained messages
+are replayed unchanged so ordinary follow-ups keep a stable cacheable prefix.
+The history ceiling is 96,000 estimated tokens within the 128,000-token request
+window; remaining capacity is reserved for instructions, tools and completion.
+Only at that ceiling are complete old turns removed. Tool results are never
+selectively rewritten or summarized on replay, and full events remain stored.
+Subscription mutations return facts about their targets and counts rather than
+embedding the user's entire subscription list; that list is queried separately.
+
 | Origin | Model representation |
 | --- | --- |
 | Accepted user input | User event with actor, original time and supported image parts |

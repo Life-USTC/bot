@@ -1,13 +1,76 @@
 package agent
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
+
+func TestHistoryKeepsLargeResultAndStablePrefixBelowContextCapacity(t *testing.T) {
+	events := []store.ConversationEvent{
+		{Type: store.ConversationEventUser, Content: "订阅李老师本学期的代数课，身份为助教"},
+		{Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "add", Name: "run_bot_command", Arguments: `{"command":"订阅 添加 ALG1001.01"}`}}},
+		{Type: store.ConversationEventToolResult, ToolCallID: "add", ToolName: "run_bot_command", Content: `{"status":"succeeded","result":{"data":"` + strings.Repeat("x", 216_000) + `"}}`},
+		{Type: store.ConversationEventAssistant, Content: "已订阅 ALG1001.01，身份为助教。"},
+		{Type: store.ConversationEventUser, Source: store.ConversationEventSourceCommand, Content: "课表"},
+		{Type: store.ConversationEventAssistant, Source: store.ConversationEventSourceCommand, Content: `{"status":"succeeded","result":{"schedules":"` + strings.Repeat("x", 18_000) + `"}}`},
+	}
+	before := conversationEventMessages(events)
+	if len(before) != len(events) || before[2].Content != events[2].Content {
+		t.Fatal("history was prematurely trimmed or rewritten")
+	}
+	events = append(events, store.ConversationEvent{Type: store.ConversationEventUser, Content: "先把这节课删掉吧"})
+	after := conversationEventMessages(events)
+	if len(after) != len(before)+1 || !reflect.DeepEqual(before, after[:len(before)]) {
+		t.Fatal("appending a short follow-up changed the cacheable history prefix")
+	}
+}
+
+func TestHistoryPagesBeyondEightyEventsWithoutChangingPrefix(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ident := store.Identity{Platform: "test", UserID: "one", ConversationType: "private", ConversationID: "one"}
+	for i := 0; i < 120; i++ {
+		kind := store.ConversationEventUser
+		if i%2 == 1 {
+			kind = store.ConversationEventAssistant
+		}
+		_, _, err := db.AppendConversationEvent(t.Context(), store.ConversationEvent{Identity: ident, DedupeKey: fmt.Sprint(i), Type: kind, Content: fmt.Sprintf("message %d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := &Service{handler: commands.Handler{Store: db}}
+	events, err := svc.historyEvents(t.Context(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := conversationEventMessages(events)
+	if len(before) != 120 || !strings.HasSuffix(before[0].Content, "message 0") {
+		t.Fatalf("event page size became a history limit: %d messages", len(before))
+	}
+	_, _, err = db.AppendConversationEvent(t.Context(), store.ConversationEvent{Identity: ident, DedupeKey: "followup", Type: store.ConversationEventUser, Content: "继续"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err = svc.historyEvents(t.Context(), ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := conversationEventMessages(events)
+	if len(after) != 121 || !reflect.DeepEqual(before, after[:120]) {
+		t.Fatal("new event shifted the history prefix")
+	}
+}
 
 func TestConversationEventMessagesPreserveExactRolesAndToolEvidence(t *testing.T) {
 	events := []store.ConversationEvent{

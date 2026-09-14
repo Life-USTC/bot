@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	conversationEventLimit        = 80
+	conversationEventPageSize     = 80
 	conversationCompactInputLimit = 128_000
-	conversationHistoryTokenLimit = 8_000
+	// Reserve room for instructions, tool schemas, new tool results and the
+	// completion. Ordinary turns keep their exact prefix for provider caching.
+	conversationHistoryTokenLimit = conversationCompactInputLimit - 32_000
 )
 
 // conversationEventMessages restores exact role-bearing history. It never

@@ -196,6 +196,12 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 }
 
 func (s *Store) RecentConversationEvents(ctx context.Context, ident Identity, limit int) ([]ConversationEvent, error) {
+	return s.ConversationEventsBefore(ctx, ident, 0, limit)
+}
+
+// ConversationEventsBefore reads one chronological page, using a stable event
+// ID cursor. A zero cursor starts at the newest event in this conversation.
+func (s *Store) ConversationEventsBefore(ctx context.Context, ident Identity, beforeID int64, limit int) ([]ConversationEvent, error) {
 	if err := validateConversationIdentity(ident); err != nil {
 		return nil, err
 	}
@@ -204,10 +210,13 @@ func (s *Store) RecentConversationEvents(ctx context.Context, ident Identity, li
 	}
 	ident = normalizeIdentity(ident)
 	var rows []conversationEventRow
-	err := s.db.WithContext(ctx).
+	query := s.db.WithContext(ctx).
 		Where("platform = ? AND conversation_type = ? AND conversation_id = ?",
-			ident.Platform, ident.ConversationType, ident.ConversationID).
-		Order("id DESC").Limit(limit).Find(&rows).Error
+			ident.Platform, ident.ConversationType, ident.ConversationID)
+	if beforeID > 0 {
+		query = query.Where("id < ?", beforeID)
+	}
+	err := query.Order("id DESC").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
