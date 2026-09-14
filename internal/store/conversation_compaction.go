@@ -153,6 +153,26 @@ func (s *Store) ClaimConversationCompaction(ctx context.Context, ident Identity,
 	return claimed, nil
 }
 
+// RenewConversationCompactionClaim keeps a live summary request's lease fresh
+// without changing the committed summary or its covered event cursor.
+func (s *Store) RenewConversationCompactionClaim(ctx context.Context, ident Identity, expectedCoveredEventID int64, token string, expiresAt time.Time) (bool, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(token) == "" {
+		return false, ErrConversationCompactionClaimRequired
+	}
+	now := nowUTC()
+	if expectedCoveredEventID < 0 || !expiresAt.After(now) {
+		return false, errors.New("invalid conversation compaction lease renewal")
+	}
+	result := s.db.WithContext(ctx).Model(&conversationCompactionRow{}).
+		Where(compactionIdentityQuery(normalizeIdentity(ident))).
+		Where("covered_event_id = ? AND claim_token = ? AND claim_expires_at > ?", expectedCoveredEventID, token, now).
+		Updates(map[string]any{"claim_expires_at": expiresAt.UTC(), "updated_at": now})
+	return result.RowsAffected == 1, result.Error
+}
+
 // CommitConversationCompaction atomically publishes the summary and advances
 // the covered event cursor. Raw events are never deleted, and an expired or
 // stale worker cannot publish its model output.
