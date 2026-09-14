@@ -13,6 +13,7 @@ type workerRepository struct {
 	completed    []Outcome
 	nextAttempts []time.Time
 	recoveredAt  time.Time
+	prunedAt     time.Time
 	expiredAt    time.Time
 }
 
@@ -39,6 +40,11 @@ func (r *workerRepository) ExpireDue(_ context.Context, now time.Time) error {
 
 func (r *workerRepository) RecoverStale(_ context.Context, before time.Time) error {
 	r.recoveredAt = before
+	return nil
+}
+
+func (r *workerRepository) PruneOutgoingMessages(_ context.Context, now time.Time) error {
+	r.prunedAt = now
 	return nil
 }
 
@@ -89,6 +95,31 @@ func TestWorkerRecoversStaleDeliveriesDuringLongLivedRun(t *testing.T) {
 	worker.tick(t.Context())
 	if want := now.Add(-staleAttemptAge); !repository.recoveredAt.Equal(want) {
 		t.Fatalf("periodic recovery=%v want=%v", repository.recoveredAt, want)
+	}
+}
+
+func TestWorkerPrunesOnStartupAndAtHourlyCadence(t *testing.T) {
+	now := time.Date(2026, 8, 10, 1, 0, 0, 0, time.UTC)
+	repository := &workerRepository{}
+	service, err := New(repository, &testAdapter{platform: "qqbot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := Worker{Service: service, Now: func() time.Time { return now }}
+	worker.tick(t.Context())
+	first := repository.prunedAt
+	if !first.Equal(now) {
+		t.Fatalf("startup prune=%v want=%v", first, now)
+	}
+	now = now.Add(prunePeriod / 2)
+	worker.tick(t.Context())
+	if !repository.prunedAt.Equal(first) {
+		t.Fatalf("prune ran before cadence: first=%v got=%v", first, repository.prunedAt)
+	}
+	now = now.Add(prunePeriod / 2)
+	worker.tick(t.Context())
+	if !repository.prunedAt.Equal(now) {
+		t.Fatalf("periodic prune=%v want=%v", repository.prunedAt, now)
 	}
 }
 

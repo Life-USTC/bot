@@ -12,6 +12,9 @@ const (
 	defaultMaxAttempts  = 5
 	staleAttemptAge     = 5 * time.Minute
 	staleRecoveryPeriod = 30 * time.Second
+	// Retained payloads are the database's dominant cost, but nothing depends
+	// on pruning promptly. Once an hour is enough to keep growth bounded.
+	prunePeriod = time.Hour
 )
 
 type Worker struct {
@@ -22,6 +25,7 @@ type Worker struct {
 	Now            func() time.Time
 	Logger         *log.Logger
 	nextRecoveryAt time.Time
+	nextPruneAt    time.Time
 }
 
 func (w *Worker) Run(ctx context.Context) {
@@ -54,6 +58,12 @@ func (w *Worker) tick(ctx context.Context) {
 		w.nextRecoveryAt = now.Add(staleRecoveryPeriod)
 		if err := w.Service.repository.RecoverStale(ctx, now.Add(-staleAttemptAge)); err != nil {
 			w.logf("recover stale deliveries failed: %v", err)
+		}
+	}
+	if w.nextPruneAt.IsZero() || !now.Before(w.nextPruneAt) {
+		w.nextPruneAt = now.Add(prunePeriod)
+		if err := w.Service.repository.PruneOutgoingMessages(ctx, now); err != nil {
+			w.logf("prune delivered messages failed: %v", err)
 		}
 	}
 	if err := w.Service.repository.ExpireDue(ctx, now); err != nil {
