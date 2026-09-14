@@ -1299,6 +1299,8 @@ func agentFailureReply(runID int64, err error) string {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentModelAttemptBudget) {
 		reply = "AI 工具流程达到模型请求总上限，已停止。请缩小请求范围后重试。"
+	} else if errors.Is(err, errLLMTransportExhausted) {
+		reply = "AI 服务连接失败，连续 5 次尝试仍未恢复。请稍后重新发送这条消息。"
 	} else if isExhaustedRetryableProviderError(err) {
 		reply = "AI 服务连续 5 次请求仍未成功，请稍后重试。"
 	} else if errors.Is(err, errLLMUpstreamCanceled) {

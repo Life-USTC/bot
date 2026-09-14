@@ -65,6 +65,7 @@ func TestRetryTransportRetriesOnlyRetryableTransportErrors(t *testing.T) {
 		transportErr error
 		wantAttempts int32
 	}{
+		{name: "EOF", transportErr: io.EOF, wantAttempts: llmHTTPMaxAttempts},
 		{name: "unexpected EOF", transportErr: io.ErrUnexpectedEOF, wantAttempts: llmHTTPMaxAttempts},
 		{name: "url error", transportErr: &url.Error{Op: "POST", URL: "http://model.test", Err: io.ErrUnexpectedEOF}, wantAttempts: llmHTTPMaxAttempts},
 		{name: "permanent error", transportErr: errors.New("invalid request"), wantAttempts: 1},
@@ -86,7 +87,33 @@ func TestRetryTransportRetriesOnlyRetryableTransportErrors(t *testing.T) {
 			if got := attempts.Load(); got != test.wantAttempts {
 				t.Fatalf("attempts = %d, want %d", got, test.wantAttempts)
 			}
+			if exhausted := errors.Is(err, errLLMTransportExhausted); exhausted != (test.wantAttempts == llmHTTPMaxAttempts) {
+				t.Fatalf("transport exhaustion classification = %v, error = %v", exhausted, err)
+			}
 		})
+	}
+}
+
+func TestExhaustedTransportFailureSurvivesHTTPWrapping(t *testing.T) {
+	client := &http.Client{Transport: &llmRetryTransport{
+		base: scriptedRoundTripper(func(*http.Request) (*http.Response, error) {
+			return nil, io.EOF
+		}),
+		wait: func(context.Context, time.Duration) error { return nil },
+	}}
+	_, err := client.Do(retryTestRequest(t.Context()))
+	if !errors.Is(err, io.EOF) || !errors.Is(err, errLLMTransportExhausted) {
+		t.Fatalf("lost transport cause: %v", err)
+	}
+	if got := agentFailureClass(err); got != "upstream_transport" {
+		t.Fatalf("failure class = %q", got)
+	}
+	reply := agentFailureReply(358, err)
+	if !strings.Contains(reply, "连接失败") || !strings.Contains(reply, "5 次") || !strings.Contains(reply, "记录 #358") {
+		t.Fatalf("network failure reply = %q", reply)
+	}
+	if strings.Contains(reply, "model.test") || strings.Contains(reply, "EOF") {
+		t.Fatalf("transport diagnostics leaked into reply: %q", reply)
 	}
 }
 

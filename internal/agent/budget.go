@@ -386,6 +386,8 @@ func agentFailureClass(err error) string {
 		return "tool_call_budget"
 	case errors.Is(err, errAgentNonProgress):
 		return "non_progress"
+	case errors.Is(err, errLLMTransportExhausted):
+		return "upstream_transport"
 	case errors.Is(err, errLLMUpstreamCanceled):
 		return "upstream_canceled"
 	case errors.Is(err, errRepeatedToolCall):
