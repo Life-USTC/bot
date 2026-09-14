@@ -548,6 +548,102 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_course_badges_and_captions_have_separate_vertical_space() {
+        use typst::layout::{Frame, FrameItem, PagedDocument, Point};
+
+        fn collect(frame: &Frame, origin: Point, runs: &mut Vec<(String, f64, f64)>) {
+            for (pos, item) in frame.items() {
+                let pos = origin + *pos;
+                match item {
+                    FrameItem::Group(group) => collect(&group.frame, pos, runs),
+                    FrameItem::Text(text) => {
+                        runs.push((text.text.to_string(), pos.y.to_pt(), text.size.to_pt()))
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Exact overlaps, unequal spans (the reported Friday case), and a
+        // transitive overlap must all keep each role attached to its course.
+        for spans in [
+            vec![(3, 3), (3, 3)],
+            vec![(3, 4), (3, 5)],
+            vec![(3, 4), (4, 5), (5, 6)],
+        ] {
+            let mut payload = valid_payload();
+            payload.days = (0..7)
+                .map(|n| GridDay {
+                    label: format!("Day {n}"),
+                    date: String::new(),
+                    today: false,
+                })
+                .collect();
+            payload.periods = (1..=13)
+                .map(|n| GridPeriod {
+                    label: format!("Period {n}"),
+                    time: String::new(),
+                })
+                .collect();
+            payload.items = spans
+                .iter()
+                .enumerate()
+                .map(|(n, &(start, end))| GridItem {
+                    day: 5,
+                    start,
+                    end,
+                    period: format!("Slot{n}"),
+                    time: String::new(),
+                    kind: if n == 0 {
+                        "teaching_assistant"
+                    } else {
+                        "auditor"
+                    }
+                    .into(),
+                    additional_kinds: Vec::new(),
+                    course: format!("Class{n}"),
+                    location: format!("Room{n}"),
+                    weeks: String::new(),
+                    color: "#dbeafe".into(),
+                })
+                .collect();
+            let world = crate::world::SandboxWorld::new(build_source(&payload));
+            let doc = typst::compile::<PagedDocument>(&world).output.unwrap();
+            assert_eq!(doc.pages.len(), 1);
+            let mut runs = Vec::new();
+            collect(&doc.pages[0].frame, Point::zero(), &mut runs);
+            let baseline = |needle: &str| {
+                let run = runs
+                    .iter()
+                    .find(|(text, _, _)| text.contains(needle))
+                    .unwrap_or_else(|| panic!("missing {needle}: {runs:?}"));
+                (run.1, run.2)
+            };
+            let badges: Vec<_> = runs
+                .iter()
+                .filter(|(text, _, _)| text == "助教" || text == "旁听")
+                .collect();
+            assert_eq!(badges.len(), spans.len(), "each course needs its own badge");
+            for (n, badge) in badges.iter().enumerate() {
+                let (caption_y, caption_size) = baseline(&format!("Slot{n}"));
+                let (course_y, course_size) = baseline(&format!("Class{n}"));
+                let (room_y, _) = baseline(&format!("Room{n}"));
+                assert!(
+                    caption_y - caption_size > badge.1 + 2.0,
+                    "badge overlaps caption"
+                );
+                assert!(
+                    course_y - course_size > caption_y + 2.0,
+                    "caption overlaps title"
+                );
+                if let Some(next) = badges.get(n + 1) {
+                    assert!(next.1 - next.2 > room_y + 2.0, "adjacent courses overlap");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn overlapping_classes_expand_their_actual_period() {
         let mut payload = valid_payload();
         let (_, _, short) = super::super::compile_png(build_source(&payload), 1.0).unwrap();
