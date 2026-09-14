@@ -40,6 +40,17 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 			store.CapabilityExecutionDenied, store.CapabilityExecutionUnknown,
 			store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
 			return campusExecutionModelResult(*existing), nil
+		case store.CapabilityExecutionRunning:
+			if !capabilityExecutionIsRead(*existing) && capabilityExecutionHasStaleLease(ctx, *existing) {
+				current, marked, markErr := markStaleCapabilityExecutionUnknown(ctx, s.service.handler.Store, *existing)
+				if markErr != nil {
+					return "", markErr
+				}
+				if marked || capabilityExecutionTerminal(current.State) {
+					return campusExecutionModelResult(current), nil
+				}
+				return "", errors.New("campus tool ownership changed while marking an interrupted mutation")
+			}
 		}
 	}
 	if err := s.ensure(ctx); err != nil {
