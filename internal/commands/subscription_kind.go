@@ -50,7 +50,7 @@ func (h Handler) setSubscriptionKind(ctx context.Context, ident store.Identity, 
 		"operation": "set_kind",
 		"jw_id":     jwID,
 		"kind":      kind,
-		"result":    compactSubscriptionKindResult(result, jwID),
+		"result":    compactSubscriptionKindResult(result),
 	})
 	label := lifedata.SubscriptionKindLabel(kind)
 	if label == "" {
