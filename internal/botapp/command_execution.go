@@ -2,12 +2,15 @@ package botapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 type responseCommitter func(context.Context, commands.Response, []string, store.ConversationJobTransition) error
@@ -61,7 +64,7 @@ func (c *Coordinator) executeCommandRoute(
 	invocation commands.Invocation,
 	commit responseCommitter,
 ) {
-	if err := c.appendCommandEvent(ctx, job, store.ConversationEventUser, "user", strings.TrimSpace(inbound.Text)); err != nil {
+	if err := c.appendCommandEvent(ctx, job, store.ConversationEventUser, "user", strings.TrimSpace(inbound.Text), inbound, inbound.SentAt); err != nil {
 		c.fail(ctx, job, err)
 		return
 	}
@@ -79,7 +82,7 @@ func (c *Coordinator) executeCommandRoute(
 				c.fail(ctx, job, executeErr)
 				return
 			}
-			c.finishCommandWithoutExecution(ctx, job, inbound, outcome.Response, outcome.Status, commit)
+			c.finishCommandWithoutExecution(ctx, job, inbound, string(invocation.ID()), outcome, commit)
 			return
 		}
 		invocation = validated
@@ -102,13 +105,18 @@ func (c *Coordinator) executeNewCommand(
 		Identity: job.Identity, JobID: job.ID, LeaseToken: job.LeaseToken,
 		DedupeKey:  fmt.Sprintf("conversation-job:%d:command:operation:0", job.ID),
 		Capability: string(invocation.ID()), Arguments: append([]string(nil), invocation.Args...),
-		Effect: string(invocation.Policy().Effect),
+		Effect: string(invocation.Policy().Effect), Receipt: commands.ReceiptForInvocation(invocation),
+		RequiresConfirmation: invocation.Policy().Effect == commands.EffectDestructive,
 	})
 	if err != nil {
 		c.fail(ctx, job, markConversationPersistenceError(err))
 		return
 	}
 	if created {
+		if execution.State == store.CapabilityExecutionAwaitingConfirmation {
+			c.waitForCommandConfirmation(ctx, job, inbound, commit)
+			return
+		}
 		if execution.State == store.CapabilityExecutionRunning && capabilityExecutionIsRead(execution) {
 			c.executeClaimedCommand(ctx, job, inbound, execution, invocation, commit)
 			return
@@ -168,6 +176,9 @@ func (c *Coordinator) executeNewCommand(
 			return
 		}
 		execution = claimed
+	} else if execution.State == store.CapabilityExecutionAwaitingConfirmation {
+		c.waitForCommandConfirmation(ctx, job, inbound, commit)
+		return
 	}
 	if execution.State != store.CapabilityExecutionRunning {
 		c.finishCommandBatch(ctx, job, inbound, commands.Response{}, commit)
@@ -187,7 +198,7 @@ func (c *Coordinator) resumeCommand(
 	for _, execution := range executions {
 		switch execution.State {
 		case store.CapabilityExecutionAwaitingConfirmation:
-			c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
+			c.waitForCommandConfirmation(ctx, job, inbound, commit)
 			return
 		case store.CapabilityExecutionApproved, store.CapabilityExecutionWaitingAuth:
 			claimed, execute, err := claimCapabilityExecutionForJob(ctx, c.jobs, job, execution.ID)
@@ -244,10 +255,16 @@ func (c *Coordinator) resumeCommand(
 			if execution.ReceiptState != execution.State && strings.TrimSpace(capabilityExecutionModelResult(execution)) != "" {
 				response.Text = joinResponseText(response.Text, capabilityExecutionModelResult(execution))
 				response.Kind = execution.Capability
+				if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, execution.ID,
+					commandExecutionModelResult(execution), inbound, capabilityExecutionObservedAt(execution)); err != nil {
+					c.fail(ctx, job, err)
+					return
+				}
 			}
 		case store.CapabilityExecutionDenied:
-			c.fail(ctx, job, fmt.Errorf("direct command capability %q was unexpectedly denied", execution.Capability))
-			return
+			// Confirmation/rejection is host lifecycle state. The receipt is
+			// emitted by finishCommandBatch, while the confirmation itself is
+			// intentionally absent from the model transcript.
 		}
 	}
 	c.finishCommandBatch(ctx, job, inbound, response, commit)
@@ -263,7 +280,7 @@ func (c *Coordinator) handleCommandClaimLoser(
 ) {
 	switch execution.State {
 	case store.CapabilityExecutionAwaitingConfirmation:
-		c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
+		c.waitForCommandConfirmation(ctx, job, inbound, commit)
 	case store.CapabilityExecutionRunning:
 		if !capabilityExecutionIsRead(execution) && capabilityExecutionHasStaleLease(execution, job) {
 			current, marked, err := markStaleCapabilityExecutionUnknown(ctx, c.jobs, job, execution)
@@ -332,11 +349,10 @@ func (c *Coordinator) executeClaimedCommand(
 			c.fail(ctx, job, markConversationPersistenceError(finishErr))
 			return
 		}
-		if text := strings.TrimSpace(finished.Result); text != "" {
-			if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text); err != nil {
-				c.fail(ctx, job, err)
-				return
-			}
+		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID,
+			commandOutcomeModelResult(invocation, outcome, capabilityExecutionObservedAt(finished)), inbound, capabilityExecutionObservedAt(finished)); err != nil {
+			c.fail(ctx, job, err)
+			return
 		}
 		c.finishCommandBatch(ctx, job, inbound, outcome.Response, commit)
 		return
@@ -349,11 +365,10 @@ func (c *Coordinator) executeClaimedCommand(
 		c.fail(ctx, job, markConversationPersistenceError(err))
 		return
 	}
-	if text := strings.TrimSpace(outcome.Response.Text); text != "" {
-		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID, text); err != nil {
-			c.fail(ctx, job, err)
-			return
-		}
+	if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, finished.ID,
+		commandOutcomeModelResult(invocation, outcome, capabilityExecutionObservedAt(finished)), inbound, capabilityExecutionObservedAt(finished)); err != nil {
+		c.fail(ctx, job, err)
+		return
 	}
 	c.finishCommandBatch(ctx, job, inbound, outcome.Response, commit)
 }
@@ -372,7 +387,7 @@ func (c *Coordinator) finishCommandBatch(
 	}
 	for _, execution := range executions {
 		if execution.State == store.CapabilityExecutionAwaitingConfirmation {
-			c.fail(ctx, job, fmt.Errorf("direct command capability %q unexpectedly awaits confirmation", execution.Capability))
+			c.waitForCommandConfirmation(ctx, job, inbound, commit)
 			return
 		}
 		if execution.State == store.CapabilityExecutionRunning {
@@ -400,7 +415,13 @@ func (c *Coordinator) finishCommandBatch(
 			return
 		}
 	}
-	if err := commit(ctx, response, nil, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
+	receipts, err := c.unsentExecutionReceiptsForEffect(ctx, job.ID, false, string(commands.EffectDestructive))
+	if err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	response = appendReceiptLines(response, "", receipts)
+	if err := commit(ctx, response, receipts.IDs, store.ConversationJobTransition{State: store.ConversationJobStateCompleted}); err != nil {
 		c.fail(ctx, job, err)
 		return
 	}
@@ -428,16 +449,20 @@ func (c *Coordinator) finishCommandWithoutExecution(
 	ctx context.Context,
 	job store.ConversationJob,
 	inbound message.Inbound,
-	response commands.Response,
-	status commands.CapabilityOutcomeStatus,
+	operation string,
+	outcome commands.CapabilityOutcome,
 	commit responseCommitter,
 ) {
+	response := outcome.Response
+	status := outcome.Status
 	transition := store.ConversationJobTransition{State: store.ConversationJobStateCompleted}
 	if status == commands.CapabilityOutcomeAuthRequired {
 		transition = store.ConversationJobTransition{State: store.ConversationJobStateWaitingAuth, WaitReason: store.ConversationJobWaitReasonAuth}
 	}
-	if text := strings.TrimSpace(response.Text); text != "" {
-		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, "result", text); err != nil {
+	if status != commands.CapabilityOutcomeAuthRequired {
+		observedAt := time.Now().UTC()
+		if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, "result",
+			commandOutcomeModelResult(commands.Invocation{Name: operation}, outcome, observedAt), inbound, observedAt); err != nil {
 			c.fail(ctx, job, err)
 			return
 		}
@@ -462,17 +487,91 @@ func (c *Coordinator) appendCommandEvent(
 	eventType store.ConversationEventType,
 	suffix string,
 	content string,
+	inbound message.Inbound,
+	occurredAt time.Time,
 ) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil
 	}
+	if occurredAt.IsZero() {
+		occurredAt = inbound.SentAt
+		if occurredAt.IsZero() {
+			occurredAt = inbound.ReceivedAt
+		}
+	}
 	_, _, err := c.jobs.AppendConversationEvent(ctx, store.ConversationEvent{
-		Identity: job.Identity, JobID: job.ID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
+		Identity: job.Identity, ActorDisplayName: inbound.Actor.DisplayName, Source: store.ConversationEventSourceCommand,
+		OccurredAt: occurredAt, JobID: job.ID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:command:%s", job.ID, strings.TrimSpace(suffix)),
 		Type:      eventType, Content: content,
 	})
 	return markConversationPersistenceError(err)
+}
+
+func (c *Coordinator) waitForCommandConfirmation(
+	ctx context.Context,
+	job store.ConversationJob,
+	inbound message.Inbound,
+	commit responseCommitter,
+) {
+	receipts, err := c.unsentExecutionReceiptsForEffect(ctx, job.ID, true, string(commands.EffectDestructive))
+	if err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	confirmation := appendReceiptLines(commands.Response{Kind: "command_confirmation"}, confirmationPrompt, receipts)
+	if err := commit(ctx, confirmation, receipts.IDs, store.ConversationJobTransition{
+		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
+	}); err != nil {
+		c.fail(ctx, job, err)
+		return
+	}
+	c.recordJob(ctx, job, inbound, confirmation, store.InteractionStatusWaitingConfirmation)
+}
+
+func capabilityExecutionObservedAt(execution store.CapabilityExecution) time.Time {
+	for _, candidate := range []*time.Time{execution.FinishedAt, &execution.UpdatedAt, &execution.CreatedAt} {
+		if candidate != nil && !candidate.IsZero() {
+			return candidate.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func commandOutcomeModelResult(invocation commands.Invocation, outcome commands.CapabilityOutcome, observedAt time.Time) string {
+	operation := strings.TrimSpace(string(invocation.ID()))
+	if operation == "" {
+		operation = strings.TrimSpace(invocation.Name)
+	}
+	var outcomeErr error
+	if outcome.Status != commands.CapabilityOutcomeSuccess {
+		message := strings.TrimSpace(outcome.Response.Text)
+		if message == "" {
+			message = "command outcome was not successful"
+		}
+		outcomeErr = errors.New(message)
+	}
+	return toolresult.Encode("bot", operation, string(outcome.Status), observedAt, outcome.Response.Data, outcomeErr)
+}
+
+func commandExecutionModelResult(execution store.CapabilityExecution) string {
+	if strings.TrimSpace(execution.Capability) == "" {
+		return ""
+	}
+	status := string(execution.State)
+	var executionErr error
+	if execution.State != store.CapabilityExecutionSucceeded {
+		message := strings.TrimSpace(execution.Error)
+		if message == "" {
+			message = strings.TrimSpace(execution.Result)
+		}
+		if message == "" {
+			message = "operation did not complete successfully"
+		}
+		executionErr = errors.New(message)
+	}
+	return toolresult.Encode("bot", execution.Capability, status, capabilityExecutionObservedAt(execution), toolresult.Data(execution.Result), executionErr)
 }
 
 func joinResponseText(current, next string) string {

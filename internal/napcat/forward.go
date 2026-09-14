@@ -33,7 +33,11 @@ func (b *Bridge) handleIncomingEvent(ctx context.Context, raw json.RawMessage, d
 			b.logf("napcat ignored invalid message event: %v", err)
 			return
 		}
+		event.receivedAt = time.Now().UTC()
 		if !isPrivateOrGroupMessage(event.MessageType) {
+			return
+		}
+		if isGroupMessageType(event.MessageType) && event.SelfID > 0 && event.UserID == event.SelfID {
 			return
 		}
 		// Local-only prep here. Network enrichment (get_forward_msg) must not run on

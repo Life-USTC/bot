@@ -48,6 +48,36 @@ func TestNapCatDelegatesInboundWithSeparateGroupActor(t *testing.T) {
 	}
 }
 
+func TestNapCatInboundPreservesSpeakerTimeAndDisplayName(t *testing.T) {
+	event := messageEvent{MessageType: "group", GroupID: 99, UserID: 7, SelfID: 123, Time: 1_757_850_000, RawMessage: "hello"}
+	event.Sender.Nickname = "昵称"
+	event.Sender.Card = "群名片"
+	event.receivedAt = time.Date(2026, 9, 14, 7, 8, 9, 123000000, time.FixedZone("CST", 8*60*60))
+
+	inbound := event.inbound()
+	if inbound.Actor.DisplayName != "群名片" {
+		t.Fatalf("display name = %q, want group card", inbound.Actor.DisplayName)
+	}
+	if inbound.SentAt.IsZero() || inbound.SentAt.Unix() != event.Time || inbound.SentAt.Location() != time.UTC {
+		t.Fatalf("sent at = %v", inbound.SentAt)
+	}
+	wantReceived := event.receivedAt.UTC()
+	if !inbound.ReceivedAt.Equal(wantReceived) {
+		t.Fatalf("received at = %v, want %v", inbound.ReceivedAt, wantReceived)
+	}
+}
+
+func TestNapCatIgnoresOwnGroupMessage(t *testing.T) {
+	processor := &processorSpy{}
+	bridge := &Bridge{App: processor}
+	bridge.processInbound(context.Background(), messageEvent{
+		MessageType: "group", GroupID: 99, UserID: 123, SelfID: 123, RawMessage: "echo",
+	})
+	if len(processor.messages) != 0 {
+		t.Fatalf("processed own group messages = %d", len(processor.messages))
+	}
+}
+
 func TestNapCatInboundCapturesReplyWithoutTreatingAtAllAsBotMention(t *testing.T) {
 	event := messageEvent{
 		MessageType: "group", GroupID: 99, UserID: 7, SelfID: 123,

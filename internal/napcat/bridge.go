@@ -122,10 +122,15 @@ type messageEvent struct {
 	SelfID      int64  `json:"self_id"`
 	Time        int64  `json:"time"`
 	MessageID   int64  `json:"message_id"`
+	Sender      struct {
+		Nickname string `json:"nickname"`
+		Card     string `json:"card"`
+	} `json:"sender"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
 	forwardImageURLs   []string
 	reverseTransportID string
+	receivedAt         time.Time
 }
 
 func (b *Bridge) Run(ctx context.Context) error {
@@ -321,6 +326,10 @@ func (b *Bridge) processInbound(ctx context.Context, event messageEvent) {
 		b.logf("napcat inbound application is unavailable")
 		return
 	}
+	if isGroupMessageType(event.MessageType) && event.SelfID > 0 && event.UserID == event.SelfID {
+		b.logf("napcat ignored bot's own group message: group_id=%d message_id=%d", event.GroupID, event.MessageID)
+		return
+	}
 	b.App.Process(ctx, event.inbound())
 }
 
@@ -368,13 +377,37 @@ func (e messageEvent) inbound() message.Inbound {
 		replyTo = &message.ReplyRef{MessageID: messageID}
 	}
 	return message.Inbound{
-		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID},
+		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID, DisplayName: e.displayName()},
 		Conversation: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
 		Source:       message.ReplyRef{MessageID: napcatEventMessageID(e.MessageID), EventID: e.sourceEventID(), TransportID: e.reverseTransportID},
 		ReplyTo:      replyTo,
-		Text:         cleanNapCatMessageText(e.RawMessage), ImageURLs: e.imageURLs(),
+		SentAt:       napcatEventTime(e.Time), ReceivedAt: e.receivedTimestamp(),
+		Text: cleanNapCatMessageText(e.RawMessage), ImageURLs: e.imageURLs(),
 		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
 	}
+}
+
+// displayName prefers the per-group card over the global nickname, which is
+// how the same person appears to everyone else in that group.
+func (e messageEvent) displayName() string {
+	if card := strings.TrimSpace(e.Sender.Card); card != "" {
+		return card
+	}
+	return strings.TrimSpace(e.Sender.Nickname)
+}
+
+func napcatEventTime(seconds int64) time.Time {
+	if seconds <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0).UTC()
+}
+
+func (e messageEvent) receivedTimestamp() time.Time {
+	if !e.receivedAt.IsZero() {
+		return e.receivedAt.UTC()
+	}
+	return time.Now().UTC()
 }
 
 var napcatCQCodeRE = regexp.MustCompile(`(?i)\[CQ:[^\]]+\]`)
