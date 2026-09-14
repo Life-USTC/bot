@@ -398,6 +398,8 @@ func agentFailureClass(err error) string {
 		return "request_timeout"
 	case errors.Is(err, context.Canceled):
 		return "canceled"
+	case errors.Is(err, errConversationCompaction):
+		return "history_compaction"
 	default:
 		return "internal"
 	}

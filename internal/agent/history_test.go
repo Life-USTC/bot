@@ -50,7 +50,7 @@ func TestHistoryPagesBeyondEightyEventsWithoutChangingPrefix(t *testing.T) {
 		}
 	}
 	svc := &Service{handler: commands.Handler{Store: db}}
-	events, err := svc.historyEvents(t.Context(), ident)
+	events, err := svc.historyEvents(t.Context(), ident, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestHistoryPagesBeyondEightyEventsWithoutChangingPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err = svc.historyEvents(t.Context(), ident)
+	events, err = svc.historyEvents(t.Context(), ident, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,32 +87,6 @@ func TestConversationEventMessagesPreserveExactRolesAndToolEvidence(t *testing.T
 		messages[2].Role != schema.Tool || messages[2].ToolCallID != "call-1" || messages[2].Content != "数学分析（程艺，2026春）" ||
 		messages[3].Role != schema.Assistant {
 		t.Fatalf("typed transcript = %#v", messages)
-	}
-}
-
-func TestConversationEventMessagesBoundsHistoryByDroppingWholeOldTurns(t *testing.T) {
-	oldResult := strings.Repeat("旧", 200)
-	newResult := strings.Repeat("新", 20)
-	events := []store.ConversationEvent{
-		{Type: store.ConversationEventUser, Content: "old question"},
-		{Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "old-call", Name: "search", Arguments: `{}`}}},
-		{Type: store.ConversationEventToolResult, ToolCallID: "old-call", ToolName: "search", Content: oldResult},
-		{Type: store.ConversationEventAssistant, Content: "old answer"},
-		{Type: store.ConversationEventUser, Content: "new question"},
-		{Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "new-call", Name: "search", Arguments: `{}`}}},
-		{Type: store.ConversationEventToolResult, ToolCallID: "new-call", ToolName: "search", Content: newResult},
-		{Type: store.ConversationEventAssistant, Content: "new answer"},
-	}
-
-	window := exactConversationEventWindow(events, 80)
-	messages := messagesFromConversationEvents(window)
-	if len(messages) != 4 || messages[0].Content != "new question" || messages[2].Content != newResult {
-		t.Fatalf("exact bounded messages = %#v", messages)
-	}
-	for _, message := range messages {
-		if strings.Contains(message.Content, "omitted") || strings.Contains(message.Content, "截断") {
-			t.Fatalf("synthetic history content reached model: %q", message.Content)
-		}
 	}
 }
 

@@ -56,15 +56,29 @@ user turns, and the model cannot approve an operation by writing a flag.
 
 ## Model conversation
 
-Only `conversation_events` is replayed as LLM history. Jobs, interaction logs,
-usage rows and the delivery outbox are not read as a chat transcript.
+The model context consists of a persisted historical summary, when one exists,
+followed by exact role-bearing `conversation_events` after its coverage boundary.
+Jobs, interaction logs, usage rows and the delivery outbox are not read as a chat
+transcript. A summary is historical information, never a new user instruction,
+an approval, or a fresh tool observation.
 
 History is paged by event ID instead of capped at 80 messages. Retained messages
 are replayed unchanged so ordinary follow-ups keep a stable cacheable prefix.
-The history ceiling is 96,000 estimated tokens within the 128,000-token request
-window; remaining capacity is reserved for instructions, tools and completion.
-Only at that ceiling are complete old turns removed. Tool results are never
-selectively rewritten or summarized on replay, and full events remain stored.
+Compaction triggers at 96,000 estimated tokens, counting history, instructions
+and tool schemas within the 128,000-token request window. The remaining capacity
+provides room for estimation overhead and completion.
+Near capacity, older history is semantically summarized; recent complete turns
+and their assistant/tool pairs remain exact. The summary and its coverage
+boundary are persisted together, and ordinary turns reuse them unchanged.
+Original events remain stored. A failed summary must not advance the boundary
+or silently discard history.
+Eino's summarization middleware processes bounded prefixes of complete durable
+turns, aiming to retain about 32,000 tokens of recent history. Internal event-ID
+metadata identifies the covered prefix without entering provider requests.
+The in-flight state remains authoritative: compaction preserves system messages
+and all recent messages, including tool results not yet persisted by the event
+consumer. An oversized current turn fails explicitly instead of being dropped.
+Summary calls use the existing provider transport, deadline and usage budget.
 Subscription mutations return facts about their targets and counts rather than
 embedding the user's entire subscription list; that list is queried separately.
 
@@ -87,10 +101,11 @@ conversation. Its `ResponseContext` carries the public command and arguments
 for deterministic follow-ups such as “周日呢”. Quoted text is explicitly
 identified as historical context, not a new tool result or fresh observation.
 
-History bounds remove complete old turns while preserving assistant/tool-call
-pairs. Typed roles remain intact; host approval messages are not manufactured
-into assistant or user evidence. Unsupported assistant image modalities are
-not replayed to a provider that cannot encode them.
+Summaries retain user goals and constraints, speaker identities and times,
+exact business identifiers, observed execution outcomes and unfinished work.
+Typed roles in recent history remain intact; host approval messages are not
+manufactured into assistant or user evidence. Unsupported assistant image
+modalities are not replayed to a provider that cannot encode them.
 
 ## One execution, two outputs
 
@@ -187,6 +202,9 @@ notice about missing inputs. Hard input limits and cancellation still stop work.
 
 The model's per-request context window and run-wide token budget are separate.
 One run remains bounded by time, tool calls and physical provider attempts.
+Exhausted model transport retries have a distinct `upstream_transport` failure
+class and a connection-failure reply. They do not imply a domain API failure
+or that earlier business operations were rolled back.
 Identical tool calls are not re-executed; a bounded number of structured repeat
 refusals lets the model change its plan before the run stops.
 

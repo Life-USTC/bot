@@ -400,6 +400,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	}
 	ctx = withToolOutcomes(ctx, newToolOutcomeRegistry())
 	repeatGuard := newToolRepeatGuard()
+	var handlers []adk.ChatModelAgentMiddleware
+	if s.handler.Store != nil && store.HasConversationIdentity(input.Identity) {
+		handlers = append(handlers, newConversationCompactionMiddleware(s, input.Identity))
+	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          "presto_assistant",
 		Description:   "Presto, a Life @ USTC QQ assistant",
@@ -436,6 +440,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 				}},
 			},
 		},
+		Handlers: handlers,
 	})
 	if err != nil {
 		reply := agentFailureReply(runID, err)
@@ -658,7 +663,11 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	messages := make([]*schema.Message, 0, conversationEventPageSize+1)
 	hasCurrentEvent := false
 	if s.handler.Store != nil {
-		events, err := s.historyEvents(ctx, input.Identity)
+		compaction, found, err := s.handler.Store.ConversationCompaction(ctx, input.Identity)
+		if err != nil {
+			return nil, err
+		}
+		events, err := s.historyEvents(ctx, input.Identity, compaction.CoveredEventID)
 		if err != nil {
 			return nil, err
 		}
@@ -670,6 +679,12 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 					break
 				}
 			}
+		}
+		if found && compaction.CoveredEventID > 0 {
+			if strings.TrimSpace(compaction.Summary) == "" {
+				return nil, errors.New("conversation summary is missing")
+			}
+			messages = append(messages, conversationSummaryMessage(compaction.Summary, compaction.CoveredEventID))
 		}
 		messages = append(messages, conversationEventMessages(events)...)
 	}
@@ -689,24 +704,20 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	return messages, nil
 }
 
-// Fetch by token capacity rather than a sliding event count. Short messages
-// must not push earlier turns out of an otherwise mostly empty context window.
-func (s *Service) historyEvents(ctx context.Context, ident store.Identity) ([]store.ConversationEvent, error) {
+// Read all uncompressed events in stable ascending pages. Capacity is handled
+// by the model middleware, never by discarding history during database reads.
+func (s *Service) historyEvents(ctx context.Context, ident store.Identity, afterID int64) ([]store.ConversationEvent, error) {
 	var events []store.ConversationEvent
-	var beforeID int64
 	for {
-		page, err := s.handler.Store.ConversationEventsBefore(ctx, ident, beforeID, conversationEventPageSize)
+		page, err := s.handler.Store.ConversationEventsAfter(ctx, ident, afterID, conversationEventPageSize)
 		if err != nil {
 			return nil, err
 		}
-		if len(page) == 0 {
+		events = append(events, page...)
+		if len(page) < conversationEventPageSize {
 			return events, nil
 		}
-		events = append(page, events...)
-		if len(page) < conversationEventPageSize || estimateMessagesTokens(messagesFromConversationEvents(events)) >= conversationHistoryTokenLimit {
-			return events, nil
-		}
-		beforeID = page[0].ID
+		afterID = page[len(page)-1].ID
 	}
 }
 
@@ -1292,7 +1303,9 @@ func agentFailureReply(runID int64, err error) string {
 	if errors.Is(err, errAgentRunDeadline) {
 		reply = "AI 处理超过 2 分钟，未能生成完整回复，已停止本次处理。请稍后重新发送；如果查询结果较多，可指定数量或筛选条件。"
 	} else if errors.Is(err, errAgentContextBudget) {
-		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
+		reply = "AI 本次上下文或工具结果过大，无法在容量限制内继续，历史记录仍保留。请缩小查询范围后重试。"
+	} else if errors.Is(err, errConversationCompaction) {
+		reply = "AI 暂时未能完成历史摘要，原始对话仍保留。请稍后重新发送这条消息。"
 	} else if errors.Is(err, errAgentRunTokenBudget) {
 		reply = "AI 本轮累计用量达到上限，已停止。请缩小本次任务范围后继续。"
 	} else if errors.Is(err, errAgentToolCallBudget) {
