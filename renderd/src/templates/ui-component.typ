@@ -43,7 +43,10 @@
           })))
     }
   }
-  table(columns: if bus { (1fr,) * t.header.len() } else { (2fr,) + (1fr,) * (t.header.len() - 1) },
+  // Help commands are short labels; give their explanations most of the width.
+  table(columns: if bus { (1fr,) * t.header.len() }
+    else if t.header == ("命令", "说明") { (1fr, 2fr) }
+    else { (2fr,) + (1fr,) * (t.header.len() - 1) },
     inset: (x: pad, y: if bus { 8pt } else { 10pt }),
     align: if bus { center + horizon } else { left + horizon },
     stroke: table-stroke,

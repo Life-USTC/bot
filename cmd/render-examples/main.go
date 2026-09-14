@@ -47,6 +47,7 @@ func fixtures() []fixture {
 		{"bus-weekend", "校车 · 周六全部路线", busWeekendImage, func() time.Time { return fixtureNow().AddDate(0, 0, 3) }},
 		{"rich-table", "待办表格 · 合成数据", richTableImage, fixtureNow},
 		{"rich-text", "帮助与长文本", richTextImage, fixtureNow},
+		{"help-menu", "Bot 帮助菜单", helpMenuImage, fixtureNow},
 		{"grid-week", "周课表 · 公开教学班组合", gridWeekImage, fixtureNow},
 		{"grid-role-badges", "周课表 · 个人身份 Badge", gridRoleImage, fixtureNow},
 		{"grid-day", "日课表 · 与周课表相同课程", gridDayImage, fixtureNow},
@@ -67,8 +68,34 @@ func richTableImage() *responses.Image {
 | 还图书馆的书 | 07-15 |`, "待办：提交数据库实验报告等 3 项")
 }
 
-// richTextImage is a pure-text rich card (help style): multiple lines plus a
-// long line that triggers wrapping.
+// helpMenuImage reproduces the two command/description tables in the menu.
+func helpMenuImage() *responses.Image {
+	return responses.NewRichTextImage("help", `# Bot 帮助
+
+发送「帮助 课表」可以查看「课表」命令的具体用法。
+
+## 常用
+| 命令 | 说明 |
+| --- | --- |
+| 待办（td） | 查看和管理待办 |
+| 作业（hw） | 查看和管理作业 |
+| 日程 | 今日安排、综合概览与近期截止 |
+| 天气 | 查看本部与高新校区的天气 |
+| 教室 | 查询教室位置和楼层地图 |
+| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |
+| 课表 | 周课表、单日课表与下一节课 |
+| 考试（ks） | 查看已订阅课程的考试 |
+
+## 账户与系统
+| 命令 | 说明 |
+| --- | --- |
+| 账户 | 登录、退出与查看账户信息 |
+| 设置 | 管理通知等偏好 |
+| 反馈 | 向管理员提交反馈 |
+| 系统 | 查看服务状态与检查连通性 |`, "Bot 帮助")
+}
+
+// richTextImage exercises paragraphs with long lines that trigger wrapping.
 func richTextImage() *responses.Image {
 	return responses.NewRichTextImage("help", `# Bot 帮助
 
