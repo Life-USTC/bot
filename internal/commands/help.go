@@ -92,7 +92,13 @@ func generatedHelpDetailSections() []helpSection {
 }
 
 func (h Handler) help(args ...string) string {
+	// Help is a local capability, so expose its command document directly
+	// instead of asking a model to recover it from the rendered table below.
+	h.markData(structuredHelpData(args...))
 	if len(args) == 0 {
+		return helpOverviewText()
+	}
+	if len(args) == 1 && isHelpToken(args[0]) {
 		return helpOverviewText()
 	}
 	topic := helpTopicCommand(args)
@@ -101,6 +107,31 @@ func (h Handler) help(args ...string) string {
 		return h.notFound("没有找到一级命令“" + strings.TrimSpace(strings.Join(args, " ")) + "”。发送“帮助”查看命令总览。")
 	}
 	return text
+}
+
+func structuredHelpData(args ...string) map[string]any {
+	shared := false
+	documentation := SearchCapabilityDocumentation("", CapabilitySearchOptions{SharedConversation: shared})
+	topic := ""
+	if len(args) > 0 && !isHelpToken(args[0]) {
+		topic = helpTopicCommand(args)
+	}
+	if topic != "" {
+		filtered := make([]CapabilityDocumentation, 0, len(documentation))
+		for _, item := range documentation {
+			if item.Topic == topic {
+				filtered = append(filtered, item)
+			}
+		}
+		documentation = filtered
+	}
+	return map[string]any{
+		"type":     "command_help",
+		"topic":    topic,
+		"commands": documentation,
+		"shared":   shared,
+		"query":    strings.TrimSpace(strings.Join(args, " ")),
+	}
 }
 
 func formatHelpTopic(topic string) string {

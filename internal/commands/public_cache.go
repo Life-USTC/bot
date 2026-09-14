@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/store"
@@ -19,6 +20,8 @@ type PublicCommandCache struct {
 	logger  *log.Logger
 	now     func() time.Time
 	group   singleflight.Group
+	dataMu  sync.RWMutex
+	data    map[string]any
 }
 
 func NewPublicCommandCache(stateStore *store.Store, version string, ttl time.Duration, logger *log.Logger) *PublicCommandCache {
@@ -35,6 +38,7 @@ func NewPublicCommandCache(stateStore *store.Store, version string, ttl time.Dur
 		ttl:     ttl,
 		logger:  logger,
 		now:     time.Now,
+		data:    make(map[string]any),
 	}
 }
 
@@ -97,17 +101,22 @@ func (c *PublicCommandCache) GetOrLoadOutcome(ctx context.Context, command strin
 
 	command = strings.TrimSpace(command)
 	argsKey := strings.Join(args, " ")
-	if response, ok := c.lookup(ctx, command, argsKey); ok {
-		return SuccessOutcome(Response{Text: response})
+	if response, ok := c.lookupOutcome(ctx, command, argsKey); ok {
+		return SuccessOutcome(response)
 	}
 
 	key := c.version + "\x00" + command + "\x00" + argsKey
 	value, _, _ := c.group.Do(key, func() (any, error) {
-		if response, ok := c.lookup(ctx, command, argsKey); ok {
-			return SuccessOutcome(Response{Text: response}), nil
+		if response, ok := c.lookupOutcome(ctx, command, argsKey); ok {
+			return SuccessOutcome(response), nil
 		}
 		outcome := normalizeOutcome(load())
 		if ctx.Err() == nil && outcome.Status == CapabilityOutcomeSuccess {
+			// Persistent cache entries predate structured command results and only
+			// contain rendered text. Keep the already-fetched Data in this process;
+			// a cache hit without it is treated as a miss by lookupOutcome so a
+			// model never receives a text-only reconstruction as business data.
+			c.saveData(command, argsKey, outcome.Response.Data)
 			now := c.currentTime()
 			err := c.store.SavePublicCommandCache(ctx, store.PublicCommandCacheEntry{
 				Version:   c.version,
@@ -135,6 +144,33 @@ func (c *PublicCommandCache) lookup(ctx context.Context, command, args string) (
 		return "", false
 	}
 	return entry.Response, ok
+}
+
+func (c *PublicCommandCache) lookupOutcome(ctx context.Context, command, args string) (Response, bool) {
+	response, ok := c.lookup(ctx, command, args)
+	if !ok {
+		return Response{}, false
+	}
+	key := command + "\x00" + args
+	c.dataMu.RLock()
+	data, hasData := c.data[key]
+	c.dataMu.RUnlock()
+	if !hasData {
+		return Response{}, false
+	}
+	return Response{Text: response, Data: data, Kind: command}, true
+}
+
+func (c *PublicCommandCache) saveData(command, args string, data any) {
+	if data == nil {
+		return
+	}
+	c.dataMu.Lock()
+	if c.data == nil {
+		c.data = make(map[string]any)
+	}
+	c.data[command+"\x00"+args] = data
+	c.dataMu.Unlock()
 }
 
 func (c *PublicCommandCache) currentTime() time.Time {

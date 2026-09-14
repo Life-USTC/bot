@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -13,10 +14,55 @@ import (
 )
 
 type Response struct {
-	Text  string
+	Text string
+	// Data is the machine-readable result of the command. It deliberately
+	// lives beside Text and Image: Text is presentation for a user, while Data
+	// is the already-fetched domain value sent to a model or another host.
+	Data  any
 	Image *responses.Image
 	Kind  string
 	Parts []Response
+}
+
+// ModelResult returns the stable model-facing envelope for this response.
+// Callers that already have a shared result encoder may use Response.Data
+// directly; this convenience keeps command-only integrations from having to
+// reconstruct the envelope from rendered text.
+func (r Response) ModelResult(operation, status string, observedAt time.Time) string {
+	if status == "success" {
+		status = "succeeded"
+	}
+	result := struct {
+		Source     string    `json:"source"`
+		Operation  string    `json:"operation"`
+		Status     string    `json:"status"`
+		ObservedAt time.Time `json:"observed_at"`
+		Result     any       `json:"result"`
+	}{
+		Source:     "commands",
+		Operation:  operation,
+		Status:     status,
+		ObservedAt: observedAt.UTC(),
+		Result:     r.Data,
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		fallback := struct {
+			Source     string    `json:"source"`
+			Operation  string    `json:"operation"`
+			Status     string    `json:"status"`
+			ObservedAt time.Time `json:"observed_at"`
+			Result     any       `json:"result"`
+		}{
+			Source:     "commands",
+			Operation:  operation,
+			Status:     "failed",
+			ObservedAt: observedAt.UTC(),
+			Result:     nil,
+		}
+		encoded, _ = json.Marshal(fallback)
+	}
+	return string(encoded)
 }
 
 const ResponseKindAuthWait = "auth_wait"
