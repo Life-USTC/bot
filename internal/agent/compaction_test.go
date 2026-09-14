@@ -171,6 +171,7 @@ func TestCompactionFailureDoesNotAdvanceHistory(t *testing.T) {
 			ident := store.Identity{Platform: "test", ConversationType: "private", ConversationID: "one", UserID: "one"}
 			events := seedCompactionHistory(t, db, ident, 6, 18_000)
 			before := &adk.ChatModelAgentState{Messages: conversationEventMessages(events)}
+			original := append([]*schema.Message(nil), before.Messages...)
 			mw := &conversationCompactionMiddleware{store: db, identity: ident, model: summaryModelFunc(func(context.Context, []*schema.Message) (*schema.Message, error) {
 				switch mode {
 				case "network":
@@ -189,7 +190,7 @@ func TestCompactionFailureDoesNotAdvanceHistory(t *testing.T) {
 			if err != nil || saved.CoveredEventID != 0 || saved.Summary != "" {
 				t.Fatal("failed summary advanced history")
 			}
-			if len(before.Messages) != len(events) {
+			if !reflect.DeepEqual(before.Messages, original) {
 				t.Fatal("failed summary changed exact state")
 			}
 			claimed, err := db.ClaimConversationCompaction(t.Context(), ident, 0, "next", time.Now().Add(time.Minute))
