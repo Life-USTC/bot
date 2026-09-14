@@ -655,10 +655,10 @@ func (s *Service) responseFor(ctx context.Context, input Input, reply string) co
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
-	messages := make([]*schema.Message, 0, conversationEventLimit+1)
+	messages := make([]*schema.Message, 0, conversationEventPageSize+1)
 	hasCurrentEvent := false
 	if s.handler.Store != nil {
-		events, err := s.handler.Store.RecentConversationEvents(ctx, input.Identity, conversationEventLimit)
+		events, err := s.historyEvents(ctx, input.Identity)
 		if err != nil {
 			return nil, err
 		}
@@ -687,6 +687,27 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	event := currentUserEvent(input)
 	messages = append(messages, messagesFromConversationEvents([]store.ConversationEvent{event})...)
 	return messages, nil
+}
+
+// Fetch by token capacity rather than a sliding event count. Short messages
+// must not push earlier turns out of an otherwise mostly empty context window.
+func (s *Service) historyEvents(ctx context.Context, ident store.Identity) ([]store.ConversationEvent, error) {
+	var events []store.ConversationEvent
+	var beforeID int64
+	for {
+		page, err := s.handler.Store.ConversationEventsBefore(ctx, ident, beforeID, conversationEventPageSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			return events, nil
+		}
+		events = append(page, events...)
+		if len(page) < conversationEventPageSize || estimateMessagesTokens(messagesFromConversationEvents(events)) >= conversationHistoryTokenLimit {
+			return events, nil
+		}
+		beforeID = page[0].ID
+	}
 }
 
 func inputOccurredAt(input Input) time.Time {

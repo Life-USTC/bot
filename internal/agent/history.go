@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	conversationEventLimit        = 80
+	conversationEventPageSize     = 80
 	conversationCompactInputLimit = 128_000
-	conversationHistoryTokenLimit = 8_000
+	// Reserve room for instructions, tool schemas, new tool results and the
+	// completion. Ordinary turns keep their exact prefix for provider caching.
+	conversationHistoryTokenLimit = conversationCompactInputLimit - 32_000
 )
 
 // conversationEventMessages restores exact role-bearing history. It never
@@ -221,20 +223,13 @@ func assistantTextOutputParts(parts []store.ConversationMessagePart) []schema.Me
 	return result
 }
 
-// exactConversationEventWindow removes bulky historical observations before
-// dropping dialogue turns. A tool call and all its results are removed together;
-// retained messages stay exact, with no invented summaries or tool evidence.
+// exactConversationEventWindow bounds history only by removing complete old
+// user turns. It never rewrites a tool result or inserts synthetic text into
+// the transcript sent to the model.
 func exactConversationEventWindow(events []store.ConversationEvent, tokenLimit int) []store.ConversationEvent {
 	events = completeConversationEventWindow(events)
 	if len(events) == 0 || tokenLimit <= 0 {
 		return events
-	}
-	for estimateMessagesTokens(messagesFromConversationEvents(events)) > tokenLimit {
-		start, end := largestHistoricalObservation(events)
-		if start < 0 {
-			break
-		}
-		events = append(events[:start:start], events[end:]...)
 	}
 	latestUser := 0
 	for index, event := range events {
@@ -249,39 +244,6 @@ func exactConversationEventWindow(events []store.ConversationEvent, tokenLimit i
 	// A single recent turn may itself exceed the history target. Keep it exact;
 	// the run-wide provider budget remains the final hard limit.
 	return events[latestUser:]
-}
-
-// The latest turn may be an interrupted run being resumed. Preserve all its
-// evidence; only completed earlier turns are candidates for observation removal.
-func largestHistoricalObservation(events []store.ConversationEvent) (int, int) {
-	latestUser := 0
-	for i, event := range events {
-		if event.Type == store.ConversationEventUser {
-			latestUser = i
-		}
-	}
-	start, end, largest := -1, -1, 0
-	for i := 0; i < latestUser; i++ {
-		event := events[i]
-		if event.Type != store.ConversationEventAssistant {
-			continue
-		}
-		next := i + 1
-		if len(event.ToolCalls) > 0 {
-			for next < latestUser && (events[next].Type == store.ConversationEventToolResult ||
-				events[next].Type == store.ConversationEventToolError || events[next].Type == store.ConversationEventToolDenial) {
-				next++
-			}
-		} else if event.Source != store.ConversationEventSourceCommand {
-			continue
-		}
-		size := estimateMessagesTokens(messagesFromConversationEvents(events[i:next]))
-		if size > largest {
-			start, end, largest = i, next, size
-		}
-		i = next - 1
-	}
-	return start, end
 }
 
 // A bounded tail may begin halfway through a tool exchange, and an expired or
