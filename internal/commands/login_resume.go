@@ -29,7 +29,20 @@ func (h Handler) BeginLoginForRequest(ctx context.Context, input Input) (Respons
 			return Response{}, err
 		}
 	}
-	return Response{Text: loginResumeInstructions(*session), Kind: ResponseKindAuthWait}, nil
+	return Response{
+		Text: loginResumeInstructions(*session),
+		Data: map[string]any{
+			"operation":                 "login",
+			"logged_in":                 false,
+			"status":                    "pending",
+			"verification_uri":          session.VerificationURI,
+			"verification_uri_complete": session.VerificationURIComplete,
+			"user_code":                 session.UserCode,
+			"expires_at":                session.ExpiresAt,
+			"interval_seconds":          session.IntervalSeconds,
+		},
+		Kind: ResponseKindAuthWait,
+	}, nil
 }
 
 func loginResumeInstructions(session store.LoginSession) string {

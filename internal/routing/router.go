@@ -62,6 +62,9 @@ func decideDirect(inbound message.Inbound) Decision {
 
 func decideShared(inbound message.Inbound, replyContext *message.ResponseContext) Decision {
 	addressed := inbound.BotMentioned || replyContext != nil
+	if !addressed && bareHelpRequest(inbound.Text) {
+		return Decision{Action: ActionIgnore}
+	}
 	if replyContext != nil {
 		if base, ok := commands.NewInvocation(commands.CapabilityID(replyContext.Capability), replyContext.Arguments); ok {
 			if invocation, ok := commands.ParsePublicFollowUp(base, inbound.Text); ok {
@@ -71,10 +74,19 @@ func decideShared(inbound message.Inbound, replyContext *message.ResponseContext
 	}
 
 	parsed := commands.ParseCommand(inbound.Text)
+	if !addressed && unknownSlashRequest(inbound.Text, parsed) {
+		return Decision{Action: ActionIgnore}
+	}
 	if parsed.Recognized() {
 		policy := parsed.Invocation.Policy()
 		explicit := parsed.Invocation.NaturalRoute == ""
 		if policy.DataScope == commands.DataScopePublic {
+			// Exact public commands are intentionally available in a group. A
+			// natural-language match is a retrieval aid and must still be
+			// explicitly addressed before it can activate the bot.
+			if !explicit && !addressed {
+				return Decision{Action: ActionIgnore}
+			}
 			activation := ActivationCommand
 			if !explicit {
 				activation = ActivationPublicQuery
@@ -86,7 +98,7 @@ func decideShared(inbound message.Inbound, replyContext *message.ResponseContext
 			}
 			return Decision{Action: ActionCommand, Activation: activation, Invocation: parsed.Invocation}
 		}
-		if policy.DataScope == commands.DataScopeUserPrivate && (explicit || addressed) {
+		if policy.DataScope == commands.DataScopeUserPrivate && addressed {
 			activation := ActivationCommand
 			if inbound.BotMentioned {
 				activation = ActivationMention
@@ -106,4 +118,29 @@ func decideShared(inbound message.Inbound, replyContext *message.ResponseContext
 		return Decision{Action: ActionAgent, Activation: activation}
 	}
 	return Decision{Action: ActionIgnore}
+}
+
+func bareHelpRequest(text string) bool {
+	switch strings.TrimSpace(text) {
+	case "?", "？":
+		return true
+	default:
+		return false
+	}
+}
+
+func unknownSlashRequest(text string, parsed commands.ParseResult) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
+		return false
+	}
+	if parsed.Invocation.ID() != commands.CapabilityHelp {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fields[0])) {
+	case "/help", "/?":
+		return false
+	default:
+		return true
+	}
 }

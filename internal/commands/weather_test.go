@@ -80,10 +80,11 @@ func TestWeatherReportsBothCampusesInGroup(t *testing.T) {
 			ConversationID:   "100",
 		},
 	}
-	reply, ok := handler.Handle(context.Background(), input)
+	response, ok := handler.HandleResponse(context.Background(), input)
 	if !ok {
 		t.Fatal("group weather message was not handled")
 	}
+	reply := response.Text
 	plain := textutil.PlainMonospace(reply)
 	for _, want := range []string{
 		"天气：", "本部：", "高新校区：", "24° 阴", "25° 阴",
@@ -97,6 +98,27 @@ func TestWeatherReportsBothCampusesInGroup(t *testing.T) {
 	}
 	if len(requested) != 2 {
 		t.Fatalf("requested locations = %v, want both campuses", requested)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "weather" {
+		t.Fatalf("weather Data = %#v", response.Data)
+	}
+	locations, ok := data["locations"].(map[string]any)
+	if !ok || len(locations) != 2 || locations["ustc-main"] == nil || locations["ustc-gaoxin"] == nil {
+		t.Fatalf("weather locations Data = %#v", data["locations"])
+	}
+}
+
+func TestWeatherCampusAliasesUseOneCanonicalLocation(t *testing.T) {
+	for _, alias := range []string{"高新", "高新校区", "高新区", "高新园区", "gaoxin", "gx"} {
+		filter, ok := weatherLocationFilter([]string{alias})
+		if !ok || filter != "ustc-gaoxin" {
+			t.Errorf("weather alias %q = %q, %v; want ustc-gaoxin", alias, filter, ok)
+		}
+		result := ParseCommand("天气 " + alias)
+		if !result.Valid() || result.Invocation.ID() != CapabilityWeather || strings.Join(result.Invocation.Args, " ") != alias {
+			t.Errorf("ParseCommand weather alias %q = %#v", alias, result)
+		}
 	}
 }
 

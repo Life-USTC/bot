@@ -36,6 +36,7 @@ const (
 	opDispatch     = 0
 	opHeartbeat    = 1
 	opIdentify     = 2
+	opResume       = 6
 	opReconnect    = 7
 	opInvalid      = 9
 	opHello        = 10
@@ -75,6 +76,53 @@ type Bot struct {
 	tokenExpiresAt time.Time
 	mediaCache     qqMediaCache
 	now            func() time.Time
+
+	// sessionMu guards the resume point. It survives reconnects on purpose:
+	// opcode 7 and an ordinary transport drop both mean "come back to this
+	// session", not "start a new one".
+	sessionMu  sync.Mutex
+	sessionID  string
+	sessionSeq int64
+}
+
+func (b *Bot) resumePoint() (string, int64) {
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	return b.sessionID, b.sessionSeq
+}
+
+func (b *Bot) currentSessionID() string {
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	return b.sessionID
+}
+
+func (b *Bot) rememberSession(id string) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	if b.sessionID != id {
+		b.sessionID = id
+		b.sessionSeq = 0
+	}
+}
+
+func (b *Bot) rememberSeq(seq int64) {
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	if seq > b.sessionSeq {
+		b.sessionSeq = seq
+	}
+}
+
+func (b *Bot) forgetSession() {
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	b.sessionID = ""
+	b.sessionSeq = 0
 }
 
 type gatewayPayload struct {
@@ -99,6 +147,14 @@ type identifyData struct {
 	Intents    uint64            `json:"intents"`
 	Shard      []int             `json:"shard"`
 	Properties map[string]string `json:"properties"`
+}
+
+// resumeData continues an existing gateway session. Opcode 7 asks for exactly
+// this: re-identifying instead drops the session and its buffered events.
+type resumeData struct {
+	Token     string `json:"token"`
+	SessionID string `json:"session_id"`
+	Seq       int64  `json:"seq"`
 }
 
 type readyData struct {
@@ -158,13 +214,15 @@ type messageAuthor struct {
 }
 
 type incomingMessage struct {
-	ID        string
-	EventID   string
-	ReplyToID string
-	Type      string
-	Text      string
-	ImageURLs []string
-	Identity  store.Identity
+	ID         string
+	EventID    string
+	ReplyToID  string
+	Type       string
+	Text       string
+	ImageURLs  []string
+	Identity   store.Identity
+	SentAt     time.Time
+	ReceivedAt time.Time
 }
 
 func (m *incomingMessage) inbound() message.Inbound {
@@ -182,7 +240,8 @@ func (m *incomingMessage) inbound() message.Inbound {
 		},
 		Source:  message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
 		ReplyTo: replyTo,
-		Text:    m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		SentAt:  m.SentAt, ReceivedAt: m.ReceivedAt,
+		Text: m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
 		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
 	}
 }
@@ -467,7 +526,8 @@ func (b *Bot) runOnce(ctx context.Context) (bool, error) {
 	defer close(heartbeatDone)
 	go b.heartbeat(ctx, conn, &writeMu, &seq, interval, heartbeatDone)
 
-	identify := gatewaySendPayload{
+	resumeSession, resumeSeq := b.resumePoint()
+	start := gatewaySendPayload{
 		Op: opIdentify,
 		D: identifyData{
 			Token:   "QQBot " + token,
@@ -480,8 +540,15 @@ func (b *Bot) runOnce(ctx context.Context) (bool, error) {
 			},
 		},
 	}
-	if err := writeGatewayJSON(conn, &writeMu, identify); err != nil {
-		b.logf("QQ bot websocket identify failed: %v", err)
+	if resumeSession != "" {
+		seq.Store(resumeSeq)
+		start = gatewaySendPayload{Op: opResume, D: resumeData{
+			Token: "QQBot " + token, SessionID: resumeSession, Seq: resumeSeq,
+		}}
+		b.logf("QQ bot resuming session: session_id=%s seq=%d", maskID(resumeSession), resumeSeq)
+	}
+	if err := writeGatewayJSON(conn, &writeMu, start); err != nil {
+		b.logf("QQ bot websocket handshake failed: %v", err)
 		return false, err
 	}
 
@@ -492,12 +559,19 @@ func (b *Bot) runOnce(ctx context.Context) (bool, error) {
 			b.logf("QQ bot websocket read failed: %v", err)
 			return ready, err
 		}
+		// READY carries the first session id and a sequence number. Install the
+		// id before recording READY's sequence so rememberSession cannot reset
+		// the sequence after it was observed.
+		if payload.Op == opDispatch && payload.T == "READY" {
+			b.rememberReadySession(payload)
+		}
 		if payload.S != nil {
 			seq.Store(*payload.S)
+			b.rememberSeq(*payload.S)
 		}
 		switch payload.Op {
 		case opDispatch:
-			if payload.T == "READY" {
+			if payload.T == "READY" || payload.T == "RESUMED" {
 				ready = true
 			}
 			b.handleDispatch(ctx, payload)
@@ -510,6 +584,9 @@ func (b *Bot) runOnce(ctx context.Context) (bool, error) {
 			b.logf("QQ bot received reconnect opcode")
 			return ready, errGatewayReconnect
 		case opInvalid:
+			// The session cannot be resumed. Drop it so the next attempt
+			// identifies fresh instead of replaying a rejected session id.
+			b.forgetSession()
 			b.logf("QQ bot received invalid session: data=%s", jsonPreview(payload.D))
 			return ready, errors.New("qq bot gateway invalid session")
 		case opHeartbeatACK:
@@ -557,7 +634,7 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 	case "READY":
 		b.logReady(payload)
 	case "RESUMED":
-		b.logf("QQ bot gateway resumed")
+		b.logf("QQ bot gateway resumed: session_id=%s", maskID(b.currentSessionID()))
 	case "C2C_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE":
 		message, err := b.messageFromPayload(payload)
 		if err != nil {
@@ -613,12 +690,15 @@ func (b *Bot) interactionFromPayload(payload gatewayPayload) (*incomingMessage, 
 	if err != nil {
 		return nil, err
 	}
+	sentAt := parseQQMessageTime(data.Timestamp)
 	return &incomingMessage{
-		EventID:   eventID,
-		ReplyToID: strings.TrimSpace(data.Data.Resolved.MessageID),
-		Type:      fmt.Sprintf("interaction:%d", data.Type),
-		Text:      b.cleanContent(text),
-		Identity:  ident,
+		EventID:    eventID,
+		ReplyToID:  strings.TrimSpace(data.Data.Resolved.MessageID),
+		Type:       fmt.Sprintf("interaction:%d", data.Type),
+		Text:       b.cleanContent(text),
+		Identity:   ident,
+		SentAt:     sentAt,
+		ReceivedAt: b.receivedAt(),
 	}, nil
 }
 
@@ -673,9 +753,16 @@ func interactionIdentity(data interactionData) (store.Identity, error) {
 func (b *Bot) logReady(payload gatewayPayload) {
 	var ready readyData
 	if err := json.Unmarshal(payload.D, &ready); err != nil {
+		b.forgetSession()
 		b.logf("QQ bot gateway ready: decode READY failed: %v", err)
 		return
 	}
+	if strings.TrimSpace(ready.SessionID) == "" {
+		b.forgetSession()
+		b.logf("QQ bot gateway ready: session_id is empty")
+		return
+	}
+	b.rememberSession(ready.SessionID)
 	b.logf("QQ bot gateway ready: user_id=%s username=%q bot=%v session_id=%s shard=%v",
 		ready.User.ID,
 		ready.User.Username,
@@ -683,6 +770,19 @@ func (b *Bot) logReady(payload gatewayPayload) {
 		maskID(ready.SessionID),
 		ready.Shard,
 	)
+}
+
+func (b *Bot) rememberReadySession(payload gatewayPayload) {
+	var ready readyData
+	if err := json.Unmarshal(payload.D, &ready); err != nil {
+		b.forgetSession()
+		return
+	}
+	if strings.TrimSpace(ready.SessionID) == "" {
+		b.forgetSession()
+		return
+	}
+	b.rememberSession(ready.SessionID)
 }
 
 func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, error) {
@@ -694,6 +794,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 	replyToID := strings.TrimSpace(data.MessageReference.MessageID)
 	text := b.cleanContent(data.Content)
 	imageURLs := attachmentImageURLs(data.Attachments)
+	sentAt := parseQQMessageTime(data.Timestamp)
+	receivedAt := b.receivedAt()
 	switch payload.T {
 	case "C2C_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.UserOpenID, data.Author.ID)
@@ -712,6 +814,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "private",
 				ConversationID:   userID,
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "GROUP_AT_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.MemberOpenID, data.Author.ID)
@@ -734,6 +838,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "group",
 				ConversationID:   strings.TrimSpace(groupID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "AT_MESSAGE_CREATE":
 		userID := strings.TrimSpace(data.Author.ID)
@@ -755,6 +861,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "channel",
 				ConversationID:   strings.TrimSpace(data.ChannelID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "DIRECT_MESSAGE_CREATE":
 		userID := strings.TrimSpace(data.Author.ID)
@@ -776,10 +884,33 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "guild_private",
 				ConversationID:   strings.TrimSpace(data.GuildID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported QQ bot event %q", payload.T)
 	}
+}
+
+func parseQQMessageTime(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
+}
+
+func (b *Bot) receivedAt() time.Time {
+	if b != nil && b.now != nil {
+		if current := b.now(); !current.IsZero() {
+			return current.UTC()
+		}
+	}
+	return time.Now().UTC()
 }
 
 func (b *Bot) cleanContent(content string) string {

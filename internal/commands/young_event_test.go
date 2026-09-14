@@ -83,10 +83,11 @@ func TestYoungEventListAndDetailUsePublicLifeEndpoints(t *testing.T) {
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	identity := store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"}
-	listReply, ok := handler.Handle(context.Background(), Input{Text: "第二课堂", Identity: identity})
+	listResponse, ok := handler.HandleResponse(context.Background(), Input{Text: "第二课堂", Identity: identity})
 	if !ok {
 		t.Fatal("young event list was not handled")
 	}
+	listReply := listResponse.Text
 	for _, want := range []string{
 		"第二课堂：",
 		"1. 校园分享",
@@ -100,11 +101,19 @@ func TestYoungEventListAndDetailUsePublicLifeEndpoints(t *testing.T) {
 			t.Fatalf("list reply missing %q: %q", want, listReply)
 		}
 	}
+	listData, ok := listResponse.Data.(map[string]any)
+	if !ok || listData["operation"] != "list" {
+		t.Fatalf("young event list Data = %#v", listResponse.Data)
+	}
+	if page, ok := listData["result"].(life.YoungEventPage); !ok || len(page.Data) != 1 || page.Data[0].YoungID != "event-1" {
+		t.Fatalf("young event page Data = %#v", listData["result"])
+	}
 
-	detailReply, ok := handler.Handle(context.Background(), Input{Text: "二课 查看 event-1", Identity: identity})
+	detailResponse, ok := handler.HandleResponse(context.Background(), Input{Text: "二课 查看 event-1", Identity: identity})
 	if !ok {
 		t.Fatal("young event detail was not handled")
 	}
+	detailReply := detailResponse.Text
 	for _, want := range []string{
 		"第二课堂活动：校园分享",
 		"youngId：event-1",
@@ -115,6 +124,13 @@ func TestYoungEventListAndDetailUsePublicLifeEndpoints(t *testing.T) {
 		if !strings.Contains(detailReply, want) {
 			t.Fatalf("detail reply missing %q: %q", want, detailReply)
 		}
+	}
+	detailData, ok := detailResponse.Data.(map[string]any)
+	if !ok || detailData["operation"] != "detail" {
+		t.Fatalf("young event detail Data = %#v", detailResponse.Data)
+	}
+	if event, ok := detailData["event"].(life.YoungEvent); !ok || event.YoungID != "event-1" {
+		t.Fatalf("young event detail domain Data = %#v", detailData["event"])
 	}
 }
 
@@ -129,7 +145,7 @@ func TestYoungEventEmptyListUsesNotFoundOutcome(t *testing.T) {
 		Text:     "第二课堂",
 		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},
 	})
-	if !handled || outcome.Status != CapabilityOutcomeNotFound || outcome.Response.Text != "没有第二课堂活动。" {
+	if !handled || outcome.Status != CapabilityOutcomeNotFound || outcome.Response.Text != "没有第二课堂活动。" || outcome.Response.Data == nil {
 		t.Fatalf("empty list outcome = %#v, handled=%v", outcome, handled)
 	}
 }

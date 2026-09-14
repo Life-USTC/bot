@@ -18,12 +18,7 @@ const (
 	// caller cancels, but it must not turn cleanup into another unbounded run.
 	agentRunCleanupTimeout = 5 * time.Second
 
-	// Keep one bounded budget for logical prompt input plus the existing Kimi
-	// output ceiling. conversationCompactInputLimit is the hard provider input
-	// budget; physical retries reuse their logical request's reservation instead
-	// of consuming it again.
-	agentRunTokenBudget  int64 = conversationCompactInputLimit + kimiMaxCompletionTokens
-	agentRunMaxToolCalls       = 12
+	agentRunMaxToolCalls = 12
 	// A tool loop can make at most one more logical model request than tool
 	// calls. Each logical request receives its own bounded retry window; the
 	// aggregate durable limit prevents a restart from resetting that budget.
@@ -31,9 +26,23 @@ const (
 	agentRunMaxModelAttempts = (agentRunMaxToolCalls + 1) * llmRequestMaxAttempts
 )
 
+const (
+	// agentRequestTokenLimit is the provider constraint: one logical request
+	// must fit in the model's input window. This is what "context too long"
+	// actually means.
+	agentRequestTokenLimit int64 = conversationCompactInputLimit
+	// agentRunTotalTokenBudget is a cost ceiling across the whole tool loop, not
+	// a context limit. It must stay large enough for the documented loop to be
+	// reachable: at a realistic 12k-token prompt plus the completion reservation,
+	// a single-window budget stopped the run at the sixth request and made the
+	// 12-tool-call bound below unreachable.
+	agentRunTotalTokenBudget int64 = 400_000
+)
+
 var (
 	errAgentRunDeadline        = errors.New("agent run deadline exceeded")
 	errAgentContextBudget      = errors.New("agent context budget exceeded")
+	errAgentRunTokenBudget     = errors.New("agent run token budget exceeded")
 	errAgentModelAttemptBudget = errors.New("agent model-attempt budget exceeded")
 	errAgentToolCallBudget     = errors.New("agent tool-call budget exceeded")
 	errAgentNonProgress        = errors.New("agent tool plan made no progress")
@@ -239,7 +248,7 @@ func admitModelRequest(ctx context.Context, contextTokens int64) error {
 		contextTokens = 1
 	}
 	completionBudget := int64(kimiMaxCompletionTokens)
-	if contextTokens > agentRunTokenBudget-completionBudget {
+	if contextTokens > agentRequestTokenLimit-completionBudget {
 		return errAgentContextBudget
 	}
 	reservation := contextTokens + completionBudget
@@ -248,9 +257,9 @@ func admitModelRequest(ctx context.Context, contextTokens int64) error {
 		budget.mu.Unlock()
 		return err
 	}
-	if budget.reservedTokens > agentRunTokenBudget-reservation {
+	if budget.reservedTokens > agentRunTotalTokenBudget-reservation {
 		budget.mu.Unlock()
-		return errAgentContextBudget
+		return errAgentRunTokenBudget
 	}
 	budget.reservedTokens += reservation
 	budget.mu.Unlock()
@@ -369,6 +378,8 @@ func agentFailureClass(err error) string {
 		return "run_deadline"
 	case errors.Is(err, errAgentContextBudget):
 		return "context_budget"
+	case errors.Is(err, errAgentRunTokenBudget):
+		return "run_token_budget"
 	case errors.Is(err, errAgentModelAttemptBudget):
 		return "model_attempt_budget"
 	case errors.Is(err, errAgentToolCallBudget):
@@ -393,6 +404,7 @@ func agentFailureClass(err error) string {
 func isAgentBudgetError(err error) bool {
 	return errors.Is(err, errAgentRunDeadline) ||
 		errors.Is(err, errAgentContextBudget) ||
+		errors.Is(err, errAgentRunTokenBudget) ||
 		errors.Is(err, errAgentModelAttemptBudget) ||
 		errors.Is(err, errAgentToolCallBudget) ||
 		errors.Is(err, errAgentNonProgress)
@@ -404,6 +416,7 @@ func normalizeAgentRunError(ctx context.Context, budget *runBudget, err error) e
 	}
 	if errors.Is(err, errAgentRunDeadline) ||
 		errors.Is(err, errAgentContextBudget) ||
+		errors.Is(err, errAgentRunTokenBudget) ||
 		errors.Is(err, errAgentModelAttemptBudget) ||
 		errors.Is(err, errAgentToolCallBudget) ||
 		errors.Is(err, errAgentNonProgress) {

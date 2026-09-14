@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -24,8 +25,10 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 type Config struct {
@@ -59,10 +62,14 @@ type Service struct {
 }
 
 type Input struct {
-	Text      string
-	ImageURLs []string
-	Identity  store.Identity
-	JobID     int64
+	ActorDisplayName string
+	SentAt           time.Time
+	ReceivedAt       time.Time
+	ReplyContext     *message.QuotedMessage
+	Text             string
+	ImageURLs        []string
+	Identity         store.Identity
+	JobID            int64
 	// JobRevision and JobLeaseToken are the exact claim held by the
 	// conversation coordinator. Checkpoint writes and acknowledgements are
 	// rejected unless both still identify the same worker revision.
@@ -73,9 +80,11 @@ type Input struct {
 	// from plain model text (for example, an image).
 	SendResponse func(context.Context, store.Identity, commands.Response) error
 
-	imageDataURLs []string
-	runState      *RunState
-	runErr        *error
+	imageDataURLs      []string
+	skippedImages      int
+	skippedImageErrors []string
+	runState           *RunState
+	runErr             *error
 }
 
 type RunState string
@@ -271,7 +280,11 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			finishRun(store.AgentRunStatusFailed, reply, err)
 			return agentTextResponse(reply), true
 		}
-		reply, err := s.capabilityInventory(ctx, input.Identity)
+		reply := commands.HelpOverview(store.IsSharedConversation(input.Identity))
+		var err error
+		if strings.Contains(strings.ToLower(input.Text), "mcp") || strings.Contains(input.Text, "内部工具") {
+			reply, err = s.capabilityInventory(ctx, input.Identity)
+		}
 		if err != nil {
 			err = normalizeAgentRunError(ctx, budget, err)
 			if errors.Is(err, context.Canceled) {
@@ -400,14 +413,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					started := time.Now()
 					defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
 					unknownInput := &compose.ToolInput{Name: name, Arguments: input}
-					if err := repeatGuard.admit(unknownInput); err != nil {
-						return "", err
+					if result, handled, err := repeatedUnknownToolResult(ctx, repeatGuard, unknownInput); handled || err != nil {
+						return result, err
 					}
 					if err := admitToolCall(ctx); err != nil {
 						return "", err
 					}
 					recordToolCall(ctx)
-					result := fmt.Sprintf("未知工具：%s", name)
+					result := toolresult.Encode("host", name, "not_found", time.Now(), nil, fmt.Errorf("未知工具：%s", name))
 					toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 					// An unknown tool cannot satisfy the plan; retain its canonical
 					// failure so a follow-up cannot retry it forever.
@@ -666,40 +679,33 @@ func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Messa
 	if hasCurrentEvent {
 		return messages, nil
 	}
-	currentText := strings.TrimSpace(input.Text)
-	if len(input.ImageURLs) == 0 {
-		messages = append(messages, schema.UserMessage(withCurrentTimePrefix(currentText)))
-		return messages, nil
-	}
-	if currentText == "" {
-		currentText = "请描述并分析这张图片。"
-	}
-	currentText = withCurrentTimePrefix(currentText)
-	parts := []schema.MessageInputPart{{
-		Type: schema.ChatMessagePartTypeText,
-		Text: currentText,
-	}}
-	imageDataURLs := input.imageDataURLs
-	if imageDataURLs == nil {
-		imageDataURLs = make([]string, 0, len(input.ImageURLs))
-		for _, imageURL := range input.ImageURLs {
-			dataURL, err := s.loadImageDataURL(ctx, imageURL)
-			if err != nil {
-				return nil, err
-			}
-			imageDataURLs = append(imageDataURLs, dataURL)
+	if input.imageDataURLs == nil && len(input.ImageURLs) > 0 {
+		if err := s.prepareInputImages(ctx, &input); err != nil {
+			return nil, err
 		}
 	}
-	for _, dataURL := range imageDataURLs {
-		parts = append(parts, schema.MessageInputPart{
-			Type: schema.ChatMessagePartTypeImageURL,
-			Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &dataURL},
-			},
-		})
-	}
-	messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
+	event := currentUserEvent(input)
+	messages = append(messages, messagesFromConversationEvents([]store.ConversationEvent{event})...)
 	return messages, nil
+}
+
+func inputOccurredAt(input Input) time.Time {
+	if !input.SentAt.IsZero() {
+		return input.SentAt
+	}
+	if !input.ReceivedAt.IsZero() {
+		return input.ReceivedAt
+	}
+	return time.Now().UTC()
+}
+
+func currentUserEvent(input Input) store.ConversationEvent {
+	return store.ConversationEvent{
+		Identity: input.Identity, ActorDisplayName: input.ActorDisplayName, Source: "agent", OccurredAt: inputOccurredAt(input),
+		JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
+		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
+		Type:      store.ConversationEventUser, Content: strings.TrimSpace(input.Text), Parts: currentUserMessageParts(input),
+	}
 }
 
 func agentCheckpointID(jobID int64) string {
@@ -713,13 +719,7 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 	if s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
 		return nil
 	}
-	content := strings.TrimSpace(input.Text)
-	_, _, err := s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
-		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
-		DedupeKey: fmt.Sprintf("conversation-job:%d:user", input.JobID),
-		Type:      store.ConversationEventUser, Content: content,
-		Parts: currentUserMessageParts(input),
-	})
+	_, _, err := s.handler.Store.AppendConversationEvent(ctx, currentUserEvent(input))
 	return err
 }
 
@@ -728,7 +728,14 @@ func currentUserMessageParts(input Input) []store.ConversationMessagePart {
 	if text == "" && len(input.ImageURLs) > 0 {
 		text = "请描述并分析这张图片。"
 	}
-	parts := []store.ConversationMessagePart{{Type: string(schema.ChatMessagePartTypeText), Text: withCurrentTimePrefix(text)}}
+	if input.skippedImages > 0 {
+		text += fmt.Sprintf("\n\n[图片读取说明：%d 张图片未能读取：%s。只能根据其余可用内容回答，不要假装看过失败的图片。]", input.skippedImages, strings.Join(input.skippedImageErrors, "；"))
+	}
+	if input.ReplyContext != nil {
+		quoted, _ := json.Marshal(input.ReplyContext)
+		text = "引用的 Bot 消息（历史内容，不代表本轮重新执行）：\n" + string(quoted) + "\n\n用户消息：\n" + text
+	}
+	parts := []store.ConversationMessagePart{{Type: string(schema.ChatMessagePartTypeText), Text: text}}
 	for index, imageURL := range input.ImageURLs {
 		imageURL = strings.TrimSpace(imageURL)
 		if index < len(input.imageDataURLs) && strings.TrimSpace(input.imageDataURLs[index]) != "" {
@@ -749,6 +756,7 @@ func (s *Service) persistAgentMessage(ctx context.Context, input Input, message 
 		return nil
 	}
 	event := store.ConversationEvent{
+		Source: "agent", OccurredAt: time.Now().UTC(),
 		Identity: input.Identity, JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
 		Content: message.Content, Name: message.Name,
 		ToolCallID: message.ToolCallID, ToolName: message.ToolName,
@@ -903,7 +911,7 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 
 const (
 	commandSearchToolName = "search_bot_commands"
-	capabilityToolName    = "invoke_bot_capability"
+	capabilityToolName    = "run_bot_command"
 	campusSearchToolName  = "search_campus_tools"
 	campusCallToolName    = "call_campus_tool"
 )
@@ -919,12 +927,33 @@ type commandSearchInput struct {
 	Query string `json:"query" jsonschema_description:"Concrete user intent, command name, or capability ID to search for"`
 }
 
+type botCommandInput struct {
+	Command string `json:"command" jsonschema_description:"Complete Bot command exactly as a user would type it, following the command manual"`
+}
+
 func hostCapabilityToolDescription(shared bool) string {
-	description := "Invoke the exact best-matched Bot capability returned by search_bot_commands. The result is the actual domain result, without a status wrapper. Use only that literal result as evidence."
+	boundary := ""
 	if shared {
-		description += " This is a shared conversation; private capabilities are unavailable."
+		boundary = "This is a shared conversation; private capabilities are unavailable.\n"
 	}
-	return description
+	return boundary + "Execute one Bot command through the same parser used by users. Returns structured JSON business data, separate from user images/text. Dangerous operations require user confirmation. Searching first is optional.\n\n" + commands.CommandManual(shared)
+}
+
+func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, ident store.Identity, jobID int64, sendResponse func(context.Context, store.Identity, commands.Response) error) (string, error) {
+	// A resumed call must resolve the saved operation, never reparse model input.
+	if interrupted, _, _ := tool.GetInterruptState[capabilityInterruptState](ctx); interrupted {
+		return s.invokeHostCapability(ctx, hostCapabilityInput{}, ident, jobID, sendResponse)
+	}
+	if commands.HasAdditionalCommandLine(input.Command) {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("send exactly one command per tool call")), nil
+	}
+	parsed := commands.ParseCommand(input.Command)
+	if !parsed.Recognized() {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("unknown command; consult the command manual or search_bot_commands")), nil
+	}
+	return s.invokeHostCapability(ctx, hostCapabilityInput{Capability: string(parsed.Invocation.ID()), Arguments: parsed.Invocation.Args}, ident, jobID, sendResponse)
 }
 
 func searchCommandDocumentation(ident store.Identity, input commandSearchInput) (string, error) {
@@ -933,7 +962,7 @@ func searchCommandDocumentation(ident store.Identity, input commandSearchInput) 
 	}
 	documentation := commands.SearchCapabilityDocumentation(input.Query, commands.CapabilitySearchOptions{
 		SharedConversation: store.IsSharedConversation(ident),
-		Limit:              1,
+		Limit:              5,
 	})
 	encoded, err := json.Marshal(documentation)
 	if err != nil {
@@ -961,7 +990,7 @@ func (s *Service) toolsFor(
 		}
 	}
 
-	tools, err = appendInferredTool(tools, "search_bot_commands", "Search the Bot command registry and return the single best-matched capability with exact arguments, examples, effect, and audience scope. An empty JSON array means no Bot command matched: never substitute an unrelated command, and search search_campus_tools next when the request is a campus-data lookup. Use a concrete query before invoking it; shared conversations return public commands only.", func(_ context.Context, input commandSearchInput) (string, error) {
+	tools, err = appendInferredTool(tools, "search_bot_commands", "Optionally search command names, aliases, descriptions, parameters and examples. Returns multiple ranked candidates with executable examples. Use the command manual to call run_bot_command directly when its syntax is known. Shared conversations return public documentation only.", func(_ context.Context, input commandSearchInput) (string, error) {
 		return searchCommandDocumentation(ident, input)
 	})
 	if err != nil {
@@ -970,8 +999,8 @@ func (s *Service) toolsFor(
 		}
 		return nil, nil, err
 	}
-	tools, err = appendInferredTool(tools, "invoke_bot_capability", hostCapabilityToolDescription(store.IsSharedConversation(ident)), func(ctx context.Context, input hostCapabilityInput) (string, error) {
-		return s.invokeHostCapability(ctx, input, ident, jobID, sendResponse)
+	tools, err = appendInferredTool(tools, capabilityToolName, hostCapabilityToolDescription(store.IsSharedConversation(ident)), func(ctx context.Context, input botCommandInput) (string, error) {
+		return s.runBotCommand(ctx, input, ident, jobID, sendResponse)
 	})
 	if err != nil {
 		if mcpSession != nil {
@@ -980,7 +1009,7 @@ func (s *Service) toolsFor(
 		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
-		return currentTimeMessage(), nil
+		return toolresult.Encode("host", "get_current_time", "succeeded", time.Now(), map[string]any{"time": time.Now().In(shanghaiLocation), "timezone": "Asia/Shanghai"}, nil), nil
 	})
 	if err != nil {
 		if mcpSession != nil {
@@ -1212,31 +1241,16 @@ Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
-Search search_bot_commands with the concrete intent before using invoke_bot_capability. For a short verification follow-up, search using the concrete request being verified, not words such as “确定吗”. Use the exact capability ID and arguments it returns, preserving every user constraint such as dates, times, filters, targets, and direction. Call tools yourself; never ask the user to type or repeat a command.
-An empty search_bot_commands result means that no Bot command matched. Never substitute a loosely related command. For a campus-data request, search search_campus_tools next; say the overall request is unsupported only if neither registry has a relevant tool.
-When the user asks for a complete capability or tool inventory, search Bot commands for “help” and invoke that exact help capability, then call search_campus_tools with query "*" when that tool is available. Report only those actual results plus the host meta-tools visible in this turn; never reconstruct an inventory from memory.
-Tool results are literal evidence. The capability tool returns the actual domain result, not a success envelope. Do not add facts, infer completion, or claim a lookup or mutation happened beyond that exact result.
+You decide whether to answer directly or use tools. No tool call or search sequence is mandatory. Use the complete Bot command manual to call run_bot_command, and optionally search_bot_commands for multiple relevant examples. MCP is an equally available execution surface, not a fallback that requires an empty Bot search. Preserve the user's dates, locations, targets and filters. Do not claim an action or fresh lookup happened without an actual tool result.
+Tool results are JSON with source, operation, status, observed_at, result and optional error. Use the original structured result as evidence. succeeded means the business operation succeeded, not that a message or image has reached the user. denied means nothing was executed; unknown means a write may have happened and must not be retried. Keep original data timestamps distinct from observed_at. Never interpret image rendering or delivery failures as a failed business operation.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
-MCP tools are available only in private conversations. Prefer a Bot capability when both layers cover the request, but MCP tools may also perform explicitly described writes or destructive actions. Search the exact MCP tool first, then call it to submit the exact tool and parameters; the host may pause the call at a confirmation checkpoint before any remote write. Never treat a model-supplied confirmed flag as user confirmation. For GraphQL construction, use list_campus_resources/read_campus_resource and list_campus_prompts/get_campus_prompt to read the server schema and planning context before calling graphql_operation_run.
-You can answer questions about prior messages using the exact chat history in this run. Treat multiple paragraphs in the latest user turn as one turn.
+MCP tools are available only in private conversations. All listed MCP operations are available within account permissions. Public MCP reads work without login. Use discovery to obtain exact names and complete schemas when needed. The host pauses dangerous or unknown-risk operations for user confirmation; ordinary writes do not need a second confirmation. Never treat a model-supplied confirmed flag as user confirmation. For GraphQL construction, use list_campus_resources/read_campus_resource and list_campus_prompts/get_campus_prompt to read the server schema and planning context before calling graphql_operation_run.
+You can answer questions about prior messages using the exact chat history in this run. An assistant history entry containing a Bot JSON result may come from a direct user command, not an LLM-authored reply or invented tool call; sender and time prefixes identify the original message. Treat multiple paragraphs in the latest user turn as one turn.
 In a group or channel, answer only the addressed public request and ask the user to continue privately for personal requests.`
-}
-
-func currentTimeMessage() string {
-	return currentTimeMessageAt(time.Now())
 }
 
 func currentTimeMessageAt(now time.Time) string {
 	return now.In(shanghaiLocation).Format("现在是 2006-01-02 15:04，Asia/Shanghai。")
-}
-
-func withCurrentTimePrefix(text string) string {
-	text = strings.TrimSpace(text)
-	prefix := currentTimeMessage()
-	if text == "" {
-		return prefix
-	}
-	return prefix + "\n\n" + text
 }
 
 var _ = schema.Assistant
@@ -1258,6 +1272,8 @@ func agentFailureReply(runID int64, err error) string {
 		reply = "AI 处理超过 2 分钟，未能生成完整回复，已停止本次处理。请稍后重新发送；如果查询结果较多，可指定数量或筛选条件。"
 	} else if errors.Is(err, errAgentContextBudget) {
 		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
+	} else if errors.Is(err, errAgentRunTokenBudget) {
+		reply = "AI 本轮累计用量达到上限，已停止。请缩小本次任务范围后继续。"
 	} else if errors.Is(err, errAgentToolCallBudget) {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentModelAttemptBudget) {
@@ -1320,9 +1336,18 @@ func toolResultMiddleware(logf toolErrorLogger) compose.InvokableToolMiddleware 
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
 					toolOutcomesFromContext(ctx).markError(input.CallID)
-					return &compose.ToolOutput{Result: result}, nil
+					return &compose.ToolOutput{Result: toolresult.Encode(toolResultSource(input.Name), input.Name, "failed", time.Now(), nil, errors.New(result))}, nil
 				}
 				return nil, err
+			}
+			if out != nil && !toolresult.IsEncoded(out.Result) {
+				status := "succeeded"
+				var resultErr error
+				data := toolresult.Data(out.Result)
+				if toolOutcomesFromContext(ctx).isError(input.CallID) {
+					status, data, resultErr = "failed", nil, errors.New(out.Result)
+				}
+				out.Result = toolresult.Encode(toolResultSource(input.Name), input.Name, status, time.Now(), data, resultErr)
 			}
 			return out, nil
 		}
@@ -1345,13 +1370,74 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 				}
 				if result, ok := botmcp.ModelToolErrorResult(err); ok {
 					toolOutcomesFromContext(ctx).markError(input.CallID)
-					return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{result})}, nil
+					return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{toolresult.Encode(toolResultSource(input.Name), input.Name, "failed", time.Now(), nil, errors.New(result))})}, nil
 				}
 				return nil, err
 			}
-			return out, nil
+			if out == nil || out.Result == nil {
+				return out, nil
+			}
+			var result strings.Builder
+			for {
+				chunk, recvErr := out.Result.Recv()
+				if errors.Is(recvErr, io.EOF) {
+					break
+				}
+				if recvErr != nil {
+					out.Result.Close()
+					if logf != nil {
+						logf("agent streaming tool result failed: name=%s call_id=%s error=%s", input.Name, input.CallID, textutil.SafeLogError(recvErr))
+					}
+					if safe, ok := botmcp.ModelToolErrorResult(recvErr); ok {
+						toolOutcomesFromContext(ctx).markError(input.CallID)
+						return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{toolresult.Encode(toolResultSource(input.Name), input.Name, "failed", time.Now(), nil, errors.New(safe))})}, nil
+					}
+					return nil, recvErr
+				}
+				result.WriteString(chunk)
+			}
+			out.Result.Close()
+			raw := result.String()
+			if !toolresult.IsEncoded(raw) {
+				status := "succeeded"
+				var resultErr error
+				data := toolresult.Data(raw)
+				if toolOutcomesFromContext(ctx).isError(input.CallID) {
+					status, data, resultErr = "failed", nil, errors.New(raw)
+				}
+				raw = toolresult.Encode(toolResultSource(input.Name), input.Name, status, time.Now(), data, resultErr)
+			}
+			return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{raw})}, nil
 		}
 	}
+}
+
+// repeatedUnknownToolResult applies the same bounded refusal policy as the
+// regular tool middleware. UnknownToolsHandler runs outside that middleware,
+// so it must admit repeat refusals explicitly instead of returning the guard's
+// internal error on the first duplicate.
+func repeatedUnknownToolResult(ctx context.Context, guard *toolRepeatGuard, input *compose.ToolInput) (string, bool, error) {
+	if err := guard.admit(input); err == nil {
+		return "", false, nil
+	} else {
+		if !guard.admitRefusal() {
+			return "", false, err
+		}
+		if input != nil {
+			toolOutcomesFromContext(ctx).markError(input.CallID)
+		}
+		return repeatGuardToolResult(input, err), true, nil
+	}
+}
+
+func toolResultSource(name string) string {
+	if name == capabilityToolName || name == commandSearchToolName {
+		return "bot"
+	}
+	if strings.Contains(name, "campus") {
+		return "mcp"
+	}
+	return "host"
 }
 
 func isTimeoutError(err error) bool {

@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -23,6 +26,11 @@ const (
 	ConversationEventToolResult ConversationEventType = "tool_result"
 	ConversationEventToolError  ConversationEventType = "tool_error"
 	ConversationEventToolDenial ConversationEventType = "tool_denial"
+)
+
+const (
+	ConversationEventSourceAgent   = "agent"
+	ConversationEventSourceCommand = "command"
 )
 
 type ConversationToolCall struct {
@@ -48,20 +56,23 @@ type ConversationMessagePart struct {
 }
 
 type ConversationEvent struct {
-	ID            int64
-	Identity      Identity
-	JobID         int64
-	JobRevision   int
-	JobLeaseToken string
-	DedupeKey     string
-	Type          ConversationEventType
-	Content       string
-	Name          string
-	ToolCallID    string
-	ToolName      string
-	ToolCalls     []ConversationToolCall
-	Parts         []ConversationMessagePart
-	CreatedAt     time.Time
+	ID               int64
+	Identity         Identity
+	ActorDisplayName string
+	Source           string
+	OccurredAt       time.Time
+	JobID            int64
+	JobRevision      int
+	JobLeaseToken    string
+	DedupeKey        string
+	Type             ConversationEventType
+	Content          string
+	Name             string
+	ToolCallID       string
+	ToolName         string
+	ToolCalls        []ConversationToolCall
+	Parts            []ConversationMessagePart
+	CreatedAt        time.Time
 }
 
 type conversationEventRow struct {
@@ -70,9 +81,12 @@ type conversationEventRow struct {
 	ConversationType string `gorm:"not null;index:idx_conversation_events_identity_id,priority:2"`
 	ConversationID   string `gorm:"not null;index:idx_conversation_events_identity_id,priority:3"`
 	ExternalUserID   string `gorm:"not null"`
-	JobID            int64  `gorm:"not null;default:0;index"`
-	DedupeKey        string `gorm:"not null;uniqueIndex:idx_conversation_events_dedupe,priority:2"`
-	Type             string `gorm:"not null"`
+	ActorDisplayName string
+	Source           string
+	OccurredAt       time.Time `gorm:"index"`
+	JobID            int64     `gorm:"not null;default:0;index"`
+	DedupeKey        string    `gorm:"not null;uniqueIndex:idx_conversation_events_dedupe,priority:2"`
+	Type             string    `gorm:"not null"`
 	Content          string
 	Name             string
 	ToolCallID       string
@@ -101,6 +115,11 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 	if !validConversationEventType(event.Type) {
 		return ConversationEvent{}, false, fmt.Errorf("invalid conversation event type %q", event.Type)
 	}
+	event.ActorDisplayName = strings.TrimSpace(event.ActorDisplayName)
+	event.Source = strings.ToLower(strings.TrimSpace(event.Source))
+	if event.Source != "" && event.Source != ConversationEventSourceAgent && event.Source != ConversationEventSourceCommand {
+		return ConversationEvent{}, false, fmt.Errorf("invalid conversation event source %q", event.Source)
+	}
 	event.JobLeaseToken = strings.TrimSpace(event.JobLeaseToken)
 	if event.JobID > 0 && (event.JobRevision <= 0 || event.JobLeaseToken == "") {
 		return ConversationEvent{}, false, errors.New("conversation event job claim is incomplete")
@@ -120,14 +139,27 @@ func (s *Store) AppendConversationEvent(ctx context.Context, event ConversationE
 		return ConversationEvent{}, false, fmt.Errorf("conversation message parts exceed %d bytes", maxConversationMessagePartsJSONBytes)
 	}
 	createdAt := event.CreatedAt.UTC()
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() && !createdAt.IsZero() {
+		occurredAt = createdAt
+	}
 	if createdAt.IsZero() {
-		createdAt = nowUTC()
+		if occurredAt.IsZero() {
+			createdAt = nowUTC()
+		} else {
+			createdAt = occurredAt
+		}
+	}
+	name := strings.TrimSpace(event.Name)
+	if name == "" && event.Type == ConversationEventUser {
+		name = event.ActorDisplayName
 	}
 	row := conversationEventRow{
 		Platform: event.Identity.Platform, ConversationType: event.Identity.ConversationType,
 		ConversationID: event.Identity.ConversationID, ExternalUserID: event.Identity.UserID,
+		ActorDisplayName: event.ActorDisplayName, Source: event.Source, OccurredAt: occurredAt,
 		JobID: event.JobID, DedupeKey: event.DedupeKey, Type: string(event.Type), Content: event.Content,
-		Name:       strings.TrimSpace(event.Name),
+		Name:       name,
 		ToolCallID: strings.TrimSpace(event.ToolCallID), ToolName: strings.TrimSpace(event.ToolName),
 		ToolCallsJSON: string(toolCallsJSON), PartsJSON: string(partsJSON), CreatedAt: createdAt,
 	}
@@ -205,10 +237,63 @@ func conversationEventFromRow(row conversationEventRow) (ConversationEvent, erro
 		}
 	}
 	return ConversationEvent{
-		ID:       row.ID,
-		Identity: Identity{Platform: row.Platform, UserID: row.ExternalUserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID},
-		JobID:    row.JobID, DedupeKey: row.DedupeKey, Type: ConversationEventType(row.Type), Content: row.Content,
-		Name: row.Name, ToolCallID: row.ToolCallID, ToolName: row.ToolName, ToolCalls: calls, Parts: parts, CreatedAt: row.CreatedAt,
+		ID:               row.ID,
+		Identity:         Identity{Platform: row.Platform, UserID: row.ExternalUserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID},
+		ActorDisplayName: row.ActorDisplayName,
+		Source:           row.Source,
+		OccurredAt:       row.OccurredAt,
+		JobID:            row.JobID,
+		DedupeKey:        row.DedupeKey,
+		Type:             ConversationEventType(row.Type),
+		Content:          row.Content,
+		Name:             row.Name,
+		ToolCallID:       row.ToolCallID,
+		ToolName:         row.ToolName,
+		ToolCalls:        calls,
+		Parts:            parts,
+		CreatedAt:        row.CreatedAt,
+	}, nil
+}
+
+// ResolveQuotedMessage returns only an accepted Bot outbox message in the
+// exact conversation. Pending, rejected, or cross-conversation platform
+// messages are deliberately indistinguishable from a missing quote.
+func (s *Store) ResolveQuotedMessage(ctx context.Context, conversation message.Conversation, platformMessageID string) (*message.QuotedMessage, error) {
+	platform := strings.ToLower(strings.TrimSpace(conversation.Platform))
+	conversationType := strings.ToLower(strings.TrimSpace(conversation.Type))
+	conversationID := strings.TrimSpace(conversation.ID)
+	platformMessageID = strings.TrimSpace(platformMessageID)
+	if platform == "" || conversationType == "" || conversationID == "" || platformMessageID == "" {
+		return nil, nil
+	}
+	var row outgoingMessageRow
+	err := s.db.WithContext(ctx).
+		Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND platform_message_id = ? AND status = ?",
+			platform, conversationType, conversationID, platformMessageID, string(delivery.StatusAccepted)).
+		Order("id DESC").First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	record, err := outgoingMessageRecord(row)
+	if err != nil {
+		return nil, err
+	}
+	content := strings.TrimSpace(record.Message.Content.Text)
+	if content == "" && record.Message.Content.Attachment != nil {
+		content = strings.TrimSpace(record.Message.Content.Attachment.AltText)
+	}
+	sentAt := record.CreatedAt.UTC()
+	if sentAt.IsZero() {
+		sentAt = record.Receipt.AcceptedAt.UTC()
+	}
+	return &message.QuotedMessage{
+		MessageID: platformMessageID,
+		Actor:     message.Actor{Platform: platform, UserID: "bot", DisplayName: "Presto"},
+		SentAt:    sentAt,
+		Content:   content,
 	}, nil
 }
 

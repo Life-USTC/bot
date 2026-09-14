@@ -63,6 +63,7 @@ type Repository interface {
 	Complete(context.Context, int64, Outcome, time.Time) error
 	ExpireDue(context.Context, time.Time) error
 	RecoverStale(context.Context, time.Time) error
+	PruneOutgoingMessages(context.Context, time.Time) error
 }
 
 type Service struct {

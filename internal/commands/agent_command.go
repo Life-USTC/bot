@@ -14,11 +14,19 @@ import (
 func (h Handler) ExecuteCapability(ctx context.Context, input Input, id CapabilityID, args []string) (CapabilityOutcome, error) {
 	descriptor, found := CapabilityDescriptorFor(id)
 	if !found {
-		return NotFoundOutcome(Response{Text: "没有找到这个能力。请先查询 Bot 命令文档。", Kind: string(id)}), nil
+		return NotFoundOutcome(Response{
+			Text: "没有找到这个能力。请先查询 Bot 命令文档。",
+			Data: map[string]any{"type": "unknown_capability", "id": id},
+			Kind: string(id),
+		}), nil
 	}
 	candidate, _ := RestoreInvocation(id, args)
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(candidate) {
-		return ForbiddenOutcome(Response{Text: "此功能只能在私聊使用。", Kind: string(id)}), nil
+		return ForbiddenOutcome(Response{
+			Text: "此功能只能在私聊使用。",
+			Data: map[string]any{"type": "forbidden_capability", "id": id},
+			Kind: string(id),
+		}), nil
 	}
 	invocation, ok := NewInvocation(id, args)
 	if !ok {
@@ -26,14 +34,18 @@ func (h Handler) ExecuteCapability(ctx context.Context, input Input, id Capabili
 	}
 	outcome, handled := h.executeInvocationOutcome(ctx, input, invocation)
 	if !handled {
-		return NotFoundOutcome(Response{Text: "宿主无法执行这条命令。", Kind: string(id)}), nil
+		return NotFoundOutcome(Response{
+			Text: "宿主无法执行这条命令。",
+			Data: map[string]any{"type": "unhandled_capability", "id": id},
+			Kind: string(id),
+		}), nil
 	}
 	return outcome, nil
 }
 
 // PresentCapabilityOutcome applies only the descriptor's result-exposure
-// decision. Status remains host state; Text is literal model-facing domain
-// evidence, while Response is available for host-rendered delivery.
+// decision. Status and Data remain host/model state; Text is presentation for
+// delivery, while Response carries both forms without reconstructing Data.
 func (h Handler) PresentCapabilityOutcome(invocation Invocation, outcome CapabilityOutcome) CapabilityPresentation {
 	outcome = normalizeOutcome(outcome)
 	presentation := CapabilityPresentation{Text: strings.TrimSpace(outcome.Response.Text), Response: outcome.Response}

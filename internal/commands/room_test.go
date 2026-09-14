@@ -71,6 +71,14 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 	if response.Text != "3A204：三教 2" || response.Image == nil || response.Image.Kind != "room-map" || response.Image.URL != "https://static.example/rooms/3A204.png" {
 		t.Fatalf("room response = %#v", response)
 	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "room_map" {
+		t.Fatalf("room Data = %#v", response.Data)
+	}
+	room, ok := data["room"].(life.RoomMap)
+	if !ok || room.Code != "3A204" {
+		t.Fatalf("room domain Data = %#v", data["room"])
+	}
 }
 
 func TestRoomMapResponseDoesNotAttachImageForUnavailableRoom(t *testing.T) {

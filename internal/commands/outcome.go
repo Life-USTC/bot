@@ -76,6 +76,11 @@ func NotFoundOutcome(response Response) CapabilityOutcome {
 type capabilityExecutionState struct {
 	status CapabilityOutcomeStatus
 	effect CapabilityEffect
+	data   any
+	// dataSet distinguishes a deliberately collected nil result from no
+	// collected result. Most command data is a map or slice, but explicit
+	// local operations may legitimately use nil as their result value.
+	dataSet bool
 }
 
 func (h Handler) markOutcome(status CapabilityOutcomeStatus) {
@@ -89,7 +94,21 @@ func (h Handler) markOutcome(status CapabilityOutcomeStatus) {
 	}
 }
 
+// markData records the domain value already obtained by the running
+// capability. Command implementations call it immediately after a successful
+// API or store read and before formatting their user-facing text.
+func (h Handler) markData(data any) {
+	if h.execution == nil {
+		return
+	}
+	h.execution.data = data
+	h.execution.dataSet = true
+}
+
 func outcomeFromResponse(h Handler, response Response) CapabilityOutcome {
+	if response.Data == nil && h.execution != nil && h.execution.dataSet {
+		response.Data = h.execution.data
+	}
 	status := CapabilityOutcomeSuccess
 	if h.execution != nil && h.execution.status.Valid() {
 		status = h.execution.status

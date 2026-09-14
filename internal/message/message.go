@@ -5,8 +5,9 @@ import "time"
 // Actor identifies the user that caused an inbound message. It is deliberately
 // separate from Conversation because a group conversation has many actors.
 type Actor struct {
-	Platform string
-	UserID   string
+	Platform    string
+	UserID      string
+	DisplayName string
 }
 
 // Conversation is a platform delivery address.
@@ -23,11 +24,24 @@ type ReplyRef struct {
 	TransportID string
 }
 
+// QuotedMessage is the immutable context of a message being replied to. It
+// is populated only after the application has verified that the referenced
+// message is this bot's accepted outbox message in the same conversation.
+type QuotedMessage struct {
+	MessageID string
+	Actor     Actor
+	SentAt    time.Time
+	Content   string
+}
+
 type Inbound struct {
 	Actor        Actor
 	Conversation Conversation
 	Source       ReplyRef
 	ReplyTo      *ReplyRef
+	ReplyContext *QuotedMessage
+	SentAt       time.Time
+	ReceivedAt   time.Time
 	Text         string
 	ImageURLs    []string
 	BotMentioned bool

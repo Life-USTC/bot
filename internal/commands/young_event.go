@@ -106,6 +106,10 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 		if strings.TrimSpace(event.Name) == "" && strings.TrimSpace(event.YoungID) == "" {
 			return h.notFound("没找到第二课堂活动：" + query.youngID)
 		}
+		h.markData(map[string]any{
+			"operation": "detail",
+			"event":     event,
+		})
 		return strings.Join(youngEventLines(event, h.Life.YoungEventURL(event.YoungID), ""), "\n")
 	}
 
@@ -113,6 +117,12 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 	if err != nil {
 		return h.commandError("第二课堂查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "list",
+		"page":      query.page,
+		"search":    query.search,
+		"result":    page,
+	})
 	if len(page.Data) == 0 {
 		if query.search != "" {
 			return h.notFound("没找到相关第二课堂活动：" + query.search)

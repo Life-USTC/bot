@@ -29,7 +29,7 @@ func weatherLocationFilter(args []string) (string, bool) {
 	switch normToken(args[0]) {
 	case "本部", "主校区", "main":
 		return "ustc-main", true
-	case "高新", "高新校区", "gaoxin":
+	case "高新", "高新校区", "高新区", "高新园区", "gaoxin", "gx":
 		return "ustc-gaoxin", true
 	}
 	return "", false
@@ -69,6 +69,7 @@ func (h Handler) weatherReport(ctx context.Context, args []string) (string, *res
 	card := &responses.WeatherCard{}
 	latestFetched := ""
 	providers := []string{}
+	data := make(map[string]any)
 	for _, location := range weatherLocations {
 		if filter != "" && location.key != filter {
 			continue
@@ -77,6 +78,7 @@ func (h Handler) weatherReport(ctx context.Context, args []string) (string, *res
 		if err != nil {
 			return h.commandError("天气查不到：", err), nil
 		}
+		data[location.key] = snapshot
 		lines = append(lines, "")
 		lines = append(lines, formatWeatherLocation(location.name, snapshot)...)
 		card.Locations = append(card.Locations, weatherCardLocation(location.name, snapshot))
@@ -106,6 +108,11 @@ func (h Handler) weatherReport(ctx context.Context, args []string) (string, *res
 		lines = append(lines, "", strings.Join(meta, " · "))
 		card.Meta = strings.Join(meta, " · ")
 	}
+	h.markData(map[string]any{
+		"operation": "weather",
+		"locations": data,
+		"filter":    filter,
+	})
 	return textutil.MonospaceDigits(strings.Join(lines, "\n")), card
 }
 

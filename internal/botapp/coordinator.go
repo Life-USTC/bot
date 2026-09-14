@@ -29,6 +29,7 @@ const (
 
 type CommandHandler interface {
 	ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error)
+	DescribeInvocation(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityInvocationDescription, error)
 }
 
 type AgentHandler interface {
@@ -70,6 +71,7 @@ type JobRepository interface {
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
 	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
 	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
+	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
 	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)
@@ -92,6 +94,14 @@ type OutputSink interface {
 
 type ReplyContextResolver interface {
 	ResolveResponseContext(context.Context, message.Conversation, string) (*message.ResponseContext, error)
+}
+
+// QuotedMessageResolver is optional so adapters that only support activation
+// context can keep implementing ReplyContextResolver. The concrete store
+// implementation verifies the accepted Bot outbox and conversation boundary
+// before returning quoted content.
+type QuotedMessageResolver interface {
+	ResolveQuotedMessage(context.Context, message.Conversation, string) (*message.QuotedMessage, error)
 }
 
 type CoordinatorConfig struct {
@@ -220,12 +230,25 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 		// pending. Otherwise it remains an ordinary conversation turn.
 	}
 	var replyContext *message.ResponseContext
-	if inbound.ReplyTo != nil && c.replies != nil {
-		resolved, err := c.replies.ResolveResponseContext(ctx, inbound.Conversation, inbound.ReplyTo.MessageID)
-		if err != nil {
-			return fmt.Errorf("resolve replied Bot message: %w", err)
+	if inbound.ReplyTo != nil {
+		if c.replies != nil {
+			resolved, err := c.replies.ResolveResponseContext(ctx, inbound.Conversation, inbound.ReplyTo.MessageID)
+			if err != nil {
+				return fmt.Errorf("resolve replied Bot message: %w", err)
+			}
+			replyContext = resolved
 		}
-		replyContext = resolved
+		quotedResolver, ok := c.replies.(QuotedMessageResolver)
+		if !ok {
+			quotedResolver, ok = c.jobs.(QuotedMessageResolver)
+		}
+		if ok {
+			quoted, err := quotedResolver.ResolveQuotedMessage(ctx, inbound.Conversation, inbound.ReplyTo.MessageID)
+			if err != nil {
+				return fmt.Errorf("resolve quoted Bot message: %w", err)
+			}
+			inbound.ReplyContext = quoted
+		}
 	}
 	routeDecision := routing.Decide(inbound, replyContext)
 	if routeDecision.Action == routing.ActionIgnore {
@@ -389,7 +412,8 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	var waitingAuth bool
 	var hostResponses []commands.Response
 	result := c.agent.Run(ctx, agent.Input{
-		Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
+		ActorDisplayName: inbound.Actor.DisplayName, SentAt: inbound.SentAt, ReceivedAt: inbound.ReceivedAt,
+		ReplyContext: inbound.ReplyContext, Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
 		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
 			_ = ctx

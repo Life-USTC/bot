@@ -296,6 +296,10 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 	if err != nil {
 		return h.commandError("校车查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "bus",
+		"network":   data,
+	})
 	if busPreferenceArgs(args) {
 		return h.busPreferences(ctx, ident, data, args)
 	}
@@ -332,7 +336,15 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		}
 	}
 	if len(options.Schedules) <= 1 {
-		return h.busReplyForOptions(ctx, ident, data, routeArgs, now, options)
+		reply := h.busReplyForOptions(ctx, ident, data, routeArgs, now, options)
+		h.markData(map[string]any{
+			"operation":     "bus",
+			"network":       data,
+			"route":         routeArgs,
+			"schedule":      options.Schedules,
+			"show_departed": options.ShowDeparted,
+		})
+		return reply
 	}
 	replies := make([]string, 0, len(options.Schedules))
 	for _, selection := range options.Schedules {
@@ -340,6 +352,13 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 		selectionOptions.Schedules = []busScheduleSelection{selection}
 		replies = append(replies, h.busReplyForOptions(ctx, ident, data, routeArgs, now, selectionOptions))
 	}
+	h.markData(map[string]any{
+		"operation":     "bus",
+		"network":       data,
+		"route":         routeArgs,
+		"schedule":      options.Schedules,
+		"show_departed": options.ShowDeparted,
+	})
 	return strings.Join(replies, "\n\n")
 }
 
@@ -422,6 +441,12 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	}
 	shouldSaveBusSettings := busSettings.ShowSouthCampus != h.currentBusSettings(ctx, ident).ShowSouthCampus
 	if !shouldSave && !shouldSaveBusSettings {
+		h.markData(map[string]any{
+			"operation":   "preferences",
+			"network":     data,
+			"preferences": preferences,
+			"settings":    busSettings,
+		})
 		return formatBusPreferences(data, preferences, busSettings, "校车偏好：")
 	}
 	if shouldSaveBusSettings && h.Store != nil {
@@ -437,6 +462,12 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 			return h.commandError("校车偏好保存失败：", err)
 		}
 	}
+	h.markData(map[string]any{
+		"operation":   "preferences",
+		"network":     data,
+		"preferences": preferences,
+		"settings":    busSettings,
+	})
 	return formatBusPreferences(data, preferences, busSettings, "已更新校车偏好：")
 }
 
@@ -1483,7 +1514,7 @@ func campusAliases() []string {
 		"east campus", "west campus", "central campus", "north campus", "south campus",
 		"taihu road campus", "taihu campus", "taihu",
 		"太湖路园区", "太湖路校区", "太湖路", "太湖园区", "太湖校区", "太湖",
-		"高新区", "高新园区", "高新",
+		"高新区", "高新园区", "高新校区", "高新", "gaoxin", "gx",
 		"先研院",
 		"东区", "西区", "中区", "北区", "南区",
 		"east", "west", "center", "central", "north", "south", "gx",
@@ -1503,7 +1534,7 @@ func campusName(value string) string {
 		return "北区"
 	case "南", "南区", "south", "south campus":
 		return "南区"
-	case "高新", "高新区", "高新园区", "gx":
+	case "高新", "高新区", "高新园区", "高新校区", "gaoxin", "gx":
 		return "高新区"
 	case "太湖", "太湖路", "太湖园区", "太湖校区", "太湖路园区", "太湖路校区", "taihu", "taihu campus", "taihu road campus":
 		return "太湖路园区"

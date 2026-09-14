@@ -39,14 +39,14 @@ func TestHandleOutcomeReportsFailedDomainCallWithoutChangingDirectText(t *testin
 	defer server.Close()
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
-	outcome, handled := handler.HandleOutcome(context.Background(), Input{Text: "ping"})
+	outcome, handled := handler.HandleOutcome(context.Background(), Input{Text: "天气"})
 	if !handled || outcome.Status != CapabilityOutcomeFailed {
 		t.Fatalf("outcome = %#v, handled = %v", outcome, handled)
 	}
 	if outcome.Response.Text == "" || outcome.Response.Text == string(outcome.Status) {
 		t.Fatalf("domain text was replaced by status: %#v", outcome.Response)
 	}
-	text, ok := handler.Handle(context.Background(), Input{Text: "ping"})
+	text, ok := handler.Handle(context.Background(), Input{Text: "天气"})
 	if !ok || text != outcome.Response.Text {
 		t.Fatalf("direct response = %q, ok = %v; outcome = %#v", text, ok, outcome)
 	}

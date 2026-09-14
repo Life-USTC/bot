@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -10,13 +11,30 @@ import (
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 type Response struct {
-	Text  string
+	Text string
+	// Data is the machine-readable result of the command. It deliberately
+	// lives beside Text and Image: Text is presentation for a user, while Data
+	// is the already-fetched domain value sent to a model or another host.
+	Data  any
 	Image *responses.Image
 	Kind  string
 	Parts []Response
+}
+
+// ModelResult returns the stable model-facing envelope for this response.
+// Callers that already have a shared result encoder may use Response.Data
+// directly; this convenience keeps command-only integrations from having to
+// reconstruct the envelope from rendered text.
+func (r Response) ModelResult(operation, status string, observedAt time.Time) string {
+	var err error
+	if status != "success" && status != "succeeded" {
+		err = errors.New(r.Text)
+	}
+	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err)
 }
 
 const ResponseKindAuthWait = "auth_wait"
@@ -35,11 +53,7 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 	}
 	// Root commands whose empty-arg reply is the topic help card.
 	switch cmd.Name {
-	case "settings":
-		if !hasArgs(cmd.Args) {
-			return "settings", true
-		}
-	case "account", "system", "feedback", "subscription":
+	case "account", "feedback", "subscription":
 		if !hasArgs(cmd.Args) {
 			if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
 				return topic, true

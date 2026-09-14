@@ -17,6 +17,10 @@ type executionReceipts struct {
 }
 
 func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, includeOnePending bool) (executionReceipts, error) {
+	return c.unsentExecutionReceiptsForEffect(ctx, jobID, includeOnePending, "")
+}
+
+func (c *Coordinator) unsentExecutionReceiptsForEffect(ctx context.Context, jobID int64, includeOnePending bool, effect string) (executionReceipts, error) {
 	executions, err := c.jobs.UnsentCapabilityExecutionsForJob(ctx, jobID)
 	if err != nil {
 		return executionReceipts{}, markConversationPersistenceError(err)
@@ -25,7 +29,7 @@ func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, 
 	seen := make(map[string]bool)
 	pendingIncluded := false
 	for _, execution := range executions {
-		if strings.TrimSpace(execution.Receipt.Action) == "" || strings.TrimSpace(execution.Receipt.Resource) == "" {
+		if effect != "" && !strings.EqualFold(strings.TrimSpace(execution.Effect), strings.TrimSpace(effect)) {
 			continue
 		}
 		if execution.State == store.CapabilityExecutionAwaitingConfirmation {
@@ -35,6 +39,9 @@ func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, 
 			pendingIncluded = true
 		}
 		line, visible := formatExecutionReceipt(execution)
+		if !visible && execution.State == store.CapabilityExecutionAwaitingConfirmation {
+			line, visible = formatUnlabeledExecutionReceipt(execution)
+		}
 		if !visible {
 			continue
 		}
@@ -46,6 +53,17 @@ func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, 
 		result.Lines = append(result.Lines, line)
 	}
 	return result, nil
+}
+
+func formatUnlabeledExecutionReceipt(execution store.CapabilityExecution) (string, bool) {
+	if execution.State != store.CapabilityExecutionAwaitingConfirmation || strings.TrimSpace(execution.Capability) == "" {
+		return "", false
+	}
+	subject := strings.TrimSpace(strings.Join(execution.Arguments, " "))
+	if subject == "" {
+		subject = "无参数"
+	}
+	return "#待确认操作{" + execution.Capability + " " + subject + "}", true
 }
 
 func formatExecutionReceipt(execution store.CapabilityExecution) (string, bool) {
@@ -80,7 +98,7 @@ func receiptFailureReason(execution store.CapabilityExecution) string {
 		// Result is the descriptor-owned, user-safe domain response. Error may
 		// contain protected transport diagnostics when execution failed before
 		// the descriptor could return a result.
-		reason = strings.TrimSpace(execution.Result)
+		reason = capabilityExecutionResultText(execution)
 		if reason == "" {
 			reason = "操作没有完成"
 		}

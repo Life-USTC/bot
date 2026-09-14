@@ -52,17 +52,17 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 	}
 }
 
-func TestNestedSettingsMutationsResolveChildPolicy(t *testing.T) {
-	invocation, ok := ParseInvocation("设置 通知 课表 开")
+func TestTopLevelNotificationMutationsResolvePolicy(t *testing.T) {
+	invocation, ok := ParseInvocation("通知 课表 开")
 	if !ok || invocation.Capability == nil || invocation.ID() != CapabilityNotify {
-		t.Fatalf("nested command invocation=%#v ok=%v", invocation, ok)
+		t.Fatalf("notification invocation=%#v ok=%v", invocation, ok)
 	}
 	policy := invocation.Policy()
 	if policy.Effect != EffectWrite || policy.DataScope != DataScopeUserPrivate {
-		t.Fatalf("nested command policy = %#v", policy)
+		t.Fatalf("notification policy = %#v", policy)
 	}
-	if structured, accepted := NewInvocation(CapabilitySettings, []string{"通知", "课表", "开"}); accepted {
-		t.Fatalf("structured settings bypass was accepted as %#v", structured)
+	if _, accepted := ParseInvocation("设置 通知 课表 开"); accepted {
+		t.Fatal("retired nested settings command was accepted")
 	}
 }
 
@@ -96,7 +96,7 @@ func TestCapabilityDataScopesSeparatePublicAndUserPrivateReads(t *testing.T) {
 	}{
 		{command: "校车 西区 高新区", want: DataScopePublic},
 		{command: "校车 偏好", want: DataScopeUserPrivate},
-		{command: "状态", want: DataScopePublic},
+		{command: "通知", want: DataScopeUserPrivate},
 		{command: "课程 数学分析", want: DataScopePublic},
 		{command: "课表", want: DataScopeUserPrivate},
 		{command: "订阅 链接", want: DataScopeUserPrivate},
@@ -113,7 +113,7 @@ func TestCapabilityDataScopesSeparatePublicAndUserPrivateReads(t *testing.T) {
 }
 
 func TestRemovedCommandFormsAreNotAccepted(t *testing.T) {
-	for _, command := range []string{"课标", "代办", "todo待办", "profile", "setting", "sched", "zt", "js", "fb"} {
+	for _, command := range []string{"课标", "代办", "todo待办", "profile", "setting", "sched", "zt", "js", "fb", "设置", "设置 通知", "系统", "状态", "ping"} {
 		if invocation, ok := ParseInvocation(command); ok {
 			t.Errorf("obsolete form %q parsed as %#v", command, invocation)
 		}

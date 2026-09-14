@@ -40,12 +40,18 @@ func (h Handler) setSubscriptionKind(ctx context.Context, ident store.Identity, 
 	}
 	jwID, _ := parseIntArg(args[0])
 	kind := normalizeSubscriptionKind(args[1])
-	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+	result, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.SetSubscriptionKind(ctx, token, jwID, kind)
 	})
 	if err != nil {
 		return h.commandError("订阅身份更新失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "set_kind",
+		"jw_id":     jwID,
+		"kind":      kind,
+		"result":    result,
+	})
 	label := lifedata.SubscriptionKindLabel(kind)
 	if label == "" {
 		label = "普通"

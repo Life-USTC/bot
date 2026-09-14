@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -589,6 +590,38 @@ func TestMessageFromPayloadNormalizesGroupIdentityAndMention(t *testing.T) {
 	}
 }
 
+func TestMessageFromPayloadPreservesPlatformAndReceiveTimes(t *testing.T) {
+	receivedAt := time.Date(2026, 9, 14, 16, 45, 0, 123000000, time.FixedZone("CST", 8*60*60))
+	bot := &Bot{now: func() time.Time { return receivedAt }}
+	message, err := bot.messageFromPayload(gatewayPayload{
+		ID: "event-id",
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"timestamp":"2026-09-14T12:34:56.789+08:00",
+			"author":{"user_openid":"user-openid"},
+			"content":"hello"
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSentAt, err := time.Parse(time.RFC3339Nano, "2026-09-14T12:34:56.789+08:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !message.SentAt.Equal(wantSentAt.UTC()) {
+		t.Fatalf("platform sent time = %s, want %s", message.SentAt, wantSentAt.UTC())
+	}
+	if !message.ReceivedAt.Equal(receivedAt.UTC()) {
+		t.Fatalf("receive time = %s, want %s", message.ReceivedAt, receivedAt.UTC())
+	}
+	inbound := message.inbound()
+	if !inbound.SentAt.Equal(wantSentAt.UTC()) || !inbound.ReceivedAt.Equal(receivedAt.UTC()) {
+		t.Fatalf("inbound times = sent %s received %s", inbound.SentAt, inbound.ReceivedAt)
+	}
+}
+
 func TestMessageFromPayloadExtractsImageAttachments(t *testing.T) {
 	bot := &Bot{}
 	message, err := bot.messageFromPayload(gatewayPayload{
@@ -799,15 +832,21 @@ func TestRunResetsBackoffAfterReady(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if identify.Op != opIdentify {
-			t.Errorf("identify opcode = %d", identify.Op)
+		if attempt <= 3 && identify.Op != opIdentify {
+			t.Errorf("attempt %d opcode = %d, want identify", attempt, identify.Op)
+			return
+		}
+		if attempt == 4 && identify.Op != opResume {
+			t.Errorf("attempt %d opcode = %d, want resume", attempt, identify.Op)
+			cancel()
 			return
 		}
 		if attempt == 3 {
 			if err := conn.WriteJSON(gatewayPayload{
 				Op: opDispatch,
+				S:  int64Pointer(1),
 				T:  "READY",
-				D:  json.RawMessage(`{}`),
+				D:  json.RawMessage(`{"session_id":"session-a"}`),
 			}); err != nil {
 				t.Error(err)
 				return
@@ -838,6 +877,153 @@ func TestRunResetsBackoffAfterReady(t *testing.T) {
 		t.Fatalf("grown-delay logs = %d, want 1:\n%s", got, logs.String())
 	}
 }
+
+func TestGatewayReconnectResumesSessionOverWebSocket(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var connections atomic.Int32
+	upgrader := websocket.Upgrader{}
+	handshakeErrors := make(chan error, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			handshakeErrors <- err
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		attempt := connections.Add(1)
+		if err := conn.WriteJSON(gatewayPayload{Op: opHello, D: json.RawMessage(`{"heartbeat_interval":3600000}`)}); err != nil {
+			handshakeErrors <- err
+			return
+		}
+		var start gatewaySendPayload
+		if err := conn.ReadJSON(&start); err != nil {
+			handshakeErrors <- err
+			return
+		}
+		var startData map[string]any
+		encoded, _ := json.Marshal(start.D)
+		_ = json.Unmarshal(encoded, &startData)
+		switch attempt {
+		case 1:
+			if start.Op != opIdentify {
+				handshakeErrors <- fmt.Errorf("first gateway start opcode=%d, want identify", start.Op)
+				return
+			}
+			if err := conn.WriteJSON(gatewayPayload{Op: opDispatch, S: int64Pointer(5), T: "READY", D: json.RawMessage(`{"session_id":"session-a"}`)}); err != nil {
+				handshakeErrors <- err
+				return
+			}
+		case 2:
+			if start.Op != opResume {
+				handshakeErrors <- fmt.Errorf("second gateway start opcode=%d, want resume", start.Op)
+				return
+			}
+			if got, _ := startData["session_id"].(string); got != "session-a" {
+				handshakeErrors <- fmt.Errorf("resume session_id=%q, want session-a", got)
+				return
+			}
+			if got, ok := startData["seq"].(float64); !ok || int64(got) != 5 {
+				handshakeErrors <- fmt.Errorf("resume seq=%v, want 5", startData["seq"])
+				return
+			}
+			if err := conn.WriteJSON(gatewayPayload{Op: opDispatch, S: int64Pointer(6), T: "RESUMED", D: json.RawMessage(`""`)}); err != nil {
+				handshakeErrors <- err
+				return
+			}
+			cancel()
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "static-token",
+		GatewayURL: "ws" + server.URL[len("http"):],
+	}
+	if err := bot.run(ctx, retry.Backoff{Initial: time.Millisecond, Max: time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("gateway connections=%d, want 2", got)
+	}
+	select {
+	case err := <-handshakeErrors:
+		t.Fatal(err)
+	default:
+	}
+	if id, seq := bot.resumePoint(); id != "session-a" || seq != 6 {
+		t.Fatalf("resume point after resumed dispatch=%q/%d, want session-a/6", id, seq)
+	}
+}
+
+func TestGatewayInvalidSessionClearsResumePointDuringHandshake(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var connections atomic.Int32
+	upgrader := websocket.Upgrader{}
+	handshakeErrors := make(chan error, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			handshakeErrors <- err
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		attempt := connections.Add(1)
+		if err := conn.WriteJSON(gatewayPayload{Op: opHello, D: json.RawMessage(`{"heartbeat_interval":3600000}`)}); err != nil {
+			handshakeErrors <- err
+			return
+		}
+		var start gatewaySendPayload
+		if err := conn.ReadJSON(&start); err != nil {
+			handshakeErrors <- err
+			return
+		}
+		switch attempt {
+		case 1:
+			if start.Op != opIdentify {
+				handshakeErrors <- fmt.Errorf("first gateway start opcode=%d, want identify", start.Op)
+				return
+			}
+			if err := conn.WriteJSON(gatewayPayload{Op: opDispatch, S: int64Pointer(3), T: "READY", D: json.RawMessage(`{"session_id":"session-invalid"}`)}); err != nil {
+				handshakeErrors <- err
+				return
+			}
+			if err := conn.WriteJSON(gatewayPayload{Op: opInvalid, D: json.RawMessage(`false`)}); err != nil {
+				handshakeErrors <- err
+				return
+			}
+		case 2:
+			if start.Op != opIdentify {
+				handshakeErrors <- fmt.Errorf("gateway after invalid session opcode=%d, want identify", start.Op)
+				return
+			}
+			cancel()
+		}
+	}))
+	defer server.Close()
+
+	bot := &Bot{
+		BotToken:   "static-token",
+		GatewayURL: "ws" + server.URL[len("http"):],
+	}
+	if err := bot.run(ctx, retry.Backoff{Initial: time.Millisecond, Max: time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("gateway connections=%d, want 2", got)
+	}
+	select {
+	case err := <-handshakeErrors:
+		t.Fatal(err)
+	default:
+	}
+	if id, seq := bot.resumePoint(); id != "" || seq != 0 {
+		t.Fatalf("invalid session resume point=%q/%d, want empty", id, seq)
+	}
+}
+
+func int64Pointer(value int64) *int64 { return &value }
 
 func TestRateLimitedTokenFailureRemainsRetryable(t *testing.T) {
 	if isPermanentHTTPStatus(http.StatusTooManyRequests) {

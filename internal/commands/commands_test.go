@@ -32,12 +32,21 @@ func TestHandleCourseSearch(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "course calculus"})
+	response, ok := handler.HandleResponse(context.Background(), Input{Text: "course calculus"})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
+	reply := response.Text
 	if !strings.Contains(reply, "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
 		t.Fatalf("unexpected reply %q", reply)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "search" {
+		t.Fatalf("course Data = %#v", response.Data)
+	}
+	items, ok := data["items"].([]map[string]any)
+	if !ok || len(items) != 1 || items[0]["code"] != "MATH1001" {
+		t.Fatalf("course items Data = %#v", data["items"])
 	}
 }
 
@@ -248,15 +257,16 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	for _, want := range []string{
 		"Bot 帮助：",
 		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
-		"常用：",
-		"账户与系统：",
+		"校园查询：",
+		"个人事务：",
+		"账户与通知：",
 		"命令\t说明",
 		"日程\t今日安排、综合概览与近期截止",
 		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
-		"设置\t管理通知等偏好",
+		"通知\t查看和管理课表、作业提醒",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -271,9 +281,6 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"作业 列表 学期ID",
 		"校车 东区 西区",
 		"教学班 搜索 老师代码",
-		"教学资源：",
-		"课程\t搜索或查看课程",
-		"进阶：",
 		"帮助 AI",
 	} {
 		if strings.Contains(reply, unwanted) {
@@ -285,7 +292,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 	}
 }
 
-func TestSettingsHelpRendersAsImages(t *testing.T) {
+func TestNotificationHelpRendersAsImages(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
 	cases := []struct {
 		text  string
@@ -294,21 +301,21 @@ func TestSettingsHelpRendersAsImages(t *testing.T) {
 		avoid []string
 	}{
 		{
-			text:  "设置",
-			title: "设置 帮助",
-			want:  []string{"设置 通知", "开启课前提醒"},
+			text:  "通知 help",
+			title: "通知 帮助",
+			want:  []string{"通知 课表 开", "开启课前提醒"},
 			avoid: []string{"AI 工具", "工具调用"},
 		},
 		{
-			text:  "设置 帮助",
-			title: "设置 帮助",
-			want:  []string{"设置 通知 作业 开"},
+			text:  "通知 帮助",
+			title: "通知 帮助",
+			want:  []string{"通知 作业 开"},
 			avoid: []string{"AI 工具"},
 		},
 		{
-			text:  "帮助 设置",
-			title: "设置 帮助",
-			want:  []string{"设置 通知"},
+			text:  "帮助 通知",
+			title: "通知 帮助",
+			want:  []string{"通知 课表 开"},
 			avoid: []string{"AI 工具"},
 		},
 	}
@@ -452,7 +459,9 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 	}
 	visibleTopics := map[string]bool{
 		"agenda": true, "schedule": true, "exam": true, "todo": true, "homework": true,
-		"bus": true, "weather": true, "room": true, "account": true, "settings": true, "system": true, "feedback": true,
+		"bus": true, "weather": true, "room": true, "young_event": true,
+		"course": true, "section": true, "teacher": true, "semester": true,
+		"subscription": true, "account": true, "notifications": true, "feedback": true,
 	}
 	if len(overviewCount) != len(visibleTopics) {
 		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))
@@ -569,7 +578,7 @@ func TestHandleLifeCommandWithoutClientDoesNotPanic(t *testing.T) {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
 	}
 
-	for _, text := range []string{"课程 help", "教学班 help", "状态 help"} {
+	for _, text := range []string{"课程 help", "教学班 help", "通知 help"} {
 		reply, ok = handler.Handle(context.Background(), Input{Text: text, Identity: testIdentity()})
 		if !ok || !strings.Contains(reply, " 帮助：") {
 			t.Fatalf("%q help reply = %q, ok = %v", text, reply, ok)
@@ -632,22 +641,6 @@ func TestHandleAuthCommandWithoutAuthManagerDoesNotPanic(t *testing.T) {
 	reply, ok = handler.Handle(context.Background(), Input{Text: "登录 help", Identity: testIdentity()})
 	if !ok || !strings.Contains(reply, "账户 帮助：") {
 		t.Fatalf("help reply = %q, ok = %v", reply, ok)
-	}
-}
-
-func TestStatusWithAuthWithoutStoreDoesNotPanic(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer server.Close()
-
-	handler := Handler{
-		Life: life.NewClient(server.URL, server.Client()),
-		Auth: &auth.Manager{},
-	}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "状态", Identity: testIdentity()})
-	if !ok || !strings.Contains(reply, "Life @ USTC：OK") || strings.Contains(reply, "登录：") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 
@@ -956,13 +949,15 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	}
 	for _, want := range []string{
 		"发送「帮助 课表」可以查看「课表」命令的具体用法。",
-		"## 常用",
+		"## 校园查询",
+		"## 个人事务",
+		"## 账户与通知",
 		"| 命令 | 说明 |",
 		"| 日程 | 今日安排、综合概览与近期截止 |",
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
-		"| 设置 | 管理通知等偏好 |",
+		"| 通知 | 查看和管理课表、作业提醒 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -971,7 +966,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	if got := strings.Count(response.Image.RichText, "| 命令 | 说明 |"); got != len(helpOverviewSections()) {
 		t.Fatalf("help table count = %d, want %d", got, len(helpOverviewSections()))
 	}
-	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "## 教学资源", "| 教学班 |", "## 进阶", "帮助 AI"} {
+	for _, unwanted := range []string{"├", "└", "•", "课表 下周", "待办 完成 1", "帮助 AI", "| 设置 |", "## 教学资源", "## 进阶"} {
 		if strings.Contains(response.Image.RichText, unwanted) {
 			t.Fatalf("help overview still contains %q: %q", unwanted, response.Image.RichText)
 		}
@@ -3259,10 +3254,11 @@ func TestSubscriptionCalendarLink(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "订阅链接", Identity: ident})
+	response, ok := handler.HandleResponse(ctx, Input{Text: "订阅链接", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
 	}
+	reply := response.Text
 	for _, want := range []string{
 		"https://example.test/calendar/private-token.ics",
 		"使用方法：复制链接",
@@ -3277,6 +3273,17 @@ func TestSubscriptionCalendarLink(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(reply), "caldav") {
 		t.Fatalf("reply contains obsolete CalDAV wording: %q", reply)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "calendar_link" || data["calendar_url"] != "https://example.test/calendar/private-token.ics" {
+		t.Fatalf("calendar link Data = %#v", response.Data)
+	}
+	encoded, err := json.Marshal(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "使用方法：") || strings.Contains(string(encoded), "iCalendar 订阅会自动更新") {
+		t.Fatalf("calendar presentation leaked into Data: %s", encoded)
 	}
 	recent, err := handler.Store.RecentHandledInteractions(ctx, ident, 1)
 	if err != nil {
@@ -3325,23 +3332,26 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s}
+	handler := Handler{Store: s, EnableImageResponses: true}
 
-	reply, ok := handler.Handle(ctx, Input{Text: "通知", Identity: ident})
-	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
+	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
+		t.Fatalf("reply = %q, ok = %v", response.Text, ok)
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "设置", Identity: ident})
-	if !ok || !strings.Contains(reply, "设置 帮助：") || !strings.Contains(reply, "设置 通知") || strings.Contains(reply, "AI 工具") {
-		t.Fatalf("settings help reply = %q, ok = %v", reply, ok)
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "notification_settings" || data["settings"] == nil {
+		t.Fatalf("notification Data = %#v", response.Data)
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知", Identity: ident})
-	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：关") {
-		t.Fatalf("nested notification settings reply = %q, ok = %v", reply, ok)
+	reply, ok := handler.Handle(ctx, Input{Text: "通知 help", Identity: ident})
+	if !ok || !strings.Contains(reply, "通知 帮助：") || !strings.Contains(reply, "通知 课表 开") || strings.Contains(reply, "AI 工具") {
+		t.Fatalf("notification help reply = %q, ok = %v", reply, ok)
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "设置 通知 课表 开", Identity: ident})
+	if _, ok := handler.parse("设置 通知"); ok {
+		t.Fatal("retired settings command was parsed")
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") || !strings.Contains(reply, "已暂停") || !strings.Contains(reply, "登录") {
-		t.Fatalf("nested notification update reply = %q, ok = %v", reply, ok)
+		t.Fatalf("notification update reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业呃开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
@@ -3364,7 +3374,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("missing state reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 校车", Identity: ident})
-	if !ok || !strings.Contains(reply, "设置 帮助：") {
+	if !ok || !strings.Contains(reply, "通知 帮助：") {
 		t.Fatalf("unknown notify kind should return usage, reply = %q, ok = %v", reply, ok)
 	}
 
@@ -3694,10 +3704,8 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "账户 登录 状态", name: "login", args: "status"},
 		{text: "账户 信息", name: "account"},
 		{text: "账户 退出", name: "logout"},
-		{text: "设置 通知 课表 开", name: "notify", args: "classes on"},
-		{text: "系统", name: "help", args: "系统"},
-		{text: "系统 状态", name: "status"},
-		{text: "系统 检查", name: "ping"},
+		{text: "通知 课表 开", name: "notify", args: "classes on"},
+		{text: "通知", name: "notify"},
 	}
 	for _, tt := range tests {
 		cmd, ok := handler.parse(tt.text)
@@ -4584,5 +4592,24 @@ func TestHandleIgnoresOtherMessages(t *testing.T) {
 	reply, ok := handler.Handle(context.Background(), Input{Text: "hello"})
 	if ok || reply != "" {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestNextClassEmptyResultRetainsSearchContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/schedules" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"schedules":null}`))
+	}))
+	defer server.Close()
+	ident := testIdentity()
+	handler := testAuthedHandler(t, server, ident)
+	handler.execution = &capabilityExecutionState{}
+	now := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
+	handler.nextClassAt(t.Context(), ident, now)
+	data, ok := handler.execution.data.(map[string]any)
+	if !ok || data["operation"] != "next_class" || data["days_checked"] != 8 || data["schedule"] != nil || handler.execution.status != CapabilityOutcomeNotFound {
+		t.Fatalf("empty next class data = %#v, status = %s", data, handler.execution.status)
 	}
 }

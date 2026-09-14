@@ -18,10 +18,6 @@ func notifyArgsAcceptable(args []string) bool {
 	return false
 }
 
-func settingsArgsAcceptable(args []string) bool {
-	return !hasArgs(args) || len(args) == 1 && firstArgIsHelp(args)
-}
-
 func homeworkArgsAcceptable(args []string) bool {
 	if !hasArgs(args) {
 		return true
