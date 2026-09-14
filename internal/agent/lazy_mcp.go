@@ -25,8 +25,7 @@ const maxCampusToolSearchResults = 5
 
 func campusReadToolAllowed(name string) bool {
 	switch name {
-	case "get_current_semester", "list_my_homeworks", "search_courses",
-		"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map":
+	case "catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map":
 		return true
 	default:
 		return false

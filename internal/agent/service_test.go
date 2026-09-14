@@ -655,11 +655,11 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	lazy := newLazyMCPSession(svc, ident, 0)
 	defer func() { _ = lazy.Close() }()
 
-	docs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "homework"})
+	docs, err := lazy.search(context.Background(), campusToolSearchInput{Query: "room"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(docs, "list_my_homeworks") || strings.Contains(docs, "delete_my_homework") {
+	if !strings.Contains(docs, "catalog_rooms_map") || strings.Contains(docs, "delete_my_homework") {
 		t.Fatalf("read-only MCP docs = %s", docs)
 	}
 	for _, query := range []string{"第二课堂 活动", "查询第二课堂平台活动", "二课活动"} {
@@ -675,13 +675,26 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"get_current_semester", "list_my_homeworks", "search_courses", "catalog_young_event_list", "catalog_young_event_get"} {
-		if !strings.Contains(allDocs, name) {
+	var listed []campusToolDocumentation
+	if err := json.Unmarshal([]byte(allDocs), &listed); err != nil {
+		t.Fatalf("decode complete MCP inventory: %v; docs=%s", err, allDocs)
+	}
+	if len(listed) != 3 {
+		t.Fatalf("complete MCP inventory contains %d tools, want 3: %s", len(listed), allDocs)
+	}
+	listedNames := make(map[string]bool, len(listed))
+	for _, item := range listed {
+		listedNames[item.Name] = true
+	}
+	for _, name := range []string{"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map"} {
+		if !listedNames[name] {
 			t.Fatalf("complete MCP inventory omitted %q: %s", name, allDocs)
 		}
 	}
-	if strings.Contains(allDocs, "delete_my_homework") {
-		t.Fatalf("complete MCP inventory exposed mutation: %s", allDocs)
+	for _, name := range []string{"get_current_semester", "list_my_homeworks", "search_courses", "delete_my_homework"} {
+		if listedNames[name] {
+			t.Fatalf("complete MCP inventory exposed disallowed tool %q: %s", name, allDocs)
+		}
 	}
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "catalog_young_event_list", Arguments: map[string]any{"active": true}}); err != nil {
 		t.Fatal(err)
@@ -689,7 +702,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if calls["catalog_young_event_list"].Load() != 1 {
 		t.Fatal("allowed young-event lookup did not reach the remote server")
 	}
-	result, err := lazy.call(context.Background(), campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}})
+	result, err := lazy.call(context.Background(), campusToolCallInput{Name: "catalog_rooms_map", Arguments: map[string]any{"code": "3A204"}})
 	if err != nil || result != `{"ok":true}` {
 		t.Fatalf("lazy MCP call result=%q err=%v", result, err)
 	}
@@ -722,7 +735,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if calls["delete_my_homework"].Load() != 0 {
 		t.Fatal("tracked hidden MCP mutation reached the remote server")
 	}
-	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err != nil {
+	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "catalog_young_event_get", Arguments: map[string]any{"youngId": "event-1"}}); err != nil {
 		t.Fatal(err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID)
@@ -730,7 +743,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 		t.Fatalf("MCP executions=%#v err=%v", executions, err)
 	}
 	if executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Receipt.Action != "查询" ||
-		executions[0].Receipt.Resource != "课程" || executions[0].Receipt.Subject != "math" {
+		executions[0].Receipt.Resource != "第二课堂活动" || executions[0].Receipt.Subject != "event-1" {
 		t.Fatalf("MCP execution receipt = %#v", executions[0])
 	}
 	if ok, err := db.CompleteConversationJob(context.Background(), job.ID, claimed.LeaseToken); err != nil || !ok {
@@ -750,11 +763,11 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	secondCtx := store.WithConversationJobLease(context.Background(), secondJob.ID, secondClaim.LeaseToken)
 	secondSession := newLazyMCPSession(svc, ident, secondJob.ID)
 	defer func() { _ = secondSession.Close() }()
-	prepared, trackedExecution, execute, err := secondSession.prepareExecution(secondCtx, "search_courses", map[string]any{"query": "math"})
+	prepared, trackedExecution, execute, err := secondSession.prepareExecution(secondCtx, "catalog_young_event_get", map[string]any{"youngId": "event-1"})
 	if err != nil || !trackedExecution || !execute || prepared.State != store.CapabilityExecutionRunning {
 		t.Fatalf("prepare same-lease MCP read=%#v tracked=%v execute=%v err=%v", prepared, trackedExecution, execute, err)
 	}
-	if _, err := secondSession.call(secondCtx, campusToolCallInput{Name: "search_courses", Arguments: map[string]any{"query": "math"}}); err == nil || !strings.Contains(err.Error(), "already running") {
+	if _, err := secondSession.call(secondCtx, campusToolCallInput{Name: "catalog_young_event_get", Arguments: map[string]any{"youngId": "event-1"}}); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("same-live MCP read was replayed: %v", err)
 	}
 }
@@ -1068,11 +1081,9 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 	mcpServer := mcpserver.NewMCPServer("agent-test", "1.0.0")
 	calls := map[string]*atomic.Int32{}
 	for _, tool := range []mcpgo.Tool{
-		mcpgo.NewTool("list_my_homeworks", mcpgo.WithDescription("List my homeworks.")),
-		mcpgo.NewTool("search_courses", mcpgo.WithDescription("Search courses.")),
-		mcpgo.NewTool("get_current_semester", mcpgo.WithDescription("Get current semester.")),
 		mcpgo.NewTool("catalog_young_event_list", mcpgo.WithDescription("List second-classroom (第二课堂) signup events.")),
 		mcpgo.NewTool("catalog_young_event_get", mcpgo.WithDescription("Fetch one second-classroom (第二课堂) signup event.")),
+		mcpgo.NewTool("catalog_rooms_map", mcpgo.WithDescription("Map campus rooms.")),
 		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
