@@ -3332,10 +3332,10 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s}
+	handler := Handler{Store: s, EnableImageResponses: true}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
-	if !ok || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
+	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
 		t.Fatalf("reply = %q, ok = %v", response.Text, ok)
 	}
 	data, ok := response.Data.(map[string]any)

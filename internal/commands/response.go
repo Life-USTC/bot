@@ -53,10 +53,6 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 	}
 	// Root commands whose empty-arg reply is the topic help card.
 	switch cmd.Name {
-	case "notify":
-		if !hasArgs(cmd.Args) {
-			return "notifications", true
-		}
 	case "account", "feedback", "subscription":
 		if !hasArgs(cmd.Args) {
 			if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
