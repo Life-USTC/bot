@@ -77,13 +77,20 @@ SQLite 数据库；初次生产迁移由迁移工作另行完成。脚本会在 
 先启动并检查 `dev.life-ustc.renderd`，再启动并检查 Bot；失败时恢复二进制、数据库和 plist，并
 重新加载部署前已加载的服务。部署锁和 launchd label 可避免同一 Bot 出现重复实例。
 
+历史压缩使用独立的 `conversation_compactions` 表保存摘要和已覆盖的事件位置，
+原始 `conversation_events` 不删除。部署脚本在停机备份后运行 `migrate`，显式创建该表并
+校验完整数据库；正常启动只校验已有数据库，不隐式补表。普通消息复用固定摘要，
+仅在上下文接近容量时再次压缩；摘要请求也计入 AI 用量与单次运行预算。
+
 NapCat 与 Bot 同机运行，OneBot 反向 WebSocket 连接 `ws://127.0.0.1:2280/ws`，
 `NAPCAT_REVERSE_ADDR` 使用 `127.0.0.1:2280`。图片在 Mac 下载或渲染后，通过 OneBot Base64
 或官方 QQ 分片上传发送，不再启动公共图片 HTTP 服务。
 
 Bot 的 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 放在远端 `config.json` 中；生产出口应使用
 Mac 本地代理。当前 `http://127.0.0.1:17890` 是 Clash Verge 的专用 mixed listener，
-通过 `DIRECT` 出站，持久配置在 Clash 的 merge profile 中；它不依赖 cn 的 SSH 隧道。
+实际出站由 Clash 的 merge profile 和当前规则决定，不能根据监听端口认定为 `DIRECT`；
+排查连接故障时应核对目标域名对应的代理日志、策略组和上游节点。模型调用中的 EOF
+可能来自代理连接超时，不能据此认定服务端 RLS 或 MCP 失败。该监听不依赖 cn 的 SSH 隧道。
 切换出口前，必须在 QQ 开放平台的接口 IP 白名单中加入 Mac 的公网出口 IP，否则 QQ API 返回 `11298`。
 官方 QQ 的公网入站反代通过 Tailscale 转发到 Mac 的 Webhook 监听地址；
 是否启动 Gateway 和 Webhook，分别由 `BOT_ENABLE_QQ_BOT_GATEWAY`、`BOT_ENABLE_QQ_BOT_WEBHOOK` 控制。

@@ -173,6 +173,7 @@ var requiredSchemaModels = []any{
 	&conversationEventRow{},
 	&agentCheckpointRow{},
 	&capabilityExecutionRow{},
+	&conversationCompactionRow{},
 }
 
 var obsoleteSchemaTables = []string{
@@ -449,6 +450,26 @@ func (publicCommandCacheRow) TableName() string {
 }
 
 func Open(path string) (*Store, error) {
+	s, err := openStore(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.migrate(); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenForSchemaMaintenance opens the database without running any schema
+// changes. The migrate command uses this entry point so a production v2
+// database can be explicitly prepared before the bot starts; normal startup
+// continues to verify the complete schema and never repairs it implicitly.
+func OpenForSchemaMaintenance(path string) (*Store, error) {
+	return openStore(path)
+}
+
+func openStore(path string) (*Store, error) {
 	if path == "" {
 		path = filepath.Join(".run", "life-ustc-bot.db")
 	}
@@ -478,12 +499,7 @@ func Open(path string) (*Store, error) {
 	// coordination with external readers/writers such as deployment backup.
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
-	s := &Store{db: db}
-	if err := s.migrate(); err != nil {
-		_ = s.Close()
-		return nil, err
-	}
-	return s, nil
+	return &Store{db: db}, nil
 }
 
 func (s *Store) Close() error {
@@ -551,25 +567,58 @@ func (s *Store) migrateSchema() error {
 	default:
 		return fmt.Errorf("unsupported database schema version %d (want %d)", version, CurrentSchemaVersion)
 	}
+	if err := s.initializeCurrentSchema(); err != nil {
+		return err
+	}
+	return verifySchemaShape(s.db)
+}
+
+// PrepareSchemaForMaintenance applies the explicitly requested schema setup
+// and then verifies the complete current schema. A current v2 database only
+// receives the independent conversation_compactions table; it is never
+// silently altered during normal startup.
+func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return errors.New("store is unavailable")
+	}
+	if err := s.db.Exec(`PRAGMA journal_mode = WAL`).Error; err != nil {
+		return err
+	}
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	switch version {
+	case CurrentSchemaVersion:
+		// Verify all existing tables before adding the one new required table.
+		// This keeps maintenance from masking an unrelated malformed or
+		// obsolete production schema.
+		if err := verifySchemaShapeWithoutConversationCompaction(s.db); err != nil {
+			return err
+		}
+		if err := s.EnsureConversationCompactionSchema(ctx); err != nil {
+			return err
+		}
+	case 0:
+		empty, err := sqliteSchemaIsEmpty(s.db)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("unsupported nonempty database schema version 0 (want %d)", CurrentSchemaVersion)
+		}
+		if err := s.initializeCurrentSchema(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported database schema version %d (want %d)", version, CurrentSchemaVersion)
+	}
+	return s.VerifySchema()
+}
+
+func (s *Store) initializeCurrentSchema() error {
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(
-			&userRow{},
-			&credentialRow{},
-			&loginSessionRow{},
-			&conversationStateRow{},
-			&interactionRow{},
-			&notificationSettingRow{},
-			&busSettingRow{},
-			&agentRunRow{},
-			&feedbackRecordRow{},
-			&outgoingMessageRow{},
-			&conversationJobSequenceRow{},
-			&conversationJobRow{},
-			&publicCommandCacheRow{},
-			&conversationEventRow{},
-			&agentCheckpointRow{},
-			&capabilityExecutionRow{},
-		); err != nil {
+		if err := tx.AutoMigrate(requiredSchemaModels...); err != nil {
 			return fmt.Errorf("initialize schema tables: %w", err)
 		}
 		if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
@@ -579,7 +628,7 @@ func (s *Store) migrateSchema() error {
 	}); err != nil {
 		return err
 	}
-	return verifySchemaShape(s.db)
+	return nil
 }
 
 func sqliteSchemaIsEmpty(db *gorm.DB) (bool, error) {
@@ -591,7 +640,22 @@ func sqliteSchemaIsEmpty(db *gorm.DB) (bool, error) {
 }
 
 func verifySchemaShape(db *gorm.DB) error {
+	return verifySchemaShapeWithModels(db, requiredSchemaModels)
+}
+
+func verifySchemaShapeWithoutConversationCompaction(db *gorm.DB) error {
+	models := make([]any, 0, len(requiredSchemaModels)-1)
 	for _, model := range requiredSchemaModels {
+		if _, ok := model.(*conversationCompactionRow); ok {
+			continue
+		}
+		models = append(models, model)
+	}
+	return verifySchemaShapeWithModels(db, models)
+}
+
+func verifySchemaShapeWithModels(db *gorm.DB, models []any) error {
+	for _, model := range models {
 		if err := verifyModelSchema(db, model); err != nil {
 			return err
 		}

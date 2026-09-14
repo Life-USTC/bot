@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -21,13 +22,14 @@ const (
 // conversationEventMessages restores exact role-bearing history. It never
 // turns host receipts, approval state, or generated summaries into user text.
 func conversationEventMessages(events []store.ConversationEvent) []*schema.Message {
-	events = exactConversationEventWindow(events, conversationHistoryTokenLimit)
+	events = completeConversationEventWindow(events)
 	return messagesFromConversationEvents(events)
 }
 
 func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.Message {
 	messages := make([]*schema.Message, 0, len(events))
 	for _, event := range events {
+		before := len(messages)
 		switch event.Type {
 		case store.ConversationEventUser:
 			parts := inputMessageParts(event.Parts)
@@ -79,6 +81,9 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 				continue
 			}
 			messages = append(messages, schema.ToolMessage(event.Content, event.ToolCallID, schema.WithToolName(event.ToolName)))
+		}
+		if event.ID > 0 && len(messages) > before {
+			messages[len(messages)-1].Extra = map[string]any{conversationEventIDKey: fmt.Sprint(event.ID)}
 		}
 	}
 	return messages
@@ -221,29 +226,6 @@ func assistantTextOutputParts(parts []store.ConversationMessagePart) []schema.Me
 		}
 	}
 	return result
-}
-
-// exactConversationEventWindow bounds history only by removing complete old
-// user turns. It never rewrites a tool result or inserts synthetic text into
-// the transcript sent to the model.
-func exactConversationEventWindow(events []store.ConversationEvent, tokenLimit int) []store.ConversationEvent {
-	events = completeConversationEventWindow(events)
-	if len(events) == 0 || tokenLimit <= 0 {
-		return events
-	}
-	latestUser := 0
-	for index, event := range events {
-		if event.Type != store.ConversationEventUser {
-			continue
-		}
-		latestUser = index
-		if estimateMessagesTokens(messagesFromConversationEvents(events[index:])) <= tokenLimit {
-			return events[index:]
-		}
-	}
-	// A single recent turn may itself exceed the history target. Keep it exact;
-	// the run-wide provider budget remains the final hard limit.
-	return events[latestUser:]
 }
 
 // A bounded tail may begin halfway through a tool exchange, and an expired or

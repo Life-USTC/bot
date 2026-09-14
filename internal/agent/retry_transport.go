@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -24,6 +25,8 @@ const (
 	llmRetryBaseDelay  = 200 * time.Millisecond
 	llmRetryMaxDelay   = 5 * time.Second
 )
+
+var errLLMTransportExhausted = errors.New("llm transport retries exhausted")
 
 func newAgentHTTPClient(base *http.Client, timeout time.Duration, logger *log.Logger) *http.Client {
 	var client http.Client
@@ -101,6 +104,9 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			err = errLLMUpstreamCanceled
 		}
 		if !shouldRetryLLMRequest(resp, err) || attempt == llmHTTPMaxAttempts {
+			if attempt == llmHTTPMaxAttempts && isRetryableTransportError(err) {
+				return resp, fmt.Errorf("%w: %w", errLLMTransportExhausted, err)
+			}
 			return resp, err
 		}
 
