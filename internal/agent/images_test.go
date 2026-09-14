@@ -25,25 +25,47 @@ func TestPrepareInputImagesSkipsOrdinaryDownloadFailures(t *testing.T) {
 		case "/image":
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write(imageData)
+		case "/broken":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("not an image"))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 
-	input := &Input{Text: "看图", ImageURLs: []string{server.URL + "/missing", server.URL + "/image"}}
+	input := &Input{Text: "看图", ImageURLs: []string{server.URL + "/missing", server.URL + "/broken", server.URL + "/image"}}
 	service := &Service{httpClient: server.Client()}
 	if err := service.prepareInputImages(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
-	if input.skippedImages != 1 {
-		t.Fatalf("skipped images=%d, want 1", input.skippedImages)
+	if input.skippedImages != 2 {
+		t.Fatalf("skipped images=%d, want 2", input.skippedImages)
 	}
-	if len(input.skippedImageErrors) != 1 || !strings.Contains(input.skippedImageErrors[0], "HTTP 410") {
+	if len(input.skippedImageErrors) != 2 || !strings.Contains(input.skippedImageErrors[0], "HTTP 410") || input.skippedImageErrors[1] != "图片内容无法读取" {
 		t.Fatalf("skip reasons=%#v", input.skippedImageErrors)
 	}
 	if len(input.ImageURLs) != 1 || input.ImageURLs[0] != server.URL+"/image" || len(input.imageDataURLs) != 1 {
 		t.Fatalf("prepared images URLs=%#v data=%d", input.ImageURLs, len(input.imageDataURLs))
+	}
+}
+
+func TestPrepareInputImagesSkipsAllOrdinaryFailures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusGone)
+	}))
+	defer server.Close()
+
+	input := &Input{ImageURLs: []string{server.URL + "/expired"}}
+	service := &Service{httpClient: server.Client()}
+	if err := service.prepareInputImages(context.Background(), input); err != nil {
+		t.Fatalf("ordinary image failure returned as hard error: %v", err)
+	}
+	if len(input.ImageURLs) != 0 || len(input.imageDataURLs) != 0 {
+		t.Fatalf("failed image was retained: urls=%#v data=%#v", input.ImageURLs, input.imageDataURLs)
+	}
+	if input.skippedImages != 1 || len(input.skippedImageErrors) != 1 {
+		t.Fatalf("skip metadata = %d %#v", input.skippedImages, input.skippedImageErrors)
 	}
 }
 

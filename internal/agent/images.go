@@ -62,7 +62,6 @@ func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 	input.skippedImageErrors = nil
 	loadedURLs := make([]string, 0, len(input.ImageURLs))
 	dataURLs := make([]string, 0, len(input.ImageURLs))
-	var lastErr error
 	for _, rawURL := range input.ImageURLs {
 		dataURL, err := s.loadImageDataURL(ctx, rawURL)
 		if err != nil {
@@ -73,7 +72,6 @@ func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 			if isAgentBudgetError(err) || errors.As(err, &inputErr) {
 				return err
 			}
-			lastErr = err
 			input.skippedImages++
 			input.skippedImageErrors = append(input.skippedImageErrors, safeImageSkipReason(err))
 			s.logf("input image skipped: reason=%s", safeImageSkipReason(err))
@@ -81,11 +79,6 @@ func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 		}
 		loadedURLs = append(loadedURLs, rawURL)
 		dataURLs = append(dataURLs, dataURL)
-	}
-	// Nothing usable is left and there is no text to answer: report the real
-	// image failure instead of pretending the turn had no content.
-	if len(dataURLs) == 0 && strings.TrimSpace(input.Text) == "" && lastErr != nil {
-		return lastErr
 	}
 	input.ImageURLs = loadedURLs
 	input.imageDataURLs = dataURLs
@@ -101,6 +94,9 @@ func safeImageSkipReason(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "图片下载超时"
+	}
+	if strings.HasPrefix(err.Error(), "图片内容无法读取") {
+		return "图片内容无法读取"
 	}
 	if message := err.Error(); strings.HasPrefix(message, "图片下载失败：HTTP ") {
 		return message
@@ -160,7 +156,41 @@ func (s *Service) loadImageDataURL(ctx context.Context, rawURL string) (string, 
 		return "", newImageInputError("图片超过 25 MiB 安全上限")
 	}
 	contentType := normalizedImageContentType(resp.Header.Get("Content-Type"), data)
-	return normalizeImageDataURL(data, contentType)
+	return normalizeRemoteImageDataURL(data, contentType)
+}
+
+// normalizeRemoteImageDataURL treats a fetched image that is malformed or
+// otherwise undecodable as an attachment that can be skipped. The hard input
+// limit is checked before this function, while data URLs supplied directly by
+// the user continue through normalizeImageDataURL and remain hard failures.
+func normalizeRemoteImageDataURL(data []byte, contentType string) (string, error) {
+	// A remote response is untrusted even when its MIME type is an allowed one.
+	// DecodeConfig catches truncated or non-image bodies that would otherwise be
+	// passed through unchanged while they are still below maxImageBytes.
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return "", errors.New("图片内容无法读取")
+	}
+	if int64(config.Width)*int64(config.Height) > maxImagePixels {
+		return "", newImageInputError("图片像素尺寸过大")
+	}
+	dataURL, err := normalizeImageDataURL(data, contentType)
+	if err == nil {
+		return dataURL, nil
+	}
+	var inputErr *imageInputError
+	if errors.As(err, &inputErr) {
+		// The size and pixel limits are safety constraints on an otherwise valid
+		// remote image. Keep those failures hard; malformed/unsupported remote
+		// content is a transient attachment failure and can be skipped.
+		if inputErr.message == "图片超过 25 MiB 安全上限" ||
+			inputErr.message == "图片像素尺寸过大" ||
+			inputErr.message == "图片压缩后仍超过 10 MiB" {
+			return "", err
+		}
+		return "", errors.New("图片内容无法读取")
+	}
+	return "", err
 }
 
 func decodeImageDataURL(rawURL string) ([]byte, string, error) {
