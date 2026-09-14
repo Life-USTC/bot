@@ -83,6 +83,7 @@ type JobRepository interface {
 	CommitConversationJobOutput(context.Context, store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error)
 	RetryConversationJob(context.Context, int64, string, string) (bool, error)
 	RecoverConversationJobLeases(context.Context, time.Time, ...time.Duration) error
+	RenewConversationJobLease(context.Context, int64, string, time.Time) (bool, error)
 	ExpireConversationJobs(context.Context, time.Time) error
 }
 
@@ -355,12 +356,39 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if deadline := conversationJobRunDeadline(job); !deadline.IsZero() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, deadline)
-		defer cancel()
-	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	ctx = store.WithConversationJobLease(ctx, job.ID, job.LeaseToken)
+	renewed, err := c.jobs.RenewConversationJobLease(ctx, job.ID, job.LeaseToken, time.Now())
+	if err != nil {
+		c.fail(ctx, job, markConversationPersistenceError(err))
+		return
+	}
+	if !renewed {
+		return
+	}
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(store.ConversationJobLease / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				live, err := c.jobs.RenewConversationJobLease(ctx, job.ID, job.LeaseToken, now)
+				if err != nil || !live {
+					if err != nil {
+						c.logf("conversation job %d heartbeat failed: %v", job.ID, err)
+					}
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-heartbeatDone }()
 	payload, err := decodeConversationJobPayload(job)
 	if err != nil {
 		c.fail(ctx, job, err)
@@ -551,17 +579,6 @@ func allCapabilityExecutionsTerminal(executions []store.CapabilityExecution) boo
 		}
 	}
 	return true
-}
-
-func conversationJobRunDeadline(job store.ConversationJob) time.Time {
-	deadline := job.ExpiresAt
-	if job.ClaimedAt != nil && !job.ClaimedAt.IsZero() {
-		leaseDeadline := job.ClaimedAt.Add(store.ConversationJobLease)
-		if deadline.IsZero() || leaseDeadline.Before(deadline) {
-			deadline = leaseDeadline
-		}
-	}
-	return deadline
 }
 
 func decodeConversationJobPayload(job store.ConversationJob) (conversationJobPayload, error) {

@@ -521,7 +521,7 @@ func TestNewNormalizesModelCredentials(t *testing.T) {
 	}
 }
 
-func TestNewUsesConfiguredTimeout(t *testing.T) {
+func TestNewAgentClientDoesNotInheritSharedHTTPTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		_, _ = w.Write([]byte(`{
@@ -533,24 +533,27 @@ func TestNewUsesConfiguredTimeout(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
+	sharedClient := server.Client()
+	sharedClient.Timeout = 20 * time.Millisecond
 
 	svc, err := New(context.Background(), Config{
 		Enabled: true,
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "test-model",
-		Timeout: 20 * time.Millisecond,
-	}, commands.Handler{}, server.Client())
+	}, commands.Handler{}, sharedClient)
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
-	_, err = svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
-	if err == nil || !isTimeoutError(err) {
+	if svc.httpClient != sharedClient || svc.httpClient.Timeout != 20*time.Millisecond {
+		t.Fatal("image downloads lost the shared client timeout")
+	}
+	reply, err := svc.model.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	if err != nil {
 		t.Fatalf("Generate error = %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("configured timeout was not used, elapsed = %s", elapsed)
+	if reply.Content != "ok" {
+		t.Fatalf("reply = %q", reply.Content)
 	}
 }
 
@@ -587,7 +590,6 @@ func TestNewRetriesTransientChatCompletionTransportError(t *testing.T) {
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "test-model",
-		Timeout: time.Second,
 	}, commands.Handler{}, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -1233,7 +1235,7 @@ func TestStreamToolResultMiddlewareAggregatesAndEncodesResult(t *testing.T) {
 	}
 }
 
-func TestRepeatedUnknownToolResultUsesBoundedStructuredRefusal(t *testing.T) {
+func TestRepeatedUnknownToolResultUsesStructuredRefusalWithoutRunLimit(t *testing.T) {
 	guard := newToolRepeatGuard()
 	ctx := withToolOutcomes(context.Background(), newToolOutcomeRegistry())
 	input := &compose.ToolInput{Name: "missing_tool", CallID: "unknown-call", Arguments: `{}`}
@@ -1242,15 +1244,15 @@ func TestRepeatedUnknownToolResultUsesBoundedStructuredRefusal(t *testing.T) {
 		t.Fatalf("first unknown admission = result %q handled=%v err=%v", result, handled, err)
 	}
 	guard.recordFailure(input)
-	for refusal := 1; refusal <= maxRepeatRefusals; refusal++ {
+	for refusal := 1; refusal <= 10; refusal++ {
 		result, handled, err := repeatedUnknownToolResult(ctx, guard, input)
 		if err != nil || !handled || !json.Valid([]byte(result)) ||
 			!strings.Contains(result, `"status":"rejected"`) || !strings.Contains(result, "did not") {
 			t.Fatalf("refusal %d = result %q handled=%v err=%v", refusal, result, handled, err)
 		}
 	}
-	if result, handled, err := repeatedUnknownToolResult(ctx, guard, input); handled || !errors.Is(err, errRepeatedToolCall) || result != "" {
-		t.Fatalf("refusal limit = result %q handled=%v err=%v", result, handled, err)
+	if result, handled, err := repeatedUnknownToolResult(ctx, guard, input); err != nil || !handled || !json.Valid([]byte(result)) {
+		t.Fatalf("refusal after many repetitions = result %q handled=%v err=%v", result, handled, err)
 	}
 	if !toolOutcomesFromContext(ctx).isError(input.CallID) {
 		t.Fatal("unknown repeat refusal was not marked as a failed tool outcome")
@@ -1269,9 +1271,6 @@ func TestNormalizeCampusReadCallErrorPreservesControlFailures(t *testing.T) {
 
 	for _, controlErr := range []error{
 		context.Canceled,
-		errAgentContextBudget,
-		errAgentRunTokenBudget,
-		errAgentToolCallBudget,
 		markDurableAgentStateError("read campus execution", errors.New("database unavailable")),
 	} {
 		if got := normalizeCampusReadCallError(context.Background(), "catalog_courses", controlErr); !errors.Is(got, controlErr) {
@@ -1738,7 +1737,7 @@ func TestHandleResponseRejectsHardLimitImageBeforeModelCall(t *testing.T) {
 	}
 }
 
-func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
+func TestHandleResponseAllowsMoreThan32ModelIterations(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -1747,8 +1746,19 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests.Add(1)
+		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
+		if request > 40 {
+			_, _ = w.Write([]byte(`{
+				"id":"chatcmpl-loop-done",
+				"object":"chat.completion",
+				"created":0,
+				"model":"test-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"循环完成"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+			}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-loop",
 			"object":"chat.completion",
@@ -1782,17 +1792,17 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	if !ok {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
 	}
-	if !strings.Contains(response.Text, "重复调用了相同工具") {
+	if response.Text != "循环完成" {
 		t.Fatalf("response = %#v", response)
 	}
-	if got := int(requests.Load()); got != maxRepeatRefusals+2 {
-		t.Fatalf("model requests = %d, want %d", got, maxRepeatRefusals+2)
+	if got := int(requests.Load()); got != 41 {
+		t.Fatalf("model requests = %d, want 41", got)
 	}
 	total, err := db.ConversationSpending(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total.ModelRequests != maxRepeatRefusals+2 || total.ToolCalls != 1 {
+	if total.ModelRequests != 41 || total.ToolCalls != 1 {
 		t.Fatalf("spending = %#v", total)
 	}
 }
@@ -2834,58 +2844,6 @@ func TestHandleResponsePropagatesCancellationToModelAndCaller(t *testing.T) {
 	}
 }
 
-func TestHandleResponseFinalizesExpiredRunContext(t *testing.T) {
-	requestStarted := make(chan struct{})
-	db, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
-	ident := store.Identity{Platform: "napcat", UserID: "timeout-user", ConversationType: "private", ConversationID: "timeout-user"}
-	client := &http.Client{Transport: blockingRoundTripper(func(r *http.Request) (*http.Response, error) {
-		close(requestStarted)
-		<-r.Context().Done()
-		return nil, r.Context().Err()
-	})}
-	svc, err := New(context.Background(), Config{
-		Enabled: true, APIKey: "test-key", BaseURL: "http://model.test", Model: "test-model",
-	}, commands.Handler{Store: db}, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), agentRunCleanupTimeout+100*time.Millisecond)
-	defer cancel()
-	result := make(chan struct {
-		response commands.Response
-		ok       bool
-	}, 1)
-	go func() {
-		response, ok := svc.HandleResponse(ctx, Input{Text: "等待超时", Identity: ident})
-		result <- struct {
-			response commands.Response
-			ok       bool
-		}{response: response, ok: ok}
-	}()
-	select {
-	case <-requestStarted:
-	case <-time.After(time.Second):
-		t.Fatal("model request did not start")
-	}
-	select {
-	case got := <-result:
-		if !got.ok || !strings.Contains(got.response.Text, "AI 响应超时") {
-			t.Fatalf("timed out response = %#v, ok = %v", got.response, got.ok)
-		}
-	case <-time.After(agentRunCleanupTimeout + 3*time.Second):
-		t.Fatal("timed out agent run did not return")
-	}
-	if interrupted, err := db.InterruptStartedAgentRuns(context.Background()); err != nil {
-		t.Fatal(err)
-	} else if interrupted != 0 {
-		t.Fatalf("timed out run remained started: interrupted=%d", interrupted)
-	}
-}
-
 type blockingRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f blockingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -2921,17 +2879,6 @@ func TestAgentFailureReplyHidesProviderTimeoutAndIncludesTrace(t *testing.T) {
 	}
 	if strings.Contains(reply, "deadline") {
 		t.Fatalf("reply exposes provider error: %q", reply)
-	}
-}
-
-func TestAgentFailureReplyDescribesRunDeadline(t *testing.T) {
-	reply := agentFailureReply(308, errAgentRunDeadline)
-	if !strings.Contains(reply, "超过 2 分钟") || !strings.Contains(reply, "未能生成完整回复") ||
-		!strings.Contains(reply, "可指定数量或筛选条件") || !strings.Contains(reply, "记录 #308") {
-		t.Fatalf("reply = %q", reply)
-	}
-	if strings.Contains(reply, "60 秒") {
-		t.Fatalf("reply exposes the obsolete run deadline: %q", reply)
 	}
 }
 

@@ -471,6 +471,48 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	}
 }
 
+func TestConversationJobHeartbeatsKeepLongRunningWorkAlive(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "long-running", ConversationJobEnqueue{ExpiresAt: now.Add(ConversationJobTTL)})
+	claim, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Simulate an hour of healthy work, beyond both old execution limits and
+	// the original task TTL. Recovery must not reclaim a live worker.
+	for minute := 1; minute <= 60; minute++ {
+		at := now.Add(time.Duration(minute) * time.Minute)
+		ok, err := s.RenewConversationJobLease(ctx, job.ID, claim.LeaseToken, at)
+		if err != nil || !ok {
+			t.Fatalf("heartbeat %d: %v", minute, err)
+		}
+		if err := s.RecoverConversationJobLeases(ctx, at); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.ExpireConversationJobs(ctx, at); err != nil {
+			t.Fatal(err)
+		}
+		if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateRunning {
+			t.Fatalf("live worker was interrupted: %s", got.State)
+		}
+	}
+	if ok, err := s.RenewConversationJobLease(ctx, job.ID, "stale-worker", now.Add(time.Hour)); err != nil || ok {
+		t.Fatal("stale worker renewed the job")
+	}
+	if err := s.RecoverConversationJobLeases(ctx, now.Add(time.Hour+ConversationJobLease+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateRetryWait {
+		t.Fatal("lost worker was not recovered")
+	}
+	if ok, err := s.RenewConversationJobLease(ctx, job.ID, claim.LeaseToken, now.Add(time.Hour+ConversationJobLease+time.Second)); err != nil || ok {
+		t.Fatal("recovered claim was revived by old worker")
+	}
+}
+
 func TestConversationJobLeaseRecoveryExpiryAndTerminalProtection(t *testing.T) {
 	s := openConversationJobTestStore(t)
 	ctx := context.Background()

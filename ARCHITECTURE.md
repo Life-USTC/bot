@@ -49,6 +49,9 @@ A job moves through `queued`, `running`, `waiting_auth`,
 `waiting_confirmation`, `retry_wait` and a terminal state. Every execution and
 checkpoint write is fenced by the current job revision and lease. A stale
 worker cannot finish a resumed job or execute an operation under a newer lease.
+Running workers renew their leases and task expiry through heartbeats. The
+lease measures worker liveness, not an execution deadline: a healthy long
+conversation is not reclaimed or expired because of its elapsed runtime.
 
 Confirmation replies are control input when a concrete operation is waiting.
 They update that operation and requeue the original job. They are not new LLM
@@ -65,8 +68,7 @@ an approval, or a fresh tool observation.
 History is paged by event ID instead of capped at 80 messages. Retained messages
 are replayed unchanged so ordinary follow-ups keep a stable cacheable prefix.
 Compaction triggers at 96,000 estimated tokens, counting history, instructions
-and tool schemas within the 128,000-token request window. The remaining capacity
-provides room for estimation overhead and completion.
+and tool schemas, to leave room for subsequent model and tool exchanges.
 Near capacity, older history is semantically summarized; recent complete turns
 and their assistant/tool pairs remain exact. The summary and its coverage
 boundary are persisted together, and ordinary turns reuse them unchanged.
@@ -78,7 +80,9 @@ metadata identifies the covered prefix without entering provider requests.
 The in-flight state remains authoritative: compaction preserves system messages
 and all recent messages, including tool results not yet persisted by the event
 consumer. An oversized current turn fails explicitly instead of being dropped.
-Summary calls use the existing provider transport, deadline and usage budget.
+Summary calls use the existing provider transport and usage accounting. Their
+leases are renewed while generation is active; summarization does not consume
+a fixed time allowance that prevents the main conversation from continuing.
 Subscription mutations return facts about their targets and counts rather than
 embedding the user's entire subscription list; that list is queried separately.
 
@@ -200,13 +204,16 @@ sessions clear the resume point. Ordinary failures downloading individual
 images do not discard usable text or other images; the model receives a clear
 notice about missing inputs. Hard input limits and cancellation still stop work.
 
-The model's per-request context window and run-wide token budget are separate.
-One run remains bounded by time, tool calls and physical provider attempts.
+The agent has no application quota on total runtime, cumulative tokens, tool
+calls or model iterations. Usage remains measured and persisted. Caller
+cancellation and shutdown still stop work, and individual failed provider
+requests use bounded network retries. Context compaction handles growing
+history separately from execution lifetime.
 Exhausted model transport retries have a distinct `upstream_transport` failure
 class and a connection-failure reply. They do not imply a domain API failure
 or that earlier business operations were rolled back.
-Identical tool calls are not re-executed; a bounded number of structured repeat
-refusals lets the model change its plan before the run stops.
+Execution identity and dangerous-operation confirmations remain enforced;
+removing runtime quotas does not authorize duplicate side effects.
 
 ## Verification and deployment
 

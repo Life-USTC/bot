@@ -25,6 +25,10 @@ const (
 	conversationRecentTokens       = 32_000
 	conversationSummaryInputTokens = 80_000
 	conversationSummaryMaxTokens   = 4_096
+	// A compaction claim is a liveness lease for the summary operation. It is
+	// independent of the lifetime of any one agent run and is renewed by the
+	// summary middleware while the operation is active.
+	conversationCompactionClaimLease = store.ConversationJobLease
 )
 
 var errConversationCompaction = errors.New("conversation compaction failed")
@@ -72,6 +76,12 @@ func (m *conversationCompactionMiddleware) BeforeModelRewriteState(ctx context.C
 		if err != nil {
 			return ctx, nil, fmt.Errorf("%w: %w", errConversationCompaction, err)
 		}
+		if next == state {
+			// No complete durable prefix can be replaced (for example, a large
+			// in-flight turn). Keep it intact and let the provider report a real
+			// context-capacity error instead of spinning on the trigger.
+			return ctx, state, nil
+		}
 		state = next
 	}
 	return ctx, state, nil
@@ -107,9 +117,6 @@ func compactionPrefix(messages []*schema.Message) (start, end int, expectedID, c
 		}
 		previousID = id
 	}
-	if end == 0 {
-		err = fmt.Errorf("no bounded complete historical prefix: %w", errAgentContextBudget)
-	}
 	return
 }
 
@@ -118,8 +125,14 @@ func (m *conversationCompactionMiddleware) compact(ctx context.Context, state *a
 	if err != nil {
 		return nil, err
 	}
+	// There is no safe persisted prefix to replace. Keep the exact current
+	// state and let the provider enforce its actual context capacity; dropping
+	// an in-flight turn or inventing a local provider limit would lose context.
+	if end == 0 || m.store == nil || m.model == nil {
+		return state, nil
+	}
 	token := rand.Text()
-	claimed, err := m.store.ClaimConversationCompaction(ctx, m.identity, expectedID, token, time.Now().Add(agentRunDeadline))
+	claimed, err := m.store.ClaimConversationCompaction(ctx, m.identity, expectedID, token, time.Now().Add(conversationCompactionClaimLease))
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +148,31 @@ func (m *conversationCompactionMiddleware) compact(ctx context.Context, state *a
 		defer cancel()
 		_ = m.store.ReleaseConversationCompaction(cleanup, m.identity, expectedID, token)
 	}()
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(conversationCompactionClaimLease / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				live, err := m.store.RenewConversationCompactionClaim(ctx, m.identity, expectedID, token, time.Now().Add(conversationCompactionClaimLease))
+				if err != nil {
+					cancel(fmt.Errorf("renew history summary claim: %w", err))
+					return
+				}
+				if !live {
+					cancel(errors.New("history summary claim was lost"))
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(nil); <-heartbeatDone }()
 
 	// Eino owns summary generation and state replacement. Custom input and
 	// finalization supply this application's durable boundary and exact tail.
@@ -172,6 +210,9 @@ func (m *conversationCompactionMiddleware) compact(ctx context.Context, state *a
 		return nil, err
 	}
 	_, next, err := middleware.BeforeModelRewriteState(ctx, state, mc)
+	if err != nil && context.Cause(ctx) != nil {
+		return nil, context.Cause(ctx)
+	}
 	return next, err
 }
 

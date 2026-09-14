@@ -48,6 +48,12 @@ func TestConversationCompactionClaimCommitAndRelease(t *testing.T) {
 	if claimed {
 		t.Fatal("second worker acquired an active compaction claim")
 	}
+	if renewed, err := s.RenewConversationCompactionClaim(ctx, ident, 0, "first-worker", time.Now().Add(time.Hour)); err != nil || !renewed {
+		t.Fatalf("renew summary lease: %v", err)
+	}
+	if renewed, err := s.RenewConversationCompactionClaim(ctx, ident, 0, "second-worker", time.Now().Add(time.Hour)); err != nil || renewed {
+		t.Fatal("different worker renewed summary lease")
+	}
 
 	// A worker whose lease has expired cannot publish its model output.
 	expired := time.Now().UTC().Add(-time.Minute)
@@ -58,6 +64,9 @@ func TestConversationCompactionClaimCommitAndRelease(t *testing.T) {
 	}
 	if err := s.CommitConversationCompaction(ctx, ident, 0, 7, "first-worker", "should not publish"); !errors.Is(err, ErrConversationCompactionClaimMismatch) {
 		t.Fatalf("expired commit err=%v, want claim mismatch", err)
+	}
+	if renewed, err := s.RenewConversationCompactionClaim(ctx, ident, 0, "first-worker", time.Now().Add(time.Hour)); err != nil || renewed {
+		t.Fatal("expired summary lease was revived")
 	}
 
 	claimed, err = s.ClaimConversationCompaction(ctx, ident, 0, "recovered-worker", time.Now().UTC().Add(time.Minute))

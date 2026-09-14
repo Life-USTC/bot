@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -209,7 +208,7 @@ func TestAgentHTTPClientRetriesResponseBodyReadFailures(t *testing.T) {
 					Request:    req,
 				}, nil
 			})
-			client := newAgentHTTPClient(&http.Client{Transport: base}, time.Second, nil)
+			client := newAgentHTTPClient(&http.Client{Transport: base}, nil)
 			retryTransport, ok := client.Transport.(*llmRetryTransport)
 			if !ok {
 				t.Fatalf("client transport = %T, want retry boundary outside usage capture", client.Transport)
@@ -275,35 +274,9 @@ func TestRetryTransportHonorsRetryAfterSecondsAndHTTPDate(t *testing.T) {
 	}
 }
 
-func TestRetryTransportCapsBackoffAndRemainingDeadline(t *testing.T) {
+func TestRetryTransportCapsBackoff(t *testing.T) {
 	if got := retryDelayWithJitter(100, func(time.Duration) time.Duration { return 24 * time.Hour }); got != llmRetryMaxDelay {
 		t.Fatalf("bounded retry delay = %s, want %s", got, llmRetryMaxDelay)
-	}
-
-	metrics := newRunMetrics()
-	budget := newRunBudget(time.Now().Add(-(agentRunDeadline - 25*time.Millisecond)), metrics)
-	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	var attempts atomic.Int32
-	transport := &llmRetryTransport{
-		base: scriptedRoundTripper(func(req *http.Request) (*http.Response, error) {
-			attempts.Add(1)
-			return retryTestResponse(req, http.StatusServiceUnavailable, nil), nil
-		}),
-		jitter: func(time.Duration) time.Duration { return 0 },
-	}
-	started := time.Now()
-	resp, err := transport.RoundTrip(retryTestRequest(ctx))
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
-	if !errors.Is(err, errAgentRunDeadline) {
-		t.Fatalf("RoundTrip error = %v, want run deadline", err)
-	}
-	if got := attempts.Load(); got != 1 {
-		t.Fatalf("attempts = %d, want 1 before deadline", got)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("deadline wait took %s", elapsed)
 	}
 }
 
@@ -328,84 +301,6 @@ func TestRetryTransportStopsBackoffOnCancellation(t *testing.T) {
 	}
 	if got := attempts.Load(); got != 1 {
 		t.Fatalf("attempts = %d, want 1", got)
-	}
-}
-
-func TestRunBudgetLimitsPhysicalAttemptsAcrossRequests(t *testing.T) {
-	metrics := newRunMetrics()
-	budget := newRunBudget(time.Now(), metrics)
-	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	var attempts atomic.Int32
-	transport := &llmRetryTransport{
-		base: scriptedRoundTripper(func(req *http.Request) (*http.Response, error) {
-			attempts.Add(1)
-			return retryTestResponse(req, http.StatusInternalServerError, nil), nil
-		}),
-		jitter: func(time.Duration) time.Duration { return 0 },
-		wait:   func(context.Context, time.Duration) error { return nil },
-	}
-
-	logicalRequests := agentRunMaxModelAttempts / llmHTTPMaxAttempts
-	for request := 0; request < logicalRequests; request++ {
-		resp, err := transport.RoundTrip(retryTestRequest(ctx))
-		if err != nil {
-			t.Fatalf("RoundTrip %d error = %v", request+1, err)
-		}
-		_ = resp.Body.Close()
-	}
-	if _, err := transport.RoundTrip(retryTestRequest(ctx)); !errors.Is(err, errAgentModelAttemptBudget) {
-		t.Fatalf("request beyond aggregate limit error = %v, want attempt budget", err)
-	}
-	if got := attempts.Load(); got != int32(agentRunMaxModelAttempts) {
-		t.Fatalf("physical attempts = %d, want %d", got, agentRunMaxModelAttempts)
-	}
-	if got := metrics.snapshot().modelRequests; got != int64(agentRunMaxModelAttempts) {
-		t.Fatalf("recorded model requests = %d, want %d", got, agentRunMaxModelAttempts)
-	}
-}
-
-func TestRunBudgetAttemptAdmissionRace(t *testing.T) {
-	metrics := newRunMetrics()
-	budget := newRunBudget(time.Now(), metrics)
-	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	const workers = 128
-	var successes atomic.Int32
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := admitModelAttempt(ctx); err == nil {
-				successes.Add(1)
-			} else if !errors.Is(err, errAgentModelAttemptBudget) {
-				t.Errorf("admitModelAttempt error = %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-	if got := successes.Load(); got != int32(agentRunMaxModelAttempts) {
-		t.Fatalf("successful admissions = %d, want %d", got, agentRunMaxModelAttempts)
-	}
-	if got := metrics.snapshot().modelRequests; got != int64(agentRunMaxModelAttempts) {
-		t.Fatalf("recorded model requests = %d, want %d", got, agentRunMaxModelAttempts)
-	}
-}
-
-func TestRunBudgetRetriesDoNotReserveTokensAgain(t *testing.T) {
-	metrics := newRunMetrics()
-	budget := newRunBudget(time.Now(), metrics)
-	ctx := withRunMetrics(withRunBudget(context.Background(), budget), metrics)
-	firstContext := agentRequestTokenLimit - kimiMaxCompletionTokens
-	if err := admitModelRequest(ctx, firstContext); err != nil {
-		t.Fatalf("first model admission error = %v", err)
-	}
-	for attempt := 2; attempt <= agentRunMaxModelAttempts; attempt++ {
-		if err := admitModelAttempt(ctx); err != nil {
-			t.Fatalf("retry admission %d = %v", attempt, err)
-		}
-	}
-	if got := metrics.snapshot().modelRequests; got != int64(agentRunMaxModelAttempts) {
-		t.Fatalf("recorded model requests = %d, want %d", got, agentRunMaxModelAttempts)
 	}
 }
 

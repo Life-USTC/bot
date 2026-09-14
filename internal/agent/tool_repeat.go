@@ -18,13 +18,6 @@ var errRepeatedToolCall = errors.New("agent repeated an identical tool call")
 
 const toolFailureRepeatLimit = 1
 
-// maxRepeatRefusals bounds how often one run may tell the model that its call
-// was refused. A model that adapts needs one or two of these; a model stuck in
-// a loop would otherwise keep paying for full-size requests until the agent
-// framework's own iteration cap, so the run aborts once the refusal budget is
-// spent.
-const maxRepeatRefusals = 3
-
 // toolRepeatGuard stops an agent from executing the same logical call twice in
 // one model turn and stops a failed logical plan from being retried in a later
 // follow-up round. It intentionally does not cache results: some tools mutate
@@ -35,7 +28,6 @@ type toolRepeatGuard struct {
 	mu       sync.Mutex
 	seen     map[string]struct{}
 	failures map[string]int
-	refusals int
 }
 
 func newToolRepeatGuard() *toolRepeatGuard {
@@ -55,12 +47,8 @@ func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		if err := g.admit(input); err != nil {
 			// A rejected repeat is the model's planning problem, not a run
-			// failure. Returning it as a tool error lets the model pick a
-			// different plan; a model that keeps repeating still hits the
-			// refusal budget and ends the run.
-			if !g.admitRefusal() {
-				return nil, err
-			}
+			// failure. Returning a structured tool result lets the model pick
+			// a different plan without imposing an artificial run limit.
 			if input != nil {
 				toolOutcomesFromContext(ctx).markError(input.CallID)
 			}
@@ -75,9 +63,6 @@ func (g *toolRepeatGuard) invokableMiddleware(next compose.InvokableToolEndpoint
 func (g *toolRepeatGuard) streamableMiddleware(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 	return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 		if err := g.admit(input); err != nil {
-			if !g.admitRefusal() {
-				return nil, err
-			}
 			if input != nil {
 				toolOutcomesFromContext(ctx).markError(input.CallID)
 			}
@@ -90,19 +75,6 @@ func (g *toolRepeatGuard) streamableMiddleware(next compose.StreamableToolEndpoi
 		return out, err
 	}
 }
-
-// admitRefusal reports whether this run may still spend a model round trip on
-// telling the model that its call was refused.
-func (g *toolRepeatGuard) admitRefusal() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.refusals >= maxRepeatRefusals {
-		return false
-	}
-	g.refusals++
-	return true
-}
-
 func (g *toolRepeatGuard) admit(input *compose.ToolInput) error {
 	key := toolCallKey(input)
 	g.mu.Lock()
@@ -204,11 +176,7 @@ func nonProgressingToolPlanError(input *compose.ToolInput) error {
 
 func toolResultFailed(ctx context.Context, input *compose.ToolInput, err error) bool {
 	if err != nil {
-		return !errors.Is(err, errAgentToolCallBudget) &&
-			!errors.Is(err, errAgentRunDeadline) &&
-			!errors.Is(err, errAgentContextBudget) &&
-			!errors.Is(err, errAgentRunTokenBudget) &&
-			!errors.Is(err, context.Canceled)
+		return !errors.Is(err, context.Canceled)
 	}
 	if input == nil {
 		return false

@@ -155,8 +155,8 @@ const (
 	// an external system. Callers can provide a shorter or longer expiry per
 	// enqueue request.
 	ConversationJobTTL = 15 * time.Minute
-	// ConversationJobLease is the maximum time a worker may hold a running
-	// claim before a recovery pass makes it retryable.
+	// ConversationJobLease bounds silence between worker heartbeats, not the
+	// duration of a healthy running task.
 	ConversationJobLease = 3 * time.Minute
 )
 
@@ -857,6 +857,19 @@ func (s *Store) UnblockConversationJobsAfterAuth(ctx context.Context, ident Iden
 		}).Error
 }
 
+// RenewConversationJobLease keeps a live worker's claim and task expiry fresh.
+// A different or terminalized claim cannot be revived by an old worker.
+func (s *Store) RenewConversationJobLease(ctx context.Context, id int64, token string, now time.Time) (bool, error) {
+	now = normalizeStoreTime(now)
+	if id <= 0 || strings.TrimSpace(token) == "" {
+		return false, errors.New("conversation job claim is incomplete")
+	}
+	result := s.db.WithContext(ctx).Model(&conversationJobRow{}).
+		Where("id = ? AND state = ? AND lease_token = ? AND expires_at > ?", id, string(ConversationJobStateRunning), token, now).
+		Updates(map[string]any{"updated_at": now, "expires_at": gorm.Expr("CASE WHEN expires_at > ? THEN expires_at ELSE ? END", now.Add(ConversationJobTTL), now.Add(ConversationJobTTL))})
+	return result.RowsAffected == 1, result.Error
+}
+
 // RecoverConversationJobLeases moves stale running jobs into retry_wait. The
 // optional lease duration is useful when a deployment has a different worker
 // heartbeat; omitted calls use ConversationJobLease.
@@ -871,7 +884,7 @@ func (s *Store) RecoverConversationJobLeases(ctx context.Context, now time.Time,
 	defer s.conversationJobMu.Unlock()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var stale []conversationJobRow
-		if err := tx.Where("state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?",
+		if err := tx.Where("state = ? AND claimed_at IS NOT NULL AND updated_at <= ? AND expires_at > ?",
 			string(ConversationJobStateRunning), cutoff, now).Find(&stale).Error; err != nil {
 			return err
 		}
@@ -881,7 +894,7 @@ func (s *Store) RecoverConversationJobLeases(ctx context.Context, now time.Time,
 		ids := make([]int64, 0, len(stale))
 		for _, row := range stale {
 			result := tx.Model(&conversationJobRow{}).
-				Where("id = ? AND state = ? AND claimed_at IS NOT NULL AND claimed_at <= ? AND expires_at > ?", row.ID,
+				Where("id = ? AND state = ? AND claimed_at IS NOT NULL AND updated_at <= ? AND expires_at > ?", row.ID,
 					string(ConversationJobStateRunning), cutoff, now).
 				Updates(map[string]any{
 					"state":       string(ConversationJobStateRetryWait),
