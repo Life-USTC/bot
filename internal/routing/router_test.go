@@ -89,7 +89,7 @@ func TestSharedBareHelpAndUnknownSlashAreIgnoredUnlessAddressed(t *testing.T) {
 				t.Fatalf("unaddressed %q = %#v", text, decision)
 			}
 			inbound.BotMentioned = true
-			if decision := Decide(inbound, nil); decision.Action != ActionCommand {
+			if decision := Decide(inbound, nil); decision.Action != ActionAgent {
 				t.Fatalf("addressed %q = %#v", text, decision)
 			}
 		})

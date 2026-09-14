@@ -244,28 +244,14 @@ func (s *Service) executeUnconfirmedHostCapability(
 		}
 		return "", executionID, true, nil
 	}
-	_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
 	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
-	if deliveryErr != nil {
-		if tracked {
-			if capabilityOutcomeIsUnknown(outcome) {
-				if _, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome"); finishErr != nil {
-					return "", executionID, false, markDurableAgentStateError("record unknown capability outcome", finishErr)
-				}
-			} else {
-				if _, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", deliveryErr); finishErr != nil {
-					return "", executionID, false, markDurableAgentStateError("record capability delivery failure", finishErr)
-				}
-			}
-		}
-		return "", executionID, false, deliveryErr
-	}
 	if tracked {
 		if capabilityOutcomeIsUnknown(outcome) {
 			if _, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome"); err != nil {
 				return "", executionID, false, markDurableAgentStateError("record unknown capability outcome", err)
 			}
-			return text, executionID, false, nil
+			_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+			return text, executionID, false, deliveryErr
 		}
 		var outcomeErr error
 		if outcome.Status != commands.CapabilityOutcomeSuccess {
@@ -275,7 +261,8 @@ func (s *Service) executeUnconfirmedHostCapability(
 			return "", executionID, false, markDurableAgentStateError("finish capability execution", err)
 		}
 	}
-	return text, executionID, false, nil
+	_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+	return text, executionID, false, deliveryErr
 }
 
 func (s *Service) resolveHostCapability(
@@ -593,31 +580,24 @@ func (s *Service) executeApprovedCapability(
 		}
 		return deferred, true, nil
 	}
-	if presentation.DeliveredByHost {
-		if sendResponse == nil {
-			runErr := errors.New("host response sender is unavailable")
-			finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", runErr)
-			return finished, false, markDurableAgentStateError("record missing host response sender", err)
-		}
-		if err := sendResponse(ctx, ident, presentation.Response); err != nil {
-			if capabilityOutcomeIsUnknown(outcome) {
-				finished, finishErr := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
-				return finished, false, markDurableAgentStateError("record unknown approved capability outcome", finishErr)
-			}
-			finished, finishErr := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, "", err)
-			return finished, false, markDurableAgentStateError("record approved capability delivery failure", finishErr)
-		}
-	}
 	if capabilityOutcomeIsUnknown(outcome) {
 		finished, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
-		return finished, false, markDurableAgentStateError("record unknown approved capability outcome", err)
+		if err != nil {
+			return finished, false, markDurableAgentStateError("record unknown approved capability outcome", err)
+		}
+		_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+		return finished, false, deliveryErr
 	}
 	var outcomeErr error
 	if outcome.Status != commands.CapabilityOutcomeSuccess {
 		outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 	}
 	finished, err := s.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, text, outcomeErr)
-	return finished, false, markDurableAgentStateError("finish approved capability execution", err)
+	if err != nil {
+		return finished, false, markDurableAgentStateError("finish approved capability execution", err)
+	}
+	_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+	return finished, false, deliveryErr
 }
 
 func deliverCapabilityPresentation(

@@ -214,14 +214,14 @@ func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: db,
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{Text: "pong", Kind: "ping"}, true
+			return commands.Response{Text: "帮助结果", Kind: "help"}, true
 		}),
 		Outputs: db,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inbound := jobInbound("event-1", "ping")
+	inbound := jobInbound("event-1", "help")
 	if err := coordinator.Enqueue(context.Background(), inbound); err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := claimOnlyConversationJob(t, db)
-	if job.Invocation.Name != "ping" || job.Invocation.Command != "ping" {
+	if job.Invocation.Name != "help" || job.Invocation.Command != "help" {
 		t.Fatalf("invocation = %#v", job.Invocation)
 	}
 	coordinator.execute(context.Background(), job)
@@ -249,7 +249,7 @@ func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 		t.Fatalf("outbox records = %#v", records)
 	}
 	got := records[0].Message
-	if got.Content.Text != "pong" || got.DedupeKey != "conversation-job:1:revision:1:part:0" || got.ReplyTo == nil || got.ReplyTo.EventID != "event-1" {
+	if got.Content.Text != "帮助结果" || got.DedupeKey != "conversation-job:1:revision:1:part:0" || got.ReplyTo == nil || got.ReplyTo.EventID != "event-1" {
 		t.Fatalf("outbound = %#v", got)
 	}
 }
@@ -736,7 +736,7 @@ func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: jobs,
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{Text: "pong", Kind: "ping"}, true
+			return commands.Response{Text: "帮助结果", Kind: "help"}, true
 		}),
 		Outputs: db,
 	})
@@ -744,7 +744,7 @@ func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := coordinator.Enqueue(ctx, jobInbound("output-commit-retry", "ping")); err != nil {
+	if err := coordinator.Enqueue(ctx, jobInbound("output-commit-retry", "help")); err != nil {
 		t.Fatal(err)
 	}
 	job := claimOnlyConversationJob(t, db)
@@ -773,7 +773,7 @@ func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing
 		t.Fatalf("retried job = %#v", saved)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "pong" {
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "帮助结果" {
 		t.Fatalf("retried output records=%#v err=%v", records, err)
 	}
 }
@@ -843,7 +843,7 @@ func TestCoordinatorCapabilityLoadingFailureRetriesWithoutLosingOperationState(t
 			coordinator, err := NewCoordinator(CoordinatorConfig{
 				Jobs: jobs,
 				Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-					return commands.Response{Text: "pong", Kind: "ping"}, true
+					return commands.Response{Text: "帮助结果", Kind: "help"}, true
 				}),
 				Outputs: db,
 			})
@@ -851,7 +851,7 @@ func TestCoordinatorCapabilityLoadingFailureRetriesWithoutLosingOperationState(t
 				t.Fatal(err)
 			}
 			ctx := t.Context()
-			if err := coordinator.Enqueue(ctx, jobInbound("capability-read-"+test.name, "ping")); err != nil {
+			if err := coordinator.Enqueue(ctx, jobInbound("capability-read-"+test.name, "help")); err != nil {
 				t.Fatal(err)
 			}
 			job := claimOnlyConversationJob(t, db)
@@ -901,7 +901,7 @@ func TestCoordinatorRetriesCapabilityPersistenceBoundaries(t *testing.T) {
 			name: "execution finalization", operation: "finish",
 			outcome: commands.CapabilityOutcome{
 				Status:   commands.CapabilityOutcomeSuccess,
-				Response: commands.Response{Text: "pong", Kind: "ping"},
+				Response: commands.Response{Text: "帮助结果", Kind: "help"},
 			},
 			wantState: store.ConversationJobStateCompleted, wantOp: store.CapabilityExecutionSucceeded,
 		},
@@ -915,7 +915,7 @@ func TestCoordinatorRetriesCapabilityPersistenceBoundaries(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx := t.Context()
-			if err := coordinator.Enqueue(ctx, jobInbound("capability-write-"+test.operation, "ping")); err != nil {
+			if err := coordinator.Enqueue(ctx, jobInbound("capability-write-"+test.operation, "help")); err != nil {
 				t.Fatal(err)
 			}
 			job := claimOnlyConversationJob(t, db)
@@ -980,7 +980,7 @@ func TestCoordinatorRecoversRunningLeaseDuringLiveRun(t *testing.T) {
 	coordinator, err := NewCoordinator(CoordinatorConfig{
 		Jobs: jobs,
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{Text: "recovered", Kind: "ping"}, true
+			return commands.Response{Text: "recovered", Kind: "help"}, true
 		}),
 		Outputs: db, PollInterval: 5 * time.Millisecond,
 	})
@@ -989,7 +989,7 @@ func TestCoordinatorRecoversRunningLeaseDuringLiveRun(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := coordinator.Enqueue(ctx, jobInbound("periodic-recovery", "ping")); err != nil {
+	if err := coordinator.Enqueue(ctx, jobInbound("periodic-recovery", "help")); err != nil {
 		t.Fatal(err)
 	}
 	job := claimOnlyConversationJob(t, db)
