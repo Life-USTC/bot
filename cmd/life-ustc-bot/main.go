@@ -251,10 +251,10 @@ func main() {
 }
 
 func migrateDatabase(path string) error {
-	stateStore, err := store.Open(path)
+	stateStore, err := store.OpenForSchemaMaintenance(path)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stateStore.Close() }()
-	return stateStore.VerifySchema()
+	return stateStore.PrepareSchemaForMaintenance(context.Background())
 }
