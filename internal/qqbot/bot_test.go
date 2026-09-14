@@ -590,6 +590,38 @@ func TestMessageFromPayloadNormalizesGroupIdentityAndMention(t *testing.T) {
 	}
 }
 
+func TestMessageFromPayloadPreservesPlatformAndReceiveTimes(t *testing.T) {
+	receivedAt := time.Date(2026, 9, 14, 16, 45, 0, 123000000, time.FixedZone("CST", 8*60*60))
+	bot := &Bot{now: func() time.Time { return receivedAt }}
+	message, err := bot.messageFromPayload(gatewayPayload{
+		ID: "event-id",
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"timestamp":"2026-09-14T12:34:56.789+08:00",
+			"author":{"user_openid":"user-openid"},
+			"content":"hello"
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSentAt, err := time.Parse(time.RFC3339Nano, "2026-09-14T12:34:56.789+08:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !message.SentAt.Equal(wantSentAt.UTC()) {
+		t.Fatalf("platform sent time = %s, want %s", message.SentAt, wantSentAt.UTC())
+	}
+	if !message.ReceivedAt.Equal(receivedAt.UTC()) {
+		t.Fatalf("receive time = %s, want %s", message.ReceivedAt, receivedAt.UTC())
+	}
+	inbound := message.inbound()
+	if !inbound.SentAt.Equal(wantSentAt.UTC()) || !inbound.ReceivedAt.Equal(receivedAt.UTC()) {
+		t.Fatalf("inbound times = sent %s received %s", inbound.SentAt, inbound.ReceivedAt)
+	}
+}
+
 func TestMessageFromPayloadExtractsImageAttachments(t *testing.T) {
 	bot := &Bot{}
 	message, err := bot.messageFromPayload(gatewayPayload{

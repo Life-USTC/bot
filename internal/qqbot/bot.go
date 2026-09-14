@@ -214,13 +214,15 @@ type messageAuthor struct {
 }
 
 type incomingMessage struct {
-	ID        string
-	EventID   string
-	ReplyToID string
-	Type      string
-	Text      string
-	ImageURLs []string
-	Identity  store.Identity
+	ID         string
+	EventID    string
+	ReplyToID  string
+	Type       string
+	Text       string
+	ImageURLs  []string
+	Identity   store.Identity
+	SentAt     time.Time
+	ReceivedAt time.Time
 }
 
 func (m *incomingMessage) inbound() message.Inbound {
@@ -238,7 +240,8 @@ func (m *incomingMessage) inbound() message.Inbound {
 		},
 		Source:  message.ReplyRef{MessageID: m.ID, EventID: m.EventID},
 		ReplyTo: replyTo,
-		Text:    m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		SentAt:  m.SentAt, ReceivedAt: m.ReceivedAt,
+		Text: m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
 		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
 	}
 }
@@ -687,12 +690,15 @@ func (b *Bot) interactionFromPayload(payload gatewayPayload) (*incomingMessage, 
 	if err != nil {
 		return nil, err
 	}
+	sentAt := parseQQMessageTime(data.Timestamp)
 	return &incomingMessage{
-		EventID:   eventID,
-		ReplyToID: strings.TrimSpace(data.Data.Resolved.MessageID),
-		Type:      fmt.Sprintf("interaction:%d", data.Type),
-		Text:      b.cleanContent(text),
-		Identity:  ident,
+		EventID:    eventID,
+		ReplyToID:  strings.TrimSpace(data.Data.Resolved.MessageID),
+		Type:       fmt.Sprintf("interaction:%d", data.Type),
+		Text:       b.cleanContent(text),
+		Identity:   ident,
+		SentAt:     sentAt,
+		ReceivedAt: b.receivedAt(),
 	}, nil
 }
 
@@ -788,6 +794,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 	replyToID := strings.TrimSpace(data.MessageReference.MessageID)
 	text := b.cleanContent(data.Content)
 	imageURLs := attachmentImageURLs(data.Attachments)
+	sentAt := parseQQMessageTime(data.Timestamp)
+	receivedAt := b.receivedAt()
 	switch payload.T {
 	case "C2C_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.UserOpenID, data.Author.ID)
@@ -806,6 +814,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "private",
 				ConversationID:   userID,
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "GROUP_AT_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.MemberOpenID, data.Author.ID)
@@ -828,6 +838,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "group",
 				ConversationID:   strings.TrimSpace(groupID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "AT_MESSAGE_CREATE":
 		userID := strings.TrimSpace(data.Author.ID)
@@ -849,6 +861,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "channel",
 				ConversationID:   strings.TrimSpace(data.ChannelID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	case "DIRECT_MESSAGE_CREATE":
 		userID := strings.TrimSpace(data.Author.ID)
@@ -870,10 +884,33 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 				ConversationType: "guild_private",
 				ConversationID:   strings.TrimSpace(data.GuildID),
 			},
+			SentAt:     sentAt,
+			ReceivedAt: receivedAt,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported QQ bot event %q", payload.T)
 	}
+}
+
+func parseQQMessageTime(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
+}
+
+func (b *Bot) receivedAt() time.Time {
+	if b != nil && b.now != nil {
+		if current := b.now(); !current.IsZero() {
+			return current.UTC()
+		}
+	}
+	return time.Now().UTC()
 }
 
 func (b *Bot) cleanContent(content string) string {
