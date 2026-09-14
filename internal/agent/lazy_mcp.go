@@ -8,13 +8,16 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/life"
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
+	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -58,7 +61,7 @@ type campusToolDocumentation struct {
 }
 
 // lazyMCPSession owns one authenticated MCP session for a private agent run.
-// The remote tools are registered with their exact server schemas while the
+// Discovery exposes exact server schemas while the
 // stable meta-tools remain available for discovery and GraphQL context.
 type lazyMCPSession struct {
 	service      *Service
@@ -78,11 +81,11 @@ func newLazyMCPSession(service *Service, identity store.Identity, jobID int64) *
 
 func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, error) {
 	var err error
-	tools, err = appendInferredTool(tools, campusSearchToolName, "Search the complete private MCP tools/list catalog by campus domain or intent. The result contains the server's exact schema, annotations, and effect. Search Bot commands first when both layers cover the request; use query * only for the complete MCP tool inventory.", s.search)
+	tools, err = appendInferredTool(tools, campusSearchToolName, "Search all MCP tools by names, descriptions, aliases, parameter fields and examples. Returns multiple candidates with the complete original schema and effect. Public tools can be discovered without login. Use query * for the full catalog.", s.search)
 	if err != nil {
 		return nil, err
 	}
-	tools, err = appendInferredTool(tools, campusCallToolName, "Call one MCP tool by the exact name returned by search_campus_tools. The result is the tool's literal domain result without a status wrapper. Write and destructive tools are persisted and require user confirmation before the remote call.", s.call)
+	tools, err = appendInferredTool(tools, campusCallToolName, "Call one MCP tool by the exact name returned by search_campus_tools. Returns the shared JSON result envelope with original domain data. Ordinary writes execute directly; dangerous and unknown-risk operations require user confirmation. All writes are durable and never replayed after an unknown outcome.", s.call)
 	if err != nil {
 		return nil, err
 	}
@@ -131,51 +134,61 @@ func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, er
 
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
 	s.once.Do(func() {
-		if s.service == nil || s.service.mcpClient == nil || s.service.auth == nil {
-			s.err = errors.New("campus tool service is unavailable")
-			return
-		}
-		token, err := s.service.auth.MCPAccessToken(ctx, s.identity)
-		if err != nil {
-			s.err = fmt.Errorf("get MCP access token: %w", err)
-			return
-		}
-		session, err := s.service.mcpClient.OpenSession(ctx, token)
-		if err != nil {
-			s.err = err
-			return
-		}
-		listed, err := session.Tools(ctx)
-		if err != nil {
-			_ = session.Close()
-			s.err = err
-			return
-		}
-		if len(listed) == 0 {
-			_ = session.Close()
-			s.err = errors.New("MCP tools/list returned no tools")
-			return
-		}
-		available := make(map[string]mcpgo.Tool, len(listed))
-		for _, candidate := range listed {
-			name := strings.TrimSpace(candidate.Name)
-			if name == "" {
-				_ = session.Close()
-				s.err = errors.New("MCP tools/list returned a tool with an empty name")
+		for attempt := 0; attempt < 3; attempt++ {
+			s.err = s.initialize(ctx)
+			if s.err == nil || ctx.Err() != nil || isMCPAuthorizationError(s.err) {
 				return
 			}
-			candidate.Name = name
-			if _, duplicate := available[name]; duplicate {
-				_ = session.Close()
-				s.err = fmt.Errorf("MCP tools/list returned duplicate tool name %q", name)
+			if attempt < 2 && !retry.Wait(ctx, time.Duration(attempt+1)*200*time.Millisecond) {
+				s.err = ctx.Err()
 				return
 			}
-			available[name] = candidate
 		}
-		s.session = session
-		s.tools = available
 	})
 	return s.err
+}
+
+func (s *lazyMCPSession) initialize(ctx context.Context) error {
+	if s.service == nil || s.service.mcpClient == nil || s.service.auth == nil {
+		return errors.New("campus tool service is unavailable")
+	}
+	token, err := s.service.auth.MCPAccessToken(ctx, s.identity)
+	if errors.Is(err, auth.ErrNotLoggedIn) {
+		token, err = "", nil
+	}
+	if err != nil {
+		return fmt.Errorf("get MCP access token: %w", err)
+	}
+	session, err := s.service.mcpClient.OpenSession(ctx, token)
+	if err != nil {
+		return err
+	}
+	listed, err := session.Tools(ctx)
+	if err != nil {
+		_ = session.Close()
+		return err
+	}
+	if len(listed) == 0 {
+		_ = session.Close()
+		return errors.New("MCP tools/list returned no tools")
+	}
+	available := make(map[string]mcpgo.Tool, len(listed))
+	for _, candidate := range listed {
+		name := strings.TrimSpace(candidate.Name)
+		if name == "" {
+			_ = session.Close()
+			return errors.New("MCP tools/list returned a tool with an empty name")
+		}
+		candidate.Name = name
+		if _, duplicate := available[name]; duplicate {
+			_ = session.Close()
+			return fmt.Errorf("MCP tools/list returned duplicate tool name %q", name)
+		}
+		available[name] = candidate
+	}
+	s.session = session
+	s.tools = available
+	return nil
 }
 
 func (s *lazyMCPSession) Close() error {
@@ -246,7 +259,8 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 	}
 	matches := make([]match, 0, len(s.tools))
 	for name, candidate := range s.tools {
-		haystack := strings.ToLower(name + " " + candidate.Title + " " + candidate.Description + " " + campusToolSearchAliases(name))
+		schemaData, _ := json.Marshal(candidate)
+		haystack := strings.ToLower(name + " " + candidate.Title + " " + candidate.Description + " " + string(schemaData) + " " + campusToolSearchAliases(name))
 		score := 0
 		if listAll {
 			score = 1
@@ -306,7 +320,7 @@ func campusToolSearchAliases(name string) string {
 		add("地点", "位置", "在哪里", "校区")
 	}
 	if strings.Contains(lower, "weather") || strings.Contains(lower, "forecast") {
-		add("天气", "气温", "温度", "降雨", "预报", "下雨")
+		add("天气", "气温", "温度", "降雨", "预报", "下雨", "本部", "主校区", "高新", "高新区", "高新校区")
 	}
 	if strings.Contains(lower, "semester") || strings.Contains(lower, "term") {
 		add("学期", "当前学期", "学年")

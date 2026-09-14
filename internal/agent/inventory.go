@@ -61,14 +61,14 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 		"",
 		"一、LLM 直接看到的主机元工具",
 		"search_bot_commands：检索 Bot 能力文档",
-		"invoke_bot_capability：执行已检索的 Bot 能力",
+		"run_bot_command：按完整命令手册执行用户命令",
 		"get_current_time：查询 Asia/Shanghai 当前时间",
 	}
 	privateMCP := !store.IsSharedConversation(ident) && s != nil && s.mcpClient != nil && s.auth != nil
 	if privateMCP {
 		lines = append(lines,
 			"search_campus_tools：检索当前 MCP tools/list（含读、写和破坏性工具）",
-			"call_campus_tool：按检索到的精确名称调用 MCP 工具（写操作会请求确认）",
+			"call_campus_tool：按检索到的精确名称调用 MCP 工具（危险操作会请求确认）",
 			"list_campus_resources/read_campus_resource：读取 MCP 资源和 URI 模板",
 			"list_campus_prompts/get_campus_prompt：读取 MCP 提示词及参数化上下文",
 		)
@@ -120,7 +120,7 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 
 	lines = append(lines,
 		"",
-		"结构说明：Bot 能力由主机负责参数校验、确认、持久化和回执；MCP tools/list 是私聊中的实时工具目录，读操作直接执行，写和破坏性操作由主机持久化并在确认后执行。当前时间是主机元工具；同一校园数据可能同时有 Bot 和 MCP 入口。",
+		"结构说明：Bot 能力由主机负责参数校验、确认、持久化和回执；MCP tools/list 是私聊中的实时工具目录，读操作和普通写操作直接执行，危险操作在确认后执行；写操作均有持久化执行记录。当前时间是主机元工具；同一校园数据可能同时有 Bot 和 MCP 入口。",
 	)
 	return strings.Join(lines, "\n"), nil
 }

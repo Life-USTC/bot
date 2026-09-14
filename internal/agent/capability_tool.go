@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 type capabilityInterruptState struct {
@@ -61,11 +63,13 @@ func (s *Service) invokeHostCapability(
 		if capabilityOutcomeIsToolError(outcome.Status) {
 			toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 		}
-		presentation := s.handler.PresentCapabilityOutcome(commands.Invocation{Name: string(id), Args: append([]string(nil), input.Arguments...)}, outcome)
-		return strings.TrimSpace(presentation.Text), nil
+		return encodeCapabilityOutcome(string(id), outcome), nil
 	}
 	policy := invocation.Policy()
-	if policy.Effect == commands.EffectRead {
+	if policy.Effect != commands.EffectRead && (jobID <= 0 || s.handler.Store == nil) {
+		return "", errors.New("mutations require a persisted conversation job")
+	}
+	if policy.Effect != commands.EffectDestructive {
 		callID := capabilityToolCallID(ctx, jobID)
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, callID, sendResponse)
 		if err != nil || !authWait {
@@ -240,7 +244,8 @@ func (s *Service) executeUnconfirmedHostCapability(
 		}
 		return "", executionID, true, nil
 	}
-	text, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+	_, deliveryErr := deliverCapabilityPresentation(ctx, ident, presentation, sendResponse)
+	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
 	if deliveryErr != nil {
 		if tracked {
 			if capabilityOutcomeIsUnknown(outcome) {
@@ -394,7 +399,7 @@ func (s *Service) resolveHostCapability(
 			Kind: capabilityInterruptConfirmation, ExecutionIDs: append([]string(nil), state.ExecutionIDs...),
 		}, state)
 	}
-	result := strings.TrimSpace(strings.Join(results, "\n\n"))
+	result := joinCapabilityResults(results)
 	if persistResult {
 		if err := s.persistResumedCapabilityResult(ctx, ident, jobID, toolCallID, result); err != nil {
 			return "", err
@@ -572,7 +577,7 @@ func (s *Service) executeApprovedCapability(
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 	}
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
-	text := strings.TrimSpace(presentation.Text)
+	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
 	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
 		deferred, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken)
 		if err != nil {
@@ -634,38 +639,49 @@ func deliverCapabilityPresentation(
 	return text, nil
 }
 
-func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "操作结果未知，系统没有自动重试。"
-	case store.CapabilityExecutionDenied:
-		reason := strings.TrimSpace(execution.Error)
-		if reason == "" {
-			reason = "用户拒绝执行"
-		}
-		return reason
-	case store.CapabilityExecutionCancelled:
-		return "操作已取消"
-	case store.CapabilityExecutionExpired:
-		return "操作已过期"
-	case store.CapabilityExecutionRunning:
-		return ""
-	default:
-		return "操作尚未执行"
+func encodeCapabilityOutcome(operation string, outcome commands.CapabilityOutcome) string {
+	var err error
+	if outcome.Status != commands.CapabilityOutcomeSuccess {
+		err = errors.New(outcome.Response.Text)
 	}
+	return toolresult.Encode("bot", operation, string(outcome.Status), time.Now(), outcome.Response.Data, err)
+}
+
+func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
+	if strings.TrimSpace(execution.Result) != "" {
+		return execution.Result
+	}
+	var err error
+	if execution.State != store.CapabilityExecutionSucceeded {
+		message := execution.Error
+		switch execution.State {
+		case store.CapabilityExecutionDenied:
+			message = "用户拒绝了该操作，未执行任何变更。"
+		case store.CapabilityExecutionUnknown:
+			message = "操作结果未知，可能已经执行；不得自动重试。"
+		case store.CapabilityExecutionCancelled:
+			message = "操作已取消，未执行任何变更。"
+		case store.CapabilityExecutionExpired:
+			message = "操作已过期，未执行任何变更。"
+		}
+		if message == "" {
+			message = "操作未成功完成。"
+		}
+		err = errors.New(message)
+	}
+	return toolresult.Encode("bot", execution.Capability, string(execution.State), execution.UpdatedAt, nil, err)
+}
+
+func joinCapabilityResults(results []string) string {
+	if len(results) == 1 {
+		return results[0]
+	}
+	values := make([]any, 0, len(results))
+	for _, result := range results {
+		values = append(values, toolresult.Data(result))
+	}
+	encoded, _ := json.Marshal(values)
+	return string(encoded)
 }
 
 func capabilityExecutionDedupeKey(jobID int64, toolCallID string, invocation commands.Invocation) string {

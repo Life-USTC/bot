@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (string, error) {
@@ -135,8 +138,14 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 	if execution.State != store.CapabilityExecutionRunning || !execute {
 		return campusExecutionModelResult(execution), nil
 	}
-	result, _, callErr := s.executeApprovedCampusCall(ctx, execution)
-	return result, callErr
+	_, finished, callErr := s.executeApprovedCampusCall(ctx, execution)
+	if isDurableAgentStateError(callErr) {
+		return "", callErr
+	}
+	if callErr != nil {
+		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+	}
+	return campusExecutionModelResult(finished), nil
 }
 
 func (s *lazyMCPSession) invokeCampusRead(ctx context.Context, name string, arguments map[string]any) (string, error) {
@@ -146,7 +155,10 @@ func (s *lazyMCPSession) invokeCampusRead(ctx context.Context, name string, argu
 			callErr = err
 		}
 	}
-	return result, callErr
+	if callErr != nil {
+		return "", callErr
+	}
+	return toolresult.Encode("mcp", name, "succeeded", time.Now(), toolresult.Data(result), nil), nil
 }
 
 func campusArgumentsForRemote(name string, arguments map[string]any, approved bool) map[string]any {
@@ -308,37 +320,31 @@ func (s *lazyMCPSession) existingCampusExecution(ctx context.Context, name strin
 }
 
 func campusExecutionModelResult(execution store.CapabilityExecution) string {
-	if capabilityExecutionIsRead(execution) {
-		return existingCampusToolResult(execution)
+	name := strings.TrimPrefix(execution.Capability, "mcp:")
+	var err error
+	var data any
+	if execution.State == store.CapabilityExecutionSucceeded {
+		if execution.Result != "" {
+			data = toolresult.Data(execution.Result)
+		}
+	} else {
+		detail := execution.Error
+		switch execution.State {
+		case store.CapabilityExecutionDenied:
+			detail = "用户拒绝了该操作，未执行任何变更。"
+		case store.CapabilityExecutionUnknown:
+			detail = "操作结果未知，可能已经执行；不得自动重试。"
+		case store.CapabilityExecutionCancelled:
+			detail = "操作已取消，未执行任何变更。"
+		case store.CapabilityExecutionExpired:
+			detail = "操作已过期，未执行任何变更。"
+		}
+		if detail == "" {
+			detail = "校园操作未成功完成。"
+		}
+		err = errors.New(textutil.SafeLogText(detail))
 	}
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园操作已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园操作失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园操作结果未知，系统没有自动重试。"
-	case store.CapabilityExecutionDenied:
-		if reason := strings.TrimSpace(execution.Error); reason != "" {
-			return reason
-		}
-		return "用户拒绝执行"
-	case store.CapabilityExecutionCancelled:
-		return "校园操作已取消"
-	case store.CapabilityExecutionExpired:
-		return "校园操作已过期"
-	default:
-		return "校园操作尚未执行"
-	}
+	return toolresult.Encode("mcp", name, string(execution.State), execution.UpdatedAt, data, err)
 }
 
 func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, execution store.CapabilityExecution) (string, store.CapabilityExecution, error) {
@@ -439,28 +445,6 @@ func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, executio
 	return result, finished, nil
 }
 
-func existingCampusToolResult(execution store.CapabilityExecution) string {
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询结果未知，系统没有自动重试。"
-	default:
-		return "the campus query has not completed"
-	}
-}
-
 func campusReceiptResource(name string) string {
 	lower := strings.ToLower(name)
 	switch {
@@ -549,7 +533,7 @@ func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, argu
 		Identity: s.identity, JobID: s.jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, s.jobID),
 		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + callID,
 		ToolCallID: callID, Capability: "mcp:" + name, Arguments: []string{string(encoded)}, Effect: string(effect),
-		Receipt: receipt, RequiresConfirmation: effect != campusEffectRead,
+		Receipt: receipt, RequiresConfirmation: effect == campusEffectDestructive,
 	})
 	return execution, true, created && execution.State == store.CapabilityExecutionRunning, markDurableAgentStateError("prepare campus tool execution", err)
 }

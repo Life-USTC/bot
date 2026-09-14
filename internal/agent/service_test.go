@@ -46,20 +46,23 @@ func TestDisabledAgentDoesNotHandle(t *testing.T) {
 }
 
 func TestEmptyTerminalCapabilityResultsRemainExplicitEvidence(t *testing.T) {
-	for _, test := range []struct {
-		state store.CapabilityExecutionState
-		want  string
-	}{
-		{state: store.CapabilityExecutionSucceeded, want: "操作已完成，但没有返回内容。"},
-		{state: store.CapabilityExecutionFailed, want: "操作失败，未返回可用结果。"},
-		{state: store.CapabilityExecutionUnknown, want: "操作结果未知，系统没有自动重试。"},
-	} {
-		if got := capabilityExecutionModelResult(store.CapabilityExecution{State: test.state}); got != test.want {
-			t.Fatalf("state %s evidence=%q want=%q", test.state, got, test.want)
+	for _, state := range []store.CapabilityExecutionState{store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown, store.CapabilityExecutionDenied} {
+		for _, got := range []string{
+			capabilityExecutionModelResult(store.CapabilityExecution{Capability: "todo", State: state}),
+			campusExecutionModelResult(store.CapabilityExecution{Capability: "mcp:future_tool", State: state}),
+		} {
+			var result struct {
+				Status string
+				Result any
+				Error  any
+			}
+			if err := json.Unmarshal([]byte(got), &result); err != nil || result.Status != string(state) || result.Result != nil {
+				t.Fatalf("state=%s result=%s err=%v", state, got, err)
+			}
+			if state != store.CapabilityExecutionSucceeded && result.Error == nil {
+				t.Fatalf("missing explicit error: %s", got)
+			}
 		}
-	}
-	if got := existingCampusToolResult(store.CapabilityExecution{State: store.CapabilityExecutionUnknown}); got != "校园查询结果未知，系统没有自动重试。" {
-		t.Fatalf("empty campus unknown evidence=%q", got)
 	}
 }
 
@@ -136,7 +139,7 @@ func TestAgentCapabilityPersistenceFailureMarksRunRetryable(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-persistence","object":"chat.completion","created":0,"model":"test-model",
 			"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-				"id":"call-persistence","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"ping\",\"arguments\":[]}"
+				"id":"call-persistence","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"ping\"}"
 			}}]},"finish_reason":"tool_calls"}],
 			"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 		}`))
@@ -258,7 +261,7 @@ func TestEmptyFinalAnswerDoesNotSubstituteToolResult(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-invoke","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"仍然未经核实","tool_calls":[{
-					"id":"invoke-help","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"help\",\"arguments\":[]}"}
+					"id":"invoke-help","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"help\"}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`))
 		case 3:
@@ -305,7 +308,7 @@ func TestToolFailureDoesNotReplaceModelAnswer(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-invalid-schedule","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"invoke-schedule","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"schedule\",\"arguments\":[\"someday\"]}"}
+					"id":"invoke-schedule","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"schedule someday\"}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`))
 		case 3:
@@ -381,7 +384,7 @@ func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-subscribe-missing","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"invoke-subscription","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"import\",\"MISSING.01\"]}"}
+					"id":"invoke-subscription","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"subscription import MISSING.01\"}"}
 				}]} ,"finish_reason":"tool_calls"}]
 			}`))
 		case 3:
@@ -629,7 +632,7 @@ func TestAgentToolConstruction(t *testing.T) {
 		"call_campus_tool",
 		"get_campus_prompt",
 		"get_current_time",
-		"invoke_bot_capability",
+		"run_bot_command",
 		"list_campus_prompts",
 		"list_campus_resources",
 		"read_campus_resource",
@@ -899,7 +902,7 @@ func TestSecondClassroomRequestCanUseSupplementaryLiteralMCPResult(t *testing.T)
 func TestAgentToolConstructionSkipsUnavailableCommandTools(t *testing.T) {
 	assertAgentToolNames(t, &Service{},
 		"get_current_time",
-		"invoke_bot_capability",
+		"run_bot_command",
 		"search_bot_commands",
 	)
 }
@@ -913,7 +916,7 @@ func TestAgentToolConstructionKeepsStoreOnlyCommandTools(t *testing.T) {
 
 	assertAgentToolNames(t, &Service{handler: commands.Handler{Store: db}},
 		"get_current_time",
-		"invoke_bot_capability",
+		"run_bot_command",
 		"search_bot_commands",
 	)
 }
@@ -940,7 +943,7 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPTokenMissing(t *testing.T) {
 	var logs bytes.Buffer
 	svc.logger = log.New(&logs, "", 0)
 	names := agentToolNames(t, svc)
-	if !names["invoke_bot_capability"] {
+	if !names["run_bot_command"] {
 		t.Fatalf("host capability tool is missing: %#v", names)
 	}
 	if !names["search_campus_tools"] || logs.Len() != 0 {
@@ -1000,7 +1003,7 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T)
 	}
 
 	names := agentToolNames(t, svc)
-	if !names["invoke_bot_capability"] {
+	if !names["run_bot_command"] {
 		t.Fatalf("host capability tool is missing: %#v", names)
 	}
 	if logs.Len() != 0 {
@@ -1257,7 +1260,7 @@ func TestCurrentTimeHelpersUseShanghaiTime(t *testing.T) {
 	if !strings.Contains(instruction, "Never use Markdown tables") {
 		t.Fatalf("instruction lacks QQ plain-text rule: %q", instruction)
 	}
-	if !strings.Contains(instruction, "search_bot_commands") || !strings.Contains(instruction, "invoke_bot_capability") || !strings.Contains(instruction, "literal evidence") {
+	if !strings.Contains(instruction, "search_bot_commands") || !strings.Contains(instruction, "run_bot_command") || !strings.Contains(instruction, "literal evidence") {
 		t.Fatalf("instruction lacks capability workflow: %q", instruction)
 	}
 	if !strings.Contains(instruction, "Private URLs returned by a tool may be used and repeated in a direct chat") {
@@ -1315,7 +1318,7 @@ func TestHostCapabilityToolReturnsPrivateCalendarURLInPrivateModelContext(t *tes
 		if infoErr != nil {
 			t.Fatal(infoErr)
 		}
-		if info.Name == "invoke_bot_capability" {
+		if info.Name == "run_bot_command" {
 			var ok bool
 			hostTool, ok = candidate.(einotool.InvokableTool)
 			if !ok {
@@ -1325,7 +1328,7 @@ func TestHostCapabilityToolReturnsPrivateCalendarURLInPrivateModelContext(t *tes
 		}
 	}
 	if hostTool == nil {
-		t.Fatal("invoke_bot_capability tool is missing")
+		t.Fatal("run_bot_command tool is missing")
 	}
 	result, err := hostTool.InvokableRun(ctx, `{"capability":"subscription","arguments":["link"]}`)
 	if err != nil {
@@ -1376,7 +1379,7 @@ func TestHostReadCapabilityReportsLoginRequirementWithoutHostSideEffect(t *testi
 		if infoErr != nil {
 			t.Fatal(infoErr)
 		}
-		if info.Name == "invoke_bot_capability" {
+		if info.Name == "run_bot_command" {
 			var ok bool
 			hostTool, ok = candidate.(einotool.InvokableTool)
 			if !ok {
@@ -1386,7 +1389,7 @@ func TestHostReadCapabilityReportsLoginRequirementWithoutHostSideEffect(t *testi
 		}
 	}
 	if hostTool == nil {
-		t.Fatal("invoke_bot_capability tool is missing")
+		t.Fatal("run_bot_command tool is missing")
 	}
 	result, err := hostTool.InvokableRun(ctx, `{"capability":"schedule","arguments":[]}`)
 	if err != nil {
@@ -1512,8 +1515,8 @@ func TestHandleResponseUsesTypedTranscriptWithoutSummaryRequest(t *testing.T) {
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	for _, event := range []store.ConversationEvent{
 		{Identity: ident, DedupeKey: "history:user", Type: store.ConversationEventUser, Content: "查数学分析"},
-		{Identity: ident, DedupeKey: "history:assistant-call", Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "call-history", Name: "invoke_bot_capability", Arguments: `{"capability":"course_search","arguments":["数学分析"]}`}}},
-		{Identity: ident, DedupeKey: "history:tool", Type: store.ConversationEventToolResult, ToolCallID: "call-history", ToolName: "invoke_bot_capability", Content: "数学分析（程艺，2026春）"},
+		{Identity: ident, DedupeKey: "history:assistant-call", Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{ID: "call-history", Name: "run_bot_command", Arguments: `{"capability":"course_search","arguments":["数学分析"]}`}}},
+		{Identity: ident, DedupeKey: "history:tool", Type: store.ConversationEventToolResult, ToolCallID: "call-history", ToolName: "run_bot_command", Content: "数学分析（程艺，2026春）"},
 		{Identity: ident, DedupeKey: "history:assistant", Type: store.ConversationEventAssistant, Content: "程艺老师在 2026 春开课。"},
 	} {
 		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
@@ -1566,7 +1569,7 @@ func TestHandleResponseDropsOrphanedToolCallBeforeNewConversationTurn(t *testing
 	for _, event := range []store.ConversationEvent{
 		{Identity: ident, DedupeKey: "orphan:user", Type: store.ConversationEventUser, Content: "执行之前的操作"},
 		{Identity: ident, DedupeKey: "orphan:assistant", Type: store.ConversationEventAssistant, ToolCalls: []store.ConversationToolCall{{
-			ID: "orphaned-tool-call", Name: "invoke_bot_capability", Arguments: `{"capability":"notify","arguments":["homework","on"]}`,
+			ID: "orphaned-tool-call", Name: "run_bot_command", Arguments: `{"capability":"notify","arguments":["homework","on"]}`,
 		}}},
 	} {
 		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
@@ -1741,7 +1744,7 @@ func TestHandleResponseDoesNotStartLoginForAgentRead(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-host-tool","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-host","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"schedule\",\"arguments\":[]}"}
+					"id":"call-host","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"schedule\"}"}
 				}]},"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
 			}`))
@@ -1809,7 +1812,7 @@ func TestRunExecutesAgentReadWithoutConfirmation(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-read","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-read","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"help\",\"arguments\":[]}"}
+					"id":"call-read","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"help\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}
 			}`))
@@ -1972,7 +1975,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-confirm","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify homework on\"}"}
 				}]} ,"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
 			}`))
@@ -2162,7 +2165,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-unsubscribe-call","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-unsubscribe","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"subscription\",\"arguments\":[\"remove\",\"COMP6212P.02\"]}"}
+					"id":"call-unsubscribe","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"subscription remove COMP6212P.02\"}"}
 				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 		case 3:
@@ -2308,7 +2311,7 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-terminal-first","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-terminal-replay","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-terminal-replay","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify homework on\"}"}
 				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 		case 3:
@@ -2435,8 +2438,8 @@ func TestRunConfirmsParallelMutationsOneOperationAtATime(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-parallel","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[
-					{"id":"call-classes","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"classes\",\"on\"]}"}},
-					{"id":"call-homework","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}}
+					{"id":"call-classes","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify classes on\"}"}},
+					{"id":"call-homework","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify homework on\"}"}}
 				]},"finish_reason":"tool_calls"}],
 				"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}
 			}`))
@@ -2563,7 +2566,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-deny","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-deny","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-deny","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify homework on\"}"}
 				}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return
@@ -2657,7 +2660,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"chatcmpl-retry-confirm","object":"chat.completion","created":0,"model":"test-model",
 				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
-					"id":"call-retry-confirm","type":"function","function":{"name":"invoke_bot_capability","arguments":"{\"capability\":\"notify\",\"arguments\":[\"homework\",\"on\"]}"}
+					"id":"call-retry-confirm","type":"function","function":{"name":"run_bot_command","arguments":"{\"command\":\"notify homework on\"}"}
 				}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 			return

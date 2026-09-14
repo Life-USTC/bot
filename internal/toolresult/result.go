@@ -46,3 +46,15 @@ func Data(raw string) any {
 	}
 	return raw
 }
+
+// IsEncoded identifies the internal envelope before a generic tool adapter
+// wraps discovery or utility output. Remote domain payloads are wrapped first.
+func IsEncoded(raw string) bool {
+	var value struct {
+		Source     string     `json:"source"`
+		Operation  string     `json:"operation"`
+		Status     string     `json:"status"`
+		ObservedAt *time.Time `json:"observed_at"`
+	}
+	return json.Unmarshal([]byte(raw), &value) == nil && value.Source != "" && value.Operation != "" && value.Status != "" && value.ObservedAt != nil
+}
