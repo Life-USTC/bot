@@ -140,7 +140,9 @@ service failure, never silently substituted with another user's identity.
 Read and ordinary write operations execute without an additional confirmation.
 Dangerous operations, and operations whose risk cannot be established, require
 user confirmation whether selected by a direct command or by the model.
-Confirmation is bound to the saved operation and exact arguments. GraphQL's
+Confirmation is bound to the saved operation and exact arguments. Todo and
+homework targets are resolved to exact IDs before preparation, so list
+reordering cannot change a pending operation; ambiguous titles are rejected. GraphQL's
 `confirmed` marker is set by the approved execution path, never trusted from
 model arguments.
 

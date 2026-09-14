@@ -946,12 +946,12 @@ func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, iden
 	}
 	if commands.HasAdditionalCommandLine(input.Command) {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
-		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Send exactly one command per tool call")), nil
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("send exactly one command per tool call")), nil
 	}
 	parsed := commands.ParseCommand(input.Command)
 	if !parsed.Recognized() {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
-		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Unknown command. Consult the command manual or search_bot_commands")), nil
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("unknown command; consult the command manual or search_bot_commands")), nil
 	}
 	return s.invokeHostCapability(ctx, hostCapabilityInput{Capability: string(parsed.Invocation.ID()), Arguments: parsed.Invocation.Args}, ident, jobID, sendResponse)
 }

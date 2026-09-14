@@ -14,7 +14,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/toolresult"
 )
@@ -96,6 +98,10 @@ func (s *Service) invokeHostCapability(
 	for _, item := range invocations {
 		description, err := s.handler.DescribeInvocation(ctx, commands.Input{Identity: ident, SuppressLog: true, Origin: commands.InvocationOriginAgent}, item.ID(), item.Args)
 		if err != nil {
+			if errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) || life.IsUnauthorized(err) {
+				toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
+				return toolresult.Encode("bot", string(item.ID()), "auth_required", time.Now(), nil, errors.New("需要先登录才能确定操作目标；可执行登录命令，授权完成后继续原请求")), nil
+			}
 			if result, ok := commands.CapabilityPreflightFailure(item.ID(), err); ok {
 				toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 				return result, nil

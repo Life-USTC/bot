@@ -3338,12 +3338,11 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	if !ok || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
 		t.Fatalf("reply = %q, ok = %v", response.Text, ok)
 	}
-	reply := response.Text
 	data, ok := response.Data.(map[string]any)
 	if !ok || data["operation"] != "notification_settings" || data["settings"] == nil {
 		t.Fatalf("notification Data = %#v", response.Data)
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "通知 help", Identity: ident})
+	reply, ok := handler.Handle(ctx, Input{Text: "通知 help", Identity: ident})
 	if !ok || !strings.Contains(reply, "通知 帮助：") || !strings.Contains(reply, "通知 课表 开") || strings.Contains(reply, "AI 工具") {
 		t.Fatalf("notification help reply = %q, ok = %v", reply, ok)
 	}

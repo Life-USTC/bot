@@ -2432,6 +2432,14 @@ func resolveHomework(homeworks []map[string]any, target string) (map[string]any,
 
 func resolveByTarget(items []map[string]any, target string) (map[string]any, bool) {
 	target = strings.TrimSpace(target)
+	if exactID, explicit := strings.CutPrefix(target, "id:"); explicit {
+		for _, item := range items {
+			if lifedata.FirstString(item, "id") == exactID {
+				return item, true
+			}
+		}
+		return nil, false
+	}
 	if index, err := strconv.Atoi(textutil.PlainDigits(target)); err == nil && index >= 1 && index <= len(items) {
 		return items[index-1], true
 	}
@@ -2440,13 +2448,21 @@ func resolveByTarget(items []map[string]any, target string) (map[string]any, boo
 		return nil, false
 	}
 	for _, item := range items {
-		id := normalizedLookupText(lifedata.FirstString(item, "id"))
-		title := normalizedLookupText(lifedata.FirstString(item, "title"))
-		if needle == id || needle == title || strings.Contains(title, needle) {
+		if normalizedLookupText(lifedata.FirstString(item, "id")) == needle {
 			return item, true
 		}
 	}
-	return nil, false
+	var match map[string]any
+	for _, item := range items {
+		title := normalizedLookupText(lifedata.FirstString(item, "title"))
+		if title == needle || strings.Contains(title, needle) {
+			if match != nil {
+				return nil, false
+			}
+			match = item
+		}
+	}
+	return match, match != nil
 }
 
 func normalizedLookupText(value string) string {

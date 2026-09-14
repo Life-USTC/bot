@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -20,6 +21,7 @@ var (
 	errCapabilityReceiptUnavailable     = errors.New("capability receipt unavailable")
 	errCapabilityInvalidInput           = errors.New("capability invocation invalid input")
 	errCapabilityMutationMustExpand     = errors.New("capability mutation requires expansion")
+	errCapabilityPersonalTarget         = errors.New("capability personal target is not unique or is missing")
 	errCapabilityForbidden              = errors.New("capability invocation forbidden")
 )
 
@@ -53,6 +55,10 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
 		return description, errCapabilityForbidden
 	}
+	if personalMutationNeedsTarget(invocation) {
+		resolved, receipt, err := h.resolvePersonalMutation(ctx, input.Identity, invocation)
+		return CapabilityInvocationDescription{Invocation: resolved, Receipt: receipt}, err
+	}
 	resolved, receipt, err := h.resolveInvocationReceipt(ctx, invocation)
 	if err != nil {
 		return description, err
@@ -68,6 +74,8 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 // domain result.
 func CapabilityPreflightFailure(id CapabilityID, err error) (string, bool) {
 	switch {
+	case errors.Is(err, errCapabilityPersonalTarget):
+		return "没有找到唯一的操作目标，因此没有执行。请先查看列表，再使用准确编号或 id:<完整ID>。", true
 	case errors.Is(err, errCapabilityReceiptTargetNotFound):
 		return "没有找到要操作的课程或教学班，因此没有执行任何操作。请先发送“教学班 搜索 <课程名或代码>”，再使用查询结果中的准确教学班代码。", true
 	case errors.Is(err, errCapabilityReceiptTargetAmbiguous):
@@ -448,4 +456,54 @@ func receiptPointer(receipt store.CapabilityReceipt) *store.CapabilityReceipt {
 
 func sectionCode(section map[string]any) string {
 	return lifedata.FirstString(section, "code", "sectionCode", "section_code")
+}
+
+func personalMutationNeedsTarget(invocation Invocation) bool {
+	if len(invocation.Args) < 2 {
+		return false
+	}
+	switch invocation.ID() {
+	case CapabilityTodo:
+		return firstArgIn(invocation.Args, "done", "undo", "delete", "update")
+	case CapabilityHomework:
+		return firstArgIn(invocation.Args, "done", "undo")
+	}
+	return false
+}
+
+func (h Handler) resolvePersonalMutation(ctx context.Context, ident store.Identity, invocation Invocation) (Invocation, *store.CapabilityReceipt, error) {
+	if h.Auth == nil {
+		return invocation, nil, auth.ErrNotLoggedIn
+	}
+	token, err := h.Auth.AccessToken(ctx, ident)
+	if err != nil {
+		return invocation, nil, err
+	}
+	if h.Life == nil {
+		return invocation, nil, errCapabilityReceiptUnavailable
+	}
+	var items []map[string]any
+	if invocation.ID() == CapabilityTodo {
+		items, err = h.todos(ctx, ident, token, life.TodoListOptions{})
+	} else {
+		items, err = h.homeworks(ctx, ident, token)
+	}
+	if err != nil {
+		return invocation, nil, err
+	}
+	target, ok := resolveByTarget(items, invocation.Args[1])
+	if !ok || lifedata.FirstString(target, "id") == "" {
+		return invocation, nil, errCapabilityPersonalTarget
+	}
+	id := lifedata.FirstString(target, "id")
+	invocation.Args = append([]string(nil), invocation.Args...)
+	invocation.Args[1] = "id:" + id
+	receipt := ReceiptForInvocation(invocation)
+	receipt.Subject = lifedata.FirstString(target, "title")
+	if receipt.Subject == "" {
+		receipt.Subject = id
+	} else {
+		receipt.Subject += " (" + id + ")"
+	}
+	return invocation, &receipt, nil
 }
