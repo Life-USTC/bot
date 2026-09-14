@@ -1,495 +1,193 @@
 # Bot architecture
 
-The Bot has four independent durable concerns:
-
-1. A conversation job decides what work belongs to one inbound event and owns
-   its lease, waits, retry, and terminal state.
-2. A capability execution records one actual read or independently reversible
-   mutation. It is the source of truth for result evidence and, for Agent
-   mutations, confirmation and user-visible receipts.
-3. An Agent checkpoint and physical-model-attempt counter make an interrupted
-   tool loop resumable without granting a fresh lease or retry budget.
-4. The outbox delivers already-finished output. Delivery failure can resend a
-   message, but can never rerun a capability.
-
-Protocol adapters, routing, orchestration, business capabilities, and delivery
-depend inward in that order. A feature package never imports NapCat or QQ Bot.
-
-## Complete durable state machine
+Bot separates inbound work, model conversation, business execution and outbound
+transport. They share identifiers, not state machines or interchangeable text.
 
 ```mermaid
-stateDiagram-v2
-    direction LR
-
-    state "Conversation job" as Job {
-        state "queued" as JQueued
-        state "running" as JRunning
-        state "waiting_confirmation" as JConfirm
-        state "waiting_auth" as JAuth
-        state "retry_wait" as JRetry
-        state "completed" as JCompleted
-        state "failed" as JFailed
-        state "expired" as JExpired
-        state "cancelled" as JCancelled
-
-        [*] --> JQueued: accepted inbound event
-        JQueued --> JRunning: FIFO claim + new lease
-        JRetry --> JRunning: retry due + new lease
-
-        JRunning --> JConfirm: Agent checkpoint + pending non-read
-        note right of JConfirm
-          Direct commands never enter this state.
-          Agent reads never enter this state.
-        end note
-        JConfirm --> JQueued: approve or deny exactly one operation\nrevision++
-
-        JRunning --> JAuth: operation proved that login is required
-        JAuth --> JQueued: exact required scopes are current\nrevision++
-
-        JRunning --> JRetry: durable run, transcript, checkpoint,\nor output persistence failed; live lease recovery
-        JRunning --> JCompleted: final outbox + any Agent receipt states\ncommitted atomically
-        JRunning --> JFailed: irrecoverable contract/run failure
-
-        JQueued --> JExpired: TTL elapsed
-        JRetry --> JExpired: TTL elapsed
-        JConfirm --> JExpired: TTL elapsed
-        JAuth --> JExpired: TTL elapsed
-        JRunning --> JExpired: TTL elapsed
-
-        JQueued --> JCancelled: explicit cancellation
-        JRetry --> JCancelled: explicit cancellation
-        JConfirm --> JCancelled: explicit cancellation
-        JAuth --> JCancelled: explicit cancellation
-        JRunning --> JCancelled: explicit cancellation wins lease CAS
-
-        JCompleted --> [*]
-        JFailed --> [*]
-        JExpired --> [*]
-        JCancelled --> [*]
-    }
-
-    state "Capability execution" as Capability {
-        state "awaiting_confirmation" as CAwaiting
-        state "approved" as CApproved
-        state "running" as CRunning
-        state "waiting_auth" as CAuth
-        state "succeeded" as CSucceeded
-        state "failed" as CFailed
-        state "unknown" as CUnknown
-        state "denied" as CDenied
-        state "cancelled" as CCancelled
-        state "expired" as CExpired
-
-        [*] --> CAwaiting: Agent write/destructive preflight
-        [*] --> CApproved: direct command write/destructive prepared
-        [*] --> CRunning: direct command read or Agent read
-
-        CAwaiting --> CApproved: real user confirms
-        CAwaiting --> CDenied: real user denies
-        CApproved --> CRunning: current job lease claims direct\nor confirmed operation
-
-        CRunning --> CAuth: no effect occurred; login required
-        CAuth --> CRunning: current job lease reclaims after auth
-
-        CRunning --> CSucceeded: exact domain result
-        CRunning --> CFailed: definite domain failure\nor owning job fails during a read
-        CRunning --> CUnknown: mutation may have reached external service\nor owning job stops after it began; never auto-retry
-        CRunning --> CRunning: recovered read may run again safely
-
-        CAwaiting --> CFailed: owning job fails
-        CApproved --> CFailed: owning job fails before execution
-        CAuth --> CFailed: owning job fails
-        CAwaiting --> CCancelled: owning job cancelled
-        CApproved --> CCancelled: owning job cancelled before execution
-        CAuth --> CCancelled: owning job cancelled
-        CRunning --> CCancelled: owning job cancelled during a read
-        CAwaiting --> CExpired: owning job expired
-        CApproved --> CExpired: owning job expired before execution
-        CAuth --> CExpired: owning job expired
-        CRunning --> CExpired: owning job expired during a read
-
-        CSucceeded --> [*]
-        CFailed --> [*]
-        CUnknown --> [*]
-        CDenied --> [*]
-        CCancelled --> [*]
-        CExpired --> [*]
-    }
-
-    state "Agent checkpoint" as Checkpoint {
-        state "none" as KNone
-        state "stored" as KStored
-        state "deleted" as KDeleted
-        [*] --> KNone
-        KNone --> KStored: Eino interrupt writes opaque checkpoint\nwith job revision + lease
-        KStored --> KStored: resumed revision atomically adopts checkpoint
-        KStored --> KDeleted: exact terminalizing lease acknowledged\nmatching job revision
-        KStored --> KDeleted: owning job cancelled or expired\ninside the terminal transaction
-        KNone --> KNone: ordinary run without interrupt
-        KDeleted --> [*]
-    }
-
-    state "Physical provider attempts" as Provider {
-        state "reserved" as PReserved
-        state "in_flight" as PInFlight
-        state "backoff" as PBackoff
-        state "accepted" as PAccepted
-        state "rejected" as PRejected
-        state "exhausted" as PExhausted
-        [*] --> PReserved: atomically reserve attempt in SQLite\nreservation failure sends no HTTP request
-        PReserved --> PInFlight: send HTTP request
-        PInFlight --> PAccepted: successful provider response
-        PInFlight --> PBackoff: 408 / 429 / 5xx / retryable transport /\nprovider-side cancel while caller remains live; attempts below 5
-        PBackoff --> PReserved: bounded Retry-After / jitter delay
-        PInFlight --> PRejected: permanent provider response
-        PInFlight --> PExhausted: fifth retryable attempt failed
-        PAccepted --> [*]
-        PRejected --> [*]
-        PExhausted --> [*]
-    }
-
-    state "Delivery outbox" as Outbox {
-        state "pending" as OPending
-        state "delivering" as ODelivering
-        state "retry_wait" as ORetry
-        state "accepted" as OAccepted
-        state "rejected" as ORejected
-        state "unknown" as OUnknown
-        state "expired" as OExpired
-        [*] --> OPending: response persisted
-        OPending --> ODelivering: delivery worker claim
-        ORetry --> ODelivering: retry due
-        ODelivering --> OAccepted: platform accepted
-        ODelivering --> ORetry: definite retryable failure\nattempts below 5
-        ODelivering --> ORejected: permanent failure or budget exhausted
-        ODelivering --> OUnknown: platform outcome ambiguous\nnever auto-retry
-        ODelivering --> OUnknown: worker died after send began
-        OPending --> OExpired: message TTL elapsed
-        ORetry --> OExpired: message TTL elapsed
-        OAccepted --> [*]
-        ORejected --> [*]
-        OUnknown --> [*]
-        OExpired --> [*]
-    }
-
-    JConfirm --> CAwaiting: one pending Agent operation is shown
-    JAuth --> CAuth: current configured scopes verified
-    JRunning --> PReserved: model request
-    JRunning --> OPending: host confirmation, auth, or final output
-    JCompleted --> OPending: final output already committed
-    JExpired --> CExpired: pending operations terminalized
-    JCancelled --> CCancelled: pending operations terminalized
+flowchart TD
+    Platform[QQ / NapCat event] --> Route[Activation and command routing]
+    Route --> Job[Durable conversation job]
+    Job --> Command[Direct command]
+    Job --> Agent[LLM conversation]
+    Agent -->|optional tool call| Capability[Bot command or MCP operation]
+    Command --> Execution[Durable execution and authorization]
+    Capability --> Execution
+    Execution -->|structured tool result| Agent
+    Command --> Output[User presentation]
+    Agent --> Output
+    Output --> Outbox[Durable outbox]
+    Outbox --> Delivery[Platform delivery]
 ```
 
-The same names appearing in different composite blocks are separate states.
-For example, an outbox `unknown` never changes a completed conversation job,
-and a capability `unknown` never authorizes an automatic mutation retry.
+## Ownership
 
-Every arrow out of `running` is fenced by the current, unexpired conversation
-job lease. A terminal transition and the terminalization check for all of its
-capability executions happen in one SQLite transaction. `completed` refuses to
-commit while a current operation is nonterminal; failure, expiry, and
-cancellation atomically close the entire operation batch.
+| Layer | Code | Responsibility |
+| --- | --- | --- |
+| Platform adapters | `internal/qqbot`, `internal/napcat`, `internal/message` | Actor, conversation, platform IDs, source time, receive time, attachment references and replies |
+| Routing | `internal/routing` | Whether to respond and whether the accepted input is a command or an Agent turn |
+| Coordinator | `internal/botapp` | FIFO jobs, leases, login and confirmation waits, atomic output commit |
+| Business commands | `internal/commands`, `internal/life` | Canonical arguments, validation, domain data, privacy, effects and presentation |
+| Model runtime | `internal/agent`, `internal/mcp`, `internal/toolresult` | Tool descriptions, optional discovery, model requests, JSON results and checkpoints |
+| Persistence | `internal/store` | Jobs, exact conversation events, operation records, credentials and outbox |
+| Delivery | `internal/delivery`, platform adapters | Send already-produced output and record platform acceptance |
 
-## Inbound and routing flow
+Feature code does not depend on QQ or NapCat. Rendering does not execute
+business operations. Delivery does not call the model or rerun commands.
 
-1. A platform adapter translates a protocol event into `message.Inbound`.
-2. `routing.Decide` classifies activation and privacy before persistence.
-   Ambient shared-chat text and retired `/life...` paths are discarded here,
-   before natural-language matching or Agent fallback.
-3. `botapp` stores the exact route and normalized invocation. Execution uses
-   that stored decision; it does not reparse or fall through to another route.
-4. One actor/conversation lane is processed FIFO. A waiting confirmation or
-   login therefore cannot be overtaken by a later event from the same lane.
-5. Responses are transactionally written to the outbox. Platform I/O happens
-   later and has no path back to capability execution.
+## Inbound jobs are not model history
 
-In shared conversations, only strict public commands, high-confidence public
-natural routes, mentions, or verified replies activate the Bot. Personal
-capabilities are unavailable even if a model asks for them. An addressed
-natural-language request whose registry match requires personal data receives
-a deterministic private-chat redirect without a provider call. `message.Actor`
-identifies who caused an event; `message.Conversation` is only the delivery
-address, and the two are never substituted for each other.
+There is no separate inbox table. `conversation_jobs` stores the accepted
+inbound envelope, the routing decision and the normalized invocation. A source
+event ID makes admission idempotent. Unaddressed ambient group messages are
+ignored before job persistence.
 
-## Capability authorization and confirmation contract
+An actor identifies the user who made the request. A conversation identifies
+where replies go. Group members can share a public conversation but never an
+OAuth identity. Display names are presentation, not authorization.
 
-`internal/commands` owns one descriptor registry. A descriptor defines the
-stable ID, accepted forms, normalization, validation, effect, privacy scope,
-executor, result presentation, receipt, and help data. Direct commands and
-Agent calls use the same descriptor and executor; the calling host owns the
-authorization decision.
+A job moves through `queued`, `running`, `waiting_auth`,
+`waiting_confirmation`, `retry_wait` and a terminal state. Every execution and
+checkpoint write is fenced by the current job revision and lease. A stale
+worker cannot finish a resumed job or execute an operation under a newer lease.
 
-The rule is entirely origin-and-effect based:
+Confirmation replies are control input when a concrete operation is waiting.
+They update that operation and requeue the original job. They are not new LLM
+user turns, and the model cannot approve an operation by writing a flag.
 
-- A command explicitly typed by the user executes immediately, whether it is
-  a read, write, or destructive action. Its durable execution row prevents an
-  output retry from replaying the operation, but it never waits for another
-  confirmation and never emits an operation receipt.
-- An Agent read executes immediately. The host does not ask the model or user
-  for permission.
-- An Agent write or destructive operation is preflighted after the model calls
-  the capability and before any side effect. A grouped request is stored
-  atomically as independent operations.
-- A missing login never starts an adjacent write on behalf of an Agent read.
-  The read returns a literal instruction to send the direct `登录` command and
-  retry. An explicit Agent login call is itself a write and follows the same
-  confirmation gate.
-- Exactly one independently reversible operation is shown and decided at a
-  time. Approval only changes `awaiting_confirmation` to `approved`; the
-  current conversation-job lease must still claim it before execution.
-- A stale worker cannot use a newer lease. A running mutation from an older
-  lease becomes `unknown`; a running read may be repeated.
-- Capability finalization, auth deferral, and Agent receipt updates require
-  the same live job lease that claimed the operation. An elapsed job TTL
-  fences the worker immediately; it does not wait for the periodic expiry
-  sweep.
-- Confirmation prompts, affirmative user replies, and receipt lines are not
-  model-visible conversation events. Approval resumes the interrupted tool
-  with only its literal domain result. A denial is fed back as a typed tool
-  denial because that is relevant evidence for the model's next response.
+## Model conversation
 
-Capability results have a typed host status, but the model receives the
-descriptor's literal result text. There is no generic `{ok,status,text}`
-wrapper. Authentication is also host-owned: the model neither handles a code
-nor turns a login message into evidence of a successful operation.
+Only `conversation_events` is replayed as LLM history. Jobs, interaction logs,
+usage rows and the delivery outbox are not read as a chat transcript.
 
-## Tool discovery
+| Origin | Model representation |
+| --- | --- |
+| Accepted user input | User event with actor, original time and supported image parts |
+| Model answer or tool call | Assistant event preserving text, tool name, arguments and call ID |
+| Tool success, error or denial | Tool event containing the shared JSON result |
+| Direct command | Real user event and an assistant event marked as command-origin JSON; no invented tool call |
+| Login instructions, confirmation prompts, receipts | Host output only; the eventual tool outcome explains what happened |
+| Notifications and platform events | Delivery/control only, unless the user explicitly refers to relevant content |
 
-The model sees stable meta-tools rather than the entire command and MCP
-catalog:
+Historical time is stable: source time, receive time, model generation time,
+operation observation time and platform acceptance time have distinct meanings.
+History formatting does not relabel an old message with the current clock.
+Business timestamps in returned data remain unchanged.
 
-- `search_bot_commands` searches descriptor-backed documentation and returns
-  exact capability IDs, arguments, examples, effect, and scope. Confirmation
-  mechanics are intentionally absent.
-- `invoke_bot_capability` executes one normalized descriptor through the host
-  state machine.
-- `search_campus_tools` and `call_campus_tool` lazily initialize MCP only when
-  supplementary campus data is needed. Only exact tool names in the host-owned
-  read allowlist are exposed; remote MCP annotations cannot grant access.
+A reply reference is resolved only against an accepted Bot message in the same
+conversation. Its `ResponseContext` carries the public command and arguments
+for deterministic follow-ups such as “周日呢”. Quoted text is explicitly
+identified as historical context, not a new tool result or fresh observation.
 
-Search ignores generic request verbs, politeness, and standalone numbers. A
-fuzzy Chinese match needs domain-bearing evidence in the capability ID, title,
-accepted forms, or multiple documentation fragments; words such as “查询”,
-“列出”, and “列表” cannot make an unrelated command look relevant. A valid empty Bot search
-result is evidence that the registry has no match and allows the model to try
-MCP. A malformed search result is not evidence and cannot unlock invocation.
+History bounds remove complete old turns while preserving assistant/tool-call
+pairs. Typed roles remain intact; host approval messages are not manufactured
+into assistant or user evidence. Unsupported assistant image modalities are
+not replayed to a provider that cannot encode them.
 
-An explicit request for the complete command/tool/capability inventory bypasses
-the model. The host constructs the response from the current descriptor
-registry, its fixed meta-tools, and the intersection of the live remote MCP
-catalog with the host read allowlist. This keeps the answer complete and
-truthful even when a model would otherwise browse one tool family at a time.
-The shortcut requires explicit inventory wording and refuses mutation wording,
-so it cannot preempt the normal confirmation path for an operation.
+## One execution, two outputs
 
-The compact system instruction tells the model to search before invoking and
-to preserve all user constraints. Mutation improvisation through MCP is not
-possible.
+A command records its already-fetched domain value in `Response.Data` before
+formatting a table, sentence or image. It does not parse rendered text back into
+data and does not make a second network call to build model context.
 
-The model chooses whether to answer or call any of the available tools. The
-host does not narrow the tool catalog based on a guessed intent, inject
-per-turn tool-only instructions, or retry a successful provider response to
-force a tool call. Assistant messages are persisted unchanged, and a final
-text answer does not depend on a host-maintained evidence checklist. Tool
-failures remain available to the model as tool results; they do not replace
-its final answer. Authentication, confirmation, shared-chat privacy, execution
-budgets, and transport retries still apply at their respective boundaries.
+- User output: `Response.Text`, image and response parts.
+- Model output: the `internal/toolresult` JSON envelope around domain data.
 
-## Exact conversation evidence
+Bot commands and MCP use the same fields: `source`, `operation`, `status`,
+`observed_at`, `result`, and optional `error` with `code` and `message`.
+Success is `succeeded`; failures distinguish invalid input, authorization,
+denial and an unknown external outcome. An empty domain result remains empty,
+not an invented success explanation. Native JSON returned by MCP remains JSON;
+a textual MCP result remains a string inside `result`.
 
-`conversation_events` stores only typed model-visible transcript events:
+A successful operation does not imply successful image rendering or platform
+acceptance. The model never receives a false “delivered” claim because output
+was merely queued. Operation results survive independently of presentation.
 
-- `user`, including the exact timestamp-prefixed text and supported image
-  parts sent to the provider;
-- `assistant`, including exact tool call IDs, names, and arguments;
-- `tool_result`, `tool_error`, and `tool_denial`, including the literal text
-  returned to the model.
+## Commands and discovery
 
-Old complete user turns may be dropped to fit the history window, but retained
-events are never summarized, rewritten, or converted into another role. Host
-approval messages and receipt lines are deliberately absent. No time-based
-placeholder message exists. Private URLs may appear in direct-chat tool results
-and this private database history; they are forbidden on shared surfaces and
-redacted from process logs.
+The command descriptor registry owns names, aliases, input normalization,
+validation, effect, audience, examples and help. User help and the model's
+complete command manual are generated from that registry.
 
-Persisted assistant image-output parts remain private evidence but are not
-replayed because the configured OpenAI-compatible adapter cannot encode them
-in assistant history. Exact assistant text and tool calls are preserved; when
-both `Content` and distinct text parts exist, both are replayed as text parts
-so the adapter cannot silently discard `Content`.
+The model uses `run_bot_command` with a full user command. It may optionally
+use `search_bot_commands`, which returns multiple ranked candidates. MCP
+`search_campus_tools` exposes exact server names, schemas, descriptions and
+effects, and `call_campus_tool` executes a published name. Resource and prompt
+tools provide schema and planning context. MCP setup remains lazy: normal
+conversation and Bot commands do not require a working MCP connection.
 
-Every event emitted by an Agent run is appended only if its job ID, revision,
-state, and lease still match the running coordinator claim in the same
-transaction. A late provider response therefore cannot write transcript into a
-resumed turn. Direct-command routes do not manufacture an Agent tool
-exchange: their actual user-visible domain response is stored as an
-`assistant` event; Agent routes preserve the real assistant/tool-call/tool-result
-roles exactly.
+There is no host rule requiring a tool call, a successful search, or an empty
+Bot search before using MCP. A model answer is not discarded to force another
+provider request. Tool failures are returned as evidence when recoverable.
 
-## User-visible Agent receipts
+Search covers names, descriptions, aliases, parameter fields and examples.
+Location aliases normalize to canonical values before execution. Fuzzy search
+is not group activation and never selects a destructive target without exact
+validated arguments.
 
-The coordinator queues no time-based placeholder. A user-visible output exists
-only when the job has a confirmation request, an authentication instruction,
-or a real final result to persist.
+User help emphasizes campus queries, personal work, accounts and notifications.
+Internal system/health commands are not a user feature. Technical MCP inventory
+is shown when explicitly requested; ordinary capability questions receive
+user-facing help.
 
-Direct commands never show receipt lines: their command response is already
-the complete user-visible result. For Agent turns, receipt lines are derived
-only from actual capability-execution rows, never from model prose or intent.
-Meta-tool searches produce no receipt. Agent reads show a receipt when a real
-domain/MCP read ran, including an empty or failed read; duplicate identical
-lines are collapsed. Examples:
+## Authorization and confirmation
 
-```text
-#已查询课程{数学分析（程艺，2026春）}
-#待确认订阅课程{数学分析（程艺，2026春）}
-#已订阅课程{数学分析（程艺，2026春）}
-#订阅课程失败{数学分析（程艺，2026春）：操作结果未知，系统没有自动重试}
-```
+All published MCP operations are available in private conversations within the
+caller's actual server permissions. A caller with no login can discover and
+query public MCP data. Failure of an existing grant is reported as an auth or
+service failure, never silently substituted with another user's identity.
 
-Receipt state is committed in the same transaction as the corresponding
-outbox output and conversation-job transition. A database failure retries the
-job without losing or duplicating the operation.
+Read and ordinary write operations execute without an additional confirmation.
+Dangerous operations, and operations whose risk cannot be established, require
+user confirmation whether selected by a direct command or by the model.
+Confirmation is bound to the saved operation and exact arguments. GraphQL's
+`confirmed` marker is set by the approved execution path, never trusted from
+model arguments.
 
-## Retry and delivery invariants
+Each independently reversible mutation has a durable execution row. Preparation
+is followed by a lease claim before external effects. Terminal outcomes are
+`succeeded`, `failed`, `unknown`, `denied`, `cancelled` or `expired`. An
+interrupted write that may have reached the server becomes `unknown` and is
+never automatically replayed. Read recovery may safely query again.
 
-- Each logical provider request gets at most five physical HTTP attempts. One
-  Agent job gets at most 65 physical attempts in total (12 tool calls plus a
-  final model turn, each with that retry window) across authentication resumes,
-  confirmation resumes, and process restarts. The Agent-run row and each
-  attempt reservation must commit durably before network I/O; persistence
-  failure retries the job without contacting the provider.
-- The whole Agent run remains bounded by two minutes. Its conversation-job
-  lease is three minutes, leaving one minute for final persistence and outbox
-  commit before stale-lease recovery can begin. Retry-After and jittered
-  exponential delays are capped by the remaining run deadline.
-- If a provider transport reports `context.Canceled` while the caller context
-  is still live, including while a successful-status response body is being
-  read, it is treated as a retryable upstream interruption. A truncated body is
-  retryable too. A genuine caller cancellation remains silent; exhausting
-  upstream retries produces a user-visible failure with the durable run ID
-  instead of dropping the reply.
-- A deterministic outbox key makes output persistence idempotent. Business
-  work and final output/receipt state commit together.
-- A definite mutation transport timeout is `unknown`, not `failed`, because
-  replay could duplicate an external effect. Reads remain safe to repeat.
-- Message polling and stale-lease recovery have separate cadences. The
-  coordinator claims ready work promptly, but runs the heavier recovery sweep
-  once at startup and then once per second.
-- The delivery worker likewise sweeps abandoned `delivering` rows at startup
-  and every 30 seconds. Once a send has been in flight for five minutes, its
-  outcome becomes `unknown` instead of remaining stuck or being replayed.
-- The process uses one SQLite connection. This matches SQLite's single-writer
-  model and prevents deferred read-to-write transactions from failing with an
-  unrecoverable stale snapshot; `busy_timeout` remains enabled for coordination
-  with deployment backup and other external processes.
-- Delivery adapters report accepted, retryable, rejected, or unknown. They do
-  not write business state or interactions.
-- An unsupported target platform is rejected rather than guessed. Rendering
-  finishes before enqueue; delivery receives immutable text/attachments.
+Group execution remains limited to public Bot capabilities. Personal data and
+MCP sessions are private. Asking how a command works is distinct from actually
+reading personal data. Bare question marks and unknown slash words do not
+activate an unaddressed group conversation. Explicit commands, mentions and
+verified replies retain their intended activation rules.
 
-## Schema release boundary
+## Reliability and outbox
 
-Schema version 2 is the only accepted persisted shape. A genuinely empty
-SQLite database may be initialized directly at version 2; a nonempty
-unversioned database, any other version, obsolete tables or columns, and
-malformed indexes are rejected instead of migrated or repaired. Legacy
-interaction replies are never imported into model history. Every required
-column and declared index (including order, uniqueness, and the absence of a
-narrowing partial predicate) is checked before the process becomes ready.
-Deployment takes an immutable backup and restores it if the new container or
-post-start schema audit fails.
+`outgoing_messages` contains immutable, delivery-ready output, reply routing,
+platform receipts and delivery state. Final job state, pending outputs and
+operation receipt state are committed atomically. A delivery retry only sends
+that output; it cannot repeat a capability or an LLM turn.
 
-## Module ownership
+Platform acceptance means the platform accepted a message, not that a human
+read it. Ambiguous sends and workers lost during sending become `unknown` and
+are not blindly resent. Definite transient failures use bounded delivery retry.
+Terminal attachment bytes are pruned; pending/retry attachments are retained.
+Old terminal outbox rows have a bounded retention period.
 
-- `internal/message`: protocol-neutral message values.
-- `internal/routing`: pure activation, privacy, and route selection.
-- `internal/botapp`: durable conversation orchestration and output boundary.
-- `internal/commands`: descriptor registry and domain capabilities.
-- `internal/agent`: model loop, tool discovery, exact transcript, checkpoint,
-  provider budgets, and tool evidence.
-- `internal/auth`, `internal/feedback`, `internal/notify`: feature state owned
-  independently of conversation and delivery state.
-- `internal/delivery`: platform selection and outbox worker.
-- `internal/napcat`, `internal/qqbot`: protocol parsing and platform I/O.
-- `internal/store`: SQLite CAS transitions and transactional outbox writes.
-- `cmd/life-ustc-bot`: dependency composition and process lifecycle only.
+QQ Gateway retains session and sequence for RESUME after reconnect. Invalid
+sessions clear the resume point. Ordinary failures downloading individual
+images do not discard usable text or other images; the model receives a clear
+notice about missing inputs. Hard input limits and cancellation still stop work.
 
-## Image rendering
+The model's per-request context window and run-wide token budget are separate.
+One run remains bounded by time, tool calls and physical provider attempts.
+Identical tool calls are not re-executed; a bounded number of structured repeat
+refusals lets the model change its plan before the run stops.
 
-Image responses are rendered by the `renderd` sidecar. The bot keeps domain
-semantics in Go, sends a validated JSON envelope to
-`BOT_RENDER_ENDPOINT`, and receives a PNG from the Rust/Typst renderer. The
-Compose deployment starts `renderd` first and waits for its `/healthz` probe;
-the bot does not silently retry with a legacy renderer when the endpoint is
-unavailable, so an operational failure remains visible while the normal text
-response is preserved.
+## Verification and deployment
 
-The Typst templates reproduce the pre-migration paper cards: `#fafafa` canvas,
-`#27272a` text, 18pt titles, 13pt body text, and 9pt
-right-aligned footer lines. Tokens and shared table/page components are separate.
-Bus, rich-text, and timetable tables share 1pt full-cell rules, gray bold headers,
-alternating pale rows, and teal highlights.
-Cards retain native content-driven height: portrait proportions are a preference,
-not a reason to stretch empty rows. Bus route tables use 360pt columns: one or two
-tables stack vertically, while larger overviews use a native two-column grid with
-a 30pt gutter. All trips remain visible. Rich cards use 280pt when they contain tables and 204pt for
-prose. Wider columns and shorter ordinary rows give cells more balanced horizontal
-and vertical breathing room. Bus tables use equal fractional columns, while rich
-tables give their first column twice the width of each remaining column so short
-date/time columns also retain horizontal space. Native horizon alignment
-centers cells vertically. Rich text uses ordinary paragraphs with native line
-breaking and 16pt paragraph spacing.
+Regression coverage must exercise activation, structured domain results,
+actor/time replay, dangerous-operation approval and denial, unknown-write
+recovery, gateway RESUME and terminal attachment cleanup. Scripted provider
+fixtures verify that ordinary answers and direct tool choices are accepted
+without mandatory search or semantic retry.
 
-The schedule retains every period and day, original pastel course colors, and
-teal current-day emphasis. Period columns are 112pt wide; day columns are 90pt in
-a week and 260pt in a single-day view. Native stacks keep weekday/date and
-period/time pairs 12pt apart and centered. Course titles use Typst's native
-`layout` and `measure` at the actual cell width to choose 14pt, 12pt, or 10pt
-proportional type against an 80pt title-height budget. The smallest size is a
-readability limit, not a clipping boundary: longer content still grows naturally.
-Native English hyphenation is enabled; location/week metadata stays at 11pt.
-Day and week views use the same compact period rows; unusually long or overlapping
-courses can still grow their rows naturally. Current-day emphasis uses color without
-adding a redundant “今天” to weekday labels or thickening the column borders.
-Weekly headers show the server semester name, the selected academic week, and
-the displayed date range. These are semantic payload fields, independent of
-Typst layout. Weeks outside the known semester do not inherit its name/week;
-whole-semester grids show the semester only.
-Overlapping classes share their occupied interval, with enough height for all
-content. Weather uses an 840pt canvas with 32pt margins and vertically stacked
-humidity/wind tiles. It retains the current-condition summary, hourly
-temperature/precipitation chart, and daily range bars. Chart labels are sampled
-for legibility; all curve and bar data is retained.
-
-Typst handles glyph shaping, line breaking, and automatic table/grid row sizing.
-Templates do not insert break characters, measure text to allocate tracks, or
-estimate paragraph heights. Unbroken identifiers follow Typst's default behavior.
-Pages grow with their content. Before rasterization, the renderer checks actual
-page dimensions and rejects oversized or multi-page output. `renderd` rasterizes
-at 3x by default; `RENDERD_SCALE` and the per-request scale support 1x–4x.
-Its runtime image includes Fira Code and Noto CJK. The Typst world exposes only
-embedded card templates; it cannot read files or access the network during
-compilation.
-
-For local development, start `renderd` and point the bot at
-`http://127.0.0.1:9123/render` with `BOT_RENDER_ENDPOINT`. In another terminal:
-
-```sh
-./scripts/render-reference.sh
-go run ./cmd/render-examples -endpoint http://127.0.0.1:9123/render -out examples
-```
-
-The reference script archives the last pre-Typst commit into a temporary
-directory, injects seven fixture definitions pinned at commit `9679327` and a fixed clock,
-and renders through the historical Go implementation. It leaves no legacy
-execution path in the bot. `examples/reference` holds the original 2x PNGs;
-`examples/index.html` presents them beside the new 3x PNGs as historical style
-references, explicitly labeled as different input data. Current examples embed
-public course and complete bus snapshots with provenance in
-`cmd/render-examples/testdata/README.md`; they require no network during rendering.
-The command fails on rendering, output-write, or dimension errors. CI builds
-both sets and uploads the gallery as `typst-render-examples`.
-
-Pinning the reference inputs keeps newer semantic payload fields from changing
-or breaking historical captures.
+`scripts/deploy-mac.sh` builds one committed revision on the macOS deployment
+host, switches binaries and launchd services transactionally, checks health and
+rolls back a failed switch. A deployment is verified by the actual
+`BOT_BUILD_VERSION` and both service health endpoints, not only by Git state.
