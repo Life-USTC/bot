@@ -2,6 +2,7 @@ package agent
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
@@ -28,10 +29,18 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 		switch event.Type {
 		case store.ConversationEventUser:
 			parts := inputMessageParts(event.Parts)
+			prefix := userHistoryPrefix(event)
 			if len(parts) > 0 {
+				if prefix != "" {
+					parts = prefixInputMessageParts(parts, prefix)
+				}
 				messages = append(messages, &schema.Message{Role: schema.User, UserInputMultiContent: parts})
 			} else if strings.TrimSpace(event.Content) != "" {
-				messages = append(messages, schema.UserMessage(event.Content))
+				messages = append(messages, schema.UserMessage(prefix+event.Content))
+			} else if prefix != "" {
+				// Keep the speaker and timestamp visible for an otherwise empty
+				// multimodal/user event without inventing a second user turn.
+				messages = append(messages, schema.UserMessage(strings.TrimSpace(prefix)))
 			}
 		case store.ConversationEventAssistant:
 			calls := make([]schema.ToolCall, 0, len(event.ToolCalls))
@@ -49,6 +58,14 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 				})
 			}
 			content, parts := providerAssistantOutput(event.Content, event.Parts)
+			// Command outcomes already carry the durable observed_at field in
+			// their JSON envelope. Prefixing that content would make it invalid
+			// JSON and would hide the structured result from the model.
+			prefix := assistantHistoryPrefix(event)
+			if event.Source == store.ConversationEventSourceCommand {
+				prefix = ""
+			}
+			content, parts = prefixAssistantOutput(content, parts, prefix)
 			if strings.TrimSpace(content) != "" || len(calls) > 0 || len(parts) > 0 {
 				message := schema.AssistantMessage(content, calls)
 				message.Name = event.Name
@@ -63,6 +80,89 @@ func messagesFromConversationEvents(events []store.ConversationEvent) []*schema.
 		}
 	}
 	return messages
+}
+
+func eventHistoryTime(event store.ConversationEvent) time.Time {
+	return event.OccurredAt
+}
+
+func formatHistoryTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
+}
+
+func historySpeaker(event store.ConversationEvent) string {
+	displayName := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(event.ActorDisplayName, "\n", " "), "\r", " "))
+	if displayName == "" {
+		displayName = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(event.Name, "\n", " "), "\r", " "))
+	}
+	userID := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(event.Identity.UserID, "\n", " "), "\r", " "))
+	switch {
+	case displayName != "" && userID != "" && displayName != userID:
+		return displayName + " (user:" + userID + ")"
+	case displayName != "":
+		return displayName
+	default:
+		return userID
+	}
+}
+
+func userHistoryPrefix(event store.ConversationEvent) string {
+	when := formatHistoryTime(eventHistoryTime(event))
+	speaker := historySpeaker(event)
+	if when == "" && speaker == "" {
+		return ""
+	}
+	if when == "" {
+		return "[" + speaker + "] "
+	}
+	if speaker == "" {
+		return "[" + when + "] "
+	}
+	return "[" + when + "] [" + speaker + "] "
+}
+
+func prefixInputMessageParts(parts []schema.MessageInputPart, prefix string) []schema.MessageInputPart {
+	if len(parts) == 0 || prefix == "" {
+		return parts
+	}
+	result := append([]schema.MessageInputPart(nil), parts...)
+	for index := range result {
+		if result[index].Type != schema.ChatMessagePartTypeText {
+			continue
+		}
+		result[index].Text = prefix + result[index].Text
+		return result
+	}
+	return append([]schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: prefix}}, result...)
+}
+
+func assistantHistoryPrefix(event store.ConversationEvent) string {
+	when := formatHistoryTime(eventHistoryTime(event))
+	if when == "" {
+		return ""
+	}
+	return "[" + when + "] "
+}
+
+func prefixAssistantOutput(content string, parts []schema.MessageOutputPart, prefix string) (string, []schema.MessageOutputPart) {
+	if prefix == "" {
+		return content, parts
+	}
+	if len(parts) == 0 {
+		return prefix + content, parts
+	}
+	result := append([]schema.MessageOutputPart(nil), parts...)
+	for index := range result {
+		if result[index].Type != schema.ChatMessagePartTypeText {
+			continue
+		}
+		result[index].Text = prefix + result[index].Text
+		return content, result
+	}
+	return content, append([]schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: prefix}}, result...)
 }
 
 func inputMessageParts(parts []store.ConversationMessagePart) []schema.MessageInputPart {
