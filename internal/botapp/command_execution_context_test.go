@@ -126,7 +126,7 @@ func TestCoordinatorDirectDestructiveCommandRejectsWithoutExecution(t *testing.T
 		t.Fatalf("rejected execution=%#v err=%v", executions, err)
 	}
 	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
-	if err != nil || len(events) != 1 || events[0].Type != store.ConversationEventUser {
+	if err != nil || len(events) != 2 || events[0].Type != store.ConversationEventUser || events[1].Type != store.ConversationEventAssistant {
 		t.Fatalf("confirmation mechanic leaked into events=%#v err=%v", events, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)

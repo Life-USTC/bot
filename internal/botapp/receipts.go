@@ -98,7 +98,7 @@ func receiptFailureReason(execution store.CapabilityExecution) string {
 		// Result is the descriptor-owned, user-safe domain response. Error may
 		// contain protected transport diagnostics when execution failed before
 		// the descriptor could return a result.
-		reason = strings.TrimSpace(execution.Result)
+		reason = capabilityExecutionResultText(execution)
 		if reason == "" {
 			reason = "操作没有完成"
 		}

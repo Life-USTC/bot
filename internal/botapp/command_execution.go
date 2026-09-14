@@ -2,6 +2,7 @@ package botapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -52,6 +53,63 @@ func finishCapabilityExecutionUnknown(ctx context.Context, jobs JobRepository, e
 }
 
 const staleCapabilityUnknownReason = "进程中断，外部操作结果未知；系统没有自动重试"
+
+const directCommandResultFormat = "presto.direct_command.v1"
+
+// directCommandResultSnapshot is stored in the existing capability result
+// column so a completed direct command can be replayed after an event or
+// outbox commit failure without invoking the capability again. Data is kept as
+// RawMessage to preserve the domain JSON that the first model event exposed.
+type directCommandResultSnapshot struct {
+	Format string          `json:"format"`
+	Status string          `json:"status"`
+	Text   string          `json:"text,omitempty"`
+	Kind   string          `json:"kind,omitempty"`
+	Data   json.RawMessage `json:"data"`
+}
+
+func encodeDirectCommandResult(outcome commands.CapabilityOutcome) string {
+	data, err := json.Marshal(outcome.Response.Data)
+	if err != nil {
+		// toolresult.Encode has the same JSON boundary. An unencodable domain
+		// value cannot be recovered as model data, but the user-facing text and
+		// terminal status remain durable.
+		data = []byte("null")
+	}
+	snapshot := directCommandResultSnapshot{
+		Format: directCommandResultFormat, Status: string(outcome.Status),
+		Text: outcome.Response.Text, Kind: outcome.Response.Kind, Data: data,
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return strings.TrimSpace(outcome.Response.Text)
+	}
+	return string(encoded)
+}
+
+func decodeDirectCommandResult(result string) (commands.Response, string, bool) {
+	var snapshot directCommandResultSnapshot
+	if err := json.Unmarshal([]byte(result), &snapshot); err != nil || snapshot.Format != directCommandResultFormat {
+		return commands.Response{Text: result}, "", false
+	}
+	response := commands.Response{Text: snapshot.Text, Kind: snapshot.Kind}
+	if len(snapshot.Data) > 0 {
+		response.Data = json.RawMessage(append([]byte(nil), snapshot.Data...))
+	}
+	return response, snapshot.Status, true
+}
+
+func capabilityExecutionResultResponse(execution store.CapabilityExecution) (commands.Response, string, bool) {
+	return decodeDirectCommandResult(execution.Result)
+}
+
+func capabilityExecutionResultText(execution store.CapabilityExecution) string {
+	response, _, snapshot := capabilityExecutionResultResponse(execution)
+	if snapshot {
+		return strings.TrimSpace(response.Text)
+	}
+	return strings.TrimSpace(execution.Result)
+}
 
 func markStaleCapabilityExecutionUnknown(ctx context.Context, jobs JobRepository, job store.ConversationJob, execution store.CapabilityExecution) (store.CapabilityExecution, bool, error) {
 	return jobs.MarkStaleCapabilityExecutionUnknown(ctx, execution.ID, job.ID, job.LeaseToken, staleCapabilityUnknownReason)
@@ -251,20 +309,23 @@ func (c *Coordinator) resumeCommand(
 			}
 			c.retryCommandBatch(ctx, job, inbound, response, "capability execution is still running", commit)
 			return
-		case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown:
-			if execution.ReceiptState != execution.State && strings.TrimSpace(capabilityExecutionModelResult(execution)) != "" {
-				response.Text = joinResponseText(response.Text, capabilityExecutionModelResult(execution))
-				response.Kind = execution.Capability
-				if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, execution.ID,
-					commandExecutionModelResult(execution), inbound, capabilityExecutionObservedAt(execution)); err != nil {
-					c.fail(ctx, job, err)
-					return
+		case store.CapabilityExecutionSucceeded, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown,
+			store.CapabilityExecutionDenied, store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
+			if execution.ReceiptState != execution.State {
+				if execution.State == store.CapabilityExecutionSucceeded || execution.State == store.CapabilityExecutionFailed || execution.State == store.CapabilityExecutionUnknown {
+					if result := capabilityExecutionModelResult(execution); strings.TrimSpace(result) != "" {
+						response.Text = joinResponseText(response.Text, result)
+						response.Kind = execution.Capability
+					}
+				}
+				if result := commandExecutionModelResult(execution); strings.TrimSpace(result) != "" {
+					if err := c.appendCommandEvent(ctx, job, store.ConversationEventAssistant, execution.ID,
+						result, inbound, capabilityExecutionObservedAt(execution)); err != nil {
+						c.fail(ctx, job, err)
+						return
+					}
 				}
 			}
-		case store.CapabilityExecutionDenied:
-			// Confirmation/rejection is host lifecycle state. The receipt is
-			// emitted by finishCommandBatch, while the confirmation itself is
-			// intentionally absent from the model transcript.
 		}
 	}
 	c.finishCommandBatch(ctx, job, inbound, response, commit)
@@ -344,7 +405,7 @@ func (c *Coordinator) executeClaimedCommand(
 	var outcomeErr error
 	if capabilityOutcomeIsUnknown(outcome) {
 		finished, finishErr := finishCapabilityExecutionUnknown(ctx, c.jobs, execution,
-			strings.TrimSpace(outcome.Response.Text), capabilityExecutionDiagnostic(outcome.Status).Error())
+			encodeDirectCommandResult(outcome), capabilityExecutionDiagnostic(outcome.Status).Error())
 		if finishErr != nil {
 			c.fail(ctx, job, markConversationPersistenceError(finishErr))
 			return
@@ -360,7 +421,7 @@ func (c *Coordinator) executeClaimedCommand(
 	if outcome.Status != commands.CapabilityOutcomeSuccess {
 		outcomeErr = capabilityExecutionDiagnostic(outcome.Status)
 	}
-	finished, err := c.jobs.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, strings.TrimSpace(outcome.Response.Text), outcomeErr)
+	finished, err := c.jobs.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, encodeDirectCommandResult(outcome), outcomeErr)
 	if err != nil {
 		c.fail(ctx, job, markConversationPersistenceError(err))
 		return
@@ -531,7 +592,7 @@ func (c *Coordinator) waitForCommandConfirmation(
 }
 
 func capabilityExecutionObservedAt(execution store.CapabilityExecution) time.Time {
-	for _, candidate := range []*time.Time{execution.FinishedAt, &execution.UpdatedAt, &execution.CreatedAt} {
+	for _, candidate := range []*time.Time{execution.FinishedAt, execution.ConfirmedAt, &execution.CreatedAt} {
 		if candidate != nil && !candidate.IsZero() {
 			return candidate.UTC()
 		}
@@ -560,18 +621,31 @@ func commandExecutionModelResult(execution store.CapabilityExecution) string {
 		return ""
 	}
 	status := string(execution.State)
+	response, snapshotStatus, snapshot := capabilityExecutionResultResponse(execution)
+	if snapshot && strings.TrimSpace(snapshotStatus) != "" {
+		status = snapshotStatus
+	}
 	var executionErr error
-	if execution.State != store.CapabilityExecutionSucceeded {
-		message := strings.TrimSpace(execution.Error)
+	if status != string(commands.CapabilityOutcomeSuccess) && status != string(store.CapabilityExecutionSucceeded) {
+		message := strings.TrimSpace(response.Text)
 		if message == "" {
-			message = strings.TrimSpace(execution.Result)
+			message = strings.TrimSpace(execution.Error)
+		}
+		if message == "" {
+			message = capabilityExecutionResultText(execution)
 		}
 		if message == "" {
 			message = "operation did not complete successfully"
 		}
 		executionErr = errors.New(message)
 	}
-	return toolresult.Encode("bot", execution.Capability, status, capabilityExecutionObservedAt(execution), toolresult.Data(execution.Result), executionErr)
+	var data any
+	if snapshot {
+		data = response.Data
+	} else if strings.TrimSpace(execution.Result) != "" {
+		data = toolresult.Data(execution.Result)
+	}
+	return toolresult.Encode("bot", execution.Capability, status, capabilityExecutionObservedAt(execution), data, executionErr)
 }
 
 func joinResponseText(current, next string) string {
@@ -586,19 +660,24 @@ func joinResponseText(current, next string) string {
 }
 
 func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
+	response, _, snapshot := capabilityExecutionResultResponse(execution)
+	if snapshot {
+		return strings.TrimSpace(response.Text)
+	}
+	resultText := strings.TrimSpace(execution.Result)
 	switch execution.State {
 	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
+		if result := resultText; result != "" {
 			return result
 		}
 		return "操作已完成，但没有返回内容。"
 	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
+		if result := resultText; result != "" {
 			return result
 		}
 		return "操作失败，未返回可用结果。"
 	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
+		if result := resultText; result != "" {
 			return result
 		}
 		return "操作结果未知，系统没有自动重试。"
