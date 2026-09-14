@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -124,6 +125,113 @@ func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing
 	}
 	if records[0].Message.Content.Text != "第一段" || records[1].Message.Content.Attachment == nil || records[1].Message.Content.Attachment.URL != partImage.URL {
 		t.Fatalf("recovered response parts=%#v", records)
+	}
+}
+
+func TestDirectMutationBatchRecoversEveryResponseWithoutReexecution(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &outputCommitFaultStore{Store: db, failures: 1}
+	firstImage := &responses.Image{Kind: "first", Title: "第一项", URL: "https://example.test/first.png"}
+	secondImage := &responses.Image{Kind: "second", Title: "第二项", URL: "https://example.test/second.png"}
+	handler := &fixedOutcomeCommand{outcomes: []commands.CapabilityOutcome{
+		commands.SuccessOutcome(commands.Response{
+			Text: "第一项完成", Kind: "todo", Data: map[string]any{"item": "1"}, Image: firstImage,
+		}),
+		commands.SuccessOutcome(commands.Response{
+			Kind: "todo", Data: map[string]any{"item": "2"},
+			Parts: []commands.Response{{Text: "第二项完成", Kind: "part_text"}, {Kind: "part_image", Image: secondImage}},
+		}),
+	}}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: jobs, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-batch-recovery", "待办 完成 1,2")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+	if handler.calls != 2 {
+		t.Fatalf("batch calls after failed output commit=%d", handler.calls)
+	}
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait {
+		t.Fatalf("batch job after output failure=%#v err=%v", saved, err)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("batch executions after output failure=%#v err=%v", executions, err)
+	}
+	first, _, firstOK := capabilityExecutionResultResponse(executions[0])
+	second, _, secondOK := capabilityExecutionResultResponse(executions[1])
+	if !firstOK || first.Image == nil || first.Image.URL != firstImage.URL || len(first.Parts) != 0 ||
+		!secondOK || second.Image != nil || len(second.Parts) != 2 || second.Parts[0].Text != "第二项完成" || second.Parts[1].Image == nil || second.Parts[1].Image.URL != secondImage.URL {
+		t.Fatalf("batch response snapshots first=%#v/%v second=%#v/%v", first, firstOK, second, secondOK)
+	}
+
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	if handler.calls != 2 {
+		t.Fatalf("batch re-executed during recovery: calls=%d", handler.calls)
+	}
+	saved, err = db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("batch job after recovery=%#v err=%v", saved, err)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 3 {
+		t.Fatalf("batch recovered outputs=%#v err=%v", records, err)
+	}
+	if records[0].Message.Content.Attachment == nil || records[0].Message.Content.Attachment.URL != firstImage.URL ||
+		records[1].Message.Content.Text != "第二项完成" || records[2].Message.Content.Attachment == nil || records[2].Message.Content.Attachment.URL != secondImage.URL {
+		t.Fatalf("batch recovered response order=%#v", records)
+	}
+}
+
+func TestDirectMutationBatchAuthWaitDoesNotRepeatCompletedResponse(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcomes: []commands.CapabilityOutcome{
+		commands.SuccessOutcome(commands.Response{Text: "第一项已完成", Kind: "todo", Data: map[string]any{"item": "1"}}),
+		commands.AuthRequiredOutcome(commands.Response{Text: "请先登录", Kind: commands.ResponseKindAuthWait}),
+		commands.SuccessOutcome(commands.Response{Text: "第二项已完成", Kind: "todo", Data: map[string]any{"item": "2"}}),
+	}}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-batch-auth", "待办 完成 1,2")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateWaitingAuth {
+		t.Fatalf("batch auth wait job=%#v err=%v", saved, err)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[0].ReceiptState != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionWaitingAuth {
+		t.Fatalf("batch auth wait executions=%#v err=%v", executions, err)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 2 || records[0].Message.Content.Text != "第一项已完成" || records[1].Message.Content.Text != "请先登录" {
+		t.Fatalf("batch auth wait output=%#v err=%v", records, err)
+	}
+
+	if err := db.UnblockConversationJobsAfterAuth(ctx, job.Identity); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	if handler.calls != 3 {
+		t.Fatalf("batch auth execution calls=%d want=3", handler.calls)
+	}
+	if saved, err := db.GetConversationJob(ctx, job.ID); err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("batch auth completed job=%#v err=%v", saved, err)
+	}
+	records, err = db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "第二项已完成" || strings.Contains(records[0].Message.Content.Text, "第一项已完成") {
+		t.Fatalf("batch auth resumed output=%#v err=%v", records, err)
 	}
 }
 

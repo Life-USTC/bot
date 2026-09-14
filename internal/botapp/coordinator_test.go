@@ -37,6 +37,23 @@ func (fn commandFunc) ExecuteCapability(ctx context.Context, input commands.Inpu
 	return commands.CapabilityOutcome{Status: status, Response: response}, nil
 }
 
+func describeTestInvocation(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) (commands.CapabilityInvocationDescription, error) {
+	invocation, ok := commands.NewInvocation(id, args)
+	if !ok {
+		return commands.CapabilityInvocationDescription{}, fmt.Errorf("invalid test invocation %q", id)
+	}
+	receipt := commands.ReceiptForInvocation(invocation)
+	var receiptPtr *store.CapabilityReceipt
+	if receipt.Action != "" && receipt.Resource != "" && receipt.Subject != "" {
+		receiptPtr = &receipt
+	}
+	return commands.CapabilityInvocationDescription{Invocation: invocation, Receipt: receiptPtr}, nil
+}
+
+func (fn commandFunc) DescribeInvocation(ctx context.Context, input commands.Input, id commands.CapabilityID, args []string) (commands.CapabilityInvocationDescription, error) {
+	return describeTestInvocation(ctx, input, id, args)
+}
+
 type agentFunc func(context.Context, agent.Input) (commands.Response, bool)
 
 func (fn agentFunc) Run(ctx context.Context, input agent.Input) agent.Result {
@@ -122,17 +139,38 @@ func (s *capabilityWriteFaultStore) FinishCapabilityExecution(ctx context.Contex
 }
 
 type fixedOutcomeCommand struct {
-	outcome commands.CapabilityOutcome
-	calls   int
-	id      commands.CapabilityID
-	args    []string
+	outcome       commands.CapabilityOutcome
+	outcomes      []commands.CapabilityOutcome
+	describeErr   error
+	calls         int
+	id            commands.CapabilityID
+	args          []string
+	allArgs       [][]string
+	describedArgs [][]string
+	described     []commands.Invocation
 }
 
 func (h *fixedOutcomeCommand) ExecuteCapability(_ context.Context, _ commands.Input, id commands.CapabilityID, args []string) (commands.CapabilityOutcome, error) {
 	h.calls++
 	h.id = id
 	h.args = append([]string(nil), args...)
+	h.allArgs = append(h.allArgs, append([]string(nil), args...))
+	if index := h.calls - 1; index >= 0 && index < len(h.outcomes) {
+		return h.outcomes[index], nil
+	}
 	return h.outcome, nil
+}
+
+func (h *fixedOutcomeCommand) DescribeInvocation(ctx context.Context, input commands.Input, id commands.CapabilityID, args []string) (commands.CapabilityInvocationDescription, error) {
+	if h.describeErr != nil {
+		return commands.CapabilityInvocationDescription{}, h.describeErr
+	}
+	description, err := describeTestInvocation(ctx, input, id, args)
+	if err == nil {
+		h.describedArgs = append(h.describedArgs, append([]string(nil), args...))
+		h.described = append(h.described, description.Invocation)
+	}
+	return description, err
 }
 
 func (s *capabilityReadFaultStore) CapabilityExecutionsForJob(ctx context.Context, jobID int64) ([]store.CapabilityExecution, error) {
@@ -1337,7 +1375,7 @@ func TestCoordinatorPassesGroupedDirectMutationThroughWithoutConfirmation(t *tes
 	}
 	job := claimOnlyConversationJob(t, db)
 	coordinator.execute(ctx, job)
-	if handler.calls != 1 || handler.id != commands.CapabilitySubscription || strings.Join(handler.args, " ") != "import CODE1.01 CODE2.02" {
+	if handler.calls != 2 || handler.id != commands.CapabilitySubscription || strings.Join(handler.args, " ") != "import CODE2.02" {
 		t.Fatalf("direct invocation: calls=%d id=%s args=%#v", handler.calls, handler.id, handler.args)
 	}
 	saved, err := db.GetConversationJob(ctx, job.ID)
@@ -1345,11 +1383,11 @@ func TestCoordinatorPassesGroupedDirectMutationThroughWithoutConfirmation(t *tes
 		t.Fatalf("grouped direct job=%#v err=%v", saved, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "批量订阅完成" || strings.Contains(records[0].Message.Content.Text, "#") {
+	if err != nil || len(records) != 2 || records[0].Message.Content.Text != "批量订阅完成" || records[1].Message.Content.Text != "批量订阅完成" || strings.Contains(records[0].Message.Content.Text, "#") || strings.Contains(records[1].Message.Content.Text, "#") {
 		t.Fatalf("grouped direct output=%#v err=%v", records, err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionSucceeded {
 		t.Fatalf("grouped direct execution=%#v err=%v", executions, err)
 	}
 }

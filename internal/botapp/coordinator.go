@@ -29,6 +29,7 @@ const (
 
 type CommandHandler interface {
 	ExecuteCapability(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityOutcome, error)
+	DescribeInvocation(context.Context, commands.Input, commands.CapabilityID, []string) (commands.CapabilityInvocationDescription, error)
 }
 
 type AgentHandler interface {
@@ -70,6 +71,7 @@ type JobRepository interface {
 	FailConversationJob(context.Context, int64, string, string) (bool, error)
 	ResolveCapabilityConfirmation(context.Context, store.Identity, store.CapabilityConfirmationDecision, ...time.Time) (*store.CapabilityExecution, *store.ConversationJob, error)
 	PrepareCapabilityExecution(context.Context, store.CapabilityExecutionPrepare) (store.CapabilityExecution, bool, error)
+	PrepareCapabilityExecutions(context.Context, []store.CapabilityExecutionPrepare) ([]store.CapabilityExecution, bool, error)
 	CapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	UnsentCapabilityExecutionsForJob(context.Context, int64) ([]store.CapabilityExecution, error)
 	ClaimCapabilityExecutionForJob(context.Context, string, int64, string) (store.CapabilityExecution, bool, error)

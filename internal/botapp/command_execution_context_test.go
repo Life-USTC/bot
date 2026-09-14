@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -132,5 +133,220 @@ func TestCoordinatorDirectDestructiveCommandRejectsWithoutExecution(t *testing.T
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
 	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "用户拒绝执行") {
 		t.Fatalf("rejection output=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorDirectDestructiveBatchConfirmsEachOperation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{
+		Text: "已删除", Kind: "todo", Data: map[string]any{"deleted": true},
+	})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-delete-batch", "待办 删除 1,2")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 {
+		t.Fatalf("prepared destructive batch=%#v err=%v", executions, err)
+	}
+	for index, execution := range executions {
+		if execution.Sequence != index || execution.State != store.CapabilityExecutionAwaitingConfirmation || execution.Capability != string(commands.CapabilityTodo) ||
+			len(execution.Arguments) != 2 || execution.Arguments[0] != "delete" || execution.Arguments[1] != string(rune('1'+index)) {
+			t.Fatalf("prepared destructive execution[%d]=%#v", index, execution)
+		}
+		if execution.Receipt.Action != "删除" || execution.Receipt.Resource != "待办" || execution.Receipt.Subject != string(rune('1'+index)) {
+			t.Fatalf("destructive receipt[%d]=%#v", index, execution.Receipt)
+		}
+	}
+	if len(handler.described) != 2 || handler.calls != 0 {
+		t.Fatalf("preflight/calls: described=%#v calls=%d", handler.described, handler.calls)
+	}
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 ||
+		!strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{1}") || strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{2}") {
+		t.Fatalf("first confirmation output=%#v err=%v", records, err)
+	}
+
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-delete-batch-confirm-1", "确认")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	if handler.calls != 1 || len(handler.allArgs) != 1 || strings.Join(handler.allArgs[0], " ") != "delete 1" {
+		t.Fatalf("first destructive execution: calls=%d args=%#v", handler.calls, handler.allArgs)
+	}
+	executions, err = db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionAwaitingConfirmation {
+		t.Fatalf("after first approval=%#v err=%v", executions, err)
+	}
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 ||
+		!strings.Contains(records[0].Message.Content.Text, "#已删除待办{1}") || !strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{2}") {
+		t.Fatalf("second confirmation output=%#v err=%v", records, err)
+	}
+
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-delete-batch-confirm-2", "确认")); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	if handler.calls != 2 || len(handler.allArgs) != 2 || strings.Join(handler.allArgs[1], " ") != "delete 2" {
+		t.Fatalf("second destructive execution: calls=%d args=%#v", handler.calls, handler.allArgs)
+	}
+	executions, err = db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("after second approval=%#v err=%v", executions, err)
+	}
+	if saved, err := db.GetConversationJob(ctx, job.ID); err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("destructive batch job=%#v err=%v", saved, err)
+	}
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#已删除待办{2}") {
+		t.Fatalf("final destructive output=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorDirectDestructiveBatchRejectsEachOperation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Text: "不应执行", Kind: "todo"})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-delete-reject-batch", "待办 删除 1,2")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+	if _, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil {
+		t.Fatal(err)
+	}
+
+	for index, eventID := range []string{"direct-delete-reject-1", "direct-delete-reject-2"} {
+		if err := coordinator.Enqueue(ctx, jobInbound(eventID, "拒绝")); err != nil {
+			t.Fatal(err)
+		}
+		coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+		executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+		if err != nil || len(executions) != 2 {
+			t.Fatalf("after rejection %d executions=%#v err=%v", index, executions, err)
+		}
+		for operationIndex, execution := range executions {
+			want := store.CapabilityExecutionAwaitingConfirmation
+			if operationIndex <= index {
+				want = store.CapabilityExecutionDenied
+			}
+			if execution.State != want {
+				t.Fatalf("after rejection %d execution[%d]=%#v want=%s", index, operationIndex, execution, want)
+			}
+		}
+		if handler.calls != 0 {
+			t.Fatalf("rejected destructive batch executed %d times", handler.calls)
+		}
+		if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "用户拒绝执行") {
+			t.Fatalf("rejection %d output=%#v err=%v", index, records, err)
+		}
+	}
+	if saved, err := db.GetConversationJob(ctx, job.ID); err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("rejected destructive batch job=%#v err=%v", saved, err)
+	}
+}
+
+func TestCoordinatorDirectOrdinaryBatchExecutesAllOperationsInOrder(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Text: "已更新", Kind: "todo"})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-done-batch", "待办 完成 1,2")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	if handler.calls != 2 || len(handler.allArgs) != 2 || strings.Join(handler.allArgs[0], " ") != "done 1" || strings.Join(handler.allArgs[1], " ") != "done 2" {
+		t.Fatalf("ordinary batch execution: calls=%d args=%#v", handler.calls, handler.allArgs)
+	}
+	if len(handler.described) != 2 || len(handler.describedArgs) != 2 || strings.Join(handler.describedArgs[0], " ") != "done 1" || strings.Join(handler.describedArgs[1], " ") != "done 2" {
+		t.Fatalf("ordinary batch preflight: invocations=%#v args=%#v", handler.described, handler.describedArgs)
+	}
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 2 || executions[0].State != store.CapabilityExecutionSucceeded || executions[1].State != store.CapabilityExecutionSucceeded {
+		t.Fatalf("ordinary batch executions=%#v err=%v", executions, err)
+	}
+	if saved, err := db.GetConversationJob(ctx, job.ID); err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
+		t.Fatalf("ordinary batch job=%#v err=%v", saved, err)
+	}
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 2 || records[0].Message.Content.Text != "已更新" || records[1].Message.Content.Text != "已更新" {
+		t.Fatalf("ordinary batch output=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorDirectMutationPreflightStartsLoginWithoutPreparingOperation(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{
+		describeErr: auth.ErrNotLoggedIn,
+		outcome:     commands.AuthRequiredOutcome(commands.Response{Text: "请先登录", Kind: commands.ResponseKindAuthWait}),
+	}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-preflight-auth", "待办 完成 1")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 0 {
+		t.Fatalf("preflight auth prepared mutations=%#v err=%v", executions, err)
+	}
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateWaitingAuth {
+		t.Fatalf("preflight auth job=%#v err=%v", saved, err)
+	}
+	if handler.calls != 1 || handler.id != commands.CapabilityLogin || len(handler.allArgs) != 1 || len(handler.allArgs[0]) != 0 {
+		t.Fatalf("preflight auth login call: calls=%d id=%s args=%#v", handler.calls, handler.id, handler.allArgs)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "请先登录" {
+		t.Fatalf("preflight auth output=%#v err=%v", records, err)
+	}
+}
+
+func TestCoordinatorDirectMutationPreflightLoginSuccessLeavesJobRetryable(t *testing.T) {
+	db := newCoordinatorStore(t)
+	handler := &fixedOutcomeCommand{
+		describeErr: auth.ErrReauthorizationRequired,
+		outcome:     commands.SuccessOutcome(commands.Response{Text: "已登录", Kind: "login"}),
+	}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-preflight-auth-success", "待办 完成 1")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 0 {
+		t.Fatalf("preflight auth-success prepared mutations=%#v err=%v", executions, err)
+	}
+	saved, err := db.GetConversationJob(ctx, job.ID)
+	if err != nil || saved == nil || saved.State != store.ConversationJobStateRetryWait {
+		t.Fatalf("preflight auth-success job=%#v err=%v", saved, err)
+	}
+	if handler.calls != 1 || handler.id != commands.CapabilityLogin {
+		t.Fatalf("preflight auth-success login call: calls=%d id=%s", handler.calls, handler.id)
 	}
 }
