@@ -137,10 +137,6 @@ func (h Handler) helpFor(shared bool, args ...string) string {
 	return text
 }
 
-func structuredHelpData(args ...string) map[string]any {
-	return structuredHelpDataFor(false, args...)
-}
-
 func structuredHelpDataFor(shared bool, args ...string) map[string]any {
 	documentation := SearchCapabilityDocumentation("", CapabilitySearchOptions{SharedConversation: shared})
 	topic := ""
@@ -213,10 +209,6 @@ func invalidCapabilityUsageResponse(id CapabilityID) Response {
 		lines = append(lines, line)
 	}
 	return Response{Text: strings.Join(lines, "\n"), Data: data, Kind: string(id)}
-}
-
-func helpOverviewText() string {
-	return HelpOverview(false)
 }
 
 // HelpOverview renders the user-facing command menu. Shared conversations

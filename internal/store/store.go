@@ -1741,17 +1741,6 @@ func (s *Store) Complete(ctx context.Context, id int64, outcome delivery.Outcome
 	})
 }
 
-// outgoingStatusIsTerminal reports whether no further send can consume the
-// stored payload.
-func outgoingStatusIsTerminal(status delivery.Status) bool {
-	switch status {
-	case delivery.StatusAccepted, delivery.StatusRejected, delivery.StatusUnknown, delivery.StatusExpired:
-		return true
-	default:
-		return false
-	}
-}
-
 func (s *Store) ExpireDue(ctx context.Context, now time.Time) error {
 	now = now.UTC()
 	return s.db.WithContext(ctx).Model(&outgoingMessageRow{}).

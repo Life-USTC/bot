@@ -252,7 +252,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	if responseKind != ResponseKindAuthWait {
 		// Executors may attach a structured image (e.g. the weather card);
 		// only fall back to the text-derived image when none was provided.
-		if response.Image == nil && !(cmd.Name == string(CapabilityHelp) && store.IsSharedConversation(input.Identity)) {
+		if response.Image == nil && (cmd.Name != string(CapabilityHelp) || !store.IsSharedConversation(input.Identity)) {
 			response.Image = h.imageResponseForOutcome(cmd, outcome)
 		}
 	} else {

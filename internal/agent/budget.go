@@ -28,7 +28,7 @@ const (
 	// a single-window budget stopped the run at the sixth request and made the
 	// 12-tool-call bound below unreachable.
 	agentRunTotalTokenBudget int64 = 400_000
-	agentRunMaxToolCalls           = 12
+	agentRunMaxToolCalls     int   = 12
 	// A tool loop can make at most one more logical model request than tool
 	// calls. Each logical request receives its own bounded retry window; the
 	// aggregate durable limit prevents a restart from resetting that budget.
