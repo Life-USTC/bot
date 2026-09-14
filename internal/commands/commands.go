@@ -2602,11 +2602,12 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 	if err != nil {
 		return h.commandError("订阅链接查不到：", err)
 	}
+	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
 	h.markData(map[string]any{
 		"operation":    "calendar_link",
+		"calendar_url": calendarURL,
 		"subscription": data,
 	})
-	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
 	if calendarURL == "" {
 		if hasCurrentScopes, scopeErr := h.Auth.HasCurrentScopes(ctx, ident); scopeErr == nil && !hasCurrentScopes {
 			if logoutErr := h.Auth.Logout(ctx, ident); logoutErr != nil {
@@ -4393,18 +4394,6 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 		return h.invalidInput(listPageOutOfRange("考试", len(exams), command))
 	}
 	return reply
-}
-
-func (h Handler) status(ctx context.Context) string {
-	api := "OK"
-	if err := h.Life.Health(ctx); err != nil {
-		h.markOutcome(CapabilityOutcomeFailed)
-		api = friendlyError(err)
-	}
-	return strings.Join([]string{
-		"状态：",
-		"Life @ USTC：" + api,
-	}, "\n")
 }
 
 func formatNumberedLine(index int, text string) string {
