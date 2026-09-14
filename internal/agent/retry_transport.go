@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	// Every logical model request gets the same retry window. The separate
-	// run-wide budget bounds the sum across a complete tool loop and resumes.
+	// Every logical model request gets its own retry window. There is no
+	// aggregate retry budget for a complete tool loop.
 	llmHTTPMaxAttempts = llmRequestMaxAttempts
 	llmRetryBaseDelay  = 200 * time.Millisecond
 	llmRetryMaxDelay   = 5 * time.Second
@@ -28,12 +28,17 @@ const (
 
 var errLLMTransportExhausted = errors.New("llm transport retries exhausted")
 
-func newAgentHTTPClient(base *http.Client, timeout time.Duration, logger *log.Logger) *http.Client {
+func newAgentHTTPClient(base *http.Client, logger *log.Logger) *http.Client {
 	var client http.Client
 	if base != nil {
 		client = *base
 	}
-	client.Timeout = timeout
+	// The shared client may have a timeout for ordinary Bot HTTP calls. A
+	// provider response can legitimately take longer than that, so the agent
+	// client must not inherit a whole-response deadline. Request cancellation
+	// still comes from the caller context, while transport-level connection and
+	// handshake timeouts remain configured on the copied Transport.
+	client.Timeout = 0
 	transport := client.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -65,11 +70,6 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if !isChatCompletionRequest(req) {
 		return t.base.RoundTrip(req)
 	}
-
-	budget := runBudgetFromContext(req.Context())
-	runCtx, cancel := contextWithRunDeadline(req.Context(), budget)
-	defer cancel()
-	req = req.WithContext(runCtx)
 
 	started := time.Now()
 	defer func() { recordRunStage(req.Context(), "model_request", time.Since(started)) }()
@@ -120,14 +120,14 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 
 		delay := t.retryDelay(attempt, resp)
-		delay, err = capRetryDelay(attemptReq.Context(), budget, delay)
+		delay, err = capRetryDelay(attemptReq.Context(), delay)
 		if err != nil {
 			return nil, err
 		}
 		t.logRetry(req, attempt, delay, lastErr)
 		if err := t.waitForRetry(attemptReq.Context(), delay); err != nil {
-			if budgetErr := budgetContextError(attemptReq.Context(), budget); budgetErr != nil {
-				return nil, budgetErr
+			if callerErr := callerContextError(attemptReq.Context()); callerErr != nil {
+				return nil, callerErr
 			}
 			return nil, err
 		}
@@ -314,8 +314,8 @@ func retryAfterHeader(header http.Header) string {
 	return ""
 }
 
-func capRetryDelay(ctx context.Context, budget *runBudget, delay time.Duration) (time.Duration, error) {
-	if err := budgetContextError(ctx, budget); err != nil {
+func capRetryDelay(ctx context.Context, delay time.Duration) (time.Duration, error) {
+	if err := callerContextError(ctx); err != nil {
 		return 0, err
 	}
 	remaining := time.Duration(1<<63 - 1)
@@ -324,11 +324,8 @@ func capRetryDelay(ctx context.Context, budget *runBudget, delay time.Duration) 
 			remaining = minDuration(remaining, time.Until(deadline))
 		}
 	}
-	if budget != nil && !budget.deadline.IsZero() {
-		remaining = minDuration(remaining, time.Until(budget.deadline))
-	}
 	if remaining <= 0 {
-		return 0, budgetContextError(ctx, budget)
+		return 0, callerContextError(ctx)
 	}
 	if delay > remaining {
 		return remaining, nil
@@ -341,16 +338,6 @@ func minDuration(left, right time.Duration) time.Duration {
 		return right
 	}
 	return left
-}
-
-func budgetContextError(ctx context.Context, budget *runBudget) error {
-	if budget != nil {
-		return budget.contextError(ctx)
-	}
-	if ctx != nil {
-		return ctx.Err()
-	}
-	return nil
 }
 
 func (t *llmRetryTransport) waitForRetry(ctx context.Context, delay time.Duration) error {

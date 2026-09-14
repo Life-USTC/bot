@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
+func TestAgentModelAttemptRecordingSurvivesInterruptedRun(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -28,11 +28,10 @@ func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstAttempts := agentModelAttemptLimit / 2
-	for i := int64(0); i < firstAttempts; i++ {
-		reserved, err := s.ReserveAgentModelAttempt(ctx, first, job.ID, agentModelAttemptLimit)
-		if err != nil || !reserved {
-			t.Fatalf("reserve attempt %d: reserved=%v err=%v", i, reserved, err)
+	const firstAttempts = 70
+	for i := 0; i < firstAttempts; i++ {
+		if err := s.RecordAgentModelAttempt(ctx, first); err != nil {
+			t.Fatalf("record attempt %d: %v", i, err)
 		}
 	}
 	if interrupted, err := s.InterruptStartedAgentRuns(ctx); err != nil || interrupted != 1 {
@@ -43,28 +42,22 @@ func TestAgentModelAttemptReservationSurvivesInterruptedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := firstAttempts; i < agentModelAttemptLimit; i++ {
-		reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, agentModelAttemptLimit)
-		if err != nil || !reserved {
-			t.Fatalf("resume reserve attempt %d: reserved=%v err=%v", i, reserved, err)
-		}
+	if err := s.RecordAgentModelAttempt(ctx, second); err != nil {
+		t.Fatal(err)
 	}
-	if reserved, err := s.ReserveAgentModelAttempt(ctx, second, job.ID, agentModelAttemptLimit); err != nil || reserved {
-		t.Fatalf("resume exceeded durable limit: reserved=%v err=%v", reserved, err)
-	}
-	if err := s.FinishAgentRun(ctx, second, AgentRunStatusFailed, "", nil, AgentSpending{ModelRequests: 1}); err != nil {
+	if err := s.FinishAgentRun(ctx, second, AgentRunStatusFailed, "", nil, AgentSpending{}); err != nil {
 		t.Fatal(err)
 	}
 	spending, err := s.AgentJobSpending(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spending.ModelRequests != agentModelAttemptLimit {
-		t.Fatalf("job spending after crash/resume = %#v, want %d attempts", spending, agentModelAttemptLimit)
+	if spending.ModelRequests != firstAttempts+1 {
+		t.Fatalf("job spending after crash/resume = %#v, want %d attempts", spending, firstAttempts+1)
 	}
 }
 
-func TestAgentModelAttemptReservationIsExclusiveAcrossWorkers(t *testing.T) {
+func TestAgentModelAttemptRecordingIsAtomicAcrossWorkers(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -72,81 +65,53 @@ func TestAgentModelAttemptReservationIsExclusiveAcrossWorkers(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "overlap", ConversationType: "private", ConversationID: "overlap"}
-	job, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
-		Identity: ident, SourceEventID: "attempt-overlap", ExpiresAt: time.Now().UTC().Add(time.Hour),
-	})
-	if err != nil || !created {
-		t.Fatalf("enqueue: job=%#v created=%v err=%v", job, created, err)
-	}
-	first, err := s.RecordAgentRun(ctx, ident, AgentRun{JobID: job.ID, RawText: "worker one"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := s.RecordAgentRun(ctx, ident, AgentRun{JobID: job.ID, RawText: "worker two"})
+	runID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "overlap"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	const workers = 128
+	const workers = 64
 	var wg sync.WaitGroup
-	results := make(chan bool, workers)
 	errs := make(chan error, workers)
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		runID := first
-		if i%2 == 1 {
-			runID = second
-		}
 		go func() {
 			defer wg.Done()
-			reserved, err := s.ReserveAgentModelAttempt(ctx, runID, job.ID, agentModelAttemptLimit)
-			if err != nil {
-				errs <- err
-				return
-			}
-			results <- reserved
+			errs <- s.RecordAgentModelAttempt(ctx, runID)
 		}()
 	}
 	wg.Wait()
-	close(results)
 	close(errs)
 	for err := range errs {
-		t.Fatal(err)
-	}
-	reserved := 0
-	for result := range results {
-		if result {
-			reserved++
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
-	if reserved != int(agentModelAttemptLimit) {
-		t.Fatalf("concurrent reservations = %d, want %d", reserved, agentModelAttemptLimit)
+	spending, err := s.UserSpending(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
 	}
-	spending, err := s.AgentJobSpending(ctx, job.ID)
-	if err != nil || spending.ModelRequests != agentModelAttemptLimit {
-		t.Fatalf("overlap spending = %#v err=%v", spending, err)
+	if spending.ModelRequests != workers {
+		t.Fatalf("concurrent attempt count = %d, want %d", spending.ModelRequests, workers)
 	}
 }
 
-func TestAgentModelAttemptReservationNeverAcceptsLimitAboveHardCap(t *testing.T) {
+func TestAgentModelAttemptRecordingRejectsFinishedRun(t *testing.T) {
 	s, err := Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
 	ctx := context.Background()
-	ident := Identity{Platform: "napcat", UserID: "attempt-limit", ConversationType: "private", ConversationID: "attempt-limit"}
-	runID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "limit"})
+	ident := Identity{Platform: "napcat", UserID: "finished", ConversationType: "private", ConversationID: "finished"}
+	runID, err := s.RecordAgentRun(ctx, ident, AgentRun{RawText: "finished"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := int64(0); i < agentModelAttemptLimit; i++ {
-		reserved, err := s.ReserveAgentModelAttempt(ctx, runID, 0, agentModelAttemptLimit+10)
-		if err != nil || !reserved {
-			t.Fatalf("reserve attempt %d: reserved=%v err=%v", i, reserved, err)
-		}
+	if err := s.FinishAgentRun(ctx, runID, AgentRunStatusCompleted, "done", nil, AgentSpending{}); err != nil {
+		t.Fatal(err)
 	}
-	if reserved, err := s.ReserveAgentModelAttempt(ctx, runID, 0, agentModelAttemptLimit+10); err != nil || reserved {
-		t.Fatalf("reservation above hard limit: reserved=%v err=%v", reserved, err)
+	if err := s.RecordAgentModelAttempt(ctx, runID); err == nil || err.Error() != "agent run is no longer active" {
+		t.Fatalf("finished run attempt error = %v", err)
 	}
 }

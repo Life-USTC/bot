@@ -12,11 +12,10 @@ import (
 )
 
 const (
-	conversationEventPageSize     = 80
-	conversationCompactInputLimit = 128_000
-	// Reserve room for instructions, tool schemas, new tool results and the
-	// completion. Ordinary turns keep their exact prefix for provider caching.
-	conversationHistoryTokenLimit = conversationCompactInputLimit - 32_000
+	conversationEventPageSize = 80
+	// Start compaction before the context becomes large. This is a compaction
+	// trigger, not a provider capacity or request rejection limit.
+	conversationHistoryTokenLimit = 96_000
 )
 
 // conversationEventMessages restores exact role-bearing history. It never

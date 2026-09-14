@@ -108,7 +108,6 @@ func main() {
 		APIKey:         cfg.LLMAPIKey,
 		BaseURL:        cfg.LLMBaseURL,
 		Model:          cfg.LLMModel,
-		Timeout:        cfg.LLMTimeout,
 		PremiumAPIKey:  cfg.PremiumAPIKey,
 		PremiumBaseURL: cfg.PremiumBaseURL,
 		PremiumModel:   cfg.PremiumModel,

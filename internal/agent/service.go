@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -36,7 +37,6 @@ type Config struct {
 	APIKey  string
 	BaseURL string
 	Model   string
-	Timeout time.Duration
 	Logger  *log.Logger
 
 	PremiumAPIKey  string
@@ -53,7 +53,6 @@ type Service struct {
 	premiumModel *einoopenai.ChatModel
 	premiumName  string
 	enabled      bool
-	timeout      time.Duration
 	logger       *log.Logger
 	httpClient   *http.Client
 
@@ -105,7 +104,6 @@ type Result struct {
 }
 
 func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *http.Client) (*Service, error) {
-	timeout := normalizedAgentTimeout(cfg.Timeout)
 	authManager := cfg.AuthManager
 	if authManager == nil {
 		authManager = handler.Auth
@@ -115,7 +113,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		mcpClient = botmcp.New(mcpBaseURL, httpClient)
 	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, timeout: timeout, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
+		return &Service{handler: handler, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -126,13 +124,12 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		modelName = "gpt-4o-mini"
 	}
 	baseURL := textutil.TrimTrailingSlash(cfg.BaseURL)
-	agentHTTPClient := newAgentHTTPClient(httpClient, timeout, cfg.Logger)
+	agentHTTPClient := newAgentHTTPClient(httpClient, cfg.Logger)
 	chatModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
 		APIKey:     apiKey,
 		BaseURL:    baseURL,
 		Model:      modelName,
 		HTTPClient: agentHTTPClient,
-		Timeout:    timeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
@@ -142,7 +139,6 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		model:      chatModel,
 		modelName:  modelName,
 		enabled:    true,
-		timeout:    timeout,
 		logger:     cfg.Logger,
 		httpClient: agentHTTPClient,
 		mcpClient:  mcpClient,
@@ -154,13 +150,11 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 			premiumName = "kimi-k3"
 		}
 		premiumModel, err := einoopenai.NewChatModel(ctx, &einoopenai.ChatModelConfig{
-			APIKey:              premiumAPIKey,
-			BaseURL:             textutil.TrimTrailingSlash(cfg.PremiumBaseURL),
-			Model:               premiumName,
-			HTTPClient:          agentHTTPClient,
-			Timeout:             timeout,
-			MaxCompletionTokens: intPointer(kimiMaxCompletionTokens),
-			ReasoningEffort:     einoopenai.ReasoningEffortLevelLow,
+			APIKey:          premiumAPIKey,
+			BaseURL:         textutil.TrimTrailingSlash(cfg.PremiumBaseURL),
+			Model:           premiumName,
+			HTTPClient:      agentHTTPClient,
+			ReasoningEffort: einoopenai.ReasoningEffortLevelLow,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create premium chat model: %w", err)
@@ -219,21 +213,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return commands.Response{}, false
 	}
 	parentCtx := ctx
-	ctx, cancel := context.WithTimeout(parentCtx, agentRunDeadline)
-	defer cancel()
 	metrics := newRunMetrics()
-	priorModelAttempts := int64(0)
-	if s.handler.Store != nil && input.JobID > 0 {
-		prior, err := s.handler.Store.AgentJobSpending(ctx, input.JobID)
-		if err != nil {
-			err = fmt.Errorf("read prior agent budget: %w", err)
-			markAgentInfrastructureFailure(input, err)
-			return agentTextResponse(agentFailureReply(0, err)), true
-		}
-		priorModelAttempts = prior.ModelRequests
-	}
-	budget := newRunBudgetWithAttempts(runStarted, metrics, priorModelAttempts)
-	ctx = withRunBudget(ctx, budget)
 	ctx = withRunMetrics(ctx, metrics)
 	model, provider, modelName := s.modelFor()
 	usage := &usageAccumulator{}
@@ -245,26 +225,23 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return commands.Response{}, true
 	}
 	if runID > 0 && s.handler.Store != nil {
-		budget.reserveModelAttempt = func(attemptCtx context.Context) (bool, error) {
-			return s.handler.Store.ReserveAgentModelAttempt(attemptCtx, runID, input.JobID, int64(agentRunMaxModelAttempts))
-		}
+		ctx = withModelAttemptRecorder(ctx, func(attemptCtx context.Context) error {
+			return s.handler.Store.RecordAgentModelAttempt(attemptCtx, runID)
+		})
 		ctx = withUsagePersister(ctx, func(usageCtx context.Context, actual tokenUsage) error {
 			spending := spendingFor(provider, modelName, actual)
-			// Every run with a persisted row reserves its physical attempt before
-			// the request, including standalone runs. Usage updates tokens/cost;
-			// they never increment or replace that reservation count.
 			return s.handler.Store.RecordAgentUsage(usageCtx, runID, spending)
 		})
 	}
 	finishRun := func(status, reply string, runErr error) {
-		runErr = normalizeAgentRunError(ctx, budget, runErr)
+		runErr = normalizeAgentRunError(ctx, runErr)
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(parentCtx), agentRunCleanupTimeout)
 		defer cleanupCancel()
 		finishCtx := withRunMetrics(withUsageAccumulator(cleanupCtx, usage), metrics)
 		s.finishAgentRun(finishCtx, runID, input.Identity, status, reply, runErr, provider, modelName, usage.snapshot(), time.Since(runStarted))
 	}
-	if err := budget.contextError(ctx); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+	if err := callerContextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
@@ -286,7 +263,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			reply, err = s.capabilityInventory(ctx, input.Identity)
 		}
 		if err != nil {
-			err = normalizeAgentRunError(ctx, budget, err)
+			err = normalizeAgentRunError(ctx, err)
 			if errors.Is(err, context.Canceled) {
 				finishRun(store.AgentRunStatusIgnored, "", err)
 				return commands.Response{}, false
@@ -324,15 +301,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if err := observeRunStage(ctx, "input_images", func() error {
 		return s.prepareInputImages(ctx, &input)
 	}); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
-		}
-		if isAgentBudgetError(err) {
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
 		}
 		reply := imageFailureReply(runID, err)
 		finishRun(store.AgentRunStatusFailed, reply, err)
@@ -362,15 +334,10 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	tools := toolSetup.tools
 	mcpSession := toolSetup.session
 	if err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
-		}
-		if isAgentBudgetError(err) {
-			reply := agentFailureReply(runID, err)
-			finishRun(store.AgentRunStatusFailed, reply, err)
-			return agentTextResponse(reply), true
 		}
 		if errors.Is(err, auth.ErrNotLoggedIn) {
 			reply := agentLoginRequiredReply(runID)
@@ -388,8 +355,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 	if mcpSession != nil {
 		defer func() { _ = mcpSession.Close() }()
 	}
-	if err := budget.contextError(ctx); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+	if err := callerContextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
@@ -405,11 +372,14 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		handlers = append(handlers, newConversationCompactionMiddleware(s, input.Identity))
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "presto_assistant",
-		Description:   "Presto, a Life @ USTC QQ assistant",
-		Instruction:   currentInstruction(),
-		Model:         model,
-		MaxIterations: agentMaxIterations,
+		Name:        "presto_assistant",
+		Description: "Presto, a Life @ USTC QQ assistant",
+		Instruction: currentInstruction(),
+		Model:       model,
+		// ChatModelAgent treats zero as its default of 20 iterations. The
+		// library's own unbounded ReAct graph uses math.MaxInt, so use that
+		// supported upper bound instead of imposing an application loop cap.
+		MaxIterations: math.MaxInt,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
 				Tools: tools, ExecuteSequentially: true,
@@ -504,7 +474,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		}
 	}
 	if err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
@@ -525,7 +495,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			break
 		}
 		if event.Err != nil {
-			runErr := normalizeAgentRunError(ctx, budget, event.Err)
+			runErr := normalizeAgentRunError(ctx, event.Err)
 			if errors.Is(runErr, context.Canceled) {
 				finishRun(store.AgentRunStatusIgnored, "", runErr)
 				return commands.Response{}, false
@@ -576,8 +546,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			reply = content
 		}
 	}
-	if err := budget.contextError(ctx); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+	if err := callerContextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
@@ -595,8 +565,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return commands.Response{}, false
 	}
 	response := s.responseFor(ctx, input, reply)
-	if err := budget.contextError(ctx); err != nil {
-		err = normalizeAgentRunError(ctx, budget, err)
+	if err := callerContextError(ctx); err != nil {
+		err = normalizeAgentRunError(ctx, err)
 		if errors.Is(err, context.Canceled) {
 			finishRun(store.AgentRunStatusIgnored, "", err)
 			return commands.Response{}, false
@@ -1256,10 +1226,6 @@ func cleanMarkdownTableRow(line string) string {
 	return strings.Join(cells, "  ")
 }
 
-const agentMaxIterations = 32
-const agentHTTPTimeout = 60 * time.Second
-const kimiMaxCompletionTokens = 8_192
-
 var shanghaiLocation = lifedata.ChinaLocation()
 
 func currentInstruction() string {
@@ -1287,43 +1253,16 @@ func currentTimeMessageAt(now time.Time) string {
 
 var _ = schema.Assistant
 
-func normalizedAgentTimeout(timeout time.Duration) time.Duration {
-	if timeout <= 0 {
-		return agentHTTPTimeout
-	}
-	return timeout
-}
-
-func intPointer(value int) *int {
-	return &value
-}
-
 func agentFailureReply(runID int64, err error) string {
 	reply := "AI 助手出错，请稍后重试。"
-	if errors.Is(err, errAgentRunDeadline) {
-		reply = "AI 处理超过 2 分钟，未能生成完整回复，已停止本次处理。请稍后重新发送；如果查询结果较多，可指定数量或筛选条件。"
-	} else if errors.Is(err, errAgentContextBudget) {
-		reply = "AI 本次上下文或工具结果过大，无法在容量限制内继续，历史记录仍保留。请缩小查询范围后重试。"
-	} else if errors.Is(err, errConversationCompaction) {
+	if errors.Is(err, errConversationCompaction) {
 		reply = "AI 暂时未能完成历史摘要，原始对话仍保留。请稍后重新发送这条消息。"
-	} else if errors.Is(err, errAgentRunTokenBudget) {
-		reply = "AI 本轮累计用量达到上限，已停止。请缩小本次任务范围后继续。"
-	} else if errors.Is(err, errAgentToolCallBudget) {
-		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
-	} else if errors.Is(err, errAgentModelAttemptBudget) {
-		reply = "AI 工具流程达到模型请求总上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errLLMTransportExhausted) {
 		reply = "AI 服务连接失败，连续 5 次尝试仍未恢复。请稍后重新发送这条消息。"
 	} else if isExhaustedRetryableProviderError(err) {
 		reply = "AI 服务连续 5 次请求仍未成功，请稍后重试。"
 	} else if errors.Is(err, errLLMUpstreamCanceled) {
 		reply = "AI 服务连接意外中断，未能生成回复。请重新发送这条消息。"
-	} else if errors.Is(err, errAgentNonProgress) {
-		reply = "AI 工具计划没有取得进展，已停止。请换一种说法或缩小请求范围后重试。"
-	} else if errors.Is(err, errRepeatedToolCall) {
-		reply = "AI 重复调用了相同工具，已停止。请换一种说法或缩小请求范围后重试。"
-	} else if isAgentIterationLimitError(err) {
-		reply = "AI 工具调用过多，已停止。请缩小请求范围后重试。"
 	} else if isTimeoutError(err) {
 		reply = "AI 响应超时，请稍后重试。"
 	}
@@ -1348,10 +1287,6 @@ func imageFailureReply(runID int64, err error) string {
 		reply += fmt.Sprintf("\n记录 #%d", runID)
 	}
 	return reply
-}
-
-func isAgentIterationLimitError(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "max iterations")
 }
 
 type toolErrorLogger func(string, ...any)
@@ -1448,17 +1383,13 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 	}
 }
 
-// repeatedUnknownToolResult applies the same bounded refusal policy as the
+// repeatedUnknownToolResult applies the same repeat/idempotence policy as the
 // regular tool middleware. UnknownToolsHandler runs outside that middleware,
-// so it must admit repeat refusals explicitly instead of returning the guard's
-// internal error on the first duplicate.
+// so it translates duplicate calls into the shared structured result itself.
 func repeatedUnknownToolResult(ctx context.Context, guard *toolRepeatGuard, input *compose.ToolInput) (string, bool, error) {
 	if err := guard.admit(input); err == nil {
 		return "", false, nil
 	} else {
-		if !guard.admitRefusal() {
-			return "", false, err
-		}
 		if input != nil {
 			toolOutcomesFromContext(ctx).markError(input.CallID)
 		}

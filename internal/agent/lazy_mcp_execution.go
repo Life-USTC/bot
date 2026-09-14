@@ -166,8 +166,7 @@ func (s *lazyMCPSession) invokeCampusRead(ctx context.Context, name string, argu
 
 // isCampusReadControlError identifies errors that belong to the agent or
 // coordinator rather than the remote MCP operation. They must reach the run
-// controller so cancellation, budgets, and persistence failures keep their
-// existing handling.
+// controller so cancellation and persistence failures keep their handling.
 func isCampusReadControlError(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
@@ -183,13 +182,6 @@ func isCampusReadControlError(ctx context.Context, err error) bool {
 	}
 	return isDurableAgentStateError(err) ||
 		errors.Is(err, context.Canceled) ||
-		errors.Is(err, errAgentRunDeadline) ||
-		errors.Is(err, errAgentContextBudget) ||
-		errors.Is(err, errAgentRunTokenBudget) ||
-		errors.Is(err, errAgentModelAttemptBudget) ||
-		errors.Is(err, errAgentToolCallBudget) ||
-		errors.Is(err, errAgentNonProgress) ||
-		errors.Is(err, errRepeatedToolCall) ||
 		errors.Is(err, errLLMUpstreamCanceled)
 }
 

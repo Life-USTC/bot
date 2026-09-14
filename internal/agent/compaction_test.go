@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -209,9 +210,9 @@ func TestCompactionTriggerIncludesToolSchemas(t *testing.T) {
 func TestCompactionCannotDiscardOversizedCurrentTurn(t *testing.T) {
 	state := &adk.ChatModelAgentState{Messages: []*schema.Message{schema.SystemMessage("system"), schema.UserMessage(strings.Repeat("数", 100_000))}}
 	mw := &conversationCompactionMiddleware{}
-	_, _, err := mw.BeforeModelRewriteState(t.Context(), state, nil)
-	if !errors.Is(err, errAgentContextBudget) || len(state.Messages) != 2 {
-		t.Fatalf("oversized current turn was discarded: %v", err)
+	_, after, err := mw.BeforeModelRewriteState(t.Context(), state, nil)
+	if err != nil || after != state || len(state.Messages) != 2 {
+		t.Fatalf("oversized current turn was discarded or rejected: %v", err)
 	}
 }
 
@@ -242,7 +243,7 @@ func TestCompactionUsesProviderBudgetWithoutToolsOrInternalMetadata(t *testing.T
 	}
 	metrics := newRunMetrics()
 	usage := &usageAccumulator{}
-	ctx := withUsageAccumulator(withRunBudget(withRunMetrics(t.Context(), metrics), newRunBudget(time.Now(), metrics)), usage)
+	ctx := withUsageAccumulator(withRunMetrics(t.Context(), metrics), usage)
 	_, _, err = newConversationCompactionMiddleware(svc, ident).BeforeModelRewriteState(ctx, &adk.ChatModelAgentState{Messages: conversationEventMessages(events)}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -250,4 +251,37 @@ func TestCompactionUsesProviderBudgetWithoutToolsOrInternalMetadata(t *testing.T
 	if requests != 1 || usage.snapshot().PromptTokens != 72000 || metrics.snapshot().modelRequests != 1 {
 		t.Fatalf("summary request bypassed usage accounting: requests=%d usage=%#v", requests, usage.snapshot())
 	}
+}
+
+func TestCompactionRenewsLeaseDuringLongSummary(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db, err := store.Open(t.TempDir() + "/bot.db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = db.Close() }()
+		ident := store.Identity{Platform: "test", ConversationType: "private", ConversationID: "long-summary", UserID: "user"}
+		events := seedCompactionHistory(t, db, ident, 6, 18_000)
+		messages := append(conversationEventMessages(events), schema.UserMessage("继续"))
+		calls := 0
+		mw := &conversationCompactionMiddleware{store: db, identity: ident, model: summaryModelFunc(func(ctx context.Context, _ []*schema.Message) (*schema.Message, error) {
+			calls++
+			time.Sleep(10 * time.Minute)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return schema.AssistantMessage("用户要求订阅 MATH1006.01，JW179889，助教；操作已完成，等待后续请求。", nil), nil
+		})}
+		_, after, err := mw.BeforeModelRewriteState(t.Context(), &adk.ChatModelAgentState{Messages: messages}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if calls != 1 || after == nil {
+			t.Fatalf("calls=%d state=%v", calls, after)
+		}
+		saved, found, err := db.ConversationCompaction(t.Context(), ident)
+		if err != nil || !found || saved.CoveredEventID == 0 {
+			t.Fatalf("summary not committed: %#v %v", saved, err)
+		}
+	})
 }

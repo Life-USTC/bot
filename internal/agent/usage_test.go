@@ -69,8 +69,11 @@ func TestKimiMultimodalRunIsAvailableToEveryUserAndRecordsSpending(t *testing.T)
 	if requestBody["model"] != "premium-model" {
 		t.Fatalf("model = %#v", requestBody["model"])
 	}
-	if requestBody["reasoning_effort"] != "low" || requestBody["max_completion_tokens"] != float64(kimiMaxCompletionTokens) {
-		t.Fatalf("kimi limits = reasoning %#v max %#v", requestBody["reasoning_effort"], requestBody["max_completion_tokens"])
+	if requestBody["reasoning_effort"] != "low" {
+		t.Fatalf("kimi reasoning_effort = %#v", requestBody["reasoning_effort"])
+	}
+	if _, ok := requestBody["max_completion_tokens"]; ok {
+		t.Fatalf("kimi request unexpectedly imposed max_completion_tokens: %#v", requestBody["max_completion_tokens"])
 	}
 	messages, ok := requestBody["messages"].([]any)
 	if !ok || len(messages) == 0 {
@@ -116,7 +119,7 @@ func TestUsageCaptureReadsProviderCacheFields(t *testing.T) {
 	}
 }
 
-func TestUsageCapturePersistsObservedUsageWithoutChangingAttemptReservation(t *testing.T) {
+func TestUsageCapturePersistsObservedUsageAfterDurableAttemptRecording(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -128,9 +131,8 @@ func TestUsageCapturePersistsObservedUsageWithoutChangingAttemptReservation(t *t
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
-		reserved, err := db.ReserveAgentModelAttempt(context.Background(), runID, 17, 5)
-		if err != nil || !reserved {
-			t.Fatalf("reserve %d: reserved=%v err=%v", i, reserved, err)
+		if err := db.RecordAgentModelAttempt(context.Background(), runID); err != nil {
+			t.Fatalf("record attempt %d: %v", i, err)
 		}
 	}
 	persisted := func(ctx context.Context, usage tokenUsage) error {

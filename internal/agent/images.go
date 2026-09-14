@@ -69,7 +69,7 @@ func (s *Service) prepareInputImages(ctx context.Context, input *Input) error {
 				return err
 			}
 			var inputErr *imageInputError
-			if isAgentBudgetError(err) || errors.As(err, &inputErr) {
+			if errors.As(err, &inputErr) {
 				return err
 			}
 			input.skippedImages++
