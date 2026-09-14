@@ -2802,12 +2802,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	if err != nil {
 		return h.commandError("订阅更新失败：", err)
 	}
-	h.markData(map[string]any{
-		"operation":   "subscribe",
-		"matches":     matches,
-		"codes":       codes,
-		"semester_id": semesterID,
-	})
+	h.markData(compactSubscriptionMutationData("subscribe", codes, semesterID, matches))
 	sections := matchSections(matches)
 	added := lifedata.FirstInt(matches, "addedCount")
 	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
@@ -2833,12 +2828,7 @@ func (h Handler) bulkUnsubscribeSections(ctx context.Context, ident store.Identi
 	if err != nil {
 		return h.commandError("取消订阅失败：", err)
 	}
-	h.markData(map[string]any{
-		"operation":   "unsubscribe",
-		"matches":     matches,
-		"codes":       codes,
-		"semester_id": semesterID,
-	})
+	h.markData(compactSubscriptionMutationData("unsubscribe", codes, semesterID, matches))
 	sections := matchSections(matches)
 	removed := lifedata.FirstInt(matches, "removedCount")
 	unchanged := lifedata.FirstInt(matches, "unchangedCount")
