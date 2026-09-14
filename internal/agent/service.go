@@ -1271,6 +1271,8 @@ func agentFailureReply(runID int64, err error) string {
 		reply = "AI 处理超过 2 分钟，未能生成完整回复，已停止本次处理。请稍后重新发送；如果查询结果较多，可指定数量或筛选条件。"
 	} else if errors.Is(err, errAgentContextBudget) {
 		reply = "AI 上下文过长，已停止。请缩短历史或拆分问题后重试。"
+	} else if errors.Is(err, errAgentRunTokenBudget) {
+		reply = "AI 本轮累计用量达到上限，已停止。请缩小本次任务范围后继续。"
 	} else if errors.Is(err, errAgentToolCallBudget) {
 		reply = "AI 工具调用次数达到上限，已停止。请缩小请求范围后重试。"
 	} else if errors.Is(err, errAgentModelAttemptBudget) {

@@ -69,7 +69,7 @@ func (s *Service) invokeHostCapability(
 	if policy.Effect != commands.EffectRead && (jobID <= 0 || s.handler.Store == nil) {
 		return "", errors.New("mutations require a persisted conversation job")
 	}
-	if policy.Effect != commands.EffectDestructive {
+	if policy.Effect == commands.EffectRead {
 		callID := capabilityToolCallID(ctx, jobID)
 		result, executionID, authWait, err := s.executeUnconfirmedHostCapability(ctx, invocation, ident, jobID, callID, sendResponse)
 		if err != nil || !authWait {
@@ -115,7 +115,7 @@ func (s *Service) invokeHostCapability(
 			Identity: ident, JobID: jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, jobID), Sequence: index,
 			DedupeKey:  capabilityExecutionDedupeKey(jobID, callID, item),
 			ToolCallID: callID, Capability: string(item.ID()), Arguments: append([]string(nil), item.Args...),
-			Effect: string(item.Policy().Effect), Receipt: receipt, RequiresConfirmation: true,
+			Effect: string(item.Policy().Effect), Receipt: receipt, RequiresConfirmation: item.Policy().Effect == commands.EffectDestructive,
 		})
 	}
 	executions, _, err := s.handler.Store.PrepareCapabilityExecutions(ctx, prepares)

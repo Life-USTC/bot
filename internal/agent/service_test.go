@@ -408,7 +408,7 @@ func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 		t.Fatalf("result=%#v", result)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionFailed {
+	if err != nil || len(operations) != 0 {
 		t.Fatalf("preflight created operations=%#v err=%v", operations, err)
 	}
 	if requests.Load() != 3 {
