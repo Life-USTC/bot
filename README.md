@@ -36,7 +36,7 @@ MCP 对齐（见
 
 **图卡（可选）**：开启后，课表、待办、作业、考试、概览、校车、提醒等可先发短时 PNG，再回退文字。
 
-**AI 助手（可选）**：接 OpenAI 兼容模型 + server MCP。私聊通过 Bot 命令注册表使用已实现的个人能力；MCP 仅作为补充只读数据源，使用 MCP 专用 OAuth token，在需要时通过 `search_campus_tools` / `call_campus_tool` 发现和调用 `catalog_young_event_list`、`catalog_young_event_get`、`catalog_rooms_map` 三个工具。server 的其他 MCP 工具不会自动开放给 Bot，MCP 写操作、评论、描述和上传也不在当前白名单中。群聊只有在 @、回复 Presto 或平台交互明确激活后才进入 Agent，可调用公开 Bot 命令，但不开放 MCP。用量记在本地 SQLite。
+**AI 助手（可选）**：接 OpenAI 兼容模型 + server MCP。私聊可使用 Bot 已实现的命令，也可通过 `search_campus_tools` / `call_campus_tool` 动态发现和调用服务端公布的全部 MCP 工具，包括个人查询和写操作；工具名、参数 schema 和读写标记来自服务端，不再维护三工具白名单。MCP 使用每位用户自己的 OAuth token，服务端仍检查权限和数据归属。写操作沿用 Bot 的确认流程，确认前不会执行；执行中断或网络失败导致结果不明时不会自动重试。MCP 的资源和提示词入口也可读取 GraphQL schema 与操作说明。群聊只开放公开 Bot 命令，不开放 MCP 工具、资源或提示词。用量记在本地 SQLite。
 
 **群聊**：`校车`、`校车 西区 高新区`、`课程 数学分析` 等明确公开查询无需 @；普通聊天中仅仅出现“校车”等关键词不会触发。课表、成绩、待办、订阅链接、账户和设置等个人能力始终只在私聊执行。回复 Presto 的公开查询时，可用“周日呢”这类短追问继承上一条路线。QQ 官方 Bot 通常只收到 @ 消息；NapCat 可以应用完整的无 @ 匹配规则。
 
