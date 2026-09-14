@@ -57,7 +57,7 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		}
 	}
 	if err := s.ensure(ctx); err != nil {
-		return "", err
+		return "", normalizeCampusReadCallError(ctx, name, err)
 	}
 	if _, found := s.tools[name]; !found {
 		return "", botmcp.NewRecoverableToolError(name, "the requested campus tool was not found in the current tools/list")
@@ -143,6 +143,9 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 		return "", callErr
 	}
 	if callErr != nil {
+		if isCampusReadControlError(ctx, callErr) {
+			return "", callErr
+		}
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 	}
 	return campusExecutionModelResult(finished), nil
@@ -150,15 +153,68 @@ func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (s
 
 func (s *lazyMCPSession) invokeCampusRead(ctx context.Context, name string, arguments map[string]any) (string, error) {
 	result, callErr := s.session.Call(ctx, name, arguments)
-	if callErr == nil && name == "catalog_rooms_map" {
+	if callErr != nil {
+		return "", normalizeCampusReadCallError(ctx, name, callErr)
+	}
+	if name == "catalog_rooms_map" {
 		if err := s.deliverRoomMapResponse(ctx, result); err != nil {
-			callErr = err
+			return "", err
 		}
 	}
-	if callErr != nil {
-		return "", callErr
-	}
 	return toolresult.Encode("mcp", name, "succeeded", time.Now(), toolresult.Data(result), nil), nil
+}
+
+// isCampusReadControlError identifies errors that belong to the agent or
+// coordinator rather than the remote MCP operation. They must reach the run
+// controller so cancellation, budgets, and persistence failures keep their
+// existing handling.
+func isCampusReadControlError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		// An http.Client timeout can wrap DeadlineExceeded while the run
+		// context remains live. That single remote request is recoverable;
+		// only an ended run context is a control failure.
+		if ctx == nil || ctx.Err() == nil {
+			return false
+		}
+		return true
+	}
+	return isDurableAgentStateError(err) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, errAgentRunDeadline) ||
+		errors.Is(err, errAgentContextBudget) ||
+		errors.Is(err, errAgentRunTokenBudget) ||
+		errors.Is(err, errAgentModelAttemptBudget) ||
+		errors.Is(err, errAgentToolCallBudget) ||
+		errors.Is(err, errAgentNonProgress) ||
+		errors.Is(err, errRepeatedToolCall) ||
+		errors.Is(err, errLLMUpstreamCanceled)
+}
+
+// normalizeCampusReadCallError turns an ordinary MCP transport/server error
+// into the recoverable tool error consumed by service.go's result middleware.
+// The fixed detail deliberately omits URLs, response bodies, and credentials.
+func normalizeCampusReadCallError(ctx context.Context, name string, err error) error {
+	return normalizeCampusExternalError(ctx, name, err, "校园数据读取暂时失败，可能是网络或服务暂时不可用；请改用其他校园工具或稍后重试。")
+}
+
+func normalizeCampusSetupError(ctx context.Context, name string, err error) error {
+	return normalizeCampusExternalError(ctx, name, err, "校园工具暂时不可用，可能是网络或服务暂时不可用；请改用 Bot 命令或稍后重试。")
+}
+
+func normalizeCampusExternalError(ctx context.Context, name string, err error, unavailableDetail string) error {
+	if err == nil || isCampusReadControlError(ctx, err) {
+		return err
+	}
+	if isMCPAuthorizationError(err) {
+		return botmcp.NewRecoverableToolError(name, "校园服务登录权限已失效，请先登录或重新登录后再试。")
+	}
+	if detail, ok := botmcp.ModelToolErrorResult(err); ok {
+		return botmcp.NewRecoverableToolError(name, detail)
+	}
+	return botmcp.NewRecoverableToolError(name, unavailableDetail)
 }
 
 func campusArgumentsForRemote(name string, arguments map[string]any, approved bool) map[string]any {
@@ -261,7 +317,7 @@ func (s *lazyMCPSession) resolveCampusExecution(ctx context.Context, state capab
 	if execution.State == store.CapabilityExecutionRunning {
 		var callErr error
 		_, execution, callErr = s.executeApprovedCampusCall(ctx, execution)
-		if callErr != nil && isDurableAgentStateError(callErr) {
+		if callErr != nil && (isDurableAgentStateError(callErr) || isCampusReadControlError(ctx, callErr)) {
 			return "", callErr
 		}
 	}
@@ -358,6 +414,7 @@ func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, executio
 		return finished.Result, finished, err
 	}
 	if err := s.ensure(ctx); err != nil {
+		err = normalizeCampusSetupError(ctx, name, err)
 		finished, finishErr := s.service.handler.Store.FinishCapabilityExecution(persistCtx, execution.ID, execution.LeaseToken, "", err)
 		if finishErr != nil {
 			return "", finished, markDurableAgentStateError("record campus tool setup failure", finishErr)
@@ -417,6 +474,7 @@ func (s *lazyMCPSession) executeApprovedCampusCall(ctx context.Context, executio
 	}
 	if callErr != nil {
 		if capabilityExecutionIsRead(execution) {
+			callErr = normalizeCampusReadCallError(ctx, name, callErr)
 			finished, finishErr := s.service.handler.Store.FinishCapabilityExecution(persistCtx, execution.ID, execution.LeaseToken, "", callErr)
 			if finishErr != nil {
 				return "", finished, markDurableAgentStateError("finish campus read failure", finishErr)

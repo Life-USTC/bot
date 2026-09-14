@@ -1192,6 +1192,99 @@ func TestToolResultMiddlewarePropagatesErrors(t *testing.T) {
 	}
 }
 
+func TestStreamToolResultMiddlewareAggregatesAndEncodesResult(t *testing.T) {
+	ctx := withToolOutcomes(context.Background(), newToolOutcomeRegistry())
+	input := &compose.ToolInput{Name: "catalog_stream", CallID: "stream-call"}
+	next := func(context.Context, *compose.ToolInput) (*compose.StreamToolOutput, error) {
+		return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{
+			`{"items":[`, `{"id":1}`, `]}`,
+		})}, nil
+	}
+
+	out, err := streamToolResultMiddleware(nil)(next)(ctx, input)
+	if err != nil || out == nil || out.Result == nil {
+		t.Fatalf("stream result = %#v, err = %v", out, err)
+	}
+	got, recvErr := out.Result.Recv()
+	if recvErr != nil {
+		t.Fatalf("stream result recv = %v", recvErr)
+	}
+	if _, recvErr = out.Result.Recv(); !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("stream result has more than one aggregate chunk: %v", recvErr)
+	}
+	out.Result.Close()
+
+	var envelope struct {
+		Source    string
+		Operation string
+		Status    string
+		Result    struct {
+			Items []struct {
+				ID int `json:"id"`
+			} `json:"items"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(got), &envelope); err != nil {
+		t.Fatalf("aggregate is not JSON: %v; result=%q", err, got)
+	}
+	if envelope.Source != "host" || envelope.Operation != input.Name || envelope.Status != "succeeded" ||
+		len(envelope.Result.Items) != 1 || envelope.Result.Items[0].ID != 1 {
+		t.Fatalf("aggregate envelope = %#v", envelope)
+	}
+}
+
+func TestRepeatedUnknownToolResultUsesBoundedStructuredRefusal(t *testing.T) {
+	guard := newToolRepeatGuard()
+	ctx := withToolOutcomes(context.Background(), newToolOutcomeRegistry())
+	input := &compose.ToolInput{Name: "missing_tool", CallID: "unknown-call", Arguments: `{}`}
+
+	if result, handled, err := repeatedUnknownToolResult(ctx, guard, input); handled || err != nil || result != "" {
+		t.Fatalf("first unknown admission = result %q handled=%v err=%v", result, handled, err)
+	}
+	guard.recordFailure(input)
+	for refusal := 1; refusal <= maxRepeatRefusals; refusal++ {
+		result, handled, err := repeatedUnknownToolResult(ctx, guard, input)
+		if err != nil || !handled || !json.Valid([]byte(result)) ||
+			!strings.Contains(result, `"status":"rejected"`) || !strings.Contains(result, "did not") {
+			t.Fatalf("refusal %d = result %q handled=%v err=%v", refusal, result, handled, err)
+		}
+	}
+	if result, handled, err := repeatedUnknownToolResult(ctx, guard, input); handled || !errors.Is(err, errRepeatedToolCall) || result != "" {
+		t.Fatalf("refusal limit = result %q handled=%v err=%v", result, handled, err)
+	}
+	if !toolOutcomesFromContext(ctx).isError(input.CallID) {
+		t.Fatal("unknown repeat refusal was not marked as a failed tool outcome")
+	}
+}
+
+func TestNormalizeCampusReadCallErrorPreservesControlFailures(t *testing.T) {
+	transportErr := normalizeCampusReadCallError(context.Background(), "catalog_courses", errors.New("HTTP 503 from https://private.example/mcp?token=secret"))
+	if detail, ok := botmcp.ModelToolErrorResult(transportErr); !ok || !strings.Contains(detail, "改用其他校园工具") || strings.Contains(detail, "secret") {
+		t.Fatalf("transport error = %q, recoverable=%v", detail, ok)
+	}
+	requestTimeout := normalizeCampusReadCallError(context.Background(), "catalog_courses", context.DeadlineExceeded)
+	if detail, ok := botmcp.ModelToolErrorResult(requestTimeout); !ok || !strings.Contains(detail, "改用其他校园工具") {
+		t.Fatalf("single-request timeout = %q, recoverable=%v", detail, ok)
+	}
+
+	for _, controlErr := range []error{
+		context.Canceled,
+		errAgentContextBudget,
+		errAgentRunTokenBudget,
+		errAgentToolCallBudget,
+		markDurableAgentStateError("read campus execution", errors.New("database unavailable")),
+	} {
+		if got := normalizeCampusReadCallError(context.Background(), "catalog_courses", controlErr); !errors.Is(got, controlErr) {
+			t.Fatalf("control error changed: got=%v want=%v", got, controlErr)
+		}
+	}
+
+	authErr := normalizeCampusSetupError(context.Background(), "search_campus_tools", auth.ErrReauthorizationRequired)
+	if detail, ok := botmcp.ModelToolErrorResult(authErr); !ok || !strings.Contains(detail, "登录或重新登录") {
+		t.Fatalf("authorization error = %q, recoverable=%v", detail, ok)
+	}
+}
+
 func recoverableMCPToolError(t *testing.T) error {
 	t.Helper()
 	mcpServer := mcpserver.NewMCPServer("agent-test", "1.0.0")

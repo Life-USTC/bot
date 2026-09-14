@@ -91,9 +91,13 @@ func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, er
 	}
 	tools, err = appendInferredTool(tools, "list_campus_resources", "List MCP resources and URI templates. Use this to find the GraphQL schema or other server context before constructing a query.", func(ctx context.Context, _ emptyInput) (string, error) {
 		if err := s.ensure(ctx); err != nil {
-			return "", err
+			return "", normalizeCampusSetupError(ctx, "list_campus_resources", err)
 		}
-		return s.session.Resources(ctx)
+		result, err := s.session.Resources(ctx)
+		if err != nil {
+			return "", normalizeCampusReadCallError(ctx, "list_campus_resources", err)
+		}
+		return result, nil
 	})
 	if err != nil {
 		return nil, err
@@ -104,18 +108,26 @@ func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, er
 			return "", botmcp.NewRecoverableToolError("read_campus_resource", "uri is required")
 		}
 		if err := s.ensure(ctx); err != nil {
-			return "", err
+			return "", normalizeCampusSetupError(ctx, "read_campus_resource", err)
 		}
-		return s.session.ReadResource(ctx, uri)
+		result, err := s.session.ReadResource(ctx, uri)
+		if err != nil {
+			return "", normalizeCampusReadCallError(ctx, "read_campus_resource", err)
+		}
+		return result, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	tools, err = appendInferredTool(tools, "list_campus_prompts", "List MCP prompts available for planning campus operations. Use plan_graphql_operation when constructing GraphQL arguments.", func(ctx context.Context, _ emptyInput) (string, error) {
 		if err := s.ensure(ctx); err != nil {
-			return "", err
+			return "", normalizeCampusSetupError(ctx, "list_campus_prompts", err)
 		}
-		return s.session.Prompts(ctx)
+		result, err := s.session.Prompts(ctx)
+		if err != nil {
+			return "", normalizeCampusReadCallError(ctx, "list_campus_prompts", err)
+		}
+		return result, nil
 	})
 	if err != nil {
 		return nil, err
@@ -126,9 +138,13 @@ func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, er
 			return "", botmcp.NewRecoverableToolError("get_campus_prompt", "name is required")
 		}
 		if err := s.ensure(ctx); err != nil {
-			return "", err
+			return "", normalizeCampusSetupError(ctx, "get_campus_prompt", err)
 		}
-		return s.session.GetPrompt(ctx, name, input.Arguments)
+		result, err := s.session.GetPrompt(ctx, name, input.Arguments)
+		if err != nil {
+			return "", normalizeCampusReadCallError(ctx, "get_campus_prompt", err)
+		}
+		return result, nil
 	})
 }
 
@@ -249,7 +265,7 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 		return "", botmcp.NewRecoverableToolError("search_campus_tools", "query is required")
 	}
 	if err := s.ensure(ctx); err != nil {
-		return "", err
+		return "", normalizeCampusSetupError(ctx, "search_campus_tools", err)
 	}
 	tokens := strings.Fields(query)
 	listAll := query == "*"

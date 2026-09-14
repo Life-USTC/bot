@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -412,8 +413,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					started := time.Now()
 					defer func() { recordRunStage(ctx, "tool_call", time.Since(started)) }()
 					unknownInput := &compose.ToolInput{Name: name, Arguments: input}
-					if err := repeatGuard.admit(unknownInput); err != nil {
-						return "", err
+					if result, handled, err := repeatedUnknownToolResult(ctx, repeatGuard, unknownInput); handled || err != nil {
+						return result, err
 					}
 					if err := admitToolCall(ctx); err != nil {
 						return "", err
@@ -945,12 +946,12 @@ func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, iden
 	}
 	if commands.HasAdditionalCommandLine(input.Command) {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
-		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Send exactly one command per tool call.")), nil
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Send exactly one command per tool call")), nil
 	}
 	parsed := commands.ParseCommand(input.Command)
 	if !parsed.Recognized() {
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
-		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Unknown command. Consult the command manual or search_bot_commands.")), nil
+		return toolresult.Encode("bot", input.Command, "invalid_input", time.Now(), nil, errors.New("Unknown command. Consult the command manual or search_bot_commands")), nil
 	}
 	return s.invokeHostCapability(ctx, hostCapabilityInput{Capability: string(parsed.Invocation.ID()), Arguments: parsed.Invocation.Args}, ident, jobID, sendResponse)
 }
@@ -1244,12 +1245,8 @@ You decide whether to answer directly or use tools. No tool call or search seque
 Tool results are JSON with source, operation, status, observed_at, result and optional error. Use the original structured result as evidence. succeeded means the business operation succeeded, not that a message or image has reached the user. denied means nothing was executed; unknown means a write may have happened and must not be retried. Keep original data timestamps distinct from observed_at. Never interpret image rendering or delivery failures as a failed business operation.
 Private URLs returned by a tool may be used and repeated in a direct chat and stored in private conversation history. Never invent, transform, or expose private URLs, credentials, tokens, personal profile, homework, todo, curriculum, subscriptions, authentication, or settings in a group or channel.
 MCP tools are available only in private conversations. All listed MCP operations are available within account permissions. Public MCP reads work without login. Use discovery to obtain exact names and complete schemas when needed. The host pauses dangerous or unknown-risk operations for user confirmation; ordinary writes do not need a second confirmation. Never treat a model-supplied confirmed flag as user confirmation. For GraphQL construction, use list_campus_resources/read_campus_resource and list_campus_prompts/get_campus_prompt to read the server schema and planning context before calling graphql_operation_run.
-You can answer questions about prior messages using the exact chat history in this run. Treat multiple paragraphs in the latest user turn as one turn.
+You can answer questions about prior messages using the exact chat history in this run. An assistant history entry containing a Bot JSON result may come from a direct user command, not an LLM-authored reply or invented tool call; sender and time prefixes identify the original message. Treat multiple paragraphs in the latest user turn as one turn.
 In a group or channel, answer only the addressed public request and ask the user to continue privately for personal requests.`
-}
-
-func currentTimeMessage() string {
-	return currentTimeMessageAt(time.Now())
 }
 
 func currentTimeMessageAt(now time.Time) string {
@@ -1377,8 +1374,59 @@ func streamToolResultMiddleware(logf toolErrorLogger) compose.StreamableToolMidd
 				}
 				return nil, err
 			}
-			return out, nil
+			if out == nil || out.Result == nil {
+				return out, nil
+			}
+			var result strings.Builder
+			for {
+				chunk, recvErr := out.Result.Recv()
+				if errors.Is(recvErr, io.EOF) {
+					break
+				}
+				if recvErr != nil {
+					out.Result.Close()
+					if logf != nil {
+						logf("agent streaming tool result failed: name=%s call_id=%s error=%s", input.Name, input.CallID, textutil.SafeLogError(recvErr))
+					}
+					if safe, ok := botmcp.ModelToolErrorResult(recvErr); ok {
+						toolOutcomesFromContext(ctx).markError(input.CallID)
+						return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{toolresult.Encode(toolResultSource(input.Name), input.Name, "failed", time.Now(), nil, errors.New(safe))})}, nil
+					}
+					return nil, recvErr
+				}
+				result.WriteString(chunk)
+			}
+			out.Result.Close()
+			raw := result.String()
+			if !toolresult.IsEncoded(raw) {
+				status := "succeeded"
+				var resultErr error
+				data := toolresult.Data(raw)
+				if toolOutcomesFromContext(ctx).isError(input.CallID) {
+					status, data, resultErr = "failed", nil, errors.New(raw)
+				}
+				raw = toolresult.Encode(toolResultSource(input.Name), input.Name, status, time.Now(), data, resultErr)
+			}
+			return &compose.StreamToolOutput{Result: schema.StreamReaderFromArray([]string{raw})}, nil
 		}
+	}
+}
+
+// repeatedUnknownToolResult applies the same bounded refusal policy as the
+// regular tool middleware. UnknownToolsHandler runs outside that middleware,
+// so it must admit repeat refusals explicitly instead of returning the guard's
+// internal error on the first duplicate.
+func repeatedUnknownToolResult(ctx context.Context, guard *toolRepeatGuard, input *compose.ToolInput) (string, bool, error) {
+	if err := guard.admit(input); err == nil {
+		return "", false, nil
+	} else {
+		if !guard.admitRefusal() {
+			return "", false, err
+		}
+		if input != nil {
+			toolOutcomesFromContext(ctx).markError(input.CallID)
+		}
+		return repeatGuardToolResult(input, err), true, nil
 	}
 }
 
