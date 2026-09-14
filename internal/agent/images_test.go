@@ -90,7 +90,9 @@ func TestSafeImageSkipReasonDoesNotExposeURLOrTransportDetails(t *testing.T) {
 func testPNGBytes(t *testing.T) []byte {
 	t.Helper()
 	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, image.NewUniform(color.RGBA{R: 20, G: 40, B: 60, A: 255})); err != nil {
+	fixture := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	fixture.Set(0, 0, color.RGBA{R: 20, G: 40, B: 60, A: 255})
+	if err := png.Encode(&buffer, fixture); err != nil {
 		t.Fatal(err)
 	}
 	return buffer.Bytes()

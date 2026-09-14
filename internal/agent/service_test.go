@@ -1186,7 +1186,7 @@ func TestToolResultMiddlewarePropagatesErrors(t *testing.T) {
 	ok := toolResultMiddleware(nil)(func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 		return &compose.ToolOutput{Result: "ok"}, nil
 	})
-	out, err = ok(ctx, input)
+	out, err = ok(ctx, &compose.ToolInput{Name: "test_tool", Arguments: "{}", CallID: "call-success"})
 	if err != nil || !strings.Contains(out.Result, `"result":"ok"`) {
 		t.Fatalf("ok result = %q, err = %v", out.Result, err)
 	}
@@ -1448,7 +1448,7 @@ func TestMessagesForIncludesTypedHistory(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	for _, event := range []store.ConversationEvent{
-		{Identity: ident, DedupeKey: "typed:user", Type: store.ConversationEventUser, Content: "你好"},
+		{Identity: ident, DedupeKey: "typed:user", Type: store.ConversationEventUser, Content: "你好", OccurredAt: time.Date(2026, 9, 2, 4, 0, 0, 0, time.UTC)},
 		{Identity: ident, DedupeKey: "typed:assistant", Type: store.ConversationEventAssistant, Content: "你好！\n有什么可以帮你的吗？"},
 	} {
 		if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
@@ -1460,10 +1460,11 @@ func TestMessagesForIncludesTypedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 || messages[0].Content != "你好" ||
-		messages[1].Content != "你好！\n有什么可以帮你的吗？" ||
-		!strings.Contains(messages[2].Content, "我上面说了什么？") ||
-		!strings.HasPrefix(messages[2].Content, "现在是 ") {
+	if len(messages) != 3 || messages[0].Role != schema.User || !strings.Contains(messages[0].Content, "2026-09-02T04:00:00Z") || !strings.HasSuffix(messages[0].Content, "你好") ||
+		messages[1].Role != schema.Assistant || !strings.HasSuffix(messages[1].Content, "你好！\n有什么可以帮你的吗？") ||
+		len(messages[2].UserInputMultiContent) != 1 ||
+		!strings.Contains(messages[2].UserInputMultiContent[0].Text, "我上面说了什么？") ||
+		!strings.HasPrefix(messages[2].UserInputMultiContent[0].Text, "[") {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
@@ -1489,8 +1490,8 @@ func TestMessagesForDoesNotDuplicatePersistedCurrentJobEvent(t *testing.T) {
 	event := store.ConversationEvent{
 		Identity: ident, JobID: job.ID, JobRevision: claimed.Revision, JobLeaseToken: claimed.LeaseToken,
 		DedupeKey: fmt.Sprintf("conversation-job:%d:user", job.ID),
-		Type:      store.ConversationEventUser, Content: "同一个问题",
-		Parts: []store.ConversationMessagePart{{Type: "text", Text: "现在是 2026-09-02 12:00，Asia/Shanghai。\n\n同一个问题"}},
+		Type:      store.ConversationEventUser, Content: "同一个问题", OccurredAt: time.Date(2026, 9, 2, 4, 0, 0, 0, time.UTC),
+		Parts: []store.ConversationMessagePart{{Type: "text", Text: "同一个问题"}},
 	}
 	if _, _, err := db.AppendConversationEvent(ctx, event); err != nil {
 		t.Fatal(err)
@@ -1500,7 +1501,7 @@ func TestMessagesForDoesNotDuplicatePersistedCurrentJobEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 1 || messages[0].UserInputMultiContent[0].Text != event.Parts[0].Text {
+	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 1 || messages[0].UserInputMultiContent[0].Text != "[2026-09-02T04:00:00Z] [current] 同一个问题" {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
@@ -1691,14 +1692,14 @@ func TestHandleResponseStopsAtModelIterationLimit(t *testing.T) {
 	if !strings.Contains(response.Text, "重复调用了相同工具") {
 		t.Fatalf("response = %#v", response)
 	}
-	if got := int(requests.Load()); got != 2 {
-		t.Fatalf("model requests = %d, want 2", got)
+	if got := int(requests.Load()); got != maxRepeatRefusals+2 {
+		t.Fatalf("model requests = %d, want %d", got, maxRepeatRefusals+2)
 	}
 	total, err := db.ConversationSpending(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total.ModelRequests != 2 || total.ToolCalls != 1 {
+	if total.ModelRequests != maxRepeatRefusals+2 || total.ToolCalls != 1 {
 		t.Fatalf("spending = %#v", total)
 	}
 }
