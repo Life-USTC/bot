@@ -18,6 +18,15 @@ const (
 	// caller cancels, but it must not turn cleanup into another unbounded run.
 	agentRunCleanupTimeout = 5 * time.Second
 
+	agentRunMaxToolCalls = 12
+	// A tool loop can make at most one more logical model request than tool
+	// calls. Each logical request receives its own bounded retry window; the
+	// aggregate durable limit prevents a restart from resetting that budget.
+	llmRequestMaxAttempts    = 5
+	agentRunMaxModelAttempts = (agentRunMaxToolCalls + 1) * llmRequestMaxAttempts
+)
+
+const (
 	// agentRequestTokenLimit is the provider constraint: one logical request
 	// must fit in the model's input window. This is what "context too long"
 	// actually means.
@@ -28,12 +37,6 @@ const (
 	// a single-window budget stopped the run at the sixth request and made the
 	// 12-tool-call bound below unreachable.
 	agentRunTotalTokenBudget int64 = 400_000
-	agentRunMaxToolCalls     int   = 12
-	// A tool loop can make at most one more logical model request than tool
-	// calls. Each logical request receives its own bounded retry window; the
-	// aggregate durable limit prevents a restart from resetting that budget.
-	llmRequestMaxAttempts    = 5
-	agentRunMaxModelAttempts = (agentRunMaxToolCalls + 1) * llmRequestMaxAttempts
 )
 
 var (
