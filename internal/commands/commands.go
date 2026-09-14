@@ -828,6 +828,12 @@ func normalizeSubscriptionArgs(args []string) []string {
 		return withFirstArg(args, "help")
 	}
 	switch normToken(args[0]) {
+	case "kind", "身份":
+		result := withFirstArg(args, "kind")
+		if len(result) == 3 {
+			result[2] = normalizeSubscriptionKind(result[2])
+		}
+		return result
 	case "import", "bulk", "add", "+", "导入", "批量", "添加", "新增":
 		return withFirstArg(args, "import")
 	case "remove", "delete", "unsubscribe", "-", "取消", "删除", "移除", "退订":
@@ -2428,6 +2434,8 @@ func (h Handler) subscription(ctx context.Context, ident store.Identity, args []
 			return subscriptionHelp()
 		case "link":
 			return h.subscriptionCalendarLink(ctx, ident)
+		case "kind":
+			return h.setSubscriptionKind(ctx, ident, args[1:])
 		case "import":
 			targetArgs, semesterID, _ := splitSubscriptionMutationArgs(args[1:])
 			return h.bulkSubscribeSections(ctx, ident, joinedArgs(targetArgs), semesterID)
@@ -2451,6 +2459,7 @@ func subscriptionHelp() string {
 		"例：订阅 导入 CONT5103P.01 CONT6104P.01",
 		"订阅 取消 <教学班代码...>：批量取消教学班订阅",
 		"例：订阅 取消 CONT5103P.01 CONT6104P.01",
+		"订阅 身份 <JW ID> <普通|助教|旁听>：修改已有订阅的身份",
 	}, "\n")
 }
 
@@ -2600,7 +2609,11 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 		}
 		lines = append(lines, group.semester+"：")
 		for _, section := range group.sections {
-			lines = append(lines, formatSection(section))
+			line := formatSection(section)
+			if jwID := lifedata.FirstString(section, "jwId"); jwID != "" {
+				line += " · JW ID " + jwID
+			}
+			lines = append(lines, line)
 		}
 	}
 	return withCalendarSubscriptionHint(strings.Join(lines, "\n"))
