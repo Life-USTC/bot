@@ -67,11 +67,26 @@
     ..(if item.weeks == "" { () } else { (text(size: 11pt, fill: accent, item.weeks),) }))
 }
 
+#let course-color(item) = if item.color == "" { rgb("#e2e8f0") } else { rgb(item.color) }
+
+#let course-card(item, overlapping: false) = block(
+  width: 100%,
+  inset: 8pt,
+  fill: if overlapping { course-color(item) } else { none },
+  stroke: if overlapping { 1pt + accent } else { none },
+  stack(dir: ttb, spacing: 8pt,
+    ..(if role-badge-labels((item,)).len() == 0 { () } else {
+      (align(right, role-badges((item,))),)
+    }),
+    ..(if overlapping { (caption-text(item.period + " · " + item.time),) } else { () }),
+    course-body(item)))
+
 #let interval-body(group) = {
-  for (index, item) in group.items.enumerate() {
-    if index > 0 { v(12pt) }
-    if group.items.len() > 1 { caption-text(item.period + " · " + item.time); v(4pt) }
-    course-body(item)
+  if group.items.len() == 1 {
+    course-card(group.items.first())
+  } else {
+    stack(dir: ttb, spacing: 6pt,
+      ..group.items.map(item => course-card(item, overlapping: true)))
   }
 }
 
@@ -105,17 +120,11 @@
       }
     }
     for group in groups {
-      let item = group.items.first()
       cells.push(grid.cell(x: day + 1, y: group.start, rowspan: group.end - group.start + 1,
-        fill: if item.color == "" { rgb("#e2e8f0") } else { rgb(item.color) },
-        stroke: 1pt + accent,
-        {
-          place(top + right, dx: -4pt, dy: 4pt, role-badges(group.items))
-          if group.start == group.end and role-badge-labels(group.items).len() > 0 {
-            v(18pt)
-          }
-          interval-body(group)
-        }))
+        inset: 0pt,
+        fill: if group.items.len() == 1 { course-color(group.items.first()) } else { none },
+        stroke: if group.items.len() == 1 { 1pt + accent } else { table-stroke },
+        interval-body(group)))
     }
   }
   let summary = if data.days.len() == 1 {
