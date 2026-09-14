@@ -47,6 +47,7 @@ func roomMapExecutor(h Handler, ctx context.Context, _ store.Identity, inv Invoc
 	if err != nil {
 		return outcomeFromResponse(h, Response{Text: h.commandError("教室地图查不到：", err), Kind: inv.Name})
 	}
+	h.markData(map[string]any{"operation": "room_map", "room": room})
 	return outcomeFromResponse(h, RoomMapResponse(room, h.EnableImageResponses))
 }
 
@@ -74,7 +75,11 @@ func RoomMapResponse(room life.RoomMap, includeImage bool) Response {
 		return Response{Text: "未找到 " + code + " 的教室地图。", Kind: "room_map"}
 	}
 
-	response := Response{Text: text, Kind: "room_map"}
+	response := Response{
+		Text: text,
+		Data: map[string]any{"operation": "room_map", "room": room},
+		Kind: "room_map",
+	}
 	imageURL := strings.TrimSpace(room.ImageURL)
 	if imageURL == "" {
 		imageURL = strings.TrimSpace(room.SourceImageURL)

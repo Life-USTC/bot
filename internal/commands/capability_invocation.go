@@ -338,7 +338,7 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 	}
 
 	switch invocation.ID() {
-	case CapabilityHelp, CapabilityPing, CapabilityStatus:
+	case CapabilityHelp:
 		return store.CapabilityReceipt{}
 	case CapabilityLogin:
 		if invocation.Policy().Effect == EffectRead {
@@ -407,11 +407,6 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 			target += "：" + state
 		}
 		return store.CapabilityReceipt{Action: "设置", Resource: "提醒", Subject: target}
-	case CapabilitySettings:
-		if invocation.Policy().Effect == EffectRead {
-			return query("设置")
-		}
-		return mutation("更新", "设置", 0)
 	case CapabilityFeedback:
 		if invocation.Policy().Effect == EffectRead {
 			return store.CapabilityReceipt{}

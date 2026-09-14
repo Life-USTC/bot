@@ -204,6 +204,24 @@ func (i Invocation) Policy() CapabilityPolicy {
 	return inv.Capability.PolicyFor(inv)
 }
 
+// RequiresConfirmation is true only for destructive invocations. Read and
+// ordinary write operations remain executable without a confirmation gate.
+func (p CapabilityPolicy) RequiresConfirmation() bool {
+	return p.Effect == EffectDestructive
+}
+
+func (d CapabilityDescriptor) RequiresConfirmation(inv Invocation) bool {
+	return d.PolicyFor(inv).RequiresConfirmation()
+}
+
+func (i Invocation) RequiresConfirmation() bool {
+	return i.Policy().RequiresConfirmation()
+}
+
+func RequiresConfirmation(inv Invocation) bool {
+	return inv.RequiresConfirmation()
+}
+
 func withDescriptor(inv Invocation) (Invocation, bool) {
 	if inv.Capability != nil {
 		return inv, true
@@ -419,23 +437,10 @@ func init() {
 		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、添加、取消和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 取消 CONT5103P.01", "按教学班代码取消订阅"), example("订阅 链接", "查看私有日历订阅链接"), example("订阅 身份 12345 助教", "按教学班 JW ID 修改已有订阅身份")}, []HelpExample{example("退订教学班 CONT5103P.01", "相当于“订阅 取消 CONT5103P.01”")})),
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
-		}, notifyPolicy, helpMeta("settings", "设置", "管理通知等偏好", false, []HelpExample{example("设置 通知", "查看通知设置"), example("设置 通知 课表 开", "开启课前提醒"), example("设置 通知 作业 开", "开启作业提醒"), example("设置 通知 作业 关", "关闭作业提醒")}, []HelpExample{example("通知", "相当于“设置 通知")})),
-		descriptor(CapabilitySettings, []string{"settings", "设置"}, CapabilityRequirements{DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, settingsArgsAcceptable, nil, func(h Handler, _ context.Context, _ store.Identity, args []string) string {
-			return h.settings(args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("settings", "设置", "管理通知等偏好", true, []HelpExample{example("设置", "查看设置命令")}, nil)),
+		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),
-		descriptor(CapabilityPing, []string{"ping"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
-			if err := h.Life.Health(ctx); err != nil {
-				h.markOutcome(CapabilityOutcomeFailed)
-				return "Life @ USTC API unavailable: " + err.Error()
-			}
-			return "Life @ USTC API is reachable."
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("system", "系统", "查看服务状态与检查连通性", false, []HelpExample{example("系统 检查", "检查 Life @ USTC API 是否可用")}, nil)),
-		descriptor(CapabilityStatus, []string{"status", "状态"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
-			return h.status(ctx)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("system", "系统", "查看服务状态与检查连通性", true, []HelpExample{example("系统 状态", "查看公开服务状态")}, []HelpExample{example("状态（status）", "相当于“系统 状态")})),
 		descriptor(CapabilitySemester, []string{"semester", "学期"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, semesterInput, nil, func(h Handler, ctx context.Context, _ store.Identity, _ []string) string {
 			return h.currentSemester(ctx)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("semester", "学期", "只查看公开的当前学期名称和日期，不返回个人选课", false, []HelpExample{example("学期", "查看当前学期"), example("学期 当前", "查看当前学期")}, nil)),
@@ -448,7 +453,7 @@ func init() {
 			Effect:       EffectRead, Exposure: ExposureModel,
 			Input: weatherInput, Execute: weatherExecutor, Present: defaultCapabilityPresenter,
 			ResolvePolicy: func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) },
-			Help:          helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区")}, nil),
+			Help:          helpMeta("weather", "天气", "查看本部与高新校区的天气", true, []HelpExample{example("天气", "查看本部与高新校区的天气"), example("天气 高新", "只看高新校区"), example("天气 高新校区", "高新区、高新园区也可作为校区别名")}, nil),
 		},
 		{
 			ID: CapabilityRoomMap, Forms: []string{"room_map", "room", "教室", "教室地图", "地图"},
@@ -481,7 +486,7 @@ func init() {
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", true, []HelpExample{example("老师 张", "按关键词快速搜索老师")}, nil)),
 		descriptor(CapabilityBus, []string{"bus", "校车", "xc"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, busCommandArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.bus(ctx, ident, args)
-		}, busPolicy, helpMeta("bus", "校车", "按日期、服务日或路线查询班次并设置偏好", true, []HelpExample{example("校车", "查看今天接下来各路线的校车"), example("校车 周六 周日", "分别查询最近周六和周日的完整时刻"), example("校车 周六 太湖路园区 东区", "查询周六指定路线的完整时刻"), example("校车 2026-09-06 东区 太湖路园区", "查询指定日期的完整时刻"), example("校车 工作日 东区 西区", "查询周一至周五的时刻"), example("校车 偏好", "查看校车偏好"), example("校车 偏好 路线 东区 西区", "设置偏好路线")}, []HelpExample{example("校车（xc）", "直接查询今天接下来的校车")})),
+		}, busPolicy, helpMeta("bus", "校车", "按日期、服务日或路线查询班次并设置偏好", true, []HelpExample{example("校车", "查看今天接下来各路线的校车"), example("校车 周六 周日", "分别查询最近周六和周日的完整时刻"), example("校车 周六 太湖路园区 东区", "查询周六指定路线的完整时刻"), example("校车 2026-09-06 东区 太湖路园区", "查询指定日期的完整时刻"), example("校车 工作日 东区 西区", "查询周一至周五的时刻"), example("校车 高新校区 东区", "高新区、高新园区也可作为校区别名"), example("校车 偏好", "查看校车偏好"), example("校车 偏好 路线 东区 西区", "设置偏好路线")}, []HelpExample{example("校车（xc）", "直接查询今天接下来的校车")})),
 		descriptor(CapabilitySchedule, []string{"schedule", "课表", "kb"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, scheduleArgsAcceptable, normalizeScheduleArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.curriculum(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("schedule", "课表", "周课表、单日课表与下一节课", true, []HelpExample{example("课表", "查看本周课表"), example("课表 本周", "查看本周课表"), example("课表 下周", "查看下周课表"), example("课表 第3周", "查看指定教学周"), example("课表 2026 秋季学期", "查看整学期课表与教学周范围"), example("课表 单日 今天", "只查看今天的课表"), example("课表 单日 明天", "只查看明天的课表")}, []HelpExample{example("今日课表（单日课表）", "相当于“课表 单日 今天")})),
@@ -547,8 +552,8 @@ func init() {
 }
 
 func init() {
-	capabilityDescriptors[0].Execute = textExecutor(func(h Handler, _ context.Context, _ store.Identity, args []string) string {
-		return h.help(args...)
+	capabilityDescriptors[0].Execute = textExecutor(func(h Handler, _ context.Context, ident store.Identity, args []string) string {
+		return h.helpFor(store.IsSharedConversation(ident), args...)
 	})
 }
 

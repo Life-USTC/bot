@@ -144,7 +144,7 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 		return ForbiddenOutcome(textResponse(reply)), true
 	}
 	if parsed.Status == ParseStatusInvalid {
-		reply := h.help(cmd.Name)
+		reply := h.helpFor(store.IsSharedConversation(input.Identity), cmd.Name)
 		if strings.TrimSpace(reply) == "" {
 			reply = "命令参数无效。发送“帮助”查看可用命令。"
 		}
@@ -152,7 +152,11 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 			h.recordState(ctx, input.Identity, cmd)
 			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeInvalidInput)
 		}
-		return InvalidInputOutcome(Response{Text: reply, Kind: cmd.Name}), true
+		return InvalidInputOutcome(Response{
+			Text: reply,
+			Data: structuredHelpDataFor(store.IsSharedConversation(input.Identity), cmd.Name),
+			Kind: cmd.Name,
+		}), true
 	}
 	if h.hasAdditionalCommandLine(input.Text) {
 		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
@@ -189,7 +193,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	executionHandler := h
 	executionHandler.execution = execution
 	if cmd.Name != string(CapabilityHelp) && firstArgIsHelp(cmd.Args) {
-		text := executionHandler.help(cmd.Name)
+		text := executionHandler.helpFor(store.IsSharedConversation(input.Identity), cmd.Name)
 		outcome := outcomeFromResponse(executionHandler, Response{Text: text, Kind: cmd.Name})
 		outcome.Response.Image = h.imageResponseForOutcome(cmd, outcome)
 		return outcome, true
@@ -232,6 +236,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 				outcome.Status = CapabilityOutcomeFailed
 			} else {
 				response.Text = loginResponse.Text
+				response.Data = loginResponse.Data
 				responseKind = ResponseKindAuthWait
 				outcome.Status = CapabilityOutcomeAuthRequired
 			}
@@ -244,7 +249,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	if responseKind != ResponseKindAuthWait {
 		// Executors may attach a structured image (e.g. the weather card);
 		// only fall back to the text-derived image when none was provided.
-		if response.Image == nil {
+		if response.Image == nil && !(cmd.Name == string(CapabilityHelp) && store.IsSharedConversation(input.Identity)) {
 			response.Image = h.imageResponseForOutcome(cmd, outcome)
 		}
 	} else {
@@ -279,6 +284,14 @@ func (h Handler) parse(text string) (Invocation, bool) {
 }
 
 func (h Handler) parseResult(text string) ParseResult {
+	if first, count := parsedCommandLines(text); count > 1 {
+		first.Status = ParseStatusInvalid
+		return first
+	}
+	return h.parseResultSingle(text)
+}
+
+func (h Handler) parseResultSingle(text string) ParseResult {
 	raw := strings.TrimSpace(stripCQCodes(text))
 	if raw == "" {
 		return ParseResult{Status: ParseStatusUnknown}
@@ -295,7 +308,7 @@ func (h Handler) parseResult(text string) ParseResult {
 	if len(fields) == 0 {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	if isHelpToken(fields[0]) {
+	if isHelpCommandToken(fields[0]) {
 		return acceptedCommandResult(raw, string(CapabilityHelp), fields[1:])
 	}
 
@@ -312,12 +325,6 @@ func (h Handler) parseResult(text string) ParseResult {
 
 	name, args := normalizeCommand(fields[0], fields[1:])
 	if name == "" {
-		if strings.HasPrefix(fields[0], "/") {
-			unknown := strings.TrimSpace(strings.TrimPrefix(fields[0], "/"))
-			if unknown != "" {
-				return acceptedCommandResult(raw, string(CapabilityHelp), []string{unknown})
-			}
-		}
 		return parseNaturalReadIntent(raw)
 	}
 	result := acceptedCommandResult(raw, name, args)
@@ -325,6 +332,31 @@ func (h Handler) parseResult(text string) ParseResult {
 		return result
 	}
 	return parseNaturalReadIntent(raw)
+}
+
+// parsedCommandLines counts recognized command lines without invoking the
+// public parser recursively. This keeps ParseCommand and Handle on the same
+// multi-command safety boundary.
+func parsedCommandLines(text string) (ParseResult, int) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	var first ParseResult
+	count := 0
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		result := (Handler{}).parseResultSingle(line)
+		if !result.Recognized() {
+			continue
+		}
+		if count == 0 {
+			first = result
+		}
+		count++
+	}
+	return first, count
 }
 
 // HasRemovedCommandPrefix identifies command paths that no longer exist. The
@@ -389,7 +421,7 @@ func isNaturalCalendarLinkRequest(raw string) bool {
 
 func normalizeCommand(name string, args []string) (string, []string) {
 	key := commandToken(name)
-	if isHelpToken(key) {
+	if isHelpCommandToken(key) {
 		return "help", args
 	}
 	if normalized, normalizedArgs, ok := normalizeHierarchicalCommand(key, args); ok {
@@ -544,24 +576,6 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 			return "login", []string{"status"}, true
 		case "退出", "登出":
 			return "logout", rest, true
-		case "状态":
-			return "status", rest, true
-		}
-	case "设置":
-		switch action {
-		case "":
-			return "settings", nil, true
-		case "通知", "提醒":
-			return "notify", normalizeNotifyArgs(rest), true
-		}
-	case "系统":
-		switch action {
-		case "":
-			return help("系统")
-		case "状态":
-			return "status", rest, true
-		case "检查", "连通性":
-			return "ping", rest, true
 		}
 	}
 	return "", args, false
@@ -1067,6 +1081,19 @@ func isHelpToken(value string) bool {
 	}
 }
 
+// isHelpCommandToken is used only for the first command token. A bare question
+// mark is ordinary user text; help remains explicit through help/帮助/菜单 or
+// the slash and flag forms. Nested command arguments still use isHelpToken so
+// “课程 ?” and similar command-specific help requests continue to work.
+func isHelpCommandToken(value string) bool {
+	switch normToken(value) {
+	case "?", "？":
+		return false
+	default:
+		return isHelpToken(value)
+	}
+}
+
 func withFirstArg(args []string, value string) []string {
 	next := copyArgs(args)
 	next[0] = value
@@ -1078,23 +1105,15 @@ func copyArgs(args []string) []string {
 }
 
 func (h Handler) hasAdditionalCommandLine(text string) bool {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	seenCommand := false
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if _, ok := h.parse(line); !ok {
-			continue
-		}
-		if seenCommand {
-			return true
-		}
-		seenCommand = true
-	}
-	return false
+	return HasAdditionalCommandLine(text)
+}
+
+// HasAdditionalCommandLine reports whether a message contains multiple
+// recognized command lines. The structured agent command path can call this
+// before executing ParseCommand so it has the same safety rule as Handle.
+func HasAdditionalCommandLine(text string) bool {
+	_, count := parsedCommandLines(text)
+	return count > 1
 }
 
 func hasArgs(args []string) bool {
@@ -1149,6 +1168,12 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 	if err != nil {
 		return h.commandError("反馈保存失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation":     "feedback",
+		"id":            result.ID,
+		"admin_intents": result.AdminIntents,
+		"content":       text,
+	})
 	if result.AdminIntents > 0 {
 		return "已收到反馈，会转给维护者。"
 	}
@@ -1236,9 +1261,17 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 		} else if result.Status != "" && result.Status != store.LoginStatusApproved {
 			h.markOutcome(CapabilityOutcomeFailed)
 		}
+		h.markData(map[string]any{
+			"operation":  "login_status",
+			"pending":    result.Pending,
+			"slow_down":  result.SlowDown,
+			"authorized": result.Authorized,
+			"status":     result.Status,
+		})
 		return result.Message
 	}
 	if _, err := h.Auth.AccessToken(ctx, ident); err == nil {
+		h.markData(map[string]any{"operation": "login", "logged_in": true})
 		return "已登录 Life @ USTC。"
 	}
 	session, err := h.Auth.Store.ActiveLoginSession(ctx, ident)
@@ -1251,6 +1284,16 @@ func (h Handler) login(ctx context.Context, ident store.Identity, args []string)
 			return h.commandError("登录开始失败：", err)
 		}
 	}
+	h.markData(map[string]any{
+		"operation":                 "login",
+		"logged_in":                 false,
+		"status":                    "pending",
+		"verification_uri":          session.VerificationURI,
+		"verification_uri_complete": session.VerificationURIComplete,
+		"user_code":                 session.UserCode,
+		"expires_at":                session.ExpiresAt,
+		"interval_seconds":          session.IntervalSeconds,
+	})
 	link := session.VerificationURIComplete
 	if link == "" {
 		link = session.VerificationURI
@@ -1271,6 +1314,7 @@ func (h Handler) logout(ctx context.Context, ident store.Identity) string {
 	if err := h.Auth.Logout(ctx, ident); err != nil {
 		return h.commandError("退出失败：", err)
 	}
+	h.markData(map[string]any{"operation": "logout", "logged_in": false})
 	return "已退出登录。"
 }
 
@@ -1285,6 +1329,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 	if err != nil {
 		return h.commandError("个人信息查不到：", err)
 	}
+	h.markData(me)
 	name := lifedata.FirstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
 		name = lifedata.FirstString(me, "id", "sub")
@@ -1381,12 +1426,17 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token str
 	if opts.Title == "" {
 		return h.invalidInput("想加什么？例如：td 写报告")
 	}
-	_, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
+	created, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.CreateTodoWithOptions(ctx, token, opts)
 	})
 	if err != nil {
 		return h.commandError("待办添加失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "create",
+		"todo":      created,
+		"requested": opts,
+	})
 	return "已加待办：" + opts.Title
 }
 
@@ -1395,6 +1445,12 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 	if err != nil {
 		return h.commandError("待办查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "list",
+		"items":     todos,
+		"filter":    opts,
+		"page":      requestedPage,
+	})
 	numbered, err := filterNumberedTodos(todos, opts)
 	if err != nil {
 		return h.invalidInput(err.Error())
@@ -1461,6 +1517,13 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 			return h.commandError("待办恢复失败：", err)
 		}
 	}
+	h.markData(map[string]any{
+		"operation": "set_completion",
+		"completed": completed,
+		"items":     items,
+		"targets":   done,
+		"missing":   missing,
+	})
 	if len(done) == 0 {
 		if completed {
 			return h.notFound("没找到这些待办。发 td 看编号，再试：td done 1,2,3")
@@ -1498,6 +1561,11 @@ func (h Handler) setTodoCompletionItem(ctx context.Context, ident store.Identity
 		}
 		return h.commandError("待办恢复失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "set_completion",
+		"completed": completed,
+		"item":      todo,
+	})
 	title := lifedata.FirstString(todo, "title")
 	if completed {
 		return todoCompletionReply(title)
@@ -1513,6 +1581,9 @@ func (h Handler) todos(ctx context.Context, ident store.Identity, token string, 
 	todos, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.TodosWithOptions(ctx, token, opts)
 	})
+	if err == nil {
+		h.markData(todos)
+	}
 	return todos, err
 }
 
@@ -1539,6 +1610,11 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 	if err != nil {
 		return h.commandError("待办修改失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "update",
+		"item":      todo,
+		"changes":   opts,
+	})
 	return "已修改待办：" + lifedata.FirstString(todo, "title", "id")
 }
 
@@ -1578,6 +1654,11 @@ func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, toke
 		}
 		deleted = append(deleted, strings.TrimPrefix(reply, "已删除："))
 	}
+	h.markData(map[string]any{
+		"operation": "delete",
+		"deleted":   deleted,
+		"missing":   missing,
+	})
 	if len(deleted) == 0 {
 		return h.notFound("没找到这些待办。发 td all 看编号，再试：td delete 1,2,3")
 	}
@@ -1606,6 +1687,10 @@ func (h Handler) deleteTodoItem(ctx context.Context, ident store.Identity, token
 	if err != nil {
 		return h.commandError("待办删除失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "delete",
+		"item":      todo,
+	})
 	title := strings.TrimSpace(lifedata.FirstString(todo, "title"))
 	if title == "" {
 		return "已删除。"
@@ -1948,6 +2033,15 @@ func (h Handler) overview(ctx context.Context, ident store.Identity) string {
 	lifedata.ApplySubscriptionKinds(subscription, schedules)
 	lifedata.ApplySubscriptionKinds(subscription, homeworks)
 	exams := upcomingSubscriptionExams(subscriptionExams(subscription), now)
+	h.markData(map[string]any{
+		"operation":    "overview",
+		"date":         now.In(lifedata.ChinaLocation()).Format("2006-01-02"),
+		"schedules":    schedules,
+		"todos":        todos,
+		"homeworks":    dueSoonHomeworks(homeworks, now),
+		"exams":        exams,
+		"subscription": subscription,
+	})
 	return formatOverview(now, schedules, todos, dueSoonHomeworks(homeworks, now), exams)
 }
 
@@ -2047,6 +2141,12 @@ func (h Handler) homework(ctx context.Context, ident store.Identity, args []stri
 	if err != nil {
 		return h.commandError("作业查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "list",
+		"items":     homeworks,
+		"filter":    listArgs,
+		"page":      listArgs.page,
+	})
 	numbered := filterNumberedHomeworks(homeworks, listArgs)
 	if len(numbered) == 0 {
 		if listArgs.all {
@@ -2217,6 +2317,13 @@ func (h Handler) setHomeworkCompletionBatch(ctx context.Context, ident store.Ide
 			return h.commandError("作业状态更新失败：", err)
 		}
 	}
+	h.markData(map[string]any{
+		"operation": "set_completion",
+		"completed": completed,
+		"items":     items,
+		"targets":   done,
+		"missing":   missing,
+	})
 	if len(done) == 0 {
 		return h.notFound("没找到这些作业。发 作业 看编号，再试：作业 done 1,2,3")
 	}
@@ -2248,6 +2355,11 @@ func (h Handler) setHomeworkCompletionItem(ctx context.Context, ident store.Iden
 	if err != nil {
 		return h.commandError("作业状态更新失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "set_completion",
+		"completed": completed,
+		"item":      homework,
+	})
 	return homeworkCompletionReply(completed, lifedata.FirstString(homework, "title"))
 }
 
@@ -2255,6 +2367,9 @@ func (h Handler) homeworks(ctx context.Context, ident store.Identity, token stri
 	homeworks, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.SubscribedHomeworks(ctx, token)
 	})
+	if err == nil {
+		h.markData(homeworks)
+	}
 	h.annotatePersonalKinds(ctx, ident, token, homeworks)
 	sortHomeworksForDisplay(homeworks, chinaNow())
 	return homeworks, err
@@ -2487,6 +2602,10 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 	if err != nil {
 		return h.commandError("订阅链接查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation":    "calendar_link",
+		"subscription": data,
+	})
 	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
 	if calendarURL == "" {
 		if hasCurrentScopes, scopeErr := h.Auth.HasCurrentScopes(ctx, ident); scopeErr == nil && !hasCurrentScopes {
@@ -2505,13 +2624,6 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 		"iCalendar 订阅会自动更新，不需要反复导入。",
 		"链接包含私密凭证，请勿公开或转发。",
 	}, "\n")
-}
-
-func (h Handler) settings(args []string) string {
-	if !hasArgs(args) || firstArgIs(args, "help") {
-		return formatHelpTopic("settings")
-	}
-	return h.invalidInput("未知设置项。\n" + formatHelpTopic("settings"))
 }
 
 func (h Handler) notify(ctx context.Context, ident store.Identity, args []string) string {
@@ -2535,6 +2647,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	}
 	settings.Identity = ident
 	if !hasArgs(args) || firstArgIs(args, "status") {
+		h.markData(map[string]any{
+			"operation": "notification_settings",
+			"settings":  settings,
+		})
 		return formatNotificationSettings(settings)
 	}
 	if len(args) < 2 {
@@ -2564,6 +2680,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	if err != nil {
 		return h.commandError("通知设置查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "notification_settings",
+		"settings":  settings,
+	})
 	return formatNotificationSettings(settings)
 }
 
@@ -2597,6 +2717,10 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	if err != nil {
 		return h.commandError("日程查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation":    "list",
+		"subscription": data,
+	})
 	sections := lifedata.SubscriptionSections(data)
 	if len(sections) == 0 {
 		return "还没有订阅课程。"
@@ -2658,6 +2782,12 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	if err != nil {
 		return h.commandError("订阅更新失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation":   "subscribe",
+		"matches":     matches,
+		"codes":       codes,
+		"semester_id": semesterID,
+	})
 	sections := matchSections(matches)
 	added := lifedata.FirstInt(matches, "addedCount")
 	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
@@ -2683,6 +2813,12 @@ func (h Handler) bulkUnsubscribeSections(ctx context.Context, ident store.Identi
 	if err != nil {
 		return h.commandError("取消订阅失败：", err)
 	}
+	h.markData(map[string]any{
+		"operation":   "unsubscribe",
+		"matches":     matches,
+		"codes":       codes,
+		"semester_id": semesterID,
+	})
 	sections := matchSections(matches)
 	removed := lifedata.FirstInt(matches, "removedCount")
 	unchanged := lifedata.FirstInt(matches, "unchangedCount")
@@ -2860,14 +2996,31 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	if err != nil {
 		return h.commandError("课表查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "day",
+		"date":      day.Format("2006-01-02"),
+		"schedules": schedules,
+	})
 	if len(schedules) == 0 {
 		hasSubscriptions, subscriptionErr := h.hasSubscribedSections(ctx, ident, token)
 		if subscriptionErr != nil {
 			return h.failed("没有查到课程，但订阅状态校验失败，暂时无法确认当天是否真的没课。")
 		}
 		if !hasSubscriptions {
+			h.markData(map[string]any{
+				"operation":         "day",
+				"date":              day.Format("2006-01-02"),
+				"schedules":         []map[string]any{},
+				"has_subscriptions": false,
+			})
 			return h.notFound("没有查到已关注的班级，无法确认当天是否有课。请先恢复或关注对应学期的课程。")
 		}
+		h.markData(map[string]any{
+			"operation":         "day",
+			"date":              day.Format("2006-01-02"),
+			"schedules":         []map[string]any{},
+			"has_subscriptions": true,
+		})
 		if target == "tomorrow" {
 			return "明天没有课。"
 		}
@@ -2894,6 +3047,7 @@ func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, 
 	if err != nil {
 		return time.Time{}, nil, err
 	}
+	h.markData(semester)
 	start, ok := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
 	if !ok {
 		return time.Time{}, nil, errors.New("当前学期缺少开始日期")
@@ -2912,6 +3066,13 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 	if err != nil {
 		return h.commandError("课表查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "week",
+		"start":     start.Format("2006-01-02"),
+		"end":       end.Format("2006-01-02"),
+		"semester":  semester,
+		"schedules": schedules,
+	})
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
 	if h.EnableImageResponses {
 		if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
@@ -2997,6 +3158,13 @@ func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, t
 	if err != nil {
 		return h.commandError("课表查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "semester",
+		"semester":  semester,
+		"start":     start.Format("2006-01-02"),
+		"end":       end.Format("2006-01-02"),
+		"schedules": schedules,
+	})
 	entries := aggregateSemesterSchedules(schedules, start, end)
 	name := lifedata.FirstString(semester, "nameCn", "namePrimary", "name", "code")
 	if name == "" {
@@ -3013,6 +3181,7 @@ func (h Handler) matchScheduleSemester(ctx context.Context, target string) (map[
 	if err != nil {
 		return nil, err
 	}
+	h.markData(semesters)
 	for _, semester := range semesters {
 		for _, field := range []string{"nameCn", "namePrimary", "name", "code"} {
 			candidate, ok := normalizeScheduleSemesterTarget(lifedata.FirstString(semester, field))
@@ -3255,6 +3424,7 @@ func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity
 	if err != nil {
 		return false, err
 	}
+	h.markData(subscription)
 	return len(lifedata.SubscriptionSectionIDs(subscription)) > 0, nil
 }
 
@@ -3298,6 +3468,11 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 			} else if offset > 1 {
 				prefix = textutil.MonospaceDigits(day.Format("01-02")) + " 下一节："
 			}
+			h.markData(map[string]any{
+				"operation": "next_class",
+				"date":      day.Format("2006-01-02"),
+				"schedule":  schedule,
+			})
 			return prefix + "\n" + formatSchedule(schedule)
 		}
 	}
@@ -3314,6 +3489,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		all = lifedata.FilterSchedulesForDay(all, day)
 		lifedata.SortSchedulesByStart(all)
 		token = h.annotatePersonalKinds(ctx, ident, token, all)
+		h.markData(all)
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3337,6 +3513,7 @@ func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, to
 	}
 	if err == nil {
 		token = h.annotatePersonalKinds(ctx, ident, token, all)
+		h.markData(all)
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3351,6 +3528,7 @@ func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, to
 		}
 		all = append(all, daySchedules...)
 	}
+	h.markData(all)
 	return all, token, nil
 }
 
@@ -3373,6 +3551,7 @@ func (h Handler) schedulesForDayBySections(ctx context.Context, ident store.Iden
 	}
 	sectionIDs := lifedata.SubscriptionSectionIDsForDay(sub, day)
 	if len(sectionIDs) == 0 {
+		h.markData([]map[string]any{})
 		return nil, token, nil
 	}
 	all, err := h.fetchSchedulesForSections(ctx, token, sectionIDs, day)
@@ -3386,6 +3565,7 @@ func (h Handler) schedulesForDayBySections(ctx context.Context, ident store.Iden
 	lifedata.ApplySubscriptionKinds(sub, all)
 	all = lifedata.FilterSchedulesForDay(all, day)
 	lifedata.SortSchedulesByStart(all)
+	h.markData(all)
 	return all, token, nil
 }
 
@@ -3667,6 +3847,12 @@ func (h Handler) listSemesters(ctx context.Context, args []string) string {
 	if err != nil {
 		return h.commandError("学期查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "list",
+		"page":      page,
+		"limit":     limit,
+		"items":     semesters,
+	})
 	if len(semesters) == 0 {
 		return h.notFound("没有学期数据。")
 	}
@@ -3696,6 +3882,7 @@ func (h Handler) searchCoursesWithFilters(ctx context.Context, args []string) st
 	if err != nil {
 		return h.commandError("课程查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "filters": opts, "items": courses})
 	if len(courses) == 0 {
 		return h.notFound("没找到课程。")
 	}
@@ -3717,6 +3904,7 @@ func (h Handler) searchSectionsWithFilters(ctx context.Context, args []string) s
 	if err != nil {
 		return h.commandError("教学班查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "filters": opts, "items": sections})
 	if len(sections) == 0 {
 		return h.notFound("没找到教学班。")
 	}
@@ -3736,6 +3924,7 @@ func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) s
 	if err != nil {
 		return h.commandError("老师查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "filters": opts, "items": teachers})
 	if len(teachers) == 0 {
 		return h.notFound("没找到老师。")
 	}
@@ -3755,6 +3944,7 @@ func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
 	if err != nil {
 		return h.commandError("课程查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "detail", "jw_id": jwId, "course": course})
 	return "课程：\n" + formatCourse(course)
 }
 
@@ -3767,6 +3957,7 @@ func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
 	if err != nil {
 		return h.commandError("教学班查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "detail", "jw_id": jwId, "section": section})
 	return "教学班：\n" + formatSection(section)
 }
 
@@ -3779,6 +3970,7 @@ func (h Handler) getTeacherByID(ctx context.Context, raw string) string {
 	if err != nil {
 		return h.commandError("老师查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "detail", "id": id, "teacher": teacher})
 	return "老师：\n" + formatTeacher(teacher)
 }
 
@@ -3822,6 +4014,7 @@ func (h Handler) busRoutes(ctx context.Context, args []string) string {
 		if err != nil {
 			return h.commandError("校车路线查不到：", err)
 		}
+		h.markData(map[string]any{"operation": "routes_lookup", "network": data, "from": opts.From, "to": opts.To})
 		if opts.From != "" {
 			id, ok := campusIDByName(data, opts.From)
 			if !ok {
@@ -3841,6 +4034,7 @@ func (h Handler) busRoutes(ctx context.Context, args []string) string {
 	if err != nil {
 		return h.commandError("校车路线查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "routes", "from": opts.From, "to": opts.To, "routes": routes})
 	return formatBusRoutes(routes)
 }
 
@@ -3897,6 +4091,13 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	if err != nil {
 		return h.commandError("课表查不到：", err)
 	}
+	h.markData(map[string]any{
+		"operation": "section_schedules",
+		"jw_id":     jwId,
+		"date_from": dateFrom,
+		"date_to":   dateTo,
+		"schedules": schedules,
+	})
 	if len(schedules) == 0 {
 		return "该时间段没有课。"
 	}
@@ -3931,6 +4132,7 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 	if err != nil {
 		return h.commandError("考试查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "section_exams", "jw_id": jwId, "section": section, "exams": exams})
 	if len(exams) == 0 {
 		return "该教学班没有考试。"
 	}
@@ -3970,6 +4172,7 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 	if err != nil {
 		return h.commandError("作业查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "section_homeworks", "jw_id": jwId, "homeworks": homeworks})
 	lifedata.SortHomeworksByDue(homeworks)
 	if len(homeworks) == 0 {
 		return "该教学班没有作业。"
@@ -4011,6 +4214,7 @@ func (h Handler) myDashboard(ctx context.Context, ident store.Identity) string {
 	if err != nil {
 		return h.commandError("概览查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "dashboard", "data": data})
 	return formatDashboard(data, "我的概览")
 }
 
@@ -4031,6 +4235,7 @@ func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, ar
 	if err != nil {
 		return h.commandError("近期截止查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "upcoming_deadlines", "days": dayLimit, "data": data})
 	return formatDashboard(data, fmt.Sprintf("未来 %d 天截止", dayLimit))
 }
 
@@ -4083,6 +4288,7 @@ func (h Handler) currentSemester(ctx context.Context) string {
 	if err != nil {
 		return h.commandError("学期查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "current", "semester": semester})
 	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
 	if name == "" {
 		name = lifedata.FirstString(semester, "id")
@@ -4102,6 +4308,7 @@ func (h Handler) searchCourses(ctx context.Context, keyword string) string {
 	if err != nil {
 		return h.commandError("课程查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "keyword": keyword, "items": courses})
 	if len(courses) == 0 {
 		return h.notFound("没找到课程。")
 	}
@@ -4121,6 +4328,7 @@ func (h Handler) searchSections(ctx context.Context, keyword string) string {
 	if err != nil {
 		return h.commandError("教学班查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "keyword": keyword, "items": sections})
 	if len(sections) == 0 {
 		return h.notFound("没找到教学班。")
 	}
@@ -4140,6 +4348,7 @@ func (h Handler) searchTeachers(ctx context.Context, keyword string) string {
 	if err != nil {
 		return h.commandError("老师查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "search", "keyword": keyword, "items": teachers})
 	if len(teachers) == 0 {
 		return h.notFound("没找到老师。")
 	}
@@ -4168,6 +4377,7 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 	if err != nil {
 		return h.commandError("考试查不到：", err)
 	}
+	h.markData(map[string]any{"operation": "exams", "subscription": data})
 	exams := subscriptionExams(data)
 	if len(exams) == 0 {
 		return "没有订阅课程考试。"

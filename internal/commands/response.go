@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -11,6 +11,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
 type Response struct {
@@ -29,40 +30,11 @@ type Response struct {
 // directly; this convenience keeps command-only integrations from having to
 // reconstruct the envelope from rendered text.
 func (r Response) ModelResult(operation, status string, observedAt time.Time) string {
-	if status == "success" {
-		status = "succeeded"
+	var err error
+	if status != "success" && status != "succeeded" {
+		err = errors.New(r.Text)
 	}
-	result := struct {
-		Source     string    `json:"source"`
-		Operation  string    `json:"operation"`
-		Status     string    `json:"status"`
-		ObservedAt time.Time `json:"observed_at"`
-		Result     any       `json:"result"`
-	}{
-		Source:     "commands",
-		Operation:  operation,
-		Status:     status,
-		ObservedAt: observedAt.UTC(),
-		Result:     r.Data,
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		fallback := struct {
-			Source     string    `json:"source"`
-			Operation  string    `json:"operation"`
-			Status     string    `json:"status"`
-			ObservedAt time.Time `json:"observed_at"`
-			Result     any       `json:"result"`
-		}{
-			Source:     "commands",
-			Operation:  operation,
-			Status:     "failed",
-			ObservedAt: observedAt.UTC(),
-			Result:     nil,
-		}
-		encoded, _ = json.Marshal(fallback)
-	}
-	return string(encoded)
+	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err)
 }
 
 const ResponseKindAuthWait = "auth_wait"
@@ -81,11 +53,11 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 	}
 	// Root commands whose empty-arg reply is the topic help card.
 	switch cmd.Name {
-	case "settings":
+	case "notify":
 		if !hasArgs(cmd.Args) {
-			return "settings", true
+			return "notifications", true
 		}
-	case "account", "system", "feedback", "subscription":
+	case "account", "feedback", "subscription":
 		if !hasArgs(cmd.Args) {
 			if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
 				return topic, true
