@@ -627,14 +627,18 @@ func TestAgentToolConstruction(t *testing.T) {
 	}
 	assertAgentToolNames(t, svc,
 		"call_campus_tool",
+		"get_campus_prompt",
 		"get_current_time",
 		"invoke_bot_capability",
+		"list_campus_prompts",
+		"list_campus_resources",
+		"read_campus_resource",
 		"search_bot_commands",
 		"search_campus_tools",
 	)
 }
 
-func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
+func TestLazyMCPSearchAndCallExposeDynamicTools(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
 		t.Fatal(err)
@@ -660,7 +664,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(docs, "catalog_rooms_map") || strings.Contains(docs, "delete_my_homework") {
-		t.Fatalf("read-only MCP docs = %s", docs)
+		t.Fatalf("room MCP docs = %s", docs)
 	}
 	for _, query := range []string{"第二课堂 活动", "查询第二课堂平台活动", "二课活动"} {
 		youngDocs, err := lazy.search(context.Background(), campusToolSearchInput{Query: query})
@@ -679,21 +683,21 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(allDocs), &listed); err != nil {
 		t.Fatalf("decode complete MCP inventory: %v; docs=%s", err, allDocs)
 	}
-	if len(listed) != 3 {
-		t.Fatalf("complete MCP inventory contains %d tools, want 3: %s", len(listed), allDocs)
+	if len(listed) != 4 {
+		t.Fatalf("complete MCP inventory contains %d tools, want 4: %s", len(listed), allDocs)
 	}
 	listedNames := make(map[string]bool, len(listed))
 	for _, item := range listed {
 		listedNames[item.Name] = true
 	}
-	for _, name := range []string{"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map"} {
+	for _, name := range []string{"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map", "delete_my_homework"} {
 		if !listedNames[name] {
 			t.Fatalf("complete MCP inventory omitted %q: %s", name, allDocs)
 		}
 	}
-	for _, name := range []string{"get_current_semester", "list_my_homeworks", "search_courses", "delete_my_homework"} {
-		if listedNames[name] {
-			t.Fatalf("complete MCP inventory exposed disallowed tool %q: %s", name, allDocs)
+	for _, item := range listed {
+		if item.Name == "delete_my_homework" && item.Effect != campusEffectDestructive {
+			t.Fatalf("delete_my_homework effect = %q, want destructive: %s", item.Effect, allDocs)
 		}
 	}
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "catalog_young_event_list", Arguments: map[string]any{"active": true}}); err != nil {
@@ -707,10 +711,10 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 		t.Fatalf("lazy MCP call result=%q err=%v", result, err)
 	}
 	if _, err := lazy.call(context.Background(), campusToolCallInput{Name: "delete_my_homework"}); err == nil {
-		t.Fatal("hidden MCP mutation was callable")
+		t.Fatal("untracked MCP mutation was callable")
 	}
 	if calls["delete_my_homework"].Load() != 0 {
-		t.Fatal("hidden MCP mutation reached the remote server")
+		t.Fatal("untracked MCP mutation reached the remote server")
 	}
 
 	job, _, err := db.EnqueueConversationJob(context.Background(), store.ConversationJobEnqueue{
@@ -727,26 +731,48 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	tracked := newLazyMCPSession(svc, ident, job.ID)
 	defer func() { _ = tracked.Close() }()
 	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "delete_my_homework", Arguments: map[string]any{"id": 1}}); err == nil {
-		t.Fatal("misannotated MCP mutation was callable in a tracked job")
+		t.Fatal("MCP mutation did not request confirmation")
 	}
-	if executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID); err != nil || len(executions) != 0 {
-		t.Fatalf("hidden MCP mutation created executions=%#v err=%v", executions, err)
+	if executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID); err != nil || len(executions) != 1 {
+		t.Fatalf("MCP mutation created executions=%#v err=%v", executions, err)
+	}
+	if executions, _ := db.CapabilityExecutionsForJob(context.Background(), job.ID); executions[0].State != store.CapabilityExecutionAwaitingConfirmation || executions[0].Receipt.Subject == "" || !strings.Contains(executions[0].Receipt.Subject, "delete_my_homework") {
+		t.Fatalf("MCP mutation execution = %#v", executions)
 	}
 	if calls["delete_my_homework"].Load() != 0 {
-		t.Fatal("tracked hidden MCP mutation reached the remote server")
+		t.Fatal("unconfirmed MCP mutation reached the remote server")
 	}
 	if _, err := tracked.call(trackedCtx, campusToolCallInput{Name: "catalog_young_event_get", Arguments: map[string]any{"youngId": "event-1"}}); err != nil {
 		t.Fatal(err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(context.Background(), job.ID)
-	if err != nil || len(executions) != 1 {
+	if err != nil || len(executions) != 2 {
 		t.Fatalf("MCP executions=%#v err=%v", executions, err)
 	}
-	if executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Receipt.Action != "查询" ||
-		executions[0].Receipt.Resource != "第二课堂活动" || executions[0].Receipt.Subject != "event-1" {
-		t.Fatalf("MCP execution receipt = %#v", executions[0])
+	if executions[1].State != store.CapabilityExecutionSucceeded || executions[1].Receipt.Action != "查询" ||
+		executions[1].Receipt.Resource != "第二课堂活动" || executions[1].Receipt.Subject != "event-1" {
+		t.Fatalf("MCP execution receipt = %#v", executions[1])
 	}
-	if ok, err := db.CompleteConversationJob(context.Background(), job.ID, claimed.LeaseToken); err != nil || !ok {
+	if ok, err := db.TransitionConversationJob(context.Background(), job.ID, claimed.LeaseToken, store.ConversationJobTransition{State: store.ConversationJobStateWaitingConfirmation}); err != nil || !ok {
+		t.Fatalf("move MCP job to confirmation: ok=%v err=%v", ok, err)
+	}
+	if _, _, err := db.ResolveCapabilityConfirmation(context.Background(), ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil {
+		t.Fatalf("approve MCP mutation: %v", err)
+	}
+	approvedClaim, err := db.ClaimConversationJob(context.Background(), ident)
+	if err != nil || approvedClaim == nil {
+		t.Fatalf("claim approved MCP job: %#v err=%v", approvedClaim, err)
+	}
+	approvedCtx := store.WithConversationJobLease(context.Background(), job.ID, approvedClaim.LeaseToken)
+	approvedSession := newLazyMCPSession(svc, ident, job.ID)
+	defer func() { _ = approvedSession.Close() }()
+	if _, err := approvedSession.resolveCampusExecution(approvedCtx, capabilityInterruptState{ExecutionIDs: []string{executions[0].ID}, ToolCallID: executions[0].ToolCallID}, true); err != nil {
+		t.Fatalf("execute approved MCP mutation: %v", err)
+	}
+	if calls["delete_my_homework"].Load() != 1 {
+		t.Fatal("approved MCP mutation did not reach the remote server exactly once")
+	}
+	if ok, err := db.CompleteConversationJob(context.Background(), job.ID, approvedClaim.LeaseToken); err != nil || !ok {
 		t.Fatalf("complete first MCP job ok=%v err=%v", ok, err)
 	}
 
@@ -1087,8 +1113,10 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 		mcpgo.NewTool("delete_my_homework", mcpgo.WithDescription("Delete a homework.")),
 	} {
 		tool := tool
-		readOnly := true
+		readOnly := !strings.HasPrefix(tool.Name, "delete_")
+		destructive := !readOnly
 		tool.Annotations.ReadOnlyHint = &readOnly
+		tool.Annotations.DestructiveHint = &destructive
 		calls[tool.Name] = &atomic.Int32{}
 		mcpServer.AddTool(tool, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			calls[tool.Name].Add(1)

@@ -5,14 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
 func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
-	if !campusReadToolAllowed("catalog_rooms_map") {
-		t.Fatal("catalog_rooms_map is not in the read-only allowlist")
-	}
 	var delivered commands.Response
 	lazy := &lazyMCPSession{
 		service:  &Service{handler: commands.Handler{EnableImageResponses: true}},
@@ -30,19 +29,40 @@ func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
 	}
 }
 
-func TestCampusReadToolAllowlistContainsOnlyCurrentReadTools(t *testing.T) {
-	for _, name := range []string{"catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map"} {
-		if !campusReadToolAllowed(name) {
-			t.Errorf("current read tool %q is not in the host allowlist", name)
+func TestCampusToolEffectUsesMCPAnnotations(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+	cases := []struct {
+		name string
+		tool mcpgo.Tool
+		want campusToolEffect
+	}{
+		{name: "read", tool: mcpgo.Tool{Annotations: mcpgo.ToolAnnotation{ReadOnlyHint: boolPtr(true), DestructiveHint: boolPtr(true)}}, want: campusEffectRead},
+		{name: "write", tool: mcpgo.Tool{Annotations: mcpgo.ToolAnnotation{ReadOnlyHint: boolPtr(false), DestructiveHint: boolPtr(false)}}, want: campusEffectWrite},
+		{name: "destructive", tool: mcpgo.Tool{Annotations: mcpgo.ToolAnnotation{ReadOnlyHint: boolPtr(false), DestructiveHint: boolPtr(true)}}, want: campusEffectDestructive},
+		{name: "unannotated", tool: mcpgo.Tool{}, want: campusEffectDestructive},
+	}
+	for _, tc := range cases {
+		if got := campusEffectOf(tc.tool); got != tc.want {
+			t.Errorf("%s effect = %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	for _, name := range []string{
-		"get_current_semester", "list_my_homeworks", "search_courses",
-		"delete_my_homework", "workspace_subscription_kind_update", "arbitrary_tool",
-	} {
-		if campusReadToolAllowed(name) {
-			t.Errorf("disallowed MCP tool %q is in the host allowlist", name)
-		}
+}
+
+func TestGraphQLConfirmedArgumentIsHostControlled(t *testing.T) {
+	modelArguments := map[string]any{
+		"operation": "mutation { updateHomework }",
+		"confirmed": true,
+	}
+	pending := campusArgumentsForRemote("graphql_operation_run", modelArguments, false)
+	if pending["confirmed"] != false {
+		t.Fatalf("pending GraphQL arguments = %#v, want confirmed=false", pending)
+	}
+	if modelArguments["confirmed"] != true {
+		t.Fatalf("model arguments were mutated = %#v", modelArguments)
+	}
+	approved := campusArgumentsForRemote("graphql_operation_run", pending, true)
+	if approved["confirmed"] != true {
+		t.Fatalf("approved GraphQL arguments = %#v, want confirmed=true", approved)
 	}
 }
 

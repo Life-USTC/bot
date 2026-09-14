@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -23,33 +21,45 @@ import (
 
 const maxCampusToolSearchResults = 5
 
-func campusReadToolAllowed(name string) bool {
-	switch name {
-	case "catalog_young_event_list", "catalog_young_event_get", "catalog_rooms_map":
-		return true
-	default:
-		return false
-	}
-}
+type campusToolEffect string
+
+const (
+	campusEffectRead        campusToolEffect = "read"
+	campusEffectWrite       campusToolEffect = "write"
+	campusEffectDestructive campusToolEffect = "destructive"
+)
 
 type campusToolSearchInput struct {
 	Query string `json:"query" jsonschema_description:"Words describing the campus data lookup you need"`
 }
 
 type campusToolCallInput struct {
-	Name      string         `json:"name" jsonschema_description:"Exact read-only tool name returned by search_campus_tools"`
+	Name      string         `json:"name" jsonschema_description:"Exact MCP tool name returned by search_campus_tools"`
 	Arguments map[string]any `json:"arguments,omitempty" jsonschema_description:"Arguments matching that tool's inputSchema exactly"`
 }
 
-type campusToolDocumentation struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+type campusResourceReadInput struct {
+	URI string `json:"uri" jsonschema_description:"Exact resource URI returned by list_campus_resources"`
 }
 
-// lazyMCPSession exposes only two stable meta-tools to the model. OAuth,
-// MCP initialization, and tools/list happen only if the model actually asks
-// for campus-tool documentation or invokes a campus read.
+type campusPromptGetInput struct {
+	Name      string            `json:"name" jsonschema_description:"Exact prompt name returned by list_campus_prompts"`
+	Arguments map[string]string `json:"arguments,omitempty" jsonschema_description:"Prompt arguments matching the listed prompt's contract"`
+}
+
+type campusToolDocumentation struct {
+	Name         string               `json:"name"`
+	Title        string               `json:"title,omitempty"`
+	Description  string               `json:"description,omitempty"`
+	InputSchema  json.RawMessage      `json:"inputSchema"`
+	OutputSchema json.RawMessage      `json:"outputSchema,omitempty"`
+	Annotations  mcpgo.ToolAnnotation `json:"annotations"`
+	Effect       campusToolEffect     `json:"effect"`
+}
+
+// lazyMCPSession owns one authenticated MCP session for a private agent run.
+// The remote tools are registered with their exact server schemas while the
+// stable meta-tools remain available for discovery and GraphQL context.
 type lazyMCPSession struct {
 	service      *Service
 	identity     store.Identity
@@ -68,11 +78,55 @@ func newLazyMCPSession(service *Service, identity store.Identity, jobID int64) *
 
 func (s *lazyMCPSession) appendTools(tools []tool.BaseTool) ([]tool.BaseTool, error) {
 	var err error
-	tools, err = appendInferredTool(tools, "search_campus_tools", "Search documentation for supplementary read-only campus tools. Search first, then pass the returned exact name and inputSchema to call_campus_tool. Bot commands should be searched and preferred first. Use the exact query * only when the user asks for a complete inventory of approved campus tools.", s.search)
+	tools, err = appendInferredTool(tools, campusSearchToolName, "Search the complete private MCP tools/list catalog by campus domain or intent. The result contains the server's exact schema, annotations, and effect. Search Bot commands first when both layers cover the request; use query * only for the complete MCP tool inventory.", s.search)
 	if err != nil {
 		return nil, err
 	}
-	return appendInferredTool(tools, "call_campus_tool", "Call one read-only campus tool previously returned by search_campus_tools. The result is the campus tool's actual result, without a status wrapper.", s.call)
+	tools, err = appendInferredTool(tools, campusCallToolName, "Call one MCP tool by the exact name returned by search_campus_tools. The result is the tool's literal domain result without a status wrapper. Write and destructive tools are persisted and require user confirmation before the remote call.", s.call)
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendInferredTool(tools, "list_campus_resources", "List MCP resources and URI templates. Use this to find the GraphQL schema or other server context before constructing a query.", func(ctx context.Context, _ emptyInput) (string, error) {
+		if err := s.ensure(ctx); err != nil {
+			return "", err
+		}
+		return s.session.Resources(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendInferredTool(tools, "read_campus_resource", "Read one exact MCP resource URI returned by list_campus_resources, such as life-ustc://graphql/schema. Return the resource's literal contents.", func(ctx context.Context, input campusResourceReadInput) (string, error) {
+		uri := strings.TrimSpace(input.URI)
+		if uri == "" {
+			return "", botmcp.NewRecoverableToolError("read_campus_resource", "uri is required")
+		}
+		if err := s.ensure(ctx); err != nil {
+			return "", err
+		}
+		return s.session.ReadResource(ctx, uri)
+	})
+	if err != nil {
+		return nil, err
+	}
+	tools, err = appendInferredTool(tools, "list_campus_prompts", "List MCP prompts available for planning campus operations. Use plan_graphql_operation when constructing GraphQL arguments.", func(ctx context.Context, _ emptyInput) (string, error) {
+		if err := s.ensure(ctx); err != nil {
+			return "", err
+		}
+		return s.session.Prompts(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return appendInferredTool(tools, "get_campus_prompt", "Render one exact MCP prompt returned by list_campus_prompts. Use it to construct a valid GraphQL operation before calling graphql_operation_run.", func(ctx context.Context, input campusPromptGetInput) (string, error) {
+		name := strings.TrimSpace(input.Name)
+		if name == "" {
+			return "", botmcp.NewRecoverableToolError("get_campus_prompt", "name is required")
+		}
+		if err := s.ensure(ctx); err != nil {
+			return "", err
+		}
+		return s.session.GetPrompt(ctx, name, input.Arguments)
+	})
 }
 
 func (s *lazyMCPSession) ensure(ctx context.Context) error {
@@ -97,16 +151,29 @@ func (s *lazyMCPSession) ensure(ctx context.Context) error {
 			s.err = err
 			return
 		}
-		readOnly := make(map[string]mcpgo.Tool)
+		if len(listed) == 0 {
+			_ = session.Close()
+			s.err = errors.New("MCP tools/list returned no tools")
+			return
+		}
+		available := make(map[string]mcpgo.Tool, len(listed))
 		for _, candidate := range listed {
-			if !campusReadToolAllowed(candidate.Name) {
-				s.service.logf("MCP tool outside host read allowlist hidden from agent: name=%s", candidate.Name)
-				continue
+			name := strings.TrimSpace(candidate.Name)
+			if name == "" {
+				_ = session.Close()
+				s.err = errors.New("MCP tools/list returned a tool with an empty name")
+				return
 			}
-			readOnly[candidate.Name] = candidate
+			candidate.Name = name
+			if _, duplicate := available[name]; duplicate {
+				_ = session.Close()
+				s.err = fmt.Errorf("MCP tools/list returned duplicate tool name %q", name)
+				return
+			}
+			available[name] = candidate
 		}
 		s.session = session
-		s.tools = readOnly
+		s.tools = available
 	})
 	return s.err
 }
@@ -116,6 +183,51 @@ func (s *lazyMCPSession) Close() error {
 		return nil
 	}
 	return s.session.Close()
+}
+
+func campusToolInputSchema(candidate mcpgo.Tool) (json.RawMessage, error) {
+	if len(candidate.RawInputSchema) > 0 {
+		if !json.Valid(candidate.RawInputSchema) {
+			return nil, fmt.Errorf("campus tool %s has an invalid input schema", candidate.Name)
+		}
+		return append(json.RawMessage(nil), candidate.RawInputSchema...), nil
+	}
+	data, err := json.Marshal(candidate.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode campus tool %s input schema: %w", candidate.Name, err)
+	}
+	return data, nil
+}
+
+func campusToolOutputSchema(candidate mcpgo.Tool) (json.RawMessage, error) {
+	if len(candidate.RawOutputSchema) > 0 {
+		if !json.Valid(candidate.RawOutputSchema) {
+			return nil, fmt.Errorf("campus tool %s has an invalid output schema", candidate.Name)
+		}
+		return append(json.RawMessage(nil), candidate.RawOutputSchema...), nil
+	}
+	if strings.TrimSpace(candidate.OutputSchema.Type) == "" {
+		return nil, nil
+	}
+	data, err := json.Marshal(candidate.OutputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode campus tool %s output schema: %w", candidate.Name, err)
+	}
+	return data, nil
+}
+
+func campusEffectOf(candidate mcpgo.Tool) campusToolEffect {
+	if candidate.Annotations.ReadOnlyHint != nil && *candidate.Annotations.ReadOnlyHint {
+		return campusEffectRead
+	}
+	if candidate.Annotations.DestructiveHint != nil && *candidate.Annotations.DestructiveHint {
+		return campusEffectDestructive
+	}
+	if candidate.Annotations.ReadOnlyHint != nil && !*candidate.Annotations.ReadOnlyHint &&
+		candidate.Annotations.DestructiveHint != nil && !*candidate.Annotations.DestructiveHint {
+		return campusEffectWrite
+	}
+	return campusEffectDestructive
 }
 
 func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput) (string, error) {
@@ -134,7 +246,7 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 	}
 	matches := make([]match, 0, len(s.tools))
 	for name, candidate := range s.tools {
-		haystack := strings.ToLower(name + " " + candidate.Description + " " + campusToolSearchAliases(name))
+		haystack := strings.ToLower(name + " " + candidate.Title + " " + candidate.Description + " " + campusToolSearchAliases(name))
 		score := 0
 		if listAll {
 			score = 1
@@ -163,8 +275,14 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 		if err != nil {
 			return "", err
 		}
+		outputSchema, err := campusToolOutputSchema(candidate)
+		if err != nil {
+			return "", err
+		}
 		docs = append(docs, campusToolDocumentation{
-			Name: candidate.Name, Description: candidate.Description, InputSchema: schemaJSON,
+			Name: candidate.Name, Title: candidate.Title, Description: candidate.Description,
+			InputSchema: schemaJSON, OutputSchema: outputSchema,
+			Annotations: candidate.Annotations, Effect: campusEffectOf(candidate),
 		})
 	}
 	data, err := json.Marshal(docs)
@@ -174,92 +292,98 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 	return string(data), nil
 }
 
-func campusToolInputSchema(candidate mcpgo.Tool) (json.RawMessage, error) {
-	if len(candidate.RawInputSchema) > 0 {
-		if !json.Valid(candidate.RawInputSchema) {
-			return nil, fmt.Errorf("campus tool %s has an invalid input schema", candidate.Name)
-		}
-		return append(json.RawMessage(nil), candidate.RawInputSchema...), nil
-	}
-	data, err := json.Marshal(candidate.InputSchema)
-	if err != nil {
-		return nil, fmt.Errorf("encode campus tool %s input schema: %w", candidate.Name, err)
-	}
-	return data, nil
-}
-
 func campusToolSearchAliases(name string) string {
-	if strings.Contains(strings.ToLower(name), "young_event") {
-		return "第二课堂 二课 活动 报名"
+	lower := strings.ToLower(name)
+	aliases := make([]string, 0, 8)
+	add := func(values ...string) { aliases = append(aliases, values...) }
+	if strings.Contains(lower, "young") || strings.Contains(lower, "event") {
+		add("第二课堂", "二课", "活动", "报名", "项目")
 	}
-	if name == "catalog_rooms_map" {
-		return "教室 房间 地图 位置 楼层 room map"
+	if strings.Contains(lower, "room") || strings.Contains(lower, "map") || strings.Contains(lower, "building") {
+		add("教室", "房间", "地图", "位置", "楼层", "room map")
 	}
-	return ""
-}
-
-func (s *lazyMCPSession) call(ctx context.Context, input campusToolCallInput) (string, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return "", botmcp.NewRecoverableToolError("call_campus_tool", "name is required")
+	if strings.Contains(lower, "location") || strings.Contains(lower, "place") || strings.Contains(lower, "geo") {
+		add("地点", "位置", "在哪里", "校区")
 	}
-	if err := s.ensure(ctx); err != nil {
-		return "", err
+	if strings.Contains(lower, "weather") || strings.Contains(lower, "forecast") {
+		add("天气", "气温", "温度", "降雨", "预报", "下雨")
 	}
-	if _, found := s.tools[name]; !found {
-		return "", botmcp.NewRecoverableToolError(name, "the requested read-only campus tool was not found")
+	if strings.Contains(lower, "semester") || strings.Contains(lower, "term") {
+		add("学期", "当前学期", "学年")
 	}
-
-	execution, tracked, execute, err := s.prepareExecution(ctx, name, input.Arguments)
-	if err != nil {
-		return "", err
+	if strings.Contains(lower, "homework") || strings.Contains(lower, "assignment") {
+		add("作业", "作业截止", "提交作业")
 	}
-	if tracked {
-		currentLease := store.ConversationJobLeaseFromContext(ctx, execution.JobID)
-		if execution.State == store.CapabilityExecutionRunning && execution.LeaseToken != currentLease {
-			claimed, claimedForExecution, claimErr := s.service.handler.Store.ClaimCapabilityExecutionForJob(ctx, execution.ID, execution.JobID, currentLease)
-			if claimErr != nil {
-				return "", markDurableAgentStateError("recover campus read", claimErr)
-			}
-			if !claimedForExecution {
-				if capabilityExecutionTerminal(claimed.State) {
-					return existingCampusToolResult(claimed), nil
-				}
-				return "", errors.New("campus read ownership changed before recovery")
-			}
-			execution = claimed
-			execute = true
-		}
-		if execution.State != store.CapabilityExecutionRunning {
-			return existingCampusToolResult(execution), nil
-		}
-		if !execute {
-			return "", errors.New("campus read is already running under the current job lease")
-		}
+	if strings.Contains(lower, "course") || strings.Contains(lower, "section") || strings.Contains(lower, "class") {
+		add("课程", "课", "选课", "班级", "节次", "教务")
 	}
-	result, callErr := s.session.Call(ctx, name, input.Arguments)
-	if callErr == nil && name == "catalog_rooms_map" {
-		if err := s.deliverRoomMapResponse(ctx, result); err != nil {
-			callErr = err
-		}
+	if strings.Contains(lower, "academic") || strings.Contains(lower, "curriculum") || strings.Contains(lower, "major") || strings.Contains(lower, "department") {
+		add("教务", "培养方案", "专业", "学院")
 	}
-	if tracked {
-		receipt := execution.Receipt
-		receipt.Subject = campusReceiptSubject(name, input.Arguments, result)
-		if receipt.Subject != execution.Receipt.Subject {
-			if err := s.service.handler.Store.UpdateCapabilityExecutionReceipt(ctx, execution.ID, execution.LeaseToken, receipt); err != nil {
-				return "", markDurableAgentStateError("update campus read receipt", err)
-			}
-		}
-		storedErr := callErr
-		if safe, ok := botmcp.ModelToolErrorResult(callErr); ok {
-			storedErr = errors.New(safe)
-		}
-		if _, err := s.service.handler.Store.FinishCapabilityExecution(ctx, execution.ID, execution.LeaseToken, result, storedErr); err != nil {
-			return "", markDurableAgentStateError("finish campus read", err)
-		}
+	if strings.Contains(lower, "enroll") || strings.Contains(lower, "registration") || strings.Contains(lower, "selection") {
+		add("选课", "选课结果", "教学班", "报名")
 	}
-	return result, callErr
+	if strings.Contains(lower, "teacher") || strings.Contains(lower, "instructor") {
+		add("教师", "老师", "任课老师")
+	}
+	if strings.Contains(lower, "exam") || strings.Contains(lower, "test") {
+		add("考试", "考场", "成绩")
+	}
+	if strings.Contains(lower, "grade") || strings.Contains(lower, "score") || strings.Contains(lower, "transcript") {
+		add("成绩", "分数", "绩点", "成绩单")
+	}
+	if strings.Contains(lower, "deadline") || strings.Contains(lower, "due") {
+		add("截止", "截止时间", "ddl")
+	}
+	if strings.Contains(lower, "schedule") || strings.Contains(lower, "calendar") {
+		add("课表", "日程", "日历", "上课")
+	}
+	if strings.Contains(lower, "bus") || strings.Contains(lower, "route") {
+		add("校车", "班车", "公交", "路线", "发车")
+	}
+	if strings.Contains(lower, "transport") || strings.Contains(lower, "shuttle") {
+		add("交通", "校车", "班车", "路线")
+	}
+	if strings.Contains(lower, "library") || strings.Contains(lower, "book") {
+		add("图书馆", "图书", "借阅", "馆藏")
+	}
+	if strings.Contains(lower, "canteen") || strings.Contains(lower, "restaurant") || strings.Contains(lower, "food") || strings.Contains(lower, "menu") {
+		add("食堂", "餐厅", "吃饭", "菜单")
+	}
+	if strings.Contains(lower, "holiday") || strings.Contains(lower, "vacation") {
+		add("假期", "放假", "节假日")
+	}
+	if strings.Contains(lower, "announcement") || strings.Contains(lower, "notice") {
+		add("公告", "通知", "消息")
+	}
+	if strings.Contains(lower, "subscription") || strings.Contains(lower, "subscribe") {
+		add("订阅", "关注", "提醒")
+	}
+	if strings.Contains(lower, "todo") || strings.Contains(lower, "task") {
+		add("待办", "任务", "提醒")
+	}
+	if strings.Contains(lower, "account") || strings.Contains(lower, "profile") || strings.Contains(lower, "user") {
+		add("账户", "账号", "个人信息")
+	}
+	if strings.Contains(lower, "student") || strings.Contains(lower, "personal") || strings.Contains(lower, "me_") {
+		add("学生", "个人", "我的")
+	}
+	if strings.Contains(lower, "graphql") || strings.Contains(lower, "operation") {
+		add("GraphQL", "数据", "教务", "查询", "操作")
+	}
+	if strings.Contains(lower, "upload") || strings.Contains(lower, "file") {
+		add("上传", "文件", "附件")
+	}
+	if strings.Contains(lower, "comment") || strings.Contains(lower, "feedback") {
+		add("评论", "反馈", "建议")
+	}
+	if strings.Contains(lower, "setting") || strings.Contains(lower, "preference") {
+		add("设置", "偏好", "配置")
+	}
+	if strings.Contains(lower, "notification") || strings.Contains(lower, "remind") {
+		add("通知", "提醒", "消息")
+	}
+	return strings.Join(aliases, " ")
 }
 
 func (s *lazyMCPSession) deliverRoomMapResponse(ctx context.Context, result string) error {
@@ -272,99 +396,6 @@ func (s *lazyMCPSession) deliverRoomMapResponse(ctx context.Context, result stri
 	}
 	response := commands.RoomMapResponse(room, s.service != nil && s.service.handler.EnableImageResponses)
 	return s.sendResponse(ctx, s.identity, response)
-}
-
-func (s *lazyMCPSession) prepareExecution(ctx context.Context, name string, arguments map[string]any) (store.CapabilityExecution, bool, bool, error) {
-	if s.service == nil || s.service.handler.Store == nil || s.jobID <= 0 {
-		return store.CapabilityExecution{}, false, true, nil
-	}
-	leaseCtx, err := ensureCapabilityJobLease(ctx, s.service.handler.Store, s.jobID)
-	if err != nil {
-		return store.CapabilityExecution{}, false, false, err
-	}
-	ctx = leaseCtx
-	encoded, err := json.Marshal(arguments)
-	if err != nil {
-		return store.CapabilityExecution{}, false, false, err
-	}
-	callID := strings.TrimSpace(compose.GetToolCallID(ctx))
-	if callID == "" {
-		digest := sha256.Sum256(append([]byte(name+"\x00"), encoded...))
-		callID = fmt.Sprintf("%x", digest[:12])
-	}
-	execution, created, err := s.service.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
-		Identity: s.identity, JobID: s.jobID, LeaseToken: store.ConversationJobLeaseFromContext(ctx, s.jobID),
-		DedupeKey:  "conversation-job:" + fmt.Sprint(s.jobID) + ":mcp:" + callID,
-		ToolCallID: callID, Capability: "mcp:" + name, Arguments: []string{string(encoded)}, Effect: string(commands.EffectRead),
-		Receipt: store.CapabilityReceipt{Action: "查询", Resource: campusReceiptResource(name), Subject: campusReceiptSubject(name, arguments, "")},
-	})
-	return execution, true, created, markDurableAgentStateError("prepare campus read", err)
-}
-
-func existingCampusToolResult(execution store.CapabilityExecution) string {
-	switch execution.State {
-	case store.CapabilityExecutionSucceeded:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询已完成，但没有返回内容。"
-	case store.CapabilityExecutionFailed:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询失败，未返回可用结果。"
-	case store.CapabilityExecutionUnknown:
-		if result := strings.TrimSpace(execution.Result); result != "" {
-			return result
-		}
-		return "校园查询结果未知，系统没有自动重试。"
-	default:
-		return "the campus query has not completed"
-	}
-}
-
-func campusReceiptResource(name string) string {
-	lower := strings.ToLower(name)
-	switch {
-	case strings.Contains(lower, "young_event"):
-		return "第二课堂活动"
-	case strings.Contains(lower, "course"), strings.Contains(lower, "section"), strings.Contains(lower, "class"):
-		return "课程"
-	case strings.Contains(lower, "teacher"):
-		return "教师"
-	case strings.Contains(lower, "semester"):
-		return "学期"
-	case strings.Contains(lower, "homework"):
-		return "作业"
-	case strings.Contains(lower, "exam"):
-		return "考试"
-	case strings.Contains(lower, "bus"):
-		return "校车"
-	default:
-		return "校园数据"
-	}
-}
-
-func campusReceiptSubject(name string, arguments map[string]any, result string) string {
-	if subject := campusResultSubject(result); subject != "" {
-		return subject
-	}
-	keys := make([]string, 0, len(arguments))
-	for key := range arguments {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	values := make([]string, 0, len(keys))
-	for _, key := range keys {
-		value := strings.TrimSpace(fmt.Sprint(arguments[key]))
-		if value != "" {
-			values = append(values, value)
-		}
-	}
-	if len(values) > 0 {
-		return strings.Join(values, " ")
-	}
-	return name
 }
 
 func campusResultSubject(result string) string {

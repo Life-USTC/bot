@@ -410,6 +410,17 @@ func (s *Service) persistResumedCapabilityResult(
 	toolCallID string,
 	result string,
 ) error {
+	return s.persistResumedToolResult(ctx, ident, jobID, toolCallID, capabilityToolName, result)
+}
+
+func (s *Service) persistResumedToolResult(
+	ctx context.Context,
+	ident store.Identity,
+	jobID int64,
+	toolCallID string,
+	toolName string,
+	result string,
+) error {
 	if s.handler.Store == nil || jobID <= 0 {
 		return nil
 	}
@@ -424,11 +435,15 @@ func (s *Service) persistResumedCapabilityResult(
 	if job == nil {
 		return markDurableAgentStateError("read resumed capability job", errors.New("conversation job is missing"))
 	}
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return errors.New("resumed tool result has no tool name")
+	}
 	_, _, err = s.handler.Store.AppendConversationEvent(ctx, store.ConversationEvent{
 		Identity: ident, JobID: jobID, JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		DedupeKey: agentToolResultDedupeKey(jobID, toolCallID),
 		Type:      s.toolEventType(ctx, jobID, toolCallID), Content: result,
-		ToolCallID: toolCallID, ToolName: capabilityToolName,
+		ToolCallID: toolCallID, ToolName: toolName,
 	})
 	return markDurableAgentStateError("persist resumed capability result", err)
 }
