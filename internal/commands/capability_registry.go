@@ -50,6 +50,7 @@ const (
 	CapabilityUpcomingDeadlines    CapabilityID = "upcoming_deadlines"
 	CapabilityWeather              CapabilityID = "weather"
 	CapabilityRoomMap              CapabilityID = "room_map"
+	CapabilityYoungEvent           CapabilityID = "young_event"
 )
 
 // CapabilityEffect describes the state transition allowed by an invocation.
@@ -461,6 +462,14 @@ func init() {
 				example("5201", "直接发送编号，自动返回教室位置图片"),
 			}, []HelpExample{example("教室 3A204", "查询教室位置和楼层图")}),
 		},
+		descriptor(CapabilityYoungEvent, []string{"young_event", "第二课堂", "二课"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, youngEventArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+			return h.youngEvents(ctx, args)
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("young_event", "第二课堂", "浏览公开的第二课堂活动、报名时间和活动详情", false, []HelpExample{
+			example("第二课堂", "查看第二课堂活动，第 1 页，每页 10 条"),
+			example("第二课堂 列表 2", "查看第二课堂活动第 2 页"),
+			example("第二课堂 搜索 志愿", "按名称搜索第二课堂活动"),
+			example("第二课堂 查看 <youngId>", "查看指定第二课堂活动详情"),
+		}, []HelpExample{example("二课", "相当于“第二课堂”")})),
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 数学分析", "按关键词快速搜索课程")}, nil)),
