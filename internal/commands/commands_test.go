@@ -4595,3 +4595,22 @@ func TestHandleIgnoresOtherMessages(t *testing.T) {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
+
+func TestNextClassEmptyResultRetainsSearchContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/schedules" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"schedules":null}`))
+	}))
+	defer server.Close()
+	ident := testIdentity()
+	handler := testAuthedHandler(t, server, ident)
+	handler.execution = &capabilityExecutionState{}
+	now := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
+	handler.nextClassAt(t.Context(), ident, now)
+	data, ok := handler.execution.data.(map[string]any)
+	if !ok || data["operation"] != "next_class" || data["days_checked"] != 8 || data["schedule"] != nil || handler.execution.status != CapabilityOutcomeNotFound {
+		t.Fatalf("empty next class data = %#v, status = %s", data, handler.execution.status)
+	}
+}

@@ -145,7 +145,7 @@ func TestYoungEventEmptyListUsesNotFoundOutcome(t *testing.T) {
 		Text:     "第二课堂",
 		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},
 	})
-	if !handled || outcome.Status != CapabilityOutcomeNotFound || outcome.Response.Text != "没有第二课堂活动。" {
+	if !handled || outcome.Status != CapabilityOutcomeNotFound || outcome.Response.Text != "没有第二课堂活动。" || outcome.Response.Data == nil {
 		t.Fatalf("empty list outcome = %#v, handled=%v", outcome, handled)
 	}
 }

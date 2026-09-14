@@ -117,18 +117,18 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 	if err != nil {
 		return h.commandError("第二课堂查不到：", err)
 	}
-	if len(page.Data) == 0 {
-		if query.search != "" {
-			return h.notFound("没找到相关第二课堂活动：" + query.search)
-		}
-		return h.notFound("没有第二课堂活动。")
-	}
 	h.markData(map[string]any{
 		"operation": "list",
 		"page":      query.page,
 		"search":    query.search,
 		"result":    page,
 	})
+	if len(page.Data) == 0 {
+		if query.search != "" {
+			return h.notFound("没找到相关第二课堂活动：" + query.search)
+		}
+		return h.notFound("没有第二课堂活动。")
+	}
 	return formatYoungEventPage(page, query, h.Life.YoungEventURL)
 }
 

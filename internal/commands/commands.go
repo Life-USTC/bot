@@ -1332,7 +1332,7 @@ func (h Handler) me(ctx context.Context, ident store.Identity) string {
 	if err != nil {
 		return h.commandError("个人信息查不到：", err)
 	}
-	h.markData(me)
+	h.markData(map[string]any{"operation": "account", "profile": me})
 	name := lifedata.FirstString(me, "name", "username", "preferred_username", "email")
 	if name == "" {
 		name = lifedata.FirstString(me, "id", "sub")
@@ -3480,6 +3480,9 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 			return prefix + "\n" + formatSchedule(schedule)
 		}
 	}
+	h.markData(map[string]any{
+		"operation": "next_class", "from": now.Format(time.RFC3339), "days_checked": 8, "schedule": nil,
+	})
 	return h.notFound("接下来一周没查到课。")
 }
 
