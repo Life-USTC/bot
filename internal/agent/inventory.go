@@ -53,8 +53,8 @@ func asksForCapabilityInventory(text string) bool {
 
 // capabilityInventory returns the host's real execution surface without
 // asking the model to reconstruct it. Bot entries come from the descriptor
-// registry; MCP entries are the intersection of the remote tools/list result
-// and the host-owned read allowlist.
+// registry; MCP entries are the exact names returned by the authenticated
+// private tools/list result.
 func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity) (string, error) {
 	lines := []string{
 		"Agent 当前能力（主机实时配置）：",
@@ -67,8 +67,10 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 	privateMCP := !store.IsSharedConversation(ident) && s != nil && s.mcpClient != nil && s.auth != nil
 	if privateMCP {
 		lines = append(lines,
-			"search_campus_tools：检索获准的只读 MCP 工具",
-			"call_campus_tool：执行已检索的只读 MCP 工具",
+			"search_campus_tools：检索当前 MCP tools/list（含读、写和破坏性工具）",
+			"call_campus_tool：按检索到的精确名称调用 MCP 工具（写操作会请求确认）",
+			"list_campus_resources/read_campus_resource：读取 MCP 资源和 URI 模板",
+			"list_campus_prompts/get_campus_prompt：读取 MCP 提示词及参数化上下文",
 		)
 	}
 
@@ -81,7 +83,7 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 		lines = append(lines, fmt.Sprintf("%s（%s）：%s", item.ID, forms, item.Summary))
 	}
 
-	lines = append(lines, "", "三、当前可调用的只读 MCP 工具")
+	lines = append(lines, "", "三、当前 tools/list 返回的 MCP 工具")
 	switch {
 	case store.IsSharedConversation(ident):
 		lines = append(lines, "群聊不开放 MCP 工具；请在私聊中检查或使用。")
@@ -103,21 +105,22 @@ func (s *Service) capabilityInventory(ctx context.Context, ident store.Identity)
 		}
 		sort.Strings(names)
 		if len(names) == 0 {
-			lines = append(lines, "远端当前没有同时通过主机只读白名单的工具。")
+			lines = append(lines, "远端当前没有可调用工具。")
 		}
 		for _, name := range names {
 			description := strings.TrimSpace(session.tools[name].Description)
-			if description == "" {
-				lines = append(lines, name)
-				continue
+			effect := campusEffectOf(session.tools[name])
+			line := fmt.Sprintf("%s（effect=%s）", name, effect)
+			if description != "" {
+				line += "：" + description
 			}
-			lines = append(lines, name+"："+description)
+			lines = append(lines, line)
 		}
 	}
 
 	lines = append(lines,
 		"",
-		"结构说明：Bot 能力由主机负责参数校验、确认、持久化和回执；MCP 只作为显式白名单内的补充只读数据源。天气属于 Bot 能力，当前时间属于主机元工具，不是 MCP。",
+		"结构说明：Bot 能力由主机负责参数校验、确认、持久化和回执；MCP tools/list 是私聊中的实时工具目录，读操作直接执行，写和破坏性操作由主机持久化并在确认后执行。当前时间是主机元工具；同一校园数据可能同时有 Bot 和 MCP 入口。",
 	)
 	return strings.Join(lines, "\n"), nil
 }

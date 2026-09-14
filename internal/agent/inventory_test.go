@@ -88,8 +88,8 @@ func TestCapabilityInventoryIsHostGeneratedFromActualRegistries(t *testing.T) {
 			t.Errorf("inventory omitted %q: %s", expected, response.Text)
 		}
 	}
-	if strings.Contains(response.Text, "delete_my_homework") {
-		t.Fatalf("inventory exposed hidden mutation: %s", response.Text)
+	if !strings.Contains(response.Text, "delete_my_homework") {
+		t.Fatalf("inventory omitted dynamic MCP mutation: %s", response.Text)
 	}
 	if modelRequests.Load() != 0 {
 		t.Fatalf("deterministic inventory made %d model requests", modelRequests.Load())

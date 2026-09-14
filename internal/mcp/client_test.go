@@ -186,3 +186,51 @@ func TestAuthorizationRequiredClassification(t *testing.T) {
 		t.Fatal("ordinary failure classified as authorization required")
 	}
 }
+
+func TestClientDiscoversEveryToolAcrossPagesWithServerMetadata(t *testing.T) {
+	mcpServer := mcpserver.NewMCPServer("paged-server", "1.0.0", mcpserver.WithPaginationLimit(1))
+	for _, candidate := range []mcpgo.Tool{
+		mcpgo.NewTool("catalog_first", mcpgo.WithReadOnlyHintAnnotation(true)),
+		mcpgo.NewTool("workspace_new_feature", mcpgo.WithReadOnlyHintAnnotation(false),
+			mcpgo.WithDestructiveHintAnnotation(false),
+			mcpgo.WithString("kind", mcpgo.Required(), mcpgo.Enum("regular", "auditor"))),
+		mcpgo.NewTool("workspace_remove", mcpgo.WithReadOnlyHintAnnotation(false), mcpgo.WithDestructiveHintAnnotation(true)),
+	} {
+		mcpServer.AddTool(candidate, func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+			return mcpgo.NewToolResultText("ok"), nil
+		})
+	}
+	server := httptest.NewServer(mcpserver.NewStreamableHTTPServer(mcpServer))
+	defer server.Close()
+	session, err := New(server.URL, server.Client()).OpenSession(t.Context(), "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	tools, err := session.Tools(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 3 {
+		t.Fatalf("tools = %#v, want all three pages", tools)
+	}
+	var writeTool *mcpgo.Tool
+	for i := range tools {
+		if tools[i].Name == "workspace_new_feature" {
+			writeTool = &tools[i]
+		}
+	}
+	if writeTool == nil || writeTool.Annotations.ReadOnlyHint == nil || *writeTool.Annotations.ReadOnlyHint ||
+		writeTool.Annotations.DestructiveHint == nil || *writeTool.Annotations.DestructiveHint {
+		t.Fatalf("write annotations lost: %#v", writeTool)
+	}
+	encoded, err := toolInputSchemaBytes(*writeTool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"enum"`, `"regular"`, `"auditor"`, `"required":["kind"]`} {
+		if !bytes.Contains(encoded, []byte(want)) {
+			t.Fatalf("server schema missing %s: %s", want, encoded)
+		}
+	}
+}
