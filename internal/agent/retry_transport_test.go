@@ -11,6 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestRetryTransportUsesExactlyRetryableStatuses(t *testing.T) {
@@ -94,14 +97,20 @@ func TestRetryTransportRetriesOnlyRetryableTransportErrors(t *testing.T) {
 	}
 }
 
-func TestExhaustedTransportFailureSurvivesHTTPWrapping(t *testing.T) {
+func TestExhaustedTransportFailureSurvivesModelAdapter(t *testing.T) {
 	client := &http.Client{Transport: &llmRetryTransport{
 		base: scriptedRoundTripper(func(*http.Request) (*http.Response, error) {
 			return nil, io.EOF
 		}),
 		wait: func(context.Context, time.Duration) error { return nil },
 	}}
-	_, err := client.Do(retryTestRequest(t.Context()))
+	model, err := einoopenai.NewChatModel(t.Context(), &einoopenai.ChatModelConfig{
+		APIKey: "test-key", BaseURL: "https://model.test/v1", Model: "test-model", HTTPClient: client,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = model.Generate(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if !errors.Is(err, io.EOF) || !errors.Is(err, errLLMTransportExhausted) {
 		t.Fatalf("lost transport cause: %v", err)
 	}
