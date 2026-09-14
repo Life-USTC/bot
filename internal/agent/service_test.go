@@ -772,7 +772,7 @@ func TestLazyMCPSearchAndCallExposeOnlyReadTools(t *testing.T) {
 	}
 }
 
-func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *testing.T) {
+func TestSecondClassroomRequestCanUseSupplementaryLiteralMCPResult(t *testing.T) {
 	ctx := t.Context()
 	db, err := store.Open(t.TempDir() + "/bot.db")
 	if err != nil {
@@ -858,10 +858,10 @@ func TestSecondClassroomRequestFallsThroughEmptyBotSearchToLiteralMCPResult(t *t
 	if calls["catalog_young_event_list"].Load() != 1 {
 		t.Fatalf("young-event MCP calls = %d, want 1", calls["catalog_young_event_list"].Load())
 	}
-	if len(requestBodies) != 4 || !bytes.Contains(requestBodies[1], []byte(`"content":"[]"`)) ||
+	if len(requestBodies) != 4 || !bytes.Contains(requestBodies[1], []byte("young_event")) ||
 		!bytes.Contains(requestBodies[2], []byte("catalog_young_event_list")) ||
 		!bytes.Contains(requestBodies[3], []byte("youngId")) || !bytes.Contains(requestBodies[3], []byte("第二课堂示例活动")) {
-		t.Fatalf("model did not receive the exact empty-search/docs/result sequence: %q", requestBodies)
+		t.Fatalf("model did not receive the exact host-docs/MCP-docs/result sequence: %q", requestBodies)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
 	if err != nil || len(executions) != 1 || executions[0].Capability != "mcp:catalog_young_event_list" ||

@@ -133,3 +133,33 @@ func TestYoungEventEmptyListUsesNotFoundOutcome(t *testing.T) {
 		t.Fatalf("empty list outcome = %#v, handled=%v", outcome, handled)
 	}
 }
+
+func TestYoungEventMissingDetailUsesNotFoundOutcome(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"Not found"}`))
+	}))
+	defer server.Close()
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	outcome, handled := handler.HandleOutcome(context.Background(), Input{
+		Text:     "第二课堂 查看 missing",
+		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},
+	})
+	if !handled || outcome.Status != CapabilityOutcomeNotFound || !strings.Contains(outcome.Response.Text, "没找到第二课堂活动") {
+		t.Fatalf("missing detail outcome = %#v, handled=%v", outcome, handled)
+	}
+}
+
+func TestYoungEventSearchPaginationKeepsSearch(t *testing.T) {
+	query, err := parseYoungEventQuery([]string{"搜索", "志愿", "服务", "第2页"})
+	if err != nil || query.page != 2 || query.search != "志愿 服务" {
+		t.Fatalf("query = %#v, err=%v", query, err)
+	}
+	reply := formatYoungEventPage(life.YoungEventPage{
+		Data:       []life.YoungEvent{{YoungID: "event-2", Name: "志愿服务"}},
+		Pagination: life.YoungEventPagination{Page: 2, PageSize: 10, Total: 30, TotalPages: 3},
+	}, query, nil)
+	if !strings.Contains(reply, "第二课堂 搜索 志愿 服务") || !strings.Contains(reply, "上一页") || !strings.Contains(reply, "下一页") {
+		t.Fatalf("pagination lost search or navigation: %q", reply)
+	}
+}
