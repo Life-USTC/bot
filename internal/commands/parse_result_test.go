@@ -41,13 +41,13 @@ func TestParseCommandNormalizesChineseOrdinalWeek(t *testing.T) {
 	}
 }
 
-func TestUnknownSlashCommandReturnsStaticHelpInsteadOfAgentFallback(t *testing.T) {
+func TestUnknownSlashCommandRemainsUnknownForAgentRouting(t *testing.T) {
 	result := ParseCommand("/not-a-command ignored arguments")
-	if result.Status != ParseStatusValid || result.Invocation.ID() != CapabilityHelp || strings.Join(result.Invocation.Args, " ") != "not-a-command" {
+	if result.Status != ParseStatusUnknown {
 		t.Fatalf("unknown slash parse=%#v", result)
 	}
 	response, ok := (Handler{}).HandleResponse(t.Context(), Input{Text: "/not-a-command"})
-	if !ok || !strings.Contains(response.Text, "没有找到一级命令“not-a-command”") || !strings.Contains(response.Text, "发送“帮助”查看命令总览") {
+	if ok || response.Text != "" || response.Data != nil {
 		t.Fatalf("unknown slash response=%#v handled=%v", response, ok)
 	}
 }
@@ -59,7 +59,7 @@ func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 		"校车 火星",
 		"校车 周六 nonsense",
 		"通知 作业 开 nonsense",
-		"设置 通知 课表 开 nonsense",
+		"通知 课表 开 nonsense",
 		"作业 all garbage",
 		"作业 semester_id not-an-int",
 		"作业 第2页 extra",

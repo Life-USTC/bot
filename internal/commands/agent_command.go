@@ -44,8 +44,8 @@ func (h Handler) ExecuteCapability(ctx context.Context, input Input, id Capabili
 }
 
 // PresentCapabilityOutcome applies only the descriptor's result-exposure
-// decision. Status remains host state; Text is literal model-facing domain
-// evidence, while Response is available for host-rendered delivery.
+// decision. Status and Data remain host/model state; Text is presentation for
+// delivery, while Response carries both forms without reconstructing Data.
 func (h Handler) PresentCapabilityOutcome(invocation Invocation, outcome CapabilityOutcome) CapabilityPresentation {
 	outcome = normalizeOutcome(outcome)
 	presentation := CapabilityPresentation{Text: strings.TrimSpace(outcome.Response.Text), Response: outcome.Response}

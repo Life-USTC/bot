@@ -39,7 +39,7 @@ func TestFixedPatternsStillParse(t *testing.T) {
 	tests := map[string]string{
 		"提醒 课表 开":      "notify",
 		"通知 作业 关":      "notify",
-		"设置 通知 课表 开":   "notify",
+		"通知 课表 开":      "notify",
 		"反馈 校车时间需要整理":  "feedback",
 		"今日课表":         "schedule",
 		"明日课表":         "schedule",

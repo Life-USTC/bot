@@ -135,6 +135,17 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 		return NotFoundOutcome(Response{}), false
 	}
 	cmd := parsed.Invocation
+	// Reject pasted command batches before validating or executing the first
+	// invocation. This keeps a multi-line message from falling through to a
+	// single-command usage response when its first line is malformed.
+	if h.hasAdditionalCommandLine(input.Text) {
+		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
+		if !input.SuppressLog {
+			h.recordState(ctx, input.Identity, cmd)
+			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeInvalidInput)
+		}
+		return InvalidInputOutcome(textResponse(reply)), true
+	}
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(cmd) {
 		reply := "此功能涉及个人数据，请私聊 Presto 使用。"
 		if !input.SuppressLog {
@@ -157,14 +168,6 @@ func (h Handler) handleParsedResponse(ctx context.Context, input Input, parsed P
 			Data: structuredHelpDataFor(store.IsSharedConversation(input.Identity), cmd.Name),
 			Kind: cmd.Name,
 		}), true
-	}
-	if h.hasAdditionalCommandLine(input.Text) {
-		reply := "检测到多条命令。为避免误操作，一次只处理一条；请分开发送。"
-		if !input.SuppressLog {
-			h.recordState(ctx, input.Identity, cmd)
-			h.recordInteractionWithOutcome(ctx, input.Identity, cmd, reply, CapabilityOutcomeInvalidInput)
-		}
-		return InvalidInputOutcome(textResponse(reply)), true
 	}
 	if !input.SuppressLog {
 		h.recordState(ctx, input.Identity, cmd)

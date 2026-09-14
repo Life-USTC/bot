@@ -85,12 +85,17 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 			ConversationID:   "100",
 		},
 	}
-	reply, ok := handler.Handle(context.Background(), groupInput)
+	response, ok := handler.HandleResponse(context.Background(), groupInput)
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
+	reply := response.Text
 	if !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") || strings.Contains(reply, "———") {
 		t.Fatalf("reply = %q", reply)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["operation"] != "bus" || data["network"] == nil {
+		t.Fatalf("bus Data = %#v", response.Data)
 	}
 
 	groupInput.Identity.ConversationType = " GROUP "
@@ -1229,6 +1234,11 @@ func TestBusArgsFromTextAcceptsEnglishCampusAliases(t *testing.T) {
 	tests := map[string][]string{
 		"Any BUS from EAST campus to west campus?": {"东区", "西区"},
 		"bus from gx to north":                     {"高新区", "北区"},
+		"校车 高新 到 东区":                               {"高新区", "东区"},
+		"校车 高新校区 到 东区":                             {"高新区", "东区"},
+		"校车 高新区 到 东区":                              {"高新区", "东区"},
+		"校车 高新园区 到 东区":                             {"高新区", "东区"},
+		"bus from gaoxin to east":                  {"高新区", "东区"},
 		"bus to west campus":                       {"到", "西区"},
 		"校车到西区":                                    {"到", "西区"},
 		"bus to northeast tomorrow":                {"tomorrow"},
