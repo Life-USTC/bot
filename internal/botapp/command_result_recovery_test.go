@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -79,6 +80,51 @@ func TestDirectCommandRecoversResponseDataAfterOutboxFailure(t *testing.T) {
 		t.Fatalf("direct command executed %d times, want once", handler.calls)
 	}
 	assertDirectCommandData(t, db, job.Identity, map[string]any{"cleared": true, "source": "remote"})
+}
+
+func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing.T) {
+	db := newCoordinatorStore(t)
+	jobs := &outputCommitFaultStore{Store: db, failures: 1}
+	image := &responses.Image{Kind: "result", Title: "结果", URL: "https://example.test/result.png"}
+	partImage := &responses.Image{Kind: "part", Title: "分段", URL: "https://example.test/part.png"}
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{
+		Text: "主结果", Kind: "notify", Data: map[string]any{"updated": true}, Image: image,
+		Parts: []commands.Response{{Text: "第一段", Kind: "part_text"}, {Kind: "part_image", Image: partImage}},
+	})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: jobs, Commands: handler, Outputs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := coordinator.Enqueue(ctx, jobInbound("direct-image-parts-recovery", "通知 作业 开")); err != nil {
+		t.Fatal(err)
+	}
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(ctx, job)
+	assertRetryableDirectJob(t, db, job.ID)
+
+	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
+	if err != nil || len(executions) != 1 {
+		t.Fatalf("saved direct execution=%#v err=%v", executions, err)
+	}
+	restored, _, ok := capabilityExecutionResultResponse(executions[0])
+	if !ok || restored.Image == nil || restored.Image.URL != image.URL || len(restored.Parts) != 2 ||
+		restored.Parts[0].Text != "第一段" || restored.Parts[1].Image == nil || restored.Parts[1].Image.URL != partImage.URL {
+		t.Fatalf("saved response image/parts=%#v snapshot=%v", restored, ok)
+	}
+
+	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
+	assertCompletedDirectJob(t, db, job.ID)
+	if handler.calls != 1 {
+		t.Fatalf("direct command executed %d times, want once", handler.calls)
+	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("recovered response parts outbox=%#v err=%v", records, err)
+	}
+	if records[0].Message.Content.Text != "第一段" || records[1].Message.Content.Attachment == nil || records[1].Message.Content.Attachment.URL != partImage.URL {
+		t.Fatalf("recovered response parts=%#v", records)
+	}
 }
 
 func TestDeniedDirectCommandPersistsCommandResultWithoutConfirmationEvent(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/toolresult"
 )
@@ -61,11 +62,13 @@ const directCommandResultFormat = "presto.direct_command.v1"
 // outbox commit failure without invoking the capability again. Data is kept as
 // RawMessage to preserve the domain JSON that the first model event exposed.
 type directCommandResultSnapshot struct {
-	Format string          `json:"format"`
-	Status string          `json:"status"`
-	Text   string          `json:"text,omitempty"`
-	Kind   string          `json:"kind,omitempty"`
-	Data   json.RawMessage `json:"data"`
+	Format string              `json:"format"`
+	Status string              `json:"status"`
+	Text   string              `json:"text,omitempty"`
+	Kind   string              `json:"kind,omitempty"`
+	Data   json.RawMessage     `json:"data"`
+	Image  *responses.Image    `json:"image,omitempty"`
+	Parts  []commands.Response `json:"parts,omitempty"`
 }
 
 func encodeDirectCommandResult(outcome commands.CapabilityOutcome) string {
@@ -79,6 +82,7 @@ func encodeDirectCommandResult(outcome commands.CapabilityOutcome) string {
 	snapshot := directCommandResultSnapshot{
 		Format: directCommandResultFormat, Status: string(outcome.Status),
 		Text: outcome.Response.Text, Kind: outcome.Response.Kind, Data: data,
+		Image: outcome.Response.Image, Parts: outcome.Response.Parts,
 	}
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
@@ -92,7 +96,7 @@ func decodeDirectCommandResult(result string) (commands.Response, string, bool) 
 	if err := json.Unmarshal([]byte(result), &snapshot); err != nil || snapshot.Format != directCommandResultFormat {
 		return commands.Response{Text: result}, "", false
 	}
-	response := commands.Response{Text: snapshot.Text, Kind: snapshot.Kind}
+	response := commands.Response{Text: snapshot.Text, Kind: snapshot.Kind, Image: snapshot.Image, Parts: snapshot.Parts}
 	if len(snapshot.Data) > 0 {
 		response.Data = json.RawMessage(append([]byte(nil), snapshot.Data...))
 	}
@@ -313,7 +317,9 @@ func (c *Coordinator) resumeCommand(
 			store.CapabilityExecutionDenied, store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
 			if execution.ReceiptState != execution.State {
 				if execution.State == store.CapabilityExecutionSucceeded || execution.State == store.CapabilityExecutionFailed || execution.State == store.CapabilityExecutionUnknown {
-					if result := capabilityExecutionModelResult(execution); strings.TrimSpace(result) != "" {
+					if restored, _, snapshot := capabilityExecutionResultResponse(execution); snapshot {
+						response = combineResponses(response, restored)
+					} else if result := capabilityExecutionModelResult(execution); strings.TrimSpace(result) != "" {
 						response.Text = joinResponseText(response.Text, result)
 						response.Kind = execution.Capability
 					}
@@ -642,8 +648,6 @@ func commandExecutionModelResult(execution store.CapabilityExecution) string {
 	var data any
 	if snapshot {
 		data = response.Data
-	} else if strings.TrimSpace(execution.Result) != "" {
-		data = toolresult.Data(execution.Result)
 	}
 	return toolresult.Encode("bot", execution.Capability, status, capabilityExecutionObservedAt(execution), data, executionErr)
 }
