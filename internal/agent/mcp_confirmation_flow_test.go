@@ -155,3 +155,72 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPInterruptedWriteRecoversOfflineWithoutReplay(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "offline", ConversationType: "private", ConversationID: "offline"}
+	now := time.Now()
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{Identity: ident, SourceEventID: "offline", ExpiresAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := db.ClaimConversationJob(ctx, ident, now)
+	if err != nil || first == nil {
+		t.Fatalf("first claim=%#v err=%v", first, err)
+	}
+	arguments := map[string]any{"value": "saved"}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callID := campusToolCallID(ctx, job.ID, "workspace_future_update", encoded)
+	execution, _, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, LeaseToken: first.LeaseToken, DedupeKey: "offline-write", ToolCallID: callID,
+		Capability: "mcp:workspace_future_update", Arguments: []string{string(encoded)}, Effect: "write",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, execute, err := db.ClaimCapabilityExecutionForJob(ctx, execution.ID, job.ID, first.LeaseToken); err != nil || !execute {
+		t.Fatalf("claim mutation: execute=%v err=%v", execute, err)
+	}
+	if ok, err := db.RetryConversationJob(ctx, job.ID, first.LeaseToken, "interrupted process"); err != nil || !ok {
+		t.Fatalf("release: ok=%v err=%v", ok, err)
+	}
+	second, err := db.ClaimConversationJob(ctx, ident, now.Add(time.Second))
+	if err != nil || second == nil {
+		t.Fatalf("second claim=%#v err=%v", second, err)
+	}
+	ctx = store.WithConversationJobLease(ctx, job.ID, second.LeaseToken)
+	// No MCP client or OAuth manager: both stale recovery and terminal replay
+	// must use the durable record without contacting the server.
+	svc := &Service{handler: commands.Handler{Store: db}}
+	for i := 0; i < 2; i++ {
+		result, err := newLazyMCPSession(svc, ident, job.ID).call(ctx, campusToolCallInput{Name: "workspace_future_update", Arguments: arguments})
+		if err != nil || !strings.Contains(result, "未知") {
+			t.Fatalf("offline replay %d: result=%q err=%v", i, result, err)
+		}
+	}
+	stored, found, err := db.CapabilityExecution(ctx, execution.ID)
+	if err != nil || !found || stored.State != store.CapabilityExecutionUnknown {
+		t.Fatalf("stored=%#v found=%v err=%v", stored, found, err)
+	}
+	_, err = newLazyMCPSession(svc, ident, job.ID+1).resolveCampusExecution(ctx, capabilityInterruptState{ExecutionIDs: []string{execution.ID}, ToolCallID: callID}, false)
+	if err == nil || !strings.Contains(err.Error(), "checkpoint belongs to job") {
+		t.Fatalf("cross-job checkpoint accepted: %v", err)
+	}
+}
+
+func TestGraphqlConfirmationFlagComesFromHostApproval(t *testing.T) {
+	input := map[string]any{"document": "mutation Update { placeholder }", "confirmed": true}
+	pending := campusArgumentsForRemote("graphql_operation_run", input, false)
+	approved := campusArgumentsForRemote("graphql_operation_run", pending, true)
+	if pending["confirmed"] != false || approved["confirmed"] != true || input["confirmed"] != true {
+		t.Fatalf("confirmation flag: input=%#v pending=%#v approved=%#v", input, pending, approved)
+	}
+}
