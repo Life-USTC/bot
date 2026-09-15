@@ -20,7 +20,7 @@ on_error() {
 	trap - ERR
 	printf 'deploy-mac smoke test failed: phase=%s status=%s command=%s\n' \
 		"$test_phase" "$status" "$BASH_COMMAND" >&2
-	for output in "${success_output:-}" "${failure_output:-}" "${blocked_output:-}"; do
+	for output in "${success_output:-}" "${delayed_output:-}" "${failure_output:-}" "${stop_failure_output:-}" "${blocked_output:-}"; do
 		if [[ -n "$output" && -f "$output" ]]; then
 			printf '%s:\n' "$output" >&2
 			debug_file "$output" >&2
@@ -55,12 +55,34 @@ mock_launchctl() {
 	case "$operation" in
 		print)
 			label="${1#system/}"
+			local pending="$DEPLOY_TEST_FIXTURE/$label.stop-pending"
+			if [[ -f "$pending" ]]; then
+				local remaining
+				remaining="$(<"$pending")"
+				if (( remaining > 0 )); then
+					printf '%s\n' "$((remaining - 1))" >"$pending"
+					: >"$DEPLOY_TEST_FIXTURE/stop-wait-observed"
+					return 0
+				fi
+				rm -f -- "$pending" "$DEPLOY_TEST_FIXTURE/$label"
+				return 1
+			fi
 			[[ -f "$DEPLOY_TEST_FIXTURE/$label" ]]
 			;;
 		bootout)
 			label="${1#system/}"
+			local delay="${DEPLOY_TEST_BOOTOUT_DELAY_CHECKS:-0}"
 			if [[ "$label" == dev.life-ustc.bot && "${DEPLOY_TEST_FAIL_ROLLBACK_BOT_BOOTOUT:-0}" == 1 && -f "$DEPLOY_TEST_FIXTURE/trigger-rollback" ]]; then
 				return 1
+			fi
+			if [[ "${DEPLOY_TEST_STUCK_BOOTOUT:-0}" == 1 ]]; then
+				: >"$DEPLOY_TEST_FIXTURE/bootout-requested"
+				return 0
+			fi
+			if [[ "$delay" =~ ^[0-9]+$ ]] && (( delay > 0 )); then
+				printf '%s\n' "$delay" >"$DEPLOY_TEST_FIXTURE/$label.stop-pending"
+				: >"$DEPLOY_TEST_FIXTURE/bootout-requested"
+				return 0
 			fi
 			rm -f "$DEPLOY_TEST_FIXTURE/$label"
 			;;
@@ -270,6 +292,17 @@ assert stat.S_IMODE(os.stat(bot_path).st_mode) == 0o600
 assert stat.S_IMODE(os.stat(renderd_path).st_mode) == 0o600
 PY
 
+test_phase="delayed launchd stop"
+delayed_fixture="$(prepare_fixture delayed)"
+IFS='|' read -r delayed_root delayed_launchd delayed_stage <<<"$delayed_fixture"
+delayed_output="$fixture/delayed-output"
+run_remote "$delayed_root" "$delayed_launchd" "$delayed_stage" deploy-account "$delayed_output" \
+	DEPLOY_LAUNCHD_STOP_TIMEOUT=2 DEPLOY_TEST_BOOTOUT_DELAY_CHECKS=1
+grep -F 'deployment succeeded: revision ' "$delayed_output" >/dev/null
+[[ -f "$fixture/delayed/stop-wait-observed" ]]
+[[ -f "$fixture/delayed/bootout-requested" ]]
+! grep -F 'remained loaded after bootout' "$delayed_output" >/dev/null
+
 test_phase="rollback after health failure"
 failure_fixture="$(prepare_fixture failure)"
 IFS='|' read -r failure_root failure_launchd failure_stage <<<"$failure_fixture"
@@ -295,6 +328,32 @@ finally:
     connection.close()
 PY
 ! grep -F 'secret-value' "$failure_output" >/dev/null
+
+test_phase="launchd stop timeout safety"
+stop_failure_fixture="$(prepare_fixture stop-failure)"
+IFS='|' read -r stop_failure_root stop_failure_launchd stop_failure_stage <<<"$stop_failure_fixture"
+stop_failure_output="$fixture/stop-failure-output"
+if run_remote "$stop_failure_root" "$stop_failure_launchd" "$stop_failure_stage" tiankaima "$stop_failure_output" \
+	DEPLOY_LAUNCHD_STOP_TIMEOUT=1 DEPLOY_TEST_STUCK_BOOTOUT=1; then
+	echo "expected mocked launchd stop timeout" >&2
+	exit 1
+fi
+grep -F 'launchd job dev.life-ustc.bot remained loaded after bootout for 1s' "$stop_failure_output" >/dev/null
+grep -F 'rollback aborted: could not ensure the bot was stopped' "$stop_failure_output" >/dev/null
+[[ -f "$fixture/stop-failure/bootout-requested" ]]
+grep -F old-bot "$stop_failure_root/bin/life-ustc-bot" >/dev/null
+grep -F old-renderd "$stop_failure_root/bin/renderd" >/dev/null
+python3 - "$stop_failure_root/data/life-ustc-bot.db" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+try:
+    assert connection.execute("SELECT value FROM marker").fetchone()[0] == "old database"
+finally:
+    connection.close()
+PY
+! grep -F 'secret-value' "$stop_failure_output" >/dev/null
 
 test_phase="rollback stop-safety failure"
 blocked_fixture="$(prepare_fixture blocked)"

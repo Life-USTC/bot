@@ -143,6 +143,7 @@ REMOTE_USER="$3"
 REVISION="$4"
 DEPLOY_ID="$5"
 HEALTH_TIMEOUT="$6"
+LAUNCHD_STOP_TIMEOUT="${DEPLOY_LAUNCHD_STOP_TIMEOUT:-30}"
 
 BOT_LABEL="dev.life-ustc.bot"
 RENDERD_LABEL="dev.life-ustc.renderd"
@@ -178,6 +179,8 @@ fail() {
 }
 
 [[ "$REMOTE_USER" =~ ^[A-Za-z0-9._-]+$ ]] || fail "remote launchd user contains unsupported characters"
+[[ "$LAUNCHD_STOP_TIMEOUT" =~ ^[0-9]+$ ]] || fail "DEPLOY_LAUNCHD_STOP_TIMEOUT must be a number of seconds"
+(( LAUNCHD_STOP_TIMEOUT >= 1 && LAUNCHD_STOP_TIMEOUT <= 300 )) || fail "DEPLOY_LAUNCHD_STOP_TIMEOUT must be between 1 and 300 seconds"
 
 sudo_cmd() {
 	"${SUDO[@]}" "$@"
@@ -192,9 +195,14 @@ bootout_if_loaded() {
 	local label="$1"
 	if loaded "$label"; then
 		sudo_cmd launchctl bootout "system/$label" || return 1
-		if loaded "$label"; then
-			return 1
-		fi
+		local deadline=$((SECONDS + LAUNCHD_STOP_TIMEOUT))
+		while loaded "$label"; do
+			if (( SECONDS >= deadline )); then
+				fail "launchd job $label remained loaded after bootout for ${LAUNCHD_STOP_TIMEOUT}s"
+				return 1
+			fi
+			sleep 1
+		done
 	fi
 	return 0
 }
