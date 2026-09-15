@@ -246,6 +246,32 @@ reading personal data. Bare question marks and unknown slash words do not
 activate an unaddressed group conversation. Explicit commands, mentions and
 verified replies retain their intended activation rules.
 
+## Command image references
+
+Command execution returns formatted JSON business evidence with optional
+`images: [{"id": "img_…"}]`. Image references are persisted independently of
+Outbox delivery and retain immutable render inputs scoped to the exact actor
+and conversation. A stable execution/image key reuses the same ID on recovery;
+resolving an ID never reruns the business command. Direct command result events
+also carry IDs, so the model can refer to their images in a later turn.
+
+Agent tool calls do not automatically deliver ordinary command images. The
+model selects images using `![](img_…)` in its final answer. The agent resolves
+these references before plain-text cleanup and preserves their order among
+text parts. This syntax cannot execute commands or fetch arbitrary URLs;
+unknown or inaccessible references produce an explicit unavailable notice.
+Authentication prompts and dangerous-operation confirmations retain their
+separate host-controlled delivery path. IDs represent historical snapshots,
+not current data or proof of delivery.
+
+Direct shuttle queries produce a card without a duplicate text presentation.
+Rendering failure is an output failure; no shuttle text fallback is generated.
+The structured JSON business result remains separate from rendering success.
+Completed Agent replies (including selected images and host presentations) are
+saved separately from the model's interrupt checkpoint until Outbox commit is
+acknowledged. Rendering or output-commit retries reuse that completed response
+without another model invocation.
+
 ## Reliability and outbox
 
 `outgoing_messages` contains immutable, delivery-ready output, reply routing,
@@ -310,6 +336,6 @@ without mandatory search or semantic retry.
 host, switches binaries and launchd services transactionally, checks health and
 rolls back a failed switch. A deployment is verified by the actual
 `BOT_BUILD_VERSION` and both service health endpoints, not only by Git state.
-Schema version 3 adds confirmation output/event bindings to capability
-executions. Existing databases require an explicit offline schema change with
+Schema version 4 includes the durable command image reference table alongside
+confirmation output/event bindings on capability executions. Existing databases require an explicit offline schema change with
 a backup before switching binaries; normal startup rejects older schema shapes.

@@ -1351,7 +1351,7 @@ func TestInstructionKeepsStableTemporalGuidance(t *testing.T) {
 	if !strings.Contains(instruction, "Private URLs returned by a tool may be used and repeated in a direct chat") {
 		t.Fatalf("instruction lacks private URL policy: %q", instruction)
 	}
-	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command", "![]("} {
+	for _, obsolete := range []string{"execute_bot_command", "resolve_image_command"} {
 		if strings.Contains(instruction, obsolete) {
 			t.Fatalf("instruction retained obsolete protocol %q: %q", obsolete, instruction)
 		}
@@ -2065,7 +2065,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"logout\"`)) {
+			if !requestContainsToolJSON(body, `"id":"logout"`) {
 				t.Errorf("capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
@@ -2249,8 +2249,8 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 				}]} ,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
 			}`))
 		case 2:
-			if !bytes.Contains(body, []byte(`\"id\":\"subscription\"`)) ||
-				!bytes.Contains(body, []byte(`\"arguments\":[\"remove\",\"CONT5103P.01\"]`)) ||
+			if !requestContainsToolJSON(body, `"id":"subscription"`) ||
+				!requestContainsToolJSON(body, `"arguments":["remove","CONT5103P.01"]`) ||
 				bytes.Contains(body, []byte("unsubscribe_section_by_jw_id")) {
 				t.Errorf("unsubscribe command documentation=%s", body)
 			}
@@ -2520,7 +2520,7 @@ func TestRunExecutesParallelOrdinaryWritesWithoutConfirmation(t *testing.T) {
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"notify\"`)) {
+			if !requestContainsToolJSON(body, `"id":"notify"`) {
 				t.Errorf("parallel capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
@@ -2605,7 +2605,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"logout\"`)) {
+			if !requestContainsToolJSON(body, `"id":"logout"`) {
 				t.Errorf("denied capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
@@ -2698,7 +2698,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 			return
 		}
 		if request == 2 {
-			if !bytes.Contains(body, []byte(`\"id\":\"logout\"`)) {
+			if !requestContainsToolJSON(body, `"id":"logout"`) {
 				t.Errorf("retry capability request lacks command-search result: %s", body)
 			}
 			_, _ = w.Write([]byte(`{
@@ -2937,7 +2937,34 @@ func claimAgentInput(t *testing.T, db *store.Store, ident store.Identity, input 
 func TestRunBotCommandRejectsMultipleCommandsBeforeExecution(t *testing.T) {
 	svc := &Service{}
 	result, err := svc.runBotCommand(context.Background(), botCommandInput{Command: "天气 高新区\n登出"}, store.Identity{}, 0, nil)
-	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status":"invalid_input"`) {
+	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status": "invalid_input"`) {
 		t.Fatalf("result = %s, err = %v", result, err)
 	}
+}
+
+// Inspect tool JSON semantically enough to ignore its presentation indentation.
+func requestContainsToolJSON(body []byte, fragment string) bool {
+	var request struct {
+		Messages []struct {
+			Role    string
+			Content json.RawMessage
+		}
+	}
+	if json.Unmarshal(body, &request) != nil {
+		return false
+	}
+	for _, message := range request.Messages {
+		if message.Role != "tool" {
+			continue
+		}
+		var content string
+		if json.Unmarshal(message.Content, &content) != nil {
+			continue
+		}
+		var compact bytes.Buffer
+		if json.Compact(&compact, []byte(content)) == nil && strings.Contains(compact.String(), fragment) {
+			return true
+		}
+	}
+	return false
 }
