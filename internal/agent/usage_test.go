@@ -13,6 +13,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -218,4 +220,30 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestUsageCaptureSeparatesHeaderAndBodyWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		metrics := newRunMetrics()
+		transport := &usageCaptureTransport{base: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			time.Sleep(2 * time.Second)
+			reader, writer := io.Pipe()
+			go func() {
+				time.Sleep(3 * time.Second)
+				_, _ = io.WriteString(writer, `{"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`)
+				_ = writer.Close()
+			}()
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: reader}, nil
+		})}
+		request := httptest.NewRequest(http.MethodPost, "https://model.test/chat/completions", nil).WithContext(withRunMetrics(t.Context(), metrics))
+		response, err := transport.RoundTrip(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		stages := metrics.snapshot().stageMilliseconds
+		if stages["model_response_headers"] != 2000 || stages["model_response_body"] != 3000 {
+			t.Fatalf("stages=%v", stages)
+		}
+	})
 }

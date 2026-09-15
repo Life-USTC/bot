@@ -5,7 +5,52 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/Life-USTC/Bot/internal/delivery"
+	"github.com/Life-USTC/Bot/internal/message"
 )
+
+func commitTestConfirmationReceipt(t *testing.T, s *Store, ctx context.Context, job ConversationJob, executionID, dedupeKey string) int64 {
+	t.Helper()
+	outputs, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
+		JobID: job.ID, LeaseToken: job.LeaseToken,
+		Messages: []message.Outbound{{
+			Kind:    "confirmation",
+			Target:  message.Conversation{Platform: job.Identity.Platform, Type: job.Identity.ConversationType, ID: job.Identity.ConversationID},
+			Content: message.Content{Text: "请确认 #待确认操作{" + executionID + "}"}, DedupeKey: dedupeKey,
+		}},
+		ReceiptIDs: []string{executionID},
+		Transition: ConversationJobTransition{State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outputs) != 1 {
+		t.Fatalf("confirmation output count=%d", len(outputs))
+	}
+	return outputs[0].Record.ID
+}
+
+func acceptTestConfirmationReceipt(t *testing.T, s *Store, ctx context.Context, outboxID int64) {
+	t.Helper()
+	records, err := s.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.ID != outboxID {
+			continue
+		}
+		if err := s.Complete(ctx, record.ID, delivery.Outcome{
+			State:   delivery.OutcomeAccepted,
+			Receipt: message.Receipt{AcceptedAt: time.Now().UTC()},
+		}, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	t.Fatalf("confirmation outbox %d was not claimable", outboxID)
+}
 
 func TestCompletedJobRequiresTerminalCapabilityExecutions(t *testing.T) {
 	s := openConversationJobTestStore(t)
@@ -528,5 +573,108 @@ func TestCapabilityExpiryTerminalizesApprovedAndRunningOperations(t *testing.T) 
 	got, found, err = s.CapabilityExecution(ctx, read.ID)
 	if err != nil || !found || got.State != CapabilityExecutionExpired {
 		t.Fatalf("expired read operation=%#v found=%v err=%v", got, found, err)
+	}
+}
+
+func TestCapabilityConfirmationRequiresDisplayedReceipt(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "confirmation-without-receipt", ConversationJobEnqueue{
+		State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation,
+		ExpiresAt: now.Add(time.Hour),
+	})
+	execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, DedupeKey: "confirmation-without-receipt-operation",
+		Capability: "logout", Effect: "destructive", RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare operation=%#v created=%v err=%v", execution, created, err)
+	}
+	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "confirmation-without-receipt-input"}, now.Add(time.Second))
+	if err != nil || resolved != nil || released != nil {
+		t.Fatalf("unrendered operation resolved=%#v released=%#v err=%v", resolved, released, err)
+	}
+	stored, found, err := s.CapabilityExecution(ctx, execution.ID)
+	if err != nil || !found || stored.State != CapabilityExecutionAwaitingConfirmation || stored.ReceiptState != "" {
+		t.Fatalf("unrendered operation=%#v found=%v err=%v", stored, found, err)
+	}
+}
+
+func TestCapabilityConfirmationRequiresAcceptedPromptOutbox(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	job := enqueueConversationJobTest(t, s, ident, "confirmation-delivery-state", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, LeaseToken: claimed.LeaseToken, DedupeKey: "confirmation-delivery-state-operation",
+		Capability: "logout", Effect: "destructive", RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		t.Fatalf("prepare operation=%#v created=%v err=%v", execution, created, err)
+	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimed, execution.ID, "confirmation-delivery-state-output")
+	if resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "confirmation-delivery-early-input"}, now.Add(time.Second)); err != nil || resolved != nil || released != nil {
+		t.Fatalf("pending prompt resolved=%#v released=%#v err=%v", resolved, released, err)
+	}
+	records, err := s.ClaimDue(ctx, now.Add(time.Second), 10)
+	if err != nil || len(records) != 1 || records[0].ID != outboxID {
+		t.Fatalf("claim confirmation outbox=%#v err=%v", records, err)
+	}
+	if err := s.Complete(ctx, outboxID, delivery.Outcome{State: delivery.OutcomeRejected, Code: "delivery_failed"}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "confirmation-delivery-late-input"}, now.Add(2*time.Second)); err != nil || resolved != nil || released != nil {
+		t.Fatalf("rejected prompt resolved=%#v released=%#v err=%v", resolved, released, err)
+	}
+}
+
+func TestCapabilityConfirmationReceiptSurvivesRestartAndRepeatedInput(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/bot.db"
+	ident := conversationJobTestIdentity()
+	now := time.Now().UTC()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := enqueueConversationJobTest(t, s, ident, "confirmation-restart", ConversationJobEnqueue{ExpiresAt: now.Add(time.Hour)})
+	claimed, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimed == nil {
+		_ = s.Close()
+		t.Fatalf("claim job=%#v err=%v", claimed, err)
+	}
+	execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: ident, JobID: job.ID, LeaseToken: claimed.LeaseToken, DedupeKey: "confirmation-restart-operation",
+		Capability: "logout", Effect: "destructive", RequiresConfirmation: true,
+	})
+	if err != nil || !created {
+		_ = s.Close()
+		t.Fatalf("prepare operation=%#v created=%v err=%v", execution, created, err)
+	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimed, execution.ID, "confirmation-restart-output")
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
+	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "confirmation-restart-input"}, now.Add(time.Second))
+	if err != nil || resolved == nil || released == nil || resolved.ID != execution.ID || resolved.State != CapabilityExecutionApproved {
+		t.Fatalf("restart resolution=%#v released=%#v err=%v", resolved, released, err)
+	}
+	resolved, released, err = s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "confirmation-restart-input"}, now.Add(2*time.Second))
+	if err != nil || resolved == nil || released == nil || resolved.ID != execution.ID || released.ID != job.ID {
+		t.Fatalf("repeated input did not return original resolution=%#v released=%#v err=%v", resolved, released, err)
 	}
 }

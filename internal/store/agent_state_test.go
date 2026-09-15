@@ -250,55 +250,78 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	job, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "grouped", Input: ConversationJobInput{Text: "订阅两门课"},
-		State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation,
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	})
 	if err != nil || !created {
 		t.Fatalf("enqueue: created=%v err=%v", created, err)
 	}
+	claimed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim: job=%#v err=%v", claimed, err)
+	}
+	prepared := make([]CapabilityExecution, 0, 2)
 	for i, subject := range []string{"数学分析（程艺，2026春）", "线性代数（李明，2026春）"} {
-		_, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
-			Identity: ident, JobID: job.ID, Sequence: i, DedupeKey: "job:grouped:" + subject,
+		execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+			Identity: ident, JobID: job.ID, LeaseToken: claimed.LeaseToken, Sequence: i, DedupeKey: "job:grouped:" + subject,
 			Capability: "subscription", Arguments: []string{"import", subject}, Effect: "write",
 			Receipt: CapabilityReceipt{Action: "订阅", Resource: "课程", Subject: subject}, RequiresConfirmation: true,
 		})
 		if err != nil || !created {
 			t.Fatalf("prepare %d: created=%v err=%v", i, created, err)
 		}
+		prepared = append(prepared, execution)
 	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimed, prepared[0].ID, "grouped-confirmation-1")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 
-	first, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true})
+	first, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"})
 	if err != nil || first == nil || released == nil {
 		t.Fatalf("approve first: operation=%#v job=%#v err=%v", first, released, err)
 	}
 	if first.Sequence != 0 || first.State != CapabilityExecutionApproved || released.State != ConversationJobStateQueued {
 		t.Fatalf("first resolution: operation=%#v job=%#v", first, released)
 	}
-	claimed, err := s.ClaimConversationJob(ctx, ident)
-	if err != nil || claimed == nil {
-		t.Fatalf("claim released job: %#v err=%v", claimed, err)
+	resumed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || resumed == nil {
+		t.Fatalf("claim released job: %#v err=%v", resumed, err)
 	}
-	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, claimed.ID, claimed.LeaseToken)
+	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, resumed.ID, resumed.LeaseToken)
 	if err != nil || !execute {
 		t.Fatalf("claim approved operation: execute=%v err=%v", execute, err)
 	}
 	if _, err := s.FinishCapabilityExecution(ctx, first.ID, claimedExecution.LeaseToken, "已订阅", nil); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.TransitionConversationJob(ctx, claimed.ID, claimed.LeaseToken, ConversationJobTransition{
-		State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("return to confirmation: ok=%v err=%v", ok, err)
+	outboxID = commitTestConfirmationReceipt(t, s, ctx, *resumed, prepared[1].ID, "grouped-confirmation-2")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
+	replayed, replayJob, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"})
+	if err != nil || replayed == nil || replayJob == nil || replayed.ID != first.ID || replayJob.State != ConversationJobStateWaitingConfirmation {
+		t.Fatalf("replay changed the confirmation queue: operation=%#v job=%#v err=%v", replayed, replayJob, err)
+	}
+	otherActor := ident
+	otherActor.UserID = "someone-else"
+	if operation, _, err := s.ResolveCapabilityConfirmation(ctx, otherActor, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"}); err == nil || operation != nil {
+		t.Fatal("confirmation replay exposed another actor's operation")
+	}
+	if _, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{Identity: ident, SourceEventID: "earlier-word", Input: ConversationJobInput{Text: "确认"}, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if operation, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "earlier-word"}); err != nil || operation != nil || job != nil {
+		t.Fatal("an ordinary conversation event became an approval on replay")
+	}
+	stillPending, _, err := s.CapabilityExecution(ctx, prepared[1].ID)
+	if err != nil || stillPending.State != CapabilityExecutionAwaitingConfirmation {
+		t.Fatalf("second operation was approved by replay: %#v err=%v", stillPending, err)
 	}
 
-	second, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Reason: "不想订阅"})
+	second, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Reason: "不想订阅", SourceEventID: "agent_state_test-confirmation-2"})
 	if err != nil || second == nil || released == nil {
 		t.Fatalf("deny second: operation=%#v job=%#v err=%v", second, released, err)
 	}
 	if second.Sequence != 1 || second.State != CapabilityExecutionDenied || second.Error != "不想订阅" {
 		t.Fatalf("second resolution = %#v", second)
 	}
-	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, second.ID, claimed.ID, claimed.LeaseToken); err != nil || execute {
+	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, second.ID, resumed.ID, resumed.LeaseToken); err != nil || execute {
 		t.Fatalf("denied operation became executable: execute=%v err=%v", execute, err)
 	}
 }

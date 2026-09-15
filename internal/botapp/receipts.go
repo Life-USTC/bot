@@ -2,18 +2,237 @@ package botapp
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-const confirmationPrompt = "请确认是否执行以下操作。回复 ok 确认，回复 取消 拒绝。"
+const confirmationPrompt = "请确认标为「待确认」的这一项操作。回复 确认 执行，回复 取消 拒绝；其余操作会逐项询问。"
 
 type executionReceipts struct {
 	Lines []string
 	IDs   []string
+}
+
+// formatExecutionReceipt renders the invocation stored in a durable execution.
+// The execution result is deliberately kept out of the invocation itself: the
+// host already sends the model-facing result, while this line records which
+// command or tool was actually run and its terminal state.
+func formatExecutionReceipt(execution store.CapabilityExecution) (string, bool) {
+	status := capabilityExecutionActionReceiptStatus(execution.State)
+	detail := capabilityExecutionActionReceiptDetail(execution)
+	capability := strings.TrimSpace(execution.Capability)
+	prefix, name, prefixed := strings.Cut(capability, ":")
+	if prefixed && (strings.EqualFold(prefix, "mcp") || strings.EqualFold(prefix, "tool")) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return "", false
+		}
+		return formatMCPExecutionReceipt(name, execution.Arguments, status, detail)
+	}
+	command := botExecutionCommand(capability, execution.Arguments)
+	return formatBotExecutionReceipt(command, status, detail)
+}
+
+func botExecutionCommand(capability string, arguments []string) string {
+	capability = strings.TrimSpace(capability)
+	invocation, ok := commands.NewInvocation(commands.CapabilityID(capability), arguments)
+	if !ok {
+		invocation, ok = commands.RestoreInvocation(commands.CapabilityID(capability), arguments)
+	}
+	if !ok {
+		parts := make([]string, 0, len(arguments)+1)
+		if capability != "" {
+			parts = append(parts, capability)
+		}
+		for _, argument := range arguments {
+			argument = strings.TrimSpace(argument)
+			if strings.ContainsAny(argument, " \t\r\n\"") {
+				argument = strconv.Quote(argument)
+			}
+			if argument != "" {
+				parts = append(parts, argument)
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, " "))
+	}
+	parts := make([]string, 0, len(invocation.Args)+1)
+	name := string(invocation.ID())
+	if descriptor, found := commands.CapabilityDescriptorFor(invocation.ID()); found {
+		for _, form := range descriptor.Forms {
+			if strings.IndexFunc(form, func(r rune) bool { return r >= 0x4e00 && r <= 0x9fff }) >= 0 {
+				name = form
+				break
+			}
+		}
+	}
+	parts = append(parts, name)
+	for _, argument := range invocation.Args {
+		argument = strings.TrimSpace(argument)
+		if strings.ContainsAny(argument, " \t\r\n\"") {
+			argument = strconv.Quote(argument)
+		}
+		if argument != "" {
+			parts = append(parts, argument)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func formatMCPExecutionReceipt(name string, arguments []string, status, detail string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false
+	}
+	argumentText := formatMCPExecutionArguments(arguments)
+	invocation := "<" + name + "()>"
+	if argumentText != "" {
+		invocation = "<" + name + "(" + argumentText + ")>"
+	}
+	return invocation + formatCapabilityExecutionActionReceiptStatus(status, detail), true
+}
+
+func formatMCPExecutionArguments(arguments []string) string {
+	if len(arguments) == 0 {
+		return ""
+	}
+	values := make([]any, len(arguments))
+	for index, argument := range arguments {
+		var value any
+		decoder := json.NewDecoder(strings.NewReader(argument))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil || !json.Valid([]byte(argument)) {
+			// Invalid arguments still identify the attempted invocation.
+			values[index] = strings.TrimSpace(argument)
+			continue
+		}
+		if index == 0 {
+			if object, ok := value.(map[string]any); ok {
+				// confirmed is a host-only authorization marker and is not an
+				// argument supplied by the model.
+				delete(object, "confirmed")
+				if len(object) == 0 {
+					value = nil
+				}
+			}
+		}
+		values[index] = redactReceiptArgument(value)
+	}
+	var value any = values
+	if len(values) == 1 {
+		if values[0] == nil {
+			return ""
+		}
+		value = values[0]
+	}
+	var encoded strings.Builder
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(encoded.String(), "\n")
+}
+
+func redactReceiptArgument(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		redacted := make(map[string]any, len(value))
+		for key, nested := range value {
+			if receiptSecretKey(key) {
+				redacted[key] = "<redacted>"
+				continue
+			}
+			redacted[key] = redactReceiptArgument(nested)
+		}
+		return redacted
+	case []any:
+		redacted := make([]any, len(value))
+		for index, nested := range value {
+			redacted[index] = redactReceiptArgument(nested)
+		}
+		return redacted
+	default:
+		return value
+	}
+}
+
+func receiptSecretKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	normalized = strings.NewReplacer("-", "_", " ", "_").Replace(normalized)
+	switch normalized {
+	case "access_token", "refresh_token", "id_token", "token", "authorization",
+		"api_key", "apikey", "client_secret", "secret", "password", "passwd",
+		"cookie", "credential", "credentials", "device_code", "user_code":
+		return true
+	default:
+		return strings.HasSuffix(normalized, "_token") || strings.HasSuffix(normalized, "_secret")
+	}
+}
+
+func formatBotExecutionReceipt(command, status, detail string) (string, bool) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", false
+	}
+	return "#" + command + formatCapabilityExecutionActionReceiptStatus(status, detail), true
+}
+
+func formatCapabilityExecutionActionReceiptStatus(status, detail string) string {
+	label := strings.TrimSpace(status)
+	if label == "" {
+		label = "状态未知"
+	}
+	if strings.HasPrefix(label, "待确认") {
+		if displayDetail := receiptDisplayDetail(detail); displayDetail != "" {
+			label += "：" + displayDetail
+		}
+	}
+	return "（" + label + "）"
+}
+
+func receiptDisplayDetail(detail string) string {
+	return strings.TrimSpace(detail)
+}
+
+func capabilityExecutionActionReceiptStatus(state store.CapabilityExecutionState) string {
+	switch state {
+	case store.CapabilityExecutionSucceeded:
+		return "已完成"
+	case store.CapabilityExecutionFailed:
+		return "失败"
+	case store.CapabilityExecutionAwaitingConfirmation:
+		return "待确认"
+	case store.CapabilityExecutionDenied:
+		return "已拒绝"
+	case store.CapabilityExecutionUnknown:
+		return "结果未知"
+	case store.CapabilityExecutionCancelled:
+		return "已取消"
+	case store.CapabilityExecutionExpired:
+		return "已过期"
+	case store.CapabilityExecutionWaitingAuth:
+		return "等待登录"
+	case store.CapabilityExecutionApproved, store.CapabilityExecutionRunning:
+		return "执行中"
+	default:
+		return "状态未知"
+	}
+}
+
+func capabilityExecutionActionReceiptDetail(execution store.CapabilityExecution) string {
+	switch execution.State {
+	case store.CapabilityExecutionAwaitingConfirmation:
+		// The descriptor-owned subject may contain the authoritative target
+		// resolved during preflight. Keep it beside the real invocation so a
+		// confirmation receipt cannot hide which item will be changed.
+		return strings.TrimSpace(execution.Receipt.Subject)
+	default:
+		return ""
+	}
 }
 
 func (c *Coordinator) unsentExecutionReceipts(ctx context.Context, jobID int64, includeOnePending bool) (executionReceipts, error) {
@@ -26,7 +245,6 @@ func (c *Coordinator) unsentExecutionReceiptsForEffect(ctx context.Context, jobI
 		return executionReceipts{}, markConversationPersistenceError(err)
 	}
 	result := executionReceipts{}
-	seen := make(map[string]bool)
 	pendingIncluded := false
 	for _, execution := range executions {
 		if effect != "" && !strings.EqualFold(strings.TrimSpace(execution.Effect), strings.TrimSpace(effect)) {
@@ -39,81 +257,13 @@ func (c *Coordinator) unsentExecutionReceiptsForEffect(ctx context.Context, jobI
 			pendingIncluded = true
 		}
 		line, visible := formatExecutionReceipt(execution)
-		if !visible && execution.State == store.CapabilityExecutionAwaitingConfirmation {
-			line, visible = formatUnlabeledExecutionReceipt(execution)
-		}
 		if !visible {
 			continue
 		}
 		result.IDs = append(result.IDs, execution.ID)
-		if seen[line] {
-			continue
-		}
-		seen[line] = true
 		result.Lines = append(result.Lines, line)
 	}
 	return result, nil
-}
-
-func formatUnlabeledExecutionReceipt(execution store.CapabilityExecution) (string, bool) {
-	if execution.State != store.CapabilityExecutionAwaitingConfirmation || strings.TrimSpace(execution.Capability) == "" {
-		return "", false
-	}
-	subject := strings.TrimSpace(strings.Join(execution.Arguments, " "))
-	if subject == "" {
-		subject = "无参数"
-	}
-	return "#待确认操作{" + execution.Capability + " " + subject + "}", true
-}
-
-func formatExecutionReceipt(execution store.CapabilityExecution) (string, bool) {
-	action := strings.TrimSpace(execution.Receipt.Action)
-	resource := strings.TrimSpace(execution.Receipt.Resource)
-	subject := strings.TrimSpace(execution.Receipt.Subject)
-	if action == "" || resource == "" || subject == "" {
-		return "", false
-	}
-	switch execution.State {
-	case store.CapabilityExecutionAwaitingConfirmation:
-		return "#待确认" + action + resource + "{" + subject + "}", true
-	case store.CapabilityExecutionSucceeded:
-		return "#已" + action + resource + "{" + subject + "}", true
-	case store.CapabilityExecutionDenied, store.CapabilityExecutionFailed, store.CapabilityExecutionUnknown,
-		store.CapabilityExecutionCancelled, store.CapabilityExecutionExpired:
-		reason := receiptFailureReason(execution)
-		return "#" + action + resource + "失败{" + subject + "：" + reason + "}", true
-	default:
-		return "", false
-	}
-}
-
-func receiptFailureReason(execution store.CapabilityExecution) string {
-	var reason string
-	switch execution.State {
-	case store.CapabilityExecutionDenied:
-		reason = "用户拒绝执行"
-	case store.CapabilityExecutionUnknown:
-		reason = "操作结果未知，系统没有自动重试"
-	case store.CapabilityExecutionFailed:
-		// Result is the descriptor-owned, user-safe domain response. Error may
-		// contain protected transport diagnostics when execution failed before
-		// the descriptor could return a result.
-		reason = capabilityExecutionResultText(execution)
-		if reason == "" {
-			reason = "操作没有完成"
-		}
-	case store.CapabilityExecutionCancelled:
-		reason = "操作已取消"
-	case store.CapabilityExecutionExpired:
-		reason = "操作已过期"
-	default:
-		reason = "操作没有完成"
-	}
-	const maxRunes = 160
-	if utf8.RuneCountInString(reason) > maxRunes {
-		reason = string([]rune(reason)[:maxRunes]) + "…"
-	}
-	return reason
 }
 
 func appendReceiptLines(response commands.Response, prefix string, receipts executionReceipts) commands.Response {

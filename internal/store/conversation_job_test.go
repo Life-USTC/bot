@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -261,27 +262,32 @@ func TestCapabilityConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	now := time.Now().UTC()
 	expires := now.Add(time.Hour)
 	confirmation := enqueueConversationJobTest(t, s, ident, "confirm", ConversationJobEnqueue{
-		State:     ConversationJobStateWaitingConfirmation,
 		ExpiresAt: expires,
 	})
+	claimedConfirmation, err := s.ClaimConversationJob(ctx, ident, now)
+	if err != nil || claimedConfirmation == nil {
+		t.Fatalf("claim confirmation job=%#v err=%v", claimedConfirmation, err)
+	}
 	operation, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
-		Identity: ident, JobID: confirmation.ID, DedupeKey: "confirm-once", Capability: "logout",
+		Identity: ident, JobID: confirmation.ID, LeaseToken: claimedConfirmation.LeaseToken, DedupeKey: "confirm-once", Capability: "logout",
 		Effect: "destructive", RequiresConfirmation: true,
 	})
 	if err != nil || !created {
 		t.Fatalf("prepare confirmation: created=%v err=%v", created, err)
 	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimedConfirmation, operation.ID, "confirm-once-output")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 
 	const consumers = 10
 	var wg sync.WaitGroup
 	consumed := make(chan *ConversationJob, consumers)
 	resolved := make(chan *CapabilityExecution, consumers)
 	errs := make(chan error, consumers)
-	for range consumers {
+	for index := range consumers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			execution, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now)
+			execution, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: fmt.Sprintf("confirmation-%d", index)}, now)
 			if err != nil {
 				errs <- err
 				return
@@ -363,6 +369,7 @@ func TestConversationJobOutputCommitMakesConfirmationVisibleAtomically(t *testin
 	if err != nil || len(outputs) != 1 || !outputs[0].Created {
 		t.Fatalf("commit outputs=%#v err=%v", outputs, err)
 	}
+	acceptTestConfirmationReceipt(t, s, ctx, outputs[0].Record.ID)
 	if got := mustGetConversationJob(t, s, job.ID); got.State != ConversationJobStateWaitingConfirmation || got.LeaseToken != "" {
 		t.Fatalf("committed job=%#v", got)
 	}
@@ -370,7 +377,7 @@ func TestConversationJobOutputCommitMakesConfirmationVisibleAtomically(t *testin
 	if err != nil || !found || gotExecution.ReceiptState != CapabilityExecutionAwaitingConfirmation || gotExecution.ReceiptSentAt == nil {
 		t.Fatalf("committed execution=%#v found=%v err=%v", gotExecution, found, err)
 	}
-	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now.Add(time.Second))
+	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-2"}, now.Add(time.Second))
 	if err != nil || resolved == nil || released == nil || resolved.ID != execution.ID || released.ID != job.ID {
 		t.Fatalf("immediate confirmation resolved=%#v released=%#v err=%v", resolved, released, err)
 	}
@@ -426,15 +433,20 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 	second := first
 	second.UserID = "42"
 
-	waiting := enqueueConversationJobTest(t, s, first, "actor-one-confirm", ConversationJobEnqueue{
-		State: ConversationJobStateWaitingConfirmation, ExpiresAt: expires,
-	})
-	if _, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
-		Identity: first, JobID: waiting.ID, DedupeKey: "actor-one-confirm", Capability: "logout",
+	waiting := enqueueConversationJobTest(t, s, first, "actor-one-confirm", ConversationJobEnqueue{ExpiresAt: expires})
+	firstClaim, err := s.ClaimConversationJob(ctx, first, now)
+	if err != nil || firstClaim == nil {
+		t.Fatalf("claim first actor job=%#v err=%v", firstClaim, err)
+	}
+	firstExecution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+		Identity: first, JobID: waiting.ID, LeaseToken: firstClaim.LeaseToken, DedupeKey: "actor-one-confirm", Capability: "logout",
 		Effect: "destructive", RequiresConfirmation: true,
-	}); err != nil || !created {
+	})
+	if err != nil || !created {
 		t.Fatalf("prepare actor confirmation: created=%v err=%v", created, err)
 	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *firstClaim, firstExecution.ID, "actor-one-confirm-output")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 	queued := enqueueConversationJobTest(t, s, second, "actor-two-command", ConversationJobEnqueue{ExpiresAt: expires})
 
 	claimed, err := s.ClaimNextConversationJob(ctx, now)
@@ -448,14 +460,14 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 		t.Fatalf("complete second actor job: ok=%v err=%v", ok, err)
 	}
 
-	_, consumed, err := s.ResolveCapabilityConfirmation(ctx, second, CapabilityConfirmationDecision{Approved: true}, now)
+	_, consumed, err := s.ResolveCapabilityConfirmation(ctx, second, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-3"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if consumed != nil {
 		t.Fatalf("second actor consumed first actor confirmation: %#v", consumed)
 	}
-	_, consumed, err = s.ResolveCapabilityConfirmation(ctx, first, CapabilityConfirmationDecision{Approved: true}, now)
+	_, consumed, err = s.ResolveCapabilityConfirmation(ctx, first, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-4"}, now)
 	if err != nil || consumed == nil || consumed.ID != waiting.ID {
 		t.Fatalf("first actor confirmation = %#v err=%v", consumed, err)
 	}

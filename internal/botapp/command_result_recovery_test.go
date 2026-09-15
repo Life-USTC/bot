@@ -253,6 +253,11 @@ func TestDeniedDirectCommandPersistsCommandResultWithoutConfirmationEvent(t *tes
 	}
 	job := claimOnlyConversationJob(t, db)
 	coordinator.execute(ctx, job)
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, confirmationPrompt) {
+		t.Fatalf("confirmation output=%#v err=%v", records, err)
+	}
+	acceptCoordinatorOutputs(t, db, records)
 	if err := coordinator.Enqueue(ctx, jobInbound("direct-denied-confirmation", "拒绝")); err != nil {
 		t.Fatal(err)
 	}

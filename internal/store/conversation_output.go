@@ -85,6 +85,22 @@ func (s *Store) CommitConversationJobOutput(ctx context.Context, commit Conversa
 			}
 			outputs = append(outputs, ConversationJobCommittedOutput{Record: record, Created: created})
 		}
+		if len(receiptIDs) > 0 && len(outputs) > 0 {
+			// ReceiptIDs can contain terminal rows whose result is included in
+			// the same response. Bind only the first still-awaiting row to the
+			// outbox record carrying this response; later operations need their
+			// own commit before they become confirmable.
+			var pending capabilityExecutionRow
+			if err := tx.Where("job_id = ? AND id IN ? AND state = ?", commit.JobID, receiptIDs, string(CapabilityExecutionAwaitingConfirmation)).
+				Order("sequence ASC, created_at ASC, id ASC").First(&pending).Error; err == nil {
+				if err := tx.Model(&capabilityExecutionRow{}).Where("id = ? AND state = ?", pending.ID, string(CapabilityExecutionAwaitingConfirmation)).
+					Updates(map[string]any{"confirmation_outbox_id": outputs[len(outputs)-1].Record.ID, "updated_at": now}).Error; err != nil {
+					return err
+				}
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
 		if len(receiptIDs) > 0 {
 			if err := tx.Model(&capabilityExecutionRow{}).
 				Where("job_id = ? AND id IN ? AND (receipt_state = '' OR receipt_state <> state)", commit.JobID, receiptIDs).

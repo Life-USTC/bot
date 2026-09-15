@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/delivery"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -36,27 +37,29 @@ type CapabilityReceipt struct {
 }
 
 type CapabilityExecution struct {
-	ID            string
-	Identity      Identity
-	JobID         int64
-	Sequence      int
-	DedupeKey     string
-	ToolCallID    string
-	LeaseToken    string
-	Capability    string
-	Arguments     []string
-	Effect        string
-	State         CapabilityExecutionState
-	Receipt       CapabilityReceipt
-	Result        string
-	Error         string
-	ConfirmedAt   *time.Time
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
-	ReceiptSentAt *time.Time
-	ReceiptState  CapabilityExecutionState
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID                   string
+	Identity             Identity
+	JobID                int64
+	Sequence             int
+	DedupeKey            string
+	ToolCallID           string
+	LeaseToken           string
+	Capability           string
+	Arguments            []string
+	Effect               string
+	State                CapabilityExecutionState
+	Receipt              CapabilityReceipt
+	Result               string
+	Error                string
+	ConfirmationOutboxID int64
+	ConfirmationEventID  string
+	ConfirmedAt          *time.Time
+	StartedAt            *time.Time
+	FinishedAt           *time.Time
+	ReceiptSentAt        *time.Time
+	ReceiptState         CapabilityExecutionState
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type CapabilityExecutionPrepare struct {
@@ -76,36 +79,39 @@ type CapabilityExecutionPrepare struct {
 }
 
 type CapabilityConfirmationDecision struct {
-	Approved bool
-	Reason   string
+	Approved      bool
+	Reason        string
+	SourceEventID string
 }
 
 type capabilityExecutionRow struct {
-	ID               string `gorm:"primaryKey"`
-	UserID           int64  `gorm:"not null;index"`
-	Platform         string `gorm:"not null;uniqueIndex:idx_capability_executions_dedupe,priority:1;index:idx_capability_executions_identity_state,priority:1"`
-	ExternalUserID   string `gorm:"not null;index:idx_capability_executions_identity_state,priority:4"`
-	ConversationType string `gorm:"not null;index:idx_capability_executions_identity_state,priority:2"`
-	ConversationID   string `gorm:"not null;index:idx_capability_executions_identity_state,priority:3"`
-	JobID            int64  `gorm:"not null;index:idx_capability_executions_job_sequence,priority:1"`
-	Sequence         int    `gorm:"not null;index:idx_capability_executions_job_sequence,priority:2"`
-	DedupeKey        string `gorm:"not null;uniqueIndex:idx_capability_executions_dedupe,priority:2"`
-	ToolCallID       string `gorm:"not null;default:'';index"`
-	LeaseToken       string `gorm:"index"`
-	Capability       string `gorm:"not null"`
-	ArgumentsJSON    string `gorm:"not null"`
-	Effect           string `gorm:"not null"`
-	State            string `gorm:"not null;index:idx_capability_executions_identity_state,priority:5"`
-	ReceiptJSON      string `gorm:"not null;default:'{}'"`
-	Result           string
-	Error            string
-	ConfirmedAt      *time.Time
-	StartedAt        *time.Time
-	FinishedAt       *time.Time
-	ReceiptSentAt    *time.Time `gorm:"index"`
-	ReceiptState     string     `gorm:"not null;default:''"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                   string `gorm:"primaryKey"`
+	UserID               int64  `gorm:"not null;index"`
+	Platform             string `gorm:"not null;uniqueIndex:idx_capability_executions_dedupe,priority:1;uniqueIndex:idx_capability_executions_confirmation_event,priority:1;index:idx_capability_executions_identity_state,priority:1"`
+	ExternalUserID       string `gorm:"not null;index:idx_capability_executions_identity_state,priority:4"`
+	ConversationType     string `gorm:"not null;index:idx_capability_executions_identity_state,priority:2"`
+	ConversationID       string `gorm:"not null;index:idx_capability_executions_identity_state,priority:3"`
+	JobID                int64  `gorm:"not null;index:idx_capability_executions_job_sequence,priority:1"`
+	Sequence             int    `gorm:"not null;index:idx_capability_executions_job_sequence,priority:2"`
+	DedupeKey            string `gorm:"not null;uniqueIndex:idx_capability_executions_dedupe,priority:2"`
+	ToolCallID           string `gorm:"not null;default:'';index"`
+	LeaseToken           string `gorm:"index"`
+	Capability           string `gorm:"not null"`
+	ArgumentsJSON        string `gorm:"not null"`
+	Effect               string `gorm:"not null"`
+	State                string `gorm:"not null;index:idx_capability_executions_identity_state,priority:5"`
+	ReceiptJSON          string `gorm:"not null;default:'{}'"`
+	Result               string
+	Error                string
+	ConfirmationOutboxID int64   `gorm:"index"`
+	ConfirmationEventID  *string `gorm:"uniqueIndex:idx_capability_executions_confirmation_event,priority:2"`
+	ConfirmedAt          *time.Time
+	StartedAt            *time.Time
+	FinishedAt           *time.Time
+	ReceiptSentAt        *time.Time `gorm:"index"`
+	ReceiptState         string     `gorm:"not null;default:''"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 func (capabilityExecutionRow) TableName() string { return "capability_executions" }
@@ -311,9 +317,11 @@ func (s *Store) UnsentCapabilityExecutionsForJob(ctx context.Context, jobID int6
 	return result, nil
 }
 
-// ResolveCapabilityConfirmation consumes exactly one independently reversible
-// operation, then releases its owning job for a checkpoint resume. Other
-// operations from the same grouped request remain awaiting confirmation.
+// ResolveCapabilityConfirmation consumes exactly the independently reversible
+// operation whose confirmation receipt was durably committed for this actor's
+// waiting job, then releases its owning job for a checkpoint resume. Other
+// operations from the same grouped request remain awaiting confirmation until
+// their own receipt is committed.
 func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identity, decision CapabilityConfirmationDecision, at ...time.Time) (*CapabilityExecution, *ConversationJob, error) {
 	s.conversationJobMu.Lock()
 	defer s.conversationJobMu.Unlock()
@@ -321,20 +329,48 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 		return nil, nil, err
 	}
 	ident = normalizeIdentity(ident)
+	decision.SourceEventID = strings.TrimSpace(decision.SourceEventID)
+	if decision.SourceEventID == "" {
+		return nil, nil, errors.New("capability confirmation source event id is empty")
+	}
 	now := claimConversationJobTime(at)
 	var resolved *CapabilityExecution
 	var released *ConversationJob
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var operation capabilityExecutionRow
-		err := tx.Table("capability_executions AS operation").
+		// A confirmation event is consumed exactly once at the operation row.
+		// Look it up before selecting a waiting operation so replay after the
+		// job has produced its next prompt cannot approve that next operation.
+		err := tx.Where("platform = ? AND confirmation_event_id = ?", ident.Platform, decision.SourceEventID).First(&operation).Error
+		if err == nil {
+			if operation.ExternalUserID != ident.UserID || operation.ConversationType != ident.ConversationType || operation.ConversationID != ident.ConversationID {
+				return errors.New("confirmation event belongs to another actor")
+			}
+			resolved, released, err = capabilityConfirmationResult(tx, operation)
+			return err
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		// A word previously accepted as an ordinary conversation turn cannot
+		// become an approval when the platform replays it after a new prompt.
+		var previousTurn int64
+		if err := tx.Model(&conversationJobRow{}).Where("platform = ? AND source_event_id = ?", ident.Platform, decision.SourceEventID).Count(&previousTurn).Error; err != nil {
+			return err
+		}
+		if previousTurn > 0 {
+			return nil
+		}
+		query := tx.Table("capability_executions AS operation").
 			Select("operation.*").
 			Joins("JOIN conversation_jobs AS job ON job.id = operation.job_id").
 			Where("job.platform = ? AND job.conversation_type = ? AND job.conversation_id = ? AND job.external_user_id = ?",
 				ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID).
 			Where("job.state = ? AND job.expires_at > ?", string(ConversationJobStateWaitingConfirmation), now).
-			Where("operation.state = ?", string(CapabilityExecutionAwaitingConfirmation)).
-			Order("job.sequence ASC, operation.sequence ASC, operation.created_at ASC, operation.id ASC").
-			First(&operation).Error
+			Where("operation.state = ? AND operation.receipt_state = ?", string(CapabilityExecutionAwaitingConfirmation), string(CapabilityExecutionAwaitingConfirmation)).
+			Joins("JOIN outgoing_messages AS confirmation ON confirmation.id = operation.confirmation_outbox_id AND confirmation.status = ?", string(delivery.StatusAccepted)).
+			Order("job.sequence ASC, operation.sequence ASC, operation.created_at ASC, operation.id ASC")
+		err = query.First(&operation).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -352,7 +388,8 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 		result := tx.Model(&capabilityExecutionRow{}).
 			Where("id = ? AND state = ?", operation.ID, string(CapabilityExecutionAwaitingConfirmation)).
 			Updates(map[string]any{
-				"state": string(state), "error": reason, "confirmed_at": now, "updated_at": now,
+				"state": string(state), "error": reason, "confirmation_event_id": decision.SourceEventID,
+				"confirmed_at": now, "updated_at": now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -375,23 +412,26 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 		if err := tx.Where("id = ?", operation.ID).First(&operation).Error; err != nil {
 			return err
 		}
-		var jobRow conversationJobRow
-		if err := tx.Where("id = ?", operation.JobID).First(&jobRow).Error; err != nil {
-			return err
-		}
-		execution, err := capabilityExecutionFromRow(operation)
-		if err != nil {
-			return err
-		}
-		job, err := conversationJobFromRow(jobRow)
-		if err != nil {
-			return err
-		}
-		resolved = &execution
-		released = &job
-		return nil
+		resolved, released, err = capabilityConfirmationResult(tx, operation)
+		return err
 	})
 	return resolved, released, err
+}
+
+func capabilityConfirmationResult(tx *gorm.DB, operation capabilityExecutionRow) (*CapabilityExecution, *ConversationJob, error) {
+	var jobRow conversationJobRow
+	if err := tx.Where("id = ?", operation.JobID).First(&jobRow).Error; err != nil {
+		return nil, nil, err
+	}
+	execution, err := capabilityExecutionFromRow(operation)
+	if err != nil {
+		return nil, nil, err
+	}
+	job, err := conversationJobFromRow(jobRow)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &execution, &job, nil
 }
 
 // ClaimCapabilityExecutionForJob is the mutation commit gate. Only a
@@ -634,12 +674,17 @@ func capabilityExecutionFromRow(row capabilityExecutionRow) (CapabilityExecution
 	if err := json.Unmarshal([]byte(row.ReceiptJSON), &receipt); err != nil {
 		return CapabilityExecution{}, fmt.Errorf("decode capability execution %s receipt: %w", row.ID, err)
 	}
+	confirmationEventID := ""
+	if row.ConfirmationEventID != nil {
+		confirmationEventID = *row.ConfirmationEventID
+	}
 	return CapabilityExecution{
 		ID:       row.ID,
 		Identity: Identity{Platform: row.Platform, UserID: row.ExternalUserID, ConversationType: row.ConversationType, ConversationID: row.ConversationID},
 		JobID:    row.JobID, Sequence: row.Sequence, DedupeKey: row.DedupeKey, ToolCallID: row.ToolCallID, LeaseToken: row.LeaseToken,
 		Capability: row.Capability, Arguments: arguments, Effect: row.Effect,
 		State: CapabilityExecutionState(row.State), Receipt: receipt, Result: row.Result, Error: row.Error,
+		ConfirmationOutboxID: row.ConfirmationOutboxID, ConfirmationEventID: confirmationEventID,
 		ConfirmedAt: row.ConfirmedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
 		ReceiptSentAt: row.ReceiptSentAt,
 		ReceiptState:  CapabilityExecutionState(row.ReceiptState),

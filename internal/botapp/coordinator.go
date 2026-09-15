@@ -216,6 +216,7 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 		return errors.New("inbound source event id is empty")
 	}
 	if decision, isDecision := userConfirmationDecision(inbound.Text); isDecision {
+		decision.SourceEventID = sourceEventID
 		_, confirmed, err := c.jobs.ResolveCapabilityConfirmation(ctx, identityForInbound(inbound), decision)
 		if err != nil {
 			return fmt.Errorf("resolve capability confirmation: %w", err)

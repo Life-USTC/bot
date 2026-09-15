@@ -154,7 +154,7 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after a successful startup migration.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 var requiredSchemaModels = []any{
 	&userRow{},
@@ -574,7 +574,7 @@ func (s *Store) migrateSchema() error {
 }
 
 // PrepareSchemaForMaintenance applies the explicitly requested schema setup
-// and then verifies the complete current schema. A current v2 database only
+// and then verifies the complete current schema. A current-version database only
 // receives the independent conversation_compactions table; it is never
 // silently altered during normal startup.
 func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {

@@ -402,6 +402,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					return result, nil
 				},
 				ToolCallMiddlewares: []compose.ToolMiddleware{{
+					Invokable: s.toolReceiptMiddleware(input.Identity, input.JobID),
+				}, {
 					Invokable:  repeatGuard.invokableMiddleware,
 					Streamable: repeatGuard.streamableMiddleware,
 				}, {
@@ -1090,10 +1092,10 @@ func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Iden
 	if err != nil {
 		failureClass = agentFailureClass(err)
 	}
-	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d",
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d stage_model_response_headers_ms=%d stage_model_response_body_ms=%d stage_history_compaction_ms=%d",
 		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
 		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds(), failureClass,
-		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"])
+		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"], metrics.stageMilliseconds["model_response_headers"], metrics.stageMilliseconds["model_response_body"], metrics.stageMilliseconds["history_compaction"])
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}
