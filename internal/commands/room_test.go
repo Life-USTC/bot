@@ -60,7 +60,7 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: false}
 	response, ok := handler.HandleResponse(context.Background(), Input{
 		Text:     "３ａ２０４",
 		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},
@@ -68,7 +68,7 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 	if !ok {
 		t.Fatal("room command was not handled")
 	}
-	if response.Text != "3A204：三教 2" || response.Image == nil || response.Image.Kind != "room-map" || response.Image.URL != "https://static.example/rooms/3A204.png" {
+	if response.Text != "" || response.Image == nil || response.Image.Kind != "room-map" || response.Image.URL != "https://static.example/rooms/3A204.png" {
 		t.Fatalf("room response = %#v", response)
 	}
 	data, ok := response.Data.(map[string]any)
@@ -82,18 +82,18 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 }
 
 func TestRoomMapResponseDoesNotAttachImageForUnavailableRoom(t *testing.T) {
-	response := RoomMapResponse(life.RoomMap{Code: "GT-Z999", Status: "unavailable"}, true)
+	response := RoomMapResponse(life.RoomMap{Code: "GT-Z999", Status: "unavailable"})
 	if response.Text != "未找到 GT-Z999 的教室地图。" || response.Image != nil {
 		t.Fatalf("unavailable response = %#v", response)
 	}
 }
 
-func TestRoomMapOverviewExplainsThatRoomPositionIsUnverified(t *testing.T) {
+func TestRoomMapOverviewPreservesStatusWithoutText(t *testing.T) {
 	response := RoomMapResponse(life.RoomMap{
 		Code: "3A299", Building: "三教", Floor: "2", Status: "overview",
 		SourceImageURL: "https://static.example/floors/3-2.png",
-	}, true)
-	if !strings.Contains(response.Text, "楼层/建筑概览") || !strings.Contains(response.Text, "未确认该房间位置") {
+	})
+	if response.Text != "" || response.Data.(map[string]any)["room"].(life.RoomMap).Status != "overview" {
 		t.Fatalf("overview response = %#v", response)
 	}
 	if response.Image == nil || response.Image.URL != "https://static.example/floors/3-2.png" {
@@ -101,12 +101,12 @@ func TestRoomMapOverviewExplainsThatRoomPositionIsUnverified(t *testing.T) {
 	}
 }
 
-func TestRoomMapResponseIncludesURLWhenImagesAreDisabled(t *testing.T) {
+func TestRoomMapResponseMissingImageDoesNotFallBackToLocation(t *testing.T) {
 	response := RoomMapResponse(life.RoomMap{
 		Code: "3A204", Building: "三教", Floor: "2", Status: "highlighted",
-		ImageURL: "https://static.example/rooms/3A204.png",
-	}, false)
-	if response.Image != nil || !strings.Contains(response.Text, "地图：https://static.example/rooms/3A204.png") {
+		ImageURL: "",
+	})
+	if response.Image != nil || response.Text != "未找到 3A204 的教室地图。" {
 		t.Fatalf("disabled image response = %#v", response)
 	}
 }

@@ -48,35 +48,18 @@ func roomMapExecutor(h Handler, ctx context.Context, _ store.Identity, inv Invoc
 		return outcomeFromResponse(h, Response{Text: h.commandError("教室地图查不到：", err), Kind: inv.Name})
 	}
 	h.markData(map[string]any{"operation": "room_map", "room": room})
-	return outcomeFromResponse(h, RoomMapResponse(room, h.EnableImageResponses))
+	return outcomeFromResponse(h, RoomMapResponse(room))
 }
 
 // RoomMapResponse turns the shared REST/MCP payload into the concise bot
 // response. Highlighted maps are preferred; overview maps are still useful
 // when an exact room annotation is not available.
-func RoomMapResponse(room life.RoomMap, includeImage bool) Response {
+func RoomMapResponse(room life.RoomMap) Response {
 	code := strings.TrimSpace(room.Code)
 	if code == "" {
 		code = "该教室"
 	}
-	location := strings.Join(nonEmptyRoomParts(room.Building, room.Floor), " ")
-	text := code
-	switch strings.ToLower(strings.TrimSpace(room.Status)) {
-	case "highlighted":
-		if location != "" {
-			text += "：" + location
-		}
-	case "overview":
-		if location != "" {
-			text += "：" + location
-		}
-		text += "（楼层/建筑概览，未确认该房间位置）"
-	default:
-		return Response{Text: "未找到 " + code + " 的教室地图。", Kind: "room_map"}
-	}
-
 	response := Response{
-		Text: text,
 		Data: map[string]any{"operation": "room_map", "room": room},
 		Kind: "room_map",
 	}
@@ -84,30 +67,21 @@ func RoomMapResponse(room life.RoomMap, includeImage bool) Response {
 	if imageURL == "" {
 		imageURL = strings.TrimSpace(room.SourceImageURL)
 	}
-	if imageURL == "" {
+	status := strings.ToLower(strings.TrimSpace(room.Status))
+	if (status != "highlighted" && status != "overview") || imageURL == "" {
+		response.Text = "未找到 " + code + " 的教室地图。"
 		return response
 	}
-	if !includeImage {
-		response.Text += "\n地图：" + imageURL
-		return response
+	title := "教室 " + code
+	if status == "overview" {
+		title += "（楼层/建筑概览，未确认该房间位置）"
 	}
 	response.Image = &responses.Image{
-		Kind:    "room-map",
-		Title:   "教室 " + code,
-		AltText: text,
-		URL:     imageURL,
+		Kind:  "room-map",
+		Title: title,
+		URL:   imageURL,
 	}
 	return response
-}
-
-func nonEmptyRoomParts(parts ...string) []string {
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
 }
 
 func parseNaturalRoomIntent(raw string) ParseResult {

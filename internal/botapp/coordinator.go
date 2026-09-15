@@ -791,14 +791,11 @@ func (c *Coordinator) presentationContent(ctx context.Context, response commands
 			content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
 			continue
 		}
-		if item.Image.Kind == "bus" {
+		if item.Image.Kind == "bus" || item.Image.Kind == "room-map" {
 			return message.Content{}, err
 		}
 		c.logf("render response image failed; persist text fallback: %v", err)
 		text := strings.TrimSpace(item.Text)
-		if item.Image.Kind == "room-map" && strings.TrimSpace(item.Image.URL) != "" && !strings.Contains(text, item.Image.URL) {
-			text = strings.TrimSpace(text + "\n地图：" + item.Image.URL)
-		}
 		if text == "" {
 			text = strings.TrimSpace(item.Image.AltText)
 		}

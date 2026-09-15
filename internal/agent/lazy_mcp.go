@@ -424,7 +424,7 @@ func (s *lazyMCPSession) deliverRoomMapResponse(ctx context.Context, result stri
 	if err := json.Unmarshal([]byte(result), &room); err != nil {
 		return fmt.Errorf("decode catalog_rooms_map result: %w", err)
 	}
-	response := commands.RoomMapResponse(room, s.service != nil && s.service.handler.EnableImageResponses)
+	response := commands.RoomMapResponse(room)
 	return s.sendResponse(ctx, s.identity, response)
 }
 
