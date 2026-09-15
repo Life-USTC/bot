@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cloudwego/eino/compose"
 
+	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/toolresult"
 )
@@ -41,7 +43,7 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 	}
 	dedupeKey := fmt.Sprintf("conversation-job:%d:tool-receipt:%s", jobID, callID)
 	capability := "tool:" + input.Name
-	arguments := input.Arguments
+	arguments := []string{input.Arguments}
 	if input.Name == campusCallToolName {
 		var call campusToolCallInput
 		if json.Unmarshal([]byte(input.Arguments), &call) == nil && strings.TrimSpace(call.Name) != "" {
@@ -50,7 +52,16 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 			if err != nil {
 				return err
 			}
-			arguments = string(encoded)
+			arguments = []string{string(encoded)}
+		}
+	} else if input.Name == "run_bot_command" {
+		var command botCommandInput
+		if json.Unmarshal([]byte(input.Arguments), &command) == nil && !commands.HasAdditionalCommandLine(command.Command) {
+			parsed := commands.ParseCommand(command.Command)
+			if parsed.Recognized() {
+				capability = string(parsed.Invocation.ID())
+				arguments = parsed.Invocation.Args
+			}
 		}
 	}
 	executions, err := s.handler.Store.CapabilityExecutionsForJob(ctx, jobID)
@@ -66,7 +77,7 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 		}
 		// A saved mutation can be returned under a new model call ID without
 		// executing again. Preserve its existing receipt and confirmation.
-		if input.Name == campusCallToolName && execution.Effect != "read" && execution.Capability == capability && len(execution.Arguments) == 1 && execution.Arguments[0] == arguments {
+		if execution.Effect != "read" && execution.Capability == capability && slices.Equal(execution.Arguments, arguments) {
 			return nil
 		}
 	}
@@ -82,7 +93,7 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 	execution, created, err := s.handler.Store.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{
 		Identity: identity, JobID: jobID, LeaseToken: lease,
 		DedupeKey:  dedupeKey,
-		ToolCallID: callID, Capability: capability, Arguments: []string{arguments}, Effect: "read",
+		ToolCallID: callID, Capability: capability, Arguments: arguments, Effect: "read",
 	})
 	if err != nil || (!created && capabilityExecutionTerminal(execution.State)) {
 		return err
