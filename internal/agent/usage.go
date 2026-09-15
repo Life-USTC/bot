@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -72,12 +73,18 @@ type usageCaptureTransport struct {
 }
 
 func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	started := time.Now()
 	resp, err := t.base.RoundTrip(req)
+	if isChatCompletionRequest(req) {
+		recordRunStage(req.Context(), "model_response_headers", time.Since(started))
+	}
 	if err != nil || resp == nil || resp.Body == nil || !isChatCompletionRequest(req) || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return resp, err
 	}
+	bodyStarted := time.Now()
 	body, readErr := io.ReadAll(resp.Body)
 	closeErr := resp.Body.Close()
+	recordRunStage(req.Context(), "model_response_body", time.Since(bodyStarted))
 	if readErr != nil {
 		return nil, readErr
 	}
