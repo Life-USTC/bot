@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -128,7 +127,7 @@ func TestAgentCapabilityPersistenceFailureMarksRunRetryable(t *testing.T) {
 	}
 
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
 		if _, err := breaker.ExecContext(ctx, "DROP TABLE capability_executions"); err != nil {
 			t.Errorf("break capability persistence: %v", err)
@@ -190,7 +189,7 @@ func TestGroupAgentOnlyAdvertisesPublicCapabilities(t *testing.T) {
 }
 
 func TestAgentHandlesRouterActivatedGroupRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-group",
 			"object":"chat.completion",
@@ -219,7 +218,7 @@ func TestAgentHandlesRouterActivatedGroupRequest(t *testing.T) {
 
 func TestGroupPersonalDataRequestIsRefusedWithoutCallingModel(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -246,7 +245,7 @@ func TestGroupPersonalDataRequestIsRefusedWithoutCallingModel(t *testing.T) {
 
 func TestEmptyFinalAnswerDoesNotSubstituteToolResult(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		switch request {
@@ -293,7 +292,7 @@ func TestEmptyFinalAnswerDoesNotSubstituteToolResult(t *testing.T) {
 
 func TestToolFailureDoesNotReplaceModelAnswer(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		switch request {
@@ -353,7 +352,7 @@ func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("enqueue job: created=%v err=%v", created, err)
 	}
-	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	lifeServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/catalog/semesters/current":
@@ -369,7 +368,7 @@ func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 	}))
 	t.Cleanup(lifeServer.Close)
 	var requests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		switch request {
@@ -435,7 +434,7 @@ func TestModelAnswerWithoutToolsIsPersistedWithoutSemanticRetry(t *testing.T) {
 		t.Fatalf("claim=%#v err=%v", claimed, err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -484,7 +483,7 @@ func TestAgentIgnoresBlankMessages(t *testing.T) {
 func TestNewNormalizesModelCredentials(t *testing.T) {
 	var gotAuth string
 	var gotPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotPath = r.URL.Path
 		_, _ = w.Write([]byte(`{
@@ -522,7 +521,7 @@ func TestNewNormalizesModelCredentials(t *testing.T) {
 }
 
 func TestNewAgentClientDoesNotInheritSharedHTTPTimeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-test",
@@ -559,7 +558,7 @@ func TestNewAgentClientDoesNotInheritSharedHTTPTimeout(t *testing.T) {
 
 func TestNewRetriesTransientChatCompletionTransportError(t *testing.T) {
 	var attempts atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -827,7 +826,7 @@ func TestSecondClassroomRequestCanUseSupplementaryLiteralMCPResult(t *testing.T)
 
 	var modelRequests atomic.Int32
 	var requestBodies [][]byte
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
 			t.Errorf("read model request: %v", readErr)
@@ -963,7 +962,7 @@ func TestToolsForKeepsHostCapabilitiesWhenMCPResourceIsNotApproved(t *testing.T)
 	defer func() { _ = db.Close() }()
 
 	var serverURL string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/oauth-authorization-server":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1131,7 +1130,7 @@ func newAgentMCPTestServer(t *testing.T) (string, *http.Client, func(), map[stri
 		})
 	}
 	handler := mcpserver.NewStreamableHTTPServer(mcpServer)
-	server := httptest.NewServer(handler)
+	server := newAgentTestServer(handler)
 	return server.URL, server.Client(), server.Close, calls
 }
 
@@ -1288,7 +1287,7 @@ func recoverableMCPToolError(t *testing.T) error {
 	mcpServer.AddTool(mcpgo.NewTool("search_courses"), func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		return mcpgo.NewToolResultError("semesterJwId must be greater than 0"), nil
 	})
-	server := httptest.NewServer(mcpserver.NewStreamableHTTPServer(mcpServer))
+	server := newAgentTestServer(mcpserver.NewStreamableHTTPServer(mcpServer))
 	t.Cleanup(server.Close)
 	session, err := botmcp.New(server.URL, server.Client()).OpenSession(context.Background(), "token")
 	if err != nil {
@@ -1362,7 +1361,7 @@ func TestInstructionKeepsStableTemporalGuidance(t *testing.T) {
 func TestHostCapabilityToolReturnsPrivateCalendarURLInPrivateModelContext(t *testing.T) {
 	ctx := context.Background()
 	calendarURL := "https://life.example/api/calendar-feeds/user-1:private-token.ics"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/workspace/subscriptions/current" {
 			t.Fatalf("unexpected request path %q", r.URL.Path)
 		}
@@ -1611,7 +1610,7 @@ func TestHandleResponseUsesTypedTranscriptWithoutSummaryRequest(t *testing.T) {
 		}
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -1664,7 +1663,7 @@ func TestHandleResponseDropsOrphanedToolCallBeforeNewConversationTurn(t *testing
 		}
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -1702,13 +1701,13 @@ func TestHandleResponseRejectsHardLimitImageBeforeModelCall(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	ident := store.Identity{Platform: "napcat", UserID: "admin", ConversationType: "private", ConversationID: "admin"}
-	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	imageServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(maxImageDownloadBytes+1, 10))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer imageServer.Close()
 	var modelRequests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		modelRequests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -1739,7 +1738,7 @@ func TestHandleResponseAllowsMoreThan32ModelIterations(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if request > 40 {
@@ -1829,13 +1828,13 @@ func TestHandleResponseDoesNotStartLoginForAgentRead(t *testing.T) {
 			"verification_uri": authServerURL + "/verify", "expires_in": 300, "interval": 5,
 		})
 	})
-	authServer := httptest.NewServer(authMux)
+	authServer := newAgentTestServer(authMux)
 	defer authServer.Close()
 	authServerURL = authServer.URL
 	manager := &auth.Manager{Server: authServer.URL, HTTPClient: authServer.Client(), Store: db}
 
 	var modelRequests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := modelRequests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
@@ -1903,7 +1902,7 @@ func TestRunExecutesAgentReadWithoutConfirmation(t *testing.T) {
 	}
 
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if request == 1 {
@@ -1955,7 +1954,7 @@ func TestApprovedAgentLoginStartsOnlyAfterConfirmation(t *testing.T) {
 
 	var authServerURL string
 	var deviceRequests atomic.Int32
-	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/oauth-authorization-server":
@@ -2047,7 +2046,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	}
 
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Error(err)
@@ -2192,7 +2191,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 	}
 
 	var removeCalls atomic.Int32
-	lifeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	lifeServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/semesters/current":
@@ -2237,7 +2236,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 	authManager := &auth.Manager{Server: lifeServer.URL, HTTPClient: lifeServer.Client(), Store: db}
 
 	var modelRequests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := modelRequests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -2384,7 +2383,7 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 	}
 
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -2506,7 +2505,7 @@ func TestRunExecutesParallelOrdinaryWritesWithoutConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -2591,7 +2590,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -2684,7 +2683,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		request := requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")

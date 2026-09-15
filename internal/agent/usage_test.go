@@ -22,7 +22,7 @@ import (
 
 func TestKimiMultimodalRunIsAvailableToEveryUserAndRecordsSpending(t *testing.T) {
 	var requestBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatal(err)
 		}
@@ -165,7 +165,7 @@ func TestUsageCapturePersistsObservedUsageAfterDurableAttemptRecording(t *testin
 
 func TestLoadImageDataURLDownloadsAndEncodesSupportedImage(t *testing.T) {
 	fixture := testPNGBytes(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(fixture)
 	}))
@@ -189,7 +189,7 @@ func TestLoadImageDataURLCompressesPayloadOverTenMiB(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := append(source.Bytes(), make([]byte, maxImageBytes-source.Len()+1)...)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(payload)
 	}))

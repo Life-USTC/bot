@@ -1659,7 +1659,7 @@ func enqueueWithDB(db *gorm.DB, outbound message.Outbound, now time.Time) (deliv
 	if strings.TrimSpace(outbound.Target.Platform) == "" || strings.TrimSpace(outbound.Target.Type) == "" || strings.TrimSpace(outbound.Target.ID) == "" {
 		return delivery.Record{}, false, errors.New("outgoing message target is incomplete")
 	}
-	if strings.TrimSpace(outbound.Content.Text) == "" && outbound.Content.Attachment == nil {
+	if !outbound.Content.HasContent() {
 		return delivery.Record{}, false, errors.New("outgoing message content is empty")
 	}
 	payload, err := json.Marshal(outbound)
@@ -1871,12 +1871,19 @@ func payloadWithoutAttachmentData(payloadJSON string) (string, bool, error) {
 	if err := json.Unmarshal([]byte(payloadJSON), &outbound); err != nil {
 		return "", false, err
 	}
-	if outbound.Content.Attachment == nil || len(outbound.Content.Attachment.Data) == 0 {
+	changed := false
+	for index, part := range outbound.Content.Parts {
+		if part.Attachment == nil || len(part.Attachment.Data) == 0 {
+			continue
+		}
+		attachment := *part.Attachment
+		attachment.Data = nil
+		outbound.Content.Parts[index].Attachment = &attachment
+		changed = true
+	}
+	if !changed {
 		return "", false, nil
 	}
-	attachment := *outbound.Content.Attachment
-	attachment.Data = nil
-	outbound.Content.Attachment = &attachment
 	encoded, err := json.Marshal(outbound)
 	if err != nil {
 		return "", false, err

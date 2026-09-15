@@ -180,7 +180,7 @@ func TestRichMediaRetryHonorsCancellation(t *testing.T) {
 func TestDeliveryAdapterRejectsRichMediaForChannel(t *testing.T) {
 	outcome := NewDeliveryAdapter(&Bot{BotToken: "token"}).Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "channel", ID: "channel-1"},
-		Content: message.Content{Attachment: &message.Attachment{MIMEType: "image/png", Data: testPNG(t)}},
+		Content: message.Content{Parts: []message.ContentPart{{Attachment: &message.Attachment{MIMEType: "image/png", Data: testPNG(t)}}}},
 	})
 	if outcome.Code != "invalid_attachment" {
 		t.Fatalf("outcome = %#v", outcome)

@@ -57,6 +57,34 @@ Confirmation replies are control input when a concrete operation is waiting.
 They update that operation and requeue the original job. They are not new LLM
 user turns, and the model cannot approve an operation by writing a flag.
 
+## Media input
+
+Inbound envelopes retain ordered media references and nested forwarded messages.
+NapCat expands forwarding references and resolves file IDs on the event worker,
+not the websocket reader. QQ reads recursive `msg_elements` and preserves its
+nested attachments/authors without copying scene authentication tokens. Original outer text/mentions control routing; text or
+mentions inside a forward cannot activate a group command. Forwarded speaker IDs
+and original times travel with each nested node. Attachment-only private inputs
+activate the agent; ambient group attachments remain ignored.
+
+The model input layer downloads images/stickers through the existing vision
+normalizer. Files use Kimi's `/files` upload (`purpose=file-extract`), content
+retrieval and temporary-file deletion, using the configured premium Kimi key.
+The complete extracted response is user material, including when the endpoint
+returns JSON. It never becomes a system instruction or command invocation.
+Prepared user events are persisted before model invocation; recovery looks up the
+same actor/job event and reuses its text/images without another upload. Raw Inbox
+input and delivery records remain separate from this transcript.
+
+Downloads retain the existing 25 MiB per-file media bound. Platform-provided voice
+transcripts are labelled as potentially imperfect ASR, not original-audio analysis.
+Unsupported audio/video,
+missing URLs, expired files and extraction failures receive explicit context
+annotations. GIF vision is static-image processing, not full animation analysis.
+Nested forwards have a structural recursion guard; ordinary history and media
+lists are not repeatedly trimmed. Source requests carry no Kimi credential;
+credential-bearing API requests cannot redirect to another origin.
+
 ## Model conversation
 
 The model context consists of a persisted historical summary, when one exists,
@@ -88,7 +116,7 @@ embedding the user's entire subscription list; that list is queried separately.
 
 | Origin | Model representation |
 | --- | --- |
-| Accepted user input | User event with actor, original time and supported image parts |
+| Accepted user input | User event with actor, original time, forwarded speakers, extracted file text and supported image parts |
 | Model answer or tool call | Assistant event preserving text, tool name, arguments and call ID |
 | Tool success, error or denial | Tool event containing the shared JSON result |
 | Direct command | Real user event and an assistant event marked as command-origin JSON; no invented tool call |
@@ -225,6 +253,13 @@ platform receipts and delivery state. Final job state, pending outputs and
 operation receipt state are committed atomically. A delivery retry only sends
 that output; it cannot repeat a capability or an LLM turn.
 
+Output content is an ordered list of text/image parts. Nested command response
+parts, leading text and the final operation receipt are coalesced. NapCat sends
+one multi-segment message; QQ's current rich-media adapter groups text with each
+image and persists each required send separately. Every resulting message has
+its own sequence, dedupe key and acceptance state. Dangerous confirmations remain
+separate from each other. Stored image metadata survives terminal byte pruning.
+
 Agent replies end with host-generated invocation receipts for Bot commands and
 MCP queries/executions. Bot invocations use `#校车 ...`; MCP invocations use the
 actual tool name and arguments, such as `<update_todo({...})>`, followed by the
@@ -254,12 +289,13 @@ or that earlier business operations were rolled back.
 Execution identity and dangerous-operation confirmations remain enforced;
 removing runtime quotas does not authorize duplicate side effects.
 
-Model generation currently uses complete JSON responses, not streaming. The
-usage transport and durable final-output path consume complete messages.
-Completion logs separate model header/body waits and history compaction from
-other stages; header/body waits are nested within model request time and must
-not be added again. Provider SSE support alone does not enable incremental
-delivery. Measurements and requirements for that change are documented in
+Model generation uses SSE with incremental transport consumption and final
+provider usage capture. Complete assistant messages and tool arguments are
+assembled before persistence/execution; a truncated stream fails explicitly.
+Completion logs separate first assistant text, model headers/body and history
+compaction. These nested durations must not be added to model request time.
+QQ/NapCat delivery remains a complete durable response, not token-by-token
+posting. The C2C-only native streaming endpoint is documented separately in
 [the latency investigation](docs/agent-latency.md).
 
 ## Verification and deployment

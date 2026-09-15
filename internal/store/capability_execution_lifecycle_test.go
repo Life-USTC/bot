@@ -17,7 +17,7 @@ func commitTestConfirmationReceipt(t *testing.T, s *Store, ctx context.Context, 
 		Messages: []message.Outbound{{
 			Kind:    "confirmation",
 			Target:  message.Conversation{Platform: job.Identity.Platform, Type: job.Identity.ConversationType, ID: job.Identity.ConversationID},
-			Content: message.Content{Text: "请确认 #待确认操作{" + executionID + "}"}, DedupeKey: dedupeKey,
+			Content: message.Content{Parts: []message.ContentPart{{Text: "请确认 #待确认操作{" + executionID + "}"}}}, DedupeKey: dedupeKey,
 		}},
 		ReceiptIDs: []string{executionID},
 		Transition: ConversationJobTransition{State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation},

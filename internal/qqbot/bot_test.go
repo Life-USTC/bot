@@ -645,6 +645,63 @@ func TestMessageFromPayloadExtractsImageAttachments(t *testing.T) {
 	}
 }
 
+func TestMessageFromPayloadPreservesAttachmentKindsAndReferences(t *testing.T) {
+	bot := &Bot{}
+	incoming, err := bot.messageFromPayload(gatewayPayload{
+		ID: "event-id",
+		T:  "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"id":"message-id",
+			"author":{"user_openid":"user-openid"},
+			"content":"",
+			"attachments":[
+				{"type":"sticker","content_type":"image/gif","filename":"meme.gif","url":"https://cdn.example/meme.gif","id":"sticker-1"},
+				{"content_type":"application/pdf","filename":"report.pdf","url":"https://cdn.example/report.pdf","size":1234,"id":"file-1"},
+				{"content_type":"audio/ogg","filename":"voice.ogg","url":"https://cdn.example/voice.ogg"}
+			]
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if incoming.Text != "" || len(incoming.Parts) != 3 || len(incoming.Media) != 3 {
+		t.Fatalf("attachment-only input = text=%q parts=%#v media=%#v", incoming.Text, incoming.Parts, incoming.Media)
+	}
+	if incoming.Media[0].Kind != message.InputMediaSticker || incoming.Media[0].URL != "https://cdn.example/meme.gif" {
+		t.Fatalf("sticker = %#v", incoming.Media[0])
+	}
+	if incoming.Media[1].Kind != message.InputMediaFile || incoming.Media[1].Name != "report.pdf" || incoming.Media[1].Size != 1234 {
+		t.Fatalf("file = %#v", incoming.Media[1])
+	}
+	if incoming.Media[2].Kind != message.InputMediaAudio {
+		t.Fatalf("audio = %#v", incoming.Media[2])
+	}
+	if len(incoming.ImageURLs) != 1 || incoming.ImageURLs[0] != "https://cdn.example/meme.gif" {
+		t.Fatalf("image URLs = %#v", incoming.ImageURLs)
+	}
+	inbound := incoming.inbound()
+	if len(inbound.Media) != 3 || len(inbound.Parts) != 3 {
+		t.Fatalf("inbound attachments = media=%#v parts=%#v", inbound.Media, inbound.Parts)
+	}
+}
+
+func TestMessageFromPayloadRetainsUnknownAttachmentForAnnotation(t *testing.T) {
+	bot := &Bot{}
+	incoming, err := bot.messageFromPayload(gatewayPayload{
+		T: "C2C_MESSAGE_CREATE",
+		D: json.RawMessage(`{
+			"author":{"user_openid":"user-openid"},
+			"attachments":[{"type":"custom_attachment","id":"opaque-1"}]
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incoming.Media) != 1 || incoming.Media[0].Kind != message.InputMediaUnknown || incoming.Media[0].FileID != "opaque-1" {
+		t.Fatalf("unknown attachment = %#v", incoming.Media)
+	}
+}
+
 func TestMessageFromPayloadNormalizesChannelIdentityAndMention(t *testing.T) {
 	bot := &Bot{BotID: "bot-id"}
 	message, err := bot.messageFromPayload(gatewayPayload{

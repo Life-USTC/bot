@@ -305,14 +305,12 @@ func appendReceiptLines(response commands.Response, prefix string, receipts exec
 func combineResponses(responses ...commands.Response) commands.Response {
 	parts := make([]commands.Response, 0, len(responses))
 	for _, response := range responses {
-		if len(response.Parts) > 0 {
-			parts = append(parts, response.Parts...)
-			continue
+		for _, item := range flattenResponseParts(response) {
+			if strings.TrimSpace(item.Text) == "" && item.Image == nil {
+				continue
+			}
+			parts = append(parts, item)
 		}
-		if strings.TrimSpace(response.Text) == "" && response.Image == nil {
-			continue
-		}
-		parts = append(parts, response)
 	}
 	if len(parts) == 0 {
 		return commands.Response{}

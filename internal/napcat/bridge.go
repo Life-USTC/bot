@@ -128,7 +128,13 @@ type messageEvent struct {
 	} `json:"sender"`
 
 	// Images extracted from 合并转发 payloads (not present on the top-level message).
-	forwardImageURLs   []string
+	forwardImageURLs []string
+	// Structured input extracted from 合并转发 payloads. The raw event remains
+	// available for routing, while the typed tree preserves source speakers,
+	// times, media and nested forwards for the agent/history layer.
+	forwardedMessages  []message.ForwardedMessage
+	resolvedMedia      []message.InputMedia
+	sourceText         *string
 	reverseTransportID string
 	receivedAt         time.Time
 }
@@ -372,9 +378,51 @@ func (e messageEvent) identity() store.Identity {
 
 func (e messageEvent) inbound() message.Inbound {
 	ident := e.identity()
+	rawText := e.RawMessage
+	mentionText := rawText
+	if e.sourceText != nil {
+		mentionText = *e.sourceText
+		if len(e.forwardedMessages) > 0 {
+			rawText = *e.sourceText
+		}
+	}
 	var replyTo *message.ReplyRef
 	if messageID := napcatReplyMessageID(e.Message, e.RawMessage); messageID != "" {
 		replyTo = &message.ReplyRef{MessageID: messageID}
+	}
+	parts := inputPartsFromNapCatMessage(e.Message)
+	mentioned := messageMentionsBot(mentionText, e.SelfID)
+	if segments := messageSegments(e.Message); len(segments) > 0 {
+		mentioned = false
+		var outerText []string
+		for _, raw := range segments {
+			segment, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			data, _ := segment["data"].(map[string]any)
+			if segment["type"] == "at" && e.SelfID > 0 && stringField(data, "qq") == fmt.Sprint(e.SelfID) {
+				mentioned = true
+			}
+			if segment["type"] == "text" {
+				outerText = append(outerText, stringField(data, "text"))
+			}
+		}
+		if len(e.forwardedMessages) > 0 {
+			rawText = strings.Join(outerText, "")
+		}
+	}
+	media := inputMediaFromNapCatMessage(e.Message)
+	if len(parts) == 0 {
+		parts = inputPartsFromCQMessage(e.RawMessage)
+	}
+	media = append(media, inputMediaFromCQMessage(e.RawMessage)...)
+	for _, forwarded := range e.forwardedMessages {
+		media = append(media, inputMediaFromForwardedMessage(forwarded)...)
+	}
+	media = dedupeInputMedia(media)
+	if e.resolvedMedia != nil {
+		media = e.resolvedMedia
 	}
 	return message.Inbound{
 		Actor:        message.Actor{Platform: ident.Platform, UserID: ident.UserID, DisplayName: e.displayName()},
@@ -382,8 +430,9 @@ func (e messageEvent) inbound() message.Inbound {
 		Source:       message.ReplyRef{MessageID: napcatEventMessageID(e.MessageID), EventID: e.sourceEventID(), TransportID: e.reverseTransportID},
 		ReplyTo:      replyTo,
 		SentAt:       napcatEventTime(e.Time), ReceivedAt: e.receivedTimestamp(),
-		Text: cleanNapCatMessageText(e.RawMessage), ImageURLs: e.imageURLs(),
-		BotMentioned: messageMentionsBot(e.RawMessage, e.SelfID),
+		Text: cleanNapCatMessageText(rawText), ImageURLs: e.imageURLs(),
+		Parts: parts, Media: media, Forwarded: append([]message.ForwardedMessage(nil), e.forwardedMessages...),
+		BotMentioned: mentioned,
 	}
 }
 
@@ -534,14 +583,17 @@ func dedupeImageURLs(urls []string) []string {
 	return out
 }
 
-func imageURLsFromCQMessage(message string) []string {
+func imageURLsFromCQMessage(raw string) []string {
 	var urls []string
-	for _, candidate := range cqAttrValues(message, "[CQ:image,", "url=", "file=") {
-		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
-			urls = append(urls, candidate)
+	for _, media := range inputMediaFromCQMessage(raw) {
+		if media.Kind != message.InputMediaImage && media.Kind != message.InputMediaSticker {
+			continue
+		}
+		if isInputMediaURL(media.URL) {
+			urls = append(urls, media.URL)
 		}
 	}
-	return urls
+	return dedupeImageURLs(urls)
 }
 
 func cqAttrValues(message, prefix string, keys ...string) []string {

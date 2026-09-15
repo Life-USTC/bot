@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -49,7 +48,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 					return mcpgo.NewToolResultText(`{"updated":"saved-value"}`), nil
 				})
 			mcpHandler := mcpserver.NewStreamableHTTPServer(mcpServer)
-			mcpHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mcpHTTP := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				r.Body = io.NopCloser(bytes.NewReader(body))
 				var request struct {
@@ -66,7 +65,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 			}))
 			defer mcpHTTP.Close()
 			var modelCalls atomic.Int32
-			modelHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			modelHTTP := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")
 				switch modelCalls.Add(1) {

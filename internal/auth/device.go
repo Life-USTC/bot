@@ -339,7 +339,7 @@ func (m *Manager) finishLogin(
 				Type:     ident.ConversationType,
 				ID:       ident.ConversationID,
 			},
-			Content: message.Content{Text: resultMessage},
+			Content: message.Content{Parts: []message.ContentPart{{Text: resultMessage}}},
 			DedupeKey: fmt.Sprintf(
 				"login:%s:%s:%s:%x:%s",
 				strings.ToLower(strings.TrimSpace(ident.Platform)),

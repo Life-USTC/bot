@@ -39,8 +39,8 @@ func TestUserFeedbackUsesDurableAdminDeliveryPath(t *testing.T) {
 	if len(due) != 1 {
 		t.Fatalf("outgoing messages = %#v", due)
 	}
-	if !strings.Contains(due[0].Message.Content.Text, "用户反馈") || strings.Contains(due[0].Message.Content.Text, "LLM") {
-		t.Fatalf("message = %q", due[0].Message.Content.Text)
+	if !strings.Contains(due[0].Message.Content.TextContent(), "用户反馈") || strings.Contains(due[0].Message.Content.TextContent(), "LLM") {
+		t.Fatalf("message = %q", due[0].Message.Content.TextContent())
 	}
 }
 

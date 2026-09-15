@@ -47,14 +47,15 @@ type Config struct {
 }
 
 type Service struct {
-	handler      commands.Handler
-	model        *einoopenai.ChatModel
-	modelName    string
-	premiumModel *einoopenai.ChatModel
-	premiumName  string
-	enabled      bool
-	logger       *log.Logger
-	httpClient   *http.Client
+	handler          commands.Handler
+	model            *einoopenai.ChatModel
+	modelName        string
+	premiumModel     *einoopenai.ChatModel
+	premiumName      string
+	enabled          bool
+	logger           *log.Logger
+	httpClient       *http.Client
+	attachmentParser *AttachmentParser
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
@@ -67,6 +68,8 @@ type Input struct {
 	ReplyContext     *message.QuotedMessage
 	Text             string
 	ImageURLs        []string
+	Media            []message.InputMedia
+	Forwarded        []message.ForwardedMessage
 	Identity         store.Identity
 	JobID            int64
 	// JobRevision and JobLeaseToken are the exact claim held by the
@@ -79,6 +82,8 @@ type Input struct {
 	// from plain model text (for example, an image).
 	SendResponse func(context.Context, store.Identity, commands.Response) error
 
+	attachmentContext  string
+	preparedUserEvent  *store.ConversationEvent
 	imageDataURLs      []string
 	skippedImages      int
 	skippedImageErrors []string
@@ -162,6 +167,12 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		service.premiumModel = premiumModel
 		service.premiumName = premiumName
 	}
+	if IsCompatibleKimiBaseURL(cfg.PremiumBaseURL) && strings.TrimSpace(cfg.PremiumAPIKey) != "" {
+		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: cfg.PremiumAPIKey, BaseURL: cfg.PremiumBaseURL, HTTPClient: httpClient, Logger: cfg.Logger})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return service, nil
 }
 
@@ -209,10 +220,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		ctx = store.WithConversationJobLease(ctx, input.JobID, input.JobLeaseToken)
 	}
 	inputText := strings.TrimSpace(input.Text)
-	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) {
+	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0 && len(input.Media) == 0 && len(input.Forwarded) == 0) {
 		return commands.Response{}, false
 	}
 	parentCtx := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	metrics := newRunMetrics()
 	ctx = withRunMetrics(ctx, metrics)
 	model, provider, modelName := s.modelFor()
@@ -299,6 +312,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if err := observeRunStage(ctx, "input_images", func() error {
+		if err := s.prepareInputAttachments(ctx, &input); err != nil {
+			return err
+		}
+		if input.preparedUserEvent != nil {
+			return nil
+		}
 		return s.prepareInputImages(ctx, &input)
 	}); err != nil {
 		err = normalizeAgentRunError(ctx, err)
@@ -439,7 +458,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			checkpointStore = bound
 		}
 	}
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore})
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore, EnableStreaming: true})
 	resume := false
 	if checkpointStore != nil {
 		_, resume, err = checkpointStore.Get(ctx, checkpointID)
@@ -533,7 +552,17 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return commands.Response{}, true
 		}
 		msg, _, err := adk.GetMessage(event)
-		if err != nil || msg == nil {
+		if err != nil {
+			err = normalizeAgentRunError(ctx, err)
+			if errors.Is(err, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", err)
+				return commands.Response{}, false
+			}
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
+		if msg == nil {
 			continue
 		}
 		content := strings.TrimSpace(msg.Content)
@@ -704,6 +733,9 @@ func inputOccurredAt(input Input) time.Time {
 }
 
 func currentUserEvent(input Input) store.ConversationEvent {
+	if input.preparedUserEvent != nil {
+		return *input.preparedUserEvent
+	}
 	return store.ConversationEvent{
 		Identity: input.Identity, ActorDisplayName: input.ActorDisplayName, Source: "agent", OccurredAt: inputOccurredAt(input),
 		JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
@@ -720,7 +752,7 @@ func agentCheckpointID(jobID int64) string {
 }
 
 func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) error {
-	if s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
+	if input.preparedUserEvent != nil || s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
 		return nil
 	}
 	_, _, err := s.handler.Store.AppendConversationEvent(ctx, currentUserEvent(input))
@@ -729,6 +761,9 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 
 func currentUserMessageParts(input Input) []store.ConversationMessagePart {
 	text := strings.TrimSpace(input.Text)
+	if input.attachmentContext != "" {
+		text = strings.TrimSpace(text + "\n\n" + input.attachmentContext)
+	}
 	if text == "" && len(input.ImageURLs) > 0 {
 		text = "请描述并分析这张图片。"
 	}
@@ -1013,7 +1048,8 @@ func (s *Service) toolsFor(
 		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
-		return toolresult.Encode("host", "get_current_time", "succeeded", time.Now(), map[string]any{"time": time.Now().In(shanghaiLocation), "timezone": "Asia/Shanghai"}, nil), nil
+		now := time.Now()
+		return toolresult.Encode("host", "get_current_time", "succeeded", now, map[string]any{"time": now.In(shanghaiLocation), "timezone": "Asia/Shanghai"}, nil), nil
 	})
 	if err != nil {
 		if mcpSession != nil {
@@ -1092,10 +1128,10 @@ func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Iden
 	if err != nil {
 		failureClass = agentFailureClass(err)
 	}
-	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d stage_model_response_headers_ms=%d stage_model_response_body_ms=%d stage_history_compaction_ms=%d",
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d stage_model_response_headers_ms=%d stage_model_response_body_ms=%d stage_history_compaction_ms=%d stage_model_first_text_ms=%d",
 		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
 		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds(), failureClass,
-		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"], metrics.stageMilliseconds["model_response_headers"], metrics.stageMilliseconds["model_response_body"], metrics.stageMilliseconds["history_compaction"])
+		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"], metrics.stageMilliseconds["model_response_headers"], metrics.stageMilliseconds["model_response_body"], metrics.stageMilliseconds["history_compaction"], metrics.stageMilliseconds["model_first_text"])
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -64,7 +63,7 @@ func TestCapabilityInventoryIsHostGeneratedFromActualRegistries(t *testing.T) {
 	mcpURL, mcpHTTPClient, closeMCP, _ := newAgentMCPTestServer(t)
 	t.Cleanup(closeMCP)
 	var modelRequests atomic.Int32
-	modelServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	modelServer := newAgentTestServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		modelRequests.Add(1)
 	}))
 	t.Cleanup(modelServer.Close)

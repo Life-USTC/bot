@@ -120,10 +120,10 @@ func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing
 		t.Fatalf("direct command executed %d times, want once", handler.calls)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 2 {
+	if err != nil || len(records) != 1 {
 		t.Fatalf("recovered response parts outbox=%#v err=%v", records, err)
 	}
-	if records[0].Message.Content.Text != "第一段" || records[1].Message.Content.Attachment == nil || records[1].Message.Content.Attachment.URL != partImage.URL {
+	if len(records[0].Message.Content.Parts) != 4 || records[0].Message.Content.TextContent() != "主结果\n\n第一段" || records[0].Message.Content.Parts[1].Attachment.URL != image.URL || records[0].Message.Content.Parts[3].Attachment.URL != partImage.URL {
 		t.Fatalf("recovered response parts=%#v", records)
 	}
 }
@@ -179,11 +179,10 @@ func TestDirectMutationBatchRecoversEveryResponseWithoutReexecution(t *testing.T
 		t.Fatalf("batch job after recovery=%#v err=%v", saved, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 3 {
+	if err != nil || len(records) != 1 {
 		t.Fatalf("batch recovered outputs=%#v err=%v", records, err)
 	}
-	if records[0].Message.Content.Attachment == nil || records[0].Message.Content.Attachment.URL != firstImage.URL ||
-		records[1].Message.Content.Text != "第二项完成" || records[2].Message.Content.Attachment == nil || records[2].Message.Content.Attachment.URL != secondImage.URL {
+	if len(records[0].Message.Content.Parts) != 4 || records[0].Message.Content.TextContent() != "第一项完成\n\n第二项完成" || records[0].Message.Content.Parts[1].Attachment.URL != firstImage.URL || records[0].Message.Content.Parts[3].Attachment.URL != secondImage.URL {
 		t.Fatalf("batch recovered response order=%#v", records)
 	}
 }
@@ -215,7 +214,7 @@ func TestDirectMutationBatchAuthWaitDoesNotRepeatCompletedResponse(t *testing.T)
 		t.Fatalf("batch auth wait executions=%#v err=%v", executions, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 2 || records[0].Message.Content.Text != "第一项已完成" || records[1].Message.Content.Text != "请先登录" {
+	if err != nil || len(records) != 1 || records[0].Message.Content.TextContent() != "第一项已完成\n\n请先登录" {
 		t.Fatalf("batch auth wait output=%#v err=%v", records, err)
 	}
 
@@ -230,7 +229,7 @@ func TestDirectMutationBatchAuthWaitDoesNotRepeatCompletedResponse(t *testing.T)
 		t.Fatalf("batch auth completed job=%#v err=%v", saved, err)
 	}
 	records, err = db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "第二项已完成" || strings.Contains(records[0].Message.Content.Text, "第一项已完成") {
+	if err != nil || len(records) != 1 || records[0].Message.Content.TextContent() != "第二项已完成" || strings.Contains(records[0].Message.Content.TextContent(), "第一项已完成") {
 		t.Fatalf("batch auth resumed output=%#v err=%v", records, err)
 	}
 }
@@ -254,7 +253,7 @@ func TestDeniedDirectCommandPersistsCommandResultWithoutConfirmationEvent(t *tes
 	job := claimOnlyConversationJob(t, db)
 	coordinator.execute(ctx, job)
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, confirmationPrompt) {
+	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.TextContent(), confirmationPrompt) {
 		t.Fatalf("confirmation output=%#v err=%v", records, err)
 	}
 	acceptCoordinatorOutputs(t, db, records)

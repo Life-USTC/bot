@@ -54,7 +54,7 @@ func decideDirect(inbound message.Inbound) Decision {
 	if parsed.Recognized() {
 		return Decision{Action: ActionCommand, Activation: ActivationDirect, Invocation: parsed.Invocation}
 	}
-	if strings.TrimSpace(inbound.Text) == "" && len(inbound.ImageURLs) == 0 {
+	if strings.TrimSpace(inbound.Text) == "" && len(inbound.ImageURLs) == 0 && len(inbound.Media) == 0 && len(inbound.Forwarded) == 0 {
 		return Decision{Action: ActionIgnore}
 	}
 	return Decision{Action: ActionAgent, Activation: ActivationDirect}

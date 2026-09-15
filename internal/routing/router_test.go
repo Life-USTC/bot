@@ -141,3 +141,18 @@ func TestRemovedLifePrefixNeverFallsThroughToAgentOrNaturalRoutes(t *testing.T) 
 		}
 	}
 }
+
+func TestMediaOnlyMessagesRespectConversationActivation(t *testing.T) {
+	inbound := message.Inbound{Conversation: message.Conversation{Type: "private"}, Media: []message.InputMedia{{Kind: message.InputMediaFile, Name: "report.pdf"}}}
+	if got := Decide(inbound, nil); got.Action != ActionAgent {
+		t.Fatalf("private file decision=%#v", got)
+	}
+	inbound.Conversation.Type = "group"
+	if got := Decide(inbound, nil); got.Action != ActionIgnore {
+		t.Fatalf("ambient group file activated agent=%#v", got)
+	}
+	inbound.BotMentioned = true
+	if got := Decide(inbound, nil); got.Action != ActionAgent {
+		t.Fatalf("addressed group file decision=%#v", got)
+	}
+}

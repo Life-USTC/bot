@@ -32,7 +32,7 @@ func TestConversationJobOutputCommitRequiresLiveLeaseAndTerminalOperations(t *te
 			JobID: job.ID, LeaseToken: claimed.LeaseToken,
 			Messages: []message.Outbound{{
 				Kind: "agent", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
-				Content: message.Content{Text: "premature"}, DedupeKey: "output-terminal-final",
+				Content: message.Content{Parts: []message.ContentPart{{Text: "premature"}}}, DedupeKey: "output-terminal-final",
 			}},
 			Transition: ConversationJobTransition{State: ConversationJobStateCompleted},
 		})
@@ -360,7 +360,7 @@ func TestConversationJobOutputCommitMakesConfirmationVisibleAtomically(t *testin
 	}
 	outbound := message.Outbound{
 		Kind: "confirmation", Target: message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
-		Content: message.Content{Text: "请确认\n#待确认订阅课程{数学分析（程艺，2026年秋季学期）}"}, DedupeKey: "atomic-confirmation-output",
+		Content: message.Content{Parts: []message.ContentPart{{Text: "请确认\n#待确认订阅课程{数学分析（程艺，2026年秋季学期）}"}}}, DedupeKey: "atomic-confirmation-output",
 	}
 	outputs, err := s.CommitConversationJobOutput(ctx, ConversationJobOutputCommit{
 		JobID: job.ID, LeaseToken: claimed.LeaseToken, Messages: []message.Outbound{outbound}, ReceiptIDs: []string{execution.ID},
