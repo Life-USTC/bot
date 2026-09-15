@@ -1,17 +1,25 @@
 # Agent latency investigation (2026-09-15)
 
-The Bot currently uses non-streaming model generation. Eino's `RunnerConfig`
-leaves `EnableStreaming` false, `adk.GetMessage` consumes a complete message,
-and the usage transport buffers the complete JSON body before passing it to the
-model adapter. Streaming tool middleware is not evidence of model streaming.
-The coordinator commits complete responses through the durable Outbox.
+The Bot enables Eino model streaming (`RunnerConfig.EnableStreaming`). The
+transport passes SSE bytes incrementally to the model SDK and observes the final
+usage event, including provider cache fields. `adk.GetMessage` assembles each
+complete message before its tool arguments are executed or its answer is saved.
+Interrupted streams fail visibly and are not automatically replayed after body
+consumption begins. Caller cancellation and run completion release stream work;
+there is no whole-run timeout or generation cap.
+
+Streaming reception does not mean token-by-token QQ delivery. The coordinator
+commits complete responses through the durable Outbox. Text, images and the final
+operation receipt are grouped for delivery where the platform supports it;
+destructive-operation confirmations remain individual messages. This prioritizes
+one useful reply over a stream of partial messages.
 
 The configured production model endpoint supports SSE and returns usage with
 `stream_options.include_usage`. A synthetic probe used the same 126-token input
 in non-streaming / streaming / streaming / non-streaming order. It sent no Bot
 messages and performed no business operations.
 
-| Trial | Mode | First visible text | Total | Cached input | Output tokens |
+| Trial | Mode | First text received by probe | Total | Cached input | Output tokens |
 | --- | --- | --- | --- | --- | --- |
 | 1 | JSON | on completion | 22.198 s | not reported | 234 |
 | 2 | SSE | 7.264 s | 12.078 s | 126 | 225 |
@@ -64,14 +72,13 @@ refresh timestamps in the prompt prefix, repeatedly trim history, remove tool
 documentation, or impose output/runtime limits to make a latency chart look
 better. Semantic compaction remains triggered near context capacity.
 
-End-to-end streaming needs more than enabling the runner: incremental SSE usage
-capture (including the final usage event), explicit handling of partial-stream
-errors without replaying emitted output, cancellation and checkpoint tests, and
-durable paragraph delivery through the Outbox. The final receipt must follow
-all completed operations. Tools must receive complete validated arguments, and
-confirmation must still gate destructive execution. Until that complete path
-exists, the Bot keeps non-streaming behavior rather than reporting buffered SSE
-as a user-visible speed improvement.
+`model_first_text` measures the time from a physical attempt's start to its
+first nonempty assistant text delta. For multiple model calls the log contains
+that duration's sum, not a user-facing time-to-first-reply measurement. It excludes
+reasoning-only and tool-only deltas. `model_request` for SSE includes reading and
+closing the body, rather than stopping at response headers. Stream usage events
+are counted once. Tests cover incremental delivery, complete fragmented tool
+arguments, truncated streams, body closure, receipts and checkpoint resumption.
 
 Independent reads could overlap when tool latency is significant. This requires
 separating read concurrency from ordered writes and confirmation queues; turning

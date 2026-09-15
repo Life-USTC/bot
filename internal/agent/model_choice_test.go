@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,7 +35,7 @@ func TestModelChoosesToolsAndCanClarifyWithoutCapabilityExecution(t *testing.T) 
 			}
 			var requests atomic.Int32
 			const answer = "请提供具体教学班，以便确认要修改的课程。"
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				request := requests.Add(1)
 				var body struct {
 					Tools []struct {

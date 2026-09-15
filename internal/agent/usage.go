@@ -81,6 +81,10 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if err != nil || resp == nil || resp.Body == nil || !isChatCompletionRequest(req) || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return resp, err
 	}
+	if isEventStream(resp) {
+		resp.Body = newUsageStreamBody(req.Context(), resp.Body, started)
+		return resp, nil
+	}
 	bodyStarted := time.Now()
 	body, readErr := io.ReadAll(resp.Body)
 	closeErr := resp.Body.Close()
@@ -94,6 +98,11 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
 
+	captureProviderUsage(req.Context(), body)
+	return resp, nil
+}
+
+func captureProviderUsage(ctx context.Context, body []byte) {
 	var payload struct {
 		Usage struct {
 			PromptTokens          int64 `json:"prompt_tokens"`
@@ -109,7 +118,7 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 		CostNanoCNY int64 `json:"cost_nano_cny"`
 	}
 	if json.Unmarshal(body, &payload) != nil {
-		return resp, nil
+		return
 	}
 	cached := payload.Usage.PromptCacheHitTokens
 	if cached == 0 {
@@ -134,16 +143,16 @@ func (t *usageCaptureTransport) RoundTrip(req *http.Request) (*http.Response, er
 		CostNanoCNY:      payload.CostNanoCNY,
 		ModelRequests:    1,
 	}
-	if accumulator, ok := req.Context().Value(usageContextKey{}).(*usageAccumulator); ok {
+	if accumulator, ok := ctx.Value(usageContextKey{}).(*usageAccumulator); ok {
 		accumulator.add(usage)
 	}
-	if persister, ok := req.Context().Value(usagePersisterContextKey{}).(usagePersister); ok && persister != nil {
+	if persister, ok := ctx.Value(usagePersisterContextKey{}).(usagePersister); ok && persister != nil {
 		// Usage persistence is best effort. The provider response has already
 		// succeeded, so a database error must not turn it into a retry that could
 		// duplicate the external request; the durable attempt reservation remains.
-		_ = persister(req.Context(), usage)
+		_ = persister(ctx, usage)
 	}
-	return resp, nil
+	return
 }
 
 func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {

@@ -213,6 +213,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return commands.Response{}, false
 	}
 	parentCtx := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	metrics := newRunMetrics()
 	ctx = withRunMetrics(ctx, metrics)
 	model, provider, modelName := s.modelFor()
@@ -439,7 +441,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			checkpointStore = bound
 		}
 	}
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore})
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: checkpointStore, EnableStreaming: true})
 	resume := false
 	if checkpointStore != nil {
 		_, resume, err = checkpointStore.Get(ctx, checkpointID)
@@ -533,7 +535,17 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 			return commands.Response{}, true
 		}
 		msg, _, err := adk.GetMessage(event)
-		if err != nil || msg == nil {
+		if err != nil {
+			err = normalizeAgentRunError(ctx, err)
+			if errors.Is(err, context.Canceled) {
+				finishRun(store.AgentRunStatusIgnored, "", err)
+				return commands.Response{}, false
+			}
+			reply := agentFailureReply(runID, err)
+			finishRun(store.AgentRunStatusFailed, reply, err)
+			return agentTextResponse(reply), true
+		}
+		if msg == nil {
 			continue
 		}
 		content := strings.TrimSpace(msg.Content)
@@ -1092,10 +1104,10 @@ func (s *Service) finishAgentRun(ctx context.Context, id int64, ident store.Iden
 	if err != nil {
 		failureClass = agentFailureClass(err)
 	}
-	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d stage_model_response_headers_ms=%d stage_model_response_body_ms=%d stage_history_compaction_ms=%d",
+	s.logf("llm run completed: id=%d status=%s provider=%s model=%s prompt_tokens=%d cached_tokens=%d completion_tokens=%d total_tokens=%d model_requests=%d tool_calls=%d estimated_cost_cny=%.6f duration_ms=%d failure_class=%s context_tokens=%d stage_input_images_ms=%d stage_tool_setup_ms=%d stage_history_messages_ms=%d stage_model_request_ms=%d stage_tool_call_ms=%d stage_model_response_headers_ms=%d stage_model_response_body_ms=%d stage_history_compaction_ms=%d stage_model_first_text_ms=%d",
 		id, status, provider, model, spending.PromptTokens, spending.CachedTokens, spending.CompletionTokens, spending.TotalTokens,
 		spending.ModelRequests, spending.ToolCalls, float64(spending.CostNanoCNY)/1_000_000_000, duration.Milliseconds(), failureClass,
-		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"], metrics.stageMilliseconds["model_response_headers"], metrics.stageMilliseconds["model_response_body"], metrics.stageMilliseconds["history_compaction"])
+		metrics.contextTokens, metrics.stageMilliseconds["input_images"], metrics.stageMilliseconds["tool_setup"], metrics.stageMilliseconds["history_messages"], metrics.stageMilliseconds["model_request"], metrics.stageMilliseconds["tool_call"], metrics.stageMilliseconds["model_response_headers"], metrics.stageMilliseconds["model_response_body"], metrics.stageMilliseconds["history_compaction"], metrics.stageMilliseconds["model_first_text"])
 	if err != nil {
 		s.logf("agent run failed: id=%d status=%s error=%v", id, status, err)
 	}

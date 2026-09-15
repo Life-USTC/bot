@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -226,7 +225,7 @@ func TestCompactionUsesProviderBudgetWithoutToolsOrInternalMetadata(t *testing.T
 	ident := store.Identity{Platform: "test", ConversationType: "private", ConversationID: "wire", UserID: "one"}
 	events := seedCompactionHistory(t, db, ident, 6, 18_000)
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		body, _ := io.ReadAll(r.Body)
 		for _, forbidden := range []string{`"tools":`, conversationEventIDKey, conversationSummaryIDKey} {

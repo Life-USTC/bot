@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,7 +33,7 @@ func TestMCPAnonymousDiscoveryAndOrdinaryWriteExecutesOnce(t *testing.T) {
 	})
 	var authorization atomic.Bool
 	handler := mcpserver.NewStreamableHTTPServer(server)
-	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	remote := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			authorization.Store(true)
 		}

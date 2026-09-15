@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -12,7 +11,7 @@ import (
 
 func TestHandleResponsePreservesModelVisiblePrivateURL(t *testing.T) {
 	const want = "订阅链接：https://life.example/api/calendar-feeds/user:token.ics"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{
 			"id":"chatcmpl-url","object":"chat.completion","created":0,"model":"test-model",
 			"choices":[{"index":0,"message":{"role":"assistant","content":"` + want + `"},"finish_reason":"stop"}]

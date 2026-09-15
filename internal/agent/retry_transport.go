@@ -43,9 +43,9 @@ func newAgentHTTPClient(base *http.Client, logger *log.Logger) *http.Client {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	// Capture each successful attempt's body inside the retry boundary. A
-	// provider can return headers and then cancel or truncate the JSON body;
-	// those read failures must be classified and retried like RoundTrip errors.
+	// Capture complete JSON responses inside the retry boundary. SSE bodies
+	// remain incremental: once exposed to the SDK, a broken stream fails the
+	// run instead of replaying a partially consumed model response.
 	client.Transport = &llmRetryTransport{
 		base: &usageCaptureTransport{
 			base: transport,
@@ -72,7 +72,12 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 
 	started := time.Now()
-	defer func() { recordRunStage(req.Context(), "model_request", time.Since(started)) }()
+	streaming := false
+	defer func() {
+		if !streaming {
+			recordRunStage(req.Context(), "model_request", time.Since(started))
+		}
+	}()
 	body, hasBody, err := reusableRequestBody(req)
 	if err != nil {
 		return nil, err
@@ -106,6 +111,12 @@ func (t *llmRetryTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		if !shouldRetryLLMRequest(resp, err) || attempt == llmHTTPMaxAttempts {
 			if attempt == llmHTTPMaxAttempts && isRetryableTransportError(err) {
 				return resp, fmt.Errorf("%w: %w", errLLMTransportExhausted, err)
+			}
+			if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && isEventStream(resp) && resp.Body != nil {
+				// Once stream bytes are exposed, read failures belong to this
+				// attempt. Never replay a partially consumed model response.
+				streaming = true
+				resp.Body = &timedStreamBody{ReadCloser: resp.Body, ctx: req.Context(), started: started}
 			}
 			return resp, err
 		}
