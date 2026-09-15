@@ -51,6 +51,11 @@ const (
 	CapabilityWeather              CapabilityID = "weather"
 	CapabilityRoomMap              CapabilityID = "room_map"
 	CapabilityYoungEvent           CapabilityID = "young_event"
+	CapabilityYoungOrganizer       CapabilityID = "young_organizer"
+	CapabilityYoungCalendar        CapabilityID = "young_calendar"
+	CapabilityYoungSubscription    CapabilityID = "young_subscription"
+	CapabilityYoungNotification    CapabilityID = "young_notification"
+	CapabilityYoungComment         CapabilityID = "young_comment"
 )
 
 // CapabilityEffect describes the state transition allowed by an invocation.
@@ -330,6 +335,31 @@ func notifyPolicy(inv Invocation) CapabilityPolicy {
 	return readPolicy(inv, DataScopeUserPrivate)
 }
 
+func youngSubscriptionPolicy(inv Invocation) CapabilityPolicy {
+	if query, err := parseYoungSubscriptionArgs(inv.Args); err == nil && query.Action == "set" {
+		return privateWritePolicy(inv, EffectWrite)
+	}
+	return readPolicy(inv, DataScopeUserPrivate)
+}
+
+func youngNotificationPolicy(inv Invocation) CapabilityPolicy {
+	if firstArgIn(inv.Args, "read", "已读") {
+		return privateWritePolicy(inv, EffectWrite)
+	}
+	return readPolicy(inv, DataScopeUserPrivate)
+}
+
+func youngCommentPolicy(inv Invocation) CapabilityPolicy {
+	if len(inv.Args) > 1 && firstArgIn(inv.Args[1:], "发", "发布", "评论", "post", "create", "回复", "reply", "编辑", "修改", "edit", "update", "删除", "delete", "remove", "赞", "反应", "reaction", "react") {
+		effect := EffectWrite
+		if firstArgIn(inv.Args[1:], "删除", "delete", "remove") {
+			effect = EffectDestructive
+		}
+		return privateWritePolicy(inv, effect)
+	}
+	return readPolicy(inv, DataScopeUserPrivate)
+}
+
 func feedbackPolicy(inv Invocation) CapabilityPolicy {
 	if hasArgs(inv.Args) && !firstArgIs(inv.Args, "help") {
 		return policyFor(inv, EffectWrite, DataScopePublic, ExposureModel)
@@ -426,15 +456,15 @@ func init() {
 		descriptor(CapabilityHomework, []string{"homework", "作业", "hw"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, homeworkOrTodoInput(homeworkArgsAcceptable), normalizeHomeworkArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.homework(ctx, ident, args)
 		}, homeworkPolicy, helpMeta("homework", "作业", "查看和管理作业", true, []HelpExample{example("作业", "查看未完成作业，每页 30 条"), example("作业 列表 第2页", "查看作业的第 2 页"), example("作业 完成 1", "完成第 1 条作业"), example("作业 恢复 1", "取消第 1 条作业的完成状态")}, []HelpExample{example("作业（hw）", "直接查看未完成作业")})),
-		descriptor(CapabilityCalendar, []string{"calendar", "日程", "今日", "ddl"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
-			return h.overview(ctx, ident)
+		descriptor(CapabilityCalendar, []string{"calendar", "日程", "今日", "ddl"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.personalCalendar(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", true, []HelpExample{example("日程 今日", "汇总今日课程、待办和作业")}, []HelpExample{example("今日（ddl）", "相当于“日程 今日")})),
 		descriptor(CapabilitySubscription, []string{"subscription", "订阅", "课程订阅"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, subscriptionArgsAcceptable, normalizeSubscriptionArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.subscription(ctx, ident, args)
 		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、添加、取消和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 取消 CONT5103P.01", "按教学班代码取消订阅"), example("订阅 链接", "查看私有日历订阅链接"), example("订阅 身份 12345 助教", "按教学班 JW ID 修改已有订阅身份")}, []HelpExample{example("退订教学班 CONT5103P.01", "相当于“订阅 取消 CONT5103P.01”")})),
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
-		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
+		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业和第二课堂提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 活动 开", "开启第二课堂提醒"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),
@@ -472,6 +502,41 @@ func init() {
 			example("第二课堂 搜索 志愿", "按名称搜索第二课堂活动"),
 			example("第二课堂 查看 <youngId>", "查看指定第二课堂活动详情"),
 		}, []HelpExample{example("二课", "相当于“第二课堂”")})),
+		descriptor(CapabilityYoungOrganizer, []string{"young_organizer", "主办方", "第二课堂主办方"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, youngOrganizerArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+			return h.youngOrganizers(ctx, args)
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("young_event", "第二课堂", "浏览第二课堂主办方目录、详情和该主办方的完整活动列表", false, []HelpExample{
+			example("第二课堂 主办方", "列出主办方及活动数量"),
+			example("第二课堂 主办方 查看 <organizerId>", "查看主办方详情和完整活动列表"),
+		}, nil)),
+		descriptor(CapabilityYoungCalendar, []string{"young_calendar", "第二课堂日历", "活动日历"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, youngCalendarArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
+			return h.youngCalendar(ctx, args)
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("young_event", "第二课堂", "按上海时区日、周、月查看完整第二课堂活动日历，可按活动或报名时间筛选", false, []HelpExample{
+			example("第二课堂 日历 日", "查看今天的活动"),
+			example("第二课堂 日历 周 2026-09-14 报名", "查看指定周的报名时间范围"),
+			example("第二课堂 日历 月", "查看本月活动"),
+		}, nil)),
+		descriptor(CapabilityYoungSubscription, []string{"young_subscription", "第二课堂订阅", "活动订阅"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, youngSubscriptionArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.youngSubscriptions(ctx, ident, args)
+		}, youngSubscriptionPolicy, helpMeta("young_event", "第二课堂", "私聊查看和设置活动订阅提醒，或关注主办方；关注主办方不会自动订阅活动", false, []HelpExample{
+			example("第二课堂 订阅 活动 <youngId> 开", "订阅活动并启用默认提醒"),
+			example("第二课堂 订阅 活动 <youngId> 开 报名提醒 关 截止提醒 开 开始提醒 开", "单独控制报名、截止和开始提醒"),
+			example("第二课堂 订阅 主办方 <organizerId> 开", "关注主办方，不自动订阅其活动"),
+			example("第二课堂 订阅 活动", "查看活动订阅"),
+		}, nil)),
+		descriptor(CapabilityYoungNotification, []string{"young_notification", "第二课堂通知", "活动通知"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, youngNotificationArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.youngNotifications(ctx, ident, args)
+		}, youngNotificationPolicy, helpMeta("notifications", "通知", "私聊查看和标记第二课堂活动通知", false, []HelpExample{
+			example("第二课堂 通知", "查看活动通知"),
+			example("第二课堂 通知 未读", "只查看未读活动通知"),
+			example("第二课堂 通知 已读 <notificationId>", "标记活动通知为已读"),
+		}, nil)),
+		descriptor(CapabilityYoungComment, []string{"young_comment", "第二课堂评论", "活动评论"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, youngCommentArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.youngComments(ctx, ident, args)
+		}, youngCommentPolicy, helpMeta("young_event", "第二课堂", "私聊查看或管理指定 youngId 活动的评论、回复和反应", false, []HelpExample{
+			example("第二课堂 评论 <youngId>", "查看活动评论"),
+			example("第二课堂 评论 <youngId> 发 <内容>", "发表评论"),
+			example("第二课堂 评论 <youngId> 回复 <commentId> <内容>", "回复评论"),
+		}, nil)),
 		descriptor(CapabilityCourse, []string{"course", "课程"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchCourses(ctx, joinedArgs(args))
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("course", "课程", "搜索课程和查看课程详情", false, []HelpExample{example("课程 数学分析", "按关键词快速搜索课程")}, nil)),

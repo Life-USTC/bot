@@ -659,6 +659,7 @@ const (
 	CommentCreateRequestSchemaTargetTypeSection        CommentCreateRequestSchemaTargetType = "section"
 	CommentCreateRequestSchemaTargetTypeSectionTeacher CommentCreateRequestSchemaTargetType = "section-teacher"
 	CommentCreateRequestSchemaTargetTypeTeacher        CommentCreateRequestSchemaTargetType = "teacher"
+	CommentCreateRequestSchemaTargetTypeYoungEvent     CommentCreateRequestSchemaTargetType = "young-event"
 )
 
 // Valid indicates whether the value is a known member of the CommentCreateRequestSchemaTargetType enum.
@@ -673,6 +674,8 @@ func (e CommentCreateRequestSchemaTargetType) Valid() bool {
 	case CommentCreateRequestSchemaTargetTypeSectionTeacher:
 		return true
 	case CommentCreateRequestSchemaTargetTypeTeacher:
+		return true
+	case CommentCreateRequestSchemaTargetTypeYoungEvent:
 		return true
 	default:
 		return false
@@ -1171,6 +1174,54 @@ func (e OauthTokenResponseSchemaTokenType) Valid() bool {
 	}
 }
 
+// Defines values for PaginatedYoungEventResponseSchemaSourceStatus.
+const (
+	Fresh   PaginatedYoungEventResponseSchemaSourceStatus = "fresh"
+	Stale   PaginatedYoungEventResponseSchemaSourceStatus = "stale"
+	Unknown PaginatedYoungEventResponseSchemaSourceStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PaginatedYoungEventResponseSchemaSourceStatus enum.
+func (e PaginatedYoungEventResponseSchemaSourceStatus) Valid() bool {
+	switch e {
+	case Fresh:
+		return true
+	case Stale:
+		return true
+	case Unknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalCalendarPageSchemaDataType.
+const (
+	Exam        PersonalCalendarPageSchemaDataType = "exam"
+	HomeworkDue PersonalCalendarPageSchemaDataType = "homework_due"
+	Schedule    PersonalCalendarPageSchemaDataType = "schedule"
+	TodoDue     PersonalCalendarPageSchemaDataType = "todo_due"
+	YoungEvent  PersonalCalendarPageSchemaDataType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the PersonalCalendarPageSchemaDataType enum.
+func (e PersonalCalendarPageSchemaDataType) Valid() bool {
+	switch e {
+	case Exam:
+		return true
+	case HomeworkDue:
+		return true
+	case Schedule:
+		return true
+	case TodoDue:
+		return true
+	case YoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PublicPublicationDetailSchemaPublicationType.
 const (
 	PublicPublicationDetailSchemaPublicationTypeNews   PublicPublicationDetailSchemaPublicationType = "news"
@@ -1384,6 +1435,33 @@ const (
 func (e PublicationIngestionBatchRequestSchemaProtocolVersion) Valid() bool {
 	switch e {
 	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind.
+const (
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindAsset        PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "asset"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyHtml     PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "body_html"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyMarkdown PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "body_markdown"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindMedia        PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "media"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindRawPage      PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "raw_page"
+)
+
+// Valid indicates whether the value is a known member of the PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind enum.
+func (e PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind) Valid() bool {
+	switch e {
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindAsset:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyHtml:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyMarkdown:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindMedia:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindRawPage:
 		return true
 	default:
 		return false
@@ -2302,6 +2380,24 @@ func (e CatalogWeatherGetParamsLocationKey) Valid() bool {
 	}
 }
 
+// Defines values for GetApiCatalogYoungEventsParamsDateUnknown.
+const (
+	GetApiCatalogYoungEventsParamsDateUnknownFalse GetApiCatalogYoungEventsParamsDateUnknown = "false"
+	GetApiCatalogYoungEventsParamsDateUnknownTrue  GetApiCatalogYoungEventsParamsDateUnknown = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetApiCatalogYoungEventsParamsDateUnknown enum.
+func (e GetApiCatalogYoungEventsParamsDateUnknown) Valid() bool {
+	switch e {
+	case GetApiCatalogYoungEventsParamsDateUnknownFalse:
+		return true
+	case GetApiCatalogYoungEventsParamsDateUnknownTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetApiCatalogYoungEventsParamsActive.
 const (
 	GetApiCatalogYoungEventsParamsActiveFalse GetApiCatalogYoungEventsParamsActive = "false"
@@ -2320,6 +2416,24 @@ func (e GetApiCatalogYoungEventsParamsActive) Valid() bool {
 	}
 }
 
+// Defines values for GetApiCatalogYoungEventsParamsTimeBasis.
+const (
+	Activity     GetApiCatalogYoungEventsParamsTimeBasis = "activity"
+	Registration GetApiCatalogYoungEventsParamsTimeBasis = "registration"
+)
+
+// Valid indicates whether the value is a known member of the GetApiCatalogYoungEventsParamsTimeBasis enum.
+func (e GetApiCatalogYoungEventsParamsTimeBasis) Valid() bool {
+	switch e {
+	case Activity:
+		return true
+	case Registration:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListCommentsParamsTargetType.
 const (
 	ListCommentsParamsTargetTypeCourse         ListCommentsParamsTargetType = "course"
@@ -2327,6 +2441,7 @@ const (
 	ListCommentsParamsTargetTypeSection        ListCommentsParamsTargetType = "section"
 	ListCommentsParamsTargetTypeSectionTeacher ListCommentsParamsTargetType = "section-teacher"
 	ListCommentsParamsTargetTypeTeacher        ListCommentsParamsTargetType = "teacher"
+	ListCommentsParamsTargetTypeYoungEvent     ListCommentsParamsTargetType = "young-event"
 )
 
 // Valid indicates whether the value is a known member of the ListCommentsParamsTargetType enum.
@@ -2341,6 +2456,8 @@ func (e ListCommentsParamsTargetType) Valid() bool {
 	case ListCommentsParamsTargetTypeSectionTeacher:
 		return true
 	case ListCommentsParamsTargetTypeTeacher:
+		return true
+	case ListCommentsParamsTargetTypeYoungEvent:
 		return true
 	default:
 		return false
@@ -2472,25 +2589,25 @@ func (e GetApiPublicationsParamsType) Valid() bool {
 
 // Defines values for GetApiPublicationsObjectsKindSha256ParamsKind.
 const (
-	GetApiPublicationsObjectsKindSha256ParamsKindAsset        GetApiPublicationsObjectsKindSha256ParamsKind = "asset"
-	GetApiPublicationsObjectsKindSha256ParamsKindBodyHtml     GetApiPublicationsObjectsKindSha256ParamsKind = "body_html"
-	GetApiPublicationsObjectsKindSha256ParamsKindBodyMarkdown GetApiPublicationsObjectsKindSha256ParamsKind = "body_markdown"
-	GetApiPublicationsObjectsKindSha256ParamsKindMedia        GetApiPublicationsObjectsKindSha256ParamsKind = "media"
-	GetApiPublicationsObjectsKindSha256ParamsKindRawPage      GetApiPublicationsObjectsKindSha256ParamsKind = "raw_page"
+	Asset        GetApiPublicationsObjectsKindSha256ParamsKind = "asset"
+	BodyHtml     GetApiPublicationsObjectsKindSha256ParamsKind = "body_html"
+	BodyMarkdown GetApiPublicationsObjectsKindSha256ParamsKind = "body_markdown"
+	Media        GetApiPublicationsObjectsKindSha256ParamsKind = "media"
+	RawPage      GetApiPublicationsObjectsKindSha256ParamsKind = "raw_page"
 )
 
 // Valid indicates whether the value is a known member of the GetApiPublicationsObjectsKindSha256ParamsKind enum.
 func (e GetApiPublicationsObjectsKindSha256ParamsKind) Valid() bool {
 	switch e {
-	case GetApiPublicationsObjectsKindSha256ParamsKindAsset:
+	case Asset:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindBodyHtml:
+	case BodyHtml:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindBodyMarkdown:
+	case BodyMarkdown:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindMedia:
+	case Media:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindRawPage:
+	case RawPage:
 		return true
 	default:
 		return false
@@ -2535,16 +2652,16 @@ func (e WorkspaceScheduleListParamsLocale) Valid() bool {
 
 // Defines values for ListTodosParamsCompleted.
 const (
-	False ListTodosParamsCompleted = "false"
-	True  ListTodosParamsCompleted = "true"
+	ListTodosParamsCompletedFalse ListTodosParamsCompleted = "false"
+	ListTodosParamsCompletedTrue  ListTodosParamsCompleted = "true"
 )
 
 // Valid indicates whether the value is a known member of the ListTodosParamsCompleted enum.
 func (e ListTodosParamsCompleted) Valid() bool {
 	switch e {
-	case False:
+	case ListTodosParamsCompletedFalse:
 		return true
-	case True:
+	case ListTodosParamsCompletedTrue:
 		return true
 	default:
 		return false
@@ -2566,6 +2683,60 @@ func (e ListTodosParamsPriority) Valid() bool {
 	case ListTodosParamsPriorityLow:
 		return true
 	case ListTodosParamsPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiWorkspaceYoungEventSubscriptionsParamsUnread.
+const (
+	GetApiWorkspaceYoungEventSubscriptionsParamsUnreadFalse GetApiWorkspaceYoungEventSubscriptionsParamsUnread = "false"
+	GetApiWorkspaceYoungEventSubscriptionsParamsUnreadTrue  GetApiWorkspaceYoungEventSubscriptionsParamsUnread = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetApiWorkspaceYoungEventSubscriptionsParamsUnread enum.
+func (e GetApiWorkspaceYoungEventSubscriptionsParamsUnread) Valid() bool {
+	switch e {
+	case GetApiWorkspaceYoungEventSubscriptionsParamsUnreadFalse:
+		return true
+	case GetApiWorkspaceYoungEventSubscriptionsParamsUnreadTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiWorkspaceYoungNotificationsParamsUnread.
+const (
+	GetApiWorkspaceYoungNotificationsParamsUnreadFalse GetApiWorkspaceYoungNotificationsParamsUnread = "false"
+	GetApiWorkspaceYoungNotificationsParamsUnreadTrue  GetApiWorkspaceYoungNotificationsParamsUnread = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetApiWorkspaceYoungNotificationsParamsUnread enum.
+func (e GetApiWorkspaceYoungNotificationsParamsUnread) Valid() bool {
+	switch e {
+	case GetApiWorkspaceYoungNotificationsParamsUnreadFalse:
+		return true
+	case GetApiWorkspaceYoungNotificationsParamsUnreadTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread.
+const (
+	False GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "false"
+	True  GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "true"
+)
+
+// Valid indicates whether the value is a known member of the GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread enum.
+func (e GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread) Valid() bool {
+	switch e {
+	case False:
+		return true
+	case True:
 		return true
 	default:
 		return false
@@ -2746,6 +2917,12 @@ type AdminCommentsResponseSchema struct {
 		} `json:"user"`
 		UserId     *string                                   `json:"userId"`
 		Visibility AdminCommentsResponseSchemaDataVisibility `json:"visibility"`
+		YoungEvent *struct {
+			Id      int    `json:"id"`
+			Name    string `json:"name"`
+			YoungId string `json:"youngId"`
+		} `json:"youngEvent"`
+		YoungEventId *int `json:"youngEventId"`
 	} `json:"data"`
 	Pagination struct {
 		Page       int `json:"page"`
@@ -2922,6 +3099,7 @@ type AdminModeratedCommentResponseSchema struct {
 		UpdatedAt        time.Time                                            `json:"updatedAt"`
 		UserId           *string                                              `json:"userId"`
 		Visibility       AdminModeratedCommentResponseSchemaCommentVisibility `json:"visibility"`
+		YoungEventId     *int                                                 `json:"youngEventId"`
 	} `json:"comment"`
 }
 
@@ -4708,6 +4886,7 @@ type CommentCreateRequestSchema struct {
 	TargetType       CommentCreateRequestSchemaTargetType         `json:"targetType"`
 	TeacherId        *CommentCreateRequestSchema_TeacherId        `json:"teacherId,omitempty"`
 	Visibility       *CommentCreateRequestSchemaVisibility        `json:"visibility,omitempty"`
+	YoungId          *string                                      `json:"youngId,omitempty"`
 }
 
 // CommentCreateRequestSchemaCourseJwId0 defines model for .
@@ -4832,6 +5011,9 @@ type CommentThreadResponseSchema struct {
 		SectionTeacherTeacherName *string `json:"sectionTeacherTeacherName"`
 		TeacherId                 *int    `json:"teacherId"`
 		TeacherName               *string `json:"teacherName"`
+		YoungEventId              *int    `json:"youngEventId"`
+		YoungEventName            *string `json:"youngEventName"`
+		YoungId                   *string `json:"youngId"`
 	} `json:"target"`
 	Thread []UnderscoreUnderscoreSchema1 `json:"thread"`
 	Viewer struct {
@@ -4891,6 +5073,9 @@ type CommentsListResponseSchema struct {
 			TeacherId                 *int                                            `json:"teacherId"`
 			TeacherName               *string                                         `json:"teacherName"`
 			Type                      string                                          `json:"type"`
+			YoungEventId              *int                                            `json:"youngEventId"`
+			YoungEventName            *string                                         `json:"youngEventName"`
+			YoungId                   *string                                         `json:"youngId"`
 		} `json:"target"`
 		Viewer struct {
 			Image               *string    `json:"image"`
@@ -7066,15 +7251,19 @@ type PaginatedYoungEventResponseSchema struct {
 		ApplyStartAt       *time.Time `json:"applyStartAt"`
 		Capacity           *int       `json:"capacity"`
 		Category           *string    `json:"category"`
+		CreatedAt          *time.Time `json:"createdAt"`
 		Department         *string    `json:"department"`
 		EndAt              *time.Time `json:"endAt"`
 		Hours              *float32   `json:"hours"`
 		ImageUrl           *string    `json:"imageUrl"`
 		IsActive           bool       `json:"isActive"`
+		LastSeenAt         *time.Time `json:"lastSeenAt"`
 		Location           *string    `json:"location"`
 		Name               string     `json:"name"`
 		Organizer          *string    `json:"organizer"`
+		OrganizerId        *string    `json:"organizerId"`
 		RegistrationStatus *string    `json:"registrationStatus"`
+		SourceMissing      bool       `json:"sourceMissing"`
 		StartAt            *time.Time `json:"startAt"`
 		Status             *string    `json:"status"`
 		YoungId            string     `json:"youngId"`
@@ -7085,7 +7274,49 @@ type PaginatedYoungEventResponseSchema struct {
 		Total      int `json:"total"`
 		TotalPages int `json:"totalPages"`
 	} `json:"pagination"`
+	Source struct {
+		LastSyncedAt *time.Time                                    `json:"lastSyncedAt"`
+		Status       PaginatedYoungEventResponseSchemaSourceStatus `json:"status"`
+	} `json:"source"`
+	UnknownDateCount int `json:"unknownDateCount"`
 }
+
+// PaginatedYoungEventResponseSchemaSourceStatus defines model for PaginatedYoungEventResponseSchema.Source.Status.
+type PaginatedYoungEventResponseSchemaSourceStatus string
+
+// PaginatedYoungOrganizerResponseSchema defines model for paginatedYoungOrganizerResponseSchema.
+type PaginatedYoungOrganizerResponseSchema struct {
+	Data       []YoungOrganizerSummarySchema `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
+// PersonalCalendarPageSchema defines model for personalCalendarPageSchema.
+type PersonalCalendarPageSchema struct {
+	Data []struct {
+		At       *time.Time                         `json:"at"`
+		EndsAt   *time.Time                         `json:"endsAt"`
+		Id       string                             `json:"id"`
+		Location *string                            `json:"location"`
+		Title    string                             `json:"title"`
+		Type     PersonalCalendarPageSchemaDataType `json:"type"`
+		Url      string                             `json:"url"`
+		YoungId  *string                            `json:"youngId"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
+// PersonalCalendarPageSchemaDataType defines model for PersonalCalendarPageSchema.Data.Type.
+type PersonalCalendarPageSchemaDataType string
 
 // PublicPublicationDetailSchema defines model for publicPublicationDetailSchema.
 type PublicPublicationDetailSchema struct {
@@ -7292,8 +7523,12 @@ type PublicationIngestionBatchResponseSchema struct {
 	ClientRunId   string `json:"clientRunId"`
 	PayloadDigest string `json:"payloadDigest"`
 	Results       []struct {
-		CanonicalUrl  string                                               `json:"canonicalUrl"`
-		Error         *string                                              `json:"error,omitempty"`
+		CanonicalUrl         string  `json:"canonicalUrl"`
+		Error                *string `json:"error,omitempty"`
+		ObjectsNeedingUpload *[]struct {
+			Kind   PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind `json:"kind"`
+			Sha256 string                                                                 `json:"sha256"`
+		} `json:"objectsNeedingUpload,omitempty"`
 		PublicationId *string                                              `json:"publicationId"`
 		RevisionHash  string                                               `json:"revisionHash"`
 		RevisionId    *string                                              `json:"revisionId"`
@@ -7301,6 +7536,9 @@ type PublicationIngestionBatchResponseSchema struct {
 		Status        PublicationIngestionBatchResponseSchemaResultsStatus `json:"status"`
 	} `json:"results"`
 }
+
+// PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind defines model for PublicationIngestionBatchResponseSchema.Results.ObjectsNeedingUpload.Kind.
+type PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind string
 
 // PublicationIngestionBatchResponseSchemaResultsStatus defines model for PublicationIngestionBatchResponseSchema.Results.Status.
 type PublicationIngestionBatchResponseSchemaResultsStatus string
@@ -8440,19 +8678,147 @@ type YoungEventDetailSchema struct {
 	ApplyStartAt       *time.Time  `json:"applyStartAt"`
 	Capacity           *int        `json:"capacity"`
 	Category           *string     `json:"category"`
+	CreatedAt          *time.Time  `json:"createdAt"`
 	Department         *string     `json:"department"`
 	EndAt              *time.Time  `json:"endAt"`
 	Hours              *float32    `json:"hours"`
 	ImageUrl           *string     `json:"imageUrl"`
 	IsActive           bool        `json:"isActive"`
+	LastSeenAt         *time.Time  `json:"lastSeenAt"`
 	Location           *string     `json:"location"`
 	Name               string      `json:"name"`
 	Organizer          *string     `json:"organizer"`
+	OrganizerId        *string     `json:"organizerId"`
 	RawJson            interface{} `json:"rawJson"`
 	RegistrationStatus *string     `json:"registrationStatus"`
+	SourceMissing      bool        `json:"sourceMissing"`
 	StartAt            *time.Time  `json:"startAt"`
 	Status             *string     `json:"status"`
 	YoungId            string      `json:"youngId"`
+}
+
+// YoungEventSubscriptionListSchema defines model for youngEventSubscriptionListSchema.
+type YoungEventSubscriptionListSchema struct {
+	Data []struct {
+		CreatedAt time.Time `json:"createdAt"`
+		Event     struct {
+			AppliedCount       *int       `json:"appliedCount"`
+			ApplyEndAt         *time.Time `json:"applyEndAt"`
+			ApplyStartAt       *time.Time `json:"applyStartAt"`
+			Capacity           *int       `json:"capacity"`
+			Category           *string    `json:"category"`
+			CreatedAt          *time.Time `json:"createdAt"`
+			Department         *string    `json:"department"`
+			EndAt              *time.Time `json:"endAt"`
+			Hours              *float32   `json:"hours"`
+			ImageUrl           *string    `json:"imageUrl"`
+			IsActive           bool       `json:"isActive"`
+			LastSeenAt         *time.Time `json:"lastSeenAt"`
+			Location           *string    `json:"location"`
+			Name               string     `json:"name"`
+			Organizer          *string    `json:"organizer"`
+			OrganizerId        *string    `json:"organizerId"`
+			RegistrationStatus *string    `json:"registrationStatus"`
+			SourceMissing      bool       `json:"sourceMissing"`
+			StartAt            *time.Time `json:"startAt"`
+			Status             *string    `json:"status"`
+			YoungId            string     `json:"youngId"`
+		} `json:"event"`
+		RemindDeadline bool   `json:"remindDeadline"`
+		RemindSignup   bool   `json:"remindSignup"`
+		RemindStart    bool   `json:"remindStart"`
+		YoungId        string `json:"youngId"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
+// YoungEventSubscriptionRequestSchema defines model for youngEventSubscriptionRequestSchema.
+type YoungEventSubscriptionRequestSchema struct {
+	RemindDeadline *bool `json:"remindDeadline,omitempty"`
+	RemindSignup   *bool `json:"remindSignup,omitempty"`
+	RemindStart    *bool `json:"remindStart,omitempty"`
+	Subscribed     bool  `json:"subscribed"`
+}
+
+// YoungEventSubscriptionStateSchema defines model for youngEventSubscriptionStateSchema.
+type YoungEventSubscriptionStateSchema struct {
+	RemindDeadline bool   `json:"remindDeadline"`
+	RemindSignup   bool   `json:"remindSignup"`
+	RemindStart    bool   `json:"remindStart"`
+	Subscribed     bool   `json:"subscribed"`
+	YoungId        string `json:"youngId"`
+}
+
+// YoungNotificationListSchema defines model for youngNotificationListSchema.
+type YoungNotificationListSchema struct {
+	Data []struct {
+		Body        string     `json:"body"`
+		CreatedAt   time.Time  `json:"createdAt"`
+		ExpiresAt   *time.Time `json:"expiresAt"`
+		Id          string     `json:"id"`
+		Kind        string     `json:"kind"`
+		OrganizerId *string    `json:"organizerId"`
+		ReadAt      *time.Time `json:"readAt"`
+		Title       string     `json:"title"`
+		YoungId     *string    `json:"youngId"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
+// YoungNotificationReadSchema defines model for youngNotificationReadSchema.
+type YoungNotificationReadSchema struct {
+	Id      string `json:"id"`
+	Success bool   `json:"success"`
+}
+
+// YoungOrganizerSubscriptionListSchema defines model for youngOrganizerSubscriptionListSchema.
+type YoungOrganizerSubscriptionListSchema struct {
+	Data []struct {
+		CreatedAt time.Time `json:"createdAt"`
+		Organizer struct {
+			Id   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"organizer"`
+		OrganizerId string `json:"organizerId"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
+// YoungOrganizerSubscriptionRequestSchema defines model for youngOrganizerSubscriptionRequestSchema.
+type YoungOrganizerSubscriptionRequestSchema struct {
+	Subscribed bool `json:"subscribed"`
+}
+
+// YoungOrganizerSubscriptionStateSchema defines model for youngOrganizerSubscriptionStateSchema.
+type YoungOrganizerSubscriptionStateSchema struct {
+	OrganizerId string `json:"organizerId"`
+	Subscribed  bool   `json:"subscribed"`
+}
+
+// YoungOrganizerSummarySchema defines model for youngOrganizerSummarySchema.
+type YoungOrganizerSummarySchema struct {
+	ActiveCount    int    `json:"activeCount"`
+	HistoryCount   int    `json:"historyCount"`
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	NormalizedName string `json:"normalizedName"`
+	TotalCount     int    `json:"totalCount"`
+	UpcomingCount  int    `json:"upcomingCount"`
 }
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
@@ -8750,6 +9116,9 @@ type CatalogWeatherGetParamsLocationKey string
 
 // GetApiCatalogYoungEventsParams defines parameters for GetApiCatalogYoungEvents.
 type GetApiCatalogYoungEventsParams struct {
+	// DateUnknown Filter activities missing the selected time basis start; incompatible with date bounds.
+	DateUnknown *GetApiCatalogYoungEventsParamsDateUnknown `form:"dateUnknown,omitempty" json:"dateUnknown,omitempty"`
+
 	// Active Filter by signup-open (active) events.
 	Active *GetApiCatalogYoungEventsParamsActive `form:"active,omitempty" json:"active,omitempty"`
 
@@ -8757,6 +9126,39 @@ type GetApiCatalogYoungEventsParams struct {
 	Category *string `form:"category,omitempty" json:"category,omitempty"`
 
 	// Search Case-insensitive substring match on the event name.
+	Search *string `form:"search,omitempty" json:"search,omitempty"`
+
+	// OrganizerId Stable local Young organizer ID.
+	OrganizerId *string `form:"organizerId,omitempty" json:"organizerId,omitempty"`
+
+	// DateFrom Inclusive Shanghai date/time range start.
+	DateFrom *string `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
+
+	// DateTo Inclusive Shanghai date/time range end.
+	DateTo *string `form:"dateTo,omitempty" json:"dateTo,omitempty"`
+
+	// TimeBasis Date fields to use for range overlap filtering.
+	TimeBasis *GetApiCatalogYoungEventsParamsTimeBasis `form:"timeBasis,omitempty" json:"timeBasis,omitempty"`
+	Page      *int64                                   `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+
+	// Limit Deprecated alias for pageSize. pageSize takes precedence when both are supplied.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetApiCatalogYoungEventsParamsDateUnknown defines parameters for GetApiCatalogYoungEvents.
+type GetApiCatalogYoungEventsParamsDateUnknown string
+
+// GetApiCatalogYoungEventsParamsActive defines parameters for GetApiCatalogYoungEvents.
+type GetApiCatalogYoungEventsParamsActive string
+
+// GetApiCatalogYoungEventsParamsTimeBasis defines parameters for GetApiCatalogYoungEvents.
+type GetApiCatalogYoungEventsParamsTimeBasis string
+
+// GetApiCatalogYoungOrganizersParams defines parameters for GetApiCatalogYoungOrganizers.
+type GetApiCatalogYoungOrganizersParams struct {
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 	Page   *int64  `form:"page,omitempty" json:"page,omitempty"`
 
@@ -8767,13 +9169,11 @@ type GetApiCatalogYoungEventsParams struct {
 	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// GetApiCatalogYoungEventsParamsActive defines parameters for GetApiCatalogYoungEvents.
-type GetApiCatalogYoungEventsParamsActive string
-
 // ListCommentsParams defines parameters for ListComments.
 type ListCommentsParams struct {
 	TargetType       ListCommentsParamsTargetType `form:"targetType" json:"targetType"`
 	TargetId         *string                      `form:"targetId,omitempty" json:"targetId,omitempty"`
+	YoungId          *string                      `form:"youngId,omitempty" json:"youngId,omitempty"`
 	SectionId        *int64                       `form:"sectionId,omitempty" json:"sectionId,omitempty"`
 	SectionJwId      *int64                       `form:"sectionJwId,omitempty" json:"sectionJwId,omitempty"`
 	CourseJwId       *int64                       `form:"courseJwId,omitempty" json:"courseJwId,omitempty"`
@@ -8861,6 +9261,14 @@ type GetApiPublicationsParamsType string
 // GetApiPublicationsObjectsKindSha256ParamsKind defines parameters for GetApiPublicationsObjectsKindSha256.
 type GetApiPublicationsObjectsKindSha256ParamsKind string
 
+// GetApiWorkspaceCalendarEventsParams defines parameters for GetApiWorkspaceCalendarEvents.
+type GetApiWorkspaceCalendarEventsParams struct {
+	Page     *int64  `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64  `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	DateFrom *string `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
+	DateTo   *string `form:"dateTo,omitempty" json:"dateTo,omitempty"`
+}
+
 // GetSubscribedHomeworksParams defines parameters for GetSubscribedHomeworks.
 type GetSubscribedHomeworksParams struct {
 	Page *int64 `form:"page,omitempty" json:"page,omitempty"`
@@ -8922,6 +9330,36 @@ type ListUploadsParams struct {
 type PutApiUploadsObjectParams struct {
 	Key string `form:"key" json:"key"`
 }
+
+// GetApiWorkspaceYoungEventSubscriptionsParams defines parameters for GetApiWorkspaceYoungEventSubscriptions.
+type GetApiWorkspaceYoungEventSubscriptionsParams struct {
+	Page     *int64                                              `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64                                              `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Unread   *GetApiWorkspaceYoungEventSubscriptionsParamsUnread `form:"unread,omitempty" json:"unread,omitempty"`
+}
+
+// GetApiWorkspaceYoungEventSubscriptionsParamsUnread defines parameters for GetApiWorkspaceYoungEventSubscriptions.
+type GetApiWorkspaceYoungEventSubscriptionsParamsUnread string
+
+// GetApiWorkspaceYoungNotificationsParams defines parameters for GetApiWorkspaceYoungNotifications.
+type GetApiWorkspaceYoungNotificationsParams struct {
+	Page     *int64                                         `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64                                         `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Unread   *GetApiWorkspaceYoungNotificationsParamsUnread `form:"unread,omitempty" json:"unread,omitempty"`
+}
+
+// GetApiWorkspaceYoungNotificationsParamsUnread defines parameters for GetApiWorkspaceYoungNotifications.
+type GetApiWorkspaceYoungNotificationsParamsUnread string
+
+// GetApiWorkspaceYoungOrganizerSubscriptionsParams defines parameters for GetApiWorkspaceYoungOrganizerSubscriptions.
+type GetApiWorkspaceYoungOrganizerSubscriptionsParams struct {
+	Page     *int64                                                  `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64                                                  `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Unread   *GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread `form:"unread,omitempty" json:"unread,omitempty"`
+}
+
+// GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread defines parameters for GetApiWorkspaceYoungOrganizerSubscriptions.
+type GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread string
 
 // SetLocaleJSONRequestBody defines body for SetLocale for application/json ContentType.
 type SetLocaleJSONRequestBody = LocaleUpdateRequestSchema
@@ -9027,6 +9465,12 @@ type CompleteUploadJSONRequestBody = UploadCompleteRequestSchema
 
 // UpdateUploadJSONRequestBody defines body for UpdateUpload for application/json ContentType.
 type UpdateUploadJSONRequestBody = UploadRenameRequestSchema
+
+// PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody defines body for PutApiWorkspaceYoungEventSubscriptionsYoungId for application/json ContentType.
+type PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody = YoungEventSubscriptionRequestSchema
+
+// PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody defines body for PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId for application/json ContentType.
+type PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody = YoungOrganizerSubscriptionRequestSchema
 
 // AsAdminCreateSuspensionRequestSchemaExpiresAt0 returns the union data inside the AdminCreateSuspensionRequestSchema_ExpiresAt as a AdminCreateSuspensionRequestSchemaExpiresAt0
 func (t AdminCreateSuspensionRequestSchema_ExpiresAt) AsAdminCreateSuspensionRequestSchemaExpiresAt0() (AdminCreateSuspensionRequestSchemaExpiresAt0, error) {
@@ -12131,6 +12575,12 @@ type ClientInterface interface {
 	// GetApiCatalogYoungEventsYoungIdImage request
 	GetApiCatalogYoungEventsYoungIdImage(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCatalogYoungOrganizers request
+	GetApiCatalogYoungOrganizers(ctx context.Context, params *GetApiCatalogYoungOrganizersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiCatalogYoungOrganizersOrganizerId request
+	GetApiCatalogYoungOrganizersOrganizerId(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListComments request
 	ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12262,6 +12712,9 @@ type ClientInterface interface {
 
 	WorkspaceBusPreferencesSet(ctx context.Context, body WorkspaceBusPreferencesSetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiWorkspaceCalendarEvents request
+	GetApiWorkspaceCalendarEvents(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSubscribedHomeworks request
 	GetSubscribedHomeworks(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12379,6 +12832,34 @@ type ClientInterface interface {
 
 	// DownloadUpload request
 	DownloadUpload(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiWorkspaceYoungEventSubscriptions request
+	GetApiWorkspaceYoungEventSubscriptions(ctx context.Context, params *GetApiWorkspaceYoungEventSubscriptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiWorkspaceYoungEventSubscriptionsYoungId request
+	GetApiWorkspaceYoungEventSubscriptionsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBody request with any body
+	PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBody(ctx context.Context, youngId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiWorkspaceYoungEventSubscriptionsYoungId(ctx context.Context, youngId string, body PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiWorkspaceYoungNotifications request
+	GetApiWorkspaceYoungNotifications(ctx context.Context, params *GetApiWorkspaceYoungNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApiWorkspaceYoungNotificationsIdRead request
+	PostApiWorkspaceYoungNotificationsIdRead(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiWorkspaceYoungOrganizerSubscriptions request
+	GetApiWorkspaceYoungOrganizerSubscriptions(ctx context.Context, params *GetApiWorkspaceYoungOrganizerSubscriptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId request
+	GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBody request with any body
+	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBody(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListOauthAuthorizationServer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -13245,6 +13726,30 @@ func (c *Client) GetApiCatalogYoungEventsYoungIdImage(ctx context.Context, young
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiCatalogYoungOrganizers(ctx context.Context, params *GetApiCatalogYoungOrganizersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungOrganizersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogYoungOrganizersOrganizerId(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungOrganizersOrganizerIdRequest(c.Server, organizerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListComments(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListCommentsRequest(c.Server, params)
 	if err != nil {
@@ -13809,6 +14314,18 @@ func (c *Client) WorkspaceBusPreferencesSet(ctx context.Context, body WorkspaceB
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiWorkspaceCalendarEvents(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceCalendarEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetSubscribedHomeworks(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSubscribedHomeworksRequest(c.Server, params)
 	if err != nil {
@@ -14339,6 +14856,126 @@ func (c *Client) UpdateUpload(ctx context.Context, id string, body UpdateUploadJ
 
 func (c *Client) DownloadUpload(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDownloadUploadRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiWorkspaceYoungEventSubscriptions(ctx context.Context, params *GetApiWorkspaceYoungEventSubscriptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceYoungEventSubscriptionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiWorkspaceYoungEventSubscriptionsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceYoungEventSubscriptionsYoungIdRequest(c.Server, youngId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBody(ctx context.Context, youngId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequestWithBody(c.Server, youngId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiWorkspaceYoungEventSubscriptionsYoungId(ctx context.Context, youngId string, body PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequest(c.Server, youngId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiWorkspaceYoungNotifications(ctx context.Context, params *GetApiWorkspaceYoungNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceYoungNotificationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiWorkspaceYoungNotificationsIdRead(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiWorkspaceYoungNotificationsIdReadRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiWorkspaceYoungOrganizerSubscriptions(ctx context.Context, params *GetApiWorkspaceYoungOrganizerSubscriptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceYoungOrganizerSubscriptionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest(c.Server, organizerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBody(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequestWithBody(c.Server, organizerId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest(c.Server, organizerId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -17646,6 +18283,18 @@ func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoun
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
+		if params.DateUnknown != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateUnknown", *params.DateUnknown, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Active != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "active", *params.Active, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -17673,6 +18322,54 @@ func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoun
 		if params.Search != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.OrganizerId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "organizerId", *params.OrganizerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateFrom", *params.DateFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateTo", *params.DateTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TimeBasis != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "timeBasis", *params.TimeBasis, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -17800,6 +18497,130 @@ func NewGetApiCatalogYoungEventsYoungIdImageRequest(server string, youngId strin
 	return req, nil
 }
 
+// NewGetApiCatalogYoungOrganizersRequest generates requests for GetApiCatalogYoungOrganizers
+func NewGetApiCatalogYoungOrganizersRequest(server string, params *GetApiCatalogYoungOrganizersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-organizers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Search != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogYoungOrganizersOrganizerIdRequest generates requests for GetApiCatalogYoungOrganizersOrganizerId
+func NewGetApiCatalogYoungOrganizersOrganizerIdRequest(server string, organizerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organizerId", organizerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-organizers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListCommentsRequest generates requests for ListComments
 func NewListCommentsRequest(server string, params *ListCommentsParams) (*http.Request, error) {
 	var err error
@@ -17839,6 +18660,18 @@ func NewListCommentsRequest(server string, params *ListCommentsParams) (*http.Re
 		if params.TargetId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "targetId", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.YoungId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "youngId", *params.YoungId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -19542,6 +20375,96 @@ func NewWorkspaceBusPreferencesSetRequestWithBody(server string, contentType str
 	return req, nil
 }
 
+// NewGetApiWorkspaceCalendarEventsRequest generates requests for GetApiWorkspaceCalendarEvents
+func NewGetApiWorkspaceCalendarEventsRequest(server string, params *GetApiWorkspaceCalendarEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/calendar/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateFrom", *params.DateFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateTo", *params.DateTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSubscribedHomeworksRequest generates requests for GetSubscribedHomeworks
 func NewGetSubscribedHomeworksRequest(server string, params *GetSubscribedHomeworksParams) (*http.Request, error) {
 	var err error
@@ -20896,6 +21819,436 @@ func NewDownloadUploadRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetApiWorkspaceYoungEventSubscriptionsRequest generates requests for GetApiWorkspaceYoungEventSubscriptions
+func NewGetApiWorkspaceYoungEventSubscriptionsRequest(server string, params *GetApiWorkspaceYoungEventSubscriptionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-event-subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Unread != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "unread", *params.Unread, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiWorkspaceYoungEventSubscriptionsYoungIdRequest generates requests for GetApiWorkspaceYoungEventSubscriptionsYoungId
+func NewGetApiWorkspaceYoungEventSubscriptionsYoungIdRequest(server string, youngId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "youngId", youngId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-event-subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequest calls the generic PutApiWorkspaceYoungEventSubscriptionsYoungId builder with application/json body
+func NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequest(server string, youngId string, body PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequestWithBody(server, youngId, "application/json", bodyReader)
+}
+
+// NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequestWithBody generates requests for PutApiWorkspaceYoungEventSubscriptionsYoungId with any type of body
+func NewPutApiWorkspaceYoungEventSubscriptionsYoungIdRequestWithBody(server string, youngId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "youngId", youngId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-event-subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApiWorkspaceYoungNotificationsRequest generates requests for GetApiWorkspaceYoungNotifications
+func NewGetApiWorkspaceYoungNotificationsRequest(server string, params *GetApiWorkspaceYoungNotificationsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-notifications")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Unread != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "unread", *params.Unread, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApiWorkspaceYoungNotificationsIdReadRequest generates requests for PostApiWorkspaceYoungNotificationsIdRead
+func NewPostApiWorkspaceYoungNotificationsIdReadRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-notifications/%s/read", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiWorkspaceYoungOrganizerSubscriptionsRequest generates requests for GetApiWorkspaceYoungOrganizerSubscriptions
+func NewGetApiWorkspaceYoungOrganizerSubscriptionsRequest(server string, params *GetApiWorkspaceYoungOrganizerSubscriptionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-organizer-subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Unread != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "unread", *params.Unread, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest generates requests for GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId
+func NewGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest(server string, organizerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organizerId", organizerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-organizer-subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest calls the generic PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId builder with application/json body
+func NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequest(server string, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequestWithBody(server, organizerId, "application/json", bodyReader)
+}
+
+// NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequestWithBody generates requests for PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId with any type of body
+func NewPutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdRequestWithBody(server string, organizerId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organizerId", organizerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/young-organizer-subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -21147,6 +22500,12 @@ type ClientWithResponsesInterface interface {
 	// GetApiCatalogYoungEventsYoungIdImageWithResponse request
 	GetApiCatalogYoungEventsYoungIdImageWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdImageResponse, error)
 
+	// GetApiCatalogYoungOrganizersWithResponse request
+	GetApiCatalogYoungOrganizersWithResponse(ctx context.Context, params *GetApiCatalogYoungOrganizersParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungOrganizersResponse, error)
+
+	// GetApiCatalogYoungOrganizersOrganizerIdWithResponse request
+	GetApiCatalogYoungOrganizersOrganizerIdWithResponse(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungOrganizersOrganizerIdResponse, error)
+
 	// ListCommentsWithResponse request
 	ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error)
 
@@ -21278,6 +22637,9 @@ type ClientWithResponsesInterface interface {
 
 	WorkspaceBusPreferencesSetWithResponse(ctx context.Context, body WorkspaceBusPreferencesSetJSONRequestBody, reqEditors ...RequestEditorFn) (*WorkspaceBusPreferencesSetResponse, error)
 
+	// GetApiWorkspaceCalendarEventsWithResponse request
+	GetApiWorkspaceCalendarEventsWithResponse(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceCalendarEventsResponse, error)
+
 	// GetSubscribedHomeworksWithResponse request
 	GetSubscribedHomeworksWithResponse(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error)
 
@@ -21395,6 +22757,34 @@ type ClientWithResponsesInterface interface {
 
 	// DownloadUploadWithResponse request
 	DownloadUploadWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DownloadUploadResponse, error)
+
+	// GetApiWorkspaceYoungEventSubscriptionsWithResponse request
+	GetApiWorkspaceYoungEventSubscriptionsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungEventSubscriptionsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungEventSubscriptionsResponse, error)
+
+	// GetApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse request
+	GetApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error)
+
+	// PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBodyWithResponse request with any body
+	PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBodyWithResponse(ctx context.Context, youngId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error)
+
+	PutApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse(ctx context.Context, youngId string, body PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error)
+
+	// GetApiWorkspaceYoungNotificationsWithResponse request
+	GetApiWorkspaceYoungNotificationsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungNotificationsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungNotificationsResponse, error)
+
+	// PostApiWorkspaceYoungNotificationsIdReadWithResponse request
+	PostApiWorkspaceYoungNotificationsIdReadWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PostApiWorkspaceYoungNotificationsIdReadResponse, error)
+
+	// GetApiWorkspaceYoungOrganizerSubscriptionsWithResponse request
+	GetApiWorkspaceYoungOrganizerSubscriptionsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungOrganizerSubscriptionsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungOrganizerSubscriptionsResponse, error)
+
+	// GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse request
+	GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error)
+
+	// PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBodyWithResponse request with any body
+	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBodyWithResponse(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error)
+
+	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error)
 }
 
 type ListOauthAuthorizationServerResponse struct {
@@ -23258,6 +24648,7 @@ type CatalogWeatherGetResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *WeatherSnapshotResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -23374,6 +24765,69 @@ func (r GetApiCatalogYoungEventsYoungIdImageResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetApiCatalogYoungEventsYoungIdImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungOrganizersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PaginatedYoungOrganizerResponseSchema
+	JSON400      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungOrganizersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungOrganizersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungOrganizersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungOrganizersOrganizerIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungOrganizerSummarySchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungOrganizersOrganizerIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungOrganizersOrganizerIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungOrganizersOrganizerIdResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -24587,6 +26041,38 @@ func (r WorkspaceBusPreferencesSetResponse) ContentType() string {
 	return ""
 }
 
+type GetApiWorkspaceCalendarEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PersonalCalendarPageSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceCalendarEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceCalendarEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceCalendarEventsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetSubscribedHomeworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -25539,6 +27025,268 @@ func (r DownloadUploadResponse) ContentType() string {
 	return ""
 }
 
+type GetApiWorkspaceYoungEventSubscriptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungEventSubscriptionListSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceYoungEventSubscriptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceYoungEventSubscriptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceYoungEventSubscriptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungEventSubscriptionStateSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungEventSubscriptionStateSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiWorkspaceYoungNotificationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungNotificationListSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceYoungNotificationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceYoungNotificationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceYoungNotificationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostApiWorkspaceYoungNotificationsIdReadResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungNotificationReadSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiWorkspaceYoungNotificationsIdReadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiWorkspaceYoungNotificationsIdReadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApiWorkspaceYoungNotificationsIdReadResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiWorkspaceYoungOrganizerSubscriptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungOrganizerSubscriptionListSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungOrganizerSubscriptionStateSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *YoungOrganizerSubscriptionStateSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON429      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListOauthAuthorizationServerWithResponse request returning *ListOauthAuthorizationServerResponse
 func (c *ClientWithResponses) ListOauthAuthorizationServerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOauthAuthorizationServerResponse, error) {
 	rsp, err := c.ListOauthAuthorizationServer(ctx, reqEditors...)
@@ -26179,6 +27927,24 @@ func (c *ClientWithResponses) GetApiCatalogYoungEventsYoungIdImageWithResponse(c
 	return ParseGetApiCatalogYoungEventsYoungIdImageResponse(rsp)
 }
 
+// GetApiCatalogYoungOrganizersWithResponse request returning *GetApiCatalogYoungOrganizersResponse
+func (c *ClientWithResponses) GetApiCatalogYoungOrganizersWithResponse(ctx context.Context, params *GetApiCatalogYoungOrganizersParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungOrganizersResponse, error) {
+	rsp, err := c.GetApiCatalogYoungOrganizers(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungOrganizersResponse(rsp)
+}
+
+// GetApiCatalogYoungOrganizersOrganizerIdWithResponse request returning *GetApiCatalogYoungOrganizersOrganizerIdResponse
+func (c *ClientWithResponses) GetApiCatalogYoungOrganizersOrganizerIdWithResponse(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungOrganizersOrganizerIdResponse, error) {
+	rsp, err := c.GetApiCatalogYoungOrganizersOrganizerId(ctx, organizerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungOrganizersOrganizerIdResponse(rsp)
+}
+
 // ListCommentsWithResponse request returning *ListCommentsResponse
 func (c *ClientWithResponses) ListCommentsWithResponse(ctx context.Context, params *ListCommentsParams, reqEditors ...RequestEditorFn) (*ListCommentsResponse, error) {
 	rsp, err := c.ListComments(ctx, params, reqEditors...)
@@ -26592,6 +28358,15 @@ func (c *ClientWithResponses) WorkspaceBusPreferencesSetWithResponse(ctx context
 	return ParseWorkspaceBusPreferencesSetResponse(rsp)
 }
 
+// GetApiWorkspaceCalendarEventsWithResponse request returning *GetApiWorkspaceCalendarEventsResponse
+func (c *ClientWithResponses) GetApiWorkspaceCalendarEventsWithResponse(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceCalendarEventsResponse, error) {
+	rsp, err := c.GetApiWorkspaceCalendarEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceCalendarEventsResponse(rsp)
+}
+
 // GetSubscribedHomeworksWithResponse request returning *GetSubscribedHomeworksResponse
 func (c *ClientWithResponses) GetSubscribedHomeworksWithResponse(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error) {
 	rsp, err := c.GetSubscribedHomeworks(ctx, params, reqEditors...)
@@ -26978,6 +28753,94 @@ func (c *ClientWithResponses) DownloadUploadWithResponse(ctx context.Context, id
 		return nil, err
 	}
 	return ParseDownloadUploadResponse(rsp)
+}
+
+// GetApiWorkspaceYoungEventSubscriptionsWithResponse request returning *GetApiWorkspaceYoungEventSubscriptionsResponse
+func (c *ClientWithResponses) GetApiWorkspaceYoungEventSubscriptionsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungEventSubscriptionsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungEventSubscriptionsResponse, error) {
+	rsp, err := c.GetApiWorkspaceYoungEventSubscriptions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceYoungEventSubscriptionsResponse(rsp)
+}
+
+// GetApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse request returning *GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse
+func (c *ClientWithResponses) GetApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error) {
+	rsp, err := c.GetApiWorkspaceYoungEventSubscriptionsYoungId(ctx, youngId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceYoungEventSubscriptionsYoungIdResponse(rsp)
+}
+
+// PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBodyWithResponse request with arbitrary body returning *PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse
+func (c *ClientWithResponses) PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBodyWithResponse(ctx context.Context, youngId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error) {
+	rsp, err := c.PutApiWorkspaceYoungEventSubscriptionsYoungIdWithBody(ctx, youngId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiWorkspaceYoungEventSubscriptionsYoungIdResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse(ctx context.Context, youngId string, body PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error) {
+	rsp, err := c.PutApiWorkspaceYoungEventSubscriptionsYoungId(ctx, youngId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiWorkspaceYoungEventSubscriptionsYoungIdResponse(rsp)
+}
+
+// GetApiWorkspaceYoungNotificationsWithResponse request returning *GetApiWorkspaceYoungNotificationsResponse
+func (c *ClientWithResponses) GetApiWorkspaceYoungNotificationsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungNotificationsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungNotificationsResponse, error) {
+	rsp, err := c.GetApiWorkspaceYoungNotifications(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceYoungNotificationsResponse(rsp)
+}
+
+// PostApiWorkspaceYoungNotificationsIdReadWithResponse request returning *PostApiWorkspaceYoungNotificationsIdReadResponse
+func (c *ClientWithResponses) PostApiWorkspaceYoungNotificationsIdReadWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PostApiWorkspaceYoungNotificationsIdReadResponse, error) {
+	rsp, err := c.PostApiWorkspaceYoungNotificationsIdRead(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiWorkspaceYoungNotificationsIdReadResponse(rsp)
+}
+
+// GetApiWorkspaceYoungOrganizerSubscriptionsWithResponse request returning *GetApiWorkspaceYoungOrganizerSubscriptionsResponse
+func (c *ClientWithResponses) GetApiWorkspaceYoungOrganizerSubscriptionsWithResponse(ctx context.Context, params *GetApiWorkspaceYoungOrganizerSubscriptionsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungOrganizerSubscriptionsResponse, error) {
+	rsp, err := c.GetApiWorkspaceYoungOrganizerSubscriptions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceYoungOrganizerSubscriptionsResponse(rsp)
+}
+
+// GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse request returning *GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse
+func (c *ClientWithResponses) GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse(ctx context.Context, organizerId string, reqEditors ...RequestEditorFn) (*GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error) {
+	rsp, err := c.GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx, organizerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp)
+}
+
+// PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBodyWithResponse request with arbitrary body returning *PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse
+func (c *ClientWithResponses) PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBodyWithResponse(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error) {
+	rsp, err := c.PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBody(ctx, organizerId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error) {
+	rsp, err := c.PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx, organizerId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp)
 }
 
 // ParseListOauthAuthorizationServerResponse parses an HTTP response from a ListOauthAuthorizationServerWithResponse call
@@ -28894,6 +30757,13 @@ func ParseCatalogWeatherGetResponse(rsp *http.Response) (*CatalogWeatherGetRespo
 		}
 		response.JSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -29013,6 +30883,79 @@ func ParseGetApiCatalogYoungEventsYoungIdImageResponse(rsp *http.Response) (*Get
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungOrganizersResponse parses an HTTP response from a GetApiCatalogYoungOrganizersWithResponse call
+func ParseGetApiCatalogYoungOrganizersResponse(rsp *http.Response) (*GetApiCatalogYoungOrganizersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungOrganizersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedYoungOrganizerResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungOrganizersOrganizerIdResponse parses an HTTP response from a GetApiCatalogYoungOrganizersOrganizerIdWithResponse call
+func ParseGetApiCatalogYoungOrganizersOrganizerIdResponse(rsp *http.Response) (*GetApiCatalogYoungOrganizersOrganizerIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungOrganizersOrganizerIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungOrganizerSummarySchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
@@ -30645,6 +32588,46 @@ func ParseWorkspaceBusPreferencesSetResponse(rsp *http.Response) (*WorkspaceBusP
 	return response, nil
 }
 
+// ParseGetApiWorkspaceCalendarEventsResponse parses an HTTP response from a GetApiWorkspaceCalendarEventsWithResponse call
+func ParseGetApiWorkspaceCalendarEventsResponse(rsp *http.Response) (*GetApiWorkspaceCalendarEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceCalendarEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PersonalCalendarPageSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetSubscribedHomeworksResponse parses an HTTP response from a GetSubscribedHomeworksWithResponse call
 func ParseGetSubscribedHomeworksResponse(rsp *http.Response) (*GetSubscribedHomeworksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -32151,6 +34134,368 @@ func ParseDownloadUploadResponse(rsp *http.Response) (*DownloadUploadResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceYoungEventSubscriptionsResponse parses an HTTP response from a GetApiWorkspaceYoungEventSubscriptionsWithResponse call
+func ParseGetApiWorkspaceYoungEventSubscriptionsResponse(rsp *http.Response) (*GetApiWorkspaceYoungEventSubscriptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceYoungEventSubscriptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungEventSubscriptionListSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceYoungEventSubscriptionsYoungIdResponse parses an HTTP response from a GetApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse call
+func ParseGetApiWorkspaceYoungEventSubscriptionsYoungIdResponse(rsp *http.Response) (*GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceYoungEventSubscriptionsYoungIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungEventSubscriptionStateSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiWorkspaceYoungEventSubscriptionsYoungIdResponse parses an HTTP response from a PutApiWorkspaceYoungEventSubscriptionsYoungIdWithResponse call
+func ParsePutApiWorkspaceYoungEventSubscriptionsYoungIdResponse(rsp *http.Response) (*PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiWorkspaceYoungEventSubscriptionsYoungIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungEventSubscriptionStateSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceYoungNotificationsResponse parses an HTTP response from a GetApiWorkspaceYoungNotificationsWithResponse call
+func ParseGetApiWorkspaceYoungNotificationsResponse(rsp *http.Response) (*GetApiWorkspaceYoungNotificationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceYoungNotificationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungNotificationListSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiWorkspaceYoungNotificationsIdReadResponse parses an HTTP response from a PostApiWorkspaceYoungNotificationsIdReadWithResponse call
+func ParsePostApiWorkspaceYoungNotificationsIdReadResponse(rsp *http.Response) (*PostApiWorkspaceYoungNotificationsIdReadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiWorkspaceYoungNotificationsIdReadResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungNotificationReadSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceYoungOrganizerSubscriptionsResponse parses an HTTP response from a GetApiWorkspaceYoungOrganizerSubscriptionsWithResponse call
+func ParseGetApiWorkspaceYoungOrganizerSubscriptionsResponse(rsp *http.Response) (*GetApiWorkspaceYoungOrganizerSubscriptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceYoungOrganizerSubscriptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungOrganizerSubscriptionListSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse parses an HTTP response from a GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse call
+func ParseGetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp *http.Response) (*GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungOrganizerSubscriptionStateSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse parses an HTTP response from a PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse call
+func ParsePutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp *http.Response) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest YoungOrganizerSubscriptionStateSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 

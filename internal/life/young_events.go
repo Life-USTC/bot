@@ -14,13 +14,31 @@ import (
 // The date fields are instants; callers should render them in the user's
 // intended local timezone.
 type YoungEvent struct {
-	ApplyEndAt   *time.Time `json:"applyEndAt"`
-	ApplyStartAt *time.Time `json:"applyStartAt"`
-	EndAt        *time.Time `json:"endAt"`
-	Location     *string    `json:"location"`
-	Name         string     `json:"name"`
-	StartAt      *time.Time `json:"startAt"`
-	YoungID      string     `json:"youngId"`
+	ApplyEndAt         *time.Time `json:"applyEndAt"`
+	ApplyStartAt       *time.Time `json:"applyStartAt"`
+	Category           string     `json:"category,omitempty"`
+	Department         string     `json:"department,omitempty"`
+	Description        string     `json:"description,omitempty"`
+	DateUnknown        bool       `json:"dateUnknown,omitempty"`
+	EndAt              *time.Time `json:"endAt"`
+	Hours              *float64   `json:"hours,omitempty"`
+	Capacity           *int       `json:"capacity,omitempty"`
+	AppliedCount       *int       `json:"appliedCount,omitempty"`
+	ImageURL           string     `json:"imageUrl,omitempty"`
+	IsActive           bool       `json:"isActive,omitempty"`
+	Location           *string    `json:"location"`
+	Name               string     `json:"name"`
+	Organizer          string     `json:"organizer,omitempty"`
+	OrganizerID        string     `json:"organizerId,omitempty"`
+	OrganizerName      string     `json:"organizerName,omitempty"`
+	RegistrationStatus string     `json:"registrationStatus,omitempty"`
+	Status             string     `json:"status,omitempty"`
+	SourceMissing      bool       `json:"sourceMissing,omitempty"`
+	StartAt            *time.Time `json:"startAt"`
+	URL                string     `json:"url,omitempty"`
+	YoungID            string     `json:"youngId"`
+	CreatedAt          *time.Time `json:"createdAt,omitempty"`
+	LastSeenAt         *time.Time `json:"lastSeenAt,omitempty"`
 }
 
 type YoungEventPagination struct {
@@ -31,8 +49,10 @@ type YoungEventPagination struct {
 }
 
 type YoungEventPage struct {
-	Data       []YoungEvent         `json:"data"`
-	Pagination YoungEventPagination `json:"pagination"`
+	Data             []YoungEvent         `json:"data"`
+	Pagination       YoungEventPagination `json:"pagination"`
+	UnknownDateCount int                  `json:"unknownDateCount,omitempty"`
+	Source           map[string]any       `json:"source,omitempty"`
 }
 
 // ListYoungEvents returns public second-classroom events. Life's API uses

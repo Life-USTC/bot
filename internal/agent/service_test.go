@@ -1031,6 +1031,7 @@ func TestMCPAuthorizationFailureDoesNotLoopReauthorizationForCurrentScopes(t *te
 		"openid", "profile", "email", "offline_access", "account.profile:read", "account.client-activity:read",
 		"workspace.todo:read", "workspace.todo:write", "workspace.homework:read", "workspace.homework:write",
 		"workspace.subscription:read", "workspace.subscription:write", "workspace.calendar-feed:read", "workspace.calendar:read",
+		"workspace.young-subscription:read", "workspace.young-subscription:write", "workspace.young-notification:read", "workspace.young-notification:write",
 		"community.comment:read", "community.comment:write", "community.description:read", "community.description:write",
 		"community.user:read", "community.section-homework:read", "community.section-homework:write",
 		"workspace.upload:read", "workspace.upload:write", "workspace.overview:read", "workspace.link-pin:read", "workspace.link-pin:write",

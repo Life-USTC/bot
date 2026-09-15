@@ -120,6 +120,7 @@ type NotificationSettings struct {
 	Identity        Identity
 	ClassesEnabled  bool
 	HomeworkEnabled bool
+	YoungEnabled    bool
 	ReauthRequired  bool
 }
 
@@ -337,6 +338,7 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
+	YoungEnabled     bool `gorm:"not null;default:false"`
 	ReauthRequired   bool `gorm:"not null;default:false"`
 	UpdatedAt        time.Time
 }
@@ -576,7 +578,7 @@ func (s *Store) migrateSchema() error {
 
 // PrepareSchemaForMaintenance applies the explicitly requested schema setup
 // and then verifies the complete current schema. A current-version database only
-// receives the independent conversation_compactions table; it is never
+// receives the independent conversation_compactions table and Young opt-in column; it is never
 // silently altered during normal startup.
 func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	if s == nil || s.db == nil {
@@ -591,13 +593,26 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	}
 	switch version {
 	case CurrentSchemaVersion:
-		// Verify all existing tables before adding the one new required table.
-		// This keeps maintenance from masking an unrelated malformed or
-		// obsolete production schema.
-		if err := verifySchemaShapeWithoutConversationCompaction(s.db); err != nil {
-			return err
-		}
-		if err := s.EnsureConversationCompactionSchema(ctx); err != nil {
+		// Apply only the explicitly supported additions, then verify the entire
+		// existing schema in the same transaction. Malformed databases roll back.
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if !tx.Migrator().HasTable(&notificationSettingRow{}) {
+				return errors.New("sqlite schema is missing required table notification_settings")
+			}
+			if !tx.Migrator().HasColumn(&notificationSettingRow{}, "YoungEnabled") {
+				if err := tx.Migrator().AddColumn(&notificationSettingRow{}, "YoungEnabled"); err != nil {
+					return fmt.Errorf("add Young notification opt-in: %w", err)
+				}
+			}
+			if err := verifySchemaShapeWithoutConversationCompaction(tx); err != nil {
+				return err
+			}
+			maintenance := &Store{db: tx}
+			if err := maintenance.EnsureConversationCompactionSchema(ctx); err != nil {
+				return err
+			}
+			return verifySchemaShape(tx)
+		}); err != nil {
 			return err
 		}
 	case 0:
@@ -1971,7 +1986,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 	if err != nil {
 		return err
 	}
-	enabled := settings.ClassesEnabled || settings.HomeworkEnabled
+	enabled := settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled
 	var credentialCount int64
 	if enabled {
 		if err := s.db.WithContext(ctx).Model(&credentialRow{}).
@@ -1989,6 +2004,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 		ConversationID:   settings.Identity.ConversationID,
 		ClassesEnabled:   settings.ClassesEnabled,
 		HomeworkEnabled:  settings.HomeworkEnabled,
+		YoungEnabled:     settings.YoungEnabled,
 		ReauthRequired:   enabled && credentialCount == 0,
 		UpdatedAt:        now,
 	}
@@ -2001,6 +2017,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 			"conversation_id",
 			"classes_enabled",
 			"homework_enabled",
+			"young_enabled",
 			"reauth_required",
 			"updated_at",
 		}),
@@ -2009,7 +2026,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 
 func normalizeNotificationSettingsForSave(settings NotificationSettings) (NotificationSettings, error) {
 	settings.Identity = normalizeIdentity(settings.Identity)
-	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.YoungEnabled {
 		return settings, nil
 	}
 	if settings.Identity.ConversationType == "" {
@@ -2024,8 +2041,8 @@ func normalizeNotificationSettingsForSave(settings NotificationSettings) (Notifi
 func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]NotificationSettings, error) {
 	var rows []notificationSettingRow
 	err := s.db.WithContext(ctx).
-		Where("(classes_enabled = ? OR homework_enabled = ?) AND reauth_required = ? AND conversation_type <> ? AND conversation_id <> ?",
-			true, true, false, "", "").
+		Where("(classes_enabled = ? OR homework_enabled = ? OR young_enabled = ?) AND reauth_required = ? AND conversation_type <> ? AND conversation_id <> ?",
+			true, true, true, false, "", "").
 		Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -2102,6 +2119,7 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		Identity:        ident,
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
+		YoungEnabled:    row.YoungEnabled,
 		ReauthRequired:  row.ReauthRequired,
 	}
 }
