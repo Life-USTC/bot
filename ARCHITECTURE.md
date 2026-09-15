@@ -238,6 +238,14 @@ or that earlier business operations were rolled back.
 Execution identity and dangerous-operation confirmations remain enforced;
 removing runtime quotas does not authorize duplicate side effects.
 
+Model generation currently uses complete JSON responses, not streaming. The
+usage transport and durable final-output path consume complete messages.
+Completion logs separate model header/body waits and history compaction from
+other stages; header/body waits are nested within model request time and must
+not be added again. Provider SSE support alone does not enable incremental
+delivery. Measurements and requirements for that change are documented in
+[the latency investigation](docs/agent-latency.md).
+
 ## Verification and deployment
 
 Regression coverage must exercise activation, structured domain results,
