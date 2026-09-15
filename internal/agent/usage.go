@@ -152,7 +152,6 @@ func captureProviderUsage(ctx context.Context, body []byte) {
 		// duplicate the external request; the durable attempt reservation remains.
 		_ = persister(ctx, usage)
 	}
-	return
 }
 
 func spendingFor(provider, _ string, usage tokenUsage) store.AgentSpending {

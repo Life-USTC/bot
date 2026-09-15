@@ -92,7 +92,7 @@ func TestStreamingTransportDoesNotReplayTruncatedResponse(t *testing.T) {
 func TestStreamingBodyCloseUnblocksReader(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader, writer := io.Pipe()
-		defer writer.Close()
+		defer func() { _ = writer.Close() }()
 		body := newUsageStreamBody(context.Background(), reader, time.Now())
 		done := make(chan error, 1)
 		go func() { _, err := io.ReadAll(body); done <- err }()

@@ -37,7 +37,7 @@ func TestAgentRejectsIncompleteStreamWithoutPersistingPartialAnswer(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	svc, err := New(t.Context(), Config{Enabled: true, APIKey: "test", BaseURL: server.URL, Model: "test-model"}, commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestAgentAssemblesStreamedToolArgumentsBeforeExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	svc, err := New(t.Context(), Config{Enabled: true, APIKey: "test", BaseURL: server.URL, Model: "test-model"}, commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)

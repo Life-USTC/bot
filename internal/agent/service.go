@@ -1025,7 +1025,8 @@ func (s *Service) toolsFor(
 		return nil, nil, err
 	}
 	tools, err = appendInferredTool(tools, "get_current_time", "Get the current local time in Asia/Shanghai.", func(_ context.Context, _ emptyInput) (string, error) {
-		return toolresult.Encode("host", "get_current_time", "succeeded", time.Now(), map[string]any{"time": time.Now().In(shanghaiLocation), "timezone": "Asia/Shanghai"}, nil), nil
+		now := time.Now()
+		return toolresult.Encode("host", "get_current_time", "succeeded", now, map[string]any{"time": now.In(shanghaiLocation), "timezone": "Asia/Shanghai"}, nil), nil
 	})
 	if err != nil {
 		if mcpSession != nil {

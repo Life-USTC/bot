@@ -80,6 +80,13 @@ closing the body, rather than stopping at response headers. Stream usage events
 are counted once. Tests cover incremental delivery, complete fragmented tool
 arguments, truncated streams, body closure, receipts and checkpoint resumption.
 
+The accompanying prefix audit found stable persisted event ordering and static
+tool/instruction assembly. MCP catalog arrays and raw remote JSON can differ in
+ordering between fresh calls, but completed results are persisted and replayed
+without reserialization. Their ordering alone is not evidence of existing
+history-prefix churn. New calls legitimately append new observation timestamps;
+cache optimization must not replace fresh observations with stale evidence.
+
 Independent reads could overlap when tool latency is significant. This requires
 separating read concurrency from ordered writes and confirmation queues; turning
 off Eino's sequential execution globally would also parallelize mutations. Use
