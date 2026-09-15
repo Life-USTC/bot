@@ -57,12 +57,13 @@ const (
 // adapters retain references and the model layer fetches or parses them under
 // its own bounded input policy.
 type InputMedia struct {
-	Kind     InputMediaKind `json:"kind"`
-	URL      string         `json:"url,omitempty"`
-	MIMEType string         `json:"mime_type,omitempty"`
-	Name     string         `json:"name,omitempty"`
-	FileID   string         `json:"file_id,omitempty"`
-	Size     int64          `json:"size,omitempty"`
+	Transcript string         `json:"transcript,omitempty"`
+	Kind       InputMediaKind `json:"kind"`
+	URL        string         `json:"url,omitempty"`
+	MIMEType   string         `json:"mime_type,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	FileID     string         `json:"file_id,omitempty"`
+	Size       int64          `json:"size,omitempty"`
 }
 
 // InputPart preserves the order of text, media and nested forwarded content.

@@ -197,3 +197,14 @@ func TestAttachmentParserRejectsCredentialRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestPlatformVoiceTranscriptDoesNotClaimAudioAnalysis(t *testing.T) {
+	parser, err := NewAttachmentParser(AttachmentParserConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := parser.Parse(t.Context(), []message.InputMedia{{Kind: message.InputMediaAudio, Name: "voice", Transcript: "查询高新校区校车"}})
+	if err != nil || len(result.Records) != 1 || !strings.Contains(result.ContextText(), "查询高新校区校车") || !strings.Contains(result.ContextText(), "未分析原始音频") {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}

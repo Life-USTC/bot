@@ -61,7 +61,8 @@ user turns, and the model cannot approve an operation by writing a flag.
 
 Inbound envelopes retain ordered media references and nested forwarded messages.
 NapCat expands forwarding references and resolves file IDs on the event worker,
-not the websocket reader. Original outer text/mentions control routing; text or
+not the websocket reader. QQ reads recursive `msg_elements` and preserves its
+nested attachments/authors without copying scene authentication tokens. Original outer text/mentions control routing; text or
 mentions inside a forward cannot activate a group command. Forwarded speaker IDs
 and original times travel with each nested node. Attachment-only private inputs
 activate the agent; ambient group attachments remain ignored.
@@ -75,7 +76,9 @@ Prepared user events are persisted before model invocation; recovery looks up th
 same actor/job event and reuses its text/images without another upload. Raw Inbox
 input and delivery records remain separate from this transcript.
 
-Downloads retain the existing 25 MiB per-file media bound. Unsupported audio/video,
+Downloads retain the existing 25 MiB per-file media bound. Platform-provided voice
+transcripts are labelled as potentially imperfect ASR, not original-audio analysis.
+Unsupported audio/video,
 missing URLs, expired files and extraction failures receive explicit context
 annotations. GIF vision is static-image processing, not full animation analysis.
 Nested forwards have a structural recursion guard; ordinary history and media

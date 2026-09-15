@@ -171,6 +171,8 @@ type readyData struct {
 }
 
 type messageData struct {
+	MessageElements  []messageData    `json:"msg_elements"`
+	ArkData          json.RawMessage  `json:"ark_data"`
 	ID               string           `json:"id"`
 	Content          string           `json:"content"`
 	Timestamp        string           `json:"timestamp"`
@@ -210,24 +212,26 @@ type interactionData struct {
 }
 
 type messageAuthor struct {
+	Username     string `json:"username"`
 	UserOpenID   string `json:"user_openid"`
 	MemberOpenID string `json:"member_openid"`
 	ID           string `json:"id"`
 }
 
 type incomingMessage struct {
-	ID         string
-	EventID    string
-	ReplyToID  string
-	Type       string
-	Text       string
-	ImageURLs  []string
-	Parts      []message.InputPart
-	Media      []message.InputMedia
-	Forwarded  []message.ForwardedMessage
-	Identity   store.Identity
-	SentAt     time.Time
-	ReceivedAt time.Time
+	ActorDisplayName string
+	ID               string
+	EventID          string
+	ReplyToID        string
+	Type             string
+	Text             string
+	ImageURLs        []string
+	Parts            []message.InputPart
+	Media            []message.InputMedia
+	Forwarded        []message.ForwardedMessage
+	Identity         store.Identity
+	SentAt           time.Time
+	ReceivedAt       time.Time
 }
 
 func (m *incomingMessage) inbound() message.Inbound {
@@ -239,7 +243,7 @@ func (m *incomingMessage) inbound() message.Inbound {
 		replyTo = &message.ReplyRef{MessageID: strings.TrimSpace(m.ReplyToID)}
 	}
 	return message.Inbound{
-		Actor: message.Actor{Platform: m.Identity.Platform, UserID: m.Identity.UserID},
+		Actor: message.Actor{Platform: m.Identity.Platform, UserID: m.Identity.UserID, DisplayName: m.ActorDisplayName},
 		Conversation: message.Conversation{
 			Platform: m.Identity.Platform, Type: m.Identity.ConversationType, ID: m.Identity.ConversationID,
 		},
@@ -642,7 +646,7 @@ func (b *Bot) handleDispatch(ctx context.Context, payload gatewayPayload) {
 		b.logReady(payload)
 	case "RESUMED":
 		b.logf("QQ bot gateway resumed: session_id=%s", maskID(b.currentSessionID()))
-	case "C2C_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE", "AT_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE":
+	case "C2C_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE", "AT_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE":
 		message, err := b.messageFromPayload(payload)
 		if err != nil {
 			b.logf("decode QQ bot message failed: %v", err)
@@ -801,6 +805,11 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 	replyToID := strings.TrimSpace(data.MessageReference.MessageID)
 	text := b.cleanContent(data.Content)
 	parts, media := inputPartsFromQQMessage(text, data.Attachments)
+	forwarded, nestedMedia := qqForwardedElements(data.MessageElements, 0)
+	media = append(media, nestedMedia...)
+	if len(data.ArkData) > 0 && string(data.ArkData) != "null" {
+		forwarded = append(forwarded, message.ForwardedMessage{Speaker: qqForwardActor(data.Author), Parts: []message.InputPart{{Type: "text", Text: "分享卡片内容：" + string(data.ArkData)}}})
+	}
 	imageURLs := imageURLsFromInputMedia(media)
 	sentAt := parseQQMessageTime(data.Timestamp)
 	receivedAt := b.receivedAt()
@@ -811,13 +820,15 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot c2c message has empty user openid")
 		}
 		return &incomingMessage{
-			ID:        messageID,
-			ReplyToID: replyToID,
-			Type:      payload.T,
-			Text:      text,
-			ImageURLs: imageURLs,
-			Parts:     parts,
-			Media:     media,
+			ID:               messageID,
+			ReplyToID:        replyToID,
+			Type:             payload.T,
+			Text:             text,
+			ImageURLs:        imageURLs,
+			Parts:            parts,
+			Media:            media,
+			Forwarded:        forwarded,
+			ActorDisplayName: data.Author.Username,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -827,7 +838,7 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			SentAt:     sentAt,
 			ReceivedAt: receivedAt,
 		}, nil
-	case "GROUP_AT_MESSAGE_CREATE":
+	case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
 		userID := textutil.FirstNonEmpty(data.Author.MemberOpenID, data.Author.ID)
 		if userID == "" {
 			return nil, errors.New("qq bot group message has empty member openid")
@@ -837,13 +848,15 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot group message has empty group openid")
 		}
 		return &incomingMessage{
-			ID:        messageID,
-			ReplyToID: replyToID,
-			Type:      payload.T,
-			Text:      text,
-			ImageURLs: imageURLs,
-			Parts:     parts,
-			Media:     media,
+			ID:               messageID,
+			ReplyToID:        replyToID,
+			Type:             payload.T,
+			Text:             text,
+			ImageURLs:        imageURLs,
+			Parts:            parts,
+			Media:            media,
+			Forwarded:        forwarded,
+			ActorDisplayName: data.Author.Username,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -862,13 +875,15 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot channel message has empty channel id")
 		}
 		return &incomingMessage{
-			ID:        messageID,
-			ReplyToID: replyToID,
-			Type:      payload.T,
-			Text:      text,
-			ImageURLs: imageURLs,
-			Parts:     parts,
-			Media:     media,
+			ID:               messageID,
+			ReplyToID:        replyToID,
+			Type:             payload.T,
+			Text:             text,
+			ImageURLs:        imageURLs,
+			Parts:            parts,
+			Media:            media,
+			Forwarded:        forwarded,
+			ActorDisplayName: data.Author.Username,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -887,13 +902,15 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			return nil, errors.New("qq bot direct message has empty guild id")
 		}
 		return &incomingMessage{
-			ID:        messageID,
-			ReplyToID: replyToID,
-			Type:      payload.T,
-			Text:      text,
-			ImageURLs: imageURLs,
-			Parts:     parts,
-			Media:     media,
+			ID:               messageID,
+			ReplyToID:        replyToID,
+			Type:             payload.T,
+			Text:             text,
+			ImageURLs:        imageURLs,
+			Parts:            parts,
+			Media:            media,
+			Forwarded:        forwarded,
+			ActorDisplayName: data.Author.Username,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -1006,12 +1023,13 @@ func inputMediaFromQQAttachment(attachment map[string]any) message.InputMedia {
 	typeName := strings.ToLower(strings.TrimSpace(firstQQString(attachment, "type", "kind", "media_type")))
 	kind := qqInputMediaKind(typeName, contentType, name)
 	item := message.InputMedia{
-		Kind:     kind,
-		URL:      qqInputMediaURL(firstQQString(attachment, "url", "proxy_url", "download_url")),
-		MIMEType: contentType,
-		Name:     name,
-		FileID:   qqInputMediaID(attachment),
-		Size:     qqInputMediaSize(firstQQValue(attachment, "size", "file_size", "bytes")),
+		Kind:       kind,
+		URL:        qqInputMediaURL(firstQQString(attachment, "url", "proxy_url", "download_url")),
+		MIMEType:   contentType,
+		Name:       name,
+		FileID:     qqInputMediaID(attachment),
+		Size:       qqInputMediaSize(firstQQValue(attachment, "size", "file_size", "bytes")),
+		Transcript: firstQQString(attachment, "asr_refer_text"),
 	}
 	if item.MIMEType == "" {
 		item.MIMEType = qqInputMIMEFromName(name)
@@ -1035,7 +1053,7 @@ func qqInputMediaKind(typeName, contentType, name string) message.InputMediaKind
 	switch {
 	case strings.HasPrefix(contentType, "image/"):
 		return message.InputMediaImage
-	case strings.HasPrefix(contentType, "audio/"):
+	case contentType == "voice" || strings.HasPrefix(contentType, "audio/"):
 		return message.InputMediaAudio
 	case strings.HasPrefix(contentType, "video/"):
 		return message.InputMediaVideo

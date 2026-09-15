@@ -249,6 +249,11 @@ func (p *AttachmentParser) parseOne(ctx context.Context, media message.InputMedi
 		}
 		return record, nil
 	case message.InputMediaAudio, message.InputMediaVideo:
+		if media.Kind == message.InputMediaAudio && strings.TrimSpace(media.Transcript) != "" {
+			record.Status = AttachmentStatusExtracted
+			record.Text = "平台提供的语音转写（可能有识别错误，未分析原始音频）：\n" + media.Transcript
+			return record, nil
+		}
 		record.Status = AttachmentStatusUnsupported
 		record.Reason = "当前输入通道未提供可用的音视频理解接口"
 		return record, nil
