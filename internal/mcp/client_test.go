@@ -37,6 +37,7 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 		method string
 		auth   string
 	}
+	var discoverRequests int
 	var initializeRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -48,9 +49,14 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 		var rpcRequest struct {
 			Method string `json:"method"`
 		}
-		if json.Unmarshal(body, &rpcRequest) == nil && rpcRequest.Method == "initialize" {
+		if json.Unmarshal(body, &rpcRequest) == nil {
 			mu.Lock()
-			initializeRequests++
+			switch rpcRequest.Method {
+			case string(mcpgo.MethodServerDiscover):
+				discoverRequests++
+			case "initialize":
+				initializeRequests++
+			}
 			mu.Unlock()
 		}
 		mu.Lock()
@@ -94,8 +100,11 @@ func TestClientListsAndCallsToolsWithBearerToken(t *testing.T) {
 	if len(requests) == 0 {
 		t.Fatal("no MCP HTTP requests observed")
 	}
-	if initializeRequests != 1 {
-		t.Fatalf("initialize requests = %d, want 1", initializeRequests)
+	if discoverRequests != 1 {
+		t.Fatalf("server/discover requests = %d, want 1", discoverRequests)
+	}
+	if initializeRequests != 0 {
+		t.Fatalf("initialize requests = %d, want 0 for modern protocol", initializeRequests)
 	}
 	for _, req := range requests {
 		if req.method == http.MethodPost && req.auth != "Bearer test-token" {
