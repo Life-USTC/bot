@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -282,11 +283,11 @@ func TestCapabilityConfirmationAndAuthReleaseAreOnceOnly(t *testing.T) {
 	consumed := make(chan *ConversationJob, consumers)
 	resolved := make(chan *CapabilityExecution, consumers)
 	errs := make(chan error, consumers)
-	for range consumers {
+	for index := range consumers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			execution, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now)
+			execution, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: fmt.Sprintf("confirmation-%d", index)}, now)
 			if err != nil {
 				errs <- err
 				return
@@ -376,7 +377,7 @@ func TestConversationJobOutputCommitMakesConfirmationVisibleAtomically(t *testin
 	if err != nil || !found || gotExecution.ReceiptState != CapabilityExecutionAwaitingConfirmation || gotExecution.ReceiptSentAt == nil {
 		t.Fatalf("committed execution=%#v found=%v err=%v", gotExecution, found, err)
 	}
-	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true}, now.Add(time.Second))
+	resolved, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-2"}, now.Add(time.Second))
 	if err != nil || resolved == nil || released == nil || resolved.ID != execution.ID || released.ID != job.ID {
 		t.Fatalf("immediate confirmation resolved=%#v released=%#v err=%v", resolved, released, err)
 	}
@@ -459,14 +460,14 @@ func TestGroupConversationWaitsAreScopedToActor(t *testing.T) {
 		t.Fatalf("complete second actor job: ok=%v err=%v", ok, err)
 	}
 
-	_, consumed, err := s.ResolveCapabilityConfirmation(ctx, second, CapabilityConfirmationDecision{Approved: true}, now)
+	_, consumed, err := s.ResolveCapabilityConfirmation(ctx, second, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-3"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if consumed != nil {
 		t.Fatalf("second actor consumed first actor confirmation: %#v", consumed)
 	}
-	_, consumed, err = s.ResolveCapabilityConfirmation(ctx, first, CapabilityConfirmationDecision{Approved: true}, now)
+	_, consumed, err = s.ResolveCapabilityConfirmation(ctx, first, CapabilityConfirmationDecision{Approved: true, SourceEventID: "conversation_job_test-confirmation-4"}, now)
 	if err != nil || consumed == nil || consumed.ID != waiting.ID {
 		t.Fatalf("first actor confirmation = %#v err=%v", consumed, err)
 	}

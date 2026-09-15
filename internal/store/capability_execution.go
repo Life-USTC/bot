@@ -343,11 +343,23 @@ func (s *Store) ResolveCapabilityConfirmation(ctx context.Context, ident Identit
 		// job has produced its next prompt cannot approve that next operation.
 		err := tx.Where("platform = ? AND confirmation_event_id = ?", ident.Platform, decision.SourceEventID).First(&operation).Error
 		if err == nil {
+			if operation.ExternalUserID != ident.UserID || operation.ConversationType != ident.ConversationType || operation.ConversationID != ident.ConversationID {
+				return errors.New("confirmation event belongs to another actor")
+			}
 			resolved, released, err = capabilityConfirmationResult(tx, operation)
 			return err
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		// A word previously accepted as an ordinary conversation turn cannot
+		// become an approval when the platform replays it after a new prompt.
+		var previousTurn int64
+		if err := tx.Model(&conversationJobRow{}).Where("platform = ? AND source_event_id = ?", ident.Platform, decision.SourceEventID).Count(&previousTurn).Error; err != nil {
+			return err
+		}
+		if previousTurn > 0 {
+			return nil
 		}
 		query := tx.Table("capability_executions AS operation").
 			Select("operation.*").

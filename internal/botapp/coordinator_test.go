@@ -594,7 +594,7 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#已执行操作{开启作业通知}") {
+	if len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#通知 homework on（已完成）") {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
@@ -648,7 +648,7 @@ func TestCoordinatorDoesNotWaitWhenInterruptedRunHasNoPendingConfirmation(t *tes
 	if strings.Contains(text, confirmationPrompt) || strings.Contains(text, "#待确认") {
 		t.Fatalf("phantom confirmation was sent: %q", text)
 	}
-	if !strings.Contains(text, "没有可确认的待处理操作") || !strings.Contains(text, "#设置提醒失败{作业：开：设置提醒失败：测试失败}") {
+	if !strings.Contains(text, "没有可确认的待处理操作") || !strings.Contains(text, "#通知 homework on（失败）") {
 		t.Fatalf("terminal interrupted explanation=%q", text)
 	}
 }

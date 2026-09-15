@@ -44,7 +44,8 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 	dedupeKey := fmt.Sprintf("conversation-job:%d:tool-receipt:%s", jobID, callID)
 	capability := "tool:" + input.Name
 	arguments := []string{input.Arguments}
-	if input.Name == campusCallToolName {
+	switch input.Name {
+	case campusCallToolName:
 		var call campusToolCallInput
 		if json.Unmarshal([]byte(input.Arguments), &call) == nil && strings.TrimSpace(call.Name) != "" {
 			capability = "mcp:" + strings.TrimSpace(call.Name)
@@ -54,7 +55,7 @@ func (s *Service) saveToolReceipt(ctx context.Context, identity store.Identity, 
 			}
 			arguments = []string{string(encoded)}
 		}
-	} else if input.Name == "run_bot_command" {
+	case "run_bot_command":
 		var command botCommandInput
 		if json.Unmarshal([]byte(input.Arguments), &command) == nil && !commands.HasAdditionalCommandLine(command.Command) {
 			parsed := commands.ParseCommand(command.Command)

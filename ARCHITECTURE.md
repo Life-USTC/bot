@@ -197,6 +197,15 @@ reordering cannot change a pending operation; ambiguous titles are rejected. Gra
 `confirmed` marker is set by the approved execution path, never trusted from
 model arguments.
 
+Confirmation is per operation. The host displays one pending operation and
+waits for its own confirmation; approval or denial cannot approve the rest of
+a grouped request. Approval is bound to the saved confirmation output accepted
+by the platform, not merely to a prepared execution. Recovery resumes the
+checkpoint and preserves the remaining queue.
+Consumed confirmation source events are unique per platform. Replaying a
+confirmation returns its original outcome, and an event already accepted as an
+ordinary conversation turn cannot later become an approval.
+
 Each independently reversible mutation has a durable execution row. Preparation
 is followed by a lease claim before external effects. Terminal outcomes are
 `succeeded`, `failed`, `unknown`, `denied`, `cancelled` or `expired`. An
@@ -215,6 +224,13 @@ verified replies retain their intended activation rules.
 platform receipts and delivery state. Final job state, pending outputs and
 operation receipt state are committed atomically. A delivery retry only sends
 that output; it cannot repeat a capability or an LLM turn.
+
+Agent replies end with host-generated invocation receipts for Bot commands and
+MCP queries/executions. Bot invocations use `#校车 ...`; MCP invocations use the
+actual tool name and arguments, such as `<update_todo({...})>`, followed by the
+execution status. Structured results remain model context; receipts do not
+dump business-result JSON or transport diagnostics. Durable execution records
+preserve receipts across confirmation waits and process recovery.
 
 Platform acceptance means the platform accepted a message, not that a human
 read it. Ambiguous sends and workers lost during sending become `unknown` and
@@ -258,3 +274,6 @@ without mandatory search or semantic retry.
 host, switches binaries and launchd services transactionally, checks health and
 rolls back a failed switch. A deployment is verified by the actual
 `BOT_BUILD_VERSION` and both service health endpoints, not only by Git state.
+Schema version 3 adds confirmation output/event bindings to capability
+executions. Existing databases require an explicit offline schema change with
+a backup before switching binaries; normal startup rejects older schema shapes.

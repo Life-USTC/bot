@@ -3,10 +3,38 @@ package botapp
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
+
+func TestReceiptsKeepSeparateIdenticalQueries(t *testing.T) {
+	db := newCoordinatorStore(t)
+	ctx := t.Context()
+	ident := store.Identity{Platform: "napcat", UserID: "receipts", ConversationType: "private", ConversationID: "receipts"}
+	job, _, err := db.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{Identity: ident, SourceEventID: "queries", ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := db.ClaimConversationJob(ctx, ident)
+	if err != nil || claim == nil {
+		t.Fatalf("claim=%v err=%v", claim, err)
+	}
+	for _, call := range []string{"first", "second"} {
+		execution, _, err := db.PrepareCapabilityExecution(ctx, store.CapabilityExecutionPrepare{Identity: ident, JobID: job.ID, LeaseToken: claim.LeaseToken, DedupeKey: call, ToolCallID: call, Capability: "bus", Arguments: []string{"西区", "高新区"}, Effect: "read"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.FinishCapabilityExecution(ctx, execution.ID, claim.LeaseToken, "result", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	receipts, err := (&Coordinator{jobs: db}).unsentExecutionReceipts(ctx, job.ID, false)
+	if err != nil || len(receipts.IDs) != 2 || len(receipts.Lines) != 2 || receipts.Lines[0] != receipts.Lines[1] {
+		t.Fatalf("distinct queries were hidden: %#v err=%v", receipts, err)
+	}
+}
 
 func TestExecutionReceiptFormatsBotReadAndMutationInvocation(t *testing.T) {
 	read, visible := formatExecutionReceipt(store.CapabilityExecution{
@@ -51,8 +79,8 @@ func TestExecutionReceiptFormatsMCPAndAuxiliaryToolInvocations(t *testing.T) {
 
 	withCredentials, visible := formatExecutionReceipt(store.CapabilityExecution{
 		Capability: "mcp:catalog_rooms_map",
-		Arguments: []string{`{"url":"https://life.example/rooms","access_token":"private-value","nested":{"authorization":"Bearer private-token"}}`},
-		State: store.CapabilityExecutionSucceeded,
+		Arguments:  []string{`{"url":"https://life.example/rooms","access_token":"private-value","nested":{"authorization":"Bearer private-token"}}`},
+		State:      store.CapabilityExecutionSucceeded,
 	})
 	wantCredentials := `<catalog_rooms_map({"access_token":"<redacted>","nested":{"authorization":"<redacted>"},"url":"https://life.example/rooms"})>（已完成）`
 	if !visible || withCredentials != wantCredentials {
@@ -97,6 +125,13 @@ func TestExecutionReceiptKeepsLongConfirmationTarget(t *testing.T) {
 	})
 	if !visible || len([]rune(receipt)) <= 1000 || !strings.HasSuffix(receipt, target+"）") {
 		t.Fatalf("long confirmation receipt length=%d suffix=%v", len([]rune(receipt)), strings.HasSuffix(receipt, target+"）"))
+	}
+	receipt, visible = formatExecutionReceipt(store.CapabilityExecution{
+		Capability: "mcp:delete_todo", Arguments: []string{`{"id":9007199254740993,"title":"` + target + `"}`},
+		State: store.CapabilityExecutionAwaitingConfirmation,
+	})
+	if !visible || !strings.Contains(receipt, `"id":9007199254740993`) || !strings.Contains(receipt, target) {
+		t.Fatal("MCP confirmation changed or truncated the target")
 	}
 }
 

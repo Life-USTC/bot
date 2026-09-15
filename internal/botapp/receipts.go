@@ -10,7 +10,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-const confirmationPrompt = "请确认是否执行以下操作。回复 ok 确认，回复 取消 拒绝。"
+const confirmationPrompt = "请确认标为「待确认」的这一项操作。回复 确认 执行，回复 取消 拒绝；其余操作会逐项询问。"
 
 type executionReceipts struct {
 	Lines []string
@@ -102,10 +102,10 @@ func formatMCPExecutionArguments(arguments []string) string {
 	values := make([]any, len(arguments))
 	for index, argument := range arguments {
 		var value any
-		if err := json.Unmarshal([]byte(argument), &value); err != nil {
-			// Persisted MCP calls use one JSON argument. Keep malformed legacy
-			// values visible as quoted text so the receipt still identifies the
-			// invocation without treating it as a result payload.
+		decoder := json.NewDecoder(strings.NewReader(argument))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil || !json.Valid([]byte(argument)) {
+			// Invalid arguments still identify the attempted invocation.
 			values[index] = strings.TrimSpace(argument)
 			continue
 		}
@@ -121,20 +121,20 @@ func formatMCPExecutionArguments(arguments []string) string {
 		}
 		values[index] = redactReceiptArgument(value)
 	}
+	var value any = values
 	if len(values) == 1 {
 		if values[0] == nil {
 			return ""
 		}
-		encoded, err := json.Marshal(values[0])
-		if err == nil {
-			return string(encoded)
-		}
+		value = values[0]
 	}
-	encoded, err := json.Marshal(values)
-	if err != nil {
+	var encoded strings.Builder
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
 		return ""
 	}
-	return string(encoded)
+	return strings.TrimSuffix(encoded.String(), "\n")
 }
 
 func redactReceiptArgument(value any) any {
@@ -245,7 +245,6 @@ func (c *Coordinator) unsentExecutionReceiptsForEffect(ctx context.Context, jobI
 		return executionReceipts{}, markConversationPersistenceError(err)
 	}
 	result := executionReceipts{}
-	seen := make(map[string]bool)
 	pendingIncluded := false
 	for _, execution := range executions {
 		if effect != "" && !strings.EqualFold(strings.TrimSpace(execution.Effect), strings.TrimSpace(effect)) {
@@ -262,10 +261,6 @@ func (c *Coordinator) unsentExecutionReceiptsForEffect(ctx context.Context, jobI
 			continue
 		}
 		result.IDs = append(result.IDs, execution.ID)
-		if seen[line] {
-			continue
-		}
-		seen[line] = true
 		result.Lines = append(result.Lines, line)
 	}
 	return result, nil

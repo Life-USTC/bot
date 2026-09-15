@@ -274,7 +274,7 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimed, prepared[0].ID, "grouped-confirmation-1")
 	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 
-	first, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true})
+	first, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"})
 	if err != nil || first == nil || released == nil {
 		t.Fatalf("approve first: operation=%#v job=%#v err=%v", first, released, err)
 	}
@@ -294,8 +294,27 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	}
 	outboxID = commitTestConfirmationReceipt(t, s, ctx, *resumed, prepared[1].ID, "grouped-confirmation-2")
 	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
+	replayed, replayJob, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"})
+	if err != nil || replayed == nil || replayJob == nil || replayed.ID != first.ID || replayJob.State != ConversationJobStateWaitingConfirmation {
+		t.Fatalf("replay changed the confirmation queue: operation=%#v job=%#v err=%v", replayed, replayJob, err)
+	}
+	otherActor := ident
+	otherActor.UserID = "someone-else"
+	if operation, _, err := s.ResolveCapabilityConfirmation(ctx, otherActor, CapabilityConfirmationDecision{Approved: true, SourceEventID: "agent_state_test-confirmation-1"}); err == nil || operation != nil {
+		t.Fatal("confirmation replay exposed another actor's operation")
+	}
+	if _, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{Identity: ident, SourceEventID: "earlier-word", Input: ConversationJobInput{Text: "确认"}, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if operation, job, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true, SourceEventID: "earlier-word"}); err != nil || operation != nil || job != nil {
+		t.Fatal("an ordinary conversation event became an approval on replay")
+	}
+	stillPending, _, err := s.CapabilityExecution(ctx, prepared[1].ID)
+	if err != nil || stillPending.State != CapabilityExecutionAwaitingConfirmation {
+		t.Fatalf("second operation was approved by replay: %#v err=%v", stillPending, err)
+	}
 
-	second, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Reason: "不想订阅"})
+	second, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Reason: "不想订阅", SourceEventID: "agent_state_test-confirmation-2"})
 	if err != nil || second == nil || released == nil {
 		t.Fatalf("deny second: operation=%#v job=%#v err=%v", second, released, err)
 	}

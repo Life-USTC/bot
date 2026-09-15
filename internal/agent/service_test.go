@@ -759,7 +759,7 @@ func TestLazyMCPSearchAndCallExposeDynamicTools(t *testing.T) {
 		t.Fatalf("MCP execution receipt = %#v", executions[1])
 	}
 	commitAgentConfirmationReceipt(t, db, context.Background(), ident, job.ID, claimed.LeaseToken, "lazy-mcp-confirmation-output")
-	if _, _, err := db.ResolveCapabilityConfirmation(context.Background(), ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil {
+	if _, _, err := db.ResolveCapabilityConfirmation(context.Background(), ident, store.CapabilityConfirmationDecision{Approved: true, SourceEventID: "service_test-confirmation-1"}); err != nil {
 		t.Fatalf("approve MCP mutation: %v", err)
 	}
 	approvedClaim, err := db.ClaimConversationJob(context.Background(), ident)
@@ -2000,7 +2000,7 @@ func TestApprovedAgentLoginStartsOnlyAfterConfirmation(t *testing.T) {
 		t.Fatalf("prepared login=%#v created=%v device_requests=%d err=%v", execution, created, deviceRequests.Load(), err)
 	}
 	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, claimed.LeaseToken, "agent-login-confirmation-output")
-	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true, SourceEventID: "service_test-confirmation-2"}); err != nil || released == nil {
 		t.Fatalf("approve login released=%#v err=%v", released, err)
 	}
 	resumed, err := db.ClaimConversationJob(ctx, ident)
@@ -2119,7 +2119,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
 		t.Fatalf("checkpoint found=%v err=%v", found, err)
 	}
-	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true, SourceEventID: "service_test-confirmation-3"}); err != nil || released == nil {
 		t.Fatalf("approve operation: released=%#v err=%v", released, err)
 	}
 
@@ -2293,7 +2293,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 		t.Fatalf("pending unsubscribe executions=%#v err=%v", executions, err)
 	}
 	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "unsubscribe-confirm-output")
-	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true, SourceEventID: "service_test-confirmation-4"}); err != nil || released == nil {
 		t.Fatalf("approve unsubscribe: released=%#v err=%v", released, err)
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "取消 COMP6212P.02 的课程订阅", Identity: ident, JobID: job.ID})
@@ -2640,7 +2640,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 		t.Fatalf("first run = %#v", first)
 	}
 	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "denied-confirmation-output")
-	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Reason: "用户拒绝执行"}); err != nil || released == nil {
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Reason: "用户拒绝执行", SourceEventID: "service_test-confirmation-5"}); err != nil || released == nil {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "退出登录", Identity: ident, JobID: job.ID})
@@ -2725,7 +2725,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 		t.Fatalf("first run = %#v", first)
 	}
 	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "retry-confirmation-output")
-	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
+	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true, SourceEventID: "service_test-confirmation-6"}); err != nil || released == nil {
 		t.Fatalf("approve confirmation: released=%#v err=%v", released, err)
 	}
 	input = claimAgentInput(t, db, ident, Input{Text: "退出登录", Identity: ident, JobID: job.ID})

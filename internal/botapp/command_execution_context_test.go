@@ -67,7 +67,7 @@ func TestCoordinatorDirectDestructiveCommandWaitsForConfirmationAndContinuesOnce
 	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionSucceeded {
 		t.Fatalf("resumed destructive execution=%#v err=%v", executions, err)
 	}
-	if records, err = db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#已退出账户") {
+	if records, err = db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#退出（已完成）") {
 		t.Fatalf("success output=%#v err=%v", records, err)
 	}
 
@@ -134,7 +134,7 @@ func TestCoordinatorDirectDestructiveCommandRejectsWithoutExecution(t *testing.T
 		t.Fatalf("confirmation mechanic leaked into events=%#v err=%v", events, err)
 	}
 	records, err = db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "用户拒绝执行") {
+	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "已拒绝") {
 		t.Fatalf("rejection output=%#v err=%v", records, err)
 	}
 }
@@ -172,7 +172,7 @@ func TestCoordinatorDirectDestructiveBatchConfirmsEachOperation(t *testing.T) {
 		t.Fatalf("preflight/calls: described=%#v calls=%d", handler.described, handler.calls)
 	}
 	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 ||
-		!strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{1}") || strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{2}") {
+		!strings.Contains(records[0].Message.Content.Text, "#待办 delete 1（待确认：1）") || strings.Contains(records[0].Message.Content.Text, "#待办 delete 2（待确认：2）") {
 		t.Fatalf("first confirmation output=%#v err=%v", records, err)
 	} else {
 		acceptCoordinatorOutputs(t, db, records)
@@ -190,7 +190,7 @@ func TestCoordinatorDirectDestructiveBatchConfirmsEachOperation(t *testing.T) {
 		t.Fatalf("after first approval=%#v err=%v", executions, err)
 	}
 	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 ||
-		!strings.Contains(records[0].Message.Content.Text, "#已删除待办{1}") || !strings.Contains(records[0].Message.Content.Text, "#待确认删除待办{2}") {
+		!strings.Contains(records[0].Message.Content.Text, "#待办 delete 1（已完成）") || !strings.Contains(records[0].Message.Content.Text, "#待办 delete 2（待确认：2）") {
 		t.Fatalf("second confirmation output=%#v err=%v", records, err)
 	} else {
 		acceptCoordinatorOutputs(t, db, records)
@@ -210,7 +210,7 @@ func TestCoordinatorDirectDestructiveBatchConfirmsEachOperation(t *testing.T) {
 	if saved, err := db.GetConversationJob(ctx, job.ID); err != nil || saved == nil || saved.State != store.ConversationJobStateCompleted {
 		t.Fatalf("destructive batch job=%#v err=%v", saved, err)
 	}
-	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#已删除待办{2}") {
+	if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#待办 delete 2（已完成）") {
 		t.Fatalf("final destructive output=%#v err=%v", records, err)
 	}
 }
@@ -255,7 +255,7 @@ func TestCoordinatorDirectDestructiveBatchRejectsEachOperation(t *testing.T) {
 		if handler.calls != 0 {
 			t.Fatalf("rejected destructive batch executed %d times", handler.calls)
 		}
-		if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "用户拒绝执行") {
+		if records, err := db.ClaimDue(ctx, time.Now().UTC(), 10); err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "已拒绝") {
 			t.Fatalf("rejection %d output=%#v err=%v", index, records, err)
 		} else {
 			acceptCoordinatorOutputs(t, db, records)

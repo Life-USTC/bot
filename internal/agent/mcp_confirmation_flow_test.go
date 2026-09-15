@@ -114,7 +114,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 				t.Fatalf("before approval: state=%s calls=%d", first.State, remoteCalls.Load())
 			}
 			commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, scenario+"-confirmation-output")
-			decision := store.CapabilityConfirmationDecision{Approved: scenario != "deny"}
+			decision := store.CapabilityConfirmationDecision{Approved: scenario != "deny", SourceEventID: "mcp_confirmation_flow_test-confirmation-1"}
 			if scenario == "deny" {
 				decision.Reason = "用户拒绝执行"
 			}
