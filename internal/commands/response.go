@@ -19,10 +19,11 @@ type Response struct {
 	// Data is the machine-readable result of the command. It deliberately
 	// lives beside Text and Image: Text is presentation for a user, while Data
 	// is the already-fetched domain value sent to a model or another host.
-	Data  any
-	Image *responses.Image
-	Kind  string
-	Parts []Response
+	Images []toolresult.ImageReference
+	Data   any
+	Image  *responses.Image
+	Kind   string
+	Parts  []Response
 }
 
 // ModelResult returns the stable model-facing envelope for this response.
@@ -34,7 +35,7 @@ func (r Response) ModelResult(operation, status string, observedAt time.Time) st
 	if status != "success" && status != "succeeded" {
 		err = errors.New(r.Text)
 	}
-	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err)
+	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err, r.Images...)
 }
 
 const ResponseKindAuthWait = "auth_wait"

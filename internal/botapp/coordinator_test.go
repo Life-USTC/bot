@@ -692,34 +692,40 @@ func TestCoordinatorRetriesInterruptedRunWithNonterminalExecution(t *testing.T) 
 	}
 }
 
-func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
+func TestBusRenderFailureHasNoTextFallbackOrBusinessReexecution(t *testing.T) {
 	db := newCoordinatorStore(t)
-	coordinator, err := NewCoordinator(CoordinatorConfig{
-		Jobs: db,
-		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
-			return commands.Response{
-				Text: "fallback", Kind: "bus",
-				Image: responses.NewTextImage("bus", "校车", "fallback"),
-			}, true
-		}),
-		Outputs: db,
-		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
-			return nil, 0, 0, errors.New("render failed")
-		}),
-	})
+	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Kind: "bus", Image: responses.NewTextImage("bus", "校车", "仅图卡内容"), Data: map[string]any{"buses": []string{"08:00"}}})}
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db, Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) { return nil, 0, 0, errors.New("render failed") })})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := coordinator.Enqueue(context.Background(), jobInbound("event-2", "校车")); err != nil {
+	if err := coordinator.Enqueue(t.Context(), jobInbound("bus-render-failure", "校车")); err != nil {
 		t.Fatal(err)
 	}
-	coordinator.execute(context.Background(), claimOnlyConversationJob(t, db))
-	records, err := db.ClaimDue(context.Background(), time.Now().UTC(), 10)
-	if err != nil {
-		t.Fatal(err)
+	job := claimOnlyConversationJob(t, db)
+	coordinator.execute(t.Context(), job)
+	assertRetryableDirectJob(t, db, job.ID)
+	records, err := db.ClaimDue(t.Context(), time.Now(), 10)
+	if err != nil || len(records) != 0 {
+		t.Fatalf("fallback outbox=%#v err=%v", records, err)
 	}
-	if len(records) != 1 || records[0].Message.Content.TextContent() != "fallback" || records[0].Message.Content.Parts[0].Attachment != nil {
-		t.Fatalf("outbox records = %#v", records)
+	coordinator.renderer = rendererFunc(func(*responses.Image) ([]byte, int, int, error) { return []byte("image"), 1, 1, nil })
+	coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+	assertCompletedDirectJob(t, db, job.ID)
+	if handler.calls != 1 {
+		t.Fatalf("business query executed %d times", handler.calls)
+	}
+	records, err = db.ClaimDue(t.Context(), time.Now(), 10)
+	if err != nil || len(records) != 1 || len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || records[0].Message.Content.TextContent() != "" {
+		t.Fatalf("image-only outbox=%#v err=%v", records, err)
+	}
+	events, err := db.RecentConversationEvents(t.Context(), job.Identity, 10)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+	var result struct{ Result struct{ Buses []string } }
+	if err := json.Unmarshal([]byte(events[1].Content), &result); err != nil || len(result.Result.Buses) != 1 || result.Result.Buses[0] != "08:00" {
+		t.Fatalf("bus JSON=%s err=%v", events[1].Content, err)
 	}
 }
 

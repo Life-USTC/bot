@@ -267,9 +267,6 @@ func defaultCapabilityPresenter(inv Invocation, response Response, policy Capabi
 		presentation.Text = ""
 		presentation.DeliveredByHost = true
 	}
-	if response.Image != nil || len(response.Parts) > 0 {
-		presentation.DeliveredByHost = true
-	}
 	return presentation
 }
 

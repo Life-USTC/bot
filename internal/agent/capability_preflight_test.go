@@ -28,7 +28,7 @@ func TestTargetPreflightRequestsLoginBeforePreparingMutation(t *testing.T) {
 	ctx := store.WithConversationJobLease(t.Context(), job.ID, claimed.LeaseToken)
 	svc := &Service{handler: commands.Handler{Store: db}}
 	result, err := svc.invokeHostCapability(ctx, hostCapabilityInput{Capability: "todo", Arguments: []string{"delete", "1"}}, ident, job.ID, nil)
-	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status":"auth_required"`) {
+	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status": "auth_required"`) {
 		t.Fatalf("result=%s err=%v", result, err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)

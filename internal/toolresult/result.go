@@ -12,28 +12,38 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-type Result struct {
-	Source     string    `json:"source"`
-	Operation  string    `json:"operation"`
-	Status     string    `json:"status"`
-	ObservedAt time.Time `json:"observed_at"`
-	Result     any       `json:"result"`
-	Error      *Error    `json:"error,omitempty"`
+type ImageReference struct {
+	ID    string `json:"id"`
+	Title string `json:"title,omitempty"`
 }
 
-func Encode(source, operation, status string, observedAt time.Time, data any, err error) string {
+type Result struct {
+	Source     string           `json:"source"`
+	Operation  string           `json:"operation"`
+	Status     string           `json:"status"`
+	ObservedAt time.Time        `json:"observed_at"`
+	Result     any              `json:"result"`
+	Images     []ImageReference `json:"images,omitempty"`
+	Error      *Error           `json:"error,omitempty"`
+}
+
+func Encode(source, operation, status string, observedAt time.Time, data any, err error, images ...ImageReference) string {
 	if status == "success" {
 		status = "succeeded"
 	}
-	r := Result{Source: source, Operation: operation, Status: status, ObservedAt: observedAt.UTC(), Result: data}
+	r := Result{Source: source, Operation: operation, Status: status, ObservedAt: observedAt.UTC(), Result: data, Images: images}
 	if err != nil {
 		r.Error = &Error{Code: status, Message: err.Error()}
 	}
-	encoded, encodeErr := json.Marshal(r)
+	marshal := json.Marshal
+	if source == "bot" {
+		marshal = func(v any) ([]byte, error) { return json.MarshalIndent(v, "", "  ") }
+	}
+	encoded, encodeErr := marshal(r)
 	if encodeErr != nil {
 		r.Status, r.Result = "failed", nil
 		r.Error = &Error{Code: "invalid_result", Message: "The operation result could not be encoded."}
-		encoded, _ = json.Marshal(r)
+		encoded, _ = marshal(r)
 	}
 	return string(encoded)
 }

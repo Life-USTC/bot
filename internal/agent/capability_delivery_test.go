@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestPresentationFailurePreservesBusinessSuccess(t *testing.T) {
+func TestCommandImagesRemainSavedUntilModelSelectsThem(t *testing.T) {
 	for _, approved := range []bool{false, true} {
 		t.Run(map[bool]string{false: "read", true: "approved"}[approved], func(t *testing.T) {
 			db, err := store.Open(t.TempDir() + "/bot.db")
@@ -27,7 +28,10 @@ func TestPresentationFailurePreservesBusinessSuccess(t *testing.T) {
 			svc := &Service{handler: commands.Handler{Store: db, EnableImageResponses: true}}
 			invocation := commands.ParseCommand("help").Invocation
 			deliveryErr := errors.New("outbox unavailable")
-			send := func(context.Context, store.Identity, commands.Response) error { return deliveryErr }
+			send := func(context.Context, store.Identity, commands.Response) error {
+				t.Error("image command sent presentation before model selection")
+				return deliveryErr
+			}
 			var executionID string
 			if approved {
 				claimed, err := db.ClaimConversationJob(t.Context(), ident)
@@ -40,7 +44,7 @@ func TestPresentationFailurePreservesBusinessSuccess(t *testing.T) {
 				}
 				executionID = execution.ID
 				_, _, err = svc.executeApprovedCapability(t.Context(), execution, ident, send)
-				if !errors.Is(err, deliveryErr) {
+				if err != nil {
 					t.Fatalf("error=%v", err)
 				}
 			} else {
@@ -51,7 +55,7 @@ func TestPresentationFailurePreservesBusinessSuccess(t *testing.T) {
 				ctx := store.WithConversationJobLease(t.Context(), job.ID, claimed.LeaseToken)
 				_, id, _, err := svc.executeUnconfirmedHostCapability(ctx, invocation, ident, job.ID, "read", send)
 				executionID = id
-				if !errors.Is(err, deliveryErr) {
+				if err != nil {
 					t.Fatalf("error=%v", err)
 				}
 			}
@@ -59,7 +63,15 @@ func TestPresentationFailurePreservesBusinessSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if execution.State != store.CapabilityExecutionSucceeded || !strings.Contains(execution.Result, `"status":"succeeded"`) {
+			var result struct{ Images []struct{ ID string } }
+			if err := json.Unmarshal([]byte(execution.Result), &result); err != nil || len(result.Images) != 1 {
+				t.Fatalf("missing image reference: %s, %v", execution.Result, err)
+			}
+			image, found, err := db.CommandImage(t.Context(), ident, result.Images[0].ID)
+			if err != nil || !found || image.Kind != "help" {
+				t.Fatalf("saved image=%#v found=%v err=%v", image, found, err)
+			}
+			if execution.State != store.CapabilityExecutionSucceeded || !strings.Contains(execution.Result, `"status": "succeeded"`) {
 				t.Fatalf("business result changed by presentation failure: %#v", execution)
 			}
 		})

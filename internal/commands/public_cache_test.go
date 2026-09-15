@@ -158,7 +158,7 @@ func TestPublicCommandCacheRetainsDomainDataAcrossInstances(t *testing.T) {
 		return FailedOutcome(Response{})
 	})
 	encoded := got.Response.ModelResult("weather", string(got.Status), time.Now())
-	if got.Response.Text != "天气卡片" || !strings.Contains(encoded, `"campus":"ustc-gaoxin"`) || !strings.Contains(encoded, `"temperature":27`) {
+	if got.Response.Text != "天气卡片" || !strings.Contains(encoded, `"campus": "ustc-gaoxin"`) || !strings.Contains(encoded, `"temperature": 27`) {
 		t.Fatalf("cached result = %s", encoded)
 	}
 }

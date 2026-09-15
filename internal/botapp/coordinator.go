@@ -65,6 +65,7 @@ func normalizedImageRenderTimeout(timeout time.Duration) time.Duration {
 // coordinator deliberately depends on this small contract instead of the
 // concrete SQLite store so job scheduling and execution can be tested apart.
 type JobRepository interface {
+	commands.CommandImageStore
 	EnqueueConversationJob(context.Context, store.ConversationJobEnqueue) (store.ConversationJob, bool, error)
 	ClaimConversationJobs(context.Context, time.Time, int) ([]store.ConversationJob, error)
 	CompleteConversationJob(context.Context, int64, string) (bool, error)
@@ -789,6 +790,9 @@ func (c *Coordinator) presentationContent(ctx context.Context, response commands
 		if err == nil {
 			content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
 			continue
+		}
+		if item.Image.Kind == "bus" {
+			return message.Content{}, err
 		}
 		c.logf("render response image failed; persist text fallback: %v", err)
 		text := strings.TrimSpace(item.Text)

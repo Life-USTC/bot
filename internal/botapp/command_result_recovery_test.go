@@ -113,6 +113,16 @@ func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing
 		restored.Parts[0].Text != "第一段" || restored.Parts[1].Image == nil || restored.Parts[1].Image.URL != partImage.URL {
 		t.Fatalf("saved response image/parts=%#v snapshot=%v", restored, ok)
 	}
+	if len(restored.Images) != 2 {
+		t.Fatalf("saved image IDs=%#v", restored.Images)
+	}
+	for i, ref := range restored.Images {
+		saved, found, err := db.CommandImage(ctx, job.Identity, ref.ID)
+		want := []*responses.Image{image, partImage}[i]
+		if err != nil || !found || saved.URL != want.URL {
+			t.Fatalf("saved image %s=%#v found=%v err=%v", ref.ID, saved, found, err)
+		}
+	}
 
 	coordinator.execute(ctx, claimOnlyConversationJob(t, db))
 	assertCompletedDirectJob(t, db, job.ID)
@@ -125,6 +135,27 @@ func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing
 	}
 	if len(records[0].Message.Content.Parts) != 4 || records[0].Message.Content.TextContent() != "主结果\n\n第一段" || records[0].Message.Content.Parts[1].Attachment.URL != image.URL || records[0].Message.Content.Parts[3].Attachment.URL != partImage.URL {
 		t.Fatalf("recovered response parts=%#v", records)
+	}
+	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Type != store.ConversationEventAssistant {
+			continue
+		}
+		var result struct{ Images []struct{ ID string } }
+		if err := json.Unmarshal([]byte(event.Content), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Images) != 2 || result.Images[0].ID != restored.Images[0].ID || result.Images[1].ID != restored.Images[1].ID {
+			t.Fatalf("recovered model IDs=%s", event.Content)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("missing model result event")
 	}
 }
 
