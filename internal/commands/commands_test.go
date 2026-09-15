@@ -1382,88 +1382,14 @@ func assertResponseImageRenders(t *testing.T, image *responses.Image) {
 	}
 }
 
-func TestImageResponseAddsBusImageAndSkipsBusNonResultReplies(t *testing.T) {
+func TestImageResponseDoesNotDeriveBusImageFromText(t *testing.T) {
 	handler := Handler{EnableImageResponses: true}
-	text := strings.Join([]string{
-		"东区   西区",
-		"09:10  09:25",
-		"",
-		"西区   东区",
-		"09:20  09:35",
-	}, "\n")
-
-	img := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text)
-	if img == nil {
-		t.Fatal("image = nil, want bus image")
+	text := "东区\t西区\n09:10\t09:25"
+	if image := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text); image != nil {
+		t.Fatalf("text-derived bus image = %#v, want nil", image)
 	}
-	if img.Kind != "bus" || img.Title != "校车" {
-		t.Fatalf("image = %#v", img)
-	}
-	if !strings.HasPrefix(img.RichText, "# 校车\n\n") || strings.Contains(img.RichText, "Life @ USTC") {
-		t.Fatalf("rich text = %q", img.RichText)
-	}
-	if !strings.Contains(img.RichText, "| **东区** | **西区** |") {
-		t.Fatalf("queried endpoints are not emphasized: %q", img.RichText)
-	}
-	if !strings.Contains(img.AltText, "09:10") || !strings.Contains(img.AltText, "西区") {
-		t.Fatalf("alt text = %q", img.AltText)
-	}
-	dateText := "查询日期：2026-09-05（周六）\n" + text
-	dateImage := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"周六", "东区", "西区"}}, dateText)
-	if dateImage == nil || dateImage.Title != "校车 · 2026-09-05（周六）" || !strings.HasPrefix(dateImage.RichText, "# 校车 · 2026-09-05（周六）\n\n") || strings.Contains(dateImage.RichText, "查询日期") {
-		t.Fatalf("date image = %#v", dateImage)
-	}
-	if image := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"周末"}}, dateText+"\n\n"+dateText); image != nil {
-		t.Fatalf("multi-date image = %#v, want nil", image)
-	}
-
-	for name, tc := range map[string]struct {
-		cmd  Invocation
-		text string
-	}{
-		"preference":       {cmd: Invocation{Name: "bus", Args: []string{"偏好"}}, text: "校车偏好：\n路线：东区 → 西区"},
-		"no service":       {cmd: Invocation{Name: "bus"}, text: "今天后面没查到校车。"},
-		"dated no service": {cmd: Invocation{Name: "bus", Args: []string{"周六"}}, text: "查询日期：2026-09-05（周六）\n没有查到校车。"},
-		"error":            {cmd: Invocation{Name: "bus"}, text: "校车查不到：server exploded"},
-	} {
-		if got := handler.imageResponseFor(tc.cmd, tc.text); got != nil {
-			t.Fatalf("%s image = %#v, want nil", name, got)
-		}
-	}
-	helpImage := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"help"}}, busHelp())
-	if helpImage == nil || helpImage.Kind != "help" {
-		t.Fatalf("help image = %#v", helpImage)
-	}
-}
-
-func TestBusImagePreservesEmptyIntermediateStopCells(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
-	text := strings.Join([]string{
-		"东区\t西区\t先研院\t高新区",
-		"06:50\t07:00\t　　\t07:40",
-	}, "\n")
-
-	img := handler.imageResponseFor(Invocation{Name: "bus"}, text)
-	if img == nil || !strings.Contains(img.RichText, "| 06:50 | 07:00 |  | 07:40 |") {
-		t.Fatalf("rich text = %q", img.RichText)
-	}
-	if strings.Contains(img.RichText, "**") {
-		t.Fatalf("all-routes headers should not be emphasized: %q", img.RichText)
-	}
-}
-
-func TestBusImageEmphasizesOnlyBothQueriedEndpoints(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
-	text := "东区\t西区\t先研院\t高新区\n06:50\t07:00\t07:20\t07:40"
-
-	queried := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text)
-	if queried == nil || !strings.Contains(queried.RichText, "| **东区** | **西区** | 先研院 | 高新区 |") {
-		t.Fatalf("queried rich text = %q", queried.RichText)
-	}
-
-	oneEndpoint := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区"}}, text)
-	if oneEndpoint == nil || strings.Contains(oneEndpoint.RichText, "**") {
-		t.Fatalf("one-endpoint rich text = %q", oneEndpoint.RichText)
+	if image := handler.imageResponseForOutcome(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, SuccessOutcome(Response{Text: text})); image != nil {
+		t.Fatalf("text-derived outcome bus image = %#v, want nil", image)
 	}
 }
 

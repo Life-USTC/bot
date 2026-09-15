@@ -19,10 +19,11 @@ type Response struct {
 	// Data is the machine-readable result of the command. It deliberately
 	// lives beside Text and Image: Text is presentation for a user, while Data
 	// is the already-fetched domain value sent to a model or another host.
-	Data  any
-	Image *responses.Image
-	Kind  string
-	Parts []Response
+	Images []toolresult.ImageReference
+	Data   any
+	Image  *responses.Image
+	Kind   string
+	Parts  []Response
 }
 
 // ModelResult returns the stable model-facing envelope for this response.
@@ -34,7 +35,7 @@ func (r Response) ModelResult(operation, status string, observedAt time.Time) st
 	if status != "success" && status != "succeeded" {
 		err = errors.New(r.Text)
 	}
-	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err)
+	return toolresult.Encode("bot", operation, status, observedAt, r.Data, err, r.Images...)
 }
 
 const ResponseKindAuthWait = "auth_wait"
@@ -148,24 +149,6 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 	case "upcoming_deadlines":
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("deadlines", imageTitle(plainText, "近期截止"), plainText)
-	case "bus":
-		if busPreferenceArgs(cmd.Args) {
-			return nil
-		}
-		if strings.Count(text, "查询日期：") > 1 {
-			return nil
-		}
-		title := "校车"
-		body := busImageRenderText(text)
-		renderBody := body
-		if first, rest, found := strings.Cut(body, "\n"); found && strings.HasPrefix(first, "查询日期：") {
-			title += " · " + strings.TrimPrefix(first, "查询日期：")
-			renderBody = rest
-		}
-		if !successfulImageText(renderBody) {
-			return nil
-		}
-		return responses.NewRichTextImage("bus", busRichText(title, renderBody, parseBusRouteArgs(cmd.Args)), body)
 	default:
 		return nil
 	}
@@ -876,40 +859,6 @@ func richTextSectionLines(lines []string) []string {
 	return out
 }
 
-func busRichText(title, text string, query busRouteQuery) string {
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	out := []string{"# " + strings.TrimSpace(title), ""}
-	atHeader := true
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			out = append(out, "")
-			atHeader = true
-			continue
-		}
-		cells := richTextTableCells(line)
-		if len(cells) == 0 {
-			continue
-		}
-		if atHeader && query.From != "" && query.To != "" {
-			for i, cell := range cells {
-				if cell == query.From || cell == query.To {
-					cells[i] = "**" + cell + "**"
-				}
-			}
-		}
-		out = append(out, markdownRichTableRow(cells))
-		if atHeader {
-			separators := make([]string, len(cells))
-			for i := range separators {
-				separators[i] = "---"
-			}
-			out = append(out, "| "+strings.Join(separators, " | ")+" |")
-			atHeader = false
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
 func richTextTableCells(line string) []string {
 	if !strings.Contains(line, "\t") {
 		return strings.Fields(line)
@@ -919,10 +868,6 @@ func richTextTableCells(line string) []string {
 		cells[i] = strings.TrimSpace(cells[i])
 	}
 	return cells
-}
-
-func busImageRenderText(text string) string {
-	return textutil.PlainMonospace(text)
 }
 
 func imageRenderText(text string) string {

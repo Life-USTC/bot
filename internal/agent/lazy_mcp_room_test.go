@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -24,7 +23,7 @@ func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
 	if err := lazy.deliverRoomMapResponse(t.Context(), `{"code":"3A204","building":"三教","floor":"2","status":"highlighted","imageUrl":"https://static.example/3A204.png","sourceImageUrl":"https://static.example/floor-2.png"}`); err != nil {
 		t.Fatal(err)
 	}
-	if delivered.Text != "3A204：三教 2" || delivered.Image == nil || delivered.Image.URL != "https://static.example/3A204.png" {
+	if delivered.Text != "" || delivered.Image == nil || delivered.Image.URL != "https://static.example/3A204.png" {
 		t.Fatalf("delivered = %#v", delivered)
 	}
 }
@@ -66,7 +65,7 @@ func TestGraphQLConfirmedArgumentIsHostControlled(t *testing.T) {
 	}
 }
 
-func TestRoomMapMCPKeepsURLWhenRenderedImagesAreDisabled(t *testing.T) {
+func TestRoomMapMCPDeliversOnlyImageWhenRenderedImagesAreDisabled(t *testing.T) {
 	var delivered commands.Response
 	lazy := &lazyMCPSession{
 		service:  &Service{handler: commands.Handler{}},
@@ -79,7 +78,7 @@ func TestRoomMapMCPKeepsURLWhenRenderedImagesAreDisabled(t *testing.T) {
 	if err := lazy.deliverRoomMapResponse(t.Context(), `{"code":"3A204","building":"三教","floor":"2","status":"highlighted","imageUrl":"https://static.example/3A204.png"}`); err != nil {
 		t.Fatal(err)
 	}
-	if delivered.Image != nil || !strings.Contains(delivered.Text, "地图：https://static.example/3A204.png") {
+	if delivered.Text != "" || delivered.Image == nil || delivered.Image.URL != "https://static.example/3A204.png" {
 		t.Fatalf("delivered = %#v", delivered)
 	}
 }

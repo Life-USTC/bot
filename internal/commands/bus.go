@@ -14,6 +14,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/auth"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -284,28 +285,37 @@ func isChineseCampusAliasBoundaryRune(r rune) bool {
 	return !unicode.Is(unicode.Han, r) && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-func (h Handler) bus(ctx context.Context, ident store.Identity, args []string) string {
-	return h.busAt(ctx, ident, args, time.Now())
+func (h Handler) busResponse(ctx context.Context, ident store.Identity, args []string) Response {
+	return h.busResponseAt(ctx, ident, args, time.Now())
 }
 
-func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string, now time.Time) string {
+// busExecutor keeps successful schedule results image-only while retaining the
+// complete structured result for the model-facing capability outcome.
+func busExecutor(h Handler, ctx context.Context, ident store.Identity, inv Invocation) CapabilityOutcome {
+	if h.execution == nil {
+		h.execution = &capabilityExecutionState{}
+	}
+	return outcomeFromResponse(h, h.busResponse(ctx, ident, inv.Args))
+}
+
+func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args []string, now time.Time) Response {
 	if firstArgIs(args, "help") {
-		return busHelp()
+		return Response{Text: busHelp(), Kind: "bus"}
 	}
 	data, err := h.Life.Bus(ctx)
 	if err != nil {
-		return h.commandError("校车查不到：", err)
+		return Response{Text: h.commandError("校车查不到：", err), Kind: "bus"}
 	}
 	h.markData(map[string]any{
 		"operation": "bus",
 		"network":   data,
 	})
 	if busPreferenceArgs(args) {
-		return h.busPreferences(ctx, ident, data, args)
+		return Response{Text: h.busPreferences(ctx, ident, data, args), Kind: "bus"}
 	}
 	routeArgs, queryOptions := busQueryArgs(args, now)
 	if queryOptions.QueryError != "" {
-		return h.invalidInput(queryOptions.QueryError)
+		return Response{Text: h.invalidInput(queryOptions.QueryError), Kind: "bus"}
 	}
 	options := queryOptions
 	if !store.IsSharedConversation(ident) {
@@ -324,6 +334,7 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			}
 		}
 	}
+
 	if h.EnableImageResponses {
 		options.UsePreferredRoute = false
 		options.ShowAll = true
@@ -335,34 +346,44 @@ func (h Handler) busAt(ctx context.Context, ident store.Identity, args []string,
 			routeArgs = nil
 		}
 	}
-	if len(options.Schedules) <= 1 {
-		reply := h.busReplyForOptions(ctx, ident, data, routeArgs, now, options)
-		h.markData(map[string]any{
-			"operation":     "bus",
-			"network":       data,
-			"route":         routeArgs,
-			"schedule":      options.Schedules,
-			"show_departed": options.ShowDeparted,
-		})
-		return reply
+
+	selections := options.Schedules
+	if len(selections) == 0 {
+		selections = []busScheduleSelection{{}}
 	}
-	replies := make([]string, 0, len(options.Schedules))
-	for _, selection := range options.Schedules {
+	sections := make([]busImageSection, 0, len(selections))
+	allItems := make([]busItem, 0)
+	for _, selection := range selections {
 		selectionOptions := options
-		selectionOptions.Schedules = []busScheduleSelection{selection}
-		replies = append(replies, h.busReplyForOptions(ctx, ident, data, routeArgs, now, selectionOptions))
+		if selection.Date.IsZero() && selection.ServiceDay == "" {
+			selectionOptions.Schedules = nil
+		} else {
+			selectionOptions.Schedules = []busScheduleSelection{selection}
+		}
+		items := h.busItemsForOptions(ctx, ident, data, routeArgs, now, selectionOptions)
+		if options.ShowDeparted && !options.After {
+			items = markNextBusItem(items, effectiveBusNow(now, selectionOptions))
+		}
+		sections = append(sections, busImageSection{
+			Label: busScheduleLabel(selection),
+			Items: items,
+		})
+		allItems = append(allItems, items...)
 	}
-	h.markData(map[string]any{
+	resultData := map[string]any{
 		"operation":     "bus",
 		"network":       data,
 		"route":         routeArgs,
 		"schedule":      options.Schedules,
 		"show_departed": options.ShowDeparted,
-	})
-	return strings.Join(replies, "\n\n")
+		"items":         busItemsData(allItems),
+		"sections":      busImageSectionsData(sections, selections),
+	}
+	h.markData(resultData)
+	return Response{Kind: "bus", Data: resultData, Image: busImageForSections(sections, routeArgs)}
 }
 
-func (h Handler) busReplyForOptions(ctx context.Context, ident store.Identity, data map[string]any, routeArgs []string, now time.Time, options busQueryOptions) string {
+func (h Handler) busItemsForOptions(ctx context.Context, ident store.Identity, data map[string]any, routeArgs []string, now time.Time, options busQueryOptions) []busItem {
 	var items []busItem
 	if options.ExplicitRoute {
 		items = nextBusItemsWithOptions(data, routeArgs, now, options)
@@ -376,23 +397,163 @@ func (h Handler) busReplyForOptions(ctx context.Context, ident store.Identity, d
 			items = filterSouthCampusBusItems(items)
 		}
 	}
-	if len(items) == 0 {
-		if len(options.Schedules) > 0 {
-			if label := options.Schedules[0].label(); label != "" {
-				return "查询日期：" + label + "\n没有查到校车。"
-			}
-			return "没查到符合指定服务日的校车。"
+	return items
+}
+
+type busImageSection struct {
+	Label string
+	Items []busItem
+}
+
+func busScheduleLabel(selection busScheduleSelection) string {
+	if label := selection.label(); label != "" {
+		return label
+	}
+	switch selection.ServiceDay {
+	case "weekday":
+		return "工作日"
+	case "saturday":
+		return "周六"
+	case "sunday":
+		return "周日"
+	default:
+		return ""
+	}
+}
+
+func busItemsData(items []busItem) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		stops := make([]map[string]string, 0, len(item.Stops))
+		for _, stop := range item.Stops {
+			stops = append(stops, map[string]string{
+				"name": stop.Name,
+				"time": stop.Time,
+			})
 		}
-		return "今天后面没查到校车。"
+		out = append(out, map[string]any{
+			"route_id":          item.RouteID,
+			"route":             item.Route,
+			"departure_campus":  item.DepartureCampus,
+			"arrival_campus":    item.ArrivalCampus,
+			"departure_minutes": item.DepartureMinutes,
+			"departure_time":    item.DepartureTime,
+			"arrival_time":      item.Arrival,
+			"stops":             stops,
+			"highlight":         item.Highlight,
+		})
 	}
-	if options.ShowDeparted && !options.After {
-		items = markNextBusItem(items, effectiveBusNow(now, options))
+	return out
+}
+
+func busImageSectionsData(sections []busImageSection, selections []busScheduleSelection) []map[string]any {
+	out := make([]map[string]any, 0, len(sections))
+	for i, section := range sections {
+		var selection any
+		if i < len(selections) {
+			selection = selections[i]
+		}
+		out = append(out, map[string]any{
+			"label":    section.Label,
+			"schedule": selection,
+			"items":    busItemsData(section.Items),
+		})
 	}
-	reply := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
-	if len(options.Schedules) > 0 && options.Schedules[0].label() != "" {
-		reply = "查询日期：" + options.Schedules[0].label() + "\n" + reply
+	return out
+}
+
+func busImageForSections(sections []busImageSection, routeArgs []string) *responses.Image {
+	if len(sections) == 0 {
+		return nil
 	}
-	return reply
+
+	title := "校车"
+	if len(sections) == 1 && strings.Contains(sections[0].Label, "（") {
+		title += " · " + sections[0].Label
+	}
+	query := parseBusRouteArgs(routeArgs)
+	lines := []string{"# " + title, ""}
+	for i, section := range sections {
+		if len(sections) > 1 && section.Label != "" {
+			lines = append(lines, "## "+section.Label, "")
+		}
+		if len(section.Items) == 0 {
+			lines = append(lines,
+				"| 状态 |",
+				"| --- |",
+				"| 没有查到校车。 |",
+			)
+		} else {
+			lines = append(lines, busImageTableLines(section.Items, query)...)
+		}
+		if i < len(sections)-1 {
+			lines = append(lines, "")
+		}
+	}
+	richText := strings.TrimSpace(strings.Join(lines, "\n"))
+	return responses.NewRichTextImage("bus", richText, richText)
+}
+
+func busImageTableLines(items []busItem, query busRouteQuery) []string {
+	groups := busImageItemGroups(items)
+	lines := make([]string, 0, len(items)*3)
+	for i, group := range groups {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		stops := busTableStops(group)
+		if len(stops) == 0 {
+			continue
+		}
+		headers := append([]string(nil), stops...)
+		if query.From != "" && query.To != "" {
+			for i, stop := range headers {
+				if stop == query.From || stop == query.To {
+					headers[i] = "**" + stop + "**"
+				}
+			}
+		}
+		lines = append(lines,
+			markdownRichTableRow(headers),
+			markdownRichTableRow(repeatString("---", len(stops))),
+		)
+		for _, item := range group {
+			times := busStopTimes(item)
+			cells := make([]string, 0, len(stops)+1)
+			for _, stop := range stops {
+				cells = append(cells, times[stop])
+			}
+			if item.Highlight {
+				cells = append(cells, "✨")
+			}
+			lines = append(lines, markdownRichTableRow(cells))
+		}
+	}
+	return lines
+}
+
+func busImageItemGroups(items []busItem) [][]busItem {
+	sorted := sortedBusItemsByRouteGroup(items)
+	groups := make([][]busItem, 0)
+	for _, item := range sorted {
+		if len(groups) == 0 || busRouteKey(item) != busRouteKey(groups[len(groups)-1][0]) {
+			groups = append(groups, []busItem{item})
+			continue
+		}
+		groups[len(groups)-1] = append(groups[len(groups)-1], item)
+	}
+	return groups
+}
+
+func repeatString(value string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = value
+	}
+	return out
 }
 
 func busHelp() string {
@@ -1165,67 +1326,6 @@ func filterSouthCampusBusItems(items []busItem) []busItem {
 	return out
 }
 
-func formatBusItemsByRouteGroup(items []busItem, limit int) []string {
-	items = sortedBusItemsByRouteGroup(items)
-	lines := make([]string, 0, len(items)*3)
-	routeItems := []busItem{}
-	for i, item := range items {
-		if limit > 0 && i >= limit {
-			break
-		}
-		if len(routeItems) > 0 && busRouteKey(item) != busRouteKey(routeItems[0]) {
-			if len(lines) > 0 {
-				lines = append(lines, "")
-			}
-			lines = append(lines, formatBusItemsAsStopTimeTable(routeItems)...)
-			routeItems = nil
-		}
-		routeItems = append(routeItems, item)
-	}
-	if len(routeItems) > 0 {
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, formatBusItemsAsStopTimeTable(routeItems)...)
-	}
-	return lines
-}
-
-func formatBusItemsAsStopTimeTable(items []busItem) []string {
-	stops := busTableStops(items)
-	if len(stops) == 0 {
-		return nil
-	}
-	rows := make([]textutil.DisplayTableRow, 0, len(items))
-	for _, item := range items {
-		times := busStopTimes(item)
-		cells := make([]string, 0, len(stops))
-		for _, stop := range stops {
-			timeText := ""
-			if stopTime := times[stop]; stopTime != "" {
-				timeText = textutil.MonospaceDigits(stopTime)
-			}
-			cells = append(cells, timeText)
-		}
-		row := textutil.DisplayTableRow{Cells: cells}
-		if item.Highlight {
-			row.Suffix = "✨"
-		}
-		rows = append(rows, row)
-	}
-	return textutil.FormatDisplayTable(stops, rows, textutil.DisplayTableOptions{
-		EmptyWidthText: busMissingTimePlaceholder,
-		EmptyCell:      busTableBlankCell,
-	})
-}
-
-func busTableBlankCell(width int) string {
-	if width <= 0 {
-		return ""
-	}
-	return strings.Repeat("\u3000", width/2) + strings.Repeat(" ", width%2)
-}
-
 func busTableStops(items []busItem) []string {
 	stops := []string{}
 	seen := map[string]bool{}
@@ -1551,5 +1651,4 @@ func busTime(value string, minutes int) string {
 	return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60)
 }
 
-const busMissingTimePlaceholder = "———"
 const busOverviewTripsPerRoute = 3

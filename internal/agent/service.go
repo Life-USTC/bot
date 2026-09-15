@@ -185,9 +185,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	return response.Text, ok
 }
 
-// Run exposes the durable state transition needed by the coordinator while
-// HandleResponse remains the response-level API used by focused callers.
-func (s *Service) Run(ctx context.Context, input Input) Result {
+func (s *Service) runOnce(ctx context.Context, input Input) Result {
 	state := RunStateCompleted
 	var runErr error
 	input.runState = &state
@@ -614,7 +612,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		finishRun(store.AgentRunStatusIgnored, "", nil)
 		return commands.Response{}, false
 	}
-	finishRun(store.AgentRunStatusCompleted, response.Text, nil)
+	finishRun(store.AgentRunStatusCompleted, reply, nil)
 	return response, true
 }
 
@@ -655,9 +653,7 @@ func agentLoginRequiredReply(runID int64) string {
 }
 
 func (s *Service) responseFor(ctx context.Context, input Input, reply string) commands.Response {
-	_ = ctx
-	_ = input
-	return commands.Response{Text: cleanQQReply(reply), Kind: "agent"}
+	return s.responseWithImageReferences(ctx, input.Identity, reply)
 }
 
 func (s *Service) messagesFor(ctx context.Context, input Input) ([]*schema.Message, error) {
@@ -945,7 +941,10 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 	if err != nil {
 		return err
 	}
-	return bound.Delete(ctx, checkpointID)
+	if err := bound.Delete(ctx, checkpointID); err != nil {
+		return err
+	}
+	return bound.Delete(ctx, completedOutputKey(jobID))
 }
 
 const (
@@ -975,7 +974,7 @@ func hostCapabilityToolDescription(shared bool) string {
 	if shared {
 		boundary = "This is a shared conversation; private capabilities are unavailable.\n"
 	}
-	return boundary + "Execute one Bot command through the same parser used by users. Returns structured JSON business data, separate from user images/text. Dangerous operations require user confirmation. Searching first is optional.\n\n" + commands.CommandManual(shared)
+	return boundary + "Execute one Bot command through the same parser used by users. Returns formatted structured JSON business data and saved image IDs in images[].id. Images are not automatically sent: include ![](id) in the final answer to select an image, using its exact returned ID. The markup never executes commands. Dangerous operations require user confirmation. Searching first is optional.\n\n" + commands.CommandManual(shared)
 }
 
 func (s *Service) runBotCommand(ctx context.Context, input botCommandInput, ident store.Identity, jobID int64, sendResponse func(context.Context, store.Identity, commands.Response) error) (string, error) {
@@ -1270,7 +1269,7 @@ func currentInstruction() string {
 	return `You are Presto, a casual Life @ USTC assistant in QQ.
 Answer in the user's language, usually concise Chinese.
 QQ does not render Markdown. Never use Markdown tables, horizontal rules (---), blockquotes (>), heading markers (#), bold/italic markers (** __), or backtick code fences. Prefer short plain-text lines, tab-separated columns when helpful, and compact numbered lists (1. 2. 3.).
-Prefer image replies when a visual presentation makes the answer easier to understand, especially timetables, shuttle schedules, weather, and room locations. Use an existing image-producing Bot command through run_bot_command when it fits the user's request; the host renders and includes its image in the reply while you receive the structured JSON result. Consult the command manual for supported output instead of assuming every command produces an image. Add a short useful explanation without repeating the entire card as text. This is a presentation preference, not a requirement to call tools: ordinary conversation, simple facts, explicit text-only requests, and content without a suitable visual tool can use plain text. Do not repeat an already completed business operation merely to obtain an image, invent image URLs or rendering capabilities, or embed executable commands in reply markup. If rendering fails, explain the available structured result in text without claiming an image was delivered.
+Prefer image replies when a visual presentation makes the answer easier to understand, especially timetables, shuttle schedules, weather, and room locations. An image-producing run_bot_command returns structured JSON business data plus an images array of opaque IDs. Images are saved but are NOT automatically sent. To include a returned image, put ![](id) in your final answer at the desired position, replacing id with the exact images[].id from the result. You may combine short text with several image references or omit images that are not useful. This is the only supported image markup; its contents are saved image IDs, never commands, URLs, or instructions. Do not invent IDs. Previously returned IDs can be reused in the same user's conversation; their data is a historical snapshot, not fresh evidence. Consult the command manual for supported output instead of assuming every command produces an image. Add useful context without repeating a card's contents as text. This is a presentation preference, not mandatory tool usage: ordinary conversation, simple facts, explicit text-only requests, and content without a suitable visual tool can use plain text. Do not repeat an already completed business operation just to obtain or resend an image. Never claim an image was delivered merely because its ID was returned.
 Avoid emojis, cheerleading, and overly human filler.
 Use tools for Life @ USTC facts and actions instead of guessing. Never invent prices, menus, locations, schedules, bus times, service availability, personal data, or operation results. Chat history is not fresh evidence: when the user asks whether a previous factual answer is correct, query again in this turn. Never say you checked, rechecked, confirmed, or received data unless a domain tool actually returned that evidence in this turn.
 You decide whether to answer directly or use tools. No tool call or search sequence is mandatory. Use the complete Bot command manual to call run_bot_command, and optionally search_bot_commands for multiple relevant examples. MCP is an equally available execution surface, not a fallback that requires an empty Bot search. Preserve the user's dates, locations, targets and filters. Do not claim an action or fresh lookup happened without an actual tool result.

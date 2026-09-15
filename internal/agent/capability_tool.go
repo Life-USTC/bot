@@ -250,6 +250,9 @@ func (s *Service) executeUnconfirmedHostCapability(
 		}
 		return "", executionID, true, nil
 	}
+	if err := s.registerCapabilityImages(ctx, ident, executionID, invocation, &outcome); err != nil {
+		return "", executionID, false, err
+	}
 	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
 	if tracked {
 		if capabilityOutcomeIsUnknown(outcome) {
@@ -573,7 +576,6 @@ func (s *Service) executeApprovedCapability(
 		toolOutcomesFromContext(ctx).markError(compose.GetToolCallID(ctx))
 	}
 	presentation := s.handler.PresentCapabilityOutcome(invocation, outcome)
-	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
 	if outcome.Status == commands.CapabilityOutcomeAuthRequired {
 		deferred, err := s.handler.Store.DeferCapabilityExecutionForAuth(ctx, execution.ID, execution.LeaseToken)
 		if err != nil {
@@ -589,6 +591,10 @@ func (s *Service) executeApprovedCapability(
 		}
 		return deferred, true, nil
 	}
+	if err := s.registerCapabilityImages(ctx, ident, execution.ID, invocation, &outcome); err != nil {
+		return execution, false, err
+	}
+	text := encodeCapabilityOutcome(string(invocation.ID()), outcome)
 	if capabilityOutcomeIsUnknown(outcome) {
 		finished, err := s.handler.Store.FinishCapabilityExecutionUnknown(ctx, execution.ID, execution.LeaseToken, text, "capability returned an unknown outcome")
 		if err != nil {
@@ -633,7 +639,7 @@ func encodeCapabilityOutcome(operation string, outcome commands.CapabilityOutcom
 	if outcome.Status != commands.CapabilityOutcomeSuccess {
 		err = errors.New(outcome.Response.Text)
 	}
-	return toolresult.Encode("bot", operation, string(outcome.Status), time.Now(), outcome.Response.Data, err)
+	return toolresult.Encode("bot", operation, string(outcome.Status), time.Now(), outcome.Response.Data, err, outcome.Response.Images...)
 }
 
 func capabilityExecutionModelResult(execution store.CapabilityExecution) string {
