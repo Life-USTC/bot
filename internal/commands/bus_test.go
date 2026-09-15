@@ -12,8 +12,8 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
-	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 const busPreferenceTestData = `{
@@ -73,7 +73,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	// This test covers group routing; select the fixture's schedule explicitly
 	// so the reply does not depend on the current weekday or departure cutoff.
 	groupInput := Input{
@@ -89,9 +89,9 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok {
 		t.Fatal("group bus message was not handled")
 	}
-	reply := response.Text
-	if !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") || strings.Contains(reply, "———") {
-		t.Fatalf("reply = %q", reply)
+	if response.Text != "" || response.Image == nil ||
+		!strings.Contains(response.Image.RichText, "| **东区** | 北区 | **西区** |\n| --- | --- | --- |\n| 23:59 |  | 23:59 |") {
+		t.Fatalf("bus image response = %#v", response)
 	}
 	data, ok := response.Data.(map[string]any)
 	if !ok || data["operation"] != "bus" || data["network"] == nil {
@@ -105,7 +105,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}
 
 	groupInput.Text = "td"
-	reply, ok = handler.Handle(context.Background(), groupInput)
+	reply, ok := handler.Handle(context.Background(), groupInput)
 	if !ok || reply != "此功能涉及个人数据，请私聊 Presto 使用。" {
 		t.Fatalf("group personal command reply = %q, ok = %v", reply, ok)
 	}
@@ -117,13 +117,13 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}
 
 	groupInput.Text = "[CQ:image,file=1.png] 校车 工作日"
-	reply, ok = handler.Handle(context.Background(), groupInput)
-	if !ok || !strings.Contains(reply, "东区 \t北区 \t西区 \n𝟸𝟹:𝟻𝟿\t　　 \t𝟸𝟹:𝟻𝟿") {
-		t.Fatalf("group image caption reply = %q, ok = %v", reply, ok)
+	response, ok = handler.HandleResponse(context.Background(), groupInput)
+	if !ok || response.Text != "" || response.Image == nil || !strings.Contains(response.Image.RichText, "23:59") {
+		t.Fatalf("group image caption response = %#v, ok = %v", response, ok)
 	}
 }
 
-func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
+func TestBusImageResponseShowsEveryTripPerRoute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -141,17 +141,20 @@ func TestBusAtAllShowsEveryTripPerRoute(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	now := time.Date(2026, 6, 2, 10, 30, 0, 0, lifedata.ChinaLocation())
-	reply := handler.busAt(context.Background(), store.Identity{}, []string{"al", "已发车", "开"}, now)
-	for _, want := range []string{"𝟶𝟾:𝟶𝟶", "𝟶𝟿:𝟶𝟶", "𝟷𝟶:𝟶𝟶", "𝟷𝟷:𝟶𝟶", "𝟷𝟸:𝟶𝟶"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %s: %q", want, reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"al", "已发车", "开"}, now)
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	for _, want := range []string{"08:00", "09:00", "10:00", "11:00", "12:00"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("image missing %s: %q", want, response.Image.RichText)
 		}
 	}
 }
 
-func TestBusAtImageModeOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
+func TestBusImageResponseOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -165,15 +168,18 @@ func TestBusAtImageModeOverviewShowsAllRoutesIncludingDepartedTrips(t *testing.T
 		EnableImageResponses: true,
 	}
 	now := time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation())
-	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, nil, now)
-	for _, want := range []string{"东区", "西区", "南区", "𝟸𝟹:𝟶𝟶", "𝟸𝟹:𝟷𝟶"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %s: %q", want, reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, nil, now)
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	for _, want := range []string{"东区", "西区", "南区", "23:00", "23:10"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("image missing %s: %q", want, response.Image.RichText)
 		}
 	}
 }
 
-func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
+func TestBusImageResponseFiltersExplicitRouteInBothDirections(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -198,20 +204,109 @@ func TestBusAtImageModeFiltersExplicitRouteInBothDirections(t *testing.T) {
 		EnableImageResponses: true,
 	}
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
-	reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "高新区"}, now)
-	for _, want := range []string{"𝟶𝟾:𝟶𝟶", "𝟶𝟾:𝟺𝟶", "𝟶𝟿:𝟶𝟶", "𝟶𝟿:𝟺𝟶"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %s: %q", want, reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "高新区"}, now)
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	for _, want := range []string{"08:00", "08:40", "09:00", "09:40"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("image missing %s: %q", want, response.Image.RichText)
 		}
 	}
-	for _, unwanted := range []string{"南区", "𝟶𝟿:𝟷𝟶", "𝟶𝟿:𝟸𝟻"} {
-		if strings.Contains(reply, unwanted) {
-			t.Fatalf("reply contains unrelated route %s: %q", unwanted, reply)
+	for _, unwanted := range []string{"南区", "09:10", "09:25"} {
+		if strings.Contains(response.Image.RichText, unwanted) {
+			t.Fatalf("image contains unrelated route %s: %q", unwanted, response.Image.RichText)
 		}
 	}
 }
 
-func TestBusAtImageModeKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) {
+func TestBusImageResponseIsImageOnlyAndPreservesStructuredTrips(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"北区"}},{"campus":{"nameCn":"西区"}}]}],
+			"trips":[{"routeId":1,"dayType":"weekday","departureTime":"08:00","departureMinutes":480,"arrivalTime":"08:15","stopTimes":[{"campusName":"东区","time":"08:00"},{"campusName":"北区"},{"campusName":"西区","time":"08:15"}]}]
+		}`))
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation())
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "西区"}, now)
+	if response.Text != "" {
+		t.Fatalf("successful bus response text = %q, want empty", response.Text)
+	}
+	if response.Image == nil || response.Image.Kind != "bus" {
+		t.Fatalf("successful bus response image = %#v", response.Image)
+	}
+	if !strings.Contains(response.Image.RichText, "**东区**") || !strings.Contains(response.Image.RichText, "**西区**") || !strings.Contains(response.Image.RichText, "08:15") {
+		t.Fatalf("bus image rich text = %q", response.Image.RichText)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || data["network"] == nil {
+		t.Fatalf("bus structured data = %#v", response.Data)
+	}
+	items, ok := data["items"].([]map[string]any)
+	if !ok || len(items) != 1 || items[0]["route_id"] != "1" {
+		t.Fatalf("bus selected items = %#v", data["items"])
+	}
+	encoded, err := json.Marshal(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"departure_time":"08:00"`) || !strings.Contains(string(encoded), `"name":"北区"`) {
+		t.Fatalf("structured bus JSON lost trip facts: %s", encoded)
+	}
+}
+
+func TestBusImageResponseRendersEmptyScheduleCardWithoutTextFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"routes":[],"trips":[]}`))
+	}))
+	defer server.Close()
+
+	now := time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation())
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"周日"}, now)
+	if response.Text != "" {
+		t.Fatalf("empty successful bus response text = %q, want empty", response.Text)
+	}
+	if response.Image == nil || !strings.Contains(response.Image.RichText, "没有查到校车。") {
+		t.Fatalf("empty schedule image = %#v", response.Image)
+	}
+	if _, _, _, err := (responses.Renderer{}).RenderPNG(response.Image); err != nil {
+		t.Fatalf("render empty schedule card: %v", err)
+	}
+}
+
+func TestHandleResponseBusSuccessUsesImageOnlyBoundary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/catalog/bus" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"routes":[],"trips":[]}`))
+	}))
+	defer server.Close()
+
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	response, ok := handler.HandleResponse(context.Background(), Input{
+		Text:     "校车",
+		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100"},
+	})
+	if !ok || response.Text != "" || response.Image == nil || response.Image.Kind != "bus" {
+		t.Fatalf("handled bus response = %#v, ok = %v", response, ok)
+	}
+	if response.Data == nil || !strings.Contains(response.Image.RichText, "没有查到校车。") {
+		t.Fatalf("bus response lost structured result or empty card: %#v", response)
+	}
+}
+
+func TestBusImageResponseKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) {
 	data := realisticEastWestBusTestData()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
@@ -261,20 +356,23 @@ func TestBusAtImageModeKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) {
 	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	for _, query := range [][]string{{"东区", "西区"}, {"西区", "东区"}} {
 		t.Run(strings.Join(query, "-"), func(t *testing.T) {
-			reply := handler.busAt(context.Background(), store.Identity{ConversationType: "group"}, query, now)
+			response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, query, now)
+			if response.Text != "" || response.Image == nil {
+				t.Fatalf("bus response = %#v", response)
+			}
 			for _, header := range []string{
-				"东区 \t北区 \t西区",
-				"西区 \t北区 \t东区",
-				"高新区\t先研院\t西区  \t东区",
-				"东区  \t西区  \t先研院\t高新区",
+				"| **东区** | 北区 | **西区** |",
+				"| **西区** | 北区 | **东区** |",
+				"| 高新区 | 先研院 | **西区** | **东区** |",
+				"| **东区** | **西区** | 先研院 | 高新区 |",
 			} {
-				if !strings.Contains(reply, header) {
-					t.Fatalf("reply missing complete route header %q: %q", header, reply)
+				if !strings.Contains(response.Image.RichText, header) {
+					t.Fatalf("image missing complete route header %q: %q", header, response.Image.RichText)
 				}
 			}
 			for _, departure := range []string{"06:40", "06:50", "16:40", "16:50"} {
-				if !strings.Contains(reply, textutil.MonospaceDigits(departure)) {
-					t.Fatalf("reply missing full-timetable departure %s: %q", departure, reply)
+				if !strings.Contains(response.Image.RichText, departure) {
+					t.Fatalf("image missing full-timetable departure %s: %q", departure, response.Image.RichText)
 				}
 			}
 		})
@@ -324,7 +422,7 @@ func realisticEastWestBusTestData() map[string]any {
 	}
 }
 
-func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
+func TestBusResponseKeepsEmptyFilteredScheduleStructured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -338,8 +436,13 @@ func TestBusAtReturnsNoServiceAfterLastTrip(t *testing.T) {
 
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
-	if reply := handler.busAt(context.Background(), store.Identity{}, nil, now); reply != "今天后面没查到校车。" {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{}, nil, now)
+	if response.Text != "" || response.Image != nil || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok || len(data["items"].([]map[string]any)) != 0 {
+		t.Fatalf("empty filtered schedule = %#v", data["items"])
 	}
 }
 
@@ -411,7 +514,7 @@ func TestHandleBusPreferencesViewAndSet(t *testing.T) {
 	}
 }
 
-func TestHandleBusBarePrivateQueryHidesSouthByDefault(t *testing.T) {
+func TestHandleBusBarePrivateQueryReturnsStructuredResult(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -427,9 +530,9 @@ func TestHandleBusBarePrivateQueryHidesSouthByDefault(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
-	if reply != "今天后面没查到校车。" {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
 }
 
@@ -452,9 +555,9 @@ func TestHandleBusBarePrivateQueryCanShowSouth(t *testing.T) {
 	if err := handler.Store.SaveBusSettings(ctx, store.BusSettings{Identity: ident, ShowSouthCampus: true}); err != nil {
 		t.Fatal(err)
 	}
-	reply := handler.busAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") || strings.Contains(reply, "𝟸𝟹:𝟶𝟶") {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, nil, time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
 }
 
@@ -474,9 +577,9 @@ func TestHandleBusExplicitSouthRouteIgnoresSouthPreference(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, []string{"南区", "东区"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, []string{"南区", "东区"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
 }
 
@@ -496,9 +599,9 @@ func TestHandleBusPreferredRouteUsesSavedPreferences(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, []string{"我的路线"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "南区 \t东区 \n𝟸𝟹:𝟷𝟶\t𝟸𝟹:𝟹𝟶") || strings.Contains(reply, "𝟸𝟹:𝟶𝟶") {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, []string{"我的路线"}, time.Date(2026, 6, 2, 22, 0, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
 }
 
@@ -531,15 +634,18 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
-	if strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") || !strings.Contains(reply, "𝟷𝟶:𝟶𝟶") {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
-	if !strings.Contains(reply, "东区  \t高新区") ||
-		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 ") ||
-		!strings.Contains(reply, "𝟷𝟶:𝟶𝟶 \t𝟷𝟶:𝟺𝟶 ") ||
-		strings.Contains(reply, "→") {
-		t.Fatalf("reply is not a stop-time table: %q", reply)
+	encoded, err := json.Marshal(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"departure_time":"08:00"`) ||
+		!strings.Contains(string(encoded), `"departure_time":"09:00"`) ||
+		!strings.Contains(string(encoded), `"departure_time":"10:00"`) {
+		t.Fatalf("structured schedule = %s", encoded)
 	}
 }
 
@@ -569,14 +675,18 @@ func TestHandleBusExplicitRouteCanShowDepartedTripsFromPreference(t *testing.T) 
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") || !strings.Contains(reply, "𝟶𝟿:𝟶𝟶") {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(ctx, ident, []string{"东区", "高新区"}, time.Date(2026, 6, 2, 8, 30, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Data == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
-	if !strings.Contains(reply, "东区  \t高新区") ||
-		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶 \t𝟶𝟾:𝟺𝟶 ") ||
-		!strings.Contains(reply, "𝟶𝟿:𝟶𝟶 \t𝟶𝟿:𝟺𝟶 \t✨") {
-		t.Fatalf("reply is not a stop-time table: %q", reply)
+	encoded, err := json.Marshal(response.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"departure_time":"08:00"`) ||
+		!strings.Contains(string(encoded), `"departure_time":"09:00"`) ||
+		!strings.Contains(string(encoded), `"highlight":true`) {
+		t.Fatalf("structured schedule = %s", encoded)
 	}
 }
 
@@ -604,14 +714,15 @@ func TestHandleBusExplicitRouteShowsAllStops(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
-	reply := handler.busAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation()))
-	if !strings.Contains(reply, "东区") || !strings.Contains(reply, "西区") || !strings.Contains(reply, "𝟶𝟾:𝟶𝟶") {
-		t.Fatalf("reply = %q", reply)
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	response := handler.busResponseAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
 	}
-	if !strings.Contains(reply, "东区  \t西区  \t先研院\t高新区") ||
-		!strings.Contains(reply, "𝟶𝟾:𝟶𝟶 \t𝟶𝟾:𝟷𝟶 \t𝟶𝟾:𝟹𝟶 \t𝟶𝟿:𝟶𝟶 ") {
-		t.Fatalf("explicit route should retain every stop and time: %q", reply)
+	for _, want := range []string{"东区", "西区", "先研院", "高新区", "08:00", "08:10", "08:30", "09:00"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("explicit route image missing %q: %s", want, response.Image.RichText)
+		}
 	}
 }
 
@@ -651,16 +762,15 @@ func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply := handler.busAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 9, 0, 0, 0, lifedata.ChinaLocation()))
-	want := strings.Join([]string{
-		"东区 \t西区 ",
-		"𝟶𝟿:𝟹𝟶\t𝟶𝟿:𝟺𝟶",
-		"",
-		"东区 \t北区 \t西区 ",
-		"𝟶𝟿:𝟸𝟶\t　　 \t𝟶𝟿:𝟹𝟻",
-	}, "\n")
-	if reply != want {
-		t.Fatalf("reply = %q, want %q", reply, want)
+	handler.EnableImageResponses = true
+	response := handler.busResponseAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 9, 0, 0, 0, lifedata.ChinaLocation()))
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	for _, want := range []string{"| **东区** | **西区** |", "| 09:30 | 09:40 |", "| **东区** | 北区 | **西区** |", "| 09:20 |  | 09:35 |"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("image missing %q: %s", want, response.Image.RichText)
+		}
 	}
 }
 
@@ -795,7 +905,7 @@ func TestBusQueryArgsSupportsWeekendAndRejectsIncompatibleOrInvalidDates(t *test
 	}
 }
 
-func TestBusAtReturnsSaturdayAndSundayAsSeparateDatedSections(t *testing.T) {
+func TestBusImageResponseReturnsSaturdayAndSundayAsSeparateDatedSections(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
 			"routes":[{"id":1,"stops":[{"campus":{"nameCn":"东区"}},{"campus":{"nameCn":"西区"}}]}],
@@ -808,33 +918,39 @@ func TestBusAtReturnsSaturdayAndSundayAsSeparateDatedSections(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
-	reply := handler.busAt(context.Background(), store.Identity{}, []string{"周六", "周日", "东区", "西区"}, now)
-	for _, want := range []string{"查询日期：2026-09-05（周六）", "𝟶𝟾:𝟶𝟶", "查询日期：2026-09-06（周日）", "𝟶𝟿:𝟶𝟶"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %q: %q", want, reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"周六", "周日", "东区", "西区"}, now)
+	if response.Text != "" || response.Image == nil {
+		t.Fatalf("bus response = %#v", response)
+	}
+	for _, want := range []string{"## 2026-09-05（周六）", "08:00", "## 2026-09-06（周日）", "09:00"} {
+		if !strings.Contains(response.Image.RichText, want) {
+			t.Fatalf("image missing %q: %q", want, response.Image.RichText)
 		}
 	}
-	if strings.Contains(reply, "𝟶𝟽:𝟶𝟶") {
-		t.Fatalf("reply contains weekday trip: %q", reply)
+	if strings.Contains(response.Image.RichText, "07:00") {
+		t.Fatalf("image contains weekday trip: %q", response.Image.RichText)
 	}
 
-	weekday := handler.busAt(context.Background(), store.Identity{}, []string{"2026-09-07", "东区", "西区"}, now)
-	if !strings.Contains(weekday, "查询日期：2026-09-07（周一）") || !strings.Contains(weekday, "𝟶𝟽:𝟶𝟶") {
-		t.Fatalf("weekday reply = %q", weekday)
+	weekday := handler.busResponseAt(context.Background(), store.Identity{}, []string{"2026-09-07", "东区", "西区"}, now)
+	if weekday.Text != "" || weekday.Image == nil || !strings.Contains(weekday.Image.RichText, "校车 · 2026-09-07（周一）") || !strings.Contains(weekday.Image.RichText, "07:00") {
+		t.Fatalf("weekday image = %#v", weekday.Image)
 	}
 }
 
-func TestBusAtSpecificDateLabelsNoService(t *testing.T) {
+func TestBusImageResponseSpecificDateLabelsNoService(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"routes":[],"trips":[]}`))
 	}))
 	defer server.Close()
-	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
-	if reply := handler.busAt(context.Background(), store.Identity{}, []string{"周日"}, now); reply != "查询日期：2026-09-06（周日）\n没有查到校车。" {
-		t.Fatalf("reply = %q", reply)
+	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"周日"}, now)
+	if response.Text != "" || response.Image == nil ||
+		!strings.Contains(response.Image.RichText, "校车 · 2026-09-06（周日）") ||
+		!strings.Contains(response.Image.RichText, "没有查到校车") {
+		t.Fatalf("bus image = %#v", response.Image)
 	}
 }
 
@@ -1105,128 +1221,10 @@ func TestNextBusByRouteSortsByDepartureCampus(t *testing.T) {
 	if items[0].DepartureCampus != "东区" || items[1].DepartureCampus != "西区" {
 		t.Fatalf("items = %#v", items)
 	}
-	lines := formatBusItemsByRouteGroup(items, 8)
-	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区 \t北区 \t西区 \n𝟶𝟿:𝟹𝟶\t　　 \t𝟶𝟿:𝟺𝟻") ||
-		!strings.Contains(got, "西区 \t东区 \n𝟶𝟿:𝟶𝟻\t𝟶𝟿:𝟸𝟶") {
-		t.Fatalf("formatted lines = %q", got)
-	}
-}
-
-func TestFormatBusItemsGroupsByRouteKind(t *testing.T) {
-	items := []busItem{
-		{
-			DepartureCampus:  "南区",
-			DepartureMinutes: 720,
-			Stops:            []busStop{{Name: "南区", Time: "12:00"}, {Name: "东区", Time: "12:15"}},
-		},
-		{
-			DepartureCampus:  "东区",
-			DepartureMinutes: 570,
-			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "西区", Time: "09:45"}},
-		},
-		{
-			DepartureCampus:  "高新区",
-			DepartureMinutes: 575,
-			Stops:            []busStop{{Name: "高新区", Time: "09:35"}, {Name: "先研院", Time: "09:40"}, {Name: "东区", Time: "10:20"}},
-		},
-		{
-			DepartureCampus:  "先研院",
-			DepartureMinutes: 800,
-			Stops:            []busStop{{Name: "先研院", Time: "13:20"}, {Name: "高新区", Time: "13:30"}},
-		},
-		{
-			DepartureCampus:  "北区",
-			DepartureMinutes: 840,
-			Stops:            []busStop{{Name: "北区", Time: "14:00"}, {Name: "中区", Time: "14:10"}},
-		},
-	}
-
-	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
-	eastHigh := "高新区\t先研院\t东区"
-	eastWest := "东区 \t北区 \t西区"
-	highTechLocal := "先研院\t高新区"
-	south := "南区 \t东区"
-	other := "北区 \t中区"
-	for _, want := range []string{eastHigh, eastWest, highTechLocal, south, other} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("formatted lines missing %q: %q", want, got)
-		}
-	}
-	if strings.Index(got, eastHigh) >= strings.Index(got, eastWest) ||
-		strings.Index(got, eastWest) >= strings.Index(got, highTechLocal) ||
-		strings.Index(got, highTechLocal) >= strings.Index(got, south) ||
-		strings.Index(got, south) >= strings.Index(got, other) {
-		t.Fatalf("formatted lines not grouped in route order: %q", got)
-	}
-}
-
-func TestFormatBusItemsNoLimitShowsAllRoutes(t *testing.T) {
-	items := []busItem{
-		{DepartureCampus: "东区", Stops: []busStop{{Name: "东区", Time: "09:00"}}},
-		{DepartureCampus: "西区", Stops: []busStop{{Name: "西区", Time: "09:05"}}},
-	}
-
-	lines := formatBusItemsByRouteGroup(items, 0)
-	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "东区") || !strings.Contains(got, "西区") {
-		t.Fatalf("formatted lines = %q", got)
-	}
-}
-
-func TestFormatBusItemsByRouteGroupUsesRouteTables(t *testing.T) {
-	items := []busItem{
-		{
-			RouteID:          "east-west-local",
-			DepartureMinutes: 570,
-			Stops:            []busStop{{Name: "东区", Time: "09:30"}, {Name: "北区"}, {Name: "西区", Time: "09:45"}},
-		},
-		{
-			RouteID:          "east-west-direct",
-			DepartureMinutes: 550,
-			Stops:            []busStop{{Name: "东区", Time: "09:10"}, {Name: "西区", Time: "09:25"}},
-		},
-		{
-			RouteID:          "west-east",
-			DepartureMinutes: 560,
-			Stops:            []busStop{{Name: "西区", Time: "09:20"}, {Name: "东区", Time: "09:35"}},
-		},
-		{
-			RouteID:          "east-west-direct",
-			DepartureMinutes: 610,
-			Stops:            []busStop{{Name: "东区", Time: "10:10"}, {Name: "西区", Time: "10:25"}},
-		},
-	}
-
-	got := strings.Join(formatBusItemsByRouteGroup(items, 0), "\n")
-	want := strings.Join([]string{
-		"东区 \t西区 ",
-		"𝟶𝟿:𝟷𝟶\t𝟶𝟿:𝟸𝟻",
-		"𝟷𝟶:𝟷𝟶\t𝟷𝟶:𝟸𝟻",
-		"",
-		"东区 \t北区 \t西区 ",
-		"𝟶𝟿:𝟹𝟶\t　　 \t𝟶𝟿:𝟺𝟻",
-		"",
-		"西区 \t东区 ",
-		"𝟶𝟿:𝟸𝟶\t𝟶𝟿:𝟹𝟻",
-	}, "\n")
-	if got != want {
-		t.Fatalf("formatted lines = %q, want %q", got, want)
-	}
-}
-
-func TestFormatBusItemsAsStopTimeTablePadsCellsBeforeTabs(t *testing.T) {
-	lines := formatBusItemsAsStopTimeTable([]busItem{{
-		Stops: []busStop{
-			{Name: "高新区", Time: "09:00"},
-			{Name: "先研院", Time: "09:05"},
-			{Name: "西区", Time: "09:10"},
-			{Name: "东区", Time: "09:20"},
-		},
-	}})
-	got := strings.Join(lines, "\n")
-	if !strings.Contains(got, "高新区\t先研院\t西区  \t东区  ") {
-		t.Fatalf("formatted table = %q", got)
+	richText := strings.Join(busImageTableLines(items, busRouteQuery{}), "\n")
+	if !strings.Contains(richText, "| 东区 | 北区 | 西区 |\n| --- | --- | --- |\n| 09:30 |  | 09:45 |") ||
+		!strings.Contains(richText, "| 西区 | 东区 |\n| --- | --- |\n| 09:05 | 09:20 |") {
+		t.Fatalf("rich bus tables = %q", richText)
 	}
 }
 

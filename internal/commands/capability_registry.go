@@ -481,9 +481,23 @@ func init() {
 		descriptor(CapabilityTeacher, []string{"teacher", "老师"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {
 			return h.searchTeachers(ctx, joinedArgs(args))
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopePublic) }, helpMeta("teacher", "老师", "搜索老师和查看老师详情", true, []HelpExample{example("老师 张", "按关键词快速搜索老师")}, nil)),
-		descriptor(CapabilityBus, []string{"bus", "校车", "xc"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic}, EffectRead, ExposureModel, busCommandArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.bus(ctx, ident, args)
-		}, busPolicy, helpMeta("bus", "校车", "按日期、服务日或路线查询班次并设置偏好", true, []HelpExample{example("校车", "查看今天接下来各路线的校车"), example("校车 周六 周日", "分别查询最近周六和周日的完整时刻"), example("校车 周六 太湖路园区 东区", "查询周六指定路线的完整时刻"), example("校车 2026-09-06 东区 太湖路园区", "查询指定日期的完整时刻"), example("校车 工作日 东区 西区", "查询周一至周五的时刻"), example("校车 高新校区 东区", "高新区、高新园区也可作为校区别名"), example("校车 偏好", "查看校车偏好"), example("校车 偏好 路线 东区 西区", "设置偏好路线")}, []HelpExample{example("校车（xc）", "直接查询今天接下来的校车")})),
+		{
+			ID: CapabilityBus, Forms: []string{"bus", "校车", "xc"},
+			Requirements: CapabilityRequirements{Life: true, DataScope: DataScopePublic},
+			Effect:       EffectRead, Exposure: ExposureModel,
+			Input: busCommandArgsAcceptable, Execute: busExecutor, Present: defaultCapabilityPresenter,
+			ResolvePolicy: busPolicy,
+			Help: helpMeta("bus", "校车", "按日期、服务日或路线查询班次并设置偏好", true, []HelpExample{
+				example("校车", "查看今天接下来各路线的校车"),
+				example("校车 周六 周日", "分别查询最近周六和周日的完整时刻"),
+				example("校车 周六 太湖路园区 东区", "查询周六指定路线的完整时刻"),
+				example("校车 2026-09-06 东区 太湖路园区", "查询指定日期的完整时刻"),
+				example("校车 工作日 东区 西区", "查询周一至周五的时刻"),
+				example("校车 高新校区 东区", "高新区、高新园区也可作为校区别名"),
+				example("校车 偏好", "查看校车偏好"),
+				example("校车 偏好 路线 东区 西区", "设置偏好路线"),
+			}, []HelpExample{example("校车（xc）", "直接查询今天接下来的校车")}),
+		},
 		descriptor(CapabilitySchedule, []string{"schedule", "课表", "kb"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, scheduleArgsAcceptable, normalizeScheduleArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.curriculum(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("schedule", "课表", "周课表、单日课表与下一节课", true, []HelpExample{example("课表", "查看本周课表"), example("课表 本周", "查看本周课表"), example("课表 下周", "查看下周课表"), example("课表 第3周", "查看指定教学周"), example("课表 2026 秋季学期", "查看整学期课表与教学周范围"), example("课表 单日 今天", "只查看今天的课表"), example("课表 单日 明天", "只查看明天的课表")}, []HelpExample{example("今日课表（单日课表）", "相当于“课表 单日 今天")})),
