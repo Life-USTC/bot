@@ -408,7 +408,7 @@ func TestMissingMutationTargetAllowsModelClarification(t *testing.T) {
 		t.Fatalf("result=%#v", result)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 0 {
+	if err != nil || len(operations) != 2 || operations[0].Capability != "tool:search_bot_commands" || operations[1].State != store.CapabilityExecutionFailed || operations[1].Effect != "read" {
 		t.Fatalf("preflight created operations=%#v err=%v", operations, err)
 	}
 	if requests.Load() != 3 {
@@ -895,8 +895,8 @@ func TestSecondClassroomRequestCanUseSupplementaryLiteralMCPResult(t *testing.T)
 		t.Fatalf("model did not receive the exact host-docs/MCP-docs/result sequence: %q", requestBodies)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 1 || executions[0].Capability != "mcp:catalog_young_event_list" ||
-		executions[0].State != store.CapabilityExecutionSucceeded || executions[0].Effect != string(commands.EffectRead) {
+	if err != nil || len(executions) != 3 || executions[2].Capability != "mcp:catalog_young_event_list" ||
+		executions[2].State != store.CapabilityExecutionSucceeded || executions[2].Effect != string(commands.EffectRead) {
 		t.Fatalf("young-event execution = %#v err=%v", executions, err)
 	}
 }
@@ -2118,7 +2118,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		t.Fatalf("mutation ran before approval: settings=%#v err=%v", credential, err)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionAwaitingConfirmation {
+	if err != nil || len(operations) != 2 || operations[1].State != store.CapabilityExecutionAwaitingConfirmation {
 		t.Fatalf("pending operations=%#v err=%v", operations, err)
 	}
 	if ok, err := db.TransitionConversationJob(ctx, job.ID, firstInput.JobLeaseToken, store.ConversationJobTransition{
@@ -2143,8 +2143,8 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 		t.Fatalf("approved mutation settings=%#v err=%v", credential, err)
 	}
 	operations, err = db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionSucceeded ||
-		!strings.Contains(operations[0].Result, "succeeded") {
+	if err != nil || len(operations) != 2 || operations[1].State != store.CapabilityExecutionSucceeded ||
+		!strings.Contains(operations[1].Result, "succeeded") {
 		t.Fatalf("completed operations=%#v err=%v", operations, err)
 	}
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
@@ -2298,8 +2298,8 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 		t.Fatalf("pre-confirmation result=%#v remove_calls=%d", first, removeCalls.Load())
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(executions) != 1 || executions[0].State != store.CapabilityExecutionAwaitingConfirmation ||
-		executions[0].Effect != string(commands.EffectDestructive) || executions[0].Receipt.Subject != "编译原理（程老师，2026年秋季学期）" {
+	if err != nil || len(executions) != 2 || executions[1].State != store.CapabilityExecutionAwaitingConfirmation ||
+		executions[1].Effect != string(commands.EffectDestructive) || executions[1].Receipt.Subject != "编译原理（程老师，2026年秋季学期）" {
 		t.Fatalf("pending unsubscribe executions=%#v err=%v", executions, err)
 	}
 	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
@@ -2443,7 +2443,7 @@ func TestRunReturnsTerminalMutationReplayWithoutPhantomConfirmation(t *testing.T
 		t.Fatalf("terminal replay run = %#v", second)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 1 || operations[0].State != store.CapabilityExecutionSucceeded {
+	if err != nil || len(operations) != 2 || operations[0].State != store.CapabilityExecutionSucceeded {
 		t.Fatalf("terminal replay operations=%#v err=%v", operations, err)
 	}
 	events, err := db.RecentConversationEvents(ctx, ident, 20)
@@ -2574,7 +2574,7 @@ func TestRunExecutesParallelOrdinaryWritesWithoutConfirmation(t *testing.T) {
 		t.Fatalf("both approved mutations should run: settings=%#v err=%v", settings, err)
 	}
 	operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-	if err != nil || len(operations) != 2 {
+	if err != nil || len(operations) != 3 {
 		t.Fatalf("final operations=%#v err=%v", operations, err)
 	}
 	for _, operation := range operations {

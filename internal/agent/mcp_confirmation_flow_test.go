@@ -138,7 +138,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 				wantState = store.CapabilityExecutionUnknown
 			}
 			operations, err := db.CapabilityExecutionsForJob(ctx, job.ID)
-			if err != nil || len(operations) != 1 || operations[0].State != wantState || remoteCalls.Load() != wantCalls {
+			if err != nil || len(operations) != 2 || operations[0].Capability != "tool:search_campus_tools" || operations[1].State != wantState || remoteCalls.Load() != wantCalls {
 				t.Fatalf("operations=%#v calls=%d err=%v", operations, remoteCalls.Load(), err)
 			}
 			events, err := db.RecentConversationEvents(ctx, ident, 30)
