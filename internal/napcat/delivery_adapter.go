@@ -42,17 +42,35 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 		return napcatRejected("invalid_target", err)
 	}
 
-	imageURL := ""
-	if attachment := outbound.Content.Attachment; attachment != nil {
-		imageURL, err = a.imageFile(ctx, attachment)
-		if err != nil {
-			if strings.TrimSpace(attachment.URL) != "" {
-				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: err}
-			}
-			return napcatRejected("invalid_attachment", err)
-		}
+	payload := make([]map[string]any, 0, len(outbound.Content.Parts)+1)
+	if replyTo := outbound.ReplyTo; replyTo != nil && strings.TrimSpace(replyTo.MessageID) != "" {
+		payload = append(payload, map[string]any{
+			"type": "reply",
+			"data": map[string]any{"id": strings.TrimSpace(replyTo.MessageID)},
+		})
 	}
-	payload := napcatDeliveryMessage(outbound.Content.Text, imageURL, outbound.ReplyTo)
+	for _, part := range outbound.Content.Parts {
+		if text := strings.TrimSpace(part.Text); text != "" {
+			if len(payload) > 0 && payload[len(payload)-1]["type"] == "text" {
+				text = "\n\n" + text
+			}
+			payload = append(payload, map[string]any{"type": "text", "data": map[string]any{"text": text}})
+		}
+		if part.Attachment == nil {
+			continue
+		}
+		imageURL, imageErr := a.imageFile(ctx, part.Attachment)
+		if imageErr != nil {
+			if strings.TrimSpace(part.Attachment.URL) != "" {
+				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: imageErr}
+			}
+			return napcatRejected("invalid_attachment", imageErr)
+		}
+		payload = append(payload, napcatImageMessage(imageURL)...)
+	}
+	if len(payload) == 0 {
+		return napcatRejected("invalid_message", errors.New("napcat delivery content is empty"))
+	}
 	conn, writeMu := a.bridge.reverseConnForReply(outbound.ReplyTo)
 	var acceptance store.MessageAcceptance
 	if conn != nil {
@@ -95,23 +113,6 @@ func (a *DeliveryAdapter) imageFile(ctx context.Context, attachment *message.Att
 		return "", errors.New("napcat PNG attachment is empty")
 	}
 	return "base64://" + base64.StdEncoding.EncodeToString(attachment.Data), nil
-}
-
-func napcatDeliveryMessage(text, imageURL string, replyTo *message.ReplyRef) []map[string]any {
-	segments := make([]map[string]any, 0, 3)
-	if replyTo != nil && strings.TrimSpace(replyTo.MessageID) != "" {
-		segments = append(segments, map[string]any{
-			"type": "reply",
-			"data": map[string]any{"id": strings.TrimSpace(replyTo.MessageID)},
-		})
-	}
-	if text = strings.TrimSpace(text); text != "" {
-		segments = append(segments, map[string]any{"type": "text", "data": map[string]any{"text": text}})
-	}
-	if strings.TrimSpace(imageURL) != "" {
-		segments = append(segments, napcatImageMessage(imageURL)...)
-	}
-	return segments
 }
 
 func classifyNapCatDeliveryError(err error) delivery.Outcome {

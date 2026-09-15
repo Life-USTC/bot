@@ -83,7 +83,7 @@ func TestPollerRemindsForFutureHomeworkWithoutCompletionRequirement(t *testing.T
 		"submissionDueAt":    "2026-06-07T15:00:00+08:00",
 		"completionRequired": false,
 	}}, now)
-	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "无需完成") {
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "无需完成") {
 		t.Fatalf("messages = %#v, want a labelled reminder", publisher.messages)
 	}
 }
@@ -165,15 +165,15 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	if len(publisher.messages) != 2 {
 		t.Fatalf("messages = %#v", publisher.messages)
 	}
-	joined := publisher.messages[0].Content.Text + "\n" + publisher.messages[1].Content.Text
+	joined := publisher.messages[0].Content.TextContent() + "\n" + publisher.messages[1].Content.TextContent()
 	for _, want := range []string{"课前提醒：", "作业提醒：", "数据库系统", "Problem Set 𝟷"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("messages missing %q: %#v", want, publisher.messages)
 		}
 	}
 	for _, outbound := range publisher.messages {
-		if outbound.Content.Attachment == nil || outbound.Content.Attachment.MIMEType != "image/png" || len(outbound.Content.Attachment.Data) == 0 {
-			t.Fatalf("attachment = %#v", outbound.Content.Attachment)
+		if len(outbound.Content.Parts) != 2 || outbound.Content.Parts[1].Attachment == nil || outbound.Content.Parts[1].Attachment.MIMEType != "image/png" || len(outbound.Content.Parts[1].Attachment.Data) == 0 {
+			t.Fatalf("attachment = %#v", outbound.Content.Parts)
 		}
 	}
 	if !publisher.messages[0].ExpiresAt.Equal(now.Add(35*time.Minute)) || !publisher.messages[1].ExpiresAt.Equal(time.Date(2026, 6, 8, 10, 0, 0, 0, lifedata.ChinaLocation())) {
@@ -226,11 +226,11 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 		t.Fatalf("messages after failed enqueue = %#v", publisher.messages)
 	}
 	poller.tick(ctx)
-	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "作业提醒：") {
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "作业提醒：") {
 		t.Fatalf("messages after retry = %#v", publisher.messages)
 	}
-	if publisher.messages[0].Content.Attachment != nil {
-		t.Fatalf("disabled image responses = %#v", publisher.messages[0].Content.Attachment)
+	if len(publisher.messages[0].Content.Parts) != 1 || publisher.messages[0].Content.Parts[0].Attachment != nil {
+		t.Fatalf("disabled image responses = %#v", publisher.messages[0].Content.Parts)
 	}
 	poller.tick(ctx)
 	if len(publisher.messages) != 1 {
@@ -437,7 +437,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	if refreshRequests != 1 || scheduleRequests != 2 {
 		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
 	}
-	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "课前提醒：") {
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "课前提醒：") {
 		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }
@@ -508,7 +508,7 @@ func TestPollerUsesRefreshedTokenForHomeworks(t *testing.T) {
 	if refreshRequests != 1 || homeworkRequests != 2 {
 		t.Fatalf("refreshRequests = %d, homeworkRequests = %d", refreshRequests, homeworkRequests)
 	}
-	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.Text, "作业提醒：") {
+	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "作业提醒：") {
 		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }

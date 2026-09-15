@@ -61,7 +61,7 @@ func TestLoginPollerPublishesCompletionToDurableOutbox(t *testing.T) {
 	if got := records[0].Message.Target; got.Platform != "napcat" || got.Type != "private" || got.ID != "42" {
 		t.Fatalf("target = %#v", got)
 	}
-	if records[0].Message.Content.Text != "登录完成。" || records[0].Status != delivery.StatusDelivering {
+	if records[0].Message.Content.TextContent() != "登录完成。" || records[0].Status != delivery.StatusDelivering {
 		t.Fatalf("record = %#v", records[0])
 	}
 	if active, err := s.ActiveLoginSession(context.Background(), ident); err != nil || active != nil {

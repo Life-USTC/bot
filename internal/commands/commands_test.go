@@ -1672,8 +1672,8 @@ func TestHandleFeedbackRecordsThroughService(t *testing.T) {
 	if len(due) != 2 || due[0].Message.Target.Platform != "napcat" || due[1].Message.Target.Platform != "napcat" {
 		t.Fatalf("admin intents = %#v", due)
 	}
-	if !strings.Contains(due[0].Message.Content.Text, "用户反馈") || !strings.Contains(due[0].Message.Content.Text, "用户：42") {
-		t.Fatalf("message = %q", due[0].Message.Content.Text)
+	if !strings.Contains(due[0].Message.Content.TextContent(), "用户反馈") || !strings.Contains(due[0].Message.Content.TextContent(), "用户：42") {
+		t.Fatalf("message = %q", due[0].Message.Content.TextContent())
 	}
 }
 

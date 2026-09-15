@@ -131,7 +131,7 @@ func validateOutbound(outbound message.Outbound, durable bool) error {
 	if strings.TrimSpace(outbound.Target.Type) == "" || strings.TrimSpace(outbound.Target.ID) == "" {
 		return errors.New("delivery target conversation is incomplete")
 	}
-	if strings.TrimSpace(outbound.Content.Text) == "" && outbound.Content.Attachment == nil {
+	if !outbound.Content.HasContent() {
 		return errors.New("delivery content is empty")
 	}
 	if durable && strings.TrimSpace(outbound.DedupeKey) == "" {
@@ -145,7 +145,23 @@ func normalizeOutbound(outbound message.Outbound) message.Outbound {
 	outbound.Target.Platform = normalizePlatform(outbound.Target.Platform)
 	outbound.Target.Type = strings.ToLower(strings.TrimSpace(outbound.Target.Type))
 	outbound.Target.ID = strings.TrimSpace(outbound.Target.ID)
-	outbound.Content.Text = strings.TrimSpace(outbound.Content.Text)
+	parts := make([]message.ContentPart, 0, len(outbound.Content.Parts))
+	for _, part := range outbound.Content.Parts {
+		part.Text = strings.TrimSpace(part.Text)
+		if part.Attachment != nil {
+			attachment := *part.Attachment
+			attachment.MIMEType = strings.TrimSpace(attachment.MIMEType)
+			attachment.URL = strings.TrimSpace(attachment.URL)
+			attachment.AltText = strings.TrimSpace(attachment.AltText)
+			attachment.Data = append([]byte(nil), attachment.Data...)
+			part.Attachment = &attachment
+		}
+		if part.Text == "" && part.Attachment == nil {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	outbound.Content.Parts = parts
 	outbound.DedupeKey = strings.TrimSpace(outbound.DedupeKey)
 	return outbound
 }

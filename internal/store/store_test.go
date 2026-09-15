@@ -31,7 +31,7 @@ func TestOutgoingMessageLifecycleAndDedupe(t *testing.T) {
 	outbound := message.Outbound{
 		Kind:      "auth.result",
 		Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
-		Content:   message.Content{Text: "登录完成。"},
+		Content:   message.Content{Parts: []message.ContentPart{{Text: "登录完成。"}}},
 		DedupeKey: "auth:device:approved",
 		ExpiresAt: now.Add(time.Hour),
 	}
@@ -77,11 +77,10 @@ func TestPruneOutgoingMessagesDropsAttachmentBytesButKeepsReplyContext(t *testin
 	outbound := message.Outbound{
 		Kind:   "bus",
 		Target: message.Conversation{Platform: "napcat", Type: "group", ID: "g"},
-		Content: message.Content{
-			Text: "东区 06:50",
+		Content: message.Content{Parts: []message.ContentPart{{Text: "东区 06:50",
 			Attachment: &message.Attachment{
 				MIMEType: "image/png", AltText: "校车", Data: bytes.Repeat([]byte{7}, 64<<10),
-			},
+			}}},
 		},
 		DedupeKey: "prune-1",
 	}
@@ -112,12 +111,12 @@ func TestPruneOutgoingMessagesDropsAttachmentBytesButKeepsReplyContext(t *testin
 	if err := json.Unmarshal([]byte(row.PayloadJSON), &kept); err != nil {
 		t.Fatalf("pruned payload is not decodable: %v", err)
 	}
-	if kept.Kind != "bus" || kept.Content.Text != "东区 06:50" {
+	if kept.Kind != "bus" || kept.Content.TextContent() != "东区 06:50" {
 		t.Fatalf("pruned payload lost reply context: %#v", kept)
 	}
-	if kept.Content.Attachment == nil || kept.Content.Attachment.MIMEType != "image/png" ||
-		kept.Content.Attachment.AltText != "校车" || len(kept.Content.Attachment.Data) != 0 {
-		t.Fatalf("attachment metadata not preserved without bytes: %#v", kept.Content.Attachment)
+	if kept.Content.Parts[0].Attachment == nil || kept.Content.Parts[0].Attachment.MIMEType != "image/png" ||
+		kept.Content.Parts[0].Attachment.AltText != "校车" || len(kept.Content.Parts[0].Attachment.Data) != 0 {
+		t.Fatalf("attachment metadata not preserved without bytes: %#v", kept.Content.Parts[0].Attachment)
 	}
 }
 
@@ -131,9 +130,9 @@ func TestPruneOutgoingMessagesKeepsPendingPayloadsIntact(t *testing.T) {
 	record, _, err := db.Enqueue(ctx, message.Outbound{
 		Kind:   "bus",
 		Target: message.Conversation{Platform: "napcat", Type: "group", ID: "g"},
-		Content: message.Content{Text: "待发送", Attachment: &message.Attachment{
+		Content: message.Content{Parts: []message.ContentPart{{Text: "待发送", Attachment: &message.Attachment{
 			MIMEType: "image/png", Data: bytes.Repeat([]byte{7}, 64<<10),
-		}},
+		}}}},
 		DedupeKey: "prune-pending",
 	})
 	if err != nil {
@@ -147,7 +146,7 @@ func TestPruneOutgoingMessagesKeepsPendingPayloadsIntact(t *testing.T) {
 	if err != nil || len(records) != 1 || records[0].ID != record.ID {
 		t.Fatalf("claim after prune: records=%#v err=%v", records, err)
 	}
-	if records[0].Message.Content.Attachment == nil || len(records[0].Message.Content.Attachment.Data) != 64<<10 {
+	if records[0].Message.Content.Parts[0].Attachment == nil || len(records[0].Message.Content.Parts[0].Attachment.Data) != 64<<10 {
 		t.Fatal("pending attachment bytes were pruned")
 	}
 }
@@ -163,9 +162,9 @@ func TestPruneOutgoingMessagesKeepsRetryPayloadsIntact(t *testing.T) {
 	record, _, err := db.Enqueue(ctx, message.Outbound{
 		Kind:   "bus",
 		Target: message.Conversation{Platform: "napcat", Type: "group", ID: "g"},
-		Content: message.Content{Text: "待重试", Attachment: &message.Attachment{
+		Content: message.Content{Parts: []message.ContentPart{{Text: "待重试", Attachment: &message.Attachment{
 			MIMEType: "image/png", Data: bytes.Repeat([]byte{8}, 64<<10),
-		}},
+		}}}},
 		DedupeKey: "prune-retry",
 	})
 	if err != nil {
@@ -181,7 +180,7 @@ func TestPruneOutgoingMessagesKeepsRetryPayloadsIntact(t *testing.T) {
 		t.Fatal(err)
 	}
 	records, err := db.ClaimDue(ctx, now.Add(time.Minute), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Attachment == nil || len(records[0].Message.Content.Attachment.Data) != 64<<10 {
+	if err != nil || len(records) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || len(records[0].Message.Content.Parts[0].Attachment.Data) != 64<<10 {
 		t.Fatalf("retry attachment was pruned: records=%#v err=%v", records, err)
 	}
 }
@@ -196,7 +195,7 @@ func TestPruneOutgoingMessagesDeletesExpiredTerminalRows(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	record, _, err := db.Enqueue(ctx, message.Outbound{
 		Kind: "text", Target: message.Conversation{Platform: "napcat", Type: "private", ID: "u"},
-		Content: message.Content{Text: "old"}, DedupeKey: "prune-old",
+		Content: message.Content{Parts: []message.ContentPart{{Text: "old"}}}, DedupeKey: "prune-old",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +232,7 @@ func TestOutgoingMessageRetryExpiryAndStaleRecovery(t *testing.T) {
 		return message.Outbound{
 			Kind:    "reminder.class",
 			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
-			Content: message.Content{Text: key}, DedupeKey: key, ExpiresAt: expiresAt,
+			Content: message.Content{Parts: []message.ContentPart{{Text: key}}}, DedupeKey: key, ExpiresAt: expiresAt,
 		}
 	}
 	retryRecord, _, err := s.Enqueue(ctx, makeOutbound("retry", now.Add(time.Hour)))
@@ -1210,7 +1209,7 @@ func TestTransitionLoginSessionAtomicallySavesCredentialAndOutbox(t *testing.T) 
 	}
 	outbound := message.Outbound{
 		Kind: "login_result", Target: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
-		Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test:approved",
+		Content: message.Content{Parts: []message.ContentPart{{Text: "登录完成。"}}}, DedupeKey: "login:test:approved",
 	}
 	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
 		Status:     LoginStatusApproved,
@@ -1255,7 +1254,7 @@ func TestTransitionLoginSessionRollsBackTerminalStateWhenOutboxFails(t *testing.
 	}); err != nil {
 		t.Fatal(err)
 	}
-	invalid := message.Outbound{Content: message.Content{Text: "登录完成。"}, DedupeKey: "login:test"}
+	invalid := message.Outbound{Content: message.Content{Parts: []message.ContentPart{{Text: "登录完成。"}}}, DedupeKey: "login:test"}
 	transitioned, err := s.TransitionLoginSession(ctx, ident, "device", LoginTransition{
 		Status:     LoginStatusApproved,
 		Credential: &Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour)},
@@ -2070,7 +2069,7 @@ func TestCreateFeedbackWithOutboundsRollsBackOnIntentFailure(t *testing.T) {
 		return []message.Outbound{{
 			Kind:      "feedback_admin",
 			Target:    message.Conversation{Platform: "napcat", Type: "private", ID: "admin"},
-			Content:   message.Content{Text: "feedback"},
+			Content:   message.Content{Parts: []message.ContentPart{{Text: "feedback"}}},
 			DedupeKey: fmt.Sprintf("feedback:%d:admin", id),
 		}}
 	})

@@ -324,10 +324,7 @@ func (s *Store) ResolveQuotedMessage(ctx context.Context, conversation message.C
 	if err != nil {
 		return nil, err
 	}
-	content := strings.TrimSpace(record.Message.Content.Text)
-	if content == "" && record.Message.Content.Attachment != nil {
-		content = strings.TrimSpace(record.Message.Content.Attachment.AltText)
-	}
+	content := record.Message.Content.TextContent()
 	sentAt := record.CreatedAt.UTC()
 	if sentAt.IsZero() {
 		sentAt = record.Receipt.AcceptedAt.UTC()

@@ -55,7 +55,7 @@ func TestWorkerPersistsRetrySchedule(t *testing.T) {
 		Attempts: 2,
 		Message: message.Outbound{
 			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
-			Content: message.Content{Text: "hello"},
+			Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 		},
 	}}}
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeRetryable, Code: "offline"}}
@@ -129,7 +129,7 @@ func TestWorkerStopsRetryingAfterAttemptBudget(t *testing.T) {
 		Attempts: defaultMaxAttempts,
 		Message: message.Outbound{
 			Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
-			Content: message.Content{Text: "hello"},
+			Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 		},
 	}}}
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeRetryable}}

@@ -52,7 +52,7 @@ func TestDeliveryAdapterContractMapsGroupTargetAndReply(t *testing.T) {
 	outcome := adapter.Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "group", ID: "g-1"},
 		ReplyTo: &message.ReplyRef{MessageID: "source", EventID: "event", Sequence: 3},
-		Content: message.Content{Text: "hello"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 	})
 	if outcome.State != delivery.OutcomeAccepted || outcome.Receipt.PlatformMessageID != "q-1" {
 		t.Fatalf("outcome = %#v", outcome)
@@ -74,7 +74,7 @@ func TestDeliveryAdapterSupportsQQChannelAndGuildDirectTargets(t *testing.T) {
 		{Platform: "qqbot", Type: "channel", ID: "channel-1"},
 		{Platform: "qqbot", Type: "guild_private", ID: "guild-1"},
 	} {
-		outcome := adapter.Deliver(t.Context(), message.Outbound{Target: target, Content: message.Content{Text: "hello"}})
+		outcome := adapter.Deliver(t.Context(), message.Outbound{Target: target, Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}}})
 		if outcome.State != delivery.OutcomeAccepted {
 			t.Fatalf("target=%#v outcome=%#v", target, outcome)
 		}
@@ -142,9 +142,8 @@ func TestDeliveryAdapterContractPublishesPNGWithText(t *testing.T) {
 	})
 	outcome := adapter.Deliver(context.Background(), message.Outbound{
 		Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "u-1"},
-		Content: message.Content{
-			Text:       "图片说明",
-			Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "图片说明",
+			Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData}}},
 		},
 	})
 	if outcome.State != delivery.OutcomeAccepted || outcome.Receipt.PlatformMessageID != "q-media" {
@@ -190,7 +189,7 @@ func TestDeliveryAdapterContractUsesURLAttachment(t *testing.T) {
 	defer server.Close()
 	outcome := NewDeliveryAdapter(&Bot{BotToken: "t", APIBaseURL: server.URL, HTTPClient: server.Client()}).Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "u"},
-		Content: message.Content{Attachment: &message.Attachment{URL: server.URL + "/source.png"}},
+		Content: message.Content{Parts: []message.ContentPart{{Attachment: &message.Attachment{URL: server.URL + "/source.png"}}}},
 	})
 	if outcome.State != delivery.OutcomeAccepted || !bytes.Equal(uploaded, pngData) {
 		t.Fatalf("outcome=%#v uploaded=%d", outcome, len(uploaded))
@@ -206,7 +205,7 @@ func TestDeliveryAdapterErrorClassification(t *testing.T) {
 		out    message.Outbound
 		want   delivery.OutcomeState
 	}{
-		{name: "wrong platform", out: message.Outbound{Target: message.Conversation{Platform: "napcat", Type: "private", ID: "u"}, Content: message.Content{Text: "x"}}, want: delivery.OutcomeRejected},
+		{name: "wrong platform", out: message.Outbound{Target: message.Conversation{Platform: "napcat", Type: "private", ID: "u"}, Content: message.Content{Parts: []message.ContentPart{{Text: "x"}}}}, want: delivery.OutcomeRejected},
 		{name: "rate limited", status: http.StatusTooManyRequests, want: delivery.OutcomeRetryable},
 		{name: "bad target", status: http.StatusBadRequest, want: delivery.OutcomeRejected},
 		{name: "incomplete success", status: http.StatusOK, body: `{}`, want: delivery.OutcomeUnknown},
@@ -237,7 +236,7 @@ func TestDeliveryAdapterErrorClassification(t *testing.T) {
 			}
 			outbound := tt.out
 			if outbound.Target.Platform == "" {
-				outbound = message.Outbound{Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "u"}, Content: message.Content{Text: "x"}}
+				outbound = message.Outbound{Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "u"}, Content: message.Content{Parts: []message.ContentPart{{Text: "x"}}}}
 			}
 			if got := NewDeliveryAdapter(bot).Deliver(context.Background(), outbound); got.State != tt.want {
 				t.Fatalf("outcome = %#v, want %q", got, tt.want)
@@ -261,7 +260,7 @@ func TestDeliveryAdapterRetriesMediaUploadFailureBeforeSend(t *testing.T) {
 
 	outcome := NewDeliveryAdapter(&Bot{BotToken: "token", APIBaseURL: server.URL, HTTPClient: server.Client()}).Deliver(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "u"},
-		Content: message.Content{Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData}},
+		Content: message.Content{Parts: []message.ContentPart{{Attachment: &message.Attachment{MIMEType: "image/png", Data: pngData}}}},
 	})
 	if outcome.State != delivery.OutcomeRetryable || messageRequests != 0 {
 		t.Fatalf("outcome=%#v messageRequests=%d", outcome, messageRequests)

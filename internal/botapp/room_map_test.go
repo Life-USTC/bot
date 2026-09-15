@@ -7,7 +7,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/responses"
 )
 
-func TestRoomMapPresentationSendsOnlyImage(t *testing.T) {
+func TestRoomMapPresentationPreservesTextAndImage(t *testing.T) {
 	content, err := (&Coordinator{}).presentationContent(t.Context(), commands.Response{
 		Text:  "3A204：三教 2",
 		Image: &responses.Image{Kind: "room-map", URL: "https://static.example/3A204.png"},
@@ -15,7 +15,7 @@ func TestRoomMapPresentationSendsOnlyImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if content.Text != "" || content.Attachment == nil || content.Attachment.URL != "https://static.example/3A204.png" {
+	if len(content.Parts) != 2 || content.TextContent() != "3A204：三教 2" || content.Parts[1].Attachment == nil || content.Parts[1].Attachment.URL != "https://static.example/3A204.png" {
 		t.Fatalf("content = %#v", content)
 	}
 }

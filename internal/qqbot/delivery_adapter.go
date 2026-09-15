@@ -43,32 +43,63 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 	if err != nil {
 		return qqRejected("invalid_target", err)
 	}
-	msgID, eventID, sequence := qqReplyReference(outbound.ReplyTo)
-
-	var acceptance store.MessageAcceptance
-	if attachment := outbound.Content.Attachment; attachment != nil {
-		if _, mediaErr := richMediaUploadPath(ident); mediaErr != nil {
-			return qqRejected("invalid_attachment", mediaErr)
+	item := qqDeliveryMessage{Text: outbound.Content.TextContent()}
+	for _, part := range outbound.Content.Parts {
+		if part.Attachment == nil {
+			continue
 		}
-		imageData, imageErr := a.imageBytes(ctx, attachment)
-		if imageErr != nil {
-			if strings.TrimSpace(attachment.URL) != "" {
-				return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: imageErr}
-			}
-			return qqRejected("invalid_attachment", imageErr)
+		if item.Attachment != nil {
+			return qqRejected("invalid_message", errors.New("QQ requires each image to have its own durable Outbox record"))
 		}
-		acceptance, err = a.bot.sendCachedRichMediaContent(
-			ctx, ident, imageData, qqBotOutgoingMessage(ident, outbound.Content.Text), msgID, eventID, sequence,
-		)
-	} else {
-		text := qqBotOutgoingMessage(ident, outbound.Content.Text)
-		acceptance, err = a.bot.sendTo(ctx, ident, text, msgID, eventID, sequence)
+		item.Attachment = part.Attachment
 	}
+	msgID, eventID, sequence := qqReplyReference(outbound.ReplyTo)
+	acceptance, err := a.deliverMessage(ctx, ident, item, msgID, eventID, sequence)
 	if err != nil {
 		return classifyQQDeliveryError(err)
 	}
 	return delivery.Outcome{State: delivery.OutcomeAccepted, Receipt: qqReceipt(acceptance)}
 }
+
+type qqDeliveryMessage struct {
+	Text       string
+	Attachment *message.Attachment
+}
+
+func (a *DeliveryAdapter) deliverMessage(
+	ctx context.Context,
+	ident store.Identity,
+	item qqDeliveryMessage,
+	msgID, eventID string,
+	sequence int,
+) (store.MessageAcceptance, error) {
+	if item.Attachment == nil {
+		return a.bot.sendTo(ctx, ident, qqBotOutgoingMessage(ident, item.Text), msgID, eventID, sequence)
+	}
+	if _, mediaErr := richMediaUploadPath(ident); mediaErr != nil {
+		return store.MessageAcceptance{}, invalidAttachmentError{err: mediaErr}
+	}
+	imageData, imageErr := a.imageBytes(ctx, item.Attachment)
+	if imageErr != nil {
+		if strings.TrimSpace(item.Attachment.URL) != "" {
+			return store.MessageAcceptance{}, attachmentUnavailableError{err: imageErr}
+		}
+		return store.MessageAcceptance{}, invalidAttachmentError{err: imageErr}
+	}
+	return a.bot.sendCachedRichMediaContent(
+		ctx, ident, imageData, qqBotOutgoingMessage(ident, item.Text), msgID, eventID, sequence,
+	)
+}
+
+type attachmentUnavailableError struct{ err error }
+
+func (e attachmentUnavailableError) Error() string { return e.err.Error() }
+func (e attachmentUnavailableError) Unwrap() error { return e.err }
+
+type invalidAttachmentError struct{ err error }
+
+func (e invalidAttachmentError) Error() string { return e.err.Error() }
+func (e invalidAttachmentError) Unwrap() error { return e.err }
 
 func qqIdentityFromConversation(target message.Conversation) (store.Identity, error) {
 	conversationType := strings.ToLower(strings.TrimSpace(target.Type))
@@ -168,6 +199,14 @@ func validatePNG(data []byte) error {
 func classifyQQDeliveryError(err error) delivery.Outcome {
 	if isUncertainSendError(err) {
 		return delivery.Outcome{State: delivery.OutcomeUnknown, Code: "send_uncertain", Err: err}
+	}
+	var attachmentErr attachmentUnavailableError
+	if errors.As(err, &attachmentErr) {
+		return delivery.Outcome{State: delivery.OutcomeRetryable, Code: "attachment_unavailable", Err: err}
+	}
+	var invalidAttachment invalidAttachmentError
+	if errors.As(err, &invalidAttachment) {
+		return qqRejected("invalid_attachment", err)
 	}
 	var beforeSend preSendError
 	if errors.As(err, &beforeSend) {

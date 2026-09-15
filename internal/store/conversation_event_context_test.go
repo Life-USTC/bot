@@ -19,7 +19,7 @@ func TestResolveQuotedMessageUsesOnlyAcceptedOutboxInSameConversation(t *testing
 	conversation := message.Conversation{Platform: "napcat", Type: "group", ID: "100"}
 	createdAt := time.Now().UTC()
 	record, created, err := db.Enqueue(ctx, message.Outbound{
-		Kind: "agent", Target: conversation, Content: message.Content{Text: "原始 Bot 内容"}, DedupeKey: "quoted-message",
+		Kind: "agent", Target: conversation, Content: message.Content{Parts: []message.ContentPart{{Text: "原始 Bot 内容"}}}, DedupeKey: "quoted-message",
 	})
 	if err != nil || !created {
 		t.Fatalf("enqueue quote=%#v created=%v err=%v", record, created, err)

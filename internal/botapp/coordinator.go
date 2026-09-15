@@ -670,28 +670,42 @@ func (c *Coordinator) responseOutbounds(ctx context.Context, job store.Conversat
 	if strings.TrimSpace(response.Text) == "" && response.Image == nil && len(response.Parts) == 0 {
 		return nil, start, nil
 	}
-	parts := response.Parts
-	if len(parts) == 0 {
-		parts = []commands.Response{response}
+	content, err := c.presentationContent(ctx, response)
+	if err != nil {
+		return nil, start, err
 	}
-	messages := make([]message.Outbound, 0, len(parts))
-	part := start
-	for _, item := range parts {
-		content, err := c.presentationContent(ctx, item)
-		if err != nil {
-			return nil, part, err
+	if !content.HasContent() {
+		return nil, start, nil
+	}
+	replyTo := inbound.Source
+	replyTo.Sequence = start + 1
+	dedupeKey := fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, start)
+	kind := strings.TrimSpace(response.Kind)
+	if kind == "" {
+		for _, item := range flattenResponseParts(response) {
+			if kind = strings.TrimSpace(item.Kind); kind != "" {
+				break
+			}
 		}
-		replyTo := inbound.Source
-		replyTo.Sequence = part + 1
-		dedupeKey := fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, part)
-		messages = append(messages, message.Outbound{
-			Kind: item.Kind, Target: inbound.Conversation, ReplyTo: &replyTo, Content: content,
-			Context:   responseContextForJob(job),
-			DedupeKey: dedupeKey,
-		})
-		part++
 	}
-	return messages, part, nil
+	contents := []message.Content{content}
+	if inbound.Conversation.Platform == "qqbot" {
+		contents = content.SingleImageMessages()
+	}
+	outbounds := make([]message.Outbound, 0, len(contents))
+	for index, item := range contents {
+		ref := replyTo
+		ref.Sequence += index
+		key := dedupeKey
+		if index > 0 {
+			key = fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, start+index)
+		}
+		outbounds = append(outbounds, message.Outbound{
+			Kind: kind, Target: inbound.Conversation, ReplyTo: &ref, Content: item,
+			Context: responseContextForJob(job), DedupeKey: key,
+		})
+	}
+	return outbounds, start + len(outbounds), nil
 }
 
 func (c *Coordinator) recordOutbound(ctx context.Context, job store.ConversationJob, outbound message.Outbound) {
@@ -700,7 +714,7 @@ func (c *Coordinator) recordOutbound(ctx context.Context, job store.Conversation
 	}
 	if err := c.recorder.RecordInteraction(ctx, job.Identity, store.Interaction{
 		Direction: store.InteractionDirectionOutbound,
-		RawText:   outbound.Content.Text,
+		RawText:   outbound.Content.TextContent(),
 		Command:   outbound.Kind,
 		Handled:   true,
 		Status:    store.InteractionStatusSent,
@@ -747,25 +761,55 @@ func (c *Coordinator) recordIgnoredJob(ctx context.Context, job store.Conversati
 }
 
 func (c *Coordinator) presentationContent(ctx context.Context, response commands.Response) (message.Content, error) {
-	if response.Image == nil {
-		return message.Content{Text: response.Text}, nil
-	}
-	attachment, err := c.renderAttachment(ctx, response.Image)
-	if err == nil {
-		return message.Content{Attachment: attachment}, nil
-	}
-	c.logf("render response image failed; persist text fallback: %v", err)
-	text := strings.TrimSpace(response.Text)
-	if response.Image.Kind == "room-map" && strings.TrimSpace(response.Image.URL) != "" && !strings.Contains(text, response.Image.URL) {
-		text = strings.TrimSpace(text + "\n地图：" + response.Image.URL)
-	}
-	if text == "" {
-		text = strings.TrimSpace(response.Image.AltText)
-	}
-	if text == "" {
+	parts := flattenResponseParts(response)
+	content := message.Content{Parts: make([]message.ContentPart, 0, len(parts)*2)}
+	for _, item := range parts {
+		if text := strings.TrimSpace(item.Text); text != "" {
+			content.Parts = append(content.Parts, message.ContentPart{Text: text})
+		}
+		if item.Image == nil {
+			continue
+		}
+		attachment, err := c.renderAttachment(ctx, item.Image)
+		if err == nil {
+			content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
+			continue
+		}
+		c.logf("render response image failed; persist text fallback: %v", err)
+		text := strings.TrimSpace(item.Text)
+		if item.Image.Kind == "room-map" && strings.TrimSpace(item.Image.URL) != "" && !strings.Contains(text, item.Image.URL) {
+			text = strings.TrimSpace(text + "\n地图：" + item.Image.URL)
+		}
+		if text == "" {
+			text = strings.TrimSpace(item.Image.AltText)
+		}
+		if text == strings.TrimSpace(item.Text) && text != "" {
+			continue
+		}
+		if text != "" {
+			content.Parts = append(content.Parts, message.ContentPart{Text: text})
+			continue
+		}
 		return message.Content{}, err
 	}
-	return message.Content{Text: text}, nil
+	return content, nil
+}
+
+// flattenResponseParts keeps every user-visible field in its original order.
+// A response with Parts may still carry leading text or an image, so those
+// fields are emitted before its nested parts instead of being discarded.
+func flattenResponseParts(response commands.Response) []commands.Response {
+	parts := make([]commands.Response, 0, max(1, len(response.Parts)))
+	if strings.TrimSpace(response.Text) != "" || response.Image != nil {
+		parts = append(parts, commands.Response{Text: response.Text, Image: response.Image, Kind: response.Kind})
+	}
+	for _, nested := range response.Parts {
+		parts = append(parts, flattenResponseParts(nested)...)
+	}
+	if len(parts) == 0 && len(response.Parts) == 0 {
+		return []commands.Response{response}
+	}
+	return parts
 }
 
 func (c *Coordinator) renderAttachment(ctx context.Context, image *responses.Image) (*message.Attachment, error) {

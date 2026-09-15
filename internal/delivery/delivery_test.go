@@ -30,12 +30,12 @@ func TestServiceRoutesOnlyToExactPlatform(t *testing.T) {
 	}
 	outbound := message.Outbound{
 		Target:  message.Conversation{Platform: " QQBOT ", Type: "private", ID: "42"},
-		Content: message.Content{Text: "hello"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 	}
 	if outcome := service.DeliverNow(context.Background(), outbound); outcome.State != OutcomeAccepted {
 		t.Fatalf("outcome = %#v", outcome)
 	}
-	if qq.got.Content.Text != "hello" || napcat.got.Content.Text != "" {
+	if qq.got.Content.TextContent() != "hello" || napcat.got.Content.HasContent() {
 		t.Fatalf("qq = %#v napcat = %#v", qq.got, napcat.got)
 	}
 }
@@ -48,12 +48,12 @@ func TestServiceDoesNotGuessSinglePlatform(t *testing.T) {
 	}
 	outcome := service.DeliverNow(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
-		Content: message.Content{Text: "hello"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 	})
 	if outcome.State != OutcomeRejected || outcome.Code != "unsupported_platform" {
 		t.Fatalf("outcome = %#v", outcome)
 	}
-	if qq.got.Content.Text != "" {
+	if qq.got.Content.HasContent() {
 		t.Fatalf("message was sent to the wrong adapter: %#v", qq.got)
 	}
 }
@@ -76,7 +76,7 @@ func TestServiceRegistersAdapterDuringComposition(t *testing.T) {
 	}
 	outcome := service.DeliverNow(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
-		Content: message.Content{Text: "hello"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 	})
 	if outcome.State != OutcomeAccepted {
 		t.Fatalf("outcome = %#v", outcome)
@@ -91,7 +91,7 @@ func TestServiceNormalizesInvalidAdapterOutcome(t *testing.T) {
 	}
 	outcome := service.DeliverNow(context.Background(), message.Outbound{
 		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
-		Content: message.Content{Text: "hello"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "hello"}}},
 	})
 	if outcome.State != OutcomeUnknown || outcome.Code != "invalid_adapter_outcome" {
 		t.Fatalf("outcome = %#v", outcome)

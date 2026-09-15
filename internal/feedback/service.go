@@ -105,7 +105,7 @@ func (s *Service) Record(ctx context.Context, ident store.Identity, submission S
 					Type:     target.ConversationType,
 					ID:       target.ConversationID,
 				},
-				Content: message.Content{Text: content},
+				Content: message.Content{Parts: []message.ContentPart{{Text: content}}},
 				DedupeKey: fmt.Sprintf("feedback:%d:%s:%s:%s",
 					id, target.Platform, target.ConversationType, target.ConversationID),
 			})

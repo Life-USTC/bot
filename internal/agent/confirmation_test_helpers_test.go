@@ -31,7 +31,7 @@ func commitAgentConfirmationReceipt(t *testing.T, db *store.Store, ctx context.C
 		Messages: []message.Outbound{{
 			Kind:    "confirmation",
 			Target:  message.Conversation{Platform: ident.Platform, Type: ident.ConversationType, ID: ident.ConversationID},
-			Content: message.Content{Text: "请确认 #待确认操作{" + executionID + "}"}, DedupeKey: dedupeKey,
+			Content: message.Content{Parts: []message.ContentPart{{Text: "请确认 #待确认操作{" + executionID + "}"}}}, DedupeKey: dedupeKey,
 		}},
 		ReceiptIDs: []string{executionID},
 		Transition: store.ConversationJobTransition{State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation},

@@ -299,7 +299,7 @@ func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 		t.Fatalf("outbox records = %#v", records)
 	}
 	got := records[0].Message
-	if got.Content.Text != "帮助结果" || got.DedupeKey != "conversation-job:1:revision:1:part:0" || got.ReplyTo == nil || got.ReplyTo.EventID != "event-1" {
+	if got.Content.TextContent() != "帮助结果" || got.DedupeKey != "conversation-job:1:revision:1:part:0" || got.ReplyTo == nil || got.ReplyTo.EventID != "event-1" {
 		t.Fatalf("outbound = %#v", got)
 	}
 }
@@ -354,7 +354,7 @@ func TestCoordinatorResolvesAcceptedBotReplyIntoBusFollowUp(t *testing.T) {
 			Capability: string(commands.CapabilityBus),
 			Arguments:  []string{"周六", "西区", "高新区"},
 		},
-		Content:   message.Content{Text: "周六校车"},
+		Content:   message.Content{Parts: []message.ContentPart{{Text: "周六校车"}}},
 		DedupeKey: "reply-context-source",
 	})
 	if err != nil || !created {
@@ -400,7 +400,7 @@ func TestCoordinatorTreatsReplyToAcceptedAgentOutputAsAddressed(t *testing.T) {
 	_, created, err := db.Enqueue(ctx, message.Outbound{
 		Kind:      "agent",
 		Target:    conversation,
-		Content:   message.Content{Text: "公开信息说明"},
+		Content:   message.Content{Parts: []message.ContentPart{{Text: "公开信息说明"}}},
 		DedupeKey: "agent-reply-source",
 	})
 	if err != nil || !created {
@@ -576,7 +576,7 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 		t.Fatalf("waiting job = %#v", saved)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, confirmationPrompt) {
+	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.TextContent(), confirmationPrompt) {
 		t.Fatalf("confirmation output = %#v err=%v", records, err)
 	}
 	acceptCoordinatorOutputs(t, db, records)
@@ -594,7 +594,7 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#通知 homework on（已完成）") {
+	if len(records) != 1 || !strings.Contains(records[0].Message.Content.TextContent(), "#通知 homework on（已完成）") {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
@@ -644,7 +644,7 @@ func TestCoordinatorDoesNotWaitWhenInterruptedRunHasNoPendingConfirmation(t *tes
 	if err != nil || len(records) != 1 {
 		t.Fatalf("terminal interrupted output=%#v err=%v", records, err)
 	}
-	text := records[0].Message.Content.Text
+	text := records[0].Message.Content.TextContent()
 	if strings.Contains(text, confirmationPrompt) || strings.Contains(text, "#待确认") {
 		t.Fatalf("phantom confirmation was sent: %q", text)
 	}
@@ -718,7 +718,7 @@ func TestCoordinatorPersistsTextFallbackBeforeCompletingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Text != "fallback" || records[0].Message.Content.Attachment != nil {
+	if len(records) != 1 || records[0].Message.Content.TextContent() != "fallback" || records[0].Message.Content.Parts[0].Attachment != nil {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
@@ -749,7 +749,7 @@ func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Attachment == nil || records[0].Message.Content.Text != "" {
+	if len(records) != 1 || len(records[0].Message.Content.Parts) != 2 || records[0].Message.Content.Parts[1].Attachment == nil || records[0].Message.Content.TextContent() != "校车查询结果" {
 		t.Fatalf("direct image output=%#v", records)
 	}
 }
@@ -772,9 +772,9 @@ func TestCoordinatorInvalidCommandReturnsExactUsageWithoutExecutionReceipt(t *te
 		t.Fatal(err)
 	}
 	if len(records) != 1 ||
-		!strings.Contains(records[0].Message.Content.Text, "课表的参数无法识别") ||
-		!strings.Contains(records[0].Message.Content.Text, "课表 第3周") ||
-		strings.Contains(records[0].Message.Content.Text, "#查询") {
+		!strings.Contains(records[0].Message.Content.TextContent(), "课表的参数无法识别") ||
+		!strings.Contains(records[0].Message.Content.TextContent(), "课表 第3周") ||
+		strings.Contains(records[0].Message.Content.TextContent(), "#查询") {
 		t.Fatalf("invalid command output=%#v", records)
 	}
 	executions, err := db.CapabilityExecutionsForJob(t.Context(), job.ID)
@@ -826,7 +826,7 @@ func TestCoordinatorOutputCommitFailureRetriesWithoutTerminalizingJob(t *testing
 		t.Fatalf("retried job = %#v", saved)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "帮助结果" {
+	if err != nil || len(records) != 1 || records[0].Message.Content.TextContent() != "帮助结果" {
 		t.Fatalf("retried output records=%#v err=%v", records, err)
 	}
 }
@@ -876,7 +876,7 @@ func TestCoordinatorOutputCommitFailureDoesNotReplayDirectMutation(t *testing.T)
 		t.Fatalf("direct operation was not retained exactly once: %#v err=%v", executions, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || records[0].Message.Content.Text != "已执行" {
+	if err != nil || len(records) != 1 || records[0].Message.Content.TextContent() != "已执行" {
 		t.Fatalf("retried direct output=%#v err=%v", records, err)
 	}
 }
@@ -1093,7 +1093,7 @@ func TestCoordinatorHostOnlyResponseIsQueuedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Text != "private-link" {
+	if len(records) != 1 || records[0].Message.Content.TextContent() != "private-link" {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }
@@ -1138,7 +1138,7 @@ func TestCoordinatorSlowAgentEmitsOnlyFinalResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].Message.Content.Text != "最终回复" || records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" {
+	if len(records) != 1 || records[0].Message.Content.TextContent() != "最终回复" || records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" {
 		t.Fatalf("final output=%#v", records)
 	}
 }
@@ -1191,7 +1191,7 @@ func TestCoordinatorNaturalCalendarLinkRequestDeliversUsablePrivateURL(t *testin
 	if len(records) != 1 {
 		t.Fatalf("outbox records = %#v", records)
 	}
-	reply := records[0].Message.Content.Text
+	reply := records[0].Message.Content.TextContent()
 	for _, want := range []string{calendarURL, "使用方法：复制链接", "通过 URL 添加/订阅日历", "iCalendar", "自动更新"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -1278,7 +1278,7 @@ func TestCoordinatorLoginWaitsOnSameJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Message.Content.Text != "请登录" || records[1].Message.Content.Text != "查询完成" {
+	if len(records) != 2 || records[0].Message.Content.TextContent() != "请登录" || records[1].Message.Content.TextContent() != "查询完成" {
 		t.Fatalf("resumed outbox = %#v", records)
 	}
 	if records[0].Message.DedupeKey != "conversation-job:1:revision:1:part:0" || records[1].Message.DedupeKey != "conversation-job:1:revision:2:part:0" {
@@ -1318,7 +1318,7 @@ func TestCoordinatorExecutesDirectMutationWithoutConfirmationOrReceipt(t *testin
 	if err != nil || len(initial) != 1 {
 		t.Fatalf("initial output: records=%#v err=%v", initial, err)
 	}
-	if got := initial[0].Message.Content.Text; !strings.Contains(got, "作业提醒：开") || strings.Contains(got, confirmationPrompt) || strings.Contains(got, "#") {
+	if got := initial[0].Message.Content.TextContent(); !strings.Contains(got, "作业提醒：开") || strings.Contains(got, confirmationPrompt) || strings.Contains(got, "#") {
 		t.Fatalf("direct output = %q", got)
 	}
 	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
@@ -1372,7 +1372,7 @@ func TestCoordinatorResumesDirectMutationPreparedBeforeClaim(t *testing.T) {
 		t.Fatalf("resumed direct execution=%#v err=%v", executions, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 1 || strings.Contains(records[0].Message.Content.Text, "#") {
+	if err != nil || len(records) != 1 || strings.Contains(records[0].Message.Content.TextContent(), "#") {
 		t.Fatalf("resumed direct output=%#v err=%v", records, err)
 	}
 }
@@ -1398,7 +1398,7 @@ func TestCoordinatorPassesGroupedDirectMutationThroughWithoutConfirmation(t *tes
 		t.Fatalf("grouped direct job=%#v err=%v", saved, err)
 	}
 	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
-	if err != nil || len(records) != 2 || records[0].Message.Content.Text != "批量订阅完成" || records[1].Message.Content.Text != "批量订阅完成" || strings.Contains(records[0].Message.Content.Text, "#") || strings.Contains(records[1].Message.Content.Text, "#") {
+	if err != nil || len(records) != 1 || records[0].Message.Content.TextContent() != "批量订阅完成\n\n批量订阅完成" || strings.Contains(records[0].Message.Content.TextContent(), "#") {
 		t.Fatalf("grouped direct output=%#v err=%v", records, err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)

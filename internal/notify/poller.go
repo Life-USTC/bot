@@ -248,13 +248,13 @@ func overviewItems(overview map[string]any, key string) []map[string]any {
 }
 
 func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) {
-	content := message.Content{Text: text}
+	content := message.Content{Parts: []message.ContentPart{{Text: text}}}
 	if image != nil && p.Renderer != nil {
 		png, _, _, err := p.Renderer.RenderPNGContext(ctx, image)
 		if err != nil {
 			p.logf("render %s notification failed: %v", kind, err)
 		} else {
-			content.Attachment = &message.Attachment{MIMEType: "image/png", Data: png, AltText: image.AltText}
+			content.Parts = append(content.Parts, message.ContentPart{Attachment: &message.Attachment{MIMEType: "image/png", Data: png, AltText: image.AltText}})
 		}
 	}
 	target := message.Conversation{
