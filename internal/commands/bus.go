@@ -380,11 +380,7 @@ func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args [
 		"sections":      busImageSectionsData(sections, selections),
 	}
 	h.markData(resultData)
-	response := Response{Kind: "bus", Data: resultData}
-	if h.EnableImageResponses {
-		response.Image = busImageForSections(sections, routeArgs)
-	}
-	return response
+	return Response{Kind: "bus", Data: resultData, Image: busImageForSections(sections, routeArgs)}
 }
 
 func (h Handler) busItemsForOptions(ctx context.Context, ident store.Identity, data map[string]any, routeArgs []string, now time.Time, options busQueryOptions) []busItem {
@@ -1655,5 +1651,4 @@ func busTime(value string, minutes int) string {
 	return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60)
 }
 
-const busMissingTimePlaceholder = "———"
 const busOverviewTripsPerRoute = 3

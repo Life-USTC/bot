@@ -422,7 +422,7 @@ func realisticEastWestBusTestData() map[string]any {
 	}
 }
 
-func TestBusResponseKeepsEmptyFilteredScheduleStructured(t *testing.T) {
+func TestBusResponseWithoutGeneralImageFlagStillRendersEmptySchedule(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -437,7 +437,7 @@ func TestBusResponseKeepsEmptyFilteredScheduleStructured(t *testing.T) {
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{}, nil, now)
-	if response.Text != "" || response.Image != nil || response.Data == nil {
+	if response.Text != "" || response.Image == nil || response.Data == nil {
 		t.Fatalf("bus response = %#v", response)
 	}
 	data, ok := response.Data.(map[string]any)
