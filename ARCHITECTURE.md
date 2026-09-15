@@ -267,6 +267,10 @@ not current data or proof of delivery.
 Direct shuttle queries produce a card without a duplicate text presentation.
 Rendering failure is an output failure; no shuttle text fallback is generated.
 The structured JSON business result remains separate from rendering success.
+Completed Agent replies (including selected images and host presentations) are
+saved separately from the model's interrupt checkpoint until Outbox commit is
+acknowledged. Rendering or output-commit retries reuse that completed response
+without another model invocation.
 
 ## Reliability and outbox
 

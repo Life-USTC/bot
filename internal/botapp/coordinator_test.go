@@ -735,7 +735,7 @@ func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 		Jobs: db,
 		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
 			return commands.Response{
-				Text: "校车查询结果", Kind: "bus",
+				Kind:  "bus",
 				Image: responses.NewTextImage("bus", "校车", "校车查询结果"),
 			}, true
 		}),
@@ -755,7 +755,7 @@ func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || len(records[0].Message.Content.Parts) != 2 || records[0].Message.Content.Parts[1].Attachment == nil || records[0].Message.Content.TextContent() != "校车查询结果" {
+	if len(records) != 1 || len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || records[0].Message.Content.TextContent() != "" {
 		t.Fatalf("direct image output=%#v", records)
 	}
 }

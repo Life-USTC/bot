@@ -185,9 +185,7 @@ func (s *Service) Handle(ctx context.Context, input Input) (string, bool) {
 	return response.Text, ok
 }
 
-// Run exposes the durable state transition needed by the coordinator while
-// HandleResponse remains the response-level API used by focused callers.
-func (s *Service) Run(ctx context.Context, input Input) Result {
+func (s *Service) runOnce(ctx context.Context, input Input) Result {
 	state := RunStateCompleted
 	var runErr error
 	input.runState = &state
@@ -943,7 +941,10 @@ func (s *Service) Acknowledge(ctx context.Context, jobID int64, revision int, le
 	if err != nil {
 		return err
 	}
-	return bound.Delete(ctx, checkpointID)
+	if err := bound.Delete(ctx, checkpointID); err != nil {
+		return err
+	}
+	return bound.Delete(ctx, completedOutputKey(jobID))
 }
 
 const (
