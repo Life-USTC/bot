@@ -250,22 +250,29 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	job, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
 		Identity: ident, SourceEventID: "grouped", Input: ConversationJobInput{Text: "订阅两门课"},
-		State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation,
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	})
 	if err != nil || !created {
 		t.Fatalf("enqueue: created=%v err=%v", created, err)
 	}
+	claimed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim: job=%#v err=%v", claimed, err)
+	}
+	prepared := make([]CapabilityExecution, 0, 2)
 	for i, subject := range []string{"数学分析（程艺，2026春）", "线性代数（李明，2026春）"} {
-		_, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
-			Identity: ident, JobID: job.ID, Sequence: i, DedupeKey: "job:grouped:" + subject,
+		execution, created, err := s.PrepareCapabilityExecution(ctx, CapabilityExecutionPrepare{
+			Identity: ident, JobID: job.ID, LeaseToken: claimed.LeaseToken, Sequence: i, DedupeKey: "job:grouped:" + subject,
 			Capability: "subscription", Arguments: []string{"import", subject}, Effect: "write",
 			Receipt: CapabilityReceipt{Action: "订阅", Resource: "课程", Subject: subject}, RequiresConfirmation: true,
 		})
 		if err != nil || !created {
 			t.Fatalf("prepare %d: created=%v err=%v", i, created, err)
 		}
+		prepared = append(prepared, execution)
 	}
+	outboxID := commitTestConfirmationReceipt(t, s, ctx, *claimed, prepared[0].ID, "grouped-confirmation-1")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 
 	first, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Approved: true})
 	if err != nil || first == nil || released == nil {
@@ -274,22 +281,19 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	if first.Sequence != 0 || first.State != CapabilityExecutionApproved || released.State != ConversationJobStateQueued {
 		t.Fatalf("first resolution: operation=%#v job=%#v", first, released)
 	}
-	claimed, err := s.ClaimConversationJob(ctx, ident)
-	if err != nil || claimed == nil {
-		t.Fatalf("claim released job: %#v err=%v", claimed, err)
+	resumed, err := s.ClaimConversationJob(ctx, ident)
+	if err != nil || resumed == nil {
+		t.Fatalf("claim released job: %#v err=%v", resumed, err)
 	}
-	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, claimed.ID, claimed.LeaseToken)
+	claimedExecution, execute, err := s.ClaimCapabilityExecutionForJob(ctx, first.ID, resumed.ID, resumed.LeaseToken)
 	if err != nil || !execute {
 		t.Fatalf("claim approved operation: execute=%v err=%v", execute, err)
 	}
 	if _, err := s.FinishCapabilityExecution(ctx, first.ID, claimedExecution.LeaseToken, "已订阅", nil); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.TransitionConversationJob(ctx, claimed.ID, claimed.LeaseToken, ConversationJobTransition{
-		State: ConversationJobStateWaitingConfirmation, WaitReason: ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("return to confirmation: ok=%v err=%v", ok, err)
-	}
+	outboxID = commitTestConfirmationReceipt(t, s, ctx, *resumed, prepared[1].ID, "grouped-confirmation-2")
+	acceptTestConfirmationReceipt(t, s, ctx, outboxID)
 
 	second, released, err := s.ResolveCapabilityConfirmation(ctx, ident, CapabilityConfirmationDecision{Reason: "不想订阅"})
 	if err != nil || second == nil || released == nil {
@@ -298,7 +302,7 @@ func TestCapabilityConfirmationResolvesGroupedOperationsOneAtATime(t *testing.T)
 	if second.Sequence != 1 || second.State != CapabilityExecutionDenied || second.Error != "不想订阅" {
 		t.Fatalf("second resolution = %#v", second)
 	}
-	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, second.ID, claimed.ID, claimed.LeaseToken); err != nil || execute {
+	if _, execute, err := s.ClaimCapabilityExecutionForJob(ctx, second.ID, resumed.ID, resumed.LeaseToken); err != nil || execute {
 		t.Fatalf("denied operation became executable: execute=%v err=%v", execute, err)
 	}
 }

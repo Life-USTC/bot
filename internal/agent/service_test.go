@@ -758,9 +758,7 @@ func TestLazyMCPSearchAndCallExposeDynamicTools(t *testing.T) {
 		executions[1].Receipt.Resource != "第二课堂活动" || executions[1].Receipt.Subject != "event-1" {
 		t.Fatalf("MCP execution receipt = %#v", executions[1])
 	}
-	if ok, err := db.TransitionConversationJob(context.Background(), job.ID, claimed.LeaseToken, store.ConversationJobTransition{State: store.ConversationJobStateWaitingConfirmation}); err != nil || !ok {
-		t.Fatalf("move MCP job to confirmation: ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, context.Background(), ident, job.ID, claimed.LeaseToken, "lazy-mcp-confirmation-output")
 	if _, _, err := db.ResolveCapabilityConfirmation(context.Background(), ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil {
 		t.Fatalf("approve MCP mutation: %v", err)
 	}
@@ -2001,11 +1999,7 @@ func TestApprovedAgentLoginStartsOnlyAfterConfirmation(t *testing.T) {
 	if err != nil || !created || execution.State != store.CapabilityExecutionAwaitingConfirmation || deviceRequests.Load() != 0 {
 		t.Fatalf("prepared login=%#v created=%v device_requests=%d err=%v", execution, created, deviceRequests.Load(), err)
 	}
-	if ok, err := db.TransitionConversationJob(ctx, job.ID, claimed.LeaseToken, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("pause login confirmation ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, claimed.LeaseToken, "agent-login-confirmation-output")
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
 		t.Fatalf("approve login released=%#v err=%v", released, err)
 	}
@@ -2121,11 +2115,7 @@ func TestRunPausesForHostConfirmationAndResumesExactToolTranscript(t *testing.T)
 	if err != nil || len(operations) != 2 || operations[1].State != store.CapabilityExecutionAwaitingConfirmation {
 		t.Fatalf("pending operations=%#v err=%v", operations, err)
 	}
-	if ok, err := db.TransitionConversationJob(ctx, job.ID, firstInput.JobLeaseToken, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("pause confirmation job: ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, firstInput.JobLeaseToken, "checkpoint-confirm-output")
 	if _, found, err := db.AgentCheckpoints().Get(ctx, agentCheckpointID(job.ID)); err != nil || !found {
 		t.Fatalf("checkpoint found=%v err=%v", found, err)
 	}
@@ -2302,11 +2292,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 		executions[1].Effect != string(commands.EffectDestructive) || executions[1].Receipt.Subject != "编译原理（程老师，2026年秋季学期）" {
 		t.Fatalf("pending unsubscribe executions=%#v err=%v", executions, err)
 	}
-	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("pause unsubscribe confirmation: ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "unsubscribe-confirm-output")
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
 		t.Fatalf("approve unsubscribe: released=%#v err=%v", released, err)
 	}
@@ -2653,11 +2639,7 @@ func TestRunFeedsOnlyDeniedConfirmationBackToModel(t *testing.T) {
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
 	}
-	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("pause denied confirmation job: ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "denied-confirmation-output")
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Reason: "用户拒绝执行"}); err != nil || released == nil {
 		t.Fatalf("deny confirmation: released=%#v err=%v", released, err)
 	}
@@ -2742,11 +2724,7 @@ func TestRunRetriesFiveTimesAfterConfirmationResume(t *testing.T) {
 	if first := svc.Run(ctx, input); first.State != RunStateInterrupted {
 		t.Fatalf("first run = %#v", first)
 	}
-	if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{
-		State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
-	}); err != nil || !ok {
-		t.Fatalf("pause retry confirmation job: ok=%v err=%v", ok, err)
-	}
+	commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, "retry-confirmation-output")
 	if _, released, err := db.ResolveCapabilityConfirmation(ctx, ident, store.CapabilityConfirmationDecision{Approved: true}); err != nil || released == nil {
 		t.Fatalf("approve confirmation: released=%#v err=%v", released, err)
 	}

@@ -113,9 +113,7 @@ func TestMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 			if first.State != RunStateInterrupted || remoteCalls.Load() != 0 {
 				t.Fatalf("before approval: state=%s calls=%d", first.State, remoteCalls.Load())
 			}
-			if ok, err := db.TransitionConversationJob(ctx, job.ID, input.JobLeaseToken, store.ConversationJobTransition{State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation}); err != nil || !ok {
-				t.Fatalf("pause: ok=%v err=%v", ok, err)
-			}
+			commitAgentConfirmationReceipt(t, db, ctx, ident, job.ID, input.JobLeaseToken, scenario+"-confirmation-output")
 			decision := store.CapabilityConfirmationDecision{Approved: scenario != "deny"}
 			if scenario == "deny" {
 				decision.Reason = "用户拒绝执行"

@@ -247,6 +247,18 @@ func claimOnlyConversationJob(t *testing.T, db *store.Store) store.ConversationJ
 	return *job
 }
 
+func acceptCoordinatorOutputs(t *testing.T, db *store.Store, records []delivery.Record) {
+	t.Helper()
+	for _, record := range records {
+		if err := db.Complete(context.Background(), record.ID, delivery.Outcome{
+			State:   delivery.OutcomeAccepted,
+			Receipt: message.Receipt{AcceptedAt: time.Now().UTC()},
+		}, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestCoordinatorPersistsInputAndOutputExactlyOnce(t *testing.T) {
 	db := newCoordinatorStore(t)
 	coordinator, err := NewCoordinator(CoordinatorConfig{
@@ -563,6 +575,11 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	if saved == nil || saved.State != store.ConversationJobStateWaitingConfirmation {
 		t.Fatalf("waiting job = %#v", saved)
 	}
+	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	if err != nil || len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, confirmationPrompt) {
+		t.Fatalf("confirmation output = %#v err=%v", records, err)
+	}
+	acceptCoordinatorOutputs(t, db, records)
 	if err := coordinator.Enqueue(ctx, jobInbound("event-ok", "ok")); err != nil {
 		t.Fatal(err)
 	}
@@ -573,13 +590,11 @@ func TestCoordinatorConfirmationResumesCheckpointedOperationOnce(t *testing.T) {
 	if mutations != 1 {
 		t.Fatalf("mutation executions = %d", mutations)
 	}
-	records, err := db.ClaimDue(ctx, time.Now().UTC(), 10)
+	records, err = db.ClaimDue(ctx, time.Now().UTC(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 ||
-		!strings.Contains(records[0].Message.Content.Text, "#待确认执行操作{开启作业通知}") ||
-		!strings.Contains(records[1].Message.Content.Text, "#已执行操作{开启作业通知}") {
+	if len(records) != 1 || !strings.Contains(records[0].Message.Content.Text, "#已执行操作{开启作业通知}") {
 		t.Fatalf("outbox records = %#v", records)
 	}
 }

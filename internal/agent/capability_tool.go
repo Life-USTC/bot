@@ -305,6 +305,9 @@ func (s *Service) resolveHostCapability(
 		if !found {
 			return "", fmt.Errorf("capability execution %s is missing", executionID)
 		}
+		if persistResult && strings.TrimSpace(execution.ToolCallID) != toolCallID {
+			return "", errors.New("capability execution checkpoint belongs to another tool call")
+		}
 		switch execution.State {
 		case store.CapabilityExecutionAwaitingConfirmation:
 			pending = true

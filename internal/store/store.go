@@ -154,7 +154,7 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after a successful startup migration.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 4
 
 var requiredSchemaModels = []any{
 	&userRow{},
