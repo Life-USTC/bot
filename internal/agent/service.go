@@ -402,6 +402,8 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 					return result, nil
 				},
 				ToolCallMiddlewares: []compose.ToolMiddleware{{
+					Invokable: s.toolReceiptMiddleware(input.Identity, input.JobID),
+				}, {
 					Invokable:  repeatGuard.invokableMiddleware,
 					Streamable: repeatGuard.streamableMiddleware,
 				}, {
