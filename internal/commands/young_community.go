@@ -41,9 +41,10 @@ func (h Handler) personalCalendar(ctx context.Context, ident store.Identity, arg
 	}
 	for i, event := range events {
 		kind := event.Type
-		if kind == "young_event" {
+		switch kind {
+		case "young_event":
 			kind = "第二课堂活动"
-		} else if kind == "" {
+		case "":
 			kind = "日程"
 		}
 		label := textutil.FirstNonEmpty(event.Title, "未命名安排")
@@ -496,7 +497,7 @@ func parseYoungReminderOptions(args []string) (signup, deadline, start *bool, er
 			if i+1 >= len(args) {
 				return nil, nil, nil, errors.New("提醒设置用法：报名|截止|开始提醒 开|关")
 			}
-			field, value, consumed = normToken(args[i]), args[i+1], true
+			field, value = normToken(args[i]), args[i+1]
 			i += 2
 		} else {
 			i++

@@ -256,7 +256,9 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		if p.EnableImageResponses {
 			image = classReminderImage(schedule, message)
 		}
-		p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute))
+		if _, err := p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute)); err != nil {
+			p.logf("enqueue class notification failed: %v", err)
+		}
 	}
 }
 
@@ -276,7 +278,9 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, home
 		if p.EnableImageResponses {
 			image = homeworkReminderImage(homework, message)
 		}
-		p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due)
+		if _, err := p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due); err != nil {
+			p.logf("enqueue homework notification failed: %v", err)
+		}
 	}
 }
 
