@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/Life-USTC/Bot/internal/message"
 )
 
 func TestAutoApproveFriendRequest(t *testing.T) {
@@ -271,6 +273,79 @@ func TestEnrichForwardMessageNapCatMessageShape(t *testing.T) {
 	}
 }
 
+func TestEnrichForwardMessagePreservesStructuredSpeakerTimeNestedMedia(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/get_forward_msg" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"messages":[
+			{"time":1720000000,"sender":{"user_id":"1001","nickname":"Alice"},"message":[
+				{"type":"text","data":{"text":"请看附件"}},
+				{"type":"image","data":{"url":"https://cdn.example/a.png"}},
+				{"type":"mface","data":{"url":"https://cdn.example/sticker.gif","name":"开心"}},
+				{"type":"file","data":{"url":"https://cdn.example/report.pdf","name":"report.pdf","file_id":"file-1"}},
+				{"type":"forward","data":{"content":[
+					{"type":"node","data":{"time":1720000060,"user_id":"1002","nickname":"Bob","content":[{"type":"text","data":{"text":"嵌套内容"}}]}}
+				]}}
+			]},
+			{"time":"2026-07-03T12:00:00Z","sender":{"user_id":"1003","card":"Carol"},"raw_message":"第二条","message":[{"type":"text","data":{"text":"第二条"}}]}
+		]}}`))
+	}))
+	defer server.Close()
+
+	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	event := messageEvent{
+		MessageType: "private",
+		RawMessage:  "[CQ:forward,id=structured-fwd]",
+		Message:     []any{map[string]any{"type": "forward", "data": map[string]any{"id": "structured-fwd"}}},
+	}
+	bridge.enrichMessageEvent(context.Background(), &event)
+	inbound := event.inbound()
+	if len(inbound.Forwarded) != 2 {
+		t.Fatalf("forwarded = %#v", inbound.Forwarded)
+	}
+	first := inbound.Forwarded[0]
+	if first.Speaker.UserID != "1001" || first.Speaker.DisplayName != "Alice" || first.SentAt.Unix() != 1720000000 {
+		t.Fatalf("first forwarded metadata = %#v", first)
+	}
+	if len(first.Parts) < 4 {
+		t.Fatalf("first parts = %#v", first.Parts)
+	}
+	if first.Parts[1].Media == nil || first.Parts[1].Media.Kind != message.InputMediaImage || first.Parts[1].Media.URL != "https://cdn.example/a.png" {
+		t.Fatalf("image part = %#v", first.Parts[1])
+	}
+	if first.Parts[2].Media == nil || first.Parts[2].Media.Kind != message.InputMediaSticker || first.Parts[2].Media.URL != "https://cdn.example/sticker.gif" {
+		t.Fatalf("sticker part = %#v", first.Parts[2])
+	}
+	if first.Parts[3].Media == nil || first.Parts[3].Media.Kind != message.InputMediaFile || first.Parts[3].Media.Name != "report.pdf" {
+		t.Fatalf("file part = %#v", first.Parts[3])
+	}
+	if first.Parts[4].Forward == nil || first.Parts[4].Forward.Speaker.UserID != "1002" || first.Parts[4].Forward.Text != "嵌套内容" {
+		t.Fatalf("nested forward = %#v", first.Parts[4])
+	}
+	if len(inbound.Media) != 3 {
+		t.Fatalf("media index = %#v", inbound.Media)
+	}
+	if len(event.imageURLs()) != 2 {
+		t.Fatalf("image urls = %#v", event.imageURLs())
+	}
+}
+
+func TestNapCatInboundCapturesStickerURLFromCQ(t *testing.T) {
+	event := messageEvent{
+		MessageType: "private",
+		RawMessage:  "[CQ:mface,emoji_id=42,url=https://cdn.example/meme.gif]",
+		Message:     []any{map[string]any{"type": "mface", "data": map[string]any{"emoji_id": "42", "url": "https://cdn.example/meme.gif"}}},
+	}
+	inbound := event.inbound()
+	if len(inbound.Media) != 1 || inbound.Media[0].Kind != message.InputMediaSticker || inbound.Media[0].URL != "https://cdn.example/meme.gif" {
+		t.Fatalf("sticker media = %#v", inbound.Media)
+	}
+	if len(inbound.Parts) != 1 || inbound.Parts[0].Media == nil || inbound.Parts[0].Media.Kind != message.InputMediaSticker {
+		t.Fatalf("sticker parts = %#v", inbound.Parts)
+	}
+}
+
 func TestEnrichForwardMessageUsesInlineContent(t *testing.T) {
 	bridge := &Bridge{}
 	event := messageEvent{
@@ -315,9 +390,9 @@ func TestProjectBusStyleForwardIDsFromCQ(t *testing.T) {
 	}
 }
 
-func TestFormatForwardMessageTruncatesLargePayload(t *testing.T) {
-	nodes := make([]any, 0, maxForwardNodes+5)
-	for i := 0; i < maxForwardNodes+5; i++ {
+func TestFormatForwardMessagePreservesLargePayload(t *testing.T) {
+	nodes := make([]any, 0, 205)
+	for i := 0; i < 205; i++ {
 		nodes = append(nodes, map[string]any{
 			"data": map[string]any{
 				"nickname": "U",
@@ -327,11 +402,8 @@ func TestFormatForwardMessageTruncatesLargePayload(t *testing.T) {
 	}
 	raw, _ := json.Marshal(map[string]any{"messages": nodes})
 	got := formatForwardMessageData(raw)
-	if !strings.Contains(got, "合并转发已截断") {
-		t.Fatalf("expected truncation marker, got %q", got)
-	}
-	if strings.Count(got, "\n")+1 > maxForwardNodes+2 {
-		t.Fatalf("too many lines after truncate: %q", got)
+	if strings.Contains(got, "合并转发已截断") || strings.Count(got, strings.Repeat("x", 20)) != 205 {
+		t.Fatalf("forwarded content lost: %q", got)
 	}
 }
 
@@ -475,6 +547,59 @@ func TestReverseEnrichForwardUsesWebsocketAction(t *testing.T) {
 				}
 				return
 			}
+		}
+	}
+}
+
+func TestNestedForwardReferenceAndFileIDAreResolvedBeforeAdmission(t *testing.T) {
+	calls := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls[r.URL.Path]++
+		if r.URL.Path == "/get_private_file_url" {
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"url":"https://cdn.example/report.txt"}}`))
+			return
+		}
+		var params map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&params)
+		if params["message_id"] == "outer" {
+			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"messages":[{"time":1720000000,"sender":{"user_id":"1001","nickname":"Alice"},"message":[{"type":"forward","data":{"id":"inner"}}]}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"messages":[{"time":1720000001,"sender":{"user_id":"1002","nickname":"Bob"},"message":[{"type":"text","data":{"text":"校车 [CQ:at,qq=42]"}},{"type":"file","data":{"file_id":"file-reference","name":"report.txt"}}]}]}}`))
+	}))
+	defer server.Close()
+	event := messageEvent{MessageType: "private", UserID: 1000, SelfID: 42, RawMessage: "请总结 [CQ:forward,id=outer]", Message: []any{map[string]any{"type": "text", "data": map[string]any{"text": "请总结 "}}, map[string]any{"type": "forward", "data": map[string]any{"id": "outer"}}}}
+	bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client()}
+	bridge.enrichMessageEvent(t.Context(), &event)
+	inbound := event.inbound()
+	if inbound.BotMentioned || strings.Contains(inbound.Text, "校车") {
+		t.Fatalf("forwarded text affected outer routing: %#v", inbound)
+	}
+	if calls["/get_forward_msg"] != 2 || calls["/get_private_file_url"] != 1 {
+		t.Fatalf("calls=%v", calls)
+	}
+	if len(inbound.Media) != 1 || inbound.Media[0].URL != "https://cdn.example/report.txt" {
+		t.Fatalf("media=%#v", inbound.Media)
+	}
+	if len(inbound.Forwarded) != 1 || len(inbound.Forwarded[0].Parts) != 1 || inbound.Forwarded[0].Parts[0].Forward == nil || inbound.Forwarded[0].Parts[0].Forward.Speaker.UserID != "1002" {
+		t.Fatalf("nested=%#v", inbound.Forwarded)
+	}
+}
+
+func TestStructuredOuterMentionIsIndependentOfForwardedMentions(t *testing.T) {
+	for _, addressed := range []bool{false, true} {
+		var segments []any
+		if err := json.Unmarshal([]byte(`[{"type":"forward","data":{"content":[{"sender":{"nickname":"Alice"},"message":[{"type":"text","data":{"text":"校车 [CQ:at,qq=42]"}}]}]}}]`), &segments); err != nil {
+			t.Fatal(err)
+		}
+		if addressed {
+			segments = append([]any{map[string]any{"type": "at", "data": map[string]any{"qq": "42"}}}, segments...)
+		}
+		event := messageEvent{MessageType: "group", UserID: 1000, GroupID: 2000, SelfID: 42, Message: segments}
+		(&Bridge{}).enrichMessageEvent(t.Context(), &event)
+		inbound := event.inbound()
+		if inbound.BotMentioned != addressed || inbound.Text != "" {
+			t.Fatalf("addressed=%v inbound=%#v", addressed, inbound)
 		}
 	}
 }

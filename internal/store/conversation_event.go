@@ -346,3 +346,22 @@ func validConversationEventType(eventType ConversationEventType) bool {
 		return false
 	}
 }
+
+// ConversationUserEventForJob retrieves only the immutable input of this actor's
+// job. A caller cannot reuse another actor's attachment content in a group.
+func (s *Store) ConversationUserEventForJob(ctx context.Context, ident Identity, jobID int64) (*ConversationEvent, error) {
+	if err := validateConversationIdentity(ident); err != nil {
+		return nil, err
+	}
+	ident = normalizeIdentity(ident)
+	var row conversationEventRow
+	err := s.db.WithContext(ctx).Where("platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND job_id = ? AND type = ? AND dedupe_key = ?", ident.Platform, ident.ConversationType, ident.ConversationID, ident.UserID, jobID, string(ConversationEventUser), fmt.Sprintf("conversation-job:%d:user", jobID)).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	event, err := conversationEventFromRow(row)
+	return &event, err
+}

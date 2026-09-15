@@ -14,6 +14,15 @@ operation receipt are grouped for delivery where the platform supports it;
 destructive-operation confirmations remain individual messages. This prioritizes
 one useful reply over a stream of partial messages.
 
+QQ's official C2C API now also documents a native `stream_messages` endpoint
+with a stable stream ID and increasing chunk indexes. It permits appending text
+or Markdown to the same message, but already-delivered prefixes cannot change.
+This is distinct from both model SSE and the existing rich-media send path. This
+change retains complete durable delivery across NapCat and QQ; it does not yet
+use the C2C-only incremental delivery endpoint. Supporting it correctly requires
+persisted chunk acceptance/recovery and a policy for later images and errors.
+See [QQ C2C streaming](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_stream_messages.post.html).
+
 The configured production model endpoint supports SSE and returns usage with
 `stream_options.include_usage`. A synthetic probe used the same 126-token input
 in non-streaming / streaming / streaming / non-streaming order. It sent no Bot

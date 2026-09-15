@@ -37,6 +37,54 @@ type QuotedMessage struct {
 	Content   string
 }
 
+// InputMediaKind identifies a piece of media attached to an inbound message.
+// The value describes the platform-provided media, not whether the model can
+// understand it. Unsupported kinds are retained so the model can be told that
+// an attachment was present instead of silently dropping user input.
+type InputMediaKind string
+
+const (
+	InputMediaImage   InputMediaKind = "image"
+	InputMediaSticker InputMediaKind = "sticker"
+	InputMediaFile    InputMediaKind = "file"
+	InputMediaAudio   InputMediaKind = "audio"
+	InputMediaVideo   InputMediaKind = "video"
+	InputMediaUnknown InputMediaKind = "unknown"
+)
+
+// InputMedia is a platform-neutral reference to user-supplied inbound media.
+// Bytes are intentionally not carried in the inbound envelope: platform
+// adapters retain references and the model layer fetches or parses them under
+// its own bounded input policy.
+type InputMedia struct {
+	Kind     InputMediaKind `json:"kind"`
+	URL      string         `json:"url,omitempty"`
+	MIMEType string         `json:"mime_type,omitempty"`
+	Name     string         `json:"name,omitempty"`
+	FileID   string         `json:"file_id,omitempty"`
+	Size     int64          `json:"size,omitempty"`
+}
+
+// InputPart preserves the order of text, media and nested forwarded content.
+// Forward points to a nested message so a forwarded tree does not have to be
+// flattened before the agent decides how to present it to the model.
+type InputPart struct {
+	Type      string            `json:"type"`
+	Text      string            `json:"text,omitempty"`
+	Media     *InputMedia       `json:"media,omitempty"`
+	Forward   *ForwardedMessage `json:"forward,omitempty"`
+	ForwardID string            `json:"forward_id,omitempty"`
+}
+
+// ForwardedMessage retains the original speaker and source time for one node
+// in a merge-forward message. Parts may contain another ForwardedMessage.
+type ForwardedMessage struct {
+	Speaker Actor       `json:"speaker"`
+	SentAt  time.Time   `json:"sent_at,omitempty"`
+	Text    string      `json:"text,omitempty"`
+	Parts   []InputPart `json:"parts,omitempty"`
+}
+
 type Inbound struct {
 	Actor        Actor
 	Conversation Conversation
@@ -47,6 +95,11 @@ type Inbound struct {
 	ReceivedAt   time.Time
 	Text         string
 	ImageURLs    []string
+	// Parts is the ordered top-level input. Media and Forwarded are retained as
+	// convenient indexes for callers that do not need to render the whole tree.
+	Parts        []InputPart
+	Media        []InputMedia
+	Forwarded    []ForwardedMessage
 	BotMentioned bool
 }
 

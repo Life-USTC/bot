@@ -47,14 +47,15 @@ type Config struct {
 }
 
 type Service struct {
-	handler      commands.Handler
-	model        *einoopenai.ChatModel
-	modelName    string
-	premiumModel *einoopenai.ChatModel
-	premiumName  string
-	enabled      bool
-	logger       *log.Logger
-	httpClient   *http.Client
+	handler          commands.Handler
+	model            *einoopenai.ChatModel
+	modelName        string
+	premiumModel     *einoopenai.ChatModel
+	premiumName      string
+	enabled          bool
+	logger           *log.Logger
+	httpClient       *http.Client
+	attachmentParser *AttachmentParser
 
 	mcpClient *botmcp.Client
 	auth      *auth.Manager
@@ -67,6 +68,8 @@ type Input struct {
 	ReplyContext     *message.QuotedMessage
 	Text             string
 	ImageURLs        []string
+	Media            []message.InputMedia
+	Forwarded        []message.ForwardedMessage
 	Identity         store.Identity
 	JobID            int64
 	// JobRevision and JobLeaseToken are the exact claim held by the
@@ -79,6 +82,8 @@ type Input struct {
 	// from plain model text (for example, an image).
 	SendResponse func(context.Context, store.Identity, commands.Response) error
 
+	attachmentContext  string
+	preparedUserEvent  *store.ConversationEvent
 	imageDataURLs      []string
 	skippedImages      int
 	skippedImageErrors []string
@@ -162,6 +167,12 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		service.premiumModel = premiumModel
 		service.premiumName = premiumName
 	}
+	if IsCompatibleKimiBaseURL(cfg.PremiumBaseURL) && strings.TrimSpace(cfg.PremiumAPIKey) != "" {
+		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: cfg.PremiumAPIKey, BaseURL: cfg.PremiumBaseURL, HTTPClient: httpClient, Logger: cfg.Logger})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return service, nil
 }
 
@@ -209,7 +220,7 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		ctx = store.WithConversationJobLease(ctx, input.JobID, input.JobLeaseToken)
 	}
 	inputText := strings.TrimSpace(input.Text)
-	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0) {
+	if !s.Enabled() || (inputText == "" && len(input.ImageURLs) == 0 && len(input.Media) == 0 && len(input.Forwarded) == 0) {
 		return commands.Response{}, false
 	}
 	parentCtx := ctx
@@ -301,6 +312,12 @@ func (s *Service) HandleResponse(ctx context.Context, input Input) (commands.Res
 		return agentTextResponse(reply), true
 	}
 	if err := observeRunStage(ctx, "input_images", func() error {
+		if err := s.prepareInputAttachments(ctx, &input); err != nil {
+			return err
+		}
+		if input.preparedUserEvent != nil {
+			return nil
+		}
 		return s.prepareInputImages(ctx, &input)
 	}); err != nil {
 		err = normalizeAgentRunError(ctx, err)
@@ -716,6 +733,9 @@ func inputOccurredAt(input Input) time.Time {
 }
 
 func currentUserEvent(input Input) store.ConversationEvent {
+	if input.preparedUserEvent != nil {
+		return *input.preparedUserEvent
+	}
 	return store.ConversationEvent{
 		Identity: input.Identity, ActorDisplayName: input.ActorDisplayName, Source: "agent", OccurredAt: inputOccurredAt(input),
 		JobID: input.JobID, JobRevision: input.JobRevision, JobLeaseToken: input.JobLeaseToken,
@@ -732,7 +752,7 @@ func agentCheckpointID(jobID int64) string {
 }
 
 func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) error {
-	if s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
+	if input.preparedUserEvent != nil || s.handler.Store == nil || input.JobID <= 0 || !store.HasConversationIdentity(input.Identity) {
 		return nil
 	}
 	_, _, err := s.handler.Store.AppendConversationEvent(ctx, currentUserEvent(input))
@@ -741,6 +761,9 @@ func (s *Service) persistCurrentUserEvent(ctx context.Context, input Input) erro
 
 func currentUserMessageParts(input Input) []store.ConversationMessagePart {
 	text := strings.TrimSpace(input.Text)
+	if input.attachmentContext != "" {
+		text = strings.TrimSpace(text + "\n\n" + input.attachmentContext)
+	}
 	if text == "" && len(input.ImageURLs) > 0 {
 		text = "请描述并分析这张图片。"
 	}

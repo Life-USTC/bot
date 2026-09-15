@@ -442,6 +442,7 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 	var hostResponses []commands.Response
 	result := c.agent.Run(ctx, agent.Input{
 		ActorDisplayName: inbound.Actor.DisplayName, SentAt: inbound.SentAt, ReceivedAt: inbound.ReceivedAt,
+		Media: inbound.Media, Forwarded: inbound.Forwarded,
 		ReplyContext: inbound.ReplyContext, Text: inbound.Text, ImageURLs: append([]string(nil), inbound.ImageURLs...), Identity: job.Identity, JobID: job.ID,
 		JobRevision: job.Revision, JobLeaseToken: job.LeaseToken,
 		SendResponse: func(ctx context.Context, _ store.Identity, response commands.Response) error {
@@ -517,6 +518,9 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 			return
 		}
 		confirmation := appendReceiptLines(commands.Response{Kind: "agent_confirmation"}, confirmationPrompt, receipts)
+		outputMu.Lock()
+		confirmation = combineResponses(append(append([]commands.Response(nil), hostResponses...), confirmation)...)
+		outputMu.Unlock()
 		if err := commit(ctx, confirmation, receipts.IDs, store.ConversationJobTransition{
 			State: store.ConversationJobStateWaitingConfirmation, WaitReason: store.ConversationJobWaitReasonConfirmation,
 		}); err != nil {
@@ -667,43 +671,54 @@ func (c *Coordinator) commitResponse(
 }
 
 func (c *Coordinator) responseOutbounds(ctx context.Context, job store.ConversationJob, inbound message.Inbound, response commands.Response, start int) ([]message.Outbound, int, error) {
-	if strings.TrimSpace(response.Text) == "" && response.Image == nil && len(response.Parts) == 0 {
-		return nil, start, nil
+	var outbounds []message.Outbound
+	var ordinary []commands.Response
+	var groups []commands.Response
+	flush := func() {
+		if len(ordinary) > 0 {
+			groups = append(groups, commands.Response{Kind: response.Kind, Parts: ordinary})
+			ordinary = nil
+		}
 	}
-	content, err := c.presentationContent(ctx, response)
-	if err != nil {
-		return nil, start, err
+	for _, part := range flattenResponseParts(response) {
+		if part.Kind == "agent_confirmation" {
+			flush()
+			groups = append(groups, part)
+		} else {
+			ordinary = append(ordinary, part)
+		}
 	}
-	if !content.HasContent() {
-		return nil, start, nil
-	}
-	replyTo := inbound.Source
-	replyTo.Sequence = start + 1
-	dedupeKey := fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, start)
-	kind := strings.TrimSpace(response.Kind)
-	if kind == "" {
-		for _, item := range flattenResponseParts(response) {
-			if kind = strings.TrimSpace(item.Kind); kind != "" {
-				break
+	flush()
+	for _, group := range groups {
+		content, err := c.presentationContent(ctx, group)
+		if err != nil {
+			return nil, start, err
+		}
+		if !content.HasContent() {
+			continue
+		}
+		kind := group.Kind
+		if kind == "" {
+			for _, part := range flattenResponseParts(group) {
+				if part.Kind != "" {
+					kind = part.Kind
+					break
+				}
 			}
 		}
-	}
-	contents := []message.Content{content}
-	if inbound.Conversation.Platform == "qqbot" {
-		contents = content.SingleImageMessages()
-	}
-	outbounds := make([]message.Outbound, 0, len(contents))
-	for index, item := range contents {
-		ref := replyTo
-		ref.Sequence += index
-		key := dedupeKey
-		if index > 0 {
-			key = fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, start+index)
+		contents := []message.Content{content}
+		if inbound.Conversation.Platform == "qqbot" {
+			contents = content.SingleImageMessages()
 		}
-		outbounds = append(outbounds, message.Outbound{
-			Kind: kind, Target: inbound.Conversation, ReplyTo: &ref, Content: item,
-			Context: responseContextForJob(job), DedupeKey: key,
-		})
+		for _, item := range contents {
+			index := start + len(outbounds)
+			ref := inbound.Source
+			ref.Sequence = index + 1
+			outbounds = append(outbounds, message.Outbound{
+				Kind: kind, Target: inbound.Conversation, ReplyTo: &ref, Content: item,
+				Context: responseContextForJob(job), DedupeKey: fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, index),
+			})
+		}
 	}
 	return outbounds, start + len(outbounds), nil
 }

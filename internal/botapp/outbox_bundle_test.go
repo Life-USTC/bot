@@ -52,3 +52,14 @@ func TestOutboxBundlePreservesImagesTextAndFinalReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmationRemainsSeparateFromBundledPresentation(t *testing.T) {
+	response := commands.Response{Parts: []commands.Response{{Text: "查询结果", Image: &responses.Image{Kind: "map", URL: "https://example.test/a.png"}}, {Kind: "agent_confirmation", Text: "确认删除第一项？"}, {Kind: "agent_confirmation", Text: "确认删除第二项？"}}}
+	outputs, _, err := (&Coordinator{}).responseOutbounds(t.Context(), store.ConversationJob{ID: 9, Revision: 1}, message.Inbound{Conversation: message.Conversation{Platform: "napcat", Type: "private", ID: "42"}}, response, 0)
+	if err != nil || len(outputs) != 3 {
+		t.Fatalf("outputs=%#v err=%v", outputs, err)
+	}
+	if outputs[1].Kind != "agent_confirmation" || outputs[1].Content.TextContent() != "确认删除第一项？" || outputs[2].Content.TextContent() != "确认删除第二项？" {
+		t.Fatalf("confirmations merged: %#v", outputs)
+	}
+}

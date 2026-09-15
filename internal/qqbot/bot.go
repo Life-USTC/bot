@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -220,6 +222,9 @@ type incomingMessage struct {
 	Type       string
 	Text       string
 	ImageURLs  []string
+	Parts      []message.InputPart
+	Media      []message.InputMedia
+	Forwarded  []message.ForwardedMessage
 	Identity   store.Identity
 	SentAt     time.Time
 	ReceivedAt time.Time
@@ -242,6 +247,8 @@ func (m *incomingMessage) inbound() message.Inbound {
 		ReplyTo: replyTo,
 		SentAt:  m.SentAt, ReceivedAt: m.ReceivedAt,
 		Text: m.Text, ImageURLs: append([]string(nil), m.ImageURLs...),
+		Parts: append([]message.InputPart(nil), m.Parts...), Media: append([]message.InputMedia(nil), m.Media...),
+		Forwarded:    append([]message.ForwardedMessage(nil), m.Forwarded...),
 		BotMentioned: strings.Contains(m.Type, "AT_MESSAGE") || strings.HasPrefix(m.Type, "interaction:"),
 	}
 }
@@ -793,7 +800,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 	messageID := textutil.FirstNonEmpty(data.ID, payload.ID)
 	replyToID := strings.TrimSpace(data.MessageReference.MessageID)
 	text := b.cleanContent(data.Content)
-	imageURLs := attachmentImageURLs(data.Attachments)
+	parts, media := inputPartsFromQQMessage(text, data.Attachments)
+	imageURLs := imageURLsFromInputMedia(media)
 	sentAt := parseQQMessageTime(data.Timestamp)
 	receivedAt := b.receivedAt()
 	switch payload.T {
@@ -808,6 +816,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
+			Parts:     parts,
+			Media:     media,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -832,6 +842,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
+			Parts:     parts,
+			Media:     media,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -855,6 +867,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
+			Parts:     parts,
+			Media:     media,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -878,6 +892,8 @@ func (b *Bot) messageFromPayload(payload gatewayPayload) (*incomingMessage, erro
 			Type:      payload.T,
 			Text:      text,
 			ImageURLs: imageURLs,
+			Parts:     parts,
+			Media:     media,
 			Identity: store.Identity{
 				Platform:         "qqbot",
 				UserID:           userID,
@@ -936,20 +952,228 @@ func (b *Bot) processInbound(ctx context.Context, incoming *incomingMessage) {
 	b.App.Process(ctx, incoming.inbound())
 }
 
-func attachmentImageURLs(attachments []map[string]any) []string {
-	urls := make([]string, 0, min(len(attachments), 4))
+// inputPartsFromQQMessage keeps attachment order beside the message text.
+// QQ's gateway exposes attachments as opaque JSON maps, so this boundary is
+// deliberately conservative: references are retained, while local paths and
+// arbitrary fields are never promoted to fetchable URLs.
+func inputPartsFromQQMessage(text string, attachments []map[string]any) ([]message.InputPart, []message.InputMedia) {
+	media := inputMediaFromQQAttachments(attachments)
+	parts := make([]message.InputPart, 0, len(media)+1)
+	if text = strings.TrimSpace(text); text != "" {
+		parts = append(parts, message.InputPart{Type: "text", Text: text})
+	}
+	for index := range media {
+		item := media[index]
+		parts = append(parts, message.InputPart{Type: string(item.Kind), Media: &item})
+	}
+	return parts, media
+}
+
+func inputMediaFromQQAttachments(attachments []map[string]any) []message.InputMedia {
+	if len(attachments) == 0 {
+		return nil
+	}
+	media := make([]message.InputMedia, 0, len(attachments))
+	seen := make(map[string]struct{}, len(attachments))
 	for _, attachment := range attachments {
-		contentType := strings.ToLower(strings.TrimSpace(fmt.Sprint(attachment["content_type"])))
-		if contentType != "" && !strings.HasPrefix(contentType, "image/") {
-			continue
+		item := inputMediaFromQQAttachment(attachment)
+		item.URL = strings.TrimSpace(item.URL)
+		item.Name = strings.TrimSpace(item.Name)
+		item.FileID = strings.TrimSpace(item.FileID)
+		if item.Kind == "" {
+			item.Kind = message.InputMediaUnknown
 		}
-		candidate := strings.TrimSpace(fmt.Sprint(attachment["url"]))
-		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
-			urls = append(urls, candidate)
-			if len(urls) == 4 {
-				break
+		if item.URL == "" && item.FileID == "" && item.Name == "" {
+			// Keep an unlabelled attachment only when the platform tells us its
+			// kind. This lets the agent annotate it as unsupported.
+			if item.Kind == message.InputMediaUnknown {
+				continue
 			}
 		}
+		key := strings.Join([]string{string(item.Kind), item.URL, item.FileID, item.Name}, "\x00")
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		media = append(media, item)
+	}
+	return media
+}
+
+func inputMediaFromQQAttachment(attachment map[string]any) message.InputMedia {
+	contentType := normalizeQQMIME(firstQQString(attachment, "content_type", "mime_type", "mime"))
+	name := firstQQString(attachment, "filename", "name", "file_name")
+	typeName := strings.ToLower(strings.TrimSpace(firstQQString(attachment, "type", "kind", "media_type")))
+	kind := qqInputMediaKind(typeName, contentType, name)
+	item := message.InputMedia{
+		Kind:     kind,
+		URL:      qqInputMediaURL(firstQQString(attachment, "url", "proxy_url", "download_url")),
+		MIMEType: contentType,
+		Name:     name,
+		FileID:   qqInputMediaID(attachment),
+		Size:     qqInputMediaSize(firstQQValue(attachment, "size", "file_size", "bytes")),
+	}
+	if item.MIMEType == "" {
+		item.MIMEType = qqInputMIMEFromName(name)
+	}
+	return item
+}
+
+func qqInputMediaKind(typeName, contentType, name string) message.InputMediaKind {
+	switch typeName {
+	case "sticker", "emoji", "mface", "face", "meme", "表情", "表情包":
+		return message.InputMediaSticker
+	case "image", "photo", "picture":
+		return message.InputMediaImage
+	case "audio", "voice", "record":
+		return message.InputMediaAudio
+	case "video":
+		return message.InputMediaVideo
+	case "file", "document", "attachment":
+		return message.InputMediaFile
+	}
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return message.InputMediaImage
+	case strings.HasPrefix(contentType, "audio/"):
+		return message.InputMediaAudio
+	case strings.HasPrefix(contentType, "video/"):
+		return message.InputMediaVideo
+	case contentType != "":
+		return message.InputMediaFile
+	case name != "":
+		return message.InputMediaFile
+	default:
+		return message.InputMediaUnknown
+	}
+}
+
+func normalizeQQMIME(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if mediaType, _, err := mime.ParseMediaType(value); err == nil {
+		return mediaType
+	}
+	return value
+}
+
+func qqInputMIMEFromName(name string) string {
+	ext := strings.ToLower(path.Ext(strings.TrimSpace(name)))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".ogg":
+		return "audio/ogg"
+	case ".mp4":
+		return "video/mp4"
+	case ".pdf":
+		return "application/pdf"
+	case ".txt":
+		return "text/plain"
+	default:
+		return ""
+	}
+}
+
+func qqInputMediaURL(candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") || strings.HasPrefix(candidate, "data:image/") {
+		return candidate
+	}
+	return ""
+}
+
+func qqInputMediaID(attachment map[string]any) string {
+	for _, key := range []string{"file_id", "id", "attachment_id"} {
+		value := strings.TrimSpace(firstQQString(attachment, key))
+		if value == "" || strings.ContainsAny(value, "/\\") || strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+			continue
+		}
+		return value
+	}
+	return ""
+}
+
+func qqInputMediaSize(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		if typed > 0 {
+			return int64(typed)
+		}
+	case int64:
+		if typed > 0 {
+			return typed
+		}
+	case float64:
+		if typed > 0 {
+			return int64(typed)
+		}
+	case json.Number:
+		if parsed, err := strconv.ParseInt(string(typed), 10, 64); err == nil && parsed > 0 {
+			return parsed
+		}
+	case string:
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func firstQQValue(values map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := values[key]; ok && value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstQQString(values map[string]any, keys ...string) string {
+	if values == nil {
+		return ""
+	}
+	for _, key := range keys {
+		value, ok := values[key]
+		if !ok || value == nil {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text != "" && text != "<nil>" {
+			return text
+		}
+	}
+	return ""
+}
+
+func imageURLsFromInputMedia(media []message.InputMedia) []string {
+	urls := make([]string, 0, min(len(media), 4))
+	seen := make(map[string]struct{}, len(media))
+	for _, item := range media {
+		if len(urls) >= 4 || (item.Kind != message.InputMediaImage && item.Kind != message.InputMediaSticker) {
+			continue
+		}
+		candidate := qqInputMediaURL(item.URL)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		urls = append(urls, candidate)
 	}
 	return urls
 }
