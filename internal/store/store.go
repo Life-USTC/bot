@@ -120,6 +120,7 @@ type NotificationSettings struct {
 	Identity        Identity
 	ClassesEnabled  bool
 	HomeworkEnabled bool
+	YoungEnabled    bool
 	ReauthRequired  bool
 }
 
@@ -337,6 +338,7 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
+	YoungEnabled     bool `gorm:"not null"`
 	ReauthRequired   bool `gorm:"not null;default:false"`
 	UpdatedAt        time.Time
 }
@@ -1971,7 +1973,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 	if err != nil {
 		return err
 	}
-	enabled := settings.ClassesEnabled || settings.HomeworkEnabled
+	enabled := settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled
 	var credentialCount int64
 	if enabled {
 		if err := s.db.WithContext(ctx).Model(&credentialRow{}).
@@ -1989,6 +1991,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 		ConversationID:   settings.Identity.ConversationID,
 		ClassesEnabled:   settings.ClassesEnabled,
 		HomeworkEnabled:  settings.HomeworkEnabled,
+		YoungEnabled:     settings.YoungEnabled,
 		ReauthRequired:   enabled && credentialCount == 0,
 		UpdatedAt:        now,
 	}
@@ -2001,6 +2004,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 			"conversation_id",
 			"classes_enabled",
 			"homework_enabled",
+			"young_enabled",
 			"reauth_required",
 			"updated_at",
 		}),
@@ -2009,7 +2013,7 @@ func (s *Store) SaveNotificationSettings(ctx context.Context, settings Notificat
 
 func normalizeNotificationSettingsForSave(settings NotificationSettings) (NotificationSettings, error) {
 	settings.Identity = normalizeIdentity(settings.Identity)
-	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.YoungEnabled {
 		return settings, nil
 	}
 	if settings.Identity.ConversationType == "" {
@@ -2024,8 +2028,8 @@ func normalizeNotificationSettingsForSave(settings NotificationSettings) (Notifi
 func (s *Store) EnabledNotificationSettings(ctx context.Context) ([]NotificationSettings, error) {
 	var rows []notificationSettingRow
 	err := s.db.WithContext(ctx).
-		Where("(classes_enabled = ? OR homework_enabled = ?) AND reauth_required = ? AND conversation_type <> ? AND conversation_id <> ?",
-			true, true, false, "", "").
+		Where("(classes_enabled = ? OR homework_enabled = ? OR young_enabled = ?) AND reauth_required = ? AND conversation_type <> ? AND conversation_id <> ?",
+			true, true, true, false, "", "").
 		Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -2102,6 +2106,7 @@ func notificationSettingsFromRow(row notificationSettingRow, fallback Identity) 
 		Identity:        ident,
 		ClassesEnabled:  row.ClassesEnabled,
 		HomeworkEnabled: row.HomeworkEnabled,
+		YoungEnabled:    row.YoungEnabled,
 		ReauthRequired:  row.ReauthRequired,
 	}
 }

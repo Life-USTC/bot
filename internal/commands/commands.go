@@ -457,6 +457,27 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 	}
 
 	switch name {
+	case "第二课堂", "二课":
+		switch action {
+		case "列表", "搜索", "查看", "详情", "list", "search", "view", "detail", "":
+			if action == "" {
+				return "", args, false
+			}
+			return "young_event", args, true
+		case "主办方", "组织", "organizer", "organizers":
+			if len(rest) > 0 && firstArgIn(rest, "查看", "详情", "get", "detail") {
+				return "young_organizer", append([]string{"查看"}, rest[1:]...), true
+			}
+			return "young_organizer", rest, true
+		case "日历", "日程", "calendar":
+			return "young_calendar", rest, true
+		case "订阅", "活动订阅", "subscription":
+			return "young_subscription", rest, true
+		case "通知", "活动通知", "notification", "notifications":
+			return "young_notification", rest, true
+		case "评论", "评论区", "comment", "comments":
+			return "young_comment", rest, true
+		}
 	case "日程":
 		switch action {
 		case "":
@@ -1005,6 +1026,8 @@ func NormalizeNotificationKind(value string) (string, bool) {
 		return "classes", true
 	case "homework", "hw", "作业":
 		return "homework", true
+	case "activity", "activities", "young", "young-event", "二课", "第二课堂", "活动":
+		return "young", true
 	default:
 		return "", false
 	}
@@ -1032,6 +1055,7 @@ func splitCompactNotificationArg(value string) (string, string, bool) {
 	}{
 		{kind: "classes", aliases: []string{"class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课"}},
 		{kind: "homework", aliases: []string{"homework", "hw", "作业"}},
+		{kind: "young", aliases: []string{"activity", "activities", "young", "young-event", "二课", "第二课堂", "活动"}},
 	} {
 		for _, alias := range item.aliases {
 			aliasToken := compactCommandToken(alias)
@@ -2653,6 +2677,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 			"通知：查看设置",
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
+			"通知 活动 开 / 通知 活动 关",
 		}, "\n")
 	}
 	if h.Store == nil {
@@ -2675,10 +2700,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	}
 	if len(args) < 2 {
 		switch args[0] {
-		case "classes", "homework":
+		case "classes", "homework", "young":
 			return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
 		default:
-			return h.invalidInput("支持：课表、作业。")
+			return h.invalidInput("支持：课表、作业、活动。")
 		}
 	}
 	enabled := args[1] == "on"
@@ -2690,8 +2715,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		settings.ClassesEnabled = enabled
 	case "homework":
 		settings.HomeworkEnabled = enabled
+	case "young":
+		settings.YoungEnabled = enabled
 	default:
-		return h.invalidInput("支持：课表、作业。")
+		return h.invalidInput("支持：课表、作业、活动。")
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
 		return h.commandError("通知设置保存失败：", err)
@@ -2712,8 +2739,9 @@ func formatNotificationSettings(settings store.NotificationSettings) string {
 		"通知设置：",
 		"课前提醒：" + onOffText(settings.ClassesEnabled),
 		"作业提醒：" + onOffText(settings.HomeworkEnabled),
+		"第二课堂提醒：" + onOffText(settings.YoungEnabled),
 	}
-	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled) {
+	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled) {
 		lines = append(lines, "状态：已暂停，请发送“登录”；登录成功后会自动恢复。")
 	}
 	return strings.Join(lines, "\n")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 const (
 	classKind            = "class"
 	homeworkKind         = "homework"
+	youngKind            = "young"
 	pollFailureBaseDelay = 5 * time.Minute
 	pollFailureMaxDelay  = time.Hour
 )
@@ -112,7 +114,7 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) notificationPollResult {
-	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.YoungEnabled {
 		return pollSucceeded
 	}
 	token, err := p.Auth.AccessToken(ctx, settings.Identity)
@@ -120,6 +122,31 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		return p.resultForAuthError(ctx, settings.Identity, err)
 	}
 	now := p.now().In(lifedata.ChinaLocation())
+	if settings.YoungEnabled {
+		unread := true
+		youngToken := token
+		notifications, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]life.YoungNotification, error) {
+			youngToken = token
+			return p.Life.ListAllYoungNotifications(ctx, token, &unread)
+		})
+		if err != nil {
+			p.logf("load young notifications failed: %v", err)
+			if youngNotificationAuthFailure(err) {
+				return pollReauthRequired
+			}
+			return p.resultForAuthError(ctx, settings.Identity, err)
+		}
+		if err := p.notifyYoungNotifications(ctx, settings.Identity, youngToken, notifications, now); err != nil {
+			p.logf("deliver young notification failed: %v", err)
+			if youngNotificationAuthFailure(err) {
+				return pollReauthRequired
+			}
+			return pollTransientFailure
+		}
+	}
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
+		return pollSucceeded
+	}
 	if settings.ClassesEnabled {
 		if settings.HomeworkEnabled {
 			overview, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) (map[string]any, error) {
@@ -153,6 +180,17 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 	}
 	p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
 	return pollSucceeded
+}
+
+func youngNotificationAuthFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) || life.IsUnauthorized(err) {
+		return true
+	}
+	var httpErr life.HTTPError
+	return errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden)
 }
 
 func (p *Poller) resultForAuthError(ctx context.Context, ident store.Identity, err error) notificationPollResult {
@@ -242,12 +280,58 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, home
 	}
 }
 
+func (p *Poller) notifyYoungNotifications(ctx context.Context, ident store.Identity, token string, notifications []life.YoungNotification, now time.Time) error {
+	for _, notification := range notifications {
+		if strings.TrimSpace(notification.ID) == "" {
+			continue
+		}
+		expiresAt := now.Add(24 * time.Hour)
+		if parsed, ok := lifedata.ParseAPITime(notification.ExpiresAt); ok {
+			expiresAt = parsed
+		}
+		// Expired server notices are no longer useful. Leave them unread so a
+		// later server-side cleanup can decide their retention; never mark one
+		// read before an outbox record exists.
+		if !expiresAt.After(now) {
+			continue
+		}
+		parts := []string{strings.TrimSpace(notification.Title)}
+		if body := strings.TrimSpace(notification.Body); body != "" {
+			parts = append(parts, body)
+		}
+		if notification.YoungID != "" {
+			if link := p.Life.YoungEventURL(notification.YoungID); link != "" {
+				parts = append(parts, "活动链接："+link)
+			}
+		}
+		if notification.OrganizerID != "" {
+			if link := p.Life.YoungOrganizerURL(notification.OrganizerID); link != "" {
+				parts = append(parts, "主办方链接："+link)
+			}
+		}
+		text := "第二课堂提醒：\n" + strings.Join(textutil.NonEmpty(parts...), "\n")
+		_, err := p.enqueueNotification(ctx, ident, youngKind, notification.ID, text, nil, expiresAt)
+		if err != nil {
+			return err
+		}
+		// The read transition happens only after durable enqueue succeeds. A
+		// read failure leaves the unread record for the next poll; outbox
+		// dedupe keeps that retry from sending a duplicate message.
+		if err := auth.WithRefreshVoid(ctx, p.Auth, ident, token, func(token string) error {
+			return p.Life.MarkYoungNotificationRead(ctx, token, notification.ID)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func overviewItems(overview map[string]any, key string) []map[string]any {
 	group, _ := overview[key].(map[string]any)
 	return lifedata.MapSlice(group["items"])
 }
 
-func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) {
+func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) (bool, error) {
 	content := message.Content{Parts: []message.ContentPart{{Text: text}}}
 	if image != nil && p.Renderer != nil {
 		png, _, _, err := p.Renderer.RenderPNGContext(ctx, image)
@@ -272,6 +356,7 @@ func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, 
 	if err != nil {
 		p.logf("enqueue %s notification failed: %v", kind, err)
 	}
+	return err == nil, err
 }
 
 func (p *Poller) now() time.Time {

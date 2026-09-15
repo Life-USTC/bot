@@ -38,6 +38,20 @@ func TestYoungEventCommandsParseAsPublic(t *testing.T) {
 	}
 }
 
+func TestYoungEventListFiltersParseIntoCatalogQuery(t *testing.T) {
+	query, err := parseYoungEventQuery([]string{"列表", "organizerId=org-1", "dateFrom=2026-09-14", "dateTo", "2026-09-20", "timeBasis=registration"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if query.organizerID != "org-1" || query.dateFrom != "2026-09-14" || query.dateTo != "2026-09-20" || query.timeBasis != "registration" || query.dateUnknown != nil {
+		t.Fatalf("query = %#v", query)
+	}
+	query, err = parseYoungEventQuery([]string{"列表", "日期未知"})
+	if err != nil || query.dateUnknown == nil || !*query.dateUnknown {
+		t.Fatalf("unknown-date query = %#v, err=%v", query, err)
+	}
+}
+
 func TestYoungEventHelpListsPublicForms(t *testing.T) {
 	reply, ok := (Handler{}).Handle(context.Background(), Input{Text: "帮助 第二课堂", Identity: store.Identity{UserID: "help"}})
 	if !ok {

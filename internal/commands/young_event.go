@@ -17,10 +17,15 @@ import (
 const youngEventPageSize = 10
 
 type youngEventQuery struct {
-	action  string
-	page    int
-	search  string
-	youngID string
+	action      string
+	page        int
+	search      string
+	youngID     string
+	organizerID string
+	dateFrom    string
+	dateTo      string
+	timeBasis   string
+	dateUnknown *bool
 }
 
 func youngEventArgsAcceptable(args []string) bool {
@@ -55,10 +60,10 @@ func parseYoungEventQuery(args []string) (youngEventQuery, error) {
 		if err != nil {
 			return youngEventQuery{}, err
 		}
-		if len(remaining) != 0 {
-			return youngEventQuery{}, errors.New("第二课堂列表用法：第二课堂 列表 [页码]")
-		}
 		query.page = page
+		if err := parseYoungEventFilters(&query, remaining); err != nil {
+			return youngEventQuery{}, err
+		}
 		return query, nil
 	case "搜索", "search":
 		query.action = "search"
@@ -113,7 +118,16 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 		return strings.Join(youngEventLines(event, h.Life.YoungEventURL(event.YoungID), ""), "\n")
 	}
 
-	page, err := h.Life.ListYoungEvents(ctx, query.page, youngEventPageSize, query.search)
+	page, err := h.Life.ListYoungEventsWithQuery(ctx, "", life.YoungEventQuery{
+		Page:        query.page,
+		PageSize:    youngEventPageSize,
+		Search:      query.search,
+		OrganizerID: query.organizerID,
+		DateFrom:    query.dateFrom,
+		DateTo:      query.dateTo,
+		TimeBasis:   query.timeBasis,
+		DateUnknown: query.dateUnknown,
+	})
 	if err != nil {
 		return h.commandError("第二课堂查不到：", err)
 	}
@@ -123,7 +137,7 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 		"search":    query.search,
 		"result":    page,
 	})
-	if len(page.Data) == 0 {
+	if len(page.Data) == 0 && page.UnknownDateCount == 0 {
 		if query.search != "" {
 			return h.notFound("没找到相关第二课堂活动：" + query.search)
 		}
@@ -139,6 +153,9 @@ func youngEventIsNotFound(err error) bool {
 
 func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, eventURL func(string) string) string {
 	lines := []string{"第二课堂："}
+	if source := formatYoungSource(page.Source); source != "" {
+		lines = append(lines, source)
+	}
 	for i, event := range page.Data {
 		link := ""
 		if eventURL != nil {
@@ -156,10 +173,7 @@ func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, event
 		totalPages = (page.Pagination.Total + youngEventPageSize - 1) / youngEventPageSize
 	}
 	if totalPages > 1 {
-		command := "第二课堂 列表"
-		if query.search != "" {
-			command = "第二课堂 搜索 " + query.search
-		}
+		command := youngEventListCommand(query)
 		navigation := []string{fmt.Sprintf("第 %d/%d 页", pageNumber, totalPages)}
 		if pageNumber > 1 {
 			navigation = append(navigation, "上一页：发送「"+command+" 第"+strconv.Itoa(pageNumber-1)+"页」")
@@ -169,7 +183,122 @@ func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, event
 		}
 		lines = append(lines, textutil.MonospaceDigits(strings.Join(navigation, " · ")))
 	}
+	if page.UnknownDateCount > 0 {
+		lines = append(lines, fmt.Sprintf("日期未知总数：%d · 发送「第二课堂 列表 日期未知」查看。", page.UnknownDateCount))
+	}
 	return strings.Join(lines, "\n")
+}
+
+func parseYoungEventFilters(query *youngEventQuery, args []string) error {
+	for i := 0; i < len(args); {
+		raw := strings.TrimSpace(args[i])
+		if raw == "" {
+			i++
+			continue
+		}
+		field, value, hasValue := strings.Cut(raw, "=")
+		if !hasValue {
+			field = raw
+			if normToken(field) == "日期未知" || normToken(field) == "dateunknown" {
+				unknown := true
+				query.dateUnknown = &unknown
+				i++
+				continue
+			}
+			switch normToken(field) {
+			case "活动", "活动时间", "activity":
+				query.timeBasis = "activity"
+				i++
+				continue
+			case "报名", "报名时间", "registration":
+				query.timeBasis = "registration"
+				i++
+				continue
+			}
+			if i+1 >= len(args) {
+				return errors.New("第二课堂筛选用法：主办方 <organizerId>、日期从 <YYYY-MM-DD>、日期到 <YYYY-MM-DD>、活动时间|报名时间、日期未知")
+			}
+			value = strings.TrimSpace(args[i+1])
+			i += 2
+		} else {
+			field, value = strings.TrimSpace(field), strings.TrimSpace(value)
+			i++
+		}
+		if value == "" {
+			return errors.New("第二课堂筛选值不能为空")
+		}
+		switch normToken(field) {
+		case "主办方", "organizer", "organizerid", "组织":
+			query.organizerID = value
+		case "日期从", "从", "datefrom":
+			if !youngEventDateFilter(value) {
+				return errors.New("日期从必须是 YYYY-MM-DD")
+			}
+			query.dateFrom = value
+		case "日期到", "到", "dateto":
+			if !youngEventDateFilter(value) {
+				return errors.New("日期到必须是 YYYY-MM-DD")
+			}
+			query.dateTo = value
+		case "timebasis", "时间基准", "时间依据":
+			basis := normToken(value)
+			switch basis {
+			case "活动", "活动时间", "activity":
+				query.timeBasis = "activity"
+			case "报名", "报名时间", "registration":
+				query.timeBasis = "registration"
+			default:
+				return errors.New("时间依据请使用活动时间或报名时间")
+			}
+		case "dateunknown", "日期未知":
+			unknown, ok := parseYoungSubscriptionBool(value)
+			if !ok {
+				return errors.New("日期未知请使用 true 或 false")
+			}
+			query.dateUnknown = &unknown
+		default:
+			return errors.New("未知第二课堂筛选项：" + field)
+		}
+	}
+	if query.dateFrom != "" && query.dateTo != "" && query.dateTo < query.dateFrom {
+		return errors.New("日期到不能早于日期从")
+	}
+	if query.dateUnknown != nil && *query.dateUnknown && (query.dateFrom != "" || query.dateTo != "") {
+		return errors.New("日期未知不能同时使用日期范围")
+	}
+	return nil
+}
+
+func youngEventDateFilter(value string) bool {
+	_, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	return err == nil
+}
+
+func youngEventListCommand(query youngEventQuery) string {
+	command := "第二课堂 列表"
+	if query.search != "" {
+		command = "第二课堂 搜索 " + query.search
+	}
+	filters := make([]string, 0, 5)
+	if query.organizerID != "" {
+		filters = append(filters, "organizerId="+query.organizerID)
+	}
+	if query.dateFrom != "" {
+		filters = append(filters, "dateFrom="+query.dateFrom)
+	}
+	if query.dateTo != "" {
+		filters = append(filters, "dateTo="+query.dateTo)
+	}
+	if query.timeBasis != "" {
+		filters = append(filters, "timeBasis="+query.timeBasis)
+	}
+	if query.dateUnknown != nil && *query.dateUnknown {
+		filters = append(filters, "dateUnknown=true")
+	}
+	if len(filters) > 0 {
+		command += " " + strings.Join(filters, " ")
+	}
+	return command
 }
 func youngEventLines(event life.YoungEvent, link, prefix string) []string {
 	name := strings.TrimSpace(event.Name)
@@ -190,12 +319,17 @@ func youngEventLines(event life.YoungEvent, link, prefix string) []string {
 	}
 	if eventTime := youngEventTimeRange(event.StartAt, event.EndAt); eventTime != "" {
 		lines = append(lines, "活动时间："+eventTime)
+	} else if event.DateUnknown || (event.StartAt == nil && event.EndAt == nil) {
+		lines = append(lines, "活动时间：待核实")
 	}
 	if signupTime := youngEventTimeRange(event.ApplyStartAt, event.ApplyEndAt); signupTime != "" {
 		lines = append(lines, "报名时间："+signupTime)
 	}
 	if link = strings.TrimSpace(link); link != "" {
 		lines = append(lines, "链接："+link)
+	}
+	if event.SourceMissing {
+		lines = append(lines, "数据源：暂缺，活动状态待核实")
 	}
 	return lines
 }

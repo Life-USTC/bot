@@ -266,7 +266,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
-		"通知\t查看和管理课表、作业提醒",
+		"通知\t查看和管理课表、作业和第二课堂提醒",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -957,7 +957,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
-		"| 通知 | 查看和管理课表、作业提醒 |",
+		"| 通知 | 查看和管理课表、作业和第二课堂提醒 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -2512,10 +2512,7 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "今日", Identity: ident})
-	if !ok {
-		t.Fatal("command was not handled")
-	}
+	reply := handler.overview(ctx, ident)
 	for _, want := range []string{"安排：", "今日课表 (1)：", "计算机导论", "待办 (1)：", "写报告", "近期作业 (1)：", "作业一", "考试 (1)：", wantExamDate} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -3294,6 +3291,10 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 hw 关闭", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("homework alias reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 活动 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "第二课堂提醒：开") {
+		t.Fatalf("activity notification reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表", Identity: ident})
 	if !ok || !strings.Contains(reply, "想打开还是关闭") {

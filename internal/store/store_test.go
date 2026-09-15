@@ -1579,12 +1579,13 @@ func TestNotificationSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ClassesEnabled || settings.HomeworkEnabled {
+	if settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled {
 		t.Fatalf("default settings = %#v", settings)
 	}
 
 	settings.ClassesEnabled = true
 	settings.HomeworkEnabled = true
+	settings.YoungEnabled = true
 	if err := s.SaveCredential(ctx, ident, Credential{
 		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
 	}); err != nil {
@@ -1597,7 +1598,7 @@ func TestNotificationSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || enabled[0].Identity != ident {
+	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || !enabled[0].YoungEnabled || enabled[0].Identity != ident {
 		t.Fatalf("enabled settings = %#v", enabled)
 	}
 	var settingRow notificationSettingRow
