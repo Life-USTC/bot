@@ -338,7 +338,7 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
-	YoungEnabled     bool `gorm:"not null"`
+	YoungEnabled     bool `gorm:"not null;default:false"`
 	ReauthRequired   bool `gorm:"not null;default:false"`
 	UpdatedAt        time.Time
 }
@@ -578,7 +578,7 @@ func (s *Store) migrateSchema() error {
 
 // PrepareSchemaForMaintenance applies the explicitly requested schema setup
 // and then verifies the complete current schema. A current-version database only
-// receives the independent conversation_compactions table; it is never
+// receives the independent conversation_compactions table and Young opt-in column; it is never
 // silently altered during normal startup.
 func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	if s == nil || s.db == nil {
@@ -593,13 +593,26 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	}
 	switch version {
 	case CurrentSchemaVersion:
-		// Verify all existing tables before adding the one new required table.
-		// This keeps maintenance from masking an unrelated malformed or
-		// obsolete production schema.
-		if err := verifySchemaShapeWithoutConversationCompaction(s.db); err != nil {
-			return err
-		}
-		if err := s.EnsureConversationCompactionSchema(ctx); err != nil {
+		// Apply only the explicitly supported additions, then verify the entire
+		// existing schema in the same transaction. Malformed databases roll back.
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if !tx.Migrator().HasTable(&notificationSettingRow{}) {
+				return errors.New("sqlite schema is missing required table notification_settings")
+			}
+			if !tx.Migrator().HasColumn(&notificationSettingRow{}, "YoungEnabled") {
+				if err := tx.Migrator().AddColumn(&notificationSettingRow{}, "YoungEnabled"); err != nil {
+					return fmt.Errorf("add Young notification opt-in: %w", err)
+				}
+			}
+			if err := verifySchemaShapeWithoutConversationCompaction(tx); err != nil {
+				return err
+			}
+			maintenance := &Store{db: tx}
+			if err := maintenance.EnsureConversationCompactionSchema(ctx); err != nil {
+				return err
+			}
+			return verifySchemaShape(tx)
+		}); err != nil {
 			return err
 		}
 	case 0:

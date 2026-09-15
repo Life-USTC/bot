@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -213,5 +214,27 @@ func TestYoungWorkspaceListsFollowAllPages(t *testing.T) {
 	}
 	if got, err := client.ListAllYoungComments(context.Background(), "token", "event-1"); err != nil || len(got) != 101 {
 		t.Fatalf("comments = %d, err=%v", len(got), err)
+	}
+}
+
+func TestYoungCommentsLoadsReplyCursorsWithoutDuplicatingAncestors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/community/comments" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"root","repliesNextCursor":"next","replies":[{"id":"one","body":"first"}]}],"pagination":{"totalPages":1}}`))
+			return
+		}
+		if r.URL.Path != "/api/community/comments/root/replies" || r.URL.Query().Get("cursor") != "next" {
+			t.Errorf("unexpected request %s", r.URL)
+		}
+		_, _ = w.Write([]byte(`{"thread":[{"id":"root","repliesNextCursor":null,"replies":[{"id":"one","body":"first","replies":[{"id":"two","parentId":"one","body":"second"}]}]}],"nextCursor":null}`))
+	}))
+	defer server.Close()
+	rows, err := NewClient(server.URL, server.Client()).ListAllYoungComments(context.Background(), "token", "event")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(rows)
+	if len(rows) != 1 || !strings.Contains(string(encoded), `"id":"two"`) || strings.Count(string(encoded), `"id":"one"`) != 1 {
+		t.Fatalf("rows=%s", encoded)
 	}
 }

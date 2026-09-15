@@ -732,7 +732,7 @@ func appendYoungCommentLines(lines *[]string, comment map[string]any, number str
 	indent := strings.Repeat("  ", depth)
 	*lines = append(*lines, fmt.Sprintf("%s%s. %s", indent, number, strings.Join(parts, " ")))
 
-	for i, child := range lifedata.MapSlice(comment["children"]) {
+	for i, child := range lifedata.MapSlice(comment["replies"]) {
 		appendYoungCommentLines(lines, child, fmt.Sprintf("%s.%d", number, i+1), depth+1, commentID)
 	}
 }

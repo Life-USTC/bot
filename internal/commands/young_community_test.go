@@ -204,7 +204,7 @@ func TestYoungCommentListDisplaysChildrenAndDeletedPlaceholders(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/community/comments" || r.URL.Query().Get("targetType") != "young-event" || r.URL.Query().Get("youngId") != "event-1" {
 			t.Fatalf("request = %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"comment-1","body":"根评论","children":[{"id":"comment-2","parentId":"comment-1","body":"回复内容","children":[]},{"id":"comment-3","parentId":"comment-1","status":"deleted","deletedAt":"2026-09-15T10:00:00+08:00","body":"","children":[]}]}],"pagination":{"page":1,"pageSize":100,"total":1,"totalPages":1}}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"comment-1","body":"根评论","replies":[{"id":"comment-2","parentId":"comment-1","body":"回复内容","replies":[]},{"id":"comment-3","parentId":"comment-1","status":"deleted","deletedAt":"2026-09-15T10:00:00+08:00","body":"","replies":[]}]}],"pagination":{"page":1,"pageSize":100,"total":1,"totalPages":1}}`))
 	}))
 	defer server.Close()
 	handler := testAuthedHandler(t, server, ident)

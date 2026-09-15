@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/Life-USTC/Bot/internal/lifedata"
 )
 
 // YoungOrganizer is the stable public organizer directory record. Event
@@ -471,10 +473,59 @@ func (c *Client) ListAllYoungComments(ctx context.Context, token, youngID string
 		}
 		all = append(all, result.Data...)
 		if !youngPageHasNext(page, result.Pagination, len(result.Data), pageSize) {
-			return all, nil
+			break
 		}
 		page++
 	}
+	for _, root := range all {
+		cursor := lifedata.FirstString(root, "repliesNextCursor")
+		seen := map[string]bool{}
+		for cursor != "" {
+			if seen[cursor] {
+				return nil, errors.New("repeated comment reply cursor")
+			}
+			seen[cursor] = true
+			var page struct {
+				Thread     []map[string]any `json:"thread"`
+				NextCursor string           `json:"nextCursor"`
+			}
+			id := lifedata.FirstString(root, "id")
+			if err := c.do(ctx, http.MethodGet, "/api/community/comments/"+url.PathEscape(id)+"/replies", url.Values{"cursor": {cursor}, "pageSize": {"20"}}, token, nil, &page); err != nil {
+				return nil, err
+			}
+			for _, node := range page.Thread {
+				mergeYoungCommentNode(root, node)
+			}
+			cursor = page.NextCursor
+		}
+	}
+	return all, nil
+}
+
+func mergeYoungCommentNode(target, source map[string]any) {
+	if lifedata.FirstString(target, "id") != lifedata.FirstString(source, "id") {
+		return
+	}
+	children := lifedata.MapSlice(target["replies"])
+	for _, incoming := range lifedata.MapSlice(source["replies"]) {
+		found := false
+		for _, child := range children {
+			if lifedata.FirstString(child, "id") == lifedata.FirstString(incoming, "id") {
+				mergeYoungCommentNode(child, incoming)
+				found = true
+				break
+			}
+		}
+		if !found {
+			children = append(children, incoming)
+		}
+	}
+	for key, value := range source {
+		if key != "replies" {
+			target[key] = value
+		}
+	}
+	target["replies"] = children
 }
 
 func (c *Client) CreateYoungComment(ctx context.Context, token, youngID, body, parentID, visibility string, anonymous bool) (map[string]any, error) {
