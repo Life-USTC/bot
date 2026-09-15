@@ -1390,6 +1390,33 @@ func (e PublicationIngestionBatchRequestSchemaProtocolVersion) Valid() bool {
 	}
 }
 
+// Defines values for PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind.
+const (
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindAsset        PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "asset"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyHtml     PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "body_html"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyMarkdown PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "body_markdown"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindMedia        PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "media"
+	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindRawPage      PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "raw_page"
+)
+
+// Valid indicates whether the value is a known member of the PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind enum.
+func (e PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind) Valid() bool {
+	switch e {
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindAsset:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyHtml:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindBodyMarkdown:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindMedia:
+		return true
+	case PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindRawPage:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PublicationIngestionBatchResponseSchemaResultsStatus.
 const (
 	PublicationIngestionBatchResponseSchemaResultsStatusCreated   PublicationIngestionBatchResponseSchemaResultsStatus = "created"
@@ -2472,25 +2499,25 @@ func (e GetApiPublicationsParamsType) Valid() bool {
 
 // Defines values for GetApiPublicationsObjectsKindSha256ParamsKind.
 const (
-	GetApiPublicationsObjectsKindSha256ParamsKindAsset        GetApiPublicationsObjectsKindSha256ParamsKind = "asset"
-	GetApiPublicationsObjectsKindSha256ParamsKindBodyHtml     GetApiPublicationsObjectsKindSha256ParamsKind = "body_html"
-	GetApiPublicationsObjectsKindSha256ParamsKindBodyMarkdown GetApiPublicationsObjectsKindSha256ParamsKind = "body_markdown"
-	GetApiPublicationsObjectsKindSha256ParamsKindMedia        GetApiPublicationsObjectsKindSha256ParamsKind = "media"
-	GetApiPublicationsObjectsKindSha256ParamsKindRawPage      GetApiPublicationsObjectsKindSha256ParamsKind = "raw_page"
+	Asset        GetApiPublicationsObjectsKindSha256ParamsKind = "asset"
+	BodyHtml     GetApiPublicationsObjectsKindSha256ParamsKind = "body_html"
+	BodyMarkdown GetApiPublicationsObjectsKindSha256ParamsKind = "body_markdown"
+	Media        GetApiPublicationsObjectsKindSha256ParamsKind = "media"
+	RawPage      GetApiPublicationsObjectsKindSha256ParamsKind = "raw_page"
 )
 
 // Valid indicates whether the value is a known member of the GetApiPublicationsObjectsKindSha256ParamsKind enum.
 func (e GetApiPublicationsObjectsKindSha256ParamsKind) Valid() bool {
 	switch e {
-	case GetApiPublicationsObjectsKindSha256ParamsKindAsset:
+	case Asset:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindBodyHtml:
+	case BodyHtml:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindBodyMarkdown:
+	case BodyMarkdown:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindMedia:
+	case Media:
 		return true
-	case GetApiPublicationsObjectsKindSha256ParamsKindRawPage:
+	case RawPage:
 		return true
 	default:
 		return false
@@ -7292,8 +7319,12 @@ type PublicationIngestionBatchResponseSchema struct {
 	ClientRunId   string `json:"clientRunId"`
 	PayloadDigest string `json:"payloadDigest"`
 	Results       []struct {
-		CanonicalUrl  string                                               `json:"canonicalUrl"`
-		Error         *string                                              `json:"error,omitempty"`
+		CanonicalUrl         string  `json:"canonicalUrl"`
+		Error                *string `json:"error,omitempty"`
+		ObjectsNeedingUpload *[]struct {
+			Kind   PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind `json:"kind"`
+			Sha256 string                                                                 `json:"sha256"`
+		} `json:"objectsNeedingUpload,omitempty"`
 		PublicationId *string                                              `json:"publicationId"`
 		RevisionHash  string                                               `json:"revisionHash"`
 		RevisionId    *string                                              `json:"revisionId"`
@@ -7301,6 +7332,9 @@ type PublicationIngestionBatchResponseSchema struct {
 		Status        PublicationIngestionBatchResponseSchemaResultsStatus `json:"status"`
 	} `json:"results"`
 }
+
+// PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind defines model for PublicationIngestionBatchResponseSchema.Results.ObjectsNeedingUpload.Kind.
+type PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind string
 
 // PublicationIngestionBatchResponseSchemaResultsStatus defines model for PublicationIngestionBatchResponseSchema.Results.Status.
 type PublicationIngestionBatchResponseSchemaResultsStatus string
@@ -23258,6 +23292,7 @@ type CatalogWeatherGetResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *WeatherSnapshotResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
 }
 
 // Status returns HTTPResponse.Status
@@ -28893,6 +28928,13 @@ func ParseCatalogWeatherGetResponse(rsp *http.Response) (*CatalogWeatherGetRespo
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
