@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"os"
 	"strings"
 	"testing"
@@ -92,4 +94,32 @@ func containsEnvironmentKey(environment []string, key string) bool {
 		}
 	}
 	return false
+}
+
+func TestRenderHarnessMatchesDeliveredImageToLoginContent(t *testing.T) {
+	h := newRenderHarness()
+	defer h.server.Close()
+	r := responses.RemoteRenderer{Endpoint: h.server.URL, Client: h.server.Client()}
+	body := "需要登录 Life @ USTC：\nhttp://localhost:3100/oauth/device?code=ABCD-EFGH\n验证码：ABCD-EFGH"
+	data, _, _, err := r.RenderPNGContext(t.Context(), responses.NewTextCardImage("login", body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := "base64://" + base64.StdEncoding.EncodeToString(data)
+	raw, err := json.Marshal([]map[string]any{{"type": "image", "data": map[string]any{"file": file}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := decodeNapCatMessage(raw)
+	if message.Text != "" || len(message.Images) != 1 {
+		t.Fatalf("message=%#v", message)
+	}
+	text, found := h.lookup(message.Images[0])
+	if !found {
+		t.Fatal("rendered image was not retained")
+	}
+	uri, code, err := loginDetails(text)
+	if err != nil || uri.Host != "localhost:3100" || code != "ABCD-EFGH" {
+		t.Fatalf("content=%q err=%v", text, err)
+	}
 }
