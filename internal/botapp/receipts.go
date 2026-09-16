@@ -105,8 +105,8 @@ func formatMCPExecutionArguments(arguments []string) string {
 		decoder := json.NewDecoder(strings.NewReader(argument))
 		decoder.UseNumber()
 		if err := decoder.Decode(&value); err != nil || !json.Valid([]byte(argument)) {
-			// Invalid arguments still identify the attempted invocation.
-			values[index] = strings.TrimSpace(argument)
+			// Malformed JSON cannot be safely redacted by field name.
+			values[index] = "<invalid arguments>"
 			continue
 		}
 		if index == 0 {
