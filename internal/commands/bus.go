@@ -653,10 +653,6 @@ func (h Handler) currentBusSettings(ctx context.Context, ident store.Identity) s
 	return settings
 }
 
-func (h Handler) showSouthCampusBus(ctx context.Context, ident store.Identity) bool {
-	return h.currentBusSettings(ctx, ident).ShowSouthCampus
-}
-
 func busPreferenceArgs(args []string) bool {
 	if len(args) == 0 {
 		return false
@@ -1307,17 +1303,6 @@ func nextBusItemsByRouteLimitWithOptions(data map[string]any, args []string, now
 		}
 		return out[i].DepartureMinutes < out[j].DepartureMinutes
 	})
-	return out
-}
-
-func filterSouthCampusBusItems(items []busItem) []busItem {
-	out := make([]busItem, 0, len(items))
-	for _, item := range items {
-		if hasBusStop(busItemStopNames(item), "南区") {
-			continue
-		}
-		out = append(out, item)
-	}
 	return out
 }
 
