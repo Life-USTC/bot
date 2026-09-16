@@ -517,6 +517,11 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 			return "exam", nil, true
 		}
 	case "课程":
+		for i, token := range args {
+			if token == "课表" || token == "考试" || token == "作业" {
+				return academicSectionActions[token], append(append([]string(nil), args[:i]...), args[i+1:]...), true
+			}
+		}
 		switch action {
 		case "":
 			return help("课程")
@@ -525,7 +530,14 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "查看", "详情", "编号":
 			return "course_by_jw_id", rest, true
 		}
-	case "教学班", "班级":
+	case "教学班", "班级", "课堂":
+		if len(args) >= 2 {
+			for i := 1; i < len(args); i++ {
+				if capability, ok := academicSectionActions[args[i]]; ok {
+					return capability, append(append([]string(nil), args[:i]...), args[i+1:]...), true
+				}
+			}
+		}
 		switch action {
 		case "":
 			return help("教学班")
@@ -539,6 +551,8 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 			return "section_exams", rest, true
 		case "作业":
 			return "section_homeworks", rest, true
+		default:
+			return "section", args, true
 		}
 	case "老师", "教师":
 		switch action {
@@ -4024,10 +4038,14 @@ func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) s
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) getCourseByJwID(ctx context.Context, ident store.Identity, args []string) string {
+	query, ok := parseAcademicQuery(args, false)
 	if !ok {
-		return h.invalidInput("需要提供课程 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, reply := h.resolveAcademicTarget(ctx, ident, query, true)
+	if reply != "" {
+		return reply
 	}
 	course, err := h.Life.GetCourseByJwID(ctx, jwId)
 	if err != nil {
@@ -4037,10 +4055,14 @@ func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
 	return "课程：\n" + formatCourse(course)
 }
 
-func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) getSectionByJwID(ctx context.Context, ident store.Identity, args []string) string {
+	query, ok := parseAcademicQuery(args, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	section, err := h.Life.GetSectionByJwID(ctx, jwId)
 	if err != nil {
@@ -4162,14 +4184,21 @@ func (h Handler) mySubscribedSections(ctx context.Context, ident store.Identity)
 }
 
 func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, args []string) string {
-	if len(args) < 3 {
-		return h.invalidInput("用法：教学班课表 <JW ID> <开始日期> <结束日期>")
-	}
-	jwId, ok := parseIntArg(args[0])
+	query, ok := parseAcademicQuery(args, true)
 	if !ok {
-		return h.invalidInput("JW ID 无效。")
+		return h.invalidInput("用法：课堂 <课程名或编号> 课表 [开始日期 结束日期] [学期 2026秋]")
 	}
-	dateFrom, dateTo := args[1], args[2]
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
+	}
+	dateFrom, dateTo := query.From, query.To
+	if dateFrom == "" {
+		now := time.Now().In(lifedata.ChinaLocation())
+		start := now.AddDate(0, 0, -int(now.Weekday()))
+		dateFrom, _ = lifedata.DayRFC3339Range(start)
+		_, dateTo = lifedata.DayRFC3339Range(start.AddDate(0, 0, 6))
+	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -4187,11 +4216,14 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 		"date_to":   dateTo,
 		"schedules": schedules,
 	})
+	startDate, _ := lifedata.ParseAPITime(dateFrom)
+	endDate, _ := lifedata.ParseAPITime(dateTo)
+	dateLabel := startDate.In(lifedata.ChinaLocation()).Format("2006-01-02") + " 至 " + endDate.In(lifedata.ChinaLocation()).Format("2006-01-02")
 	if len(schedules) == 0 {
-		return "该时间段没有课。"
+		return "该时间段没有课（" + dateLabel + "）。"
 	}
 	lifedata.SortSchedulesByStart(schedules)
-	lines := []string{"教学班课表："}
+	lines := []string{"教学班课表（" + dateLabel + "）："}
 	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
 	}
@@ -4203,9 +4235,13 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 	if err != nil {
 		return h.invalidInput(err.Error())
 	}
-	jwId, ok := parseIntArg(joinedArgs(listArgs))
+	query, ok := parseAcademicQuery(listArgs, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -4247,9 +4283,13 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 	if err != nil {
 		return h.invalidInput(err.Error())
 	}
-	jwId, ok := parseIntArg(joinedArgs(listArgs))
+	query, ok := parseAcademicQuery(listArgs, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {

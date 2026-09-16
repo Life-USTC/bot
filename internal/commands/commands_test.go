@@ -4196,7 +4196,7 @@ func TestHandleSectionSchedules(t *testing.T) {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("dateFrom") != "2026-06-01" || q.Get("dateTo") != "2026-06-07" {
+		if q.Get("dateFrom") != "2026-05-31T16:00:00Z" || q.Get("dateTo") != "2026-06-07T15:59:59Z" {
 			t.Fatalf("query = %s", q.Encode())
 		}
 		_, _ = w.Write([]byte(`[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]`))

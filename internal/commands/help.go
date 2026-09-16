@@ -291,6 +291,8 @@ var helpTopicAliases = map[string]string{
 	"课程":           "course",
 	"course":       "course",
 	"教学班":          "section",
+	"课堂":           "section",
+	"班级":           "section",
 	"section":      "section",
 	"老师":           "teacher",
 	"教师":           "teacher",

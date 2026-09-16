@@ -169,17 +169,13 @@ func positiveIDArgs(args []string) bool {
 }
 
 func sectionScheduleArgsAcceptable(args []string) bool {
-	if len(args) != 3 || !positiveIDArgs(args[:1]) {
-		return false
-	}
-	from, fromOK := parseScheduleDateToken(args[1], time.Now())
-	to, toOK := parseScheduleDateToken(args[2], time.Now())
-	return fromOK && toOK && !to.Before(from)
+	_, ok := parseAcademicQuery(args, true)
+	return ok
 }
 
 func sectionPagedIDArgsAcceptable(args []string) bool {
 	remaining, _, err := extractListPage(args)
-	return err == nil && positiveIDArgs(remaining)
+	return err == nil && academicTargetArgs(remaining)
 }
 
 func examArgsAcceptable(args []string) bool {
