@@ -177,8 +177,8 @@ func TestCommandImageSchemaVersionAndShape(t *testing.T) {
 	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("schema version = %d, want 4", version)
+	if version != CurrentSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, CurrentSchemaVersion)
 	}
 	if !s.db.Migrator().HasTable(&commandImageRow{}) {
 		t.Fatal("command_images table is missing")

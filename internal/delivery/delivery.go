@@ -132,11 +132,18 @@ func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Out
 		return Outcome{State: OutcomeRejected, Code: "invalid_message", Err: err}
 	}
 	outbound = normalizeOutbound(outbound)
+	if !outbound.ExpiresAt.IsZero() && !outbound.ExpiresAt.After(time.Now()) {
+		return Outcome{State: OutcomeRejected, Code: "expired", Err: errors.New("message expired before delivery")}
+	}
 	rendered, err := s.renderOutbound(ctx, outbound)
 	if err != nil {
 		return Outcome{State: OutcomeRetryable, Code: "render_failed", Err: err}
 	}
 	outbound = rendered
+	// Rendering can outlast a reminder's deadline even after a valid claim.
+	if !outbound.ExpiresAt.IsZero() && !outbound.ExpiresAt.After(time.Now()) {
+		return Outcome{State: OutcomeRejected, Code: "expired", Err: errors.New("message expired while rendering")}
+	}
 	adapter := s.adapters[outbound.Target.Platform]
 	if adapter == nil {
 		return Outcome{

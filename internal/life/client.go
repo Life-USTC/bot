@@ -642,15 +642,37 @@ func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {
 	return typedResponse(c.Typed(ctx, token).DeleteTodo(ctx, id))
 }
 
+// SubscribedHomeworks reads the complete paginated workspace collection.
+// The workspace endpoint returns data/pagination, not the section homework envelope.
 func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[string]any, error) {
-	var out struct {
-		Homeworks []map[string]any `json:"homeworks"`
+	const pageSize = int64(50)
+	var homeworks []map[string]any
+	for page := int64(1); ; page++ {
+		var out struct {
+			Data       []map[string]any `json:"data"`
+			Pagination *struct {
+				Page       int64 `json:"page"`
+				TotalPages int64 `json:"totalPages"`
+			} `json:"pagination"`
+		}
+		resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx, &openapi.GetSubscribedHomeworksParams{Page: &page, PageSize: int64Ptr(pageSize)})
+		if err := typedJSON(resp, err, "subscribed homeworks", &out); err != nil {
+			return nil, err
+		}
+		if out.Data == nil || out.Pagination == nil || out.Pagination.Page != page || out.Pagination.TotalPages < page {
+			return nil, errors.New("subscribed homeworks response missing valid data/pagination")
+		}
+		if out.Pagination.TotalPages > 100 {
+			return nil, errors.New("subscribed homeworks exceeds the API's 100-page limit")
+		}
+		homeworks = append(homeworks, out.Data...)
+		if page == out.Pagination.TotalPages {
+			return homeworks, nil
+		}
+		if len(out.Data) == 0 {
+			return nil, fmt.Errorf("subscribed homeworks page %d is unexpectedly empty", page)
+		}
 	}
-	resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx, nil)
-	if err := typedJSON(resp, err, "subscribed homeworks", &out); err != nil {
-		return nil, err
-	}
-	return out.Homeworks, nil
 }
 
 func (c *Client) SetHomeworkCompletion(ctx context.Context, token, id string, completed bool) error {

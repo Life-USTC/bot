@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +22,7 @@ import (
 const (
 	classKind            = "class"
 	homeworkKind         = "homework"
+	todoKind             = "todo"
 	youngKind            = "young"
 	pollFailureBaseDelay = 5 * time.Minute
 	pollFailureMaxDelay  = time.Hour
@@ -102,6 +102,9 @@ func (p *Poller) tick(ctx context.Context) {
 				continue
 			}
 			p.clearPollFailure(setting.Identity)
+			for _, kind := range []string{classKind, homeworkKind, todoKind, youngKind} {
+				p.clearPollFailureKey(notificationIdentityKey(setting.Identity) + "|" + kind)
+			}
 		case pollTransientFailure:
 			p.notePollFailure(setting.Identity)
 		}
@@ -109,7 +112,7 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) notificationPollResult {
-	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.YoungEnabled {
+	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.TodosEnabled && !settings.YoungEnabled {
 		return pollSucceeded
 	}
 	token, err := p.Auth.AccessToken(ctx, settings.Identity)
@@ -117,75 +120,67 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		return p.resultForAuthError(ctx, settings.Identity, err)
 	}
 	now := p.now().In(lifedata.ChinaLocation())
-	if settings.YoungEnabled {
-		unread := true
-		youngToken := token
-		notifications, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]life.YoungNotification, error) {
-			youngToken = token
-			return p.Life.ListAllYoungNotifications(ctx, token, &unread)
-		})
-		if err != nil {
-			p.logf("load young notifications failed: %v", err)
-			if youngNotificationAuthFailure(err) {
-				return pollReauthRequired
+	polls := []struct {
+		kind    string
+		enabled bool
+		run     func(string) error
+	}{
+		{classKind, settings.ClassesEnabled, func(token string) error {
+			dateFrom, _ := lifedata.DayRFC3339Range(now)
+			_, dateTo := lifedata.DayRFC3339Range(now.Add(30 * time.Minute))
+			schedules, err := p.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+			if err != nil {
+				return err
 			}
-			return p.resultForAuthError(ctx, settings.Identity, err)
-		}
-		if err := p.notifyYoungNotifications(ctx, settings.Identity, youngToken, notifications, now); err != nil {
-			p.logf("deliver young notification failed: %v", err)
-			if youngNotificationAuthFailure(err) {
-				return pollReauthRequired
+			return p.notifyClasses(ctx, settings.Identity, schedules, now)
+		}},
+		{homeworkKind, settings.HomeworkEnabled, func(token string) error {
+			homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
+			if err != nil {
+				return err
 			}
-			return pollTransientFailure
-		}
-	}
-	if !settings.ClassesEnabled && !settings.HomeworkEnabled {
-		return pollSucceeded
-	}
-	if settings.ClassesEnabled {
-		if settings.HomeworkEnabled {
-			overview, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) (map[string]any, error) {
-				return p.Life.GetUpcomingDeadlinesAt(ctx, token, 1, now)
+			return p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
+		}},
+		{todoKind, settings.TodosEnabled, func(token string) error {
+			todos, err := p.Life.TodosWithOptions(ctx, token, life.TodoListOptions{
+				Completed: "false", DueAfter: now.Format(time.RFC3339), DueBefore: now.Add(24 * time.Hour).Format(time.RFC3339),
 			})
 			if err != nil {
-				p.logf("load notification overview failed: %v", err)
-				return p.resultForAuthError(ctx, settings.Identity, err)
+				return err
 			}
-			p.notifyClasses(ctx, settings.Identity, overviewItems(overview, "schedules"), now)
-			p.notifyHomeworks(ctx, settings.Identity, overviewItems(overview, "homeworks"), now)
-			return pollSucceeded
+			return p.notifyTodos(ctx, settings.Identity, todos, now)
+		}},
+		{youngKind, settings.YoungEnabled, func(token string) error {
+			unread := true
+			notifications, err := p.Life.ListAllYoungNotifications(ctx, token, &unread)
+			if err != nil {
+				return err
+			}
+			return p.notifyYoungNotifications(ctx, settings.Identity, token, notifications, now)
+		}},
+	}
+	for _, poll := range polls {
+		// Back off each source independently: an unavailable activity API must
+		// not suppress an imminent class or deadline reminder.
+		key := notificationIdentityKey(settings.Identity) + "|" + poll.kind
+		if !poll.enabled || !p.shouldPollKey(key) {
+			continue
 		}
-		dateFrom, dateTo := lifedata.DayRFC3339Range(now)
-		schedules, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
-			return p.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+		err := auth.WithRefreshVoid(ctx, p.Auth, settings.Identity, token, func(current string) error {
+			token = current
+			return poll.run(current)
 		})
-		if err != nil {
-			p.logf("load schedules for notification failed: %v", err)
-			return p.resultForAuthError(ctx, settings.Identity, err)
+		if err == nil {
+			p.clearPollFailureKey(key)
+			continue
 		}
-		p.notifyClasses(ctx, settings.Identity, schedules, now)
-		return pollSucceeded
+		p.logf("poll %s notifications failed: %v", poll.kind, err)
+		if result := p.resultForAuthError(ctx, settings.Identity, err); result == pollReauthRequired {
+			return result
+		}
+		p.notePollFailureKey(key)
 	}
-	homeworks, err := auth.WithRefresh(ctx, p.Auth, settings.Identity, token, func(token string) ([]map[string]any, error) {
-		return p.Life.SubscribedHomeworks(ctx, token)
-	})
-	if err != nil {
-		p.logf("load homework notifications failed: %v", err)
-		return p.resultForAuthError(ctx, settings.Identity, err)
-	}
-	p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
 	return pollSucceeded
-}
-
-func youngNotificationAuthFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, auth.ErrNotLoggedIn) || errors.Is(err, auth.ErrReauthorizationRequired) || life.IsUnauthorized(err) {
-		return true
-	}
-	var httpErr life.HTTPError
-	return errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden)
 }
 
 func (p *Poller) resultForAuthError(ctx context.Context, ident store.Identity, err error) notificationPollResult {
@@ -204,19 +199,26 @@ func (p *Poller) resultForAuthError(ctx context.Context, ident store.Identity, e
 }
 
 func (p *Poller) shouldPoll(ident store.Identity) bool {
+	return p.shouldPollKey(notificationIdentityKey(ident))
+}
+
+func (p *Poller) shouldPollKey(key string) bool {
 	p.failureMu.Lock()
 	defer p.failureMu.Unlock()
-	failure, ok := p.failures[notificationIdentityKey(ident)]
+	failure, ok := p.failures[key]
 	return !ok || !p.now().Before(failure.nextAt)
 }
 
 func (p *Poller) notePollFailure(ident store.Identity) {
+	p.notePollFailureKey(notificationIdentityKey(ident))
+}
+
+func (p *Poller) notePollFailureKey(key string) {
 	p.failureMu.Lock()
 	defer p.failureMu.Unlock()
 	if p.failures == nil {
 		p.failures = make(map[string]pollFailure)
 	}
-	key := notificationIdentityKey(ident)
 	failure := p.failures[key]
 	failure.count++
 	delay := pollFailureBaseDelay << min(failure.count-1, 4)
@@ -228,20 +230,28 @@ func (p *Poller) notePollFailure(ident store.Identity) {
 }
 
 func (p *Poller) clearPollFailure(ident store.Identity) {
+	p.clearPollFailureKey(notificationIdentityKey(ident))
+}
+
+func (p *Poller) clearPollFailureKey(key string) {
 	p.failureMu.Lock()
 	defer p.failureMu.Unlock()
-	delete(p.failures, notificationIdentityKey(ident))
+	delete(p.failures, key)
 }
 
 func notificationIdentityKey(ident store.Identity) string {
 	return ident.Platform + "|" + ident.UserID
 }
 
-func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedules []map[string]any, now time.Time) {
-	schedules = lifedata.FilterSchedulesForDay(schedules, now)
+func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedules []map[string]any, now time.Time) error {
+	var errs []error
 	lifedata.SortSchedulesByStart(schedules)
 	for _, schedule := range schedules {
-		start := lifedata.ScheduleStartTime(schedule, now, nil)
+		day, ok := lifedata.ParseAPITime(lifedata.FirstString(schedule, "date"))
+		if !ok {
+			continue
+		}
+		start := lifedata.ScheduleStartTime(schedule, day.In(lifedata.ChinaLocation()), nil)
 		if start.IsZero() || start.Before(now) || start.After(now.Add(30*time.Minute)) {
 			continue
 		}
@@ -249,28 +259,31 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		message := "课前提醒：\n" + formatSchedule(schedule)
 		image := classReminderImage(schedule, message)
 		if _, err := p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute)); err != nil {
-			p.logf("enqueue class notification failed: %v", err)
+			errs = append(errs, err)
 		}
 	}
+	return errors.Join(errs...)
 }
 
-func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, homeworks []map[string]any, now time.Time) {
+func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, homeworks []map[string]any, now time.Time) error {
+	var errs []error
 	lifedata.SortHomeworksByDue(homeworks)
 	for _, homework := range homeworks {
 		if lifedata.HomeworkCompleted(homework) {
 			continue
 		}
 		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-		if !ok || due.Before(now) || due.After(now.Add(24*time.Hour)) {
+		if !ok || !due.After(now) || due.After(now.Add(24*time.Hour)) {
 			continue
 		}
-		key := notificationKey(homeworkKind, textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
+		key := notificationKey(homeworkKind, textutil.JoinNonEmpty("|", textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title")), due.UTC().Format(time.RFC3339)))
 		message := "作业提醒：\n" + formatHomework(homework)
 		image := homeworkReminderImage(homework, message)
 		if _, err := p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due); err != nil {
-			p.logf("enqueue homework notification failed: %v", err)
+			errs = append(errs, err)
 		}
 	}
+	return errors.Join(errs...)
 }
 
 func (p *Poller) notifyYoungNotifications(ctx context.Context, ident store.Identity, token string, notifications []life.YoungNotification, now time.Time) error {
@@ -317,11 +330,6 @@ func (p *Poller) notifyYoungNotifications(ctx context.Context, ident store.Ident
 		}
 	}
 	return nil
-}
-
-func overviewItems(overview map[string]any, key string) []map[string]any {
-	group, _ := overview[key].(map[string]any)
-	return lifedata.MapSlice(group["items"])
 }
 
 func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) (bool, error) {

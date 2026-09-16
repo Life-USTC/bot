@@ -145,3 +145,29 @@ func TestWorkerStopsRetryingAfterAttemptBudget(t *testing.T) {
 		t.Fatalf("unexpected retry = %v", repository.nextAttempts[0])
 	}
 }
+
+func TestWorkerBackoffStartsAfterSlowDelivery(t *testing.T) {
+	started := time.Date(2026, 9, 16, 1, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Minute)
+	repository := &workerRepository{records: []Record{{ID: 1, Attempts: 1, Message: message.Outbound{
+		TextPolicy: message.TextPolicyLLM,
+		Target:     message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content:    message.Content{Parts: []message.ContentPart{{Text: "reminder"}}},
+	}}}}
+	service, err := New(repository, &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeRetryable, Code: "offline"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clockReads := 0
+	worker := Worker{Service: service, Now: func() time.Time {
+		clockReads++
+		if clockReads == 1 {
+			return started
+		}
+		return finished
+	}}
+	worker.tick(t.Context())
+	if len(repository.nextAttempts) != 1 || !repository.nextAttempts[0].Equal(finished.Add(5*time.Second)) {
+		t.Fatalf("retry times = %v", repository.nextAttempts)
+	}
+}

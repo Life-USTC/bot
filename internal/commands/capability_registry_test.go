@@ -53,13 +53,15 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 }
 
 func TestTopLevelNotificationMutationsResolvePolicy(t *testing.T) {
-	invocation, ok := ParseInvocation("通知 课表 开")
-	if !ok || invocation.Capability == nil || invocation.ID() != CapabilityNotify {
-		t.Fatalf("notification invocation=%#v ok=%v", invocation, ok)
-	}
-	policy := invocation.Policy()
-	if policy.Effect != EffectWrite || policy.DataScope != DataScopeUserPrivate {
-		t.Fatalf("notification policy = %#v", policy)
+	for _, command := range []string{"通知 课表 开", "通知 待办 开"} {
+		invocation, ok := ParseInvocation(command)
+		if !ok || invocation.Capability == nil || invocation.ID() != CapabilityNotify {
+			t.Fatalf("notification invocation=%#v ok=%v", invocation, ok)
+		}
+		policy := invocation.Policy()
+		if policy.Effect != EffectWrite || policy.DataScope != DataScopeUserPrivate {
+			t.Fatalf("notification policy = %#v", policy)
+		}
 	}
 	if _, accepted := ParseInvocation("设置 通知 课表 开"); accepted {
 		t.Fatal("retired nested settings command was accepted")

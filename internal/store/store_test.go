@@ -1579,13 +1579,14 @@ func TestNotificationSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled {
+	if settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled || settings.TodosEnabled {
 		t.Fatalf("default settings = %#v", settings)
 	}
 
 	settings.ClassesEnabled = true
 	settings.HomeworkEnabled = true
 	settings.YoungEnabled = true
+	settings.TodosEnabled = true
 	if err := s.SaveCredential(ctx, ident, Credential{
 		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
 	}); err != nil {
@@ -1598,7 +1599,7 @@ func TestNotificationSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || !enabled[0].YoungEnabled || enabled[0].Identity != ident {
+	if len(enabled) != 1 || !enabled[0].ClassesEnabled || !enabled[0].HomeworkEnabled || !enabled[0].YoungEnabled || !enabled[0].TodosEnabled || enabled[0].Identity != ident {
 		t.Fatalf("enabled settings = %#v", enabled)
 	}
 	var settingRow notificationSettingRow
@@ -1607,6 +1608,40 @@ func TestNotificationSettings(t *testing.T) {
 	}
 	if settingRow.UpdatedAt.IsZero() {
 		t.Fatal("notification settings updated_at was not set")
+	}
+}
+
+func TestTodoNotificationSettingsAreIndependent(t *testing.T) {
+	s, err := Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	ctx := context.Background()
+	ident := Identity{Platform: "napcat", UserID: "todo-only", ConversationType: "private", ConversationID: "todo-only"}
+	if err := s.SaveCredential(ctx, ident, Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{Identity: ident, TodosEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := s.NotificationSettings(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.TodosEnabled || settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled {
+		t.Fatalf("todo-only settings = %#v", settings)
+	}
+	enabled, err := s.EnabledNotificationSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled) != 1 || !enabled[0].TodosEnabled || enabled[0].ClassesEnabled || enabled[0].HomeworkEnabled || enabled[0].YoungEnabled {
+		t.Fatalf("todo-only enabled settings = %#v", enabled)
 	}
 }
 
@@ -1654,14 +1689,14 @@ func TestNotificationSettingsPauseUntilCredentialRestored(t *testing.T) {
 
 	ctx := context.Background()
 	ident := Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
-	if err := s.SaveNotificationSettings(ctx, NotificationSettings{Identity: ident, HomeworkEnabled: true}); err != nil {
+	if err := s.SaveNotificationSettings(ctx, NotificationSettings{Identity: ident, TodosEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := s.NotificationSettings(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.ReauthRequired || !settings.HomeworkEnabled {
+	if !settings.ReauthRequired || !settings.TodosEnabled || settings.HomeworkEnabled {
 		t.Fatalf("settings without credential = %#v", settings)
 	}
 	if enabled, err := s.EnabledNotificationSettings(ctx); err != nil || len(enabled) != 0 {
@@ -1691,7 +1726,7 @@ func TestNotificationSettingsPauseUntilCredentialRestored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.ReauthRequired || !settings.HomeworkEnabled {
+	if !settings.ReauthRequired || !settings.TodosEnabled || settings.HomeworkEnabled {
 		t.Fatalf("settings after logout = %#v", settings)
 	}
 }
@@ -1763,6 +1798,10 @@ func TestSaveNotificationSettingsRejectsEnabledWithoutConversation(t *testing.T)
 		{
 			Identity:        Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: " "},
 			HomeworkEnabled: true,
+		},
+		{
+			Identity:     Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: " "},
+			TodosEnabled: true,
 		},
 	}
 	for _, settings := range tests {

@@ -94,7 +94,7 @@ func TestYoungNotificationReadFailureRetriesWithoutDuplicateEnqueue(t *testing.T
 	}
 }
 
-func TestYoungNotificationForbiddenRequestsReauthorization(t *testing.T) {
+func TestYoungNotificationForbiddenBacksOffOnlyItsSource(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/workspace/young-notifications" {
@@ -121,7 +121,7 @@ func TestYoungNotificationForbiddenRequestsReauthorization(t *testing.T) {
 		Auth:  &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
 		Store: db, Publisher: &fakePublisher{},
 	}
-	if got := poller.notifyUser(ctx, store.NotificationSettings{Identity: ident, YoungEnabled: true}); got != pollReauthRequired {
-		t.Fatalf("notifyUser result = %v, want reauth", got)
+	if got := poller.notifyUser(ctx, store.NotificationSettings{Identity: ident, YoungEnabled: true}); got != pollSucceeded {
+		t.Fatalf("notifyUser result = %v, want successful independent polling", got)
 	}
 }

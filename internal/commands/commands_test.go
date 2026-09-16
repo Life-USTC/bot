@@ -266,7 +266,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
-		"通知\t查看和管理课表、作业和第二课堂提醒",
+		"通知\t查看和管理课表、作业、第二课堂和待办提醒",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -687,6 +687,15 @@ func TestNormalizeArgsTrimsAndDoesNotMutate(t *testing.T) {
 		t.Fatalf("compact notify args mutated = %#v", args)
 	}
 
+	args = []string{"待办", "关"}
+	normalized = normalizeNotifyArgs(args)
+	if strings.Join(normalized, " ") != "todos off" {
+		t.Fatalf("todo notify normalized = %#v", normalized)
+	}
+	if args[0] != "待办" || args[1] != "关" {
+		t.Fatalf("todo notify args mutated = %#v", args)
+	}
+
 }
 
 func TestNormalizeNotificationKind(t *testing.T) {
@@ -698,6 +707,10 @@ func TestNormalizeNotificationKind(t *testing.T) {
 		" homework ": "homework",
 		"HW":         "homework",
 		"作业":         "homework",
+		"todo":       "todos",
+		"待办":         "todos",
+		"待办提醒":       "todos",
+		"td":         "todos",
 	}
 	for input, want := range tests {
 		got, ok := NormalizeNotificationKind(input)
@@ -957,7 +970,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
-		"| 通知 | 查看和管理课表、作业和第二课堂提醒 |",
+		"| 通知 | 查看和管理课表、作业、第二课堂和待办提醒 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)
@@ -2154,7 +2167,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completion":null}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completion":null}]}`))
 		case r.URL.Path == "/api/workspace/homeworks/hw-1/completion" && r.Method == http.MethodPut:
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -2194,7 +2207,7 @@ func TestHomeworkDisplayIndexesMatchActionsForUndatedItems(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": []any{
+			_ = json.NewEncoder(w).Encode(map[string]any{"pagination": map[string]any{"page": 1, "totalPages": 1}, "data": []any{
 				map[string]any{"id": "future", "title": "未来作业", "submissionDueAt": future, "completion": nil},
 				map[string]any{"id": "undated", "title": "未定日期作业", "completion": nil},
 			}})
@@ -2230,7 +2243,7 @@ func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"homeworks":[
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[
 				{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
 				{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
 			]}`))
@@ -2284,7 +2297,7 @@ func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
 		case r.URL.Path == "/api/workspace/homeworks/completions" && r.Method == http.MethodPut:
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
@@ -2421,7 +2434,12 @@ func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 		if r.URL.Path != "/api/workspace/homeworks" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": homeworks})
+		page := 1
+		if r.URL.Query().Get("page") == "2" {
+			page = 2
+		}
+		start := (page - 1) * 50
+		_ = json.NewEncoder(w).Encode(map[string]any{"pagination": map[string]any{"page": page, "totalPages": 2}, "data": homeworks[start:min(start+50, len(homeworks))]})
 	}))
 	defer server.Close()
 
@@ -2449,7 +2467,7 @@ func TestPersonalHomeworkDisplaysSubscriptionMembershipKind(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/workspace/homeworks":
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-ta","title":"助教作业","submissionDueAt":"2099-01-01T10:00:00+08:00","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"completionRequired":false,"isCompleted":false}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-ta","title":"助教作业","submissionDueAt":"2099-01-01T10:00:00+08:00","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"completionRequired":false,"isCompleted":false}]}`))
 		case "/api/workspace/subscriptions/current":
 			_, _ = w.Write([]byte(`{"subscription":{"sections":[{"id":101,"kind":"teaching_assistant"}]}}`))
 		default:
@@ -2502,7 +2520,7 @@ func TestHandleOverviewCombinesPersonalData(t *testing.T) {
 			}
 			_, _ = fmt.Fprintf(w, `{"todos":[{"id":"todo-1","title":"写报告","dueAt":%q}]}`, today+"T18:00:00+08:00")
 		case "/api/workspace/homeworks":
-			_, _ = fmt.Fprintf(w, `{"homeworks":[{"id":"hw-1","title":"作业一","submissionDueAt":%q,"section":{"course":{"namePrimary":"数学分析"}}}]}`, today+"T23:59:00+08:00")
+			_, _ = fmt.Fprintf(w, `{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"作业一","submissionDueAt":%q,"section":{"course":{"namePrimary":"数学分析"}}}]}`, today+"T23:59:00+08:00")
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -3263,7 +3281,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	handler := Handler{Store: s}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
-	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
+	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") || !strings.Contains(response.Text, "待办提醒：关") {
 		t.Fatalf("reply = %q, ok = %v", response.Text, ok)
 	}
 	data, ok := response.Data.(map[string]any)
@@ -3271,7 +3289,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatalf("notification Data = %#v", response.Data)
 	}
 	reply, ok := handler.Handle(ctx, Input{Text: "通知 help", Identity: ident})
-	if !ok || !strings.Contains(reply, "通知 帮助：") || !strings.Contains(reply, "通知 课表 开") || strings.Contains(reply, "AI 工具") {
+	if !ok || !strings.Contains(reply, "通知 帮助：") || !strings.Contains(reply, "通知 课表 开") || !strings.Contains(reply, "通知 待办 开") || !strings.Contains(reply, "未来 24 小时内到期") || strings.Contains(reply, "AI 工具") {
 		t.Fatalf("notification help reply = %q, ok = %v", reply, ok)
 	}
 	if _, ok := handler.parse("设置 通知"); ok {
@@ -3300,6 +3318,14 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 活动 开", Identity: ident})
 	if !ok || !strings.Contains(reply, "第二课堂提醒：开") {
 		t.Fatalf("activity notification reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 待办 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "待办提醒：开") || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") || !strings.Contains(reply, "第二课堂提醒：开") {
+		t.Fatalf("todo notification reply = %q", reply)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 td 关", Identity: ident})
+	if !ok || !strings.Contains(reply, "待办提醒：关") || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") || !strings.Contains(reply, "第二课堂提醒：开") {
+		t.Fatalf("todo alias notification reply = %q", reply)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表", Identity: ident})
 	if !ok || !strings.Contains(reply, "想打开还是关闭") {
@@ -3637,6 +3663,7 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		{text: "账户 信息", name: "account"},
 		{text: "账户 退出", name: "logout"},
 		{text: "通知 课表 开", name: "notify", args: "classes on"},
+		{text: "通知 待办 开", name: "notify", args: "todos on"},
 		{text: "通知", name: "notify"},
 	}
 	for _, tt := range tests {
