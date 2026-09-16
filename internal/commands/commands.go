@@ -517,11 +517,6 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 			return "exam", nil, true
 		}
 	case "课程":
-		for i, token := range args {
-			if token == "课表" || token == "考试" || token == "作业" {
-				return academicSectionActions[token], append(append([]string(nil), args[:i]...), args[i+1:]...), true
-			}
-		}
 		switch action {
 		case "":
 			return help("课程")
@@ -530,14 +525,12 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "查看", "详情", "编号":
 			return "course_by_jw_id", rest, true
 		}
-	case "教学班", "班级", "课堂":
-		if len(args) >= 2 {
-			for i := 1; i < len(args); i++ {
-				if capability, ok := academicSectionActions[args[i]]; ok {
-					return capability, append(append([]string(nil), args[:i]...), args[i+1:]...), true
-				}
+		for i, token := range args {
+			if token == "课表" || token == "考试" || token == "作业" {
+				return academicSectionActions[token], append(append([]string(nil), args[:i]...), args[i+1:]...), true
 			}
 		}
+	case "教学班", "班级", "课堂":
 		switch action {
 		case "":
 			return help("教学班")
@@ -552,6 +545,13 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "作业":
 			return "section_homeworks", rest, true
 		default:
+			if len(args) >= 2 {
+				for i := 1; i < len(args); i++ {
+					if capability, ok := academicSectionActions[args[i]]; ok {
+						return capability, append(append([]string(nil), args[:i]...), args[i+1:]...), true
+					}
+				}
+			}
 			return "section", args, true
 		}
 	case "老师", "教师":
