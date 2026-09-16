@@ -1041,6 +1041,8 @@ func NormalizeNotificationKind(value string) (string, bool) {
 		return "homework", true
 	case "activity", "activities", "young", "young-event", "二课", "第二课堂", "活动":
 		return "young", true
+	case "todo", "todos", "todo-reminder", "待办", "待办提醒", "td":
+		return "todos", true
 	default:
 		return "", false
 	}
@@ -1069,6 +1071,7 @@ func splitCompactNotificationArg(value string) (string, string, bool) {
 		{kind: "classes", aliases: []string{"class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课"}},
 		{kind: "homework", aliases: []string{"homework", "hw", "作业"}},
 		{kind: "young", aliases: []string{"activity", "activities", "young", "young-event", "二课", "第二课堂", "活动"}},
+		{kind: "todos", aliases: []string{"todo", "todos", "todo-reminder", "待办", "待办提醒", "td"}},
 	} {
 		for _, alias := range item.aliases {
 			aliasToken := compactCommandToken(alias)
@@ -2737,6 +2740,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
 			"通知 活动 开 / 通知 活动 关",
+			"通知 待办 开 / 通知 待办 关",
 		}, "\n")
 	}
 	if h.Store == nil {
@@ -2759,10 +2763,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	}
 	if len(args) < 2 {
 		switch args[0] {
-		case "classes", "homework", "young":
+		case "classes", "homework", "young", "todos":
 			return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
 		default:
-			return h.invalidInput("支持：课表、作业、活动。")
+			return h.invalidInput("支持：课表、作业、活动、待办。")
 		}
 	}
 	enabled := args[1] == "on"
@@ -2776,8 +2780,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		settings.HomeworkEnabled = enabled
 	case "young":
 		settings.YoungEnabled = enabled
+	case "todos":
+		settings.TodosEnabled = enabled
 	default:
-		return h.invalidInput("支持：课表、作业、活动。")
+		return h.invalidInput("支持：课表、作业、活动、待办。")
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
 		return h.commandError("通知设置保存失败：", err)
@@ -2799,8 +2805,9 @@ func formatNotificationSettings(settings store.NotificationSettings) string {
 		"课前提醒：" + onOffText(settings.ClassesEnabled),
 		"作业提醒：" + onOffText(settings.HomeworkEnabled),
 		"第二课堂提醒：" + onOffText(settings.YoungEnabled),
+		"待办提醒：" + onOffText(settings.TodosEnabled),
 	}
-	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled) {
+	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled || settings.TodosEnabled) {
 		lines = append(lines, "状态：已暂停，请发送“登录”；登录成功后会自动恢复。")
 	}
 	return strings.Join(lines, "\n")

@@ -76,12 +76,14 @@ func TestPollerRemindsForFutureHomeworkWithoutCompletionRequirement(t *testing.T
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	publisher := &fakePublisher{}
 	poller := &Poller{Publisher: publisher}
-	poller.notifyHomeworks(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, []map[string]any{{
+	if err := poller.notifyHomeworks(context.Background(), store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}, []map[string]any{{
 		"id":                 "hw-ta",
 		"title":              "助教作业",
 		"submissionDueAt":    "2026-06-07T15:00:00+08:00",
 		"completionRequired": false,
-	}}, now)
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
 	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "无需完成") {
 		t.Fatalf("messages = %#v, want a labelled reminder", publisher.messages)
 	}
@@ -107,19 +109,19 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: " PRIVATE ", ConversationID: "42"}
-	overviewRequests := 0
+	scheduleRequests, homeworkRequests := 0, 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/overview" {
-			t.Fatalf("unexpected request %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
+			scheduleRequests++
+			_, _ = w.Write([]byte(`{"schedules":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]}`))
+		case "/api/workspace/homeworks":
+			homeworkRequests++
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		}
-		if r.URL.Query().Get("homeworkWindowDays") != "1" || r.URL.Query().Get("limit") != "50" {
-			t.Fatalf("overview query = %q", r.URL.RawQuery)
-		}
-		if r.URL.Query().Get("atTime") != now.Format(time.RFC3339) {
-			t.Fatalf("overview atTime = %q", r.URL.Query().Get("atTime"))
-		}
-		overviewRequests++
-		_, _ = w.Write([]byte(`{"schedules":{"items":[{"date":"2026-06-07T08:00:00+08:00","startTime":"14:20","endTime":"15:55","section":{"id":101,"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]},"homeworks":{"items":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}}`))
 	}))
 	defer server.Close()
 
@@ -154,8 +156,8 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	}
 	poller.tick(ctx)
 	poller.tick(ctx)
-	if overviewRequests != 2 {
-		t.Fatalf("overviewRequests = %d, want one per tick", overviewRequests)
+	if scheduleRequests != 2 || homeworkRequests != 2 {
+		t.Fatalf("requests: schedules=%d homeworks=%d, want two each", scheduleRequests, homeworkRequests)
 	}
 
 	if len(publisher.messages) != 2 {
@@ -185,7 +187,7 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 		if r.URL.Path != "/api/workspace/homeworks" {
 			t.Fatalf("unexpected request %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
 	}))
 	defer server.Close()
 
@@ -221,6 +223,7 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	if len(publisher.messages) != 0 {
 		t.Fatalf("messages after failed enqueue = %#v", publisher.messages)
 	}
+	now = now.Add(pollFailureBaseDelay)
 	poller.tick(ctx)
 	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "作业提醒：") {
 		t.Fatalf("messages after retry = %#v", publisher.messages)
@@ -288,7 +291,7 @@ func TestPollerPausesWithoutCredentialAndResumesAfterLogin(t *testing.T) {
 		if r.URL.Path != "/api/workspace/homeworks" {
 			t.Fatalf("unexpected request %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"homeworks":[]}`))
+		_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[]}`))
 	}))
 	defer server.Close()
 
@@ -332,7 +335,7 @@ func TestPollerLeavesDeliveryRetriesToOutbox(t *testing.T) {
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
 	}))
 	defer server.Close()
 
@@ -370,6 +373,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 
 	var serverURL string
 	scheduleRequests := 0
+	homeworkRequests := 0
 	refreshRequests := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -395,6 +399,13 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 	})
+	mux.HandleFunc("/api/workspace/homeworks", func(w http.ResponseWriter, r *http.Request) {
+		homeworkRequests++
+		if r.Header.Get("Authorization") != "Bearer new-access" {
+			t.Errorf("homework reused stale token")
+		}
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"totalPages":1}}`))
+	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	serverURL = server.URL
@@ -414,8 +425,9 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{
-		Identity:       ident,
-		ClassesEnabled: true,
+		Identity:        ident,
+		ClassesEnabled:  true,
+		HomeworkEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +442,7 @@ func TestPollerUsesRefreshedTokenForSchedules(t *testing.T) {
 	}
 	poller.tick(ctx)
 
-	if refreshRequests != 1 || scheduleRequests != 2 {
+	if refreshRequests != 1 || scheduleRequests != 2 || homeworkRequests != 1 {
 		t.Fatalf("refreshRequests = %d, scheduleRequests = %d", refreshRequests, scheduleRequests)
 	}
 	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "课前提醒：") {
@@ -461,7 +473,7 @@ func TestPollerUsesRefreshedTokenForHomeworks(t *testing.T) {
 		case "Bearer old-access":
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		case "Bearer new-access":
-			_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
 		default:
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}

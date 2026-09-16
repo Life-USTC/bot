@@ -94,7 +94,7 @@ func (w *Worker) tick(ctx context.Context) {
 		}
 		nextAttempt := time.Time{}
 		if outcome.State == OutcomeRetryable {
-			nextAttempt = now.Add(retryDelay(record.Attempts))
+			nextAttempt = w.now().Add(retryDelay(record.Attempts))
 		}
 		if err := w.Service.repository.Complete(ctx, record.ID, outcome, nextAttempt); err != nil {
 			w.logf("complete delivery %d failed: %v", record.ID, err)

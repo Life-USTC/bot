@@ -903,6 +903,8 @@ func cardTheme(kind string) responseCardTheme {
 		theme.Label = "课前提醒"
 	case "homework_reminder":
 		theme.Label = "作业提醒"
+	case "todo_reminder":
+		theme.Label = "待办提醒"
 	}
 	return theme
 }
