@@ -461,7 +461,8 @@ type TodoListOptions struct {
 	DueAfter  string
 }
 
-const todoListLimit = 200
+// TodoListLimit is the maximum supported by the workspace todo endpoint.
+const TodoListLimit = 200
 
 type TodoCreateOptions struct {
 	Title    string
@@ -484,7 +485,7 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 
 func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoListOptions) ([]map[string]any, error) {
 	params := openapi.ListTodosParams{}
-	params.Limit = int64Ptr(todoListLimit)
+	params.Limit = int64Ptr(TodoListLimit)
 	if completed := strings.TrimSpace(opts.Completed); completed != "" {
 		value := openapi.ListTodosParamsCompleted(completed)
 		params.Completed = &value

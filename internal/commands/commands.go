@@ -1500,8 +1500,8 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 		return h.invalidInput(err.Error())
 	}
 	if len(numbered) == 0 {
-		if len(todos) >= todoListLimit {
-			return fmt.Sprintf("没有待办。\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", todoListLimit)
+		if len(todos) >= life.TodoListLimit {
+			return fmt.Sprintf("没有待办。\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", life.TodoListLimit)
 		}
 		return "没有待办。"
 	}
@@ -1514,8 +1514,8 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 	if !ok {
 		return h.invalidInput(listPageOutOfRange("待办", len(numbered), command))
 	}
-	if len(todos) >= todoListLimit {
-		reply += fmt.Sprintf("\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", todoListLimit)
+	if len(todos) >= life.TodoListLimit {
+		reply += fmt.Sprintf("\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", life.TodoListLimit)
 	}
 	return reply
 }
@@ -1826,8 +1826,6 @@ type numberedTodo struct {
 	number int
 	todo   map[string]any
 }
-
-const todoListLimit = 200
 
 func filterNumberedTodos(todos []map[string]any, opts life.TodoListOptions) ([]numberedTodo, error) {
 	var dueBefore, dueAfter time.Time

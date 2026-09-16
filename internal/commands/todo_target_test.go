@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"github.com/Life-USTC/Bot/internal/life"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -167,7 +168,7 @@ func TestDescribeTodoExplicitIDSkipsListPreflight(t *testing.T) {
 }
 
 func TestTodoListMarksMaximumReadAsBounded(t *testing.T) {
-	todos := make([]map[string]any, todoListLimit)
+	todos := make([]map[string]any, life.TodoListLimit)
 	for i := range todos {
 		todos[i] = map[string]any{"id": "todo-" + strconv.Itoa(i+1), "title": "待办"}
 	}
@@ -187,7 +188,7 @@ func TestTodoListMarksMaximumReadAsBounded(t *testing.T) {
 }
 
 func TestTodoListDoesNotClaimAnEmptyFilteredResultIsCompleteAtTheLimit(t *testing.T) {
-	todos := make([]map[string]any, todoListLimit)
+	todos := make([]map[string]any, life.TodoListLimit)
 	for i := range todos {
 		todos[i] = map[string]any{"id": "todo-" + strconv.Itoa(i+1), "title": "已完成", "completed": true}
 	}
