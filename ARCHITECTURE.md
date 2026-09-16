@@ -168,7 +168,11 @@ A command records its already-fetched domain value in `Response.Data` before
 formatting a table, sentence or image. It does not parse rendered text back into
 data and does not make a second network call to build model context.
 
-- User output: `Response.Text`, image and response parts.
+Each visible response text part carries its author origin. The coordinator
+keeps text only when the part is explicitly marked as model-authored; synthetic
+errors, prompts, confirmations, receipts and host responses become image cards.
+
+- User output: explicitly model-authored text plus structured image parts. Host-authored text is an image-card intent and is never sent as a plain-text part.
 - Model output: the `internal/toolresult` JSON envelope around domain data.
 
 Bot commands and MCP use the same fields: `source`, `operation`, `status`,
@@ -181,6 +185,10 @@ a textual MCP result remains a string inside `result`.
 A successful operation does not imply successful image rendering or platform
 acceptance. The model never receives a false “delivered” claim because output
 was merely queued. Operation results survive independently of presentation.
+Outbox records contain image URLs or serialized card inputs alongside explicitly
+model-authored prose. The delivery boundary renders every deferred intent for each
+attempt. A render failure retries that outbox record and never reruns the
+operation that produced it.
 
 ## Commands and discovery
 
@@ -261,8 +269,9 @@ these references before plain-text cleanup and preserves their order among
 text parts. This syntax cannot execute commands or fetch arbitrary URLs;
 unknown or inaccessible references produce an explicit unavailable notice.
 Authentication prompts and dangerous-operation confirmations retain their
-separate host-controlled delivery path. IDs represent historical snapshots,
-not current data or proof of delivery.
+separate host-controlled delivery path, rendered as image cards. Login cards
+include the complete authorization URL and user code. IDs represent historical
+snapshots, not current data or proof of delivery.
 
 Direct shuttle queries produce a card without a duplicate text presentation.
 Rendering failure is an output failure; no shuttle text fallback is generated.
@@ -274,13 +283,14 @@ without another model invocation.
 
 ## Reliability and outbox
 
-`outgoing_messages` contains immutable, delivery-ready output, reply routing,
+`outgoing_messages` contains immutable output intent, reply routing,
 platform receipts and delivery state. Final job state, pending outputs and
 operation receipt state are committed atomically. A delivery retry only sends
 that output; it cannot repeat a capability or an LLM turn.
 
-Output content is an ordered list of text/image parts. Nested command response
-parts, leading text and the final operation receipt are coalesced. NapCat sends
+Output content is an ordered list of image parts plus explicitly model-authored
+text. Nested command response parts, leading text and the final operation
+receipt are coalesced; host text becomes a generic rich-text card. NapCat sends
 one multi-segment message; QQ's current rich-media adapter groups text with each
 image and persists each required send separately. Every resulting message has
 its own sequence, dedupe key and acceptance state. Dangerous confirmations remain

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -38,6 +39,9 @@ func TestUserFeedbackUsesDurableAdminDeliveryPath(t *testing.T) {
 	}
 	if len(due) != 1 {
 		t.Fatalf("outgoing messages = %#v", due)
+	}
+	if due[0].Message.TextPolicy != message.TextPolicyImageOnly || len(due[0].Message.Content.Parts) != 1 || due[0].Message.Content.Parts[0].Attachment != nil {
+		t.Fatalf("feedback should persist a text card intent = %#v", due[0].Message)
 	}
 	if !strings.Contains(due[0].Message.Content.TextContent(), "用户反馈") || strings.Contains(due[0].Message.Content.TextContent(), "LLM") {
 		t.Fatalf("message = %q", due[0].Message.Content.TextContent())

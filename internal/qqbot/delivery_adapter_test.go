@@ -196,6 +196,49 @@ func TestDeliveryAdapterContractUsesURLAttachment(t *testing.T) {
 	}
 }
 
+func TestDeliveryAdapterDoesNotSendImageAltTextAsCaption(t *testing.T) {
+	pngData := testPNG(t)
+	var sent sendMessageRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/u/upload_prepare":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"upload_id":  "upload-alt",
+				"block_size": len(pngData),
+				"parts":      []map[string]any{{"index": 0, "presigned_url": "http://upload.invalid/part", "block_size": len(pngData)}},
+			})
+		case "/v2/users/u/files":
+			_ = json.NewEncoder(w).Encode(map[string]any{"file_info": map[string]any{"id": "m"}, "ttl": 60})
+		case "/v2/users/u/messages":
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "sent"})
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewDeliveryAdapter(&Bot{
+		BotToken:   "token",
+		APIBaseURL: server.URL,
+		HTTPClient: &http.Client{Transport: deliveryRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "upload.invalid" {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(pngData)), Header: make(http.Header), Request: req}, nil
+			}
+			return server.Client().Transport.RoundTrip(req)
+		})},
+	})
+	outcome := adapter.Deliver(context.Background(), message.Outbound{
+		Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "u"},
+		Content: message.Content{Parts: []message.ContentPart{{Attachment: &message.Attachment{
+			MIMEType: "image/png", Data: pngData, AltText: "卡片说明",
+		}}}},
+	})
+	if outcome.State != delivery.OutcomeAccepted || sent.Content != "" || sent.Media == nil {
+		t.Fatalf("outcome=%#v sent=%#v", outcome, sent)
+	}
+}
+
 func TestDeliveryAdapterErrorClassification(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -64,9 +64,13 @@ func main() {
 	} else if interrupted > 0 {
 		logger.Printf("Marked %d interrupted agent runs", interrupted)
 	}
+	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
 	deliveryService, err := delivery.New(stateStore)
 	if err != nil {
 		logger.Fatalf("create delivery service: %v", err)
+	}
+	if err := deliveryService.SetRenderer(renderer); err != nil {
+		logger.Fatalf("configure delivery renderer: %v", err)
 	}
 	publicCommandCache := commands.NewPublicCommandCache(
 		stateStore,
@@ -92,16 +96,14 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
-	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
-		Life:                 lifeClient,
-		Auth:                 authManager,
-		Store:                stateStore,
-		Logger:               logger,
-		Feedback:             feedbackService,
-		EnableImageResponses: cfg.EnableImageResponses,
-		PublicCache:          publicCommandCache,
+		Life:        lifeClient,
+		Auth:        authManager,
+		Store:       stateStore,
+		Logger:      logger,
+		Feedback:    feedbackService,
+		PublicCache: publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled:        cfg.EnableAgent,
@@ -140,7 +142,6 @@ func main() {
 		Outputs:  deliveryService,
 		Replies:  stateStore,
 		Recorder: stateStore,
-		Renderer: renderer,
 		Logger:   logger,
 	})
 	if err != nil {
@@ -234,13 +235,11 @@ func main() {
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
 		notificationPoller := &notify.Poller{
-			Life:                 lifeClient,
-			Auth:                 authManager,
-			Store:                stateStore,
-			Publisher:            deliveryService,
-			Renderer:             renderer,
-			Logger:               logger,
-			EnableImageResponses: handler.EnableImageResponses,
+			Life:      lifeClient,
+			Auth:      authManager,
+			Store:     stateStore,
+			Publisher: deliveryService,
+			Logger:    logger,
 		}
 		go notificationPoller.Run(ctx)
 		logger.Printf("Notification poller started")

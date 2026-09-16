@@ -16,7 +16,6 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/message"
-	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -146,15 +145,12 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	publisher := &fakePublisher{}
-	renderer := responses.Renderer{}
 	poller := &Poller{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		Auth:                 &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
-		Store:                db,
-		Publisher:            publisher,
-		Renderer:             renderer,
-		Now:                  func() time.Time { return now },
-		EnableImageResponses: true,
+		Life:      life.NewClient(server.URL, server.Client()),
+		Auth:      &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db},
+		Store:     db,
+		Publisher: publisher,
+		Now:       func() time.Time { return now },
 	}
 	poller.tick(ctx)
 	poller.tick(ctx)
@@ -172,7 +168,7 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 		}
 	}
 	for _, outbound := range publisher.messages {
-		if len(outbound.Content.Parts) != 2 || outbound.Content.Parts[1].Attachment == nil || outbound.Content.Parts[1].Attachment.MIMEType != "image/png" || len(outbound.Content.Parts[1].Attachment.Data) == 0 {
+		if outbound.TextPolicy != message.TextPolicyImageOnly || len(outbound.Content.Parts) != 1 || outbound.Content.Parts[0].Attachment == nil || outbound.Content.Parts[0].Attachment.MIMEType != "image/png" || len(outbound.Content.Parts[0].Attachment.RenderPayload) == 0 || len(outbound.Content.Parts[0].Attachment.Data) != 0 {
 			t.Fatalf("attachment = %#v", outbound.Content.Parts)
 		}
 	}
@@ -229,8 +225,8 @@ func TestPollerRetriesFailedNotificationSend(t *testing.T) {
 	if len(publisher.messages) != 1 || !strings.Contains(publisher.messages[0].Content.TextContent(), "作业提醒：") {
 		t.Fatalf("messages after retry = %#v", publisher.messages)
 	}
-	if len(publisher.messages[0].Content.Parts) != 1 || publisher.messages[0].Content.Parts[0].Attachment != nil {
-		t.Fatalf("disabled image responses = %#v", publisher.messages[0].Content.Parts)
+	if publisher.messages[0].TextPolicy != message.TextPolicyImageOnly || len(publisher.messages[0].Content.Parts) != 1 || publisher.messages[0].Content.Parts[0].Attachment == nil || len(publisher.messages[0].Content.Parts[0].Attachment.RenderPayload) == 0 {
+		t.Fatalf("notification image intent = %#v", publisher.messages[0].Content.Parts)
 	}
 	poller.tick(ctx)
 	if len(publisher.messages) != 1 {

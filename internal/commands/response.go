@@ -14,8 +14,20 @@ import (
 	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
+// ResponseTextOrigin identifies who authored visible response text. The zero
+// value is deliberately treated as host-authored by presentation code, so a
+// synthetic prompt or error cannot accidentally inherit the text permission
+// of a model response when responses are combined.
+type ResponseTextOrigin string
+
+const (
+	ResponseTextOriginSynthetic ResponseTextOrigin = "synthetic"
+	ResponseTextOriginLLM       ResponseTextOrigin = "llm"
+)
+
 type Response struct {
-	Text string
+	Text       string
+	TextOrigin ResponseTextOrigin
 	// Data is the machine-readable result of the command. It deliberately
 	// lives beside Text and Image: Text is presentation for a user, while Data
 	// is the already-fetched domain value sent to a model or another host.
@@ -65,7 +77,7 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 }
 
 func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image {
-	if !h.EnableImageResponses || strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 	if !successfulImageText(text) {
@@ -75,14 +87,12 @@ func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image 
 }
 
 // imageResponseForOutcome trusts the explicit capability outcome rather than
-// trying to infer command state from the domain text. The legacy
-// imageResponseFor helper above remains available to direct rendering callers
-// that only have text; capability execution always has the typed status.
+// trying to infer command state from the domain text.
 func (h Handler) imageResponseForOutcome(cmd Invocation, outcome CapabilityOutcome) *responses.Image {
 	if outcome.Status != CapabilityOutcomeSuccess {
 		return nil
 	}
-	if !h.EnableImageResponses || strings.TrimSpace(outcome.Response.Text) == "" {
+	if strings.TrimSpace(outcome.Response.Text) == "" {
 		return nil
 	}
 	if !successfulImageText(outcome.Response.Text) {

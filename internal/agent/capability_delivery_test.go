@@ -20,12 +20,12 @@ func TestCommandImagesRemainSavedUntilModelSelectsThem(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = db.Close() }()
+			svc := &Service{handler: commands.Handler{Store: db}}
 			ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
 			job, _, err := db.EnqueueConversationJob(t.Context(), store.ConversationJobEnqueue{Identity: ident, SourceEventID: "delivery", ExpiresAt: time.Now().Add(time.Hour)})
 			if err != nil {
 				t.Fatal(err)
 			}
-			svc := &Service{handler: commands.Handler{Store: db, EnableImageResponses: true}}
 			invocation := commands.ParseCommand("help").Invocation
 			deliveryErr := errors.New("outbox unavailable")
 			send := func(context.Context, store.Identity, commands.Response) error {

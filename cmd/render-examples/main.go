@@ -47,6 +47,15 @@ func fixtures() []fixture {
 		{"bus-weekend", "校车 · 周六全部路线", busWeekendImage, func() time.Time { return fixtureNow().AddDate(0, 0, 3) }},
 		{"rich-table", "待办表格 · 合成数据", richTableImage, fixtureNow},
 		{"rich-text", "帮助与长文本", richTextImage, fixtureNow},
+		{"host-login", "登录说明 · 合成数据", func() *responses.Image {
+			return responses.NewTextCardImage("login", "需要登录 Life @ USTC。\n请打开：https://life.example.test/oauth/device?user_code=ABCD-EFGH\n验证码：ABCD-EFGH\n授权成功后将继续刚才的查询。")
+		}, fixtureNow},
+		{"host-confirmation", "操作确认 · 合成数据", func() *responses.Image {
+			return responses.NewTextCardImage("agent_confirmation", "确认删除待办：提交实验报告？\n请回复 确认 或 取消。\n#待确认操作{op_example123}")
+		}, fixtureNow},
+		{"host-error", "查询失败 · 合成数据", func() *responses.Image {
+			return responses.NewTextCardImage("error", "当前学期查不到，请稍后重试。\n本次没有执行修改。")
+		}, fixtureNow},
 		{"help-menu", "Bot 帮助菜单", helpMenuImage, fixtureNow},
 		{"grid-week", "周课表 · 公开教学班组合", gridWeekImage, fixtureNow},
 		{"grid-role-badges", "周课表 · 个人身份 Badge", gridRoleImage, fixtureNow},

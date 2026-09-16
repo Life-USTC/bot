@@ -461,6 +461,9 @@ type TodoListOptions struct {
 	DueAfter  string
 }
 
+// TodoListLimit is the maximum supported by the workspace todo endpoint.
+const TodoListLimit = 200
+
 type TodoCreateOptions struct {
 	Title    string
 	Content  string
@@ -482,6 +485,7 @@ func (c *Client) Todos(ctx context.Context, token string, completed string) ([]m
 
 func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoListOptions) ([]map[string]any, error) {
 	params := openapi.ListTodosParams{}
+	params.Limit = int64Ptr(TodoListLimit)
 	if completed := strings.TrimSpace(opts.Completed); completed != "" {
 		value := openapi.ListTodosParamsCompleted(completed)
 		params.Completed = &value
@@ -581,10 +585,10 @@ func (c *Client) SetTodoCompleted(ctx context.Context, token, id string, complet
 	return typedResponse(c.Typed(ctx, token).UpdateTodo(ctx, id, openapi.UpdateTodoJSONRequestBody{Completed: &completed}))
 }
 
-func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpdateOptions) error {
+func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpdateOptions) (map[string]any, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return errors.New("todo id is required")
+		return nil, errors.New("todo id is required")
 	}
 	body := openapi.UpdateTodoJSONRequestBody{}
 	changed := false
@@ -612,9 +616,22 @@ func (c *Client) UpdateTodo(ctx context.Context, token, id string, opts TodoUpda
 		changed = true
 	}
 	if !changed {
-		return errors.New("todo update requires at least one change")
+		return nil, errors.New("todo update requires at least one change")
 	}
-	return typedResponse(c.Typed(ctx, token).UpdateTodo(ctx, id, body))
+	var out struct {
+		Todo map[string]any `json:"todo"`
+	}
+	resp, err := c.Typed(ctx, token).UpdateTodo(ctx, id, body)
+	if err := typedJSON(resp, err, "update todo", &out); err != nil {
+		return nil, err
+	}
+	if out.Todo == nil {
+		return nil, errors.New("update todo response missing todo")
+	}
+	if lifedata.FirstString(out.Todo, "id") == "" {
+		return nil, errors.New("update todo response missing todo id")
+	}
+	return out.Todo, nil
 }
 
 func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {

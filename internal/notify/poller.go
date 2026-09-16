@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -31,10 +32,6 @@ type Publisher interface {
 	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
 }
 
-type ImageRenderer interface {
-	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
-}
-
 type pollFailure struct {
 	count  int
 	nextAt time.Time
@@ -49,15 +46,13 @@ const (
 )
 
 type Poller struct {
-	Life                 *life.Client
-	Auth                 *auth.Manager
-	Store                *store.Store
-	Publisher            Publisher
-	Renderer             ImageRenderer
-	Interval             time.Duration
-	Now                  func() time.Time
-	Logger               *log.Logger
-	EnableImageResponses bool
+	Life      *life.Client
+	Auth      *auth.Manager
+	Store     *store.Store
+	Publisher Publisher
+	Interval  time.Duration
+	Now       func() time.Time
+	Logger    *log.Logger
 
 	failureMu sync.Mutex
 	failures  map[string]pollFailure
@@ -252,10 +247,7 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		}
 		key := notificationKey(classKind, scheduleKey(schedule, start))
 		message := "课前提醒：\n" + formatSchedule(schedule)
-		var image *responses.Image
-		if p.EnableImageResponses {
-			image = classReminderImage(schedule, message)
-		}
+		image := classReminderImage(schedule, message)
 		if _, err := p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute)); err != nil {
 			p.logf("enqueue class notification failed: %v", err)
 		}
@@ -274,10 +266,7 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, home
 		}
 		key := notificationKey(homeworkKind, textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title"), due.Format(time.RFC3339)))
 		message := "作业提醒：\n" + formatHomework(homework)
-		var image *responses.Image
-		if p.EnableImageResponses {
-			image = homeworkReminderImage(homework, message)
-		}
+		image := homeworkReminderImage(homework, message)
 		if _, err := p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due); err != nil {
 			p.logf("enqueue homework notification failed: %v", err)
 		}
@@ -336,14 +325,17 @@ func overviewItems(overview map[string]any, key string) []map[string]any {
 }
 
 func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, kind, key, text string, image *responses.Image, expiresAt time.Time) (bool, error) {
-	content := message.Content{Parts: []message.ContentPart{{Text: text}}}
-	if image != nil && p.Renderer != nil {
-		png, _, _, err := p.Renderer.RenderPNGContext(ctx, image)
+	content := message.Content{}
+	if image != nil {
+		payload, err := responses.EncodeImageIntent(image)
 		if err != nil {
-			p.logf("render %s notification failed: %v", kind, err)
-		} else {
-			content.Parts = append(content.Parts, message.ContentPart{Attachment: &message.Attachment{MIMEType: "image/png", Data: png, AltText: image.AltText}})
+			return false, fmt.Errorf("encode %s notification image: %w", kind, err)
 		}
+		content.Parts = []message.ContentPart{{Attachment: &message.Attachment{
+			MIMEType: "image/png", AltText: image.AltText, RenderPayload: payload,
+		}}}
+	} else {
+		content.Parts = []message.ContentPart{{Text: text}}
 	}
 	target := message.Conversation{
 		Platform: ident.Platform,
@@ -351,9 +343,8 @@ func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, 
 		ID:       ident.ConversationID,
 	}
 	_, _, err := p.Publisher.Enqueue(ctx, message.Outbound{
-		Kind:      "notification." + kind,
-		Target:    target,
-		Content:   content,
+		Kind: "notification." + kind, TextPolicy: message.TextPolicyImageOnly,
+		Target: target, Content: content,
 		DedupeKey: strings.Join([]string{"notification", target.Platform, target.Type, target.ID, key}, ":"),
 		ExpiresAt: expiresAt,
 	})

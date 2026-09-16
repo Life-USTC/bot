@@ -72,7 +72,7 @@ func TestModelSelectsCommandImageInFinalAnswer(t *testing.T) {
 				_, _ = w.Write(encoded)
 			}))
 			defer server.Close()
-			svc, err := New(t.Context(), Config{Enabled: true, APIKey: "test", BaseURL: server.URL, Model: "test"}, commands.Handler{Store: db, EnableImageResponses: true}, server.Client())
+			svc, err := New(t.Context(), Config{Enabled: true, APIKey: "test", BaseURL: server.URL, Model: "test"}, commands.Handler{Store: db}, server.Client())
 			if err != nil {
 				t.Fatal(err)
 			}

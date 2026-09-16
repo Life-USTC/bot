@@ -1,15 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -32,9 +38,10 @@ var (
 )
 
 type options struct {
-	botBinary string
-	server    string
-	runDir    string
+	botBinary      string
+	server         string
+	runDir         string
+	renderEndpoint string
 }
 
 func main() {
@@ -66,10 +73,14 @@ func run(opts options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 
+	renderer := newRenderHarness()
+	defer renderer.server.Close()
+	opts.renderEndpoint = renderer.server.URL
 	napcat, err := newNapCatHarness()
 	if err != nil {
 		return err
 	}
+	napcat.renderer = renderer
 	bot, err := startBot(ctx, opts, napcat.Address())
 	if err != nil {
 		return err
@@ -170,22 +181,22 @@ func startBot(ctx context.Context, opts options, napcatAddress string) (*botProc
 	}
 	cmd := exec.CommandContext(ctx, opts.botBinary)
 	cmd.Env = environmentWith(map[string]string{
-		"LIFE_USTC_SERVER":           strings.TrimRight(opts.server, "/"),
-		"BOT_DB_PATH":                filepath.Join(opts.runDir, "bot.db"),
-		"BOT_BUILD_VERSION":          "dev-e2e",
-		"BOT_HEALTH_ADDR":            "127.0.0.1:0",
-		"BOT_ENABLE_NAPCAT_BRIDGE":   "true",
-		"NAPCAT_WS_URL":              "",
-		"NAPCAT_REVERSE_ADDR":        napcatAddress,
-		"NAPCAT_REVERSE_PATH":        "/ws",
-		"NAPCAT_API_URL":             "",
-		"NAPCAT_ACCESS_TOKEN":        "",
-		"BOT_ENABLE_QQ_BOT":          "false",
-		"BOT_ENABLE_QQ_BOT_GATEWAY":  "false",
-		"BOT_ENABLE_QQ_BOT_WEBHOOK":  "false",
-		"BOT_ENABLE_AGENT":           "false",
-		"BOT_ENABLE_IMAGE_RESPONSES": "false",
-		"BOT_HTTP_TIMEOUT_SECONDS":   "10",
+		"LIFE_USTC_SERVER":          strings.TrimRight(opts.server, "/"),
+		"BOT_DB_PATH":               filepath.Join(opts.runDir, "bot.db"),
+		"BOT_RENDER_ENDPOINT":       opts.renderEndpoint,
+		"BOT_BUILD_VERSION":         "dev-e2e",
+		"BOT_HEALTH_ADDR":           "127.0.0.1:0",
+		"BOT_ENABLE_NAPCAT_BRIDGE":  "true",
+		"NAPCAT_WS_URL":             "",
+		"NAPCAT_REVERSE_ADDR":       napcatAddress,
+		"NAPCAT_REVERSE_PATH":       "/ws",
+		"NAPCAT_API_URL":            "",
+		"NAPCAT_ACCESS_TOKEN":       "",
+		"BOT_ENABLE_QQ_BOT":         "false",
+		"BOT_ENABLE_QQ_BOT_GATEWAY": "false",
+		"BOT_ENABLE_QQ_BOT_WEBHOOK": "false",
+		"BOT_ENABLE_AGENT":          "false",
+		"BOT_HTTP_TIMEOUT_SECONDS":  "10",
 	})
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -256,6 +267,7 @@ func (p *botProcess) Stop() {
 }
 
 type napCatHarness struct {
+	renderer  *renderHarness
 	address   string
 	messageID atomic.Int64
 }
@@ -307,6 +319,7 @@ type napCatAction struct {
 type napCatMessage struct {
 	Text    string
 	ReplyTo string
+	Images  []string
 }
 
 func (h *napCatHarness) WaitForMessage(ctx context.Context, conn *websocket.Conn, accept func(string) bool) (string, error) {
@@ -332,6 +345,20 @@ func (h *napCatHarness) WaitForActionMessage(ctx context.Context, conn *websocke
 			continue
 		}
 		message := decodeNapCatMessage(frame.Params["message"])
+		if strings.TrimSpace(message.Text) != "" || len(message.Images) == 0 {
+			return napCatMessage{}, errors.New("host reply must contain images and no text")
+		}
+		var semanticText []string
+		for _, file := range message.Images {
+			text, ok := h.renderer.lookup(file)
+			if !ok {
+				return napCatMessage{}, errors.New("outbound image was not produced by the render harness")
+			}
+			semanticText = append(semanticText, text)
+		}
+		// Inspect captured renderer input only after checking the actual
+		// platform message is image-only. No OCR or textual transport fallback.
+		message.Text = strings.Join(semanticText, "\n")
 		if accept(message) {
 			return message, nil
 		}
@@ -358,6 +385,7 @@ func decodeNapCatMessage(raw json.RawMessage) napCatMessage {
 		Data struct {
 			Text string `json:"text"`
 			ID   string `json:"id"`
+			File string `json:"file"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(raw, &segments) != nil {
@@ -371,6 +399,8 @@ func decodeNapCatMessage(raw json.RawMessage) napCatMessage {
 			message.ReplyTo = strings.TrimSpace(segment.Data.ID)
 		case "text":
 			builder.WriteString(segment.Data.Text)
+		case "image":
+			message.Images = append(message.Images, segment.Data.File)
 		}
 	}
 	message.Text = builder.String()
@@ -535,4 +565,72 @@ func verifyCalendarFeed(ctx context.Context, serverURL, calendarURL *url.URL) er
 		return errors.New("iCalendar feed body is not a VCALENDAR document")
 	}
 	return nil
+}
+
+// renderHarness replaces only the rasterizer in the local OAuth E2E. Each
+// semantic card receives a distinct valid PNG; actual OneBot output is checked
+// against these bytes before its captured content is used for assertions.
+type renderHarness struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	cards  map[string]string
+	next   uint32
+}
+
+func newRenderHarness() *renderHarness {
+	h := &renderHarness{cards: make(map[string]string)}
+	h.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body any
+		if err := json.NewDecoder(io.LimitReader(r.Body, 8<<20)).Decode(&body); err != nil {
+			http.Error(w, "invalid renderer request", http.StatusBadRequest)
+			return
+		}
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.next++
+		img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+		img.SetRGBA(0, 0, color.RGBA{R: uint8(h.next), G: uint8(h.next >> 8), B: uint8(h.next >> 16), A: 255})
+		var out bytes.Buffer
+		if err := png.Encode(&out, img); err != nil {
+			http.Error(w, "encode test image", http.StatusInternalServerError)
+			return
+		}
+		h.cards["base64://"+base64.StdEncoding.EncodeToString(out.Bytes())] = strings.Join(renderStrings(body), "\n")
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(out.Bytes())
+	}))
+	return h
+}
+
+func (h *renderHarness) lookup(file string) (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	text, ok := h.cards[file]
+	return text, ok
+}
+
+func renderStrings(value any) []string {
+	switch value := value.(type) {
+	case string:
+		return []string{value}
+	case []any:
+		var result []string
+		for _, item := range value {
+			result = append(result, renderStrings(item)...)
+		}
+		return result
+	case map[string]any:
+		var keys []string
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		var result []string
+		for _, key := range keys {
+			result = append(result, renderStrings(value[key])...)
+		}
+		return result
+	default:
+		return nil
+	}
 }

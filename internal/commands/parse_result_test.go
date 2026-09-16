@@ -69,7 +69,7 @@ func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 		"订阅 导入",
 		"订阅 导入 BAD",
 		"订阅 导入 CONT5103P.01 nonsense",
-		"课程 查看 not-an-id",
+		"课程 查看",
 		"课程 搜索 数学 limit nope",
 		"教学班 搜索 高等数学 学期ID nope",
 		"老师 搜索 张 limit nope",

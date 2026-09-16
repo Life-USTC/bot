@@ -337,7 +337,7 @@ func (m *Manager) finishLogin(
 	if notify && store.HasConversationTarget(ident) {
 		sum := sha256.Sum256([]byte(session.DeviceCode))
 		outbound := message.Outbound{
-			Kind: "login_result",
+			Kind: "login_result", TextPolicy: message.TextPolicyImageOnly,
 			Target: message.Conversation{
 				Platform: ident.Platform,
 				Type:     ident.ConversationType,

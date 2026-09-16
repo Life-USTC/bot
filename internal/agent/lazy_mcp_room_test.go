@@ -13,7 +13,7 @@ import (
 func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
 	var delivered commands.Response
 	lazy := &lazyMCPSession{
-		service:  &Service{handler: commands.Handler{EnableImageResponses: true}},
+		service:  &Service{handler: commands.Handler{}},
 		identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "private", ConversationID: "7"},
 		sendResponse: func(_ context.Context, _ store.Identity, response commands.Response) error {
 			delivered = response

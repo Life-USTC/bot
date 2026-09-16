@@ -335,16 +335,14 @@ func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args [
 		}
 	}
 
-	if h.EnableImageResponses {
-		options.UsePreferredRoute = false
-		options.ShowAll = true
-		options.ShowDeparted = true
-		options.After = false
-		if options.ExplicitRoute {
-			options.BidirectionalRoute = true
-		} else {
-			routeArgs = nil
-		}
+	options.UsePreferredRoute = false
+	options.ShowAll = true
+	options.ShowDeparted = true
+	options.After = false
+	if options.ExplicitRoute {
+		options.BidirectionalRoute = true
+	} else {
+		routeArgs = nil
 	}
 
 	selections := options.Schedules
@@ -393,9 +391,6 @@ func (h Handler) busItemsForOptions(ctx context.Context, ident store.Identity, d
 			limit = 0
 		}
 		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, limit)
-		if len(routeArgs) == 0 && !h.EnableImageResponses && !h.showSouthCampusBus(ctx, ident) {
-			items = filterSouthCampusBusItems(items)
-		}
 	}
 	return items
 }
@@ -656,10 +651,6 @@ func (h Handler) currentBusSettings(ctx context.Context, ident store.Identity) s
 		return store.BusSettings{Identity: ident}
 	}
 	return settings
-}
-
-func (h Handler) showSouthCampusBus(ctx context.Context, ident store.Identity) bool {
-	return h.currentBusSettings(ctx, ident).ShowSouthCampus
 }
 
 func busPreferenceArgs(args []string) bool {
@@ -1312,17 +1303,6 @@ func nextBusItemsByRouteLimitWithOptions(data map[string]any, args []string, now
 		}
 		return out[i].DepartureMinutes < out[j].DepartureMinutes
 	})
-	return out
-}
-
-func filterSouthCampusBusItems(items []busItem) []busItem {
-	out := make([]busItem, 0, len(items))
-	for _, item := range items {
-		if hasBusStop(busItemStopNames(item), "南区") {
-			continue
-		}
-		out = append(out, item)
-	}
 	return out
 }
 

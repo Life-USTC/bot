@@ -24,7 +24,6 @@ const (
 	defaultJobPollInterval     = 250 * time.Millisecond
 	defaultJobRecoveryInterval = time.Second
 	defaultJobBatchSize        = 4
-	defaultImageRenderTimeout  = 5 * time.Second
 )
 
 type CommandHandler interface {
@@ -41,24 +40,8 @@ type Recorder interface {
 	RecordInteraction(context.Context, store.Identity, store.Interaction) error
 }
 
-type Renderer interface {
-	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
-}
-
 type Processor interface {
 	Process(context.Context, message.Inbound)
-}
-
-type renderedImage struct {
-	data []byte
-	err  error
-}
-
-func normalizedImageRenderTimeout(timeout time.Duration) time.Duration {
-	if timeout <= 0 {
-		return defaultImageRenderTimeout
-	}
-	return timeout
 }
 
 // JobRepository is the durable source of truth for conversation work. The
@@ -107,36 +90,32 @@ type QuotedMessageResolver interface {
 }
 
 type CoordinatorConfig struct {
-	Jobs               JobRepository
-	Commands           CommandHandler
-	Agent              AgentHandler
-	Outputs            OutputSink
-	Replies            ReplyContextResolver
-	Recorder           Recorder
-	Renderer           Renderer
-	ImageRenderTimeout time.Duration
-	PollInterval       time.Duration
-	BatchSize          int
-	Logger             *log.Logger
+	Jobs         JobRepository
+	Commands     CommandHandler
+	Agent        AgentHandler
+	Outputs      OutputSink
+	Replies      ReplyContextResolver
+	Recorder     Recorder
+	PollInterval time.Duration
+	BatchSize    int
+	Logger       *log.Logger
 }
 
 // Coordinator owns the one durable pipeline used by live messages and
 // resumed jobs. It is the only component allowed to turn a capability result
 // into user-visible output.
 type Coordinator struct {
-	jobs               JobRepository
-	commands           CommandHandler
-	agent              AgentHandler
-	outputs            OutputSink
-	replies            ReplyContextResolver
-	recorder           Recorder
-	renderer           Renderer
-	imageRenderTimeout time.Duration
-	pollInterval       time.Duration
-	batchSize          int
-	nextRecoveryAt     time.Time
-	logger             *log.Logger
-	wake               chan struct{}
+	jobs           JobRepository
+	commands       CommandHandler
+	agent          AgentHandler
+	outputs        OutputSink
+	replies        ReplyContextResolver
+	recorder       Recorder
+	pollInterval   time.Duration
+	batchSize      int
+	nextRecoveryAt time.Time
+	logger         *log.Logger
+	wake           chan struct{}
 }
 
 type conversationJobPayload struct {
@@ -193,9 +172,8 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	}
 	return &Coordinator{
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
-		recorder: config.Recorder, renderer: config.Renderer,
-		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
-		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
+		recorder:     config.Recorder,
+		pollInterval: interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -691,7 +669,11 @@ func (c *Coordinator) responseOutbounds(ctx context.Context, job store.Conversat
 	}
 	flush()
 	for _, group := range groups {
-		content, err := c.presentationContent(ctx, group)
+		// A routed command and every host response are synthetic output. Agent
+		// turns may carry model-authored prose, but only text explicitly marked
+		// by the model response is allowed to remain text at this boundary.
+		allowLLMText := strings.TrimSpace(job.Invocation.Name) == ""
+		content, err := c.presentationContentFor(ctx, group, allowLLMText)
 		if err != nil {
 			return nil, start, err
 		}
@@ -715,8 +697,12 @@ func (c *Coordinator) responseOutbounds(ctx context.Context, job store.Conversat
 			index := start + len(outbounds)
 			ref := inbound.Source
 			ref.Sequence = index + 1
+			textPolicy := message.TextPolicyImageOnly
+			if allowLLMText && responseContainsLLMText(group) {
+				textPolicy = message.TextPolicyLLM
+			}
 			outbounds = append(outbounds, message.Outbound{
-				Kind: kind, Target: inbound.Conversation, ReplyTo: &ref, Content: item,
+				Kind: kind, TextPolicy: textPolicy, Target: inbound.Conversation, ReplyTo: &ref, Content: item,
 				Context: responseContextForJob(job), DedupeKey: fmt.Sprintf("conversation-job:%d:revision:%d:part:%d", job.ID, job.Revision, index),
 			})
 		}
@@ -777,33 +763,37 @@ func (c *Coordinator) recordIgnoredJob(ctx context.Context, job store.Conversati
 }
 
 func (c *Coordinator) presentationContent(ctx context.Context, response commands.Response) (message.Content, error) {
+	return c.presentationContentFor(ctx, response, false)
+}
+
+func (c *Coordinator) presentationContentFor(ctx context.Context, response commands.Response, allowLLMText bool) (message.Content, error) {
 	parts := flattenResponseParts(response)
 	content := message.Content{Parts: make([]message.ContentPart, 0, len(parts)*2)}
 	for _, item := range parts {
 		if text := strings.TrimSpace(item.Text); text != "" {
-			content.Parts = append(content.Parts, message.ContentPart{Text: text})
+			if allowLLMText && item.TextOrigin == commands.ResponseTextOriginLLM {
+				content.Parts = append(content.Parts, message.ContentPart{Text: text})
+			} else if item.Image == nil {
+				attachment, err := c.renderTextCard(item.Kind, text)
+				if err != nil {
+					return message.Content{}, err
+				}
+				content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
+			}
 		}
 		if item.Image == nil {
+			if strings.TrimSpace(item.Text) == "" && (item.Data != nil || strings.TrimSpace(item.Kind) != "") {
+				attachment, err := c.renderTextCard(item.Kind, "没有可显示的结果。")
+				if err != nil {
+					return message.Content{}, err
+				}
+				content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
+			}
 			continue
 		}
-		attachment, err := c.renderAttachment(ctx, item.Image)
+		attachment, err := c.renderAttachment(item.Image)
 		if err == nil {
 			content.Parts = append(content.Parts, message.ContentPart{Attachment: attachment})
-			continue
-		}
-		if item.Image.Kind == "bus" || item.Image.Kind == "room-map" {
-			return message.Content{}, err
-		}
-		c.logf("render response image failed; persist text fallback: %v", err)
-		text := strings.TrimSpace(item.Text)
-		if text == "" {
-			text = strings.TrimSpace(item.Image.AltText)
-		}
-		if text == strings.TrimSpace(item.Text) && text != "" {
-			continue
-		}
-		if text != "" {
-			content.Parts = append(content.Parts, message.ContentPart{Text: text})
 			continue
 		}
 		return message.Content{}, err
@@ -811,13 +801,38 @@ func (c *Coordinator) presentationContent(ctx context.Context, response commands
 	return content, nil
 }
 
+func (c *Coordinator) renderTextCard(kind, text string) (*message.Attachment, error) {
+	image := responses.NewTextCardImage(kind, text)
+	if image == nil {
+		return nil, errors.New("host text is empty")
+	}
+	payload, err := responses.EncodeImageIntent(image)
+	if err != nil {
+		return nil, err
+	}
+	return &message.Attachment{MIMEType: "image/png", AltText: strings.TrimSpace(text), RenderPayload: payload}, nil
+}
+
+func responseContainsLLMText(response commands.Response) bool {
+	if strings.TrimSpace(response.Text) != "" && response.TextOrigin == commands.ResponseTextOriginLLM {
+		return true
+	}
+	for _, part := range response.Parts {
+		if responseContainsLLMText(part) {
+			return true
+		}
+	}
+	return false
+}
+
 // flattenResponseParts keeps every user-visible field in its original order.
 // A response with Parts may still carry leading text or an image, so those
 // fields are emitted before its nested parts instead of being discarded.
 func flattenResponseParts(response commands.Response) []commands.Response {
-	parts := make([]commands.Response, 0, max(1, len(response.Parts)))
-	if strings.TrimSpace(response.Text) != "" || response.Image != nil {
-		parts = append(parts, commands.Response{Text: response.Text, Image: response.Image, Kind: response.Kind})
+	parts := make([]commands.Response, 0, max(1, len(response.Parts)+1))
+	if strings.TrimSpace(response.Text) != "" || response.Image != nil ||
+		(len(response.Parts) == 0 && (response.Data != nil || strings.TrimSpace(response.Kind) != "")) {
+		parts = append(parts, commands.Response{Text: response.Text, TextOrigin: response.TextOrigin, Data: response.Data, Image: response.Image, Kind: response.Kind})
 	}
 	for _, nested := range response.Parts {
 		parts = append(parts, flattenResponseParts(nested)...)
@@ -828,32 +843,18 @@ func flattenResponseParts(response commands.Response) []commands.Response {
 	return parts
 }
 
-func (c *Coordinator) renderAttachment(ctx context.Context, image *responses.Image) (*message.Attachment, error) {
+func (c *Coordinator) renderAttachment(image *responses.Image) (*message.Attachment, error) {
 	if image == nil {
 		return nil, errors.New("response image is nil")
 	}
 	if url := strings.TrimSpace(image.URL); url != "" {
-		return &message.Attachment{MIMEType: "image/png", URL: url}, nil
+		return &message.Attachment{MIMEType: "image/png", URL: url, AltText: image.AltText}, nil
 	}
-	if c.renderer == nil {
-		return nil, errors.New("response renderer is unavailable")
+	payload, err := responses.EncodeImageIntent(image)
+	if err != nil {
+		return nil, err
 	}
-	renderCtx, cancel := context.WithTimeout(ctx, c.imageRenderTimeout)
-	defer cancel()
-	result := make(chan renderedImage, 1)
-	go func() {
-		data, _, _, err := c.renderer.RenderPNGContext(renderCtx, image)
-		result <- renderedImage{data: data, err: err}
-	}()
-	select {
-	case <-renderCtx.Done():
-		return nil, renderCtx.Err()
-	case rendered := <-result:
-		if rendered.err != nil {
-			return nil, rendered.err
-		}
-		return &message.Attachment{MIMEType: "image/png", Data: rendered.data}, nil
-	}
+	return &message.Attachment{MIMEType: "image/png", AltText: image.AltText, RenderPayload: payload}, nil
 }
 
 func (c *Coordinator) logf(format string, args ...any) {

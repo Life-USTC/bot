@@ -148,3 +148,12 @@ func TestAppendReceiptLinesKeepsModelResponseAndReceiptSeparate(t *testing.T) {
 		t.Fatalf("response metadata=%#v", response)
 	}
 }
+
+func TestMalformedMCPReceiptArgumentsDoNotExposeCredentials(t *testing.T) {
+	for _, raw := range []string{`{"access_token":"secret"`, `{"authorization":"Bearer secret"} trailing`, `password=secret`} {
+		line, visible := formatMCPExecutionReceipt("catalog_search", []string{raw}, "失败", "")
+		if !visible || strings.Contains(line, "secret") || !strings.Contains(line, "<invalid arguments>") {
+			t.Fatalf("unsafe receipt: %q", line)
+		}
+	}
+}

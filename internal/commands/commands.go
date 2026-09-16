@@ -24,13 +24,12 @@ import (
 )
 
 type Handler struct {
-	Life                 *life.Client
-	Auth                 *auth.Manager
-	Store                *store.Store
-	Logger               *log.Logger
-	Feedback             feedback.Recorder
-	EnableImageResponses bool
-	PublicCache          *PublicCommandCache
+	Life        *life.Client
+	Auth        *auth.Manager
+	Store       *store.Store
+	Logger      *log.Logger
+	Feedback    feedback.Recorder
+	PublicCache *PublicCommandCache
 
 	// execution is populated only while a capability executor is running. It
 	// lets legacy direct command methods report explicit domain/auth outcomes
@@ -252,7 +251,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	if responseKind != ResponseKindAuthWait {
 		// Executors may attach a structured image (e.g. the weather card);
 		// only fall back to the text-derived image when none was provided.
-		if response.Image == nil && (cmd.Name != string(CapabilityHelp) || !store.IsSharedConversation(input.Identity)) {
+		if response.Image == nil {
 			response.Image = h.imageResponseForOutcome(cmd, outcome)
 		}
 	} else {
@@ -525,7 +524,12 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		case "查看", "详情", "编号":
 			return "course_by_jw_id", rest, true
 		}
-	case "教学班", "班级":
+		for i, token := range args {
+			if token == "课表" || token == "考试" || token == "作业" {
+				return academicSectionActions[token], append(append([]string(nil), args[:i]...), args[i+1:]...), true
+			}
+		}
+	case "教学班", "班级", "课堂":
 		switch action {
 		case "":
 			return help("教学班")
@@ -539,6 +543,15 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 			return "section_exams", rest, true
 		case "作业":
 			return "section_homeworks", rest, true
+		default:
+			if len(args) >= 2 {
+				for i := 1; i < len(args); i++ {
+					if capability, ok := academicSectionActions[args[i]]; ok {
+						return capability, append(append([]string(nil), args[:i]...), args[i+1:]...), true
+					}
+				}
+			}
+			return "section", args, true
 		}
 	case "老师", "教师":
 		switch action {
@@ -1468,6 +1481,9 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token str
 }
 
 func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions, requestedPage int) string {
+	// The endpoint has no cursor for reconnecting a filtered view to the full
+	// order. Fetch the canonical order once and apply display filters locally
+	// so the global numbers remain usable by a later mutation command.
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
@@ -1483,6 +1499,9 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 		return h.invalidInput(err.Error())
 	}
 	if len(numbered) == 0 {
+		if len(todos) >= life.TodoListLimit {
+			return fmt.Sprintf("没有待办。\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", life.TodoListLimit)
+		}
 		return "没有待办。"
 	}
 	command := func(page int) string {
@@ -1494,11 +1513,25 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 	if !ok {
 		return h.invalidInput(listPageOutOfRange("待办", len(numbered), command))
 	}
+	if len(todos) >= life.TodoListLimit {
+		reply += fmt.Sprintf("\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", life.TodoListLimit)
+	}
 	return reply
 }
 
 func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, token, target string, completed bool) string {
 	targets := splitTodoTargets(target)
+	if len(targets) == 1 {
+		if id, explicit := todoTargetID(targets[0]); explicit {
+			if id == "" {
+				return h.notFound("没找到这条待办。发 td 看编号，再试：td done 1")
+			}
+			return h.setTodoCompletionItem(ctx, ident, token, map[string]any{"id": id}, completed)
+		}
+	}
+	if len(targets) > 1 && allTodoTargetsExplicitIDs(targets) {
+		return h.setTodoCompletionBatch(ctx, ident, token, nil, targets, completed)
+	}
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
@@ -1521,7 +1554,10 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 	done := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
-		todo, ok := resolveTodo(todos, target)
+		todo, ok := todoTargetItem(target)
+		if !ok {
+			todo, ok = resolveTodo(todos, target)
+		}
 		if !ok {
 			missing = append(missing, target)
 			continue
@@ -1615,13 +1651,22 @@ func (h Handler) todos(ctx context.Context, ident store.Identity, token string, 
 }
 
 func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, target string, args []string) string {
-	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
-	if err != nil {
-		return h.commandError("待办查不到：", err)
-	}
-	todo, ok := resolveTodo(todos, target)
-	if !ok {
-		return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+	var todo map[string]any
+	if id, explicit := todoTargetID(target); explicit {
+		if id == "" {
+			return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+		}
+		todo = map[string]any{"id": id}
+	} else {
+		todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
+		if err != nil {
+			return h.commandError("待办查不到：", err)
+		}
+		var ok bool
+		todo, ok = resolveTodo(todos, target)
+		if !ok {
+			return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+		}
 	}
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
@@ -1631,7 +1676,7 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 	if !hasTodoUpdate(opts) {
 		return h.invalidInput("想改什么？例如：td update 1 title 写报告")
 	}
-	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+	updated, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.UpdateTodo(ctx, token, id, opts)
 	})
 	if err != nil {
@@ -1639,18 +1684,29 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 	}
 	h.markData(map[string]any{
 		"operation": "update",
-		"item":      todo,
+		"item":      updated,
 		"changes":   opts,
 	})
-	return "已修改待办：" + lifedata.FirstString(todo, "title", "id")
+	return "已修改待办：" + lifedata.FirstString(updated, "title", "id")
 }
 
 func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, target string) string {
+	targets := splitTodoTargets(target)
+	if len(targets) == 1 {
+		if id, explicit := todoTargetID(targets[0]); explicit {
+			if id == "" {
+				return h.notFound("没找到这条待办。发 td all 看编号，再试：td delete 1")
+			}
+			return h.deleteTodoItem(ctx, ident, token, map[string]any{"id": id})
+		}
+	}
+	if len(targets) > 1 && allTodoTargetsExplicitIDs(targets) {
+		return h.deleteTodoBatch(ctx, ident, token, nil, targets)
+	}
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
 	}
-	targets := splitTodoTargets(target)
 	if len(targets) > 1 {
 		return h.deleteTodoBatch(ctx, ident, token, todos, targets)
 	}
@@ -1670,13 +1726,16 @@ func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, toke
 	deleted := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
-		todo, ok := resolveTodo(todos, target)
+		todo, ok := todoTargetItem(target)
+		if !ok {
+			todo, ok = resolveTodo(todos, target)
+		}
 		if !ok {
 			missing = append(missing, target)
 			continue
 		}
 		reply := h.deleteTodoItem(ctx, ident, token, todo)
-		if execution.status == CapabilityOutcomeFailed || execution.status == CapabilityOutcomeAuthRequired {
+		if execution.status == CapabilityOutcomeFailed || execution.status == CapabilityOutcomeUnknown || execution.status == CapabilityOutcomeAuthRequired {
 			return reply
 		}
 		deleted = append(deleted, strings.TrimPrefix(reply, "已删除："))
@@ -3112,10 +3171,8 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		"schedules": schedules,
 	})
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
-	if h.EnableImageResponses {
-		if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
-			lines = append(lines, formatScheduleGridMetadata(metadata))
-		}
+	if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
+		lines = append(lines, formatScheduleGridMetadata(metadata))
 	}
 	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 	for offset := 0; offset < 7; offset++ {
@@ -3976,10 +4033,14 @@ func (h Handler) searchTeachersWithFilters(ctx context.Context, args []string) s
 	return strings.Join(lines, "\n")
 }
 
-func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) getCourseByJwID(ctx context.Context, ident store.Identity, args []string) string {
+	query, ok := parseAcademicQuery(args, false)
 	if !ok {
-		return h.invalidInput("需要提供课程 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, reply := h.resolveAcademicTarget(ctx, ident, query, true)
+	if reply != "" {
+		return reply
 	}
 	course, err := h.Life.GetCourseByJwID(ctx, jwId)
 	if err != nil {
@@ -3989,10 +4050,14 @@ func (h Handler) getCourseByJwID(ctx context.Context, raw string) string {
 	return "课程：\n" + formatCourse(course)
 }
 
-func (h Handler) getSectionByJwID(ctx context.Context, raw string) string {
-	jwId, ok := parseIntArg(raw)
+func (h Handler) getSectionByJwID(ctx context.Context, ident store.Identity, args []string) string {
+	query, ok := parseAcademicQuery(args, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	section, err := h.Life.GetSectionByJwID(ctx, jwId)
 	if err != nil {
@@ -4114,14 +4179,21 @@ func (h Handler) mySubscribedSections(ctx context.Context, ident store.Identity)
 }
 
 func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, args []string) string {
-	if len(args) < 3 {
-		return h.invalidInput("用法：教学班课表 <JW ID> <开始日期> <结束日期>")
-	}
-	jwId, ok := parseIntArg(args[0])
+	query, ok := parseAcademicQuery(args, true)
 	if !ok {
-		return h.invalidInput("JW ID 无效。")
+		return h.invalidInput("用法：课堂 <课程名或编号> 课表 [开始日期 结束日期] [学期 2026秋]")
 	}
-	dateFrom, dateTo := args[1], args[2]
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
+	}
+	dateFrom, dateTo := query.From, query.To
+	if dateFrom == "" {
+		now := time.Now().In(lifedata.ChinaLocation())
+		start := now.AddDate(0, 0, -int(now.Weekday()))
+		dateFrom, _ = lifedata.DayRFC3339Range(start)
+		_, dateTo = lifedata.DayRFC3339Range(start.AddDate(0, 0, 6))
+	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
 		return h.loginRequired()
@@ -4139,11 +4211,14 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 		"date_to":   dateTo,
 		"schedules": schedules,
 	})
+	startDate, _ := lifedata.ParseAPITime(dateFrom)
+	endDate, _ := lifedata.ParseAPITime(dateTo)
+	dateLabel := startDate.In(lifedata.ChinaLocation()).Format("2006-01-02") + " 至 " + endDate.In(lifedata.ChinaLocation()).Format("2006-01-02")
 	if len(schedules) == 0 {
-		return "该时间段没有课。"
+		return "该时间段没有课（" + dateLabel + "）。"
 	}
 	lifedata.SortSchedulesByStart(schedules)
-	lines := []string{"教学班课表："}
+	lines := []string{"教学班课表（" + dateLabel + "）："}
 	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
 	}
@@ -4155,9 +4230,13 @@ func (h Handler) sectionExams(ctx context.Context, ident store.Identity, args []
 	if err != nil {
 		return h.invalidInput(err.Error())
 	}
-	jwId, ok := parseIntArg(joinedArgs(listArgs))
+	query, ok := parseAcademicQuery(listArgs, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {
@@ -4199,9 +4278,13 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 	if err != nil {
 		return h.invalidInput(err.Error())
 	}
-	jwId, ok := parseIntArg(joinedArgs(listArgs))
+	query, ok := parseAcademicQuery(listArgs, false)
 	if !ok {
-		return h.invalidInput("需要提供教学班 JW ID。")
+		return h.invalidInput("请输入课程名称、课程编号、教学班编号或 JW ID。")
+	}
+	jwId, resolutionReply := h.resolveAcademicTarget(ctx, ident, query, false)
+	if resolutionReply != "" {
+		return resolutionReply
 	}
 	token, ok := h.accessToken(ctx, ident)
 	if !ok {

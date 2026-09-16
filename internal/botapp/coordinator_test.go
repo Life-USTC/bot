@@ -695,7 +695,7 @@ func TestCoordinatorRetriesInterruptedRunWithNonterminalExecution(t *testing.T) 
 func TestBusRenderFailureHasNoTextFallbackOrBusinessReexecution(t *testing.T) {
 	db := newCoordinatorStore(t)
 	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{Kind: "bus", Image: responses.NewTextImage("bus", "校车", "仅图卡内容"), Data: map[string]any{"buses": []string{"08:00"}}})}
-	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db, Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) { return nil, 0, 0, errors.New("render failed") })})
+	coordinator, err := NewCoordinator(CoordinatorConfig{Jobs: db, Commands: handler, Outputs: db})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,20 +704,27 @@ func TestBusRenderFailureHasNoTextFallbackOrBusinessReexecution(t *testing.T) {
 	}
 	job := claimOnlyConversationJob(t, db)
 	coordinator.execute(t.Context(), job)
-	assertRetryableDirectJob(t, db, job.ID)
+	assertCompletedDirectJob(t, db, job.ID)
 	records, err := db.ClaimDue(t.Context(), time.Now(), 10)
-	if err != nil || len(records) != 0 {
-		t.Fatalf("fallback outbox=%#v err=%v", records, err)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("durable image intent missing: len=%d err=%v", len(records), err)
 	}
-	coordinator.renderer = rendererFunc(func(*responses.Image) ([]byte, int, int, error) { return []byte("image"), 1, 1, nil })
-	coordinator.execute(t.Context(), claimOnlyConversationJob(t, db))
+	svc, err := delivery.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetRenderer(rendererFunc(func(*responses.Image) ([]byte, int, int, error) { return nil, 0, 0, errors.New("render failed") })); err != nil {
+		t.Fatal(err)
+	}
+	if outcome := svc.DeliverNow(t.Context(), records[0].Message); outcome.State != delivery.OutcomeRetryable || outcome.Code != "render_failed" {
+		t.Fatalf("render failure = %#v", outcome)
+	}
 	assertCompletedDirectJob(t, db, job.ID)
 	if handler.calls != 1 {
 		t.Fatalf("business query executed %d times", handler.calls)
 	}
-	records, err = db.ClaimDue(t.Context(), time.Now(), 10)
-	if err != nil || len(records) != 1 || len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || records[0].Message.Content.TextContent() != "" {
-		t.Fatalf("image-only outbox=%#v err=%v", records, err)
+	if len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || len(records[0].Message.Content.Parts[0].Attachment.RenderPayload) == 0 || records[0].Message.Content.Parts[0].Text != "" {
+		t.Fatal("expected durable image-only output")
 	}
 	events, err := db.RecentConversationEvents(t.Context(), job.Identity, 10)
 	if err != nil || len(events) != 2 {
@@ -740,9 +747,6 @@ func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 			}, true
 		}),
 		Outputs: db,
-		Renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
-			return []byte("png"), 1, 1, nil
-		}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -755,7 +759,7 @@ func TestCoordinatorDirectRenderedImageHasNoExecutionReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || records[0].Message.Content.TextContent() != "" {
+	if len(records) != 1 || len(records[0].Message.Content.Parts) != 1 || records[0].Message.Content.Parts[0].Attachment == nil || records[0].Message.Content.Parts[0].Text != "" {
 		t.Fatalf("direct image output=%#v", records)
 	}
 }

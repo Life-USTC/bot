@@ -99,7 +99,7 @@ func (s *Service) Record(ctx context.Context, ident store.Identity, submission S
 		outbounds := make([]message.Outbound, 0, len(s.targets))
 		for _, target := range s.targets {
 			outbounds = append(outbounds, message.Outbound{
-				Kind: "feedback_admin",
+				Kind: "feedback_admin", TextPolicy: message.TextPolicyImageOnly,
 				Target: message.Conversation{
 					Platform: target.Platform,
 					Type:     target.ConversationType,

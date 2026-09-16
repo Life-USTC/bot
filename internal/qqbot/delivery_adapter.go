@@ -43,7 +43,7 @@ func (a *DeliveryAdapter) Deliver(ctx context.Context, outbound message.Outbound
 	if err != nil {
 		return qqRejected("invalid_target", err)
 	}
-	item := qqDeliveryMessage{Text: outbound.Content.TextContent()}
+	item := qqDeliveryMessage{Text: outbound.Content.ExplicitTextContent()}
 	for _, part := range outbound.Content.Parts {
 		if part.Attachment == nil {
 			continue

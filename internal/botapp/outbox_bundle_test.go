@@ -23,12 +23,13 @@ func TestOutboxBundlePreservesImagesTextAndFinalReceipt(t *testing.T) {
 			}
 			count := 1
 			if platform == "qqbot" {
-				count = 2
+				count = 4
 			}
 			if len(outputs) != count || next != count {
 				t.Fatalf("outputs=%#v next=%d", outputs, next)
 			}
 			var texts []string
+			var intents []string
 			var urls []string
 			for index, output := range outputs {
 				if output.ReplyTo.Sequence != index+1 {
@@ -42,11 +43,16 @@ func TestOutboxBundlePreservesImagesTextAndFinalReceipt(t *testing.T) {
 						texts = append(texts, part.Text)
 					}
 					if part.Attachment != nil {
-						urls = append(urls, part.Attachment.URL)
+						if part.Attachment.URL != "" {
+							urls = append(urls, part.Attachment.URL)
+						}
+						if len(part.Attachment.RenderPayload) > 0 {
+							intents = append(intents, part.Attachment.AltText)
+						}
 					}
 				}
 			}
-			if len(texts) != 2 || texts[0] != "已查询" || texts[1] != "#校车（成功）\n<search({})>（成功）" || len(urls) != 2 || urls[0] != "https://example.test/a.png" || urls[1] != "https://example.test/b.png" {
+			if len(texts) != 0 || len(intents) != 2 || intents[0] != "已查询" || intents[1] != "#校车（成功）\n<search({})>（成功）" || len(urls) != 2 || urls[0] != "https://example.test/a.png" || urls[1] != "https://example.test/b.png" {
 				t.Fatalf("texts=%v urls=%v", texts, urls)
 			}
 		})
