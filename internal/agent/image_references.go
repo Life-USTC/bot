@@ -46,30 +46,30 @@ var replyImageReference = regexp.MustCompile(`!\[[^\]\r\n]*\]\(([^)\r\n]*)\)`)
 func (s *Service) responseWithImageReferences(ctx context.Context, ident store.Identity, reply string) commands.Response {
 	matches := replyImageReference.FindAllStringSubmatchIndex(reply, -1)
 	if len(matches) == 0 {
-		return agentTextResponse(reply)
+		return commands.Response{Text: cleanQQReply(reply), Kind: "agent", TextOrigin: commands.ResponseTextOriginLLM}
 	}
 	response := commands.Response{Kind: "agent"}
-	appendText := func(text string) {
+	appendText := func(text string, origin commands.ResponseTextOrigin) {
 		if text = cleanQQReply(text); text != "" {
-			response.Parts = append(response.Parts, commands.Response{Text: text, Kind: "agent"})
+			response.Parts = append(response.Parts, commands.Response{Text: text, Kind: "agent", TextOrigin: origin})
 		}
 	}
 	offset := 0
 	for _, match := range matches {
-		appendText(reply[offset:match[0]])
+		appendText(reply[offset:match[0]], commands.ResponseTextOriginLLM)
 		id := strings.TrimSpace(reply[match[2]:match[3]])
 		offset = match[1]
 		if s.handler.Store == nil || !strings.HasPrefix(id, "img_") {
-			appendText("图片引用无效。")
+			appendText("图片引用无效。", commands.ResponseTextOriginSynthetic)
 			continue
 		}
 		image, found, err := s.handler.Store.CommandImage(ctx, ident, id)
 		if err != nil || !found {
-			appendText("无法读取这张图片。")
+			appendText("无法读取这张图片。", commands.ResponseTextOriginSynthetic)
 			continue
 		}
 		response.Parts = append(response.Parts, commands.Response{Image: image, Kind: "agent"})
 	}
-	appendText(reply[offset:])
+	appendText(reply[offset:], commands.ResponseTextOriginLLM)
 	return response
 }

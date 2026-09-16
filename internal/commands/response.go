@@ -14,8 +14,20 @@ import (
 	"github.com/Life-USTC/Bot/internal/toolresult"
 )
 
+// ResponseTextOrigin identifies who authored visible response text. The zero
+// value is deliberately treated as host-authored by presentation code, so a
+// synthetic prompt or error cannot accidentally inherit the text permission
+// of a model response when responses are combined.
+type ResponseTextOrigin string
+
+const (
+	ResponseTextOriginSynthetic ResponseTextOrigin = "synthetic"
+	ResponseTextOriginLLM       ResponseTextOrigin = "llm"
+)
+
 type Response struct {
-	Text string
+	Text       string
+	TextOrigin ResponseTextOrigin
 	// Data is the machine-readable result of the command. It deliberately
 	// lives beside Text and Image: Text is presentation for a user, while Data
 	// is the already-fetched domain value sent to a model or another host.

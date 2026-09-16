@@ -64,9 +64,13 @@ func main() {
 	} else if interrupted > 0 {
 		logger.Printf("Marked %d interrupted agent runs", interrupted)
 	}
+	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
 	deliveryService, err := delivery.New(stateStore)
 	if err != nil {
 		logger.Fatalf("create delivery service: %v", err)
+	}
+	if err := deliveryService.SetRenderer(renderer); err != nil {
+		logger.Fatalf("configure delivery renderer: %v", err)
 	}
 	publicCommandCache := commands.NewPublicCommandCache(
 		stateStore,
@@ -92,7 +96,6 @@ func main() {
 		HTTPClient: httpClient,
 		Store:      stateStore,
 	}
-	renderer := responses.RemoteRenderer{Endpoint: cfg.RenderEndpoint, Client: httpClient}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
 		Life:                 lifeClient,
@@ -238,7 +241,6 @@ func main() {
 			Auth:                 authManager,
 			Store:                stateStore,
 			Publisher:            deliveryService,
-			Renderer:             renderer,
 			Logger:               logger,
 			EnableImageResponses: handler.EnableImageResponses,
 		}

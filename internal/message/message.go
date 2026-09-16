@@ -113,13 +113,19 @@ type ResponseContext struct {
 	Arguments  []string `json:"arguments,omitempty"`
 }
 
-// Attachment contains immutable, delivery-ready media. Rendering belongs to
-// the presentation layer; platform adapters only upload or reference it.
+// Attachment contains immutable media or a serialized render intent. The
+// delivery service resolves render intents before adapters upload or reference
+// the resulting image.
 type Attachment struct {
 	MIMEType string
 	Data     []byte
 	URL      string
 	AltText  string
+	// RenderPayload is a serialized renderer input. It keeps structured cards
+	// as durable image intent until delivery, where the platform-independent
+	// renderer turns it into Data. It is cleared from the copy sent to an
+	// adapter and may remain in the outbox for retry.
+	RenderPayload []byte
 }
 
 // ContentPart is one ordered piece of an outbound message. Text and an
@@ -133,6 +139,17 @@ type ContentPart struct {
 type Content struct {
 	Parts []ContentPart
 }
+
+// TextPolicy controls whether an outbound may contain user-visible text.
+// Host-authored output is image-only; an LLM response may opt into text after
+// the model has actually produced it. The zero value is deliberately
+// image-only so a caller cannot bypass the policy by omitting the field.
+type TextPolicy string
+
+const (
+	TextPolicyImageOnly TextPolicy = ""
+	TextPolicyLLM       TextPolicy = "llm"
+)
 
 // HasContent reports whether at least one non-empty text or attachment part
 // can be delivered.
@@ -168,6 +185,19 @@ func (c Content) TextContent() string {
 	return strings.Join(alts, "\n\n")
 }
 
+// ExplicitTextContent returns only user-visible text parts. Platform adapters
+// use it for captions so image alt text remains quote context and cannot turn
+// an image-only host response into a plain-text fallback.
+func (c Content) ExplicitTextContent() string {
+	texts := make([]string, 0, len(c.Parts))
+	for _, part := range c.Parts {
+		if text := strings.TrimSpace(part.Text); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n\n")
+}
+
 // SingleImageMessages groups text with each image for APIs that accept one
 // image per message. Each group must be persisted as a separate Outbox record
 // so partial acceptance never causes a previously sent image to be replayed.
@@ -191,13 +221,14 @@ func (c Content) SingleImageMessages() []Content {
 }
 
 type Outbound struct {
-	Kind      string
-	Target    Conversation
-	ReplyTo   *ReplyRef
-	Context   *ResponseContext
-	Content   Content
-	DedupeKey string
-	ExpiresAt time.Time
+	Kind       string
+	TextPolicy TextPolicy
+	Target     Conversation
+	ReplyTo    *ReplyRef
+	Context    *ResponseContext
+	Content    Content
+	DedupeKey  string
+	ExpiresAt  time.Time
 }
 
 type Receipt struct {

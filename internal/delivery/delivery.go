@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 )
 
 type Status string
@@ -69,6 +70,7 @@ type Repository interface {
 type Service struct {
 	repository Repository
 	adapters   map[string]Adapter
+	renderer   responses.PNGRenderer
 }
 
 func New(repository Repository, adapters ...Adapter) (*Service, error) {
@@ -98,6 +100,20 @@ func (s *Service) Register(adapter Adapter) error {
 	return nil
 }
 
+// SetRenderer injects the renderer used at the durable delivery boundary.
+// Renderers are intentionally absent from producer transactions: an outbox
+// record keeps the image intent and this service renders it for each attempt.
+func (s *Service) SetRenderer(renderer responses.PNGRenderer) error {
+	if s == nil {
+		return errors.New("delivery service is unavailable")
+	}
+	if renderer == nil {
+		return errors.New("delivery renderer is unavailable")
+	}
+	s.renderer = renderer
+	return nil
+}
+
 func (s *Service) Enqueue(ctx context.Context, outbound message.Outbound) (Record, bool, error) {
 	if s == nil || s.repository == nil {
 		return Record{}, false, errors.New("delivery repository is unavailable")
@@ -109,10 +125,18 @@ func (s *Service) Enqueue(ctx context.Context, outbound message.Outbound) (Recor
 }
 
 func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Outcome {
+	if s == nil {
+		return Outcome{State: OutcomeRejected, Code: "delivery_unavailable", Err: errors.New("delivery service is unavailable")}
+	}
 	if err := validateOutbound(outbound, false); err != nil {
 		return Outcome{State: OutcomeRejected, Code: "invalid_message", Err: err}
 	}
 	outbound = normalizeOutbound(outbound)
+	rendered, err := s.renderOutbound(ctx, outbound)
+	if err != nil {
+		return Outcome{State: OutcomeRetryable, Code: "render_failed", Err: err}
+	}
+	outbound = rendered
 	adapter := s.adapters[outbound.Target.Platform]
 	if adapter == nil {
 		return Outcome{
@@ -124,6 +148,80 @@ func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Out
 	return normalizeOutcome(adapter.Deliver(ctx, outbound))
 }
 
+// renderOutbound turns host-authored text and structured render intents into
+// delivery-ready attachments. It runs after an outbox record has been
+// claimed, so a renderer failure retries only output and never reruns the
+// business operation that created the record.
+func (s *Service) renderOutbound(ctx context.Context, outbound message.Outbound) (message.Outbound, error) {
+	if outbound.TextPolicy == message.TextPolicyLLM {
+		return renderStructuredAttachments(ctx, s.renderer, outbound, false)
+	}
+	if outbound.TextPolicy != message.TextPolicyImageOnly {
+		return message.Outbound{}, fmt.Errorf("unsupported text policy %q", outbound.TextPolicy)
+	}
+	if s.renderer == nil {
+		for _, part := range outbound.Content.Parts {
+			if (strings.TrimSpace(part.Text) != "" && part.Attachment == nil) ||
+				(part.Attachment != nil && len(part.Attachment.RenderPayload) > 0) {
+				return message.Outbound{}, errors.New("delivery renderer is unavailable")
+			}
+		}
+	}
+	rendered, err := renderStructuredAttachments(ctx, s.renderer, outbound, true)
+	if err != nil {
+		return message.Outbound{}, err
+	}
+	for _, part := range rendered.Content.Parts {
+		if strings.TrimSpace(part.Text) != "" {
+			return message.Outbound{}, errors.New("image-only delivery retained text")
+		}
+		if part.Attachment == nil {
+			return message.Outbound{}, errors.New("image-only delivery retained an empty part")
+		}
+	}
+	return rendered, nil
+}
+
+func renderStructuredAttachments(ctx context.Context, renderer responses.PNGRenderer, outbound message.Outbound, renderText bool) (message.Outbound, error) {
+	parts := make([]message.ContentPart, 0, len(outbound.Content.Parts))
+	for _, part := range outbound.Content.Parts {
+		if strings.TrimSpace(part.Text) != "" && renderText && part.Attachment == nil {
+			attachment, err := responses.RenderTextAttachment(ctx, renderer, outbound.Kind, part.Text)
+			if err != nil {
+				return message.Outbound{}, err
+			}
+			attachment.AltText = strings.TrimSpace(part.Text)
+			parts = append(parts, message.ContentPart{Attachment: attachment})
+		} else if strings.TrimSpace(part.Text) != "" {
+			parts = append(parts, message.ContentPart{Text: strings.TrimSpace(part.Text)})
+		}
+		if part.Attachment == nil {
+			continue
+		}
+		attachment := *part.Attachment
+		if len(attachment.RenderPayload) > 0 {
+			image, err := responses.DecodeImageIntent(attachment.RenderPayload)
+			if err != nil {
+				return message.Outbound{}, fmt.Errorf("decode image render intent: %w", err)
+			}
+			if url := strings.TrimSpace(image.URL); url != "" {
+				attachment = message.Attachment{MIMEType: "image/png", URL: url, AltText: image.AltText}
+			} else {
+				rendered, err := responses.RenderImageAttachment(ctx, renderer, image)
+				if err != nil {
+					return message.Outbound{}, err
+				}
+				rendered.AltText = image.AltText
+				attachment = *rendered
+			}
+		}
+		attachment.RenderPayload = nil
+		parts = append(parts, message.ContentPart{Attachment: &attachment})
+	}
+	outbound.Content.Parts = parts
+	return outbound, nil
+}
+
 func validateOutbound(outbound message.Outbound, durable bool) error {
 	if normalizePlatform(outbound.Target.Platform) == "" {
 		return errors.New("delivery target platform is empty")
@@ -133,6 +231,12 @@ func validateOutbound(outbound message.Outbound, durable bool) error {
 	}
 	if !outbound.Content.HasContent() {
 		return errors.New("delivery content is empty")
+	}
+	switch outbound.TextPolicy {
+	case message.TextPolicyImageOnly, message.TextPolicyLLM:
+		// Host text is a durable image intent and is rendered by DeliverNow.
+	default:
+		return fmt.Errorf("unsupported text policy %q", outbound.TextPolicy)
 	}
 	if durable && strings.TrimSpace(outbound.DedupeKey) == "" {
 		return errors.New("durable delivery dedupe key is empty")
@@ -154,6 +258,7 @@ func normalizeOutbound(outbound message.Outbound) message.Outbound {
 			attachment.URL = strings.TrimSpace(attachment.URL)
 			attachment.AltText = strings.TrimSpace(attachment.AltText)
 			attachment.Data = append([]byte(nil), attachment.Data...)
+			attachment.RenderPayload = append([]byte(nil), attachment.RenderPayload...)
 			part.Attachment = &attachment
 		}
 		if part.Text == "" && part.Attachment == nil {

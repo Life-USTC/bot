@@ -287,6 +287,12 @@ func appendReceiptLines(response commands.Response, prefix string, receipts exec
 			{Text: receiptText, Kind: "agent_receipt"},
 		}}
 	}
+	if response.TextOrigin == commands.ResponseTextOriginLLM && receiptText != "" {
+		return commands.Response{Parts: []commands.Response{
+			response,
+			{Text: receiptText, Kind: "agent_receipt"},
+		}}
+	}
 	if text := strings.TrimSpace(response.Text); text != "" {
 		if receiptText != "" {
 			response.Text = text + "\n\n" + receiptText
