@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Life-USTC/Bot/internal/message"
 	"github.com/Life-USTC/Bot/internal/responses"
@@ -210,5 +211,26 @@ func TestServiceRendersPersistedStructuredImageIntent(t *testing.T) {
 	attachment := adapter.got.Content.Parts[0].Attachment
 	if attachment == nil || string(attachment.Data) != "png" || len(attachment.RenderPayload) != 0 || attachment.AltText != image.AltText {
 		t.Fatalf("rendered attachment = %#v", attachment)
+	}
+}
+
+func TestServiceRejectsReminderThatExpiredAfterClaim(t *testing.T) {
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
+	service, err := New(nil, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer := &testRenderer{data: []byte("png")}
+	if err := service.SetRenderer(renderer); err != nil {
+		t.Fatal(err)
+	}
+	outcome := service.DeliverNow(t.Context(), message.Outbound{
+		Kind: "notification.todo", TextPolicy: message.TextPolicyImageOnly,
+		Target:    message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content:   message.Content{Parts: []message.ContentPart{{Text: "待办提醒"}}},
+		ExpiresAt: time.Now().Add(-time.Second),
+	})
+	if outcome.State != OutcomeRejected || outcome.Code != "expired" || adapter.got.Content.HasContent() || renderer.calls != 0 {
+		t.Fatalf("outcome=%#v adapter=%#v renderer calls=%d", outcome, adapter.got, renderer.calls)
 	}
 }
