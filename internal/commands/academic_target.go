@@ -18,6 +18,7 @@ var academicSectionActions = map[string]string{"课表": "section_schedules", "�
 
 type academicQuery struct {
 	Target   string
+	Code     bool
 	Semester string
 	From     string
 	To       string
@@ -59,6 +60,13 @@ func parseAcademicQuery(args []string, dates bool) (academicQuery, bool) {
 		}
 	}
 	q.Target = strings.Trim(strings.TrimSpace(strings.Join(target, " ")), "<>〈〉")
+	for _, prefix := range []string{"code:", "课程编号:", "教学班编号:"} {
+		if strings.HasPrefix(q.Target, prefix) {
+			q.Code = true
+			q.Target = strings.TrimSpace(strings.TrimPrefix(q.Target, prefix))
+			break
+		}
+	}
 	return q, q.Target != ""
 }
 
@@ -169,7 +177,7 @@ func (h Handler) academicSemester(ctx context.Context, raw string) (map[string]a
 // resolveAcademicTarget is shared by human commands and model capabilities.
 // Personalized selection never goes through a shared public response cache.
 func (h Handler) resolveAcademicTarget(ctx context.Context, ident store.Identity, q academicQuery, course bool) (int64, string) {
-	if id, ok := academicJWID(q.Target); ok && (q.Semester == "" || course) {
+	if id, ok := academicJWID(q.Target); ok && !q.Code && (q.Semester == "" || course) {
 		return id, ""
 	}
 
@@ -199,7 +207,7 @@ func (h Handler) resolveAcademicTarget(ctx context.Context, ident store.Identity
 		semesterID = int64(lifedata.FirstInt(semester, "id"))
 	}
 
-	if id, ok := academicJWID(q.Target); ok && !course {
+	if id, ok := academicJWID(q.Target); ok && !q.Code && !course {
 		section, err := h.Life.GetSectionByJwID(ctx, id)
 		if err != nil {
 			return 0, h.commandError("教学班查不到：", err)

@@ -35,10 +35,15 @@ func TestAcademicQueriesPreferUniqueCurrentSubscription(t *testing.T) {
 		"教学班 考试 数学分析",
 		"教学班 作业 001548",
 		"课程 查看 001548",
+		"课程 查看 code:1548",
+		"课堂 课表 code:1548",
 	} {
 		t.Run(command, func(t *testing.T) {
 			var publicSearch atomic.Int32
 			section := academicTestSection(42, 2, "数学分析(B1)")
+			if strings.Contains(command, "code:1548") {
+				section["course"].(map[string]any)["code"] = "1548"
+			}
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
