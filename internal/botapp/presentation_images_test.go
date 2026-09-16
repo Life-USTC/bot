@@ -11,9 +11,7 @@ import (
 )
 
 func TestPresentationKeepsOnlyExplicitLLMText(t *testing.T) {
-	coordinator := &Coordinator{renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
-		return []byte("png"), 1, 1, nil
-	}), imageRenderTimeout: defaultImageRenderTimeout}
+	coordinator := &Coordinator{}
 	content, err := coordinator.presentationContentFor(context.Background(), commands.Response{Parts: []commands.Response{
 		{Text: "宿主错误", Kind: "agent_error"},
 		{Text: "这是模型回答", Kind: "agent", TextOrigin: commands.ResponseTextOriginLLM},
@@ -27,9 +25,7 @@ func TestPresentationKeepsOnlyExplicitLLMText(t *testing.T) {
 }
 
 func TestPresentationPrefersSpecializedImageOverSyntheticCaption(t *testing.T) {
-	coordinator := &Coordinator{renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
-		return []byte("png"), 1, 1, nil
-	}), imageRenderTimeout: defaultImageRenderTimeout}
+	coordinator := &Coordinator{}
 	content, err := coordinator.presentationContentFor(context.Background(), commands.Response{
 		Text: "不应重复发送", Kind: "bus", Image: responses.NewTextImage("bus", "校车", "图卡内容"),
 	}, false)
@@ -42,9 +38,7 @@ func TestPresentationPrefersSpecializedImageOverSyntheticCaption(t *testing.T) {
 }
 
 func TestImageOnlyOutboundPolicyIsExplicitlyMarked(t *testing.T) {
-	coordinator := &Coordinator{renderer: rendererFunc(func(*responses.Image) ([]byte, int, int, error) {
-		return []byte("png"), 1, 1, nil
-	})}
+	coordinator := &Coordinator{}
 	outbounds, _, err := coordinator.responseOutbounds(context.Background(), store.ConversationJob{}, message.Inbound{Conversation: message.Conversation{Platform: "napcat", Type: "private", ID: "42"}}, commands.Response{Text: "宿主提示", Kind: "error"}, 0)
 	if err != nil {
 		t.Fatal(err)

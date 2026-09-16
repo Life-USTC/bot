@@ -185,8 +185,8 @@ a textual MCP result remains a string inside `result`.
 A successful operation does not imply successful image rendering or platform
 acceptance. The model never receives a false “delivered” claim because output
 was merely queued. Operation results survive independently of presentation.
-Outbox records contain either already-rendered command cards or deferred host
-image intents. The delivery boundary renders every deferred intent for each
+Outbox records contain image URLs or serialized card inputs alongside explicitly
+model-authored prose. The delivery boundary renders every deferred intent for each
 attempt. A render failure retries that outbox record and never reruns the
 operation that produced it.
 

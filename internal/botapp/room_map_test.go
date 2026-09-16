@@ -26,11 +26,11 @@ func TestRoomMapPresentationOnlyContainsImage(t *testing.T) {
 	}
 }
 
-func TestRoomMapPresentationFailureDoesNotFallBackToText(t *testing.T) {
+func TestRoomMapPresentationKeepsDurableImageIntent(t *testing.T) {
 	content, err := (&Coordinator{}).presentationContent(t.Context(), commands.Response{
 		Image: &responses.Image{Kind: "room-map", AltText: "5201：五教 2"},
 	})
-	if err == nil || len(content.Parts) != 0 {
+	if err != nil || len(content.Parts) != 1 || content.ExplicitTextContent() != "" || content.Parts[0].Attachment == nil || len(content.Parts[0].Attachment.RenderPayload) == 0 {
 		t.Fatalf("content = %#v, err = %v", content, err)
 	}
 }

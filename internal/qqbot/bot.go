@@ -1197,7 +1197,7 @@ func imageURLsFromInputMedia(media []message.InputMedia) []string {
 }
 
 func qqBotOutgoingMessage(ident store.Identity, message string) string {
-	if !store.IsSharedConversation(ident) {
+	if strings.TrimSpace(message) == "" || !store.IsSharedConversation(ident) {
 		return message
 	}
 	return "\n\n" + strings.TrimLeft(message, "\r\n")

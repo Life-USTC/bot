@@ -24,7 +24,6 @@ const (
 	defaultJobPollInterval     = 250 * time.Millisecond
 	defaultJobRecoveryInterval = time.Second
 	defaultJobBatchSize        = 4
-	defaultImageRenderTimeout  = 5 * time.Second
 )
 
 type CommandHandler interface {
@@ -41,19 +40,8 @@ type Recorder interface {
 	RecordInteraction(context.Context, store.Identity, store.Interaction) error
 }
 
-type Renderer interface {
-	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
-}
-
 type Processor interface {
 	Process(context.Context, message.Inbound)
-}
-
-func normalizedImageRenderTimeout(timeout time.Duration) time.Duration {
-	if timeout <= 0 {
-		return defaultImageRenderTimeout
-	}
-	return timeout
 }
 
 // JobRepository is the durable source of truth for conversation work. The
@@ -102,36 +90,32 @@ type QuotedMessageResolver interface {
 }
 
 type CoordinatorConfig struct {
-	Jobs               JobRepository
-	Commands           CommandHandler
-	Agent              AgentHandler
-	Outputs            OutputSink
-	Replies            ReplyContextResolver
-	Recorder           Recorder
-	Renderer           Renderer
-	ImageRenderTimeout time.Duration
-	PollInterval       time.Duration
-	BatchSize          int
-	Logger             *log.Logger
+	Jobs         JobRepository
+	Commands     CommandHandler
+	Agent        AgentHandler
+	Outputs      OutputSink
+	Replies      ReplyContextResolver
+	Recorder     Recorder
+	PollInterval time.Duration
+	BatchSize    int
+	Logger       *log.Logger
 }
 
 // Coordinator owns the one durable pipeline used by live messages and
 // resumed jobs. It is the only component allowed to turn a capability result
 // into user-visible output.
 type Coordinator struct {
-	jobs               JobRepository
-	commands           CommandHandler
-	agent              AgentHandler
-	outputs            OutputSink
-	replies            ReplyContextResolver
-	recorder           Recorder
-	renderer           Renderer
-	imageRenderTimeout time.Duration
-	pollInterval       time.Duration
-	batchSize          int
-	nextRecoveryAt     time.Time
-	logger             *log.Logger
-	wake               chan struct{}
+	jobs           JobRepository
+	commands       CommandHandler
+	agent          AgentHandler
+	outputs        OutputSink
+	replies        ReplyContextResolver
+	recorder       Recorder
+	pollInterval   time.Duration
+	batchSize      int
+	nextRecoveryAt time.Time
+	logger         *log.Logger
+	wake           chan struct{}
 }
 
 type conversationJobPayload struct {
@@ -188,9 +172,8 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	}
 	return &Coordinator{
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
-		recorder: config.Recorder, renderer: config.Renderer,
-		imageRenderTimeout: normalizedImageRenderTimeout(config.ImageRenderTimeout),
-		pollInterval:       interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
+		recorder:     config.Recorder,
+		pollInterval: interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
 	}, nil
 }
 

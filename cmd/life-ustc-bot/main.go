@@ -143,7 +143,6 @@ func main() {
 		Outputs:  deliveryService,
 		Replies:  stateStore,
 		Recorder: stateStore,
-		Renderer: renderer,
 		Logger:   logger,
 	})
 	if err != nil {

@@ -86,7 +86,7 @@ func TestDirectCommandRecoversResponseDataAfterOutboxFailure(t *testing.T) {
 func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing.T) {
 	db := newCoordinatorStore(t)
 	jobs := &outputCommitFaultStore{Store: db, failures: 1}
-	image := &responses.Image{Kind: "result", Title: "结果", URL: "https://example.test/result.png"}
+	image := &responses.Image{Kind: "result", Title: "结果", AltText: "主结果", URL: "https://example.test/result.png"}
 	partImage := &responses.Image{Kind: "part", Title: "分段", URL: "https://example.test/part.png"}
 	handler := &fixedOutcomeCommand{outcome: commands.SuccessOutcome(commands.Response{
 		Text: "主结果", Kind: "notify", Data: map[string]any{"updated": true}, Image: image,
@@ -133,7 +133,7 @@ func TestDirectCommandRecoversResponseImageAndPartsAfterOutboxFailure(t *testing
 	if err != nil || len(records) != 1 {
 		t.Fatalf("recovered response parts outbox=%#v err=%v", records, err)
 	}
-	if len(records[0].Message.Content.Parts) != 4 || records[0].Message.Content.TextContent() != "主结果\n\n第一段" || records[0].Message.Content.Parts[1].Attachment.URL != image.URL || records[0].Message.Content.Parts[3].Attachment.URL != partImage.URL {
+	if len(records[0].Message.Content.Parts) != 3 || records[0].Message.Content.TextContent() != "主结果\n\n第一段" || records[0].Message.Content.ExplicitTextContent() != "" || records[0].Message.Content.Parts[0].Attachment.URL != image.URL || records[0].Message.Content.Parts[2].Attachment.URL != partImage.URL {
 		t.Fatalf("recovered response parts=%#v", records)
 	}
 	events, err := db.RecentConversationEvents(ctx, job.Identity, 10)
@@ -213,7 +213,7 @@ func TestDirectMutationBatchRecoversEveryResponseWithoutReexecution(t *testing.T
 	if err != nil || len(records) != 1 {
 		t.Fatalf("batch recovered outputs=%#v err=%v", records, err)
 	}
-	if len(records[0].Message.Content.Parts) != 4 || records[0].Message.Content.TextContent() != "第一项完成\n\n第二项完成" || records[0].Message.Content.Parts[1].Attachment.URL != firstImage.URL || records[0].Message.Content.Parts[3].Attachment.URL != secondImage.URL {
+	if len(records[0].Message.Content.Parts) != 3 || records[0].Message.Content.Parts[1].Attachment.AltText != "第二项完成" || records[0].Message.Content.ExplicitTextContent() != "" || records[0].Message.Content.Parts[0].Attachment.URL != firstImage.URL || records[0].Message.Content.Parts[2].Attachment.URL != secondImage.URL {
 		t.Fatalf("batch recovered response order=%#v", records)
 	}
 }

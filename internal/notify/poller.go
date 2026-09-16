@@ -32,10 +32,6 @@ type Publisher interface {
 	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
 }
 
-type ImageRenderer interface {
-	RenderPNGContext(context.Context, *responses.Image) ([]byte, int, int, error)
-}
-
 type pollFailure struct {
 	count  int
 	nextAt time.Time
@@ -54,7 +50,6 @@ type Poller struct {
 	Auth                 *auth.Manager
 	Store                *store.Store
 	Publisher            Publisher
-	Renderer             ImageRenderer
 	Interval             time.Duration
 	Now                  func() time.Time
 	Logger               *log.Logger
