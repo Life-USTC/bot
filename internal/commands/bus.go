@@ -335,16 +335,14 @@ func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args [
 		}
 	}
 
-	if h.EnableImageResponses {
-		options.UsePreferredRoute = false
-		options.ShowAll = true
-		options.ShowDeparted = true
-		options.After = false
-		if options.ExplicitRoute {
-			options.BidirectionalRoute = true
-		} else {
-			routeArgs = nil
-		}
+	options.UsePreferredRoute = false
+	options.ShowAll = true
+	options.ShowDeparted = true
+	options.After = false
+	if options.ExplicitRoute {
+		options.BidirectionalRoute = true
+	} else {
+		routeArgs = nil
 	}
 
 	selections := options.Schedules
@@ -393,9 +391,6 @@ func (h Handler) busItemsForOptions(ctx context.Context, ident store.Identity, d
 			limit = 0
 		}
 		items = nextBusItemsByRouteLimitWithOptions(data, routeArgs, now, options, limit)
-		if len(routeArgs) == 0 && !h.EnableImageResponses && !h.showSouthCampusBus(ctx, ident) {
-			items = filterSouthCampusBusItems(items)
-		}
 	}
 	return items
 }

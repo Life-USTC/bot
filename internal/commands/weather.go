@@ -54,7 +54,7 @@ func weatherExecutor(h Handler, ctx context.Context, _ store.Identity, inv Invoc
 	}
 	text, card := h.weatherReport(ctx, inv.Args)
 	outcome := outcomeFromResponse(h, Response{Text: text, Kind: inv.Name})
-	if card != nil && h.EnableImageResponses && outcome.Status == CapabilityOutcomeSuccess {
+	if card != nil && outcome.Status == CapabilityOutcomeSuccess {
 		outcome.Response.Image = responses.NewWeatherCardImage(card, textutil.PlainMonospace(text))
 	}
 	return outcome

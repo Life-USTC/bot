@@ -73,7 +73,7 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	// This test covers group routing; select the fixture's schedule explicitly
 	// so the reply does not depend on the current weekday or departure cutoff.
 	groupInput := Input{
@@ -141,7 +141,7 @@ func TestBusImageResponseShowsEveryTripPerRoute(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 6, 2, 10, 30, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"al", "已发车", "开"}, now)
 	if response.Text != "" || response.Image == nil {
@@ -164,8 +164,7 @@ func TestBusImageResponseOverviewShowsAllRoutesIncludingDepartedTrips(t *testing
 	defer server.Close()
 
 	handler := Handler{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		EnableImageResponses: true,
+		Life: life.NewClient(server.URL, server.Client()),
 	}
 	now := time.Date(2026, 6, 2, 23, 5, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, nil, now)
@@ -200,8 +199,7 @@ func TestBusImageResponseFiltersExplicitRouteInBothDirections(t *testing.T) {
 	defer server.Close()
 
 	handler := Handler{
-		Life:                 life.NewClient(server.URL, server.Client()),
-		EnableImageResponses: true,
+		Life: life.NewClient(server.URL, server.Client()),
 	}
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "高新区"}, now)
@@ -233,7 +231,7 @@ func TestBusImageResponseIsImageOnlyAndPreservesStructuredTrips(t *testing.T) {
 	defer server.Close()
 
 	now := time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation())
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"东区", "西区"}, now)
 	if response.Text != "" {
 		t.Fatalf("successful bus response text = %q, want empty", response.Text)
@@ -271,7 +269,7 @@ func TestBusImageResponseRendersEmptyScheduleCardWithoutTextFallback(t *testing.
 	defer server.Close()
 
 	now := time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation())
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, []string{"周日"}, now)
 	if response.Text != "" {
 		t.Fatalf("empty successful bus response text = %q, want empty", response.Text)
@@ -293,7 +291,7 @@ func TestHandleResponseBusSuccessUsesImageOnlyBoundary(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	response, ok := handler.HandleResponse(context.Background(), Input{
 		Text:     "校车",
 		Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "group", ConversationID: "100"},
@@ -353,7 +351,7 @@ func TestBusImageResponseKeepsFullStopsForRealisticEastWestRoutes(t *testing.T) 
 		}
 	}
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	for _, query := range [][]string{{"东区", "西区"}, {"西区", "东区"}} {
 		t.Run(strings.Join(query, "-"), func(t *testing.T) {
 			response := handler.busResponseAt(context.Background(), store.Identity{ConversationType: "group"}, query, now)
@@ -422,7 +420,7 @@ func realisticEastWestBusTestData() map[string]any {
 	}
 }
 
-func TestBusResponseWithoutGeneralImageFlagStillRendersEmptySchedule(t *testing.T) {
+func TestBusResponseRendersAllRoutesInImageSchedule(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/bus" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -441,8 +439,8 @@ func TestBusResponseWithoutGeneralImageFlagStillRendersEmptySchedule(t *testing.
 		t.Fatalf("bus response = %#v", response)
 	}
 	data, ok := response.Data.(map[string]any)
-	if !ok || len(data["items"].([]map[string]any)) != 0 {
-		t.Fatalf("empty filtered schedule = %#v", data["items"])
+	if !ok || len(data["items"].([]map[string]any)) != 1 {
+		t.Fatalf("schedule items = %#v, want all routes", data["items"])
 	}
 }
 
@@ -642,7 +640,7 @@ func TestHandleBusExplicitRouteShowsAllMatchingTripsWithPreference(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), `"departure_time":"08:00"`) ||
+	if !strings.Contains(string(encoded), `"departure_time":"08:00"`) ||
 		!strings.Contains(string(encoded), `"departure_time":"09:00"`) ||
 		!strings.Contains(string(encoded), `"departure_time":"10:00"`) {
 		t.Fatalf("structured schedule = %s", encoded)
@@ -714,7 +712,7 @@ func TestHandleBusExplicitRouteShowsAllStops(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	response := handler.busResponseAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 7, 0, 0, 0, lifedata.ChinaLocation()))
 	if response.Text != "" || response.Image == nil {
 		t.Fatalf("bus response = %#v", response)
@@ -762,7 +760,6 @@ func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response := handler.busResponseAt(ctx, ident, []string{"东区", "西区"}, time.Date(2026, 6, 2, 9, 0, 0, 0, lifedata.ChinaLocation()))
 	if response.Text != "" || response.Image == nil {
 		t.Fatalf("bus response = %#v", response)
@@ -918,7 +915,7 @@ func TestBusImageResponseReturnsSaturdayAndSundayAsSeparateDatedSections(t *test
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"周六", "周日", "东区", "西区"}, now)
 	if response.Text != "" || response.Image == nil {
@@ -944,7 +941,7 @@ func TestBusImageResponseSpecificDateLabelsNoService(t *testing.T) {
 		_, _ = w.Write([]byte(`{"routes":[],"trips":[]}`))
 	}))
 	defer server.Close()
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: true}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, lifedata.ChinaLocation())
 	response := handler.busResponseAt(context.Background(), store.Identity{}, []string{"周日"}, now)
 	if response.Text != "" || response.Image == nil ||

@@ -170,22 +170,21 @@ func startBot(ctx context.Context, opts options, napcatAddress string) (*botProc
 	}
 	cmd := exec.CommandContext(ctx, opts.botBinary)
 	cmd.Env = environmentWith(map[string]string{
-		"LIFE_USTC_SERVER":           strings.TrimRight(opts.server, "/"),
-		"BOT_DB_PATH":                filepath.Join(opts.runDir, "bot.db"),
-		"BOT_BUILD_VERSION":          "dev-e2e",
-		"BOT_HEALTH_ADDR":            "127.0.0.1:0",
-		"BOT_ENABLE_NAPCAT_BRIDGE":   "true",
-		"NAPCAT_WS_URL":              "",
-		"NAPCAT_REVERSE_ADDR":        napcatAddress,
-		"NAPCAT_REVERSE_PATH":        "/ws",
-		"NAPCAT_API_URL":             "",
-		"NAPCAT_ACCESS_TOKEN":        "",
-		"BOT_ENABLE_QQ_BOT":          "false",
-		"BOT_ENABLE_QQ_BOT_GATEWAY":  "false",
-		"BOT_ENABLE_QQ_BOT_WEBHOOK":  "false",
-		"BOT_ENABLE_AGENT":           "false",
-		"BOT_ENABLE_IMAGE_RESPONSES": "false",
-		"BOT_HTTP_TIMEOUT_SECONDS":   "10",
+		"LIFE_USTC_SERVER":          strings.TrimRight(opts.server, "/"),
+		"BOT_DB_PATH":               filepath.Join(opts.runDir, "bot.db"),
+		"BOT_BUILD_VERSION":         "dev-e2e",
+		"BOT_HEALTH_ADDR":           "127.0.0.1:0",
+		"BOT_ENABLE_NAPCAT_BRIDGE":  "true",
+		"NAPCAT_WS_URL":             "",
+		"NAPCAT_REVERSE_ADDR":       napcatAddress,
+		"NAPCAT_REVERSE_PATH":       "/ws",
+		"NAPCAT_API_URL":            "",
+		"NAPCAT_ACCESS_TOKEN":       "",
+		"BOT_ENABLE_QQ_BOT":         "false",
+		"BOT_ENABLE_QQ_BOT_GATEWAY": "false",
+		"BOT_ENABLE_QQ_BOT_WEBHOOK": "false",
+		"BOT_ENABLE_AGENT":          "false",
+		"BOT_HTTP_TIMEOUT_SECONDS":  "10",
 	})
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

@@ -273,14 +273,19 @@ func TestEmptyFinalAnswerDoesNotSubstituteToolResult(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
 	svc, err := New(t.Context(), Config{
 		Enabled: true, APIKey: "test-key", BaseURL: server.URL, Model: "test-model",
-	}, commands.Handler{}, server.Client())
+	}, commands.Handler{Store: db}, server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	response, ok := svc.HandleResponse(t.Context(), Input{
-		Text: "你确定吗", Identity: store.Identity{ConversationType: "private"},
+		Text: "你确定吗", Identity: store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"},
 	})
 	if ok || response.Text != "" {
 		t.Fatalf("response=%#v ok=%v", response, ok)

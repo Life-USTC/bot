@@ -46,14 +46,13 @@ const (
 )
 
 type Poller struct {
-	Life                 *life.Client
-	Auth                 *auth.Manager
-	Store                *store.Store
-	Publisher            Publisher
-	Interval             time.Duration
-	Now                  func() time.Time
-	Logger               *log.Logger
-	EnableImageResponses bool
+	Life      *life.Client
+	Auth      *auth.Manager
+	Store     *store.Store
+	Publisher Publisher
+	Interval  time.Duration
+	Now       func() time.Time
+	Logger    *log.Logger
 
 	failureMu sync.Mutex
 	failures  map[string]pollFailure

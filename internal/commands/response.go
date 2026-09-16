@@ -77,7 +77,7 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 }
 
 func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image {
-	if !h.EnableImageResponses || strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 	if !successfulImageText(text) {
@@ -87,14 +87,12 @@ func (h Handler) imageResponseFor(cmd Invocation, text string) *responses.Image 
 }
 
 // imageResponseForOutcome trusts the explicit capability outcome rather than
-// trying to infer command state from the domain text. The legacy
-// imageResponseFor helper above remains available to direct rendering callers
-// that only have text; capability execution always has the typed status.
+// trying to infer command state from the domain text.
 func (h Handler) imageResponseForOutcome(cmd Invocation, outcome CapabilityOutcome) *responses.Image {
 	if outcome.Status != CapabilityOutcomeSuccess {
 		return nil
 	}
-	if !h.EnableImageResponses || strings.TrimSpace(outcome.Response.Text) == "" {
+	if strings.TrimSpace(outcome.Response.Text) == "" {
 		return nil
 	}
 	if !successfulImageText(outcome.Response.Text) {

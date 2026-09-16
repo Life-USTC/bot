@@ -60,7 +60,7 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := Handler{Life: life.NewClient(server.URL, server.Client()), EnableImageResponses: false}
+	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
 	response, ok := handler.HandleResponse(context.Background(), Input{
 		Text:     "３ａ２０４",
 		Identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "group", ConversationID: "42"},

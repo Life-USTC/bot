@@ -24,13 +24,12 @@ import (
 )
 
 type Handler struct {
-	Life                 *life.Client
-	Auth                 *auth.Manager
-	Store                *store.Store
-	Logger               *log.Logger
-	Feedback             feedback.Recorder
-	EnableImageResponses bool
-	PublicCache          *PublicCommandCache
+	Life        *life.Client
+	Auth        *auth.Manager
+	Store       *store.Store
+	Logger      *log.Logger
+	Feedback    feedback.Recorder
+	PublicCache *PublicCommandCache
 
 	// execution is populated only while a capability executor is running. It
 	// lets legacy direct command methods report explicit domain/auth outcomes
@@ -252,7 +251,7 @@ func (h Handler) executeInvocationOutcome(ctx context.Context, input Input, cmd 
 	if responseKind != ResponseKindAuthWait {
 		// Executors may attach a structured image (e.g. the weather card);
 		// only fall back to the text-derived image when none was provided.
-		if response.Image == nil && (cmd.Name != string(CapabilityHelp) || !store.IsSharedConversation(input.Identity)) {
+		if response.Image == nil {
 			response.Image = h.imageResponseForOutcome(cmd, outcome)
 		}
 	} else {
@@ -3172,10 +3171,8 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		"schedules": schedules,
 	})
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
-	if h.EnableImageResponses {
-		if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
-			lines = append(lines, formatScheduleGridMetadata(metadata))
-		}
+	if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
+		lines = append(lines, formatScheduleGridMetadata(metadata))
 	}
 	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 	for offset := 0; offset < 7; offset++ {

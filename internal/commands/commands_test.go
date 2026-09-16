@@ -293,7 +293,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 }
 
 func TestNotificationHelpRendersAsImages(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	cases := []struct {
 		text  string
 		title string
@@ -379,7 +379,7 @@ func TestHelpTopicShowsCompleteCommandDetails(t *testing.T) {
 }
 
 func TestShortcutAndLegacyHelpResolveToCanonicalTopics(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "帮助 快捷入口", Identity: testIdentity()})
 	if !ok || response.Image == nil {
 		t.Fatalf("shortcut help response = %#v, ok = %v", response, ok)
@@ -931,7 +931,7 @@ func TestHandleScheduleHelpAliases(t *testing.T) {
 
 func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 	ctx := context.Background()
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "/help", Identity: testIdentity()})
 	if !ok {
@@ -975,7 +975,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 }
 
 func TestSubcommandHelpUsesImage(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 help", Identity: testIdentity()})
 	if !ok || response.Image == nil || response.Image.Kind != "help" {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
@@ -1003,7 +1003,6 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response, ok := handler.HandleResponse(ctx, Input{Text: "今天课表", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -1023,7 +1022,7 @@ func TestHandleResponseAddsImageForEnabledSchedule(t *testing.T) {
 }
 
 func TestImageResponseUsesPlainFontText(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := "𝟶𝟽-𝟶𝟾 课表：\n𝟷. \t𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷 𝟶𝟿:𝟻𝟶"
 
 	img := handler.imageResponseFor(Invocation{Name: "schedule"}, text)
@@ -1045,7 +1044,7 @@ func TestImageResponseUsesPlainFontText(t *testing.T) {
 }
 
 func TestImageResponseRejectsFailuresAndEmptyResults(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	tests := []struct {
 		cmd  Invocation
 		text string
@@ -1070,7 +1069,7 @@ func TestImageResponseRejectsFailuresAndEmptyResults(t *testing.T) {
 }
 
 func TestDailyScheduleImageUsesSingleDayGrid(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := strings.Join([]string{
 		"今天 07-17 课表：",
 		"西区 3A204\t09:50-11:25\t数据库系统",
@@ -1135,7 +1134,7 @@ func TestMergeScheduleGridItemPreservesOverlappingPersonalKinds(t *testing.T) {
 }
 
 func TestWeeklyScheduleImageUsesSundayToSaturdayGrid(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := strings.Join([]string{
 		"07-12 至 07-18 课表：",
 		"课表信息：学期：2026 春季学期 · 教学周：第 20 周",
@@ -1239,7 +1238,7 @@ func TestRichTextImageMarksSectionHeadings(t *testing.T) {
 }
 
 func TestTodoImageUsesTable(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	img := handler.imageResponseFor(Invocation{Name: "todo"}, "待办：\n1.\t截止 07-16 18:00\t写报告\n2.\t\t买咖啡")
 	if img == nil || !strings.Contains(img.RichText, "| # | 截止 | 待办 |") ||
 		!strings.Contains(img.RichText, "| 1 | 07-16 18:00 | 写报告 |") ||
@@ -1249,7 +1248,7 @@ func TestTodoImageUsesTable(t *testing.T) {
 }
 
 func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	img := handler.imageResponseFor(Invocation{Name: "todo"}, "待办：\n1.\t\t写报告\n...and 4 more")
 	if img == nil || !strings.Contains(img.RichText, "|  |  | ...and 4 more |") {
 		t.Fatalf("rich text = %q", img.RichText)
@@ -1257,7 +1256,7 @@ func TestTodoImageKeepsOverflowNoticeInTable(t *testing.T) {
 }
 
 func TestTodoImageKeepsPaginationNoticeInTable(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	img := handler.imageResponseFor(
 		Invocation{Name: "todo", Args: []string{"list", "第2页"}},
 		"待办：\n31.\t\t写报告\n第 2/3 页 · 上一页：待办 列表 第1页 · 下一页：待办 列表 第3页",
@@ -1270,7 +1269,7 @@ func TestTodoImageKeepsPaginationNoticeInTable(t *testing.T) {
 }
 
 func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := strings.Join([]string{
 		"作业：",
 		"已逾期：",
@@ -1323,7 +1322,7 @@ func TestHomeworkImageUsesGroupedTablesAndSkipsNonListReplies(t *testing.T) {
 }
 
 func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := "考试：\n1.\t07-20\t14:30-16:30\t数学分析\tMATH1001.01\t闭卷\t3A101"
 
 	for _, name := range []string{"exam", "section_exams"} {
@@ -1351,7 +1350,7 @@ func TestExamImageUsesTableForSubscriptionAndSectionQueries(t *testing.T) {
 }
 
 func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := "下一节课：\n西区 3A204\t09:50-11:25\t数据库系统"
 
 	img := handler.imageResponseFor(Invocation{Name: "nextclass"}, text)
@@ -1383,7 +1382,7 @@ func assertResponseImageRenders(t *testing.T, image *responses.Image) {
 }
 
 func TestImageResponseDoesNotDeriveBusImageFromText(t *testing.T) {
-	handler := Handler{EnableImageResponses: true}
+	handler := Handler{}
 	text := "东区\t西区\n09:10\t09:25"
 	if image := handler.imageResponseFor(Invocation{Name: "bus", Args: []string{"东区", "西区"}}, text); image != nil {
 		t.Fatalf("text-derived bus image = %#v, want nil", image)
@@ -1393,7 +1392,7 @@ func TestImageResponseDoesNotDeriveBusImageFromText(t *testing.T) {
 	}
 }
 
-func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
+func TestHandleResponseAddsImageForTodoList(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1412,8 +1411,8 @@ func TestHandleResponseDoesNotAddImageWhenDisabled(t *testing.T) {
 	if !strings.Contains(response.Text, "写报告") {
 		t.Fatalf("text = %q", response.Text)
 	}
-	if response.Image != nil {
-		t.Fatalf("image = %#v, want nil", response.Image)
+	if response.Image == nil || response.Image.Kind != "todo" {
+		t.Fatalf("image = %#v, want todo card", response.Image)
 	}
 }
 
@@ -1429,7 +1428,6 @@ func TestHandleResponseLeavesTodoMutationTextOnly(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response, ok := handler.HandleResponse(ctx, Input{Text: "td 写报告", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -2696,7 +2694,6 @@ func TestPersonalScheduleDisplaysSubscriptionMembershipKind(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response, ok := handler.HandleResponse(ctx, Input{Text: "今天课表", Identity: ident})
 	if !ok || !strings.Contains(response.Text, "数据库系统（助教）") {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
@@ -2718,6 +2715,13 @@ func TestHandleCurriculumDateShowsContainingWeek(t *testing.T) {
 	ident := testIdentity()
 	base := time.Date(2026, 6, 21, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/catalog/semesters/current" {
+			if got := r.Header.Get("Authorization"); got != "" {
+				t.Fatalf("current semester authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"nameCn":"2026年春季学期","startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
+			return
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
@@ -2865,6 +2869,8 @@ func TestBareCurriculumReusesRefreshedTokenForWeek(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case handleOAuthRefreshMetadata(w, r, serverURL):
+		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"nameCn":"2026年春季学期","startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			refreshRequests++
 			w.Header().Set("Content-Type", "application/json")
@@ -2907,6 +2913,8 @@ func TestBareCurriculumShowsSundayToSaturdayWeek(t *testing.T) {
 	day := time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/catalog/semesters/current":
+			_, _ = w.Write([]byte(`{"nameCn":"2026年春季学期","startDate":"2026-02-23T00:00:00+08:00","endDate":"2026-07-05T23:59:59+08:00"}`))
 		case "/api/workspace/schedules":
 			scheduleCalls++
 			if got := r.URL.Query().Get("dateFrom"); got != "2026-07-11T16:00:00Z" {
@@ -2959,7 +2967,6 @@ func TestCurriculumSupportsAcademicWeekNumber(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	reply := handler.curriculumAt(ctx, ident, []string{"week-number:3"}, time.Date(2026, 7, 16, 12, 0, 0, 0, lifedata.ChinaLocation()))
 	if !strings.Contains(reply, "03-08 至 03-14 课表：") {
 		t.Fatalf("reply = %q", reply)
@@ -3032,7 +3039,6 @@ func TestCurriculumRendersMatchedSemesterWithTeachingWeeks(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response, ok := handler.HandleResponse(ctx, Input{Text: "课表 26秋", Identity: ident})
 	if !ok {
 		t.Fatal("command was not handled")
@@ -3069,7 +3075,6 @@ func TestCurriculumSemesterReportsMissingMatch(t *testing.T) {
 	defer server.Close()
 
 	handler := testAuthedHandler(t, server, ident)
-	handler.EnableImageResponses = true
 	response, ok := handler.HandleResponse(context.Background(), Input{Text: "课表 2026春", Identity: ident})
 	if !ok || response.Text != "没有找到 2026年春季学期。可以发「学期 列表」查看可用学期。" {
 		t.Fatalf("response = %#v, ok = %v", response, ok)
@@ -3255,7 +3260,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	handler := Handler{Store: s, EnableImageResponses: true}
+	handler := Handler{Store: s}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
 	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") {
@@ -4301,7 +4306,7 @@ func TestFormatDashboardUsesTotalsAndPointsToFullLists(t *testing.T) {
 			t.Fatalf("reply missing %q: %q", want, plain)
 		}
 	}
-	image := (Handler{EnableImageResponses: true}).imageResponseFor(Invocation{Name: "overview"}, reply)
+	image := (Handler{}).imageResponseFor(Invocation{Name: "overview"}, reply)
 	if image == nil || !strings.Contains(textutil.PlainMonospace(image.RichText), "|  |  | 另有 12 条") {
 		t.Fatalf("overview image = %#v", image)
 	}

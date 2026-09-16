@@ -145,14 +145,10 @@ func TestFromEnvUsesPremiumModelDefaults(t *testing.T) {
 	}
 }
 
-func TestFromEnvParsesImageResponseConfig(t *testing.T) {
-	t.Setenv("BOT_ENABLE_IMAGE_RESPONSES", "true")
+func TestFromEnvParsesRenderEndpoint(t *testing.T) {
 	t.Setenv("BOT_RENDER_ENDPOINT", " http://renderd:9123/render ")
 
 	cfg := FromEnv()
-	if !cfg.EnableImageResponses {
-		t.Fatal("EnableImageResponses = false, want true")
-	}
 	if cfg.RenderEndpoint != "http://renderd:9123/render" {
 		t.Fatalf("RenderEndpoint = %q", cfg.RenderEndpoint)
 	}

@@ -145,7 +145,6 @@ func TestWeatherRejectsUnknownCampus(t *testing.T) {
 
 func TestWeatherImageResponse(t *testing.T) {
 	handler := weatherTestHandler(t, nil)
-	handler.EnableImageResponses = true
 	outcome := weatherExecutor(handler, context.Background(), store.Identity{}, Invocation{Name: string(CapabilityWeather)})
 	if outcome.Status != CapabilityOutcomeSuccess {
 		t.Fatalf("outcome status = %v, text = %q", outcome.Status, outcome.Response.Text)

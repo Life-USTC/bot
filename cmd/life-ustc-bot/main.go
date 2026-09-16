@@ -98,13 +98,12 @@ func main() {
 	}
 	var napcatBridge *napcat.Bridge
 	handler := commands.Handler{
-		Life:                 lifeClient,
-		Auth:                 authManager,
-		Store:                stateStore,
-		Logger:               logger,
-		Feedback:             feedbackService,
-		EnableImageResponses: cfg.EnableImageResponses,
-		PublicCache:          publicCommandCache,
+		Life:        lifeClient,
+		Auth:        authManager,
+		Store:       stateStore,
+		Logger:      logger,
+		Feedback:    feedbackService,
+		PublicCache: publicCommandCache,
 	}
 	agentService, err := agent.New(context.Background(), agent.Config{
 		Enabled:        cfg.EnableAgent,
@@ -236,12 +235,11 @@ func main() {
 		go loginPoller.Run(ctx)
 		logger.Printf("Login poller started")
 		notificationPoller := &notify.Poller{
-			Life:                 lifeClient,
-			Auth:                 authManager,
-			Store:                stateStore,
-			Publisher:            deliveryService,
-			Logger:               logger,
-			EnableImageResponses: handler.EnableImageResponses,
+			Life:      lifeClient,
+			Auth:      authManager,
+			Store:     stateStore,
+			Publisher: deliveryService,
+			Logger:    logger,
 		}
 		go notificationPoller.Run(ctx)
 		logger.Printf("Notification poller started")

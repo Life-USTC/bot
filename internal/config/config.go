@@ -34,7 +34,6 @@ type Config struct {
 	EnableQQBotGateway    bool
 	EnableQQBotWebhook    bool
 	EnableAgent           bool
-	EnableImageResponses  bool
 	RenderEndpoint        string
 	LLMAPIKey             string
 	LLMBaseURL            string
@@ -75,7 +74,6 @@ func FromEnv() Config {
 		EnableQQBotGateway:    envBool("BOT_ENABLE_QQ_BOT_GATEWAY", true),
 		EnableQQBotWebhook:    envBool("BOT_ENABLE_QQ_BOT_WEBHOOK", hasQQBotWebhookCredentials()),
 		EnableAgent:           envBool("BOT_ENABLE_AGENT", false),
-		EnableImageResponses:  envBool("BOT_ENABLE_IMAGE_RESPONSES", false),
 		RenderEndpoint:        envString("BOT_RENDER_ENDPOINT", "http://127.0.0.1:9123/render"),
 		LLMAPIKey:             envOptionalString("OPENAI_API_KEY"),
 		LLMBaseURL:            envOptionalString("OPENAI_BASE_URL"),
