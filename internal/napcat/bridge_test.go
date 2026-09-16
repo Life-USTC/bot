@@ -3,8 +3,12 @@ package napcat
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +25,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -31,6 +36,18 @@ type processorSpy struct{ messages []message.Inbound }
 
 func (s *processorSpy) Process(_ context.Context, inbound message.Inbound) {
 	s.messages = append(s.messages, inbound)
+}
+
+type integrationPNGRenderer struct{}
+
+func (integrationPNGRenderer) RenderPNGContext(_ context.Context, _ *responses.Image) ([]byte, int, int, error) {
+	var data bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	if err := png.Encode(&data, img); err != nil {
+		return nil, 0, 0, err
+	}
+	return data.Bytes(), 1, 1, nil
 }
 
 func TestNapCatDelegatesInboundWithSeparateGroupActor(t *testing.T) {
@@ -134,6 +151,9 @@ func configureTestApp(t *testing.T, bridge *Bridge, handler commands.Handler, ag
 	}
 	deliverer, err := delivery.New(db, NewDeliveryAdapter(bridge))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deliverer.SetRenderer(integrationPNGRenderer{}); err != nil {
 		t.Fatal(err)
 	}
 	var agentHandler botapp.AgentHandler
@@ -362,9 +382,7 @@ func TestReverseBridgeEndToEnd(t *testing.T) {
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if !strings.Contains(plainTextFromMessage(params["message"]), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
-		t.Fatalf("message = %q", params["message"])
-	}
+	assertImageOnlyNapCatMessage(t, params["message"])
 	if err := conn.WriteJSON(map[string]any{
 		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9001}, "echo": frame["echo"],
 	}); err != nil {
@@ -461,13 +479,47 @@ func TestReverseBridgeRepliesOnMessageConnectionAfterNewerConnectionCloses(t *te
 		t.Fatalf("action = %v", frame["action"])
 	}
 	params := frame["params"].(map[string]any)
-	if !strings.Contains(plainTextFromMessage(params["message"]), "𝙼𝙰𝚃𝙷𝟷𝟶𝟶𝟷      \tCalculus") {
-		t.Fatalf("message = %q", params["message"])
-	}
+	assertImageOnlyNapCatMessage(t, params["message"])
 	if err := conn1.WriteJSON(map[string]any{
 		"status": "ok", "retcode": 0, "data": map[string]any{"message_id": 9002}, "echo": frame["echo"],
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertImageOnlyNapCatMessage(t *testing.T, raw any) {
+	t.Helper()
+	segments := messageSegments(raw)
+	if len(segments) == 0 {
+		t.Fatalf("image-only message has no segments: %#v", raw)
+	}
+	images := 0
+	for _, rawSegment := range segments {
+		segment, ok := rawSegment.(map[string]any)
+		if !ok {
+			t.Fatalf("invalid NapCat segment: %#v", rawSegment)
+		}
+		typ, _ := segment["type"].(string)
+		data, _ := segment["data"].(map[string]any)
+		switch strings.ToLower(strings.TrimSpace(typ)) {
+		case "text":
+			if text, _ := data["text"].(string); strings.TrimSpace(text) != "" {
+				t.Fatalf("image-only message contains text segment: %#v", segment)
+			}
+		case "image":
+			images++
+			file, _ := data["file"].(string)
+			if !strings.HasPrefix(file, "base64://") {
+				t.Fatalf("image segment is not inline PNG: %#v", segment)
+			}
+			data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(file, "base64://"))
+			if err != nil || http.DetectContentType(data) != "image/png" {
+				t.Fatalf("image segment is not valid PNG: err=%v data=%d", err, len(data))
+			}
+		}
+	}
+	if images == 0 {
+		t.Fatalf("image-only message contains no image segment: %#v", segments)
 	}
 }
 

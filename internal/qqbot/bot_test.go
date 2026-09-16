@@ -23,6 +23,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/delivery"
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/retry"
 	"github.com/Life-USTC/Bot/internal/store"
 )
@@ -33,6 +34,12 @@ type processorSpy struct{ messages []message.Inbound }
 
 func (s *processorSpy) Process(_ context.Context, inbound message.Inbound) {
 	s.messages = append(s.messages, inbound)
+}
+
+type integrationPNGRenderer struct{ data []byte }
+
+func (r integrationPNGRenderer) RenderPNGContext(_ context.Context, _ *responses.Image) ([]byte, int, int, error) {
+	return append([]byte(nil), r.data...), 2, 1, nil
 }
 
 func TestQQBotDelegatesInboundWithSeparateGroupActor(t *testing.T) {
@@ -69,6 +76,9 @@ func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentSer
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := deliverer.SetRenderer(integrationPNGRenderer{data: testPNG(t)}); err != nil {
+		t.Fatal(err)
+	}
 	var agentHandler botapp.AgentHandler
 	if agentService != nil {
 		agentHandler = agentService
@@ -85,6 +95,46 @@ func configureTestApp(t *testing.T, bot *Bot, handler commands.Handler, agentSer
 	t.Cleanup(cancel)
 	go app.Run(ctx)
 	go (&delivery.Worker{Service: deliverer, Interval: time.Millisecond}).Run(ctx)
+}
+
+func handleIntegrationQQMediaUpload(w http.ResponseWriter, r *http.Request) bool {
+	switch r.URL.Path {
+	case "/v2/users/user-openid/upload_prepare":
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"upload_id":  "integration-upload",
+			"block_size": 1,
+			"parts": []map[string]any{{
+				"index":         0,
+				"presigned_url": "http://" + r.Host + "/integration-upload-part",
+				"block_size":    1,
+			}},
+		})
+		return true
+	case "/integration-upload-part":
+		w.WriteHeader(http.StatusOK)
+		return true
+	case "/v2/users/user-openid/upload_part_finish":
+		w.WriteHeader(http.StatusOK)
+		return true
+	case "/v2/users/user-openid/files":
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"file_info": map[string]any{"id": "integration-file"},
+			"ttl":       300,
+		})
+		return true
+	default:
+		return false
+	}
+}
+
+func assertImageOnlyQQMessage(t *testing.T, got sendMessageRequest) {
+	t.Helper()
+	if got.MsgType != 7 || got.Media == nil {
+		t.Fatalf("reply did not use QQ rich media: %#v", got)
+	}
+	if strings.TrimSpace(got.Content) != "" {
+		t.Fatalf("image-only reply contains text: %q", got.Content)
+	}
 }
 
 func TestSendToReturnsPlatformAcceptance(t *testing.T) {
@@ -305,6 +355,9 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	var gotBody sendMessageRequest
 	gotBodyCh := make(chan sendMessageRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handleIntegrationQQMediaUpload(w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/app/getAppAccessToken":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -354,9 +407,7 @@ func TestHandleDispatchSendsPassiveC2CReplyAndRecordsInteractions(t *testing.T) 
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校车（xc）\t按日期、服务日或路线查询班次并设置偏好") {
-		t.Fatalf("reply content = %q", gotBody.Content)
-	}
+	assertImageOnlyQQMessage(t, gotBody)
 	waitInteractionCount(t, db, 2)
 }
 
@@ -388,6 +439,9 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 
 	gotBodyCh := make(chan sendMessageRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handleIntegrationQQMediaUpload(w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/app/getAppAccessToken":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -447,9 +501,7 @@ func TestServeWebhookRoutesSignedC2CMessageAndAcksDispatch(t *testing.T) {
 	if gotBody.MsgID != "message-id" || gotBody.MsgSeq != 1 {
 		t.Fatalf("passive reply fields = msg_id %q msg_seq %d", gotBody.MsgID, gotBody.MsgSeq)
 	}
-	if !strings.Contains(gotBody.Content, "校车（xc）\t按日期、服务日或路线查询班次并设置偏好") {
-		t.Fatalf("reply content = %q", gotBody.Content)
-	}
+	assertImageOnlyQQMessage(t, gotBody)
 	waitInteractionCount(t, db, 2)
 }
 
@@ -464,6 +516,9 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 	var gotBody sendMessageRequest
 	gotBodyCh := make(chan sendMessageRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handleIntegrationQQMediaUpload(w, r) {
+			return
+		}
 		switch r.URL.Path {
 		case "/app/getAppAccessToken":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -527,9 +582,7 @@ func TestHandleDispatchAcksInteractionAndRepliesWithEventID(t *testing.T) {
 	if gotBody.EventID != "interaction-id" || gotBody.MsgID != "" || gotBody.MsgSeq != 0 {
 		t.Fatalf("reply fields = %#v", gotBody)
 	}
-	if !strings.Contains(gotBody.Content, "校车（xc）\t按日期、服务日或路线查询班次并设置偏好") {
-		t.Fatalf("reply content = %q", gotBody.Content)
-	}
+	assertImageOnlyQQMessage(t, gotBody)
 }
 
 func TestInteractionFromPayloadDefaultsQuickMenuToHelp(t *testing.T) {
