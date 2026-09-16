@@ -1452,7 +1452,7 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if query := r.URL.Query().Encode(); query != "" {
+			if query := r.URL.Query().Encode(); query != "limit=200" {
 				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","dueAt":"2026-05-14T23:55:00+08:00"},{"id":"todo-2","title":"买咖啡"}]}`))
@@ -1516,7 +1516,7 @@ func TestHandleTodoDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if query := r.URL.Query().Encode(); query != "" {
+			if query := r.URL.Query().Encode(); query != "limit=200" {
 				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"回工位收拾"},{"id":"todo-2","title":"test"},{"id":"todo-3","title":"创建 2"},{"id":"todo-4","title":"创建 1"}]}`))
@@ -1820,7 +1820,7 @@ func TestHandleTodoListWithFilters(t *testing.T) {
 		if r.URL.Path != "/api/workspace/todos" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		if query := r.URL.Query().Encode(); query != "" {
+		if query := r.URL.Query().Encode(); query != "limit=200" {
 			t.Fatalf("query = %s", query)
 		}
 		_, _ = w.Write([]byte(`{"todos":[
@@ -1910,7 +1910,7 @@ func TestHandleTodoListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if query := r.URL.Query().Encode(); query != "" {
+			if query := r.URL.Query().Encode(); query != "limit=200" {
 				t.Fatalf("query = %q", query)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"todos": todos})
@@ -1995,7 +1995,7 @@ func TestHandleTodoUndoByIndex(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			if query := r.URL.Query().Encode(); query != "" {
+			if query := r.URL.Query().Encode(); query != "limit=200" {
 				t.Fatalf("query = %q", query)
 			}
 			_, _ = w.Write([]byte(`{"todos":[{"id":"todo-1","title":"写报告","completed":true}]}`))
@@ -2037,7 +2037,7 @@ func TestHandleTodoUpdateByIndex(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
 			}
-			_, _ = w.Write([]byte(`{"success":true}`))
+			_, _ = w.Write([]byte(`{"success":true,"todo":{"id":"todo-1","title":"新标题","content":"备注","priority":"low","completed":false,"dueAt":"2026-06-10T00:00:00+08:00"}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2052,7 +2052,7 @@ func TestHandleTodoUpdateByIndex(t *testing.T) {
 	if gotBody["title"] != "新标题" || gotBody["dueAt"] != "2026-06-10" || gotBody["priority"] != "low" || gotBody["content"] != "备注" {
 		t.Fatalf("body = %#v", gotBody)
 	}
-	if !strings.Contains(reply, "已修改待办：旧标题") {
+	if !strings.Contains(reply, "已修改待办：新标题") {
 		t.Fatalf("reply = %q", reply)
 	}
 }

@@ -482,6 +482,16 @@ func (h Handler) resolvePersonalMutation(ctx context.Context, ident store.Identi
 	if h.Life == nil {
 		return invocation, nil, errCapabilityReceiptUnavailable
 	}
+	if invocation.ID() == CapabilityTodo && len(invocation.Args) >= 2 {
+		if id, explicit := todoTargetID(invocation.Args[1]); explicit {
+			if id == "" {
+				return invocation, nil, errCapabilityPersonalTarget
+			}
+			receipt := ReceiptForInvocation(invocation)
+			receipt.Subject = id
+			return invocation, &receipt, nil
+		}
+	}
 	var items []map[string]any
 	if invocation.ID() == CapabilityTodo {
 		items, err = h.todos(ctx, ident, token, life.TodoListOptions{})

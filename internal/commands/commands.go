@@ -1468,6 +1468,9 @@ func (h Handler) createTodo(ctx context.Context, ident store.Identity, token str
 }
 
 func (h Handler) listTodos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions, requestedPage int) string {
+	// The endpoint has no cursor for reconnecting a filtered view to the full
+	// order. Fetch the canonical order once and apply display filters locally
+	// so the global numbers remain usable by a later mutation command.
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
@@ -1483,6 +1486,9 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 		return h.invalidInput(err.Error())
 	}
 	if len(numbered) == 0 {
+		if len(todos) >= todoListLimit {
+			return fmt.Sprintf("没有待办。\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", todoListLimit)
+		}
 		return "没有待办。"
 	}
 	command := func(page int) string {
@@ -1494,11 +1500,25 @@ func (h Handler) listTodos(ctx context.Context, ident store.Identity, token stri
 	if !ok {
 		return h.invalidInput(listPageOutOfRange("待办", len(numbered), command))
 	}
+	if len(todos) >= todoListLimit {
+		reply += fmt.Sprintf("\n已达到待办列表读取上限（%d 条）；如有更多，请使用 id:<完整ID> 操作。", todoListLimit)
+	}
 	return reply
 }
 
 func (h Handler) setTodoCompletion(ctx context.Context, ident store.Identity, token, target string, completed bool) string {
 	targets := splitTodoTargets(target)
+	if len(targets) == 1 {
+		if id, explicit := todoTargetID(targets[0]); explicit {
+			if id == "" {
+				return h.notFound("没找到这条待办。发 td 看编号，再试：td done 1")
+			}
+			return h.setTodoCompletionItem(ctx, ident, token, map[string]any{"id": id}, completed)
+		}
+	}
+	if len(targets) > 1 && allTodoTargetsExplicitIDs(targets) {
+		return h.setTodoCompletionBatch(ctx, ident, token, nil, targets, completed)
+	}
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
@@ -1521,7 +1541,10 @@ func (h Handler) setTodoCompletionBatch(ctx context.Context, ident store.Identit
 	done := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
-		todo, ok := resolveTodo(todos, target)
+		todo, ok := todoTargetItem(target)
+		if !ok {
+			todo, ok = resolveTodo(todos, target)
+		}
 		if !ok {
 			missing = append(missing, target)
 			continue
@@ -1615,13 +1638,22 @@ func (h Handler) todos(ctx context.Context, ident store.Identity, token string, 
 }
 
 func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, target string, args []string) string {
-	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
-	if err != nil {
-		return h.commandError("待办查不到：", err)
-	}
-	todo, ok := resolveTodo(todos, target)
-	if !ok {
-		return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+	var todo map[string]any
+	if id, explicit := todoTargetID(target); explicit {
+		if id == "" {
+			return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+		}
+		todo = map[string]any{"id": id}
+	} else {
+		todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
+		if err != nil {
+			return h.commandError("待办查不到：", err)
+		}
+		var ok bool
+		todo, ok = resolveTodo(todos, target)
+		if !ok {
+			return h.notFound("没找到这条待办。发 td all 看编号，再试：td update 1 title 写报告")
+		}
 	}
 	id := lifedata.FirstString(todo, "id")
 	if id == "" {
@@ -1631,7 +1663,7 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 	if !hasTodoUpdate(opts) {
 		return h.invalidInput("想改什么？例如：td update 1 title 写报告")
 	}
-	err = auth.WithRefreshVoid(ctx, h.Auth, ident, token, func(token string) error {
+	updated, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
 		return h.Life.UpdateTodo(ctx, token, id, opts)
 	})
 	if err != nil {
@@ -1639,18 +1671,29 @@ func (h Handler) updateTodo(ctx context.Context, ident store.Identity, token, ta
 	}
 	h.markData(map[string]any{
 		"operation": "update",
-		"item":      todo,
+		"item":      updated,
 		"changes":   opts,
 	})
-	return "已修改待办：" + lifedata.FirstString(todo, "title", "id")
+	return "已修改待办：" + lifedata.FirstString(updated, "title", "id")
 }
 
 func (h Handler) deleteTodo(ctx context.Context, ident store.Identity, token, target string) string {
+	targets := splitTodoTargets(target)
+	if len(targets) == 1 {
+		if id, explicit := todoTargetID(targets[0]); explicit {
+			if id == "" {
+				return h.notFound("没找到这条待办。发 td all 看编号，再试：td delete 1")
+			}
+			return h.deleteTodoItem(ctx, ident, token, map[string]any{"id": id})
+		}
+	}
+	if len(targets) > 1 && allTodoTargetsExplicitIDs(targets) {
+		return h.deleteTodoBatch(ctx, ident, token, nil, targets)
+	}
 	todos, err := h.todos(ctx, ident, token, life.TodoListOptions{})
 	if err != nil {
 		return h.commandError("待办查不到：", err)
 	}
-	targets := splitTodoTargets(target)
 	if len(targets) > 1 {
 		return h.deleteTodoBatch(ctx, ident, token, todos, targets)
 	}
@@ -1670,13 +1713,16 @@ func (h Handler) deleteTodoBatch(ctx context.Context, ident store.Identity, toke
 	deleted := make([]string, 0, len(targets))
 	missing := []string{}
 	for _, target := range targets {
-		todo, ok := resolveTodo(todos, target)
+		todo, ok := todoTargetItem(target)
+		if !ok {
+			todo, ok = resolveTodo(todos, target)
+		}
 		if !ok {
 			missing = append(missing, target)
 			continue
 		}
 		reply := h.deleteTodoItem(ctx, ident, token, todo)
-		if execution.status == CapabilityOutcomeFailed || execution.status == CapabilityOutcomeAuthRequired {
+		if execution.status == CapabilityOutcomeFailed || execution.status == CapabilityOutcomeUnknown || execution.status == CapabilityOutcomeAuthRequired {
 			return reply
 		}
 		deleted = append(deleted, strings.TrimPrefix(reply, "已删除："))
@@ -1766,6 +1812,8 @@ type numberedTodo struct {
 	number int
 	todo   map[string]any
 }
+
+const todoListLimit = 200
 
 func filterNumberedTodos(todos []map[string]any, opts life.TodoListOptions) ([]numberedTodo, error) {
 	var dueBefore, dueAfter time.Time

@@ -439,13 +439,13 @@ func TestUpdateTodoSendsChanges(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{"todo":{"id":"todo-1","title":"写报告"}}`))
 	}))
 	defer server.Close()
 
 	completed := false
 	client := NewClient(server.URL, server.Client())
-	err := client.UpdateTodo(context.Background(), "token", " todo-1 ", TodoUpdateOptions{
+	todo, err := client.UpdateTodo(context.Background(), "token", " todo-1 ", TodoUpdateOptions{
 		Title:     " 写报告 ",
 		Content:   " 读第一章 ",
 		Priority:  " high ",
@@ -454,6 +454,9 @@ func TestUpdateTodoSendsChanges(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if todo["id"] != "todo-1" || todo["title"] != "写报告" {
+		t.Fatalf("updated todo = %#v", todo)
 	}
 	if gotBody["title"] != "写报告" || gotBody["content"] != "读第一章" || gotBody["priority"] != "high" || gotBody["dueAt"] != "2026-06-10" || gotBody["completed"] != false {
 		t.Fatalf("body = %#v", gotBody)
@@ -467,9 +470,25 @@ func TestUpdateTodoRejectsEmptyChanges(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	err := client.UpdateTodo(context.Background(), "token", "todo-1", TodoUpdateOptions{})
+	_, err := client.UpdateTodo(context.Background(), "token", "todo-1", TodoUpdateOptions{})
 	if err == nil || !strings.Contains(err.Error(), "at least one change") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUpdateTodoRequiresCanonicalResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workspace/todos/todo-1" || r.Method != http.MethodPatch {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.Client())
+	todo, err := client.UpdateTodo(context.Background(), "token", "todo-1", TodoUpdateOptions{Title: "新标题"})
+	if err == nil || !strings.Contains(err.Error(), "missing todo") {
+		t.Fatalf("todo = %#v, err = %v", todo, err)
 	}
 }
 
