@@ -98,7 +98,12 @@ type CoordinatorConfig struct {
 	Recorder     Recorder
 	PollInterval time.Duration
 	BatchSize    int
-	Logger       *log.Logger
+	// MergeWindow folds a rapid follow-up agent message into the still-queued
+	// job of the same actor lane instead of starting a second run, covering
+	// bursts like one-by-one message forwarding. Zero disables merging and
+	// every message starts its own run immediately.
+	MergeWindow time.Duration
+	Logger      *log.Logger
 }
 
 // Coordinator owns the one durable pipeline used by live messages and
@@ -113,6 +118,7 @@ type Coordinator struct {
 	recorder       Recorder
 	pollInterval   time.Duration
 	batchSize      int
+	mergeWindow    time.Duration
 	nextRecoveryAt time.Time
 	logger         *log.Logger
 	wake           chan struct{}
@@ -122,6 +128,82 @@ type conversationJobPayload struct {
 	Inbound    message.Inbound    `json:"inbound"`
 	Route      routing.Action     `json:"route"`
 	Activation routing.Activation `json:"activation"`
+}
+
+const (
+	// Merged bursts stay bounded so a flood of forwarded messages cannot grow
+	// one job without limit; beyond the cap a new job takes over.
+	maxMergedConversationText     = 16 << 10
+	maxMergedConversationMedia    = 20
+	maxMergedConversationForwards = 8
+)
+
+// mergeConversationJobInputs combines two agent-route jobs of one actor lane
+// into a single agent input. The base job keeps its identity, routing, and
+// source reference; the follow-up contributes its text, media, and forwarded
+// content. Anything that does not decode as an agent payload declines.
+func mergeConversationJobInputs(existing, incoming store.ConversationJobInput) (store.ConversationJobInput, bool) {
+	var existingPayload, incomingPayload conversationJobPayload
+	if err := json.Unmarshal(existing.Data, &existingPayload); err != nil {
+		return store.ConversationJobInput{}, false
+	}
+	if err := json.Unmarshal(incoming.Data, &incomingPayload); err != nil {
+		return store.ConversationJobInput{}, false
+	}
+	if existingPayload.Route != routing.ActionAgent || incomingPayload.Route != routing.ActionAgent {
+		return store.ConversationJobInput{}, false
+	}
+	if len(existing.Text)+len(incoming.Text) > maxMergedConversationText ||
+		len(existingPayload.Inbound.Media)+len(incomingPayload.Inbound.Media) > maxMergedConversationMedia ||
+		len(existingPayload.Inbound.Forwarded)+len(incomingPayload.Inbound.Forwarded) > maxMergedConversationForwards {
+		return store.ConversationJobInput{}, false
+	}
+	mergedInbound := mergeInboundMessages(existingPayload.Inbound, incomingPayload.Inbound)
+	payload, err := json.Marshal(conversationJobPayload{
+		Inbound: mergedInbound, Route: existingPayload.Route, Activation: existingPayload.Activation,
+	})
+	if err != nil {
+		return store.ConversationJobInput{}, false
+	}
+	return store.ConversationJobInput{Text: mergedInbound.Text, Data: payload}, true
+}
+
+func mergeInboundMessages(base, extra message.Inbound) message.Inbound {
+	switch {
+	case base.Text == "":
+		base.Text = strings.TrimSpace(extra.Text)
+	case strings.TrimSpace(extra.Text) != "":
+		base.Text += "\n" + strings.TrimSpace(extra.Text)
+	}
+	base.Parts = append(base.Parts, extra.Parts...)
+	base.Media = append(base.Media, extra.Media...)
+	base.Forwarded = append(base.Forwarded, extra.Forwarded...)
+	base.ImageURLs = appendUniqueStrings(base.ImageURLs, extra.ImageURLs)
+	base.BotMentioned = base.BotMentioned || extra.BotMentioned
+	if base.ReplyTo == nil {
+		base.ReplyTo = extra.ReplyTo
+		base.ReplyContext = extra.ReplyContext
+	}
+	if extra.ReceivedAt.After(base.ReceivedAt) {
+		base.ReceivedAt = extra.ReceivedAt
+	}
+	return base
+}
+
+func appendUniqueStrings(base []string, extra []string) []string {
+	for _, candidate := range extra {
+		found := false
+		for _, value := range base {
+			if value == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			base = append(base, candidate)
+		}
+	}
+	return base
 }
 
 // conversationPersistenceError distinguishes a durable state/output failure
@@ -178,6 +260,7 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 		jobs: config.Jobs, commands: config.Commands, agent: config.Agent, outputs: config.Outputs, replies: config.Replies,
 		recorder:     config.Recorder,
 		pollInterval: interval, batchSize: batchSize, logger: config.Logger, wake: make(chan struct{}, 1),
+		mergeWindow: config.MergeWindow,
 	}, nil
 }
 
@@ -253,7 +336,7 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			Args:    append([]string(nil), routeDecision.Invocation.Args...),
 		}
 	}
-	_, created, err := c.jobs.EnqueueConversationJob(ctx, store.ConversationJobEnqueue{
+	enqueue := store.ConversationJobEnqueue{
 		Identity:      identityForInbound(inbound),
 		SourceEventID: sourceEventID,
 		Input: store.ConversationJobInput{
@@ -261,7 +344,13 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 			Data: payload,
 		},
 		Invocation: invocation,
-	})
+	}
+	if routeDecision.Action == routing.ActionAgent && c.mergeWindow > 0 {
+		enqueue.RetryAt = time.Now().UTC().Add(c.mergeWindow)
+		enqueue.MergeWindow = c.mergeWindow
+		enqueue.Merge = mergeConversationJobInputs
+	}
+	_, created, err := c.jobs.EnqueueConversationJob(ctx, enqueue)
 	if err != nil {
 		return err
 	}

@@ -147,6 +147,8 @@ func main() {
 		Replies:  stateStore,
 		Recorder: stateStore,
 		Logger:   logger,
+
+		MergeWindow: cfg.ConversationMergeWindow,
 	})
 	if err != nil {
 		logger.Fatalf("create bot application: %v", err)

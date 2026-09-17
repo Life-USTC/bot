@@ -197,6 +197,9 @@ func startBot(ctx context.Context, opts options, napcatAddress string) (*botProc
 		"BOT_ENABLE_QQ_BOT_WEBHOOK": "false",
 		"BOT_ENABLE_AGENT":          "false",
 		"BOT_HTTP_TIMEOUT_SECONDS":  "10",
+		// Keep every message on its own immediate job so e2e assertions stay
+		// deterministic; the merge window is a production behavior.
+		"BOT_CONVERSATION_MERGE_WINDOW_SECONDS": "0",
 	})
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

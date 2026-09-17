@@ -77,6 +77,13 @@ type ConversationJobEnqueue struct {
 	RetryAt        time.Time
 	ExpiresAt      time.Time
 	MaxAttempts    int
+	// MergeWindow folds this event into the newest still-queued,
+	// invocation-free job in the same actor lane instead of creating a new
+	// job, and extends that job's earliest claim time by the window. Merge
+	// decides how the persisted inputs combine and may decline by returning
+	// ok=false, in which case a new job is created as usual.
+	MergeWindow time.Duration
+	Merge       func(existing, incoming ConversationJobInput) (ConversationJobInput, bool)
 }
 
 // ConversationJob is the store-facing representation of one interaction.
@@ -272,8 +279,10 @@ func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJo
 	if input.State == ConversationJobStateRetryWait && input.RetryAt.IsZero() {
 		input.RetryAt = now
 	}
-	if input.State != ConversationJobStateRetryWait && !input.RetryAt.IsZero() {
-		return ConversationJob{}, false, errors.New("conversation job retry time requires retry_wait state")
+	// A queued job may carry RetryAt as its earliest claim time (used by the
+	// conversation merge window); every other non-retry state must not.
+	if input.State != ConversationJobStateRetryWait && input.State != ConversationJobStateQueued && !input.RetryAt.IsZero() {
+		return ConversationJob{}, false, errors.New("conversation job retry time requires queued or retry_wait state")
 	}
 	inputJSON, err := normalizeConversationJobJSON(input.InputJSON, input.Input, "input")
 	if err != nil {
@@ -315,6 +324,17 @@ func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJo
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+
+		if input.MergeWindow > 0 && input.Merge != nil && input.State == ConversationJobStateQueued && invocationJSON == "{}" {
+			merged, err := mergeIntoQueuedConversationJob(tx, input, now)
+			if err != nil {
+				return err
+			}
+			if merged != nil {
+				saved = *merged
+				return nil
+			}
 		}
 
 		if err := tx.Model(&conversationJobSequenceRow{}).
@@ -375,6 +395,65 @@ func (s *Store) EnqueueConversationJob(ctx context.Context, input ConversationJo
 		return ConversationJob{}, false, err
 	}
 	return job, created, nil
+}
+
+// mergeIntoQueuedConversationJob folds input into the newest queued job in
+// the same actor lane. A job carrying an invocation (a routed command) never
+// receives merged input, and the update is conditional on the job still being
+// queued so a concurrent claim simply declines the merge.
+func mergeIntoQueuedConversationJob(tx *gorm.DB, input ConversationJobEnqueue, now time.Time) (*conversationJobRow, error) {
+	var candidate conversationJobRow
+	err := tx.Where(
+		"platform = ? AND conversation_type = ? AND conversation_id = ? AND external_user_id = ? AND state = ?",
+		input.Identity.Platform, input.Identity.ConversationType, input.Identity.ConversationID, input.Identity.UserID,
+		string(ConversationJobStateQueued),
+	).Order("sequence DESC").Limit(1).First(&candidate).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var existingInput ConversationJobInput
+	if err := json.Unmarshal([]byte(candidate.InputJSON), &existingInput); err != nil {
+		return nil, fmt.Errorf("decode queued conversation job input: %w", err)
+	}
+	var existingInvocation ConversationJobInvocation
+	if err := json.Unmarshal([]byte(candidate.InvocationJSON), &existingInvocation); err != nil {
+		return nil, fmt.Errorf("decode queued conversation job invocation: %w", err)
+	}
+	if !conversationJobInvocationZero(existingInvocation) {
+		return nil, nil
+	}
+	merged, ok := input.Merge(existingInput, input.Input)
+	if !ok {
+		return nil, nil
+	}
+	mergedJSON, err := normalizeConversationJobJSON("", merged, "input")
+	if err != nil {
+		return nil, err
+	}
+	result := tx.Model(&conversationJobRow{}).
+		Where("id = ? AND state = ?", candidate.ID, string(ConversationJobStateQueued)).
+		Updates(map[string]any{
+			"input_json": mergedJSON,
+			"retry_at":   now.Add(input.MergeWindow),
+			"revision":   gorm.Expr("revision + 1"),
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		// The job was claimed between the lookup and the update; the caller
+		// falls back to creating a new job.
+		return nil, nil
+	}
+	var row conversationJobRow
+	if err := tx.First(&row, candidate.ID).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 // GetConversationJob returns one job by ID. A missing job is represented by a

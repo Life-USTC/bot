@@ -1465,3 +1465,46 @@ func TestCoordinatorStopsRetryingAPermanentPersistenceFailure(t *testing.T) {
 		t.Fatalf("job = %#v, want state failed", saved)
 	}
 }
+
+func TestMergeConversationJobInputsCombinesAgentPayloads(t *testing.T) {
+	mk := func(text string, media int, route routing.Action) store.ConversationJobInput {
+		inbound := message.Inbound{
+			Text:  text,
+			Parts: []message.InputPart{{Type: "text", Text: text}},
+			Media: make([]message.InputMedia, media),
+			Forwarded: []message.ForwardedMessage{{
+				Speaker: message.Actor{DisplayName: "Alice"},
+			}},
+			ImageURLs: []string{"https://cdn.example/" + text},
+		}
+		payload, err := json.Marshal(conversationJobPayload{Inbound: inbound, Route: route, Activation: routing.ActivationDirect})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store.ConversationJobInput{Text: text, Data: payload}
+	}
+
+	merged, ok := mergeConversationJobInputs(mk("first", 1, routing.ActionAgent), mk("second", 1, routing.ActionAgent))
+	if !ok || merged.Text != "first\nsecond" {
+		t.Fatalf("merged=%#v ok=%v", merged, ok)
+	}
+	var payload conversationJobPayload
+	if err := json.Unmarshal(merged.Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Route != routing.ActionAgent || len(payload.Inbound.Media) != 2 || len(payload.Inbound.Parts) != 2 ||
+		len(payload.Inbound.Forwarded) != 2 || len(payload.Inbound.ImageURLs) != 2 {
+		t.Fatalf("merged payload=%#v", payload)
+	}
+
+	if _, ok := mergeConversationJobInputs(mk("first", 0, routing.ActionCommand), mk("second", 0, routing.ActionAgent)); ok {
+		t.Fatal("command route accepted a merge")
+	}
+	if _, ok := mergeConversationJobInputs(store.ConversationJobInput{Text: "broken", Data: []byte("{")}, mk("second", 0, routing.ActionAgent)); ok {
+		t.Fatal("undecodable payload accepted a merge")
+	}
+	big := mk(strings.Repeat("x", maxMergedConversationText), 0, routing.ActionAgent)
+	if _, ok := mergeConversationJobInputs(big, mk("second", 0, routing.ActionAgent)); ok {
+		t.Fatal("oversized merge accepted")
+	}
+}
