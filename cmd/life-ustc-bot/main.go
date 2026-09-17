@@ -113,9 +113,12 @@ func main() {
 		PremiumAPIKey:  cfg.PremiumAPIKey,
 		PremiumBaseURL: cfg.PremiumBaseURL,
 		PremiumModel:   cfg.PremiumModel,
-		Logger:         logger,
-		MCPBaseURL:     strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
-		AuthManager:    authManager,
+
+		AttachmentAPIKey:  cfg.AttachmentAPIKey,
+		AttachmentBaseURL: cfg.AttachmentBaseURL,
+		Logger:            logger,
+		MCPBaseURL:        strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
+		AuthManager:       authManager,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)

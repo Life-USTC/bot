@@ -208,3 +208,76 @@ func TestPlatformVoiceTranscriptDoesNotClaimAudioAnalysis(t *testing.T) {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }
+
+// A chat model on an endpoint without a file-extract API must not disable
+// attachment parsing: the file credentials are configured separately.
+func TestAttachmentCredentialsAreIndependentOfChatEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	const codingBaseURL = "https://api.kimi.com/coding/v1"
+	if IsCompatibleKimiBaseURL(codingBaseURL) {
+		t.Fatalf("%s unexpectedly serves the file-extract API", codingBaseURL)
+	}
+
+	for _, test := range []struct {
+		name              string
+		attachmentAPIKey  string
+		attachmentBaseURL string
+		wantConfigured    bool
+	}{
+		{name: "separate file endpoint", attachmentAPIKey: "file-key", attachmentBaseURL: server.URL + "/v1", wantConfigured: true},
+		{name: "no file endpoint", wantConfigured: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			svc, err := New(t.Context(), Config{
+				Enabled: true, APIKey: "default", BaseURL: server.URL + "/v1", Model: "test",
+				PremiumAPIKey: "coding-plan-key", PremiumBaseURL: codingBaseURL, PremiumModel: "k3-256k",
+				AttachmentAPIKey: test.attachmentAPIKey, AttachmentBaseURL: test.attachmentBaseURL,
+			}, commands.Handler{Store: db}, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := svc.attachmentParser != nil && svc.attachmentParser.configured; got != test.wantConfigured {
+				t.Fatalf("attachment parser configured = %v, want %v", got, test.wantConfigured)
+			}
+			if svc.premiumName != "k3-256k" {
+				t.Fatalf("premiumName = %q", svc.premiumName)
+			}
+		})
+	}
+}
+
+// Deployments that set only PREMIUM_MODEL_* keep uploading files with the
+// premium credential.
+func TestAttachmentCredentialsFallBackToPremium(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	svc, err := New(t.Context(), Config{
+		Enabled: true, APIKey: "default", BaseURL: server.URL + "/v1", Model: "test",
+		PremiumAPIKey: "kimi-test-key", PremiumBaseURL: server.URL + "/v1", PremiumModel: "kimi-test",
+	}, commands.Handler{Store: db}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.attachmentParser == nil || !svc.attachmentParser.configured {
+		t.Fatal("premium credentials no longer configure attachment parsing")
+	}
+	if svc.attachmentParser.apiKey != "kimi-test-key" {
+		t.Fatalf("attachment parser apiKey = %q", svc.attachmentParser.apiKey)
+	}
+}
