@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -40,6 +41,10 @@ type AttachmentParserConfig struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Logger     *log.Logger
+	// AllowLocalPaths permits reading attachment bytes from local filesystem
+	// paths. Enable only when a platform adapter sharing this host (a
+	// co-located NapCat) is configured to resolve files locally.
+	AllowLocalPaths bool
 }
 
 // AttachmentParser uploads user supplied files to Kimi's file-extract API,
@@ -47,12 +52,13 @@ type AttachmentParserConfig struct {
 // stickers stay on the existing vision path so this parser never duplicates
 // image downloads or uploads.
 type AttachmentParser struct {
-	apiKey     string
-	baseURL    *url.URL
-	client     *http.Client
-	download   *http.Client
-	logger     *log.Logger
-	configured bool
+	apiKey          string
+	baseURL         *url.URL
+	client          *http.Client
+	download        *http.Client
+	logger          *log.Logger
+	configured      bool
+	allowLocalPaths bool
 }
 
 // AttachmentStatus describes how the model can use one inbound attachment.
@@ -94,12 +100,13 @@ func NewAttachmentParser(cfg AttachmentParserConfig) (*AttachmentParser, error) 
 	}
 	client := cloneAttachmentClient(cfg.HTTPClient)
 	parser := &AttachmentParser{
-		apiKey:     strings.TrimSpace(cfg.APIKey),
-		baseURL:    base,
-		client:     client,
-		download:   cloneAttachmentDownloadClient(cfg.HTTPClient),
-		logger:     cfg.Logger,
-		configured: strings.TrimSpace(cfg.APIKey) != "" && base != nil,
+		apiKey:          strings.TrimSpace(cfg.APIKey),
+		baseURL:         base,
+		client:          client,
+		download:        cloneAttachmentDownloadClient(cfg.HTTPClient),
+		logger:          cfg.Logger,
+		configured:      strings.TrimSpace(cfg.APIKey) != "" && base != nil,
+		allowLocalPaths: cfg.AllowLocalPaths,
 	}
 	return parser, nil
 }
@@ -334,8 +341,12 @@ func appendUniqueString(values []string, candidate string) []string {
 }
 
 func (p *AttachmentParser) downloadFile(ctx context.Context, rawURL string) ([]byte, error) {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	trimmed := strings.TrimSpace(rawURL)
+	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		if p.allowLocalPaths && err == nil && parsed.Scheme == "" && strings.HasPrefix(trimmed, "/") {
+			return readLocalAttachment(trimmed)
+		}
 		return nil, errors.New("文件地址不受支持")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
@@ -369,6 +380,29 @@ func (p *AttachmentParser) downloadFile(ctx context.Context, rawURL string) ([]b
 	}
 	if int64(len(data)) > maxAttachmentDownloadBytes {
 		return nil, errors.New("文件超过 25 MiB 安全上限")
+	}
+	return data, nil
+}
+
+// readLocalAttachment applies the same size ceiling as remote downloads. The
+// caller has already verified the path is absolute and opted in; error text
+// stays generic so no filesystem detail reaches the model context.
+func readLocalAttachment(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New("本地附件不可读取")
+	}
+	if info.Size() > maxAttachmentDownloadBytes {
+		return nil, errors.New("文件超过 25 MiB 安全上限")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("本地附件不可读取")
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, maxAttachmentDownloadBytes+1))
+	if err != nil || int64(len(data)) > maxAttachmentDownloadBytes {
+		return nil, errors.New("本地附件不可读取")
 	}
 	return data, nil
 }

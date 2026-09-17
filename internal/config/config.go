@@ -43,6 +43,7 @@ type Config struct {
 	PremiumModel          string
 	AttachmentAPIKey      string
 	AttachmentBaseURL     string
+	AttachmentLocalPaths  bool
 	FeedbackAdminPlatform string
 	FeedbackAdminUsers    []string
 	FeedbackAdminGroups   []string
@@ -85,6 +86,7 @@ func FromEnv() Config {
 		PremiumModel:          envString("PREMIUM_MODEL", "kimi-k3"),
 		AttachmentAPIKey:      envOptionalString("KIMI_FILE_API_KEY"),
 		AttachmentBaseURL:     envTrimRight("KIMI_FILE_BASE_URL", "", "/"),
+		AttachmentLocalPaths:  envBool("BOT_ATTACHMENT_LOCAL_PATHS", false),
 		FeedbackAdminPlatform: envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
 		FeedbackAdminUsers:    envList("BOT_FEEDBACK_ADMIN_USERS"),
 		FeedbackAdminGroups:   envList("BOT_FEEDBACK_ADMIN_GROUPS"),

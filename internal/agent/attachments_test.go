@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -308,5 +309,39 @@ func TestAgentRunRawTextIsNeverEmpty(t *testing.T) {
 				t.Fatal("raw text must never be empty")
 			}
 		})
+	}
+}
+
+// A co-located platform adapter (NapCat on the same host) resolves file IDs to
+// local paths. The parser reads them only after an explicit opt-in, and never
+// treats relative paths or missing files as attachments.
+func TestAttachmentParserReadsLocalPathOnlyWhenAllowed(t *testing.T) {
+	path := t.TempDir() + "/report.txt"
+	if err := os.WriteFile(path, []byte("local document"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guarded, err := NewAttachmentParser(AttachmentParserConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guarded.downloadFile(t.Context(), path); err == nil {
+		t.Fatal("local path accepted without opt-in")
+	}
+	allowed, err := NewAttachmentParser(AttachmentParserConfig{AllowLocalPaths: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := allowed.downloadFile(t.Context(), path)
+	if err != nil || string(data) != "local document" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+	if _, err := allowed.downloadFile(t.Context(), "report.txt"); err == nil {
+		t.Fatal("relative path accepted")
+	}
+	if _, err := allowed.downloadFile(t.Context(), path+".missing"); err == nil {
+		t.Fatal("missing file accepted")
+	}
+	if _, err := allowed.downloadFile(t.Context(), t.TempDir()); err == nil {
+		t.Fatal("directory accepted")
 	}
 }

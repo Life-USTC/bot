@@ -47,8 +47,12 @@ type Config struct {
 	// an endpoint that serves no /files route without disabling attachments.
 	AttachmentAPIKey  string
 	AttachmentBaseURL string
-	MCPBaseURL        string
-	AuthManager       *auth.Manager
+	// AttachmentLocalPaths lets the attachment parser read local filesystem
+	// paths handed over by a co-located platform adapter (NapCat on the same
+	// host). Keep disabled when the adapter is remote.
+	AttachmentLocalPaths bool
+	MCPBaseURL           string
+	AuthManager          *auth.Manager
 }
 
 type Service struct {
@@ -181,7 +185,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		attachmentBaseURL = cfg.PremiumBaseURL
 	}
 	if IsCompatibleKimiBaseURL(attachmentBaseURL) && attachmentAPIKey != "" {
-		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: attachmentAPIKey, BaseURL: attachmentBaseURL, HTTPClient: httpClient, Logger: cfg.Logger})
+		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: attachmentAPIKey, BaseURL: attachmentBaseURL, HTTPClient: httpClient, Logger: cfg.Logger, AllowLocalPaths: cfg.AttachmentLocalPaths})
 		if err != nil {
 			return nil, err
 		}
