@@ -42,8 +42,13 @@ type Config struct {
 	PremiumAPIKey  string
 	PremiumBaseURL string
 	PremiumModel   string
-	MCPBaseURL     string
-	AuthManager    *auth.Manager
+	// AttachmentAPIKey and AttachmentBaseURL address the Kimi file-extract API.
+	// They default to the premium pair when unset, so the chat model can move to
+	// an endpoint that serves no /files route without disabling attachments.
+	AttachmentAPIKey  string
+	AttachmentBaseURL string
+	MCPBaseURL        string
+	AuthManager       *auth.Manager
 }
 
 type Service struct {
@@ -167,8 +172,16 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		service.premiumModel = premiumModel
 		service.premiumName = premiumName
 	}
-	if IsCompatibleKimiBaseURL(cfg.PremiumBaseURL) && strings.TrimSpace(cfg.PremiumAPIKey) != "" {
-		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: cfg.PremiumAPIKey, BaseURL: cfg.PremiumBaseURL, HTTPClient: httpClient, Logger: cfg.Logger})
+	attachmentAPIKey := strings.TrimSpace(cfg.AttachmentAPIKey)
+	if attachmentAPIKey == "" {
+		attachmentAPIKey = strings.TrimSpace(cfg.PremiumAPIKey)
+	}
+	attachmentBaseURL := strings.TrimSpace(cfg.AttachmentBaseURL)
+	if attachmentBaseURL == "" {
+		attachmentBaseURL = cfg.PremiumBaseURL
+	}
+	if IsCompatibleKimiBaseURL(attachmentBaseURL) && attachmentAPIKey != "" {
+		service.attachmentParser, err = NewAttachmentParser(AttachmentParserConfig{APIKey: attachmentAPIKey, BaseURL: attachmentBaseURL, HTTPClient: httpClient, Logger: cfg.Logger})
 		if err != nil {
 			return nil, err
 		}

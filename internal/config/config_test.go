@@ -254,3 +254,36 @@ func TestFromEnvKeepsAbsoluteNapCatReversePath(t *testing.T) {
 		t.Fatalf("NapCatReversePath = %q", cfg.NapCatReversePath)
 	}
 }
+
+func TestFromEnvParsesAttachmentCredentials(t *testing.T) {
+	t.Setenv("PREMIUM_MODEL_API_KEY", "premium-key")
+	t.Setenv("PREMIUM_MODEL_BASE_URL", "https://chat.example/v1")
+	t.Setenv("KIMI_FILE_API_KEY", " file-key ")
+	t.Setenv("KIMI_FILE_BASE_URL", " https://api.moonshot.cn/v1/// ")
+
+	cfg := FromEnv()
+	if cfg.AttachmentAPIKey != "file-key" {
+		t.Fatalf("AttachmentAPIKey = %q", cfg.AttachmentAPIKey)
+	}
+	if cfg.AttachmentBaseURL != "https://api.moonshot.cn/v1" {
+		t.Fatalf("AttachmentBaseURL = %q", cfg.AttachmentBaseURL)
+	}
+	if cfg.PremiumAPIKey != "premium-key" || cfg.PremiumBaseURL != "https://chat.example/v1" {
+		t.Fatalf("premium credentials were overwritten: %q %q", cfg.PremiumAPIKey, cfg.PremiumBaseURL)
+	}
+}
+
+func TestFromEnvAttachmentCredentialsDefaultToPremium(t *testing.T) {
+	t.Setenv("PREMIUM_MODEL_API_KEY", "premium-key")
+	t.Setenv("PREMIUM_MODEL_BASE_URL", "https://api.moonshot.cn/v1")
+	t.Setenv("KIMI_FILE_API_KEY", "")
+	t.Setenv("KIMI_FILE_BASE_URL", "")
+
+	cfg := FromEnv()
+	if cfg.AttachmentAPIKey != "premium-key" {
+		t.Fatalf("AttachmentAPIKey = %q, want premium fallback", cfg.AttachmentAPIKey)
+	}
+	if cfg.AttachmentBaseURL != "https://api.moonshot.cn/v1" {
+		t.Fatalf("AttachmentBaseURL = %q, want premium fallback", cfg.AttachmentBaseURL)
+	}
+}

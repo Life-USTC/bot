@@ -41,13 +41,15 @@ type Config struct {
 	PremiumAPIKey         string
 	PremiumBaseURL        string
 	PremiumModel          string
+	AttachmentAPIKey      string
+	AttachmentBaseURL     string
 	FeedbackAdminPlatform string
 	FeedbackAdminUsers    []string
 	FeedbackAdminGroups   []string
 }
 
 func FromEnv() Config {
-	return Config{
+	cfg := Config{
 		LifeServer:            envTrimRight("LIFE_USTC_SERVER", "http://localhost:3000", "/"),
 		HealthAddr:            envString("BOT_HEALTH_ADDR", "127.0.0.1:2282"),
 		NapCatAPIURL:          envTrimRight("NAPCAT_API_URL", "", "/"),
@@ -81,10 +83,23 @@ func FromEnv() Config {
 		PremiumAPIKey:         envOptionalString("PREMIUM_MODEL_API_KEY"),
 		PremiumBaseURL:        envTrimRight("PREMIUM_MODEL_BASE_URL", "https://api.moonshot.cn/v1", "/"),
 		PremiumModel:          envString("PREMIUM_MODEL", "kimi-k3"),
+		AttachmentAPIKey:      envOptionalString("KIMI_FILE_API_KEY"),
+		AttachmentBaseURL:     envTrimRight("KIMI_FILE_BASE_URL", "", "/"),
 		FeedbackAdminPlatform: envOptionalString("BOT_FEEDBACK_ADMIN_PLATFORM"),
 		FeedbackAdminUsers:    envList("BOT_FEEDBACK_ADMIN_USERS"),
 		FeedbackAdminGroups:   envList("BOT_FEEDBACK_ADMIN_GROUPS"),
 	}
+	// File extraction and the chat model are separate endpoints: a chat model
+	// can live on a host without a file-extract API. Attachment credentials
+	// therefore default to the premium pair, so a deployment that sets only
+	// PREMIUM_MODEL_* keeps its previous behaviour.
+	if cfg.AttachmentAPIKey == "" {
+		cfg.AttachmentAPIKey = cfg.PremiumAPIKey
+	}
+	if cfg.AttachmentBaseURL == "" {
+		cfg.AttachmentBaseURL = cfg.PremiumBaseURL
+	}
+	return cfg
 }
 
 func envString(key, fallback string) string {

@@ -69,7 +69,11 @@ activate the agent; ambient group attachments remain ignored.
 
 The model input layer downloads images/stickers through the existing vision
 normalizer. Files use Kimi's `/files` upload (`purpose=file-extract`), content
-retrieval and temporary-file deletion, using the configured premium Kimi key.
+retrieval and temporary-file deletion, using `KIMI_FILE_API_KEY` and
+`KIMI_FILE_BASE_URL`. Those default to the premium chat pair and are configured
+separately only because a chat endpoint need not serve `/files`: the Kimi coding
+plan (`api.kimi.com/coding/v1`) does not, so file extraction stays on the
+Moonshot platform host while chat runs on the coding plan.
 The complete extracted response is user material, including when the endpoint
 returns JSON. It never becomes a system instruction or command invocation.
 Prepared user events are persisted before model invocation; recovery looks up the
