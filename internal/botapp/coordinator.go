@@ -140,6 +140,10 @@ func (e conversationPersistenceError) Unwrap() error {
 	return e.err
 }
 
+// conversationJobPersistenceRetryLimit bounds how many times a job may be
+// re-claimed after a persistence failure before it is failed outright.
+const conversationJobPersistenceRetryLimit = 20
+
 func markConversationPersistenceError(err error) error {
 	if err == nil {
 		return nil
@@ -599,7 +603,11 @@ func (c *Coordinator) acknowledgeAgent(ctx context.Context, job store.Conversati
 }
 
 func (c *Coordinator) fail(ctx context.Context, job store.ConversationJob, cause error) {
-	if isConversationPersistenceError(cause) {
+	// A persistence failure is retried because it is usually transient. A
+	// permanently unacceptable row is not: without this bound the job returns to
+	// retry_wait immediately, is re-claimed at once, and spins until the
+	// conversation expires.
+	if isConversationPersistenceError(cause) && job.Attempts < conversationJobPersistenceRetryLimit {
 		ok, err := c.jobs.RetryConversationJob(ctx, job.ID, job.LeaseToken, cause.Error())
 		if err != nil {
 			c.logf("retry conversation job %d after persistence failure failed: %v", job.ID, err)

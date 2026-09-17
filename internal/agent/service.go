@@ -1072,6 +1072,27 @@ func (s *Service) toolsFor(
 	return tools, mcpSession, nil
 }
 
+// agentRunRawText never returns an empty string. RecordAgentRun rejects an
+// empty value and the coordinator classifies that rejection as a retryable
+// persistence failure, so an input carrying no text of its own — an
+// attachment-only or forward-only message — would otherwise re-enter the
+// durable queue forever instead of ever reaching a terminal state.
+func agentRunRawText(input Input) string {
+	if text := strings.TrimSpace(input.Text); text != "" {
+		return text
+	}
+	switch {
+	case len(input.ImageURLs) > 0:
+		return "[image]"
+	case len(input.Media) > 0:
+		return "[attachment]"
+	case len(input.Forwarded) > 0:
+		return "[forwarded]"
+	default:
+		return "[empty]"
+	}
+}
+
 func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, model string) (int64, error) {
 	if s.handler.Store == nil {
 		if input.JobID > 0 {
@@ -1085,10 +1106,7 @@ func (s *Service) recordAgentRun(ctx context.Context, input Input, provider, mod
 		}
 		return 0, nil
 	}
-	rawText := strings.TrimSpace(input.Text)
-	if rawText == "" && len(input.ImageURLs) > 0 {
-		rawText = "[image]"
-	}
+	rawText := agentRunRawText(input)
 	id, err := s.handler.Store.RecordAgentRun(ctx, input.Identity, store.AgentRun{
 		JobID:    input.JobID,
 		RawText:  rawText,

@@ -281,3 +281,32 @@ func TestAttachmentCredentialsFallBackToPremium(t *testing.T) {
 		t.Fatalf("attachment parser apiKey = %q", svc.attachmentParser.apiKey)
 	}
 }
+
+// An input with no text of its own must still yield a recordable agent run:
+// RecordAgentRun rejects empty raw text and the coordinator retries that
+// rejection, so an empty value turns an attachment-only message into a job
+// that never reaches a terminal state.
+func TestAgentRunRawTextIsNeverEmpty(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input Input
+		want  string
+	}{
+		{name: "text", input: Input{Text: "  查课表  "}, want: "查课表"},
+		{name: "image only", input: Input{ImageURLs: []string{"https://example.invalid/a.png"}}, want: "[image]"},
+		{name: "attachment only", input: Input{Media: []message.InputMedia{{Kind: message.InputMediaFile, Name: "report.pdf"}}}, want: "[attachment]"},
+		{name: "forward only", input: Input{Forwarded: []message.ForwardedMessage{{}}}, want: "[forwarded]"},
+		{name: "nothing at all", input: Input{}, want: "[empty]"},
+		{name: "blank text with attachment", input: Input{Text: "   ", Media: []message.InputMedia{{Kind: message.InputMediaFile}}}, want: "[attachment]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := agentRunRawText(test.input)
+			if got != test.want {
+				t.Fatalf("agentRunRawText = %q, want %q", got, test.want)
+			}
+			if strings.TrimSpace(got) == "" {
+				t.Fatal("raw text must never be empty")
+			}
+		})
+	}
+}

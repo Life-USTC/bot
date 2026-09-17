@@ -1416,3 +1416,52 @@ func TestCoordinatorPassesGroupedDirectMutationThroughWithoutConfirmation(t *tes
 		t.Fatalf("grouped direct execution=%#v err=%v", executions, err)
 	}
 }
+
+// A persistence failure that can never succeed must reach a terminal state.
+// RetryConversationJob sets retry_at to now, so an unbounded retry re-claims
+// the job immediately and spins until the conversation expires.
+func TestCoordinatorStopsRetryingAPermanentPersistenceFailure(t *testing.T) {
+	db := newCoordinatorStore(t)
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: db,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{Text: "帮助结果", Kind: "help"}, true
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Enqueue(context.Background(), jobInbound("poison-1", "help")); err != nil {
+		t.Fatal(err)
+	}
+
+	cause := markConversationPersistenceError(errors.New("agent run raw text is empty"))
+	var jobID int64
+	claims := 0
+	for claims < conversationJobPersistenceRetryLimit+5 {
+		job, err := db.ClaimNextConversationJob(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job == nil {
+			break
+		}
+		jobID = job.ID
+		claims++
+		coordinator.fail(context.Background(), *job, cause)
+	}
+	if claims == 0 {
+		t.Fatal("job was never claimed")
+	}
+	if claims > conversationJobPersistenceRetryLimit+1 {
+		t.Fatalf("job was re-claimed %d times; the retry bound did not apply", claims)
+	}
+	saved, err := db.GetConversationJob(context.Background(), jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.State != store.ConversationJobStateFailed {
+		t.Fatalf("job = %#v, want state failed", saved)
+	}
+}
