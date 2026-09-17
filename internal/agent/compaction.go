@@ -104,9 +104,12 @@ func compactionPrefix(messages []*schema.Message) (start, end int, expectedID, c
 		if isHistoryMetadata(messages[i]) {
 			continue
 		}
-		// Every user boundary closes the preceding complete historical turn.
+		// Every user boundary closes the preceding complete historical turn. The
+		// first boundary is always taken even when that turn alone exceeds the
+		// summary input budget: without a minimum prefix, one oversized turn at
+		// the frontier would block every later compaction attempt forever.
 		if i > historyStart && messages[i].Role == schema.User {
-			if estimateMessagesTokens(messages[start:i]) > conversationSummaryInputTokens {
+			if end != 0 && estimateMessagesTokens(messages[start:i]) > conversationSummaryInputTokens {
 				break
 			}
 			end, coveredID = i, previousID
