@@ -34,6 +34,10 @@ type Bridge struct {
 	App         botapp.Processor
 	HTTPClient  *http.Client
 	Logger      *log.Logger
+	// AllowLocalMediaPaths lets a co-located NapCat hand back local download
+	// paths from get_file. The attachment parser must be opted in separately;
+	// without both flags the path is dropped.
+	AllowLocalMediaPaths bool
 
 	reverseMu      sync.Mutex
 	reverseConn    *websocket.Conn

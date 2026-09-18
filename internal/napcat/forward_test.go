@@ -555,7 +555,7 @@ func TestNestedForwardReferenceAndFileIDAreResolvedBeforeAdmission(t *testing.T)
 	calls := map[string]int{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls[r.URL.Path]++
-		if r.URL.Path == "/get_private_file_url" {
+		if r.URL.Path == "/get_file" {
 			_, _ = w.Write([]byte(`{"status":"ok","retcode":0,"data":{"url":"https://cdn.example/report.txt"}}`))
 			return
 		}
@@ -575,7 +575,7 @@ func TestNestedForwardReferenceAndFileIDAreResolvedBeforeAdmission(t *testing.T)
 	if inbound.BotMentioned || strings.Contains(inbound.Text, "校车") {
 		t.Fatalf("forwarded text affected outer routing: %#v", inbound)
 	}
-	if calls["/get_forward_msg"] != 2 || calls["/get_private_file_url"] != 1 {
+	if calls["/get_forward_msg"] != 2 || calls["/get_file"] != 1 {
 		t.Fatalf("calls=%v", calls)
 	}
 	if len(inbound.Media) != 1 || inbound.Media[0].URL != "https://cdn.example/report.txt" {

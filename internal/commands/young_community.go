@@ -18,54 +18,6 @@ import (
 
 const youngWorkspacePageSize = 100
 
-func (h Handler) personalCalendar(ctx context.Context, ident store.Identity, args []string) string {
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	query, err := parseYoungCalendarQuery(args, chinaNow())
-	if err != nil {
-		return h.invalidInput(err.Error())
-	}
-	dateFrom, dateTo := youngCalendarBounds(query)
-	events, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]life.PersonalCalendarEvent, error) {
-		return h.Life.ListAllPersonalCalendarEvents(ctx, token, dateFrom, dateTo)
-	})
-	if err != nil {
-		return h.commandError("日程查不到：", err)
-	}
-	h.markData(map[string]any{"operation": "personal_calendar", "dateFrom": dateFrom, "dateTo": dateTo, "events": events})
-	lines := []string{fmt.Sprintf("日程（%s 至 %s）：", dateFrom, dateTo)}
-	if len(events) == 0 {
-		return lines[0] + "\n暂无安排。"
-	}
-	for i, event := range events {
-		kind := event.Type
-		switch kind {
-		case "young_event":
-			kind = "第二课堂活动"
-		case "":
-			kind = "日程"
-		}
-		label := textutil.FirstNonEmpty(event.Title, "未命名安排")
-		line := fmt.Sprintf("%d. [%s] %s", i+1, kind, label)
-		if event.At != "" {
-			line += " · " + formatCalendarInstant(event.At)
-		}
-		if event.EndsAt != "" {
-			line += " ~ " + formatCalendarInstant(event.EndsAt)
-		}
-		if event.Location != "" {
-			line += " · " + event.Location
-		}
-		if event.YoungID != "" {
-			line += " · youngId：" + event.YoungID
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
 func formatCalendarInstant(value string) string {
 	if parsed, ok := lifedata.ParseAPITime(value); ok {
 		return parsed.In(lifedata.ChinaLocation()).Format("2006-01-02 15:04")

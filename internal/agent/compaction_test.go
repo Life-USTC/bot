@@ -207,6 +207,50 @@ func TestCompactionTriggerIncludesToolSchemas(t *testing.T) {
 	}
 }
 
+func TestCompactionAdvancesPastOversizedFirstTurn(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "test", ConversationType: "private", ConversationID: "oversized-first", UserID: "one"}
+	events := seedCompactionHistory(t, db, ident, 1, 100_000)
+	events = append(events, seedCompactionHistory(t, db, ident, 4, 5_000)...)
+	messages := conversationEventMessages(events)
+	calls := 0
+	mw := &conversationCompactionMiddleware{store: db, identity: ident, model: summaryModelFunc(func(_ context.Context, _ []*schema.Message) (*schema.Message, error) {
+		calls++
+		return schema.AssistantMessage("第一轮超大工具结果已概括；后续请求待处理。", nil), nil
+	})}
+	_, after, err := mw.BeforeModelRewriteState(t.Context(), &adk.ChatModelAgentState{Messages: messages}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls == 0 {
+		t.Fatal("an oversized first turn blocked compaction forever")
+	}
+	if calls != 1 {
+		t.Fatalf("compaction ran %d times for one oversized prefix", calls)
+	}
+	saved, found, err := db.ConversationCompaction(t.Context(), ident)
+	if err != nil || !found || saved.CoveredEventID != events[3].ID {
+		t.Fatalf("compaction did not cover the oversized first turn: %#v %v", saved, err)
+	}
+	if after.Messages[0].Role != schema.Assistant || messageCursor(after.Messages[0], conversationSummaryIDKey) != saved.CoveredEventID {
+		t.Fatal("rewritten state lost the summary cursor")
+	}
+	tail := -1
+	for i, m := range messages {
+		if messageCursor(m, conversationEventIDKey) == events[4].ID {
+			tail = i
+			break
+		}
+	}
+	if tail < 0 || !reflect.DeepEqual(after.Messages[1:], messages[tail:]) {
+		t.Fatal("compaction replaced more than the oversized first turn")
+	}
+}
+
 func TestCompactionCannotDiscardOversizedCurrentTurn(t *testing.T) {
 	state := &adk.ChatModelAgentState{Messages: []*schema.Message{schema.SystemMessage("system"), schema.UserMessage(strings.Repeat("数", 100_000))}}
 	mw := &conversationCompactionMiddleware{}

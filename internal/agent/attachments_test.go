@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -279,5 +280,68 @@ func TestAttachmentCredentialsFallBackToPremium(t *testing.T) {
 	}
 	if svc.attachmentParser.apiKey != "kimi-test-key" {
 		t.Fatalf("attachment parser apiKey = %q", svc.attachmentParser.apiKey)
+	}
+}
+
+// An input with no text of its own must still yield a recordable agent run:
+// RecordAgentRun rejects empty raw text and the coordinator retries that
+// rejection, so an empty value turns an attachment-only message into a job
+// that never reaches a terminal state.
+func TestAgentRunRawTextIsNeverEmpty(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input Input
+		want  string
+	}{
+		{name: "text", input: Input{Text: "  查课表  "}, want: "查课表"},
+		{name: "image only", input: Input{ImageURLs: []string{"https://example.invalid/a.png"}}, want: "[image]"},
+		{name: "attachment only", input: Input{Media: []message.InputMedia{{Kind: message.InputMediaFile, Name: "report.pdf"}}}, want: "[attachment]"},
+		{name: "forward only", input: Input{Forwarded: []message.ForwardedMessage{{}}}, want: "[forwarded]"},
+		{name: "nothing at all", input: Input{}, want: "[empty]"},
+		{name: "blank text with attachment", input: Input{Text: "   ", Media: []message.InputMedia{{Kind: message.InputMediaFile}}}, want: "[attachment]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := agentRunRawText(test.input)
+			if got != test.want {
+				t.Fatalf("agentRunRawText = %q, want %q", got, test.want)
+			}
+			if strings.TrimSpace(got) == "" {
+				t.Fatal("raw text must never be empty")
+			}
+		})
+	}
+}
+
+// A co-located platform adapter (NapCat on the same host) resolves file IDs to
+// local paths. The parser reads them only after an explicit opt-in, and never
+// treats relative paths or missing files as attachments.
+func TestAttachmentParserReadsLocalPathOnlyWhenAllowed(t *testing.T) {
+	path := t.TempDir() + "/report.txt"
+	if err := os.WriteFile(path, []byte("local document"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guarded, err := NewAttachmentParser(AttachmentParserConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guarded.downloadFile(t.Context(), path); err == nil {
+		t.Fatal("local path accepted without opt-in")
+	}
+	allowed, err := NewAttachmentParser(AttachmentParserConfig{AllowLocalPaths: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := allowed.downloadFile(t.Context(), path)
+	if err != nil || string(data) != "local document" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+	if _, err := allowed.downloadFile(t.Context(), "report.txt"); err == nil {
+		t.Fatal("relative path accepted")
+	}
+	if _, err := allowed.downloadFile(t.Context(), path+".missing"); err == nil {
+		t.Fatal("missing file accepted")
+	}
+	if _, err := allowed.downloadFile(t.Context(), t.TempDir()); err == nil {
+		t.Fatal("directory accepted")
 	}
 }

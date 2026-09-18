@@ -114,11 +114,12 @@ func main() {
 		PremiumBaseURL: cfg.PremiumBaseURL,
 		PremiumModel:   cfg.PremiumModel,
 
-		AttachmentAPIKey:  cfg.AttachmentAPIKey,
-		AttachmentBaseURL: cfg.AttachmentBaseURL,
-		Logger:            logger,
-		MCPBaseURL:        strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
-		AuthManager:       authManager,
+		AttachmentAPIKey:     cfg.AttachmentAPIKey,
+		AttachmentBaseURL:    cfg.AttachmentBaseURL,
+		AttachmentLocalPaths: cfg.AttachmentLocalPaths,
+		Logger:               logger,
+		MCPBaseURL:           strings.TrimRight(cfg.LifeServer, "/") + "/api/mcp/",
+		AuthManager:          authManager,
 	}, handler, httpClient)
 	if err != nil {
 		logger.Fatalf("create agent service: %v", err)
@@ -146,6 +147,8 @@ func main() {
 		Replies:  stateStore,
 		Recorder: stateStore,
 		Logger:   logger,
+
+		MergeWindow: cfg.ConversationMergeWindow,
 	})
 	if err != nil {
 		logger.Fatalf("create bot application: %v", err)
@@ -161,6 +164,8 @@ func main() {
 			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
+
+			AllowLocalMediaPaths: cfg.AttachmentLocalPaths,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)
@@ -179,6 +184,8 @@ func main() {
 			App:         app,
 			HTTPClient:  httpClient,
 			Logger:      logger,
+
+			AllowLocalMediaPaths: cfg.AttachmentLocalPaths,
 		}
 		if err := deliveryService.Register(napcat.NewDeliveryAdapter(napcatBridge)); err != nil {
 			logger.Fatalf("register NapCat delivery adapter: %v", err)

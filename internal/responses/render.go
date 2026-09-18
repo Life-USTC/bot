@@ -871,26 +871,11 @@ func cardTheme(kind string) responseCardTheme {
 		theme.Background = color.RGBA{255, 251, 235, 255}
 		theme.Header = color.RGBA{254, 243, 199, 255}
 		theme.Accent = color.RGBA{217, 119, 6, 255}
-	case "overview":
-		theme.Label = "今日"
-		theme.Background = color.RGBA{245, 243, 255, 255}
-		theme.Header = color.RGBA{237, 233, 254, 255}
-		theme.Accent = color.RGBA{124, 58, 237, 255}
-	case "dashboard":
-		theme.Label = "概览"
-		theme.Background = color.RGBA{240, 249, 255, 255}
-		theme.Header = color.RGBA{224, 242, 254, 255}
-		theme.Accent = color.RGBA{2, 132, 199, 255}
 	case "weather":
 		theme.Label = "天气"
 		theme.Background = color.RGBA{240, 249, 255, 255}
 		theme.Header = color.RGBA{224, 242, 254, 255}
 		theme.Accent = color.RGBA{217, 119, 6, 255}
-	case "deadlines":
-		theme.Label = "截止"
-		theme.Background = color.RGBA{255, 247, 237, 255}
-		theme.Header = color.RGBA{255, 237, 213, 255}
-		theme.Accent = color.RGBA{234, 88, 12, 255}
 	case "schedule":
 		theme.Label = "课表"
 	case "homework":

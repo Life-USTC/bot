@@ -298,9 +298,6 @@ func (h Handler) parseResultSingle(text string) ParseResult {
 	if raw == "" {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	if HasRemovedCommandPrefix(raw) {
-		return ParseResult{Status: ParseStatusUnknown}
-	}
 	if isNaturalCalendarLinkRequest(raw) {
 		result := acceptedCommandResult(raw, "subscription", []string{"link"})
 		result.Invocation.NaturalRoute = "calendar_link"
@@ -359,15 +356,6 @@ func parsedCommandLines(text string) (ParseResult, int) {
 		count++
 	}
 	return first, count
-}
-
-// HasRemovedCommandPrefix identifies command paths that no longer exist. The
-// router uses the same boundary as the parser so rejected slash commands can
-// never fall through to natural-language handling or the Agent.
-func HasRemovedCommandPrefix(text string) bool {
-	raw := strings.TrimSpace(stripCQCodes(text))
-	fields := strings.Fields(raw)
-	return len(fields) > 0 && strings.HasPrefix(strings.ToLower(fields[0]), "/life")
 }
 
 func parseNaturalReadIntent(raw string) ParseResult {
@@ -479,15 +467,10 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		}
 	case "日程":
 		switch action {
-		case "":
-			return help("日程")
-		case "今日", "今天":
-			return "calendar", rest, true
-		case "概览", "汇总":
-			return "overview", rest, true
-		case "截止", "近期截止":
-			return "upcoming_deadlines", rest, true
+		case "链接", "日历":
+			return "subscription", []string{"link"}, true
 		}
+		return "calendar", args, true
 	case "课表":
 		switch action {
 		case "":
@@ -1192,7 +1175,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		return strings.Join([]string{
 			"反馈用法：",
 			"反馈 希望校车能显示更多路线",
-			"fb 这里写你的建议",
+			"反馈 这里写你的建议",
 		}, "\n")
 	}
 	text := strings.TrimSpace(joinedArgs(args))
@@ -1637,10 +1620,6 @@ func (h Handler) setTodoCompletionItem(ctx context.Context, ident store.Identity
 		return todoCompletionReply(title)
 	}
 	return todoUndoReply(title)
-}
-
-func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	return h.todos(ctx, ident, token, life.TodoListOptions{Completed: "false"})
 }
 
 func (h Handler) todos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions) ([]map[string]any, error) {
@@ -2093,91 +2072,6 @@ func hasTodoUpdate(opts life.TodoUpdateOptions) bool {
 		strings.TrimSpace(opts.Priority) != "" ||
 		strings.TrimSpace(opts.DueAt) != "" ||
 		opts.Completed != nil
-}
-
-func (h Handler) overview(ctx context.Context, ident store.Identity) string {
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	now := chinaNow()
-	schedules, token, err := h.schedulesForDay(ctx, ident, token, now)
-	if err != nil {
-		return h.commandError("今日安排查不到：", err)
-	}
-	todos, err := h.pendingTodos(ctx, ident, token)
-	if err != nil {
-		return h.commandError("今日安排查不到：", err)
-	}
-	homeworks, err := h.homeworks(ctx, ident, token)
-	if err != nil {
-		return h.commandError("今日安排查不到：", err)
-	}
-	subscription, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.CurrentSubscription(ctx, token)
-	})
-	if err != nil {
-		return h.commandError("今日安排查不到：", err)
-	}
-	lifedata.ApplySubscriptionKinds(subscription, schedules)
-	lifedata.ApplySubscriptionKinds(subscription, homeworks)
-	exams := upcomingSubscriptionExams(subscriptionExams(subscription), now)
-	h.markData(map[string]any{
-		"operation":    "overview",
-		"date":         now.In(lifedata.ChinaLocation()).Format("2006-01-02"),
-		"schedules":    schedules,
-		"todos":        todos,
-		"homeworks":    dueSoonHomeworks(homeworks, now),
-		"exams":        exams,
-		"subscription": subscription,
-	})
-	return formatOverview(now, schedules, todos, dueSoonHomeworks(homeworks, now), exams)
-}
-
-func formatOverview(now time.Time, schedules []map[string]any, todos []map[string]any, homeworks []map[string]any, exams []subscriptionExam) string {
-	lines := []string{textutil.MonospaceDigits(now.In(lifedata.ChinaLocation()).Format("01-02")) + " 安排："}
-	lines = appendOverviewSection(lines, "今日课表", schedules, formatSchedule, "课表 单日 今天")
-	lines = appendOverviewSection(lines, "待办", todos, formatTodo, "待办")
-	lines = appendOverviewSection(lines, "近期作业", homeworks, formatHomework, "作业")
-	lines = appendOverviewSection(lines, "考试", exams, formatExam, "考试")
-	if len(lines) == 1 {
-		return lines[0] + "\n暂无安排。"
-	}
-	reply := strings.Join(lines, "\n")
-	if len(schedules) > 0 || len(exams) > 0 {
-		return withCalendarSubscriptionHint(reply)
-	}
-	return reply
-}
-
-func appendOverviewSection[T any](lines []string, title string, items []T, format func(T) string, command string) []string {
-	if len(items) == 0 {
-		return lines
-	}
-	if len(lines) > 1 {
-		lines = append(lines, "")
-	}
-	lines = append(lines, fmt.Sprintf("%s (%d)：", title, len(items)))
-	shown := min(len(items), 3)
-	for i, item := range items[:shown] {
-		lines = append(lines, formatNumberedLine(i+1, format(item)))
-	}
-	return appendListOverflow(lines, len(items), shown, command)
-}
-
-func dueSoonHomeworks(homeworks []map[string]any, now time.Time) []map[string]any {
-	out := make([]map[string]any, 0, len(homeworks))
-	for _, homework := range homeworks {
-		if !lifedata.HomeworkPendingForDisplay(homework, now) {
-			continue
-		}
-		due, ok := lifedata.ParseAPITime(lifedata.FirstString(homework, "submissionDueAt"))
-		if !ok || due.Before(now) || !due.After(now.Add(7*24*time.Hour)) {
-			out = append(out, homework)
-		}
-	}
-	lifedata.SortHomeworksByDue(out)
-	return out
 }
 
 func (h Handler) homework(ctx context.Context, ident store.Identity, args []string) string {
@@ -4320,100 +4214,6 @@ func (h Handler) sectionHomeworks(ctx context.Context, ident store.Identity, arg
 	return reply
 }
 
-func dashboardItemSlice(data map[string]any, key string) []map[string]any {
-	container, _ := data[key].(map[string]any)
-	return lifedata.MapSlice(container["items"])
-}
-
-func dashboardItemTotal(data map[string]any, key string, itemCount int) int {
-	container, _ := data[key].(map[string]any)
-	total := lifedata.FirstInt(container, "total")
-	if total < itemCount {
-		return itemCount
-	}
-	return total
-}
-
-func (h Handler) myDashboard(ctx context.Context, ident store.Identity) string {
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.GetMyDashboard(ctx, token)
-	})
-	if err != nil {
-		return h.commandError("概览查不到：", err)
-	}
-	h.markData(map[string]any{"operation": "dashboard", "data": data})
-	return formatDashboard(data, "我的概览")
-}
-
-func (h Handler) upcomingDeadlines(ctx context.Context, ident store.Identity, args []string) string {
-	dayLimit := 7
-	if len(args) > 0 {
-		if v, ok := parseIntArg(args[0]); ok {
-			dayLimit = int(v)
-		}
-	}
-	token, ok := h.accessToken(ctx, ident)
-	if !ok {
-		return h.loginRequired()
-	}
-	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.GetUpcomingDeadlines(ctx, token, dayLimit)
-	})
-	if err != nil {
-		return h.commandError("近期截止查不到：", err)
-	}
-	h.markData(map[string]any{"operation": "upcoming_deadlines", "days": dayLimit, "data": data})
-	return formatDashboard(data, fmt.Sprintf("未来 %d 天截止", dayLimit))
-}
-
-func formatDashboard(data map[string]any, title string) string {
-	lines := []string{title + "："}
-	dueTodos := dashboardItemSlice(data, "dueTodos")
-	dueTodoTotal := dashboardItemTotal(data, "dueTodos", len(dueTodos))
-	if dueTodoTotal > 0 {
-		lines = append(lines, "", fmt.Sprintf("待办 (%d)：", dueTodoTotal))
-		for i, todo := range dueTodos[:min(len(dueTodos), summaryDisplayLimit)] {
-			lines = append(lines, formatNumberedLine(i+1, formatTodo(todo)))
-		}
-		lines = appendListOverflow(lines, dueTodoTotal, min(len(dueTodos), summaryDisplayLimit), "待办")
-	}
-	homeworks := dashboardItemSlice(data, "homeworks")
-	homeworkTotal := dashboardItemTotal(data, "homeworks", len(homeworks))
-	if homeworkTotal > 0 {
-		lines = append(lines, "", fmt.Sprintf("作业 (%d)：", homeworkTotal))
-		for i, homework := range homeworks[:min(len(homeworks), summaryDisplayLimit)] {
-			lines = append(lines, formatNumberedLine(i+1, formatHomework(homework)))
-		}
-		lines = appendListOverflow(lines, homeworkTotal, min(len(homeworks), summaryDisplayLimit), "作业")
-	}
-	exams := dashboardItemSlice(data, "exams")
-	examTotal := dashboardItemTotal(data, "exams", len(exams))
-	if examTotal > 0 {
-		lines = append(lines, "", fmt.Sprintf("考试 (%d)：", examTotal))
-		for i, exam := range exams[:min(len(exams), summaryDisplayLimit)] {
-			sectionMap, _ := exam["section"].(map[string]any)
-			lines = append(lines, formatNumberedLine(i+1, formatExam(subscriptionExam{exam: exam, section: sectionMap})))
-		}
-		lines = appendListOverflow(lines, examTotal, min(len(exams), summaryDisplayLimit), "考试")
-	}
-	if len(lines) == 1 {
-		return title + "\n暂无近期截止。"
-	}
-	return strings.Join(lines, "\n")
-}
-
-func appendListOverflow(lines []string, total, shown int, command string) []string {
-	if total <= shown {
-		return lines
-	}
-	line := fmt.Sprintf("另有 %d 条，发送「%s」查看完整列表。", total-shown, command)
-	return append(lines, textutil.MonospaceDigits(line))
-}
-
 func (h Handler) currentSemester(ctx context.Context) string {
 	semester, err := h.Life.CurrentSemester(ctx)
 	if err != nil {
@@ -4585,20 +4385,6 @@ func sortSubscriptionExams(exams []subscriptionExam) {
 	})
 }
 
-func upcomingSubscriptionExams(exams []subscriptionExam, now time.Time) []subscriptionExam {
-	out := make([]subscriptionExam, 0, len(exams))
-	loc := lifedata.ChinaLocation()
-	today := now.In(loc).Format("2006-01-02")
-	for _, exam := range exams {
-		date, ok := lifedata.ParseAPITime(lifedata.FirstString(exam.exam, "examDate", "date"))
-		if !ok || date.In(loc).Format("2006-01-02") >= today {
-			out = append(out, exam)
-		}
-	}
-	sortSubscriptionExams(out)
-	return out
-}
-
 func formatExam(item subscriptionExam) string {
 	date := formatExamDate(item.exam)
 	timeRange := formatExamTimeRange(item.exam)
@@ -4717,7 +4503,6 @@ func paddedCourseCode(code string) string {
 const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
 const fullListPageSize = 30
-const summaryDisplayLimit = 8
 
 type listPage struct {
 	number int

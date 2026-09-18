@@ -261,7 +261,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"个人事务：",
 		"账户与通知：",
 		"命令\t说明",
-		"日程\t今日安排、综合概览与近期截止",
+		"日程\t查看某一天的课程、考试、作业、待办与第二课堂安排",
 		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
@@ -966,7 +966,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"## 个人事务",
 		"## 账户与通知",
 		"| 命令 | 说明 |",
-		"| 日程 | 今日安排、综合概览与近期截止 |",
+		"| 日程 | 查看某一天的课程、考试、作业、待办与第二课堂安排 |",
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
@@ -1216,7 +1216,7 @@ func TestSchedulePeriodLabelUsesUSTCLessonTimes(t *testing.T) {
 }
 
 func TestRichTextImageMarksSectionHeadings(t *testing.T) {
-	img := richTextImage("overview", "07-15 安排", strings.Join([]string{
+	img := richTextImage("calendar", "07-15 安排", strings.Join([]string{
 		"07-15 安排：",
 		"今日课表 (1)：",
 		"1.\t西区 3A204\t09:50-11:25\t数据库系统",
@@ -2497,45 +2497,6 @@ func TestCompletedTeachingAssistantHomeworkIsNotPending(t *testing.T) {
 	}
 }
 
-func TestHandleOverviewCombinesPersonalData(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	now := chinaNow()
-	today := now.Format("2006-01-02")
-	wantExamDate := textutil.MonospaceDigits(now.Format("01-02"))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer access" {
-			t.Fatalf("authorization = %q", got)
-		}
-		switch r.URL.Path {
-		case "/api/workspace/subscriptions/current":
-			_, _ = fmt.Fprintf(w, `{"subscription":{"sections":[
-				{"id":101,"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"semester":{"startDate":"2026-02-01T00:00:00+08:00","endDate":"2026-07-01T00:00:00+08:00"},"exams":[{"id":1,"examDate":%q,"startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
-			]}}`, today+"T00:00:00+08:00")
-		case "/api/workspace/schedules":
-			_, _ = fmt.Fprintf(w, `{"schedules":[{"id":1,"date":%q,"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"计算机导论"}},"room":{"namePrimary":"3A101"}}]}`, today+"T00:00:00+08:00")
-		case "/api/workspace/todos":
-			if r.URL.Query().Get("completed") != "false" {
-				t.Fatalf("completed = %q", r.URL.Query().Get("completed"))
-			}
-			_, _ = fmt.Fprintf(w, `{"todos":[{"id":"todo-1","title":"写报告","dueAt":%q}]}`, today+"T18:00:00+08:00")
-		case "/api/workspace/homeworks":
-			_, _ = fmt.Fprintf(w, `{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"作业一","submissionDueAt":%q,"section":{"course":{"namePrimary":"数学分析"}}}]}`, today+"T23:59:00+08:00")
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	reply := handler.overview(ctx, ident)
-	for _, want := range []string{"安排：", "今日课表 (1)：", "计算机导论", "待办 (1)：", "写报告", "近期作业 (1)：", "作业一", "考试 (1)：", wantExamDate} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %q: %q", want, reply)
-		}
-	}
-}
-
 func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
@@ -3615,10 +3576,10 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		name string
 		args string
 	}{
-		{text: "日程", name: "help", args: "日程"},
-		{text: "日程 今日", name: "calendar"},
-		{text: "日程 概览", name: "overview"},
-		{text: "日程 截止 14", name: "upcoming_deadlines", args: "14"},
+		{text: "日程", name: "calendar"},
+		{text: "日程 今日", name: "calendar", args: "今日"},
+		{text: "日程 明天", name: "calendar", args: "明天"},
+		{text: "日程 链接", name: "subscription", args: "link"},
 		{text: "课表 单日 今天", name: "schedule", args: "today"},
 		{text: "课表 单日 明天", name: "schedule", args: "tomorrow"},
 		{text: "课表 下一节", name: "nextclass"},
@@ -3702,18 +3663,6 @@ func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 	}
 	if _, ok = handler.parse("设置作业呃开"); ok {
 		t.Fatal("compact settings text unexpectedly parsed as a notification command")
-	}
-}
-
-func TestLifePrefixIsRejected(t *testing.T) {
-	handler := Handler{}
-	for _, text := range []string{
-		"/life", "/LIFE help", "/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容",
-		"/life校车 东区 西区", "/lifekb今天", "/lifenope", "/life课表订阅链接",
-	} {
-		if cmd, ok := handler.parse(text); ok {
-			t.Fatalf("removed prefix %q parsed as %#v", text, cmd)
-		}
 	}
 }
 
@@ -3919,28 +3868,6 @@ func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("interaction count = %d", count)
-	}
-}
-
-func TestRemovedLifePrefixIsNotHandledOrLogged(t *testing.T) {
-	s, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ident := testIdentity()
-	handler := Handler{Store: s}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if ok || reply != "" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recent) != 0 {
-		t.Fatalf("recent = %#v", recent)
 	}
 }
 
@@ -4278,134 +4205,6 @@ func TestHandleSectionHomeworks(t *testing.T) {
 	handler := testAuthedHandler(t, server, ident)
 	reply, ok := handler.Handle(ctx, Input{Text: "教学班作业 654", Identity: ident})
 	if !ok || !strings.Contains(reply, "Problem Set") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-}
-
-func TestFormatDashboard(t *testing.T) {
-	data := map[string]any{
-		"counts": map[string]any{
-			"todaySchedules":   2,
-			"pendingHomeworks": 3,
-			"dueSoonHomeworks": 1,
-			"upcomingExams":    4,
-		},
-		"dueTodos": map[string]any{
-			"items": []any{map[string]any{"title": "写报告", "dueAt": "2026-06-10T18:00:00+08:00"}},
-		},
-		"homeworks": map[string]any{
-			"items": []any{map[string]any{"title": "Problem Set 1", "submissionDueAt": "2026-06-03T12:00:00+08:00"}},
-		},
-		"exams": map[string]any{
-			"items": []any{
-				map[string]any{
-					"section":   map[string]any{"course": map[string]any{"namePrimary": "数学分析"}},
-					"examDate":  "2026-06-20T00:00:00+08:00",
-					"startTime": 900,
-					"endTime":   1100,
-					"examRooms": []any{map[string]any{"room": "3A101"}},
-				},
-			},
-		},
-	}
-	reply := formatDashboard(data, "我的概览")
-	for _, want := range []string{"我的概览", "待办 (1)：", "作业 (1)：", "考试 (1)：", "数学分析"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %q: %q", want, reply)
-		}
-	}
-	if strings.Contains(reply, "今日课表 2") || strings.Contains(reply, "待交作业 3") || strings.Contains(reply, " · ") {
-		t.Fatalf("reply still contains the summary line: %q", reply)
-	}
-}
-
-func TestFormatDashboardUsesTotalsAndPointsToFullLists(t *testing.T) {
-	items := make([]any, summaryDisplayLimit)
-	for i := range items {
-		items[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
-	}
-	reply := formatDashboard(map[string]any{
-		"dueTodos": map[string]any{"total": 20, "items": items},
-	}, "我的概览")
-	plain := textutil.PlainMonospace(reply)
-	for _, want := range []string{"待办 (20)：", "另有 12 条", "发送「待办」查看完整列表"} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("reply missing %q: %q", want, plain)
-		}
-	}
-	image := (Handler{}).imageResponseFor(Invocation{Name: "overview"}, reply)
-	if image == nil || !strings.Contains(textutil.PlainMonospace(image.RichText), "|  |  | 另有 12 条") {
-		t.Fatalf("overview image = %#v", image)
-	}
-	assertResponseImageRenders(t, image)
-}
-
-func TestFormatOverviewPointsToCompleteList(t *testing.T) {
-	todos := make([]map[string]any, 4)
-	for i := range todos {
-		todos[i] = map[string]any{"title": fmt.Sprintf("Todo %d", i+1)}
-	}
-	reply := textutil.PlainMonospace(formatOverview(chinaNow(), nil, todos, nil, nil))
-	for _, want := range []string{"待办 (4)：", "Todo 3", "另有 1 条", "发送「待办」查看完整列表"} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("reply missing %q: %q", want, reply)
-		}
-	}
-	if strings.Contains(reply, "Todo 4") || strings.Contains(reply, "...and") {
-		t.Fatalf("reply contains inaccessible preview content: %q", reply)
-	}
-}
-
-func TestCalendarSubscriptionHintAppearsForScheduleResults(t *testing.T) {
-	reply := formatOverview(chinaNow(), []map[string]any{{
-		"startTime": "09:50", "endTime": "11:25",
-		"section": map[string]any{"course": map[string]any{"namePrimary": "数据库系统"}},
-	}}, nil, nil, nil)
-	if !strings.Contains(reply, calendarSubscriptionHint) {
-		t.Fatalf("schedule overview missing calendar hint: %q", reply)
-	}
-	withoutSchedule := formatOverview(chinaNow(), nil, []map[string]any{{"title": "写报告"}}, nil, nil)
-	if strings.Contains(withoutSchedule, calendarSubscriptionHint) {
-		t.Fatalf("non-calendar overview should not include calendar hint: %q", withoutSchedule)
-	}
-}
-
-func TestHandleDashboard(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/overview" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"counts":{"todaySchedules":1,"pendingHomeworks":1},"dueTodos":{"items":[{"title":"写报告"}]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "概览", Identity: ident})
-	if !ok || !strings.Contains(reply, "我的概览") || !strings.Contains(reply, "写报告") || !strings.Contains(reply, "作业一") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-}
-
-func TestHandleUpcomingDeadlines(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/overview" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		q := r.URL.Query()
-		if q.Get("homeworkWindowDays") != "14" || q.Get("limit") != "50" {
-			t.Fatalf("query = %s", q.Encode())
-		}
-		_, _ = w.Write([]byte(`{"counts":{"upcomingExams":1},"dueTodos":{"items":[]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "近期截止 14", Identity: ident})
-	if !ok || !strings.Contains(reply, "未来 14 天截止") || !strings.Contains(reply, "作业一") {
 		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }

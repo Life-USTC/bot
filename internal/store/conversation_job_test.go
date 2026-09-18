@@ -640,3 +640,105 @@ func mustGetConversationJob(t *testing.T, s *Store, id int64) *ConversationJob {
 	}
 	return job
 }
+
+func TestConversationJobMergeWindowFoldsRapidFollowUps(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	window := 3 * time.Second
+	merge := func(existing, incoming ConversationJobInput) (ConversationJobInput, bool) {
+		return ConversationJobInput{Text: existing.Text + "\n" + incoming.Text}, true
+	}
+	enqueue := func(source, text string) ConversationJobEnqueue {
+		return ConversationJobEnqueue{
+			Input: ConversationJobInput{Text: text}, RetryAt: time.Now().UTC().Add(window),
+			ExpiresAt: time.Now().UTC().Add(time.Hour), MergeWindow: window, Merge: merge,
+		}
+	}
+
+	first := enqueueConversationJobTest(t, s, ident, "merge-1", enqueue("merge-1", "first"))
+	if first.RetryAt.IsZero() {
+		t.Fatal("first job is claimable inside the merge window")
+	}
+	if claimed, err := s.ClaimConversationJob(ctx, ident); err != nil || claimed != nil {
+		t.Fatalf("claimed inside the merge window: %#v err=%v", claimed, err)
+	}
+
+	mergedJob, created, err := s.EnqueueConversationJob(ctx, func() ConversationJobEnqueue {
+		input := enqueue("merge-2", "second")
+		input.Identity = ident
+		input.SourceEventID = "merge-2"
+		return input
+	}())
+	if err != nil || created || mergedJob.ID != first.ID {
+		t.Fatalf("merge created=%v job=%#v err=%v", created, mergedJob, err)
+	}
+	if mergedJob.Input.Text != "first\nsecond" {
+		t.Fatalf("merged input=%q", mergedJob.Input.Text)
+	}
+	if got := mustGetConversationJob(t, s, first.ID); got.Revision != 2 {
+		t.Fatalf("merged job revision=%d", got.Revision)
+	}
+
+	// A different actor in the same conversation is a different lane.
+	other := ident
+	other.UserID = "user-2"
+	otherJob, created, err := s.EnqueueConversationJob(ctx, func() ConversationJobEnqueue {
+		input := enqueue("merge-other", "other actor")
+		input.Identity = other
+		input.SourceEventID = "merge-other"
+		return input
+	}())
+	if err != nil || !created || otherJob.ID == first.ID {
+		t.Fatalf("other lane merged: created=%v job=%#v err=%v", created, otherJob, err)
+	}
+
+	// Jobs carrying a command invocation are never merge targets.
+	commandJob, created, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "merge-command", Input: ConversationJobInput{Text: "/weather"},
+		Invocation: ConversationJobInvocation{Name: "weather", Command: "/weather"},
+		ExpiresAt:  time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil || !created {
+		t.Fatalf("command enqueue created=%v err=%v", created, err)
+	}
+	if _, created, err := s.EnqueueConversationJob(ctx, func() ConversationJobEnqueue {
+		input := enqueue("merge-3", "third")
+		input.Identity = ident
+		input.SourceEventID = "merge-3"
+		return input
+	}()); err != nil || !created {
+		t.Fatalf("merged into command job: created=%v err=%v", created, err)
+	}
+	_ = commandJob
+
+	// After the window the merged job is claimable and carries both texts.
+	claimed, err := s.ClaimConversationJob(ctx, ident, time.Now().UTC().Add(2*window))
+	if err != nil || claimed == nil || claimed.ID != first.ID {
+		t.Fatalf("claim after window=%#v err=%v", claimed, err)
+	}
+	if claimed.Input.Text != "first\nsecond" {
+		t.Fatalf("claimed input=%q", claimed.Input.Text)
+	}
+}
+
+func TestConversationJobEnqueueRetryAtStateRules(t *testing.T) {
+	s := openConversationJobTestStore(t)
+	ctx := t.Context()
+	ident := conversationJobTestIdentity()
+	// Queued jobs may carry an earliest claim time.
+	if _, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "retryat-queued", Input: ConversationJobInput{Text: "hi"},
+		ExpiresAt: time.Now().UTC().Add(time.Hour), RetryAt: time.Now().UTC().Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("queued job with retry_at rejected: %v", err)
+	}
+	// Other wait states must not.
+	if _, _, err := s.EnqueueConversationJob(ctx, ConversationJobEnqueue{
+		Identity: ident, SourceEventID: "retryat-auth", Input: ConversationJobInput{Text: "hi"},
+		State: ConversationJobStateWaitingAuth, WaitReason: ConversationJobWaitReasonAuth,
+		ExpiresAt: time.Now().UTC().Add(time.Hour), RetryAt: time.Now().UTC().Add(time.Minute),
+	}); err == nil {
+		t.Fatal("waiting_auth job with retry_at accepted")
+	}
+}

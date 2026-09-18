@@ -318,38 +318,6 @@ func (c *Client) ListHomeworksBySection(ctx context.Context, token string, secti
 	return out.Homeworks, nil
 }
 
-func (c *Client) GetMyDashboard(ctx context.Context, token string) (map[string]any, error) {
-	params := openapi.WorkspaceOverviewGetParams{}
-	var out map[string]any
-	resp, err := c.Typed(ctx, token).WorkspaceOverviewGet(ctx, &params)
-	err = typedJSON(resp, err, "dashboard", &out)
-	return out, err
-}
-
-func (c *Client) GetUpcomingDeadlines(ctx context.Context, token string, dayLimit int) (map[string]any, error) {
-	return c.GetUpcomingDeadlinesAt(ctx, token, dayLimit, time.Time{})
-}
-
-func (c *Client) GetUpcomingDeadlinesAt(ctx context.Context, token string, dayLimit int, atTime time.Time) (map[string]any, error) {
-	params := openapi.WorkspaceOverviewGetParams{}
-	if !atTime.IsZero() {
-		value := atTime.Format(time.RFC3339)
-		params.AtTime = &value
-	}
-	if dayLimit > 0 {
-		params.HomeworkWindowDays = int64Ptr(int64(dayLimit))
-	}
-	params.Limit = int64Ptr(int64(50))
-	var out map[string]any
-	resp, err := c.Typed(ctx, token).WorkspaceOverviewGet(ctx, &params)
-	err = typedJSON(resp, err, "upcoming deadlines", &out)
-	return out, err
-}
-
-func int64Ptr(v int64) *int64 {
-	return &v
-}
-
 func (c *Client) Bus(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
 	resp, err := c.Typed(ctx, "").CatalogBusTimetableGet(
@@ -965,6 +933,10 @@ func setSearchLimit(searchTarget **string, limitTarget **int64, search string, l
 	}
 	value := int64(limit)
 	*limitTarget = &value
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }
 
 func listSchedulesParams(values url.Values) *openapi.ListSchedulesParams {

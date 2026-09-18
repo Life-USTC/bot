@@ -37,16 +37,16 @@ func textCardTitle(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "help":
 		return "帮助"
-	case "schedule", "nextclass", "calendar":
+	case "schedule", "nextclass":
 		return "课表"
+	case "calendar":
+		return "日程"
 	case "todo":
 		return "待办"
 	case "homework":
 		return "作业"
 	case "exam":
 		return "考试"
-	case "overview":
-		return "概览"
 	case "account", "login", "login_result", "auth_wait":
 		return "登录"
 	case "feedback", "feedback_admin":

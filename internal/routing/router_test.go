@@ -123,25 +123,6 @@ func TestConversationSurfaceDrivesOneRouter(t *testing.T) {
 	}
 }
 
-func TestRemovedLifePrefixNeverFallsThroughToAgentOrNaturalRoutes(t *testing.T) {
-	for _, inbound := range []message.Inbound{
-		{
-			Actor:        message.Actor{Platform: "napcat", UserID: "42"},
-			Conversation: message.Conversation{Platform: "napcat", Type: "private", ID: "42"},
-			Text:         "/life课表订阅链接",
-		},
-		func() message.Inbound {
-			inbound := groupMessage("/life 帮我查课表")
-			inbound.BotMentioned = true
-			return inbound
-		}(),
-	} {
-		if decision := Decide(inbound, nil); decision.Action != ActionIgnore {
-			t.Fatalf("removed prefix routed as %#v", decision)
-		}
-	}
-}
-
 func TestMediaOnlyMessagesRespectConversationActivation(t *testing.T) {
 	inbound := message.Inbound{Conversation: message.Conversation{Type: "private"}, Media: []message.InputMedia{{Kind: message.InputMediaFile, Name: "report.pdf"}}}
 	if got := Decide(inbound, nil); got.Action != ActionAgent {

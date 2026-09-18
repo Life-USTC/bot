@@ -105,26 +105,6 @@ func TestYoungCalendarGroupsShanghaiDatesAndShowsSourceAndUnknowns(t *testing.T)
 	}
 }
 
-func TestPersonalCalendarUsesCompleteRESTAndKeepsYoungType(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/calendar/events" || r.URL.Query().Get("pageSize") != "100" {
-			t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
-		}
-		if r.Header.Get("Authorization") != "Bearer access" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"young-1","type":"young_event","at":"2026-09-15T10:00:00+08:00","endsAt":null,"title":"活动","location":"东区","url":"/catalog/young-events/young-1","youngId":"young-1"}],"pagination":{"page":1,"pageSize":100,"total":1,"totalPages":1}}`))
-	}))
-	defer server.Close()
-	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "日程 今日", Identity: ident})
-	if !ok || !strings.Contains(reply, "第二课堂活动") || !strings.Contains(reply, "youngId：young-1") {
-		t.Fatalf("reply=%q ok=%v", reply, ok)
-	}
-}
-
 func TestYoungSubscriptionCommandControlsReminderFields(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
