@@ -47,7 +47,7 @@ func TestCapabilityDescriptorsDeclareCompleteContract(t *testing.T) {
 			t.Errorf("%s invocation policy = %#v, descriptor policy = %#v", descriptor.ID, got, want)
 		}
 	}
-	if len(seen) < 35 {
+	if len(seen) < 33 {
 		t.Fatalf("registered %d capabilities, want all capability families", len(seen))
 	}
 }

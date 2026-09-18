@@ -261,7 +261,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"个人事务：",
 		"账户与通知：",
 		"命令\t说明",
-		"日程\t今日安排、综合概览与近期截止",
+		"日程\t查看某一天的课程、考试、作业、待办与第二课堂安排",
 		"课表\t周课表、单日课表与下一节课",
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
@@ -966,7 +966,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"## 个人事务",
 		"## 账户与通知",
 		"| 命令 | 说明 |",
-		"| 日程 | 今日安排、综合概览与近期截止 |",
+		"| 日程 | 查看某一天的课程、考试、作业、待办与第二课堂安排 |",
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
@@ -3615,10 +3615,10 @@ func TestCanonicalCommandHierarchy(t *testing.T) {
 		name string
 		args string
 	}{
-		{text: "日程", name: "help", args: "日程"},
-		{text: "日程 今日", name: "calendar"},
-		{text: "日程 概览", name: "overview"},
-		{text: "日程 截止 14", name: "upcoming_deadlines", args: "14"},
+		{text: "日程", name: "calendar"},
+		{text: "日程 今日", name: "calendar", args: "今日"},
+		{text: "日程 明天", name: "calendar", args: "明天"},
+		{text: "日程 链接", name: "subscription", args: "link"},
 		{text: "课表 单日 今天", name: "schedule", args: "today"},
 		{text: "课表 单日 明天", name: "schedule", args: "tomorrow"},
 		{text: "课表 下一节", name: "nextclass"},
@@ -4333,46 +4333,6 @@ func TestCalendarSubscriptionHintAppearsForScheduleResults(t *testing.T) {
 	withoutSchedule := formatOverview(chinaNow(), nil, []map[string]any{{"title": "写报告"}}, nil, nil)
 	if strings.Contains(withoutSchedule, calendarSubscriptionHint) {
 		t.Fatalf("non-calendar overview should not include calendar hint: %q", withoutSchedule)
-	}
-}
-
-func TestHandleDashboard(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/overview" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"counts":{"todaySchedules":1,"pendingHomeworks":1},"dueTodos":{"items":[{"title":"写报告"}]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "概览", Identity: ident})
-	if !ok || !strings.Contains(reply, "我的概览") || !strings.Contains(reply, "写报告") || !strings.Contains(reply, "作业一") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-}
-
-func TestHandleUpcomingDeadlines(t *testing.T) {
-	ctx := context.Background()
-	ident := testIdentity()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace/overview" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		q := r.URL.Query()
-		if q.Get("homeworkWindowDays") != "14" || q.Get("limit") != "50" {
-			t.Fatalf("query = %s", q.Encode())
-		}
-		_, _ = w.Write([]byte(`{"counts":{"upcomingExams":1},"dueTodos":{"items":[]},"homeworks":{"items":[{"title":"作业一"}]},"exams":{"items":[]}}`))
-	}))
-	defer server.Close()
-
-	handler := testAuthedHandler(t, server, ident)
-	reply, ok := handler.Handle(ctx, Input{Text: "近期截止 14", Identity: ident})
-	if !ok || !strings.Contains(reply, "未来 14 天截止") || !strings.Contains(reply, "作业一") {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
 	}
 }
 

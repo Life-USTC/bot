@@ -64,7 +64,6 @@ func TestInvalidCommandReturnsUsageInsteadOfFallingThrough(t *testing.T) {
 		"作业 semester_id not-an-int",
 		"作业 第2页 extra",
 		"学期 列表 第2页",
-		"日程 截止 第2页",
 		"考试 第2页 extra",
 		"订阅 导入",
 		"订阅 导入 BAD",

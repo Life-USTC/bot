@@ -456,9 +456,9 @@ func init() {
 		descriptor(CapabilityHomework, []string{"homework", "作业", "hw"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, homeworkOrTodoInput(homeworkArgsAcceptable), normalizeHomeworkArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.homework(ctx, ident, args)
 		}, homeworkPolicy, helpMeta("homework", "作业", "查看和管理作业", true, []HelpExample{example("作业", "查看未完成作业，每页 30 条"), example("作业 列表 第2页", "查看作业的第 2 页"), example("作业 完成 1", "完成第 1 条作业"), example("作业 恢复 1", "取消第 1 条作业的完成状态")}, []HelpExample{example("作业（hw）", "直接查看未完成作业")})),
-		descriptor(CapabilityCalendar, []string{"calendar", "日程", "今日", "ddl"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.personalCalendar(ctx, ident, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", true, []HelpExample{example("日程 今日", "汇总今日课程、待办和作业")}, []HelpExample{example("今日（ddl）", "相当于“日程 今日")})),
+		descriptor(CapabilityCalendar, []string{"calendar", "日程", "今日"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.agenda(ctx, ident, args)
+		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "查看某一天的课程、考试、作业、待办与第二课堂安排", true, []HelpExample{example("日程", "查看今天的全部安排"), example("日程 明天", "查看明天的安排"), example("日程 9-20", "查看指定日期的安排")}, []HelpExample{example("今日", "相当于“日程”")})),
 		descriptor(CapabilitySubscription, []string{"subscription", "订阅", "课程订阅"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, subscriptionArgsAcceptable, normalizeSubscriptionArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.subscription(ctx, ident, args)
 		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、添加、取消和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 取消 CONT5103P.01", "按教学班代码取消订阅"), example("订阅 链接", "查看私有日历订阅链接"), example("订阅 身份 12345 助教", "按教学班 JW ID 修改已有订阅身份")}, []HelpExample{example("退订教学班 CONT5103P.01", "相当于“订阅 取消 CONT5103P.01”")})),
@@ -608,21 +608,6 @@ func init() {
 		descriptor(CapabilitySectionHomeworks, []string{"section_homeworks", "教学班作业"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, sectionPagedIDArgsAcceptable, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.sectionHomeworks(ctx, ident, args)
 		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("section", "教学班", "搜索教学班及其课表、考试、作业", false, []HelpExample{exampleFor(CapabilitySectionHomeworks, "教学班 作业 <课程名或编号>", "查看指定教学班作业，每页 30 条", "12345")}, nil)),
-		descriptor(CapabilityOverview, []string{"overview", "概览"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, noArgsOrHelp, nil, func(h Handler, ctx context.Context, ident store.Identity, _ []string) string {
-			return h.myDashboard(ctx, ident)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 概览", "汇总待办、作业和考试")}, []HelpExample{example("概览", "相当于“日程 概览")})),
-		descriptor(CapabilityUpcomingDeadlines, []string{"upcoming_deadlines", "近期截止"}, CapabilityRequirements{Life: true, OAuth: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, func(args []string) bool {
-			if !hasArgs(args) {
-				return true
-			}
-			if firstArgIsHelp(args) {
-				return len(args) == 1
-			}
-			_, ok := parseIntArg(args[0])
-			return len(args) == 1 && ok
-		}, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
-			return h.upcomingDeadlines(ctx, ident, args)
-		}, func(inv Invocation) CapabilityPolicy { return readPolicy(inv, DataScopeUserPrivate) }, helpMeta("agenda", "日程", "今日安排、综合概览与近期截止", false, []HelpExample{example("日程 截止", "查看未来 7 天的截止事项"), example("日程 截止 14", "指定未来天数")}, []HelpExample{example("近期截止 14", "相当于“日程 截止 14")})),
 	}
 	bindCapabilityUsage(capabilityDescriptors)
 }

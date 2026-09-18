@@ -467,15 +467,10 @@ func normalizeHierarchicalCommand(name string, args []string) (string, []string,
 		}
 	case "日程":
 		switch action {
-		case "":
-			return help("日程")
-		case "今日", "今天":
-			return "calendar", rest, true
-		case "概览", "汇总":
-			return "overview", rest, true
-		case "截止", "近期截止":
-			return "upcoming_deadlines", rest, true
+		case "链接", "日历":
+			return "subscription", []string{"link"}, true
 		}
+		return "calendar", args, true
 	case "课表":
 		switch action {
 		case "":

@@ -152,7 +152,7 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 		return responses.NewRichTextImage("nextclass", scheduleRichText(title, plainText), imageText)
 	case "calendar":
 		plainText := textutil.PlainMonospace(text)
-		return richTextImage("calendar", imageTitle(plainText, "今日安排"), plainText)
+		return richTextImage("calendar", imageTitle(plainText, "日程"), plainText)
 	case "overview":
 		plainText := textutil.PlainMonospace(text)
 		return richTextImage("overview", imageTitle(plainText, "我的概览"), plainText)
