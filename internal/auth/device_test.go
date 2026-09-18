@@ -1111,6 +1111,86 @@ func TestAccessTokenRemovesCredentialRejectedAsInvalidGrant(t *testing.T) {
 	}
 }
 
+func TestAccessTokenRetriesRefreshAfterTransientFailure(t *testing.T) {
+	var serverURL string
+	var refreshRequests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer": serverURL, "token_endpoint": serverURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		if refreshRequests.Add(1) == 1 {
+			// The server rotated the refresh token but the response was lost;
+			// the retry recovers the rotated response via the replay window.
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		accessToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": []string{serverURL, serverURL + "/api/mcp"},
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
+		idToken := mustSignIDToken(t, map[string]any{
+			"iss": serverURL,
+			"aud": "client",
+			"exp": authTestNow.Add(time.Hour).Unix(),
+			"sub": "user-1",
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  accessToken,
+			"refresh_token": "new-refresh",
+			"expires_in":    3600,
+			"id_token":      idToken,
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	serverURL = server.URL
+
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	ident := store.Identity{Platform: "napcat", UserID: "42"}
+	if err := db.SaveCredential(ctx, ident, store.Credential{
+		ClientID:     "client",
+		AccessToken:  "old-access",
+		RefreshToken: "refresh",
+		ExpiresAt:    authTestNow,
+		Resource:     server.URL + " " + server.URL + "/api/mcp",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := Manager{
+		Server: server.URL, HTTPClient: server.Client(), Store: db,
+		Now: fixedClock(authTestNow),
+	}
+
+	token, err := manager.AccessToken(ctx, ident)
+	if err != nil {
+		t.Fatalf("AccessToken error = %v", err)
+	}
+	if token == "" || token == "old-access" {
+		t.Fatalf("token = %q, want refreshed token", token)
+	}
+	if got := refreshRequests.Load(); got != 2 {
+		t.Fatalf("refresh requests = %d, want 2", got)
+	}
+	credential, err := db.Credential(ctx, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential == nil || credential.RefreshToken != "new-refresh" {
+		t.Fatalf("credential = %#v, want saved refreshed credential", credential)
+	}
+}
+
 func TestRefreshReturnsBodyReadError(t *testing.T) {
 	manager := Manager{
 		Server: "https://life.test",

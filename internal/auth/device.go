@@ -692,6 +692,13 @@ func (m *Manager) refreshCredential(
 	// Keep the replacement access token usable for every approved audience so
 	// callers for another purpose can share this refresh result safely.
 	refreshed, err := m.refresh(ctx, *cred, approvedResources)
+	if err != nil && !errors.Is(err, ErrReauthorizationRequired) {
+		// A response lost after server-side token rotation surfaces here as a
+		// transient error, and on the next attempt as invalid_grant. One
+		// immediate retry recovers both through the server's rotation replay
+		// window instead of forcing a new login.
+		refreshed, err = m.refresh(ctx, *cred, approvedResources)
+	}
 	if err != nil {
 		if errors.Is(err, ErrReauthorizationRequired) {
 			if deleteErr := authStore.DeleteCredential(ctx, ident); deleteErr != nil {
