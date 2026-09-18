@@ -796,7 +796,7 @@ func (c *Coordinator) responseOutbounds(ctx context.Context, job store.Conversat
 			ref := inbound.Source
 			ref.Sequence = index + 1
 			textPolicy := message.TextPolicyImageOnly
-			if allowLLMText && responseContainsLLMText(group) {
+			if contentHasPlainText(item) {
 				textPolicy = message.TextPolicyLLM
 			}
 			outbounds = append(outbounds, message.Outbound{
@@ -869,9 +869,14 @@ func (c *Coordinator) presentationContentFor(ctx context.Context, response comma
 	content := message.Content{Parts: make([]message.ContentPart, 0, len(parts)*2)}
 	for _, item := range parts {
 		if text := strings.TrimSpace(item.Text); text != "" {
-			if allowLLMText && item.TextOrigin == commands.ResponseTextOriginLLM {
+			switch {
+			case allowLLMText && item.TextOrigin == commands.ResponseTextOriginLLM:
 				content.Parts = append(content.Parts, message.ContentPart{Text: text})
-			} else if item.Image == nil {
+			case item.Image == nil && textContainsURL(text):
+				// Links must stay clickable: URL-bearing host text goes out as
+				// plain text instead of a rendered card.
+				content.Parts = append(content.Parts, message.ContentPart{Text: text})
+			case item.Image == nil:
 				attachment, err := c.renderTextCard(item.Kind, text)
 				if err != nil {
 					return message.Content{}, err
@@ -899,6 +904,19 @@ func (c *Coordinator) presentationContentFor(ctx context.Context, response comma
 	return content, nil
 }
 
+func textContainsURL(text string) bool {
+	return strings.Contains(text, "https://") || strings.Contains(text, "http://")
+}
+
+func contentHasPlainText(content message.Content) bool {
+	for _, part := range content.Parts {
+		if strings.TrimSpace(part.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Coordinator) renderTextCard(kind, text string) (*message.Attachment, error) {
 	image := responses.NewTextCardImage(kind, text)
 	if image == nil {
@@ -909,18 +927,6 @@ func (c *Coordinator) renderTextCard(kind, text string) (*message.Attachment, er
 		return nil, err
 	}
 	return &message.Attachment{MIMEType: "image/png", AltText: strings.TrimSpace(text), RenderPayload: payload}, nil
-}
-
-func responseContainsLLMText(response commands.Response) bool {
-	if strings.TrimSpace(response.Text) != "" && response.TextOrigin == commands.ResponseTextOriginLLM {
-		return true
-	}
-	for _, part := range response.Parts {
-		if responseContainsLLMText(part) {
-			return true
-		}
-	}
-	return false
 }
 
 // flattenResponseParts keeps every user-visible field in its original order.

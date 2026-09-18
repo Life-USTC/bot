@@ -2,6 +2,7 @@ package botapp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -34,6 +35,33 @@ func TestPresentationPrefersSpecializedImageOverSyntheticCaption(t *testing.T) {
 	}
 	if len(content.Parts) != 1 || content.Parts[0].Attachment == nil || content.Parts[0].Text != "" {
 		t.Fatalf("content = %#v", content)
+	}
+}
+
+func TestPresentationSendsURLBearingHostTextAsPlainText(t *testing.T) {
+	coordinator := &Coordinator{}
+	content, err := coordinator.presentationContentFor(context.Background(), commands.Response{
+		Text: "需要登录 Life @ USTC：\nhttps://life-ustc.tiankaima.dev/oauth/device?code=H9WH-487Q&step=approve",
+		Kind: commands.ResponseKindAuthWait,
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content.Parts) != 1 || content.Parts[0].Text == "" || content.Parts[0].Attachment != nil {
+		t.Fatalf("content = %#v", content)
+	}
+}
+
+func TestURLBearingCommandResponseKeepsClickableText(t *testing.T) {
+	coordinator := &Coordinator{}
+	job := store.ConversationJob{Invocation: store.ConversationJobInvocation{Name: "subscription"}}
+	outbounds, _, err := coordinator.responseOutbounds(context.Background(), job, message.Inbound{Conversation: message.Conversation{Platform: "napcat", Type: "private", ID: "42"}}, commands.Response{Text: "日历订阅链接：\nhttps://life-ustc.example/ical/feed.ics", Kind: "subscription"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outbounds) != 1 || outbounds[0].TextPolicy != message.TextPolicyLLM ||
+		len(outbounds[0].Content.Parts) != 1 || !strings.Contains(outbounds[0].Content.Parts[0].Text, "https://life-ustc.example/ical/feed.ics") {
+		t.Fatalf("outbounds = %#v", outbounds)
 	}
 }
 
