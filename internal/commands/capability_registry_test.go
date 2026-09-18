@@ -113,11 +113,3 @@ func TestCapabilityDataScopesSeparatePublicAndUserPrivateReads(t *testing.T) {
 		}
 	}
 }
-
-func TestRemovedCommandFormsAreNotAccepted(t *testing.T) {
-	for _, command := range []string{"课标", "代办", "todo待办", "profile", "setting", "sched", "zt", "js", "fb", "设置", "设置 通知", "系统", "状态", "ping"} {
-		if invocation, ok := ParseInvocation(command); ok {
-			t.Errorf("obsolete form %q parsed as %#v", command, invocation)
-		}
-	}
-}

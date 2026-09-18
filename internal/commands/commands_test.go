@@ -3705,18 +3705,6 @@ func TestParseAttachedFeedbackAndNotifyCommands(t *testing.T) {
 	}
 }
 
-func TestLifePrefixIsRejected(t *testing.T) {
-	handler := Handler{}
-	for _, text := range []string{
-		"/life", "/LIFE help", "/life 校车 东区 西区", "/life\tkb 今天", "/life　反馈 内容",
-		"/life校车 东区 西区", "/lifekb今天", "/lifenope", "/life课表订阅链接",
-	} {
-		if cmd, ok := handler.parse(text); ok {
-			t.Fatalf("removed prefix %q parsed as %#v", text, cmd)
-		}
-	}
-}
-
 func TestNormalizeScheduleArgsSupportsWeekTargets(t *testing.T) {
 	tests := map[string]string{
 		"本周":    "this-week",
@@ -3919,28 +3907,6 @@ func TestHandleSkipsLogForIncompleteConversationIdentity(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("interaction count = %d", count)
-	}
-}
-
-func TestRemovedLifePrefixIsNotHandledOrLogged(t *testing.T) {
-	s, err := store.Open(t.TempDir() + "/bot.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	ident := testIdentity()
-	handler := Handler{Store: s}
-	reply, ok := handler.Handle(context.Background(), Input{Text: "/life nope", Identity: ident})
-	if ok || reply != "" {
-		t.Fatalf("reply = %q, ok = %v", reply, ok)
-	}
-	recent, err := s.RecentHandledInteractions(context.Background(), ident, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recent) != 0 {
-		t.Fatalf("recent = %#v", recent)
 	}
 }
 

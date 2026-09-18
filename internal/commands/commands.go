@@ -298,9 +298,6 @@ func (h Handler) parseResultSingle(text string) ParseResult {
 	if raw == "" {
 		return ParseResult{Status: ParseStatusUnknown}
 	}
-	if HasRemovedCommandPrefix(raw) {
-		return ParseResult{Status: ParseStatusUnknown}
-	}
 	if isNaturalCalendarLinkRequest(raw) {
 		result := acceptedCommandResult(raw, "subscription", []string{"link"})
 		result.Invocation.NaturalRoute = "calendar_link"
@@ -359,15 +356,6 @@ func parsedCommandLines(text string) (ParseResult, int) {
 		count++
 	}
 	return first, count
-}
-
-// HasRemovedCommandPrefix identifies command paths that no longer exist. The
-// router uses the same boundary as the parser so rejected slash commands can
-// never fall through to natural-language handling or the Agent.
-func HasRemovedCommandPrefix(text string) bool {
-	raw := strings.TrimSpace(stripCQCodes(text))
-	fields := strings.Fields(raw)
-	return len(fields) > 0 && strings.HasPrefix(strings.ToLower(fields[0]), "/life")
 }
 
 func parseNaturalReadIntent(raw string) ParseResult {
@@ -1192,7 +1180,7 @@ func (h Handler) feedback(ctx context.Context, ident store.Identity, args []stri
 		return strings.Join([]string{
 			"反馈用法：",
 			"反馈 希望校车能显示更多路线",
-			"fb 这里写你的建议",
+			"反馈 这里写你的建议",
 		}, "\n")
 	}
 	text := strings.TrimSpace(joinedArgs(args))
