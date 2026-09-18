@@ -1622,10 +1622,6 @@ func (h Handler) setTodoCompletionItem(ctx context.Context, ident store.Identity
 	return todoUndoReply(title)
 }
 
-func (h Handler) pendingTodos(ctx context.Context, ident store.Identity, token string) ([]map[string]any, error) {
-	return h.todos(ctx, ident, token, life.TodoListOptions{Completed: "false"})
-}
-
 func (h Handler) todos(ctx context.Context, ident store.Identity, token string, opts life.TodoListOptions) ([]map[string]any, error) {
 	todos, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.TodosWithOptions(ctx, token, opts)
@@ -4389,20 +4385,6 @@ func sortSubscriptionExams(exams []subscriptionExam) {
 	})
 }
 
-func upcomingSubscriptionExams(exams []subscriptionExam, now time.Time) []subscriptionExam {
-	out := make([]subscriptionExam, 0, len(exams))
-	loc := lifedata.ChinaLocation()
-	today := now.In(loc).Format("2006-01-02")
-	for _, exam := range exams {
-		date, ok := lifedata.ParseAPITime(lifedata.FirstString(exam.exam, "examDate", "date"))
-		if !ok || date.In(loc).Format("2006-01-02") >= today {
-			out = append(out, exam)
-		}
-	}
-	sortSubscriptionExams(out)
-	return out
-}
-
 func formatExam(item subscriptionExam) string {
 	date := formatExamDate(item.exam)
 	timeRange := formatExamTimeRange(item.exam)
@@ -4521,7 +4503,6 @@ func paddedCourseCode(code string) string {
 const courseCodeColumnWidth = 14
 const numberedColumnWidth = 3
 const fullListPageSize = 30
-const summaryDisplayLimit = 8
 
 type listPage struct {
 	number int
