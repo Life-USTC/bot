@@ -46,8 +46,6 @@ const (
 	CapabilitySectionSchedules     CapabilityID = "section_schedules"
 	CapabilitySectionExams         CapabilityID = "section_exams"
 	CapabilitySectionHomeworks     CapabilityID = "section_homeworks"
-	CapabilityOverview             CapabilityID = "overview"
-	CapabilityUpcomingDeadlines    CapabilityID = "upcoming_deadlines"
 	CapabilityWeather              CapabilityID = "weather"
 	CapabilityRoomMap              CapabilityID = "room_map"
 	CapabilityYoungEvent           CapabilityID = "young_event"
@@ -239,17 +237,32 @@ func withDescriptor(inv Invocation) (Invocation, bool) {
 	return inv, true
 }
 
+// legacyCapabilityIDMap keeps persisted command jobs executable after their
+// capability was folded into another one.
+var legacyCapabilityIDMap = map[string]CapabilityID{
+	"overview":           CapabilityCalendar,
+	"upcoming_deadlines": CapabilityCalendar,
+}
+
 // RestoreInvocation reconstructs the exact normalized invocation persisted by
 // the router. It intentionally does not validate or renormalize arguments;
 // Handler owns the final validity and policy checks at execution time.
 func RestoreInvocation(id CapabilityID, args []string) (Invocation, bool) {
 	descriptor, ok := descriptorForID(string(id))
 	if !ok {
-		return Invocation{}, false
+		mapped, legacy := legacyCapabilityIDMap[string(id)]
+		if !legacy {
+			return Invocation{}, false
+		}
+		descriptor, ok = descriptorForID(string(mapped))
+		if !ok {
+			return Invocation{}, false
+		}
+		args = nil
 	}
 	return Invocation{
 		Capability: descriptor,
-		Name:       string(descriptor.ID),
+		Name:       string(id),
 		Args:       append([]string(nil), args...),
 	}, true
 }

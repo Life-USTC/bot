@@ -490,7 +490,8 @@ func (c *Coordinator) execute(ctx context.Context, job store.ConversationJob) {
 			c.fail(ctx, job, fmt.Errorf("restore routed capability %q", job.Invocation.Name))
 			return
 		}
-		if strings.TrimSpace(job.Invocation.Command) != invocation.CanonicalCommand() {
+		persisted := strings.TrimSpace(strings.TrimSpace(job.Invocation.Name) + " " + strings.Join(job.Invocation.Args, " "))
+		if strings.TrimSpace(job.Invocation.Command) != persisted {
 			c.fail(ctx, job, errors.New("persisted command route does not match its invocation"))
 			return
 		}

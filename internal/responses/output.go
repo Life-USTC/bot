@@ -47,8 +47,6 @@ func textCardTitle(kind string) string {
 		return "作业"
 	case "exam":
 		return "考试"
-	case "overview":
-		return "概览"
 	case "account", "login", "login_result", "auth_wait":
 		return "登录"
 	case "feedback", "feedback_admin":

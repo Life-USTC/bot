@@ -438,10 +438,8 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 		return query("课表")
 	case CapabilityExam:
 		return query("考试")
-	case CapabilityCalendar, CapabilityOverview:
+	case CapabilityCalendar:
 		return query("日程")
-	case CapabilityUpcomingDeadlines:
-		return query("截止事项")
 	default:
 		return store.CapabilityReceipt{}
 	}

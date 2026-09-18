@@ -113,3 +113,24 @@ func TestCapabilityDataScopesSeparatePublicAndUserPrivateReads(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreInvocationMapsRemovedAgendaCapabilities(t *testing.T) {
+	for _, legacy := range []string{"overview", "upcoming_deadlines"} {
+		invocation, ok := RestoreInvocation(CapabilityID(legacy), []string{"14"})
+		if !ok {
+			t.Fatalf("RestoreInvocation(%q) not restored", legacy)
+		}
+		if invocation.ID() != CapabilityCalendar {
+			t.Fatalf("RestoreInvocation(%q) ID = %q, want %q", legacy, invocation.ID(), CapabilityCalendar)
+		}
+		if invocation.Name != legacy {
+			t.Fatalf("RestoreInvocation(%q) Name = %q, want persisted name", legacy, invocation.Name)
+		}
+		if len(invocation.Args) != 0 {
+			t.Fatalf("RestoreInvocation(%q) Args = %#v, want dropped", legacy, invocation.Args)
+		}
+	}
+	if _, ok := RestoreInvocation("no_such_capability", nil); ok {
+		t.Fatal("unknown capability unexpectedly restored")
+	}
+}
