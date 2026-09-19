@@ -7325,6 +7325,7 @@ type PublicPublicationDetailSchema struct {
 	PublicationType PublicPublicationDetailSchemaPublicationType `json:"publicationType"`
 	Revision        struct {
 		Author            *string `json:"author"`
+		BodyMarkdown      *string `json:"bodyMarkdown"`
 		BodyText          *string `json:"bodyText"`
 		Category          *string `json:"category"`
 		ClassifierVersion *string `json:"classifierVersion"`
@@ -7461,12 +7462,13 @@ type PublicationIngestionBatchRequestSchema struct {
 
 // PublicationIngestionBatchRequestSchemaItems0 defines model for .
 type PublicationIngestionBatchRequestSchemaItems0 struct {
-	Author            *string `json:"author,omitempty"`
-	BodyText          *string `json:"bodyText,omitempty"`
-	CanonicalUrl      string  `json:"canonicalUrl"`
-	Category          *string `json:"category,omitempty"`
-	ClassifierVersion *string `json:"classifierVersion,omitempty"`
-	ExtractionMethod  *string `json:"extractionMethod,omitempty"`
+	Author            *string           `json:"author,omitempty"`
+	BodyText          *string           `json:"bodyText,omitempty"`
+	CanonicalUrl      string            `json:"canonicalUrl"`
+	Category          *string           `json:"category,omitempty"`
+	ClassifierVersion *string           `json:"classifierVersion,omitempty"`
+	ExtractionMethod  *string           `json:"extractionMethod,omitempty"`
+	ImageSources      map[string]string `json:"imageSources"`
 	Objects           []struct {
 		AltText     *string                                                 `json:"altText,omitempty"`
 		ContentType string                                                  `json:"contentType"`
@@ -12695,6 +12697,9 @@ type ClientInterface interface {
 	// GetApiPublications request
 	GetApiPublications(ctx context.Context, params *GetApiPublicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiPublicationsImagesHash request
+	GetApiPublicationsImagesHash(ctx context.Context, hash string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiPublicationsObjectsKindSha256 request
 	GetApiPublicationsObjectsKindSha256(ctx context.Context, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -14232,6 +14237,18 @@ func (c *Client) GetOpenApiSpec(ctx context.Context, reqEditors ...RequestEditor
 
 func (c *Client) GetApiPublications(ctx context.Context, params *GetApiPublicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiPublicationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiPublicationsImagesHash(ctx context.Context, hash string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiPublicationsImagesHashRequest(c.Server, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -20206,6 +20223,40 @@ func NewGetApiPublicationsRequest(server string, params *GetApiPublicationsParam
 	return req, nil
 }
 
+// NewGetApiPublicationsImagesHashRequest generates requests for GetApiPublicationsImagesHash
+func NewGetApiPublicationsImagesHashRequest(server string, hash string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "hash", hash, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/publications/images/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiPublicationsObjectsKindSha256Request generates requests for GetApiPublicationsObjectsKindSha256
 func NewGetApiPublicationsObjectsKindSha256Request(server string, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string) (*http.Request, error) {
 	var err error
@@ -22619,6 +22670,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiPublicationsWithResponse request
 	GetApiPublicationsWithResponse(ctx context.Context, params *GetApiPublicationsParams, reqEditors ...RequestEditorFn) (*GetApiPublicationsResponse, error)
+
+	// GetApiPublicationsImagesHashWithResponse request
+	GetApiPublicationsImagesHashWithResponse(ctx context.Context, hash string, reqEditors ...RequestEditorFn) (*GetApiPublicationsImagesHashResponse, error)
 
 	// GetApiPublicationsObjectsKindSha256WithResponse request
 	GetApiPublicationsObjectsKindSha256WithResponse(ctx context.Context, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*GetApiPublicationsObjectsKindSha256Response, error)
@@ -25882,6 +25936,39 @@ func (r GetApiPublicationsResponse) ContentType() string {
 	return ""
 }
 
+type GetApiPublicationsImagesHashResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+	JSON502      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiPublicationsImagesHashResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiPublicationsImagesHashResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiPublicationsImagesHashResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetApiPublicationsObjectsKindSha256Response struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -28303,6 +28390,15 @@ func (c *ClientWithResponses) GetApiPublicationsWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseGetApiPublicationsResponse(rsp)
+}
+
+// GetApiPublicationsImagesHashWithResponse request returning *GetApiPublicationsImagesHashResponse
+func (c *ClientWithResponses) GetApiPublicationsImagesHashWithResponse(ctx context.Context, hash string, reqEditors ...RequestEditorFn) (*GetApiPublicationsImagesHashResponse, error) {
+	rsp, err := c.GetApiPublicationsImagesHash(ctx, hash, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiPublicationsImagesHashResponse(rsp)
 }
 
 // GetApiPublicationsObjectsKindSha256WithResponse request returning *GetApiPublicationsObjectsKindSha256Response
@@ -32389,6 +32485,53 @@ func ParseGetApiPublicationsResponse(rsp *http.Response) (*GetApiPublicationsRes
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiPublicationsImagesHashResponse parses an HTTP response from a GetApiPublicationsImagesHashWithResponse call
+func ParseGetApiPublicationsImagesHashResponse(rsp *http.Response) (*GetApiPublicationsImagesHashResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiPublicationsImagesHashResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 502:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON502 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
