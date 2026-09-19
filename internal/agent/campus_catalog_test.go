@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -18,8 +17,6 @@ import (
 	botmcp "github.com/Life-USTC/Bot/internal/mcp"
 	"github.com/Life-USTC/Bot/internal/store"
 )
-
-func boolPointer(value bool) *bool { return &value }
 
 func TestCampusCatalogCacheExpires(t *testing.T) {
 	// A fresh lazyMCPSession is created for every turn and every inventory
@@ -345,5 +342,3 @@ func TestLoggedOutCallerCatalogIsCachedSeparatelyFromAuthenticated(t *testing.T)
 		t.Fatal("a logged-out caller's tools/list result must be cached under the anonymous key")
 	}
 }
-
-func unusedHTTPTestServerImportGuard() { _ = httptest.NewServer }
