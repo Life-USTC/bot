@@ -32,6 +32,76 @@ const (
 	campusEffectDestructive campusToolEffect = "destructive"
 )
 
+// campusCatalogTTL bounds how stale a cached tools/list result may be. Tool
+// definitions are deployment configuration rather than user data, so caching
+// them process-wide means a tools/list round trip is only paid again once the
+// catalog has expired, not on every lazyMCPSession. The OAuth token itself
+// already carries its own expiry-based cache in internal/auth; this cache
+// targets the separate tools/list RPC that a fresh lazyMCPSession otherwise
+// repeats on every turn.
+const campusCatalogTTL = 10 * time.Minute
+
+type campusCatalog struct {
+	tools     []mcpgo.Tool
+	fetchedAt time.Time
+}
+
+// campusCatalogCache is shared process-wide on the Service, so every
+// lazyMCPSession created for any turn or inventory lookup consults the same
+// entries. Anonymous and authenticated listings are cached separately because
+// the server filters the catalog by the caller's scopes: a shared conversation
+// has no user token and legitimately sees only the public tools, so its
+// catalog must never be served to, or from, an authenticated caller.
+type campusCatalogCache struct {
+	mu      sync.Mutex
+	entries map[string]campusCatalog
+	now     func() time.Time
+}
+
+func newCampusCatalogCache() *campusCatalogCache {
+	return &campusCatalogCache{entries: make(map[string]campusCatalog), now: time.Now}
+}
+
+func (c *campusCatalogCache) get(key string) ([]mcpgo.Tool, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, found := c.entries[key]
+	if !found || c.now().Sub(entry.fetchedAt) > campusCatalogTTL {
+		return nil, false
+	}
+	return entry.tools, true
+}
+
+func (c *campusCatalogCache) put(key string, tools []mcpgo.Tool) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = campusCatalog{tools: append([]mcpgo.Tool(nil), tools...), fetchedAt: c.now()}
+}
+
+// campusCatalogCacheKey partitions the cache by authorization class. This Bot
+// requests one fixed scope set, so every caller holding a token sees the same
+// authenticated catalog and every tokenless caller sees the same public one.
+//
+// The key is derived from the token actually obtained, never from the shape of
+// the identity: a caller can carry a full Platform/UserID identity and still be
+// logged out, in which case MCPAccessToken returns ErrNotLoggedIn, the session
+// opens anonymously, and the server returns only the public catalog. Keying on
+// the identity would file that public catalog under "authenticated" — starving
+// real logged-in callers of their tools, and in the other direction serving a
+// logged-out caller the authenticated catalog a logged-in caller had warmed.
+func campusCatalogCacheKey(token string) string {
+	if token != "" {
+		return "authenticated"
+	}
+	return "anonymous"
+}
+
 type campusToolSearchInput struct {
 	Query string `json:"query" jsonschema_description:"Words describing the campus data lookup you need"`
 }
@@ -179,32 +249,60 @@ func (s *lazyMCPSession) initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cacheKey := campusCatalogCacheKey(token)
+	if cached, found := s.service.campusCatalog.get(cacheKey); found {
+		s.session = session
+		s.tools = campusToolsByName(cached)
+		return nil
+	}
 	listed, err := session.Tools(ctx)
 	if err != nil {
 		_ = session.Close()
 		return err
 	}
-	if len(listed) == 0 {
+	available, err := campusValidatedTools(listed)
+	if err != nil {
 		_ = session.Close()
-		return errors.New("MCP tools/list returned no tools")
+		return err
+	}
+	s.service.campusCatalog.put(cacheKey, listed)
+	s.session = session
+	s.tools = available
+	return nil
+}
+
+// campusValidatedTools rebuilds the tools/list response into a lookup map,
+// rejecting a catalog the server should never send: an empty or duplicate name
+// would make search_campus_tools and call_campus_tool ambiguous about which
+// tool they mean.
+func campusValidatedTools(listed []mcpgo.Tool) (map[string]mcpgo.Tool, error) {
+	if len(listed) == 0 {
+		return nil, errors.New("MCP tools/list returned no tools")
 	}
 	available := make(map[string]mcpgo.Tool, len(listed))
 	for _, candidate := range listed {
 		name := strings.TrimSpace(candidate.Name)
 		if name == "" {
-			_ = session.Close()
-			return errors.New("MCP tools/list returned a tool with an empty name")
+			return nil, errors.New("MCP tools/list returned a tool with an empty name")
 		}
 		candidate.Name = name
 		if _, duplicate := available[name]; duplicate {
-			_ = session.Close()
-			return fmt.Errorf("MCP tools/list returned duplicate tool name %q", name)
+			return nil, fmt.Errorf("MCP tools/list returned duplicate tool name %q", name)
 		}
 		available[name] = candidate
 	}
-	s.session = session
-	s.tools = available
-	return nil
+	return available, nil
+}
+
+// campusToolsByName rebuilds the lookup map from a cached catalog. The catalog
+// was already validated (non-empty, unique names) the first time it was
+// fetched, so this cannot fail.
+func campusToolsByName(cached []mcpgo.Tool) map[string]mcpgo.Tool {
+	available := make(map[string]mcpgo.Tool, len(cached))
+	for _, candidate := range cached {
+		available[candidate.Name] = candidate
+	}
+	return available
 }
 
 func (s *lazyMCPSession) Close() error {

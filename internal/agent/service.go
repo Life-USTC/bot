@@ -62,8 +62,9 @@ type Service struct {
 	httpClient       *http.Client
 	attachmentParser *AttachmentParser
 
-	mcpClient *botmcp.Client
-	auth      *auth.Manager
+	mcpClient     *botmcp.Client
+	auth          *auth.Manager
+	campusCatalog *campusCatalogCache
 }
 
 type Input struct {
@@ -123,7 +124,7 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		mcpClient = botmcp.New(mcpBaseURL, httpClient)
 	}
 	if !cfg.Enabled {
-		return &Service{handler: handler, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager}, nil
+		return &Service{handler: handler, logger: cfg.Logger, mcpClient: mcpClient, auth: authManager, campusCatalog: newCampusCatalogCache()}, nil
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
@@ -145,14 +146,15 @@ func New(ctx context.Context, cfg Config, handler commands.Handler, httpClient *
 		return nil, fmt.Errorf("create chat model: %w", err)
 	}
 	service := &Service{
-		handler:    handler,
-		model:      chatModel,
-		modelName:  modelName,
-		enabled:    true,
-		logger:     cfg.Logger,
-		httpClient: httpClient,
-		mcpClient:  mcpClient,
-		auth:       authManager,
+		handler:       handler,
+		model:         chatModel,
+		modelName:     modelName,
+		enabled:       true,
+		logger:        cfg.Logger,
+		httpClient:    httpClient,
+		mcpClient:     mcpClient,
+		auth:          authManager,
+		campusCatalog: newCampusCatalogCache(),
 	}
 	if premiumAPIKey := strings.TrimSpace(cfg.PremiumAPIKey); premiumAPIKey != "" {
 		premiumName := strings.TrimSpace(cfg.PremiumModel)
