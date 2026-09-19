@@ -1428,13 +1428,13 @@ func (e PublicationIngestionBatchRequestSchemaItems1Tombstone) Valid() bool {
 
 // Defines values for PublicationIngestionBatchRequestSchemaProtocolVersion.
 const (
-	N1 PublicationIngestionBatchRequestSchemaProtocolVersion = "1"
+	PublicationIngestionBatchRequestSchemaProtocolVersionN1 PublicationIngestionBatchRequestSchemaProtocolVersion = "1"
 )
 
 // Valid indicates whether the value is a known member of the PublicationIngestionBatchRequestSchemaProtocolVersion enum.
 func (e PublicationIngestionBatchRequestSchemaProtocolVersion) Valid() bool {
 	switch e {
-	case N1:
+	case PublicationIngestionBatchRequestSchemaProtocolVersionN1:
 		return true
 	default:
 		return false
@@ -2581,6 +2581,21 @@ func (e GetApiPublicationsParamsType) Valid() bool {
 	case GetApiPublicationsParamsTypeNews:
 		return true
 	case GetApiPublicationsParamsTypeNotice:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiPublicationsParamsFold.
+const (
+	GetApiPublicationsParamsFoldN1 GetApiPublicationsParamsFold = "1"
+)
+
+// Valid indicates whether the value is a known member of the GetApiPublicationsParamsFold enum.
+func (e GetApiPublicationsParamsFold) Valid() bool {
+	switch e {
+	case GetApiPublicationsParamsFoldN1:
 		return true
 	default:
 		return false
@@ -7320,6 +7335,16 @@ type PersonalCalendarPageSchemaDataType string
 
 // PublicPublicationDetailSchema defines model for publicPublicationDetailSchema.
 type PublicPublicationDetailSchema struct {
+	AlsoPublishedIn []struct {
+		CanonicalUrl string     `json:"canonicalUrl"`
+		Id           string     `json:"id"`
+		PublishedAt  *time.Time `json:"publishedAt"`
+		Source       struct {
+			Id                string `json:"id"`
+			Name              string `json:"name"`
+			OrganizationLevel string `json:"organizationLevel"`
+		} `json:"source"`
+	} `json:"alsoPublishedIn"`
 	CanonicalUrl    string                                       `json:"canonicalUrl"`
 	Id              string                                       `json:"id"`
 	PublicationType PublicPublicationDetailSchemaPublicationType `json:"publicationType"`
@@ -7369,8 +7394,11 @@ type PublicPublicationDetailSchemaRevisionObjectsStatus string
 type PublicPublicationsResponseSchema struct {
 	Data []struct {
 		CanonicalUrl string `json:"canonicalUrl"`
-		Id           string `json:"id"`
-		Objects      []struct {
+		FoldGroup    *struct {
+			SiblingCount int `json:"siblingCount"`
+		} `json:"foldGroup,omitempty"`
+		Id      string `json:"id"`
+		Objects []struct {
 			AltText     *string                                           `json:"altText"`
 			ContentType string                                            `json:"contentType"`
 			Kind        PublicPublicationsResponseSchemaDataObjectsKind   `json:"kind"`
@@ -9255,10 +9283,14 @@ type GetApiPublicationsParams struct {
 	Query    *string                       `form:"query,omitempty" json:"query,omitempty"`
 	Page     *int                          `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *int                          `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Fold     *GetApiPublicationsParamsFold `form:"fold,omitempty" json:"fold,omitempty"`
 }
 
 // GetApiPublicationsParamsType defines parameters for GetApiPublications.
 type GetApiPublicationsParamsType string
+
+// GetApiPublicationsParamsFold defines parameters for GetApiPublications.
+type GetApiPublicationsParamsFold string
 
 // GetApiPublicationsObjectsKindSha256ParamsKind defines parameters for GetApiPublicationsObjectsKindSha256.
 type GetApiPublicationsObjectsKindSha256ParamsKind string
@@ -20200,6 +20232,18 @@ func NewGetApiPublicationsRequest(server string, params *GetApiPublicationsParam
 		if params.PageSize != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Fold != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "fold", *params.Fold, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
