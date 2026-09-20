@@ -390,6 +390,104 @@ mod tests {
         }
     }
 
+    fn reminder_card(header: [&str; 3], cells: [&str; 3]) -> serde_json::Value {
+        serde_json::json!({
+            "title": "作业提醒",
+            "footer": ["2026-10-21（周三）15:04", "#4471 · Life @ USTC"],
+            "blocks": [{
+                "table": {
+                    "header": header,
+                    "header_emphasis": [false, false, false],
+                    "rows": [{"cells": cells}]
+                }
+            }]
+        })
+    }
+
+    const DEADLINE: &str = "2026-10-22 23:59";
+    const COURSE: &str = "计算机组成原理 (CS1002.02)";
+    const ASSIGNMENT: &str = "第三次作业：流水线冒险分析与 Cache 命中率计算";
+
+    /// A reminder card leads with a short timestamp and ends with a long
+    /// course or assignment title. Sizing columns by position instead of
+    /// content squeezed that last column until its text ran over the card
+    /// edge, so the same cells must lay out identically whichever order they
+    /// arrive in.
+    #[test]
+    fn column_order_does_not_change_the_rendered_table() {
+        let (_, wide_last_width, wide_last_height) = render(
+            &reminder_card(["截止", "课程", "作业"], [DEADLINE, COURSE, ASSIGNMENT]),
+            1.0,
+        )
+        .expect("rich template should compile");
+        let (_, wide_first_width, wide_first_height) = render(
+            &reminder_card(["作业", "课程", "截止"], [ASSIGNMENT, COURSE, DEADLINE]),
+            1.0,
+        )
+        .expect("rich template should compile");
+        assert_eq!(
+            (wide_last_width, wide_last_height),
+            (wide_first_width, wide_first_height)
+        );
+    }
+
+    /// The sheet follows the table it has to hold, but a long assignment
+    /// title must not stretch the card without limit.
+    #[test]
+    fn table_sheet_grows_with_content_within_the_paper_bounds() {
+        let (_, narrow, _) = render(
+            &reminder_card(["截止", "课程", "作业"], ["10-22", "数学", "习题"]),
+            1.0,
+        )
+        .expect("rich template should compile");
+        let (_, wide, _) = render(
+            &reminder_card(["截止", "课程", "作业"], [DEADLINE, COURSE, ASSIGNMENT]),
+            1.0,
+        )
+        .expect("rich template should compile");
+        assert!(
+            narrow < wide,
+            "a wider table did not widen the sheet: {narrow} vs {wide}"
+        );
+        for width in [narrow, wide] {
+            assert!(
+                (super::super::SHEET_MIN_WIDTH_PT..=super::super::SHEET_MAX_WIDTH_PT)
+                    .contains(&width),
+                "width {width} outside the sheet's range"
+            );
+        }
+    }
+
+    /// Two tables under one card that repeat a header are one list split
+    /// into sections, so they share a column layout: the card looks the same
+    /// whichever section happens to hold the longest row.
+    #[test]
+    fn repeated_headers_share_one_column_layout() {
+        let help = |first: [&str; 2], second: [&str; 2]| {
+            serde_json::json!({
+                "title": "Bot 帮助",
+                "blocks": [
+                    {"heading": "常用", "table": {"header": ["命令", "说明"],
+                        "header_emphasis": [false, false],
+                        "rows": [{"cells": first}]}},
+                    {"heading": "账户与系统", "table": {"header": ["命令", "说明"],
+                        "header_emphasis": [false, false],
+                        "rows": [{"cells": second}]}}
+                ]
+            })
+        };
+        let long = ["校车（xc）", "按日期、服务日或路线查询班次并设置偏好"];
+        let short = ["设置", "管理通知等偏好"];
+        let (_, long_first_width, long_first_height) =
+            render(&help(long, short), 1.0).expect("rich template should compile");
+        let (_, long_second_width, long_second_height) =
+            render(&help(short, long), 1.0).expect("rich template should compile");
+        assert_eq!(
+            (long_first_width, long_first_height),
+            (long_second_width, long_second_height)
+        );
+    }
+
     #[test]
     fn renders_content_width_and_wraps_long_content() {
         let payload = serde_json::json!({

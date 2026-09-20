@@ -26,6 +26,9 @@ const (
 	exampleMinWidth  = 268 * 3
 	exampleMaxWidth  = 864 * 3
 	exampleMinHeight = 120 * 3
+	// The request number a delivered card would carry. Fixed so a rerun of
+	// the gallery differs only where layout did.
+	exampleRef = "4471"
 )
 
 type fixture struct {
@@ -57,11 +60,39 @@ func fixtures() []fixture {
 			return responses.NewTextCardImage("error", "当前学期查不到，请稍后重试。\n本次没有执行修改。")
 		}, fixtureNow},
 		{"help-menu", "Bot 帮助菜单", helpMenuImage, fixtureNow},
+		{"notify-class", "课前提醒 · 合成数据", classReminderImage, fixtureNow},
+		{"notify-homework", "作业提醒 · 合成数据", homeworkReminderImage, fixtureNow},
+		{"notify-todo", "待办提醒 · 合成数据", todoReminderImage, fixtureNow},
 		{"grid-week", "周课表 · 公开教学班组合", gridWeekImage, fixtureNow},
 		{"grid-role-badges", "周课表 · 个人身份 Badge", gridRoleImage, fixtureNow},
 		{"grid-day", "日课表 · 与周课表相同课程", gridDayImage, fixtureNow},
 		{"weather", "多城市天气 · 合成数据", weatherImage, fixtureNow},
 	}
+}
+
+// The reminder fixtures use the production card builder so the gallery shows
+// exactly what the notification poller sends. Their first column is a short
+// timestamp and their last is a long title, which is the case a fixed
+// "widest column first" table split used to mangle.
+func classReminderImage() *responses.Image {
+	return responses.NewReminderCardImage("class_reminder", "课前提醒",
+		[]string{"地点", "时间", "课程"},
+		[]string{"3A204", "15:55-17:30", "数理方程 (MATH1006.05)"},
+		"课前提醒：\n3A204\t15:55-17:30\t数理方程 (MATH1006.05)")
+}
+
+func homeworkReminderImage() *responses.Image {
+	return responses.NewReminderCardImage("homework_reminder", "作业提醒",
+		[]string{"截止", "课程", "作业"},
+		[]string{"2026-10-22 23:59", "计算机组成原理 (CS1002.02)", "第三次作业：流水线冒险分析与 Cache 命中率计算"},
+		"作业提醒：\n计算机组成原理 第三次作业，2026-10-22 23:59 截止")
+}
+
+func todoReminderImage() *responses.Image {
+	return responses.NewReminderCardImage("todo_reminder", "待办提醒",
+		[]string{"截止", "待办"},
+		[]string{"2026-10-21 23:59", "提交数据库实验报告"},
+		"待办提醒：\n提交数据库实验报告\n截止 2026-10-21 23:59")
 }
 
 // richTableImage is a non-bus rich card: todo kind with a section heading, a
@@ -219,6 +250,9 @@ func run(endpoint, out, only string) error {
 			failures = append(failures, fmt.Errorf("%s fixture build failed", f.name))
 			continue
 		}
+		// Delivery stamps the outbound record's number on every card it
+		// renders; the gallery uses a fixed one so its footers stay stable.
+		img.Ref = exampleRef
 		png, width, height, err := renderer.RenderPNG(img)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", f.name, err))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,7 +125,26 @@ func (s *Service) Enqueue(ctx context.Context, outbound message.Outbound) (Recor
 	return s.repository.Enqueue(ctx, normalizeOutbound(outbound))
 }
 
+// DeliverRecord delivers a claimed outbox record. The record ID is the
+// request number stamped on every card the attempt renders, so the identifier
+// a user reads in a footer names the durable row an operator can look up. A
+// retry of the same record renders the same number.
+func (s *Service) DeliverRecord(ctx context.Context, record Record) Outcome {
+	return s.deliver(ctx, record.Message, formatRef(record.ID))
+}
+
 func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Outcome {
+	return s.deliver(ctx, outbound, "")
+}
+
+func formatRef(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func (s *Service) deliver(ctx context.Context, outbound message.Outbound, ref string) Outcome {
 	if s == nil {
 		return Outcome{State: OutcomeRejected, Code: "delivery_unavailable", Err: errors.New("delivery service is unavailable")}
 	}
@@ -135,7 +155,7 @@ func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Out
 	if !outbound.ExpiresAt.IsZero() && !outbound.ExpiresAt.After(time.Now()) {
 		return Outcome{State: OutcomeRejected, Code: "expired", Err: errors.New("message expired before delivery")}
 	}
-	rendered, err := s.renderOutbound(ctx, outbound)
+	rendered, err := s.renderOutbound(ctx, outbound, ref)
 	if err != nil {
 		return Outcome{State: OutcomeRetryable, Code: "render_failed", Err: err}
 	}
@@ -159,9 +179,9 @@ func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Out
 // delivery-ready attachments. It runs after an outbox record has been
 // claimed, so a renderer failure retries only output and never reruns the
 // business operation that created the record.
-func (s *Service) renderOutbound(ctx context.Context, outbound message.Outbound) (message.Outbound, error) {
+func (s *Service) renderOutbound(ctx context.Context, outbound message.Outbound, ref string) (message.Outbound, error) {
 	if outbound.TextPolicy == message.TextPolicyLLM {
-		return renderStructuredAttachments(ctx, s.renderer, outbound, false)
+		return renderStructuredAttachments(ctx, s.renderer, outbound, false, ref)
 	}
 	if outbound.TextPolicy != message.TextPolicyImageOnly {
 		return message.Outbound{}, fmt.Errorf("unsupported text policy %q", outbound.TextPolicy)
@@ -174,7 +194,7 @@ func (s *Service) renderOutbound(ctx context.Context, outbound message.Outbound)
 			}
 		}
 	}
-	rendered, err := renderStructuredAttachments(ctx, s.renderer, outbound, true)
+	rendered, err := renderStructuredAttachments(ctx, s.renderer, outbound, true, ref)
 	if err != nil {
 		return message.Outbound{}, err
 	}
@@ -189,11 +209,11 @@ func (s *Service) renderOutbound(ctx context.Context, outbound message.Outbound)
 	return rendered, nil
 }
 
-func renderStructuredAttachments(ctx context.Context, renderer responses.PNGRenderer, outbound message.Outbound, renderText bool) (message.Outbound, error) {
+func renderStructuredAttachments(ctx context.Context, renderer responses.PNGRenderer, outbound message.Outbound, renderText bool, ref string) (message.Outbound, error) {
 	parts := make([]message.ContentPart, 0, len(outbound.Content.Parts))
 	for _, part := range outbound.Content.Parts {
 		if strings.TrimSpace(part.Text) != "" && renderText && part.Attachment == nil {
-			attachment, err := responses.RenderTextAttachment(ctx, renderer, outbound.Kind, part.Text)
+			attachment, err := responses.RenderTextAttachment(ctx, renderer, outbound.Kind, part.Text, ref)
 			if err != nil {
 				return message.Outbound{}, err
 			}
@@ -211,6 +231,7 @@ func renderStructuredAttachments(ctx context.Context, renderer responses.PNGRend
 			if err != nil {
 				return message.Outbound{}, fmt.Errorf("decode image render intent: %w", err)
 			}
+			image.Ref = ref
 			if url := strings.TrimSpace(image.URL); url != "" {
 				attachment = message.Attachment{MIMEType: "image/png", URL: url, AltText: image.AltText}
 			} else {

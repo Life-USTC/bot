@@ -268,7 +268,7 @@ func (r RemoteRenderer) buildBusRequest(img *Image) remoteBusPayload {
 		NextTime: nextTime,
 		NextWait: nextWait,
 	}
-	footer := richFooterLines(now)
+	footer := richFooterLines(now, img.Ref)
 	req.Footer = []string{footer[0], footer[1]}
 	for _, block := range doc.Blocks {
 		if block.Table == nil {
@@ -302,7 +302,7 @@ func (r RemoteRenderer) buildRichRequest(img *Image) remoteRichPayload {
 	req := remoteRichPayload{
 		Title: doc.Title,
 	}
-	footer := richFooterLines(now)
+	footer := richFooterLines(now, img.Ref)
 	req.Footer = []string{footer[0], footer[1]}
 	for _, source := range doc.Blocks {
 		block := remoteRichBlock{Heading: strings.TrimSpace(source.Heading)}

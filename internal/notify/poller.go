@@ -400,7 +400,7 @@ func formatHomework(homework map[string]any) string {
 }
 
 func classReminderImage(schedule map[string]any, altText string) *responses.Image {
-	return reminderTableImage("class_reminder", "课前提醒",
+	return responses.NewReminderCardImage("class_reminder", "课前提醒",
 		[]string{"地点", "时间", "课程"},
 		[]string{
 			lifedata.SchedulePlaceLabel(schedule),
@@ -414,35 +414,11 @@ func homeworkReminderImage(homework map[string]any, altText string) *responses.I
 	if title == "" {
 		title = lifedata.FirstString(homework, "id")
 	}
-	return reminderTableImage("homework_reminder", "作业提醒",
+	return responses.NewReminderCardImage("homework_reminder", "作业提醒",
 		[]string{"截止", "课程", "作业"},
 		[]string{
 			lifedata.FormatAPITime(lifedata.FirstString(homework, "submissionDueAt")),
 			lifedata.HomeworkCourseLabel(homework),
 			title,
 		}, altText)
-}
-
-func reminderTableImage(kind, title string, headers, cells []string, altText string) *responses.Image {
-	separators := make([]string, len(headers))
-	for i := range separators {
-		separators[i] = "---"
-	}
-	richText := strings.Join([]string{
-		"# " + title,
-		"",
-		reminderTableRow(headers),
-		reminderTableRow(separators),
-		reminderTableRow(cells),
-	}, "\n")
-	return responses.NewRichTextImage(kind, richText, altText)
-}
-
-func reminderTableRow(cells []string) string {
-	clean := make([]string, len(cells))
-	for i, cell := range cells {
-		cell = strings.ReplaceAll(cell, "|", "｜")
-		clean[i] = strings.Join(strings.Fields(cell), " ")
-	}
-	return "| " + strings.Join(clean, " | ") + " |"
 }
