@@ -24,8 +24,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Test deployment transaction
-        run: bash scripts/deploy-mac.test.sh
+      - name: Test deployment transaction and OpenAPI contract scripts
+        run: make check-scripts
 
       - name: Install CJK fonts
         run: |
@@ -45,10 +45,21 @@ jobs:
           repository: Life-USTC/server
           ref: ${{ steps.openapi.outputs.server-sha }}
           path: .server
+          # The pin is checked for reachability from server main, which needs
+          # real history: a shallow checkout cannot answer the question, and
+          # `openapi-contract.sh verify-reachable` refuses to guess.
+          fetch-depth: 0
+
+      - name: Fetch server main for the pin reachability check
+        run: |
+          git -C .server fetch --no-tags --quiet origin \
+            +refs/heads/main:refs/remotes/origin/main
+          git -C .server rev-parse --verify refs/remotes/origin/main >/dev/null
 
       - name: Verify pinned OpenAPI source
         run: |
           test "$(git -C .server rev-parse HEAD)" = "${{ steps.openapi.outputs.server-sha }}"
+          make check-openapi-reachability OPENAPI_SERVER_DIR=.server
           make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
 
       - name: Build and regenerate OpenAPI client
