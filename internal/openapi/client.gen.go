@@ -1176,19 +1176,19 @@ func (e OauthTokenResponseSchemaTokenType) Valid() bool {
 
 // Defines values for PaginatedYoungEventResponseSchemaSourceStatus.
 const (
-	Fresh   PaginatedYoungEventResponseSchemaSourceStatus = "fresh"
-	Stale   PaginatedYoungEventResponseSchemaSourceStatus = "stale"
-	Unknown PaginatedYoungEventResponseSchemaSourceStatus = "unknown"
+	PaginatedYoungEventResponseSchemaSourceStatusFresh   PaginatedYoungEventResponseSchemaSourceStatus = "fresh"
+	PaginatedYoungEventResponseSchemaSourceStatusStale   PaginatedYoungEventResponseSchemaSourceStatus = "stale"
+	PaginatedYoungEventResponseSchemaSourceStatusUnknown PaginatedYoungEventResponseSchemaSourceStatus = "unknown"
 )
 
 // Valid indicates whether the value is a known member of the PaginatedYoungEventResponseSchemaSourceStatus enum.
 func (e PaginatedYoungEventResponseSchemaSourceStatus) Valid() bool {
 	switch e {
-	case Fresh:
+	case PaginatedYoungEventResponseSchemaSourceStatusFresh:
 		return true
-	case Stale:
+	case PaginatedYoungEventResponseSchemaSourceStatusStale:
 		return true
-	case Unknown:
+	case PaginatedYoungEventResponseSchemaSourceStatusUnknown:
 		return true
 	default:
 		return false
@@ -1279,6 +1279,102 @@ func (e PublicPublicationDetailSchemaRevisionObjectsStatus) Valid() bool {
 	case PublicPublicationDetailSchemaRevisionObjectsStatusLinked:
 		return true
 	case PublicPublicationDetailSchemaRevisionObjectsStatusVerified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel.
+const (
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelCenter     PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "center"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelCollege    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "college"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelDepartment PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "department"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelJournal    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "journal"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelOffice     PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "office"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelProgram    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "program"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelResearch   PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "research"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelService    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "service"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelSociety    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "society"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelStudent    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "student"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelUniversity PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "university"
+	PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelUnknown    PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel enum.
+func (e PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel) Valid() bool {
+	switch e {
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelCenter:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelCollege:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelDepartment:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelJournal:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelOffice:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelProgram:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelResearch:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelService:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelSociety:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelStudent:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelUniversity:
+		return true
+	case PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel.
+const (
+	Center     PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "center"
+	College    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "college"
+	Department PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "department"
+	Journal    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "journal"
+	Office     PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "office"
+	Program    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "program"
+	Research   PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "research"
+	Service    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "service"
+	Society    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "society"
+	Student    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "student"
+	University PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "university"
+	Unknown    PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel enum.
+func (e PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel) Valid() bool {
+	switch e {
+	case Center:
+		return true
+	case College:
+		return true
+	case Department:
+		return true
+	case Journal:
+		return true
+	case Office:
+		return true
+	case Program:
+		return true
+	case Research:
+		return true
+	case Service:
+		return true
+	case Society:
+		return true
+	case Student:
+		return true
+	case University:
+		return true
+	case Unknown:
 		return true
 	default:
 		return false
@@ -7261,26 +7357,50 @@ type PaginatedTeacherResponseSchema struct {
 // PaginatedYoungEventResponseSchema defines model for paginatedYoungEventResponseSchema.
 type PaginatedYoungEventResponseSchema struct {
 	Data []struct {
-		AppliedCount       *int       `json:"appliedCount"`
-		ApplyEndAt         *time.Time `json:"applyEndAt"`
-		ApplyStartAt       *time.Time `json:"applyStartAt"`
-		Capacity           *int       `json:"capacity"`
-		Category           *string    `json:"category"`
-		CreatedAt          *time.Time `json:"createdAt"`
-		Department         *string    `json:"department"`
-		EndAt              *time.Time `json:"endAt"`
-		Hours              *float32   `json:"hours"`
-		ImageUrl           *string    `json:"imageUrl"`
-		IsActive           bool       `json:"isActive"`
-		LastSeenAt         *time.Time `json:"lastSeenAt"`
-		Location           *string    `json:"location"`
-		Name               string     `json:"name"`
-		Organizer          *string    `json:"organizer"`
-		OrganizerId        *string    `json:"organizerId"`
+		ActivityLevel     *string    `json:"activityLevel"`
+		AppliedCount      *int       `json:"appliedCount"`
+		ApplyEndAt        *time.Time `json:"applyEndAt"`
+		ApplyStartAt      *time.Time `json:"applyStartAt"`
+		AuditedAt         *time.Time `json:"auditedAt"`
+		Capacity          *int       `json:"capacity"`
+		Category          *string    `json:"category"`
+		ContactName       *string    `json:"contactName"`
+		ContactTel        *string    `json:"contactTel"`
+		CreatedAt         *time.Time `json:"createdAt"`
+		CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
+		Department        *string    `json:"department"`
+		Duration          *float32   `json:"duration"`
+		EndAt             *time.Time `json:"endAt"`
+		FavCount          *int       `json:"favCount"`
+		Form              *string    `json:"form"`
+		Grades            *string    `json:"grades"`
+		Hours             *float32   `json:"hours"`
+		ImageUrl          *string    `json:"imageUrl"`
+		IsActive          bool       `json:"isActive"`
+		LastSeenAt        *time.Time `json:"lastSeenAt"`
+		LimitNum          *int       `json:"limitNum"`
+		Location          *string    `json:"location"`
+		Module            *string    `json:"module"`
+		Name              string     `json:"name"`
+		Organizer         *string    `json:"organizer"`
+		OrganizerId       *string    `json:"organizerId"`
+		PartakeNum        *int       `json:"partakeNum"`
+		Places            *[]struct {
+			PlaceEt   *string `json:"placeEt"`
+			PlaceInfo *string `json:"placeInfo"`
+			PlaceSt   *string `json:"placeSt"`
+		} `json:"places"`
+
+		// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
 		RegistrationStatus *string    `json:"registrationStatus"`
+		ServiceHour        *float32   `json:"serviceHour"`
 		SourceMissing      bool       `json:"sourceMissing"`
+		Sponsor            *string    `json:"sponsor"`
 		StartAt            *time.Time `json:"startAt"`
 		Status             *string    `json:"status"`
+		SumHours           *float32   `json:"sumHours"`
+		SumPersons         *int       `json:"sumPersons"`
+		UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
 		YoungId            string     `json:"youngId"`
 	} `json:"data"`
 	Pagination struct {
@@ -7340,8 +7460,10 @@ type PublicPublicationDetailSchema struct {
 		Id           string     `json:"id"`
 		PublishedAt  *time.Time `json:"publishedAt"`
 		Source       struct {
-			Id                string `json:"id"`
-			Name              string `json:"name"`
+			Id   string `json:"id"`
+			Name string `json:"name"`
+
+			// OrganizationLevel Source organization level. Currently one of: university, office, department, college, center, research, service, program, society, journal, student, unknown. Treat an unrecognized value as unknown rather than an error.
 			OrganizationLevel string `json:"organizationLevel"`
 		} `json:"source"`
 	} `json:"alsoPublishedIn"`
@@ -7375,8 +7497,10 @@ type PublicPublicationDetailSchema struct {
 		UpdatedAtSource *time.Time `json:"updatedAtSource"`
 	} `json:"revision"`
 	Source struct {
-		Id                string `json:"id"`
-		Name              string `json:"name"`
+		Id   string `json:"id"`
+		Name string `json:"name"`
+
+		// OrganizationLevel Source organization level. Currently one of: university, office, department, college, center, research, service, program, society, journal, student, unknown. Treat an unrecognized value as unknown rather than an error.
 		OrganizationLevel string `json:"organizationLevel"`
 	} `json:"source"`
 }
@@ -7389,6 +7513,33 @@ type PublicPublicationDetailSchemaRevisionObjectsKind string
 
 // PublicPublicationDetailSchemaRevisionObjectsStatus defines model for PublicPublicationDetailSchema.Revision.Objects.Status.
 type PublicPublicationDetailSchemaRevisionObjectsStatus string
+
+// PublicPublicationSourceDirectoryResponseSchema defines model for publicPublicationSourceDirectoryResponseSchema.
+type PublicPublicationSourceDirectoryResponseSchema struct {
+	Groups []struct {
+		OrganizationLevel PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel `json:"organizationLevel"`
+		PublicationCount  int                                                                   `json:"publicationCount"`
+		SourceCount       int                                                                   `json:"sourceCount"`
+		Sources           []struct {
+			Hosts             []string                                                                     `json:"hosts"`
+			Id                string                                                                       `json:"id"`
+			LastPublishedAt   *time.Time                                                                   `json:"lastPublishedAt"`
+			Name              string                                                                       `json:"name"`
+			OrganizationLevel PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel `json:"organizationLevel"`
+			PublicationCount  int                                                                          `json:"publicationCount"`
+		} `json:"sources"`
+	} `json:"groups"`
+	Totals struct {
+		PublicationCount int `json:"publicationCount"`
+		SourceCount      int `json:"sourceCount"`
+	} `json:"totals"`
+}
+
+// PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel defines model for PublicPublicationSourceDirectoryResponseSchema.Groups.OrganizationLevel.
+type PublicPublicationSourceDirectoryResponseSchemaGroupsOrganizationLevel string
+
+// PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel defines model for PublicPublicationSourceDirectoryResponseSchema.Groups.Sources.OrganizationLevel.
+type PublicPublicationSourceDirectoryResponseSchemaGroupsSourcesOrganizationLevel string
 
 // PublicPublicationsResponseSchema defines model for publicPublicationsResponseSchema.
 type PublicPublicationsResponseSchema struct {
@@ -7422,8 +7573,10 @@ type PublicPublicationsResponseSchema struct {
 			UpdatedAtSource *time.Time `json:"updatedAtSource"`
 		} `json:"revision"`
 		Source struct {
-			Id                string `json:"id"`
-			Name              string `json:"name"`
+			Id   string `json:"id"`
+			Name string `json:"name"`
+
+			// OrganizationLevel Source organization level. Currently one of: university, office, department, college, center, research, service, program, society, journal, student, unknown. Treat an unrecognized value as unknown rather than an error.
 			OrganizationLevel string `json:"organizationLevel"`
 		} `json:"source"`
 	} `json:"data"`
@@ -8703,28 +8856,54 @@ type WorkspaceLinkPinResponseSchema struct {
 
 // YoungEventDetailSchema defines model for youngEventDetailSchema.
 type YoungEventDetailSchema struct {
-	AppliedCount       *int        `json:"appliedCount"`
-	ApplyEndAt         *time.Time  `json:"applyEndAt"`
-	ApplyStartAt       *time.Time  `json:"applyStartAt"`
-	Capacity           *int        `json:"capacity"`
-	Category           *string     `json:"category"`
-	CreatedAt          *time.Time  `json:"createdAt"`
-	Department         *string     `json:"department"`
-	EndAt              *time.Time  `json:"endAt"`
-	Hours              *float32    `json:"hours"`
-	ImageUrl           *string     `json:"imageUrl"`
-	IsActive           bool        `json:"isActive"`
-	LastSeenAt         *time.Time  `json:"lastSeenAt"`
-	Location           *string     `json:"location"`
-	Name               string      `json:"name"`
-	Organizer          *string     `json:"organizer"`
-	OrganizerId        *string     `json:"organizerId"`
-	RawJson            interface{} `json:"rawJson"`
-	RegistrationStatus *string     `json:"registrationStatus"`
-	SourceMissing      bool        `json:"sourceMissing"`
-	StartAt            *time.Time  `json:"startAt"`
-	Status             *string     `json:"status"`
-	YoungId            string      `json:"youngId"`
+	ActivityLevel      *string    `json:"activityLevel"`
+	AppliedCount       *int       `json:"appliedCount"`
+	ApplyEndAt         *time.Time `json:"applyEndAt"`
+	ApplyStartAt       *time.Time `json:"applyStartAt"`
+	AuditedAt          *time.Time `json:"auditedAt"`
+	Capacity           *int       `json:"capacity"`
+	Category           *string    `json:"category"`
+	ContactName        *string    `json:"contactName"`
+	ContactTel         *string    `json:"contactTel"`
+	CreatedAt          *time.Time `json:"createdAt"`
+	CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
+	Department         *string    `json:"department"`
+	Description        *string    `json:"description"`
+	Duration           *float32   `json:"duration"`
+	EndAt              *time.Time `json:"endAt"`
+	FavCount           *int       `json:"favCount"`
+	Form               *string    `json:"form"`
+	Grades             *string    `json:"grades"`
+	Hours              *float32   `json:"hours"`
+	ImageUrl           *string    `json:"imageUrl"`
+	IsActive           bool       `json:"isActive"`
+	LastSeenAt         *time.Time `json:"lastSeenAt"`
+	LimitNum           *int       `json:"limitNum"`
+	Location           *string    `json:"location"`
+	Module             *string    `json:"module"`
+	Name               string     `json:"name"`
+	Organizer          *string    `json:"organizer"`
+	OrganizerId        *string    `json:"organizerId"`
+	PartakeNum         *int       `json:"partakeNum"`
+	ParticipationNotes *string    `json:"participationNotes"`
+	Places             *[]struct {
+		PlaceEt   *string `json:"placeEt"`
+		PlaceInfo *string `json:"placeInfo"`
+		PlaceSt   *string `json:"placeSt"`
+	} `json:"places"`
+	RawJson interface{} `json:"rawJson"`
+
+	// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
+	RegistrationStatus *string    `json:"registrationStatus"`
+	ServiceHour        *float32   `json:"serviceHour"`
+	SourceMissing      bool       `json:"sourceMissing"`
+	Sponsor            *string    `json:"sponsor"`
+	StartAt            *time.Time `json:"startAt"`
+	Status             *string    `json:"status"`
+	SumHours           *float32   `json:"sumHours"`
+	SumPersons         *int       `json:"sumPersons"`
+	UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
+	YoungId            string     `json:"youngId"`
 }
 
 // YoungEventSubscriptionListSchema defines model for youngEventSubscriptionListSchema.
@@ -8732,26 +8911,50 @@ type YoungEventSubscriptionListSchema struct {
 	Data []struct {
 		CreatedAt time.Time `json:"createdAt"`
 		Event     struct {
-			AppliedCount       *int       `json:"appliedCount"`
-			ApplyEndAt         *time.Time `json:"applyEndAt"`
-			ApplyStartAt       *time.Time `json:"applyStartAt"`
-			Capacity           *int       `json:"capacity"`
-			Category           *string    `json:"category"`
-			CreatedAt          *time.Time `json:"createdAt"`
-			Department         *string    `json:"department"`
-			EndAt              *time.Time `json:"endAt"`
-			Hours              *float32   `json:"hours"`
-			ImageUrl           *string    `json:"imageUrl"`
-			IsActive           bool       `json:"isActive"`
-			LastSeenAt         *time.Time `json:"lastSeenAt"`
-			Location           *string    `json:"location"`
-			Name               string     `json:"name"`
-			Organizer          *string    `json:"organizer"`
-			OrganizerId        *string    `json:"organizerId"`
+			ActivityLevel     *string    `json:"activityLevel"`
+			AppliedCount      *int       `json:"appliedCount"`
+			ApplyEndAt        *time.Time `json:"applyEndAt"`
+			ApplyStartAt      *time.Time `json:"applyStartAt"`
+			AuditedAt         *time.Time `json:"auditedAt"`
+			Capacity          *int       `json:"capacity"`
+			Category          *string    `json:"category"`
+			ContactName       *string    `json:"contactName"`
+			ContactTel        *string    `json:"contactTel"`
+			CreatedAt         *time.Time `json:"createdAt"`
+			CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
+			Department        *string    `json:"department"`
+			Duration          *float32   `json:"duration"`
+			EndAt             *time.Time `json:"endAt"`
+			FavCount          *int       `json:"favCount"`
+			Form              *string    `json:"form"`
+			Grades            *string    `json:"grades"`
+			Hours             *float32   `json:"hours"`
+			ImageUrl          *string    `json:"imageUrl"`
+			IsActive          bool       `json:"isActive"`
+			LastSeenAt        *time.Time `json:"lastSeenAt"`
+			LimitNum          *int       `json:"limitNum"`
+			Location          *string    `json:"location"`
+			Module            *string    `json:"module"`
+			Name              string     `json:"name"`
+			Organizer         *string    `json:"organizer"`
+			OrganizerId       *string    `json:"organizerId"`
+			PartakeNum        *int       `json:"partakeNum"`
+			Places            *[]struct {
+				PlaceEt   *string `json:"placeEt"`
+				PlaceInfo *string `json:"placeInfo"`
+				PlaceSt   *string `json:"placeSt"`
+			} `json:"places"`
+
+			// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
 			RegistrationStatus *string    `json:"registrationStatus"`
+			ServiceHour        *float32   `json:"serviceHour"`
 			SourceMissing      bool       `json:"sourceMissing"`
+			Sponsor            *string    `json:"sponsor"`
 			StartAt            *time.Time `json:"startAt"`
 			Status             *string    `json:"status"`
+			SumHours           *float32   `json:"sumHours"`
+			SumPersons         *int       `json:"sumPersons"`
+			UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
 			YoungId            string     `json:"youngId"`
 		} `json:"event"`
 		RemindDeadline bool   `json:"remindDeadline"`
@@ -9155,6 +9358,12 @@ type GetApiCatalogYoungEventsParams struct {
 	// Category Exact category filter, e.g. 单次项目 or 系列项目.
 	Category *string `form:"category,omitempty" json:"category,omitempty"`
 
+	// Module Exact second-classroom module filter, e.g. 德/智/体/美/劳.
+	Module *string `form:"module,omitempty" json:"module,omitempty"`
+
+	// ActivityLevel Exact activity-level filter, e.g. 院级 or 校级.
+	ActivityLevel *string `form:"activityLevel,omitempty" json:"activityLevel,omitempty"`
+
 	// Search Case-insensitive substring match on the event name.
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 
@@ -9278,12 +9487,13 @@ type PutApiIngestionPublicationsObjectsBatchIdKindSha256ParamsKind string
 
 // GetApiPublicationsParams defines parameters for GetApiPublications.
 type GetApiPublicationsParams struct {
-	Type     *GetApiPublicationsParamsType `form:"type,omitempty" json:"type,omitempty"`
-	Source   *string                       `form:"source,omitempty" json:"source,omitempty"`
-	Query    *string                       `form:"query,omitempty" json:"query,omitempty"`
-	Page     *int                          `form:"page,omitempty" json:"page,omitempty"`
-	PageSize *int                          `form:"pageSize,omitempty" json:"pageSize,omitempty"`
-	Fold     *GetApiPublicationsParamsFold `form:"fold,omitempty" json:"fold,omitempty"`
+	Type              *GetApiPublicationsParamsType `form:"type,omitempty" json:"type,omitempty"`
+	Source            *string                       `form:"source,omitempty" json:"source,omitempty"`
+	OrganizationLevel *string                       `form:"organizationLevel,omitempty" json:"organizationLevel,omitempty"`
+	Query             *string                       `form:"query,omitempty" json:"query,omitempty"`
+	Page              *int                          `form:"page,omitempty" json:"page,omitempty"`
+	PageSize          *int                          `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Fold              *GetApiPublicationsParamsFold `form:"fold,omitempty" json:"fold,omitempty"`
 }
 
 // GetApiPublicationsParamsType defines parameters for GetApiPublications.
@@ -12603,6 +12813,9 @@ type ClientInterface interface {
 	// GetApiCatalogYoungEvents request
 	GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCatalogYoungEventsImagesPath request
+	GetApiCatalogYoungEventsImagesPath(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiCatalogYoungEventsYoungId request
 	GetApiCatalogYoungEventsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -12734,6 +12947,9 @@ type ClientInterface interface {
 
 	// GetApiPublicationsObjectsKindSha256 request
 	GetApiPublicationsObjectsKindSha256(ctx context.Context, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiPublicationsSources request
+	GetApiPublicationsSources(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetApiPublicationsId request
 	GetApiPublicationsId(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -13739,6 +13955,18 @@ func (c *Client) GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCat
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiCatalogYoungEventsImagesPath(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungEventsImagesPathRequest(c.Server, path)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetApiCatalogYoungEventsYoungId(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiCatalogYoungEventsYoungIdRequest(c.Server, youngId)
 	if err != nil {
@@ -14293,6 +14521,18 @@ func (c *Client) GetApiPublicationsImagesHash(ctx context.Context, hash string, 
 
 func (c *Client) GetApiPublicationsObjectsKindSha256(ctx context.Context, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiPublicationsObjectsKindSha256Request(c.Server, kind, sha256)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiPublicationsSources(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiPublicationsSourcesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -18368,6 +18608,30 @@ func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoun
 
 		}
 
+		if params.Module != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "module", *params.Module, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ActivityLevel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "activityLevel", *params.ActivityLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Search != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -18468,6 +18732,40 @@ func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoun
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogYoungEventsImagesPathRequest generates requests for GetApiCatalogYoungEventsImagesPath
+func NewGetApiCatalogYoungEventsImagesPathRequest(server string, path string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "path", path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-events/images/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -20205,6 +20503,18 @@ func NewGetApiPublicationsRequest(server string, params *GetApiPublicationsParam
 
 		}
 
+		if params.OrganizationLevel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "organizationLevel", *params.OrganizationLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Query != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "query", *params.Query, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -20325,6 +20635,33 @@ func NewGetApiPublicationsObjectsKindSha256Request(server string, kind GetApiPub
 	}
 
 	operationPath := fmt.Sprintf("/api/publications/objects/%s/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiPublicationsSourcesRequest generates requests for GetApiPublicationsSources
+func NewGetApiPublicationsSourcesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/publications/sources")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -22589,6 +22926,9 @@ type ClientWithResponsesInterface interface {
 	// GetApiCatalogYoungEventsWithResponse request
 	GetApiCatalogYoungEventsWithResponse(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsResponse, error)
 
+	// GetApiCatalogYoungEventsImagesPathWithResponse request
+	GetApiCatalogYoungEventsImagesPathWithResponse(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsImagesPathResponse, error)
+
 	// GetApiCatalogYoungEventsYoungIdWithResponse request
 	GetApiCatalogYoungEventsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdResponse, error)
 
@@ -22720,6 +23060,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiPublicationsObjectsKindSha256WithResponse request
 	GetApiPublicationsObjectsKindSha256WithResponse(ctx context.Context, kind GetApiPublicationsObjectsKindSha256ParamsKind, sha256 string, reqEditors ...RequestEditorFn) (*GetApiPublicationsObjectsKindSha256Response, error)
+
+	// GetApiPublicationsSourcesWithResponse request
+	GetApiPublicationsSourcesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiPublicationsSourcesResponse, error)
 
 	// GetApiPublicationsIdWithResponse request
 	GetApiPublicationsIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetApiPublicationsIdResponse, error)
@@ -24804,6 +25147,38 @@ func (r GetApiCatalogYoungEventsResponse) ContentType() string {
 	return ""
 }
 
+type GetApiCatalogYoungEventsImagesPathResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON404      *OpenApiErrorSchema
+	JSON502      *OpenApiErrorSchema
+	JSON503      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungEventsImagesPathResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungEventsImagesPathResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungEventsImagesPathResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetApiCatalogYoungEventsYoungIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -25580,6 +25955,7 @@ type PostApiIngestionPublicationsBatchesResponse struct {
 	JSON400      *OpenApiErrorSchema
 	JSON401      *OpenApiErrorSchema
 	JSON409      *OpenApiErrorSchema
+	JSON413      *OpenApiErrorSchema
 	JSON429      *OpenApiErrorSchema
 	JSON503      *OpenApiErrorSchema
 }
@@ -26039,6 +26415,36 @@ func (r GetApiPublicationsObjectsKindSha256Response) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetApiPublicationsObjectsKindSha256Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiPublicationsSourcesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PublicPublicationSourceDirectoryResponseSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiPublicationsSourcesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiPublicationsSourcesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiPublicationsSourcesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -28040,6 +28446,15 @@ func (c *ClientWithResponses) GetApiCatalogYoungEventsWithResponse(ctx context.C
 	return ParseGetApiCatalogYoungEventsResponse(rsp)
 }
 
+// GetApiCatalogYoungEventsImagesPathWithResponse request returning *GetApiCatalogYoungEventsImagesPathResponse
+func (c *ClientWithResponses) GetApiCatalogYoungEventsImagesPathWithResponse(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsImagesPathResponse, error) {
+	rsp, err := c.GetApiCatalogYoungEventsImagesPath(ctx, path, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungEventsImagesPathResponse(rsp)
+}
+
 // GetApiCatalogYoungEventsYoungIdWithResponse request returning *GetApiCatalogYoungEventsYoungIdResponse
 func (c *ClientWithResponses) GetApiCatalogYoungEventsYoungIdWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsYoungIdResponse, error) {
 	rsp, err := c.GetApiCatalogYoungEventsYoungId(ctx, youngId, reqEditors...)
@@ -28452,6 +28867,15 @@ func (c *ClientWithResponses) GetApiPublicationsObjectsKindSha256WithResponse(ct
 		return nil, err
 	}
 	return ParseGetApiPublicationsObjectsKindSha256Response(rsp)
+}
+
+// GetApiPublicationsSourcesWithResponse request returning *GetApiPublicationsSourcesResponse
+func (c *ClientWithResponses) GetApiPublicationsSourcesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetApiPublicationsSourcesResponse, error) {
+	rsp, err := c.GetApiPublicationsSources(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiPublicationsSourcesResponse(rsp)
 }
 
 // GetApiPublicationsIdWithResponse request returning *GetApiPublicationsIdResponse
@@ -30942,6 +31366,46 @@ func ParseGetApiCatalogYoungEventsResponse(rsp *http.Response) (*GetApiCatalogYo
 	return response, nil
 }
 
+// ParseGetApiCatalogYoungEventsImagesPathResponse parses an HTTP response from a GetApiCatalogYoungEventsImagesPathWithResponse call
+func ParseGetApiCatalogYoungEventsImagesPathResponse(rsp *http.Response) (*GetApiCatalogYoungEventsImagesPathResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungEventsImagesPathResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 502:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON502 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetApiCatalogYoungEventsYoungIdResponse parses an HTTP response from a GetApiCatalogYoungEventsYoungIdWithResponse call
 func ParseGetApiCatalogYoungEventsYoungIdResponse(rsp *http.Response) (*GetApiCatalogYoungEventsYoungIdResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -32132,6 +32596,13 @@ func ParsePostApiIngestionPublicationsBatchesResponse(rsp *http.Response) (*Post
 		}
 		response.JSON409 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -32616,6 +33087,32 @@ func ParseGetApiPublicationsObjectsKindSha256Response(rsp *http.Response) (*GetA
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiPublicationsSourcesResponse parses an HTTP response from a GetApiPublicationsSourcesWithResponse call
+func ParseGetApiPublicationsSourcesResponse(rsp *http.Response) (*GetApiPublicationsSourcesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiPublicationsSourcesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PublicPublicationSourceDirectoryResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	}
 
