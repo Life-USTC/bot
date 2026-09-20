@@ -52,6 +52,11 @@ use 7pt gray tracks (`#E4E4E7`) and a sky-blue-to-amber gradient. Weather glyphs
 use amber sun, gray cloud `#A1A1AA`, sky drops `#38BDF8`, dark amber lightning
 `#D97706`, and slate hail `#64748B`.
 
+The in-process renderer these numbers describe no longer exists at HEAD: Typst
+renders every card, and `scripts/render-reference.sh` rebuilds the reference
+PNGs from the pinned commits below rather than from the working tree. The file
+paths in the next paragraph resolve only in that history.
+
 Source pointers (all at the legacy commit): `internal/responses/rich_render.go`
 lines 48–67, 92–116, 222–280, 397–412, 522–538, and 557–705;
 `internal/responses/schedule_grid.go` lines 31–74 and 161–360;

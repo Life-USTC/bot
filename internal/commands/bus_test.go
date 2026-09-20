@@ -277,8 +277,8 @@ func TestBusImageResponseRendersEmptyScheduleCardWithoutTextFallback(t *testing.
 	if response.Image == nil || !strings.Contains(response.Image.RichText, "没有查到校车。") {
 		t.Fatalf("empty schedule image = %#v", response.Image)
 	}
-	if _, _, _, err := (responses.Renderer{}).RenderPNG(response.Image); err != nil {
-		t.Fatalf("render empty schedule card: %v", err)
+	if err := responses.ValidateImage(response.Image); err != nil {
+		t.Fatalf("empty schedule card is not renderable: %v", err)
 	}
 }
 

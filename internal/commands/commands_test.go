@@ -1385,12 +1385,8 @@ func TestNextClassImageUsesScheduleTableAndSkipsEmptyReply(t *testing.T) {
 
 func assertResponseImageRenders(t *testing.T, image *responses.Image) {
 	t.Helper()
-	data, width, height, err := (responses.Renderer{}).RenderPNG(image)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(data) == 0 || width <= 0 || height <= 0 {
-		t.Fatalf("rendered image len=%d size=%dx%d", len(data), width, height)
+	if err := responses.ValidateImage(image); err != nil {
+		t.Fatalf("response image is not renderable: %v", err)
 	}
 }
 

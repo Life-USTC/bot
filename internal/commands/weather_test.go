@@ -174,11 +174,7 @@ func TestWeatherImageResponse(t *testing.T) {
 	if !strings.Contains(image.Weather.Meta, "数据来源：amap") {
 		t.Fatalf("card meta = %q", image.Weather.Meta)
 	}
-	png, width, height, err := (responses.Renderer{}).RenderPNG(image)
-	if err != nil {
-		t.Fatalf("render weather card: %v", err)
-	}
-	if len(png) == 0 || width <= 0 || height <= 0 {
-		t.Fatalf("rendered png = %d bytes, %dx%d", len(png), width, height)
+	if err := responses.ValidateImage(image); err != nil {
+		t.Fatalf("weather card is not renderable: %v", err)
 	}
 }

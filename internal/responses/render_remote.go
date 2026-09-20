@@ -130,37 +130,9 @@ func (r RemoteRenderer) RenderPNGContext(parent context.Context, img *Image) ([]
 	if endpoint == "" {
 		return nil, 0, 0, errors.New("remote renderer endpoint is empty")
 	}
-	var kind string
-	var payload any
-	switch {
-	case img.Grid != nil:
-		p := r.buildGridRequest(img)
-		if len(p.Days) == 0 || len(p.Periods) == 0 {
-			return nil, 0, 0, errors.New("response grid is empty")
-		}
-		kind = "grid"
-		payload = p
-	case img.Weather != nil:
-		p, err := r.buildWeatherRequest(img)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		kind = "weather"
-		payload = p
-	case richDocumentIsBus(parseRichText(img.RichText)):
-		p := r.buildBusRequest(img)
-		if len(p.Tables) == 0 {
-			return nil, 0, 0, errors.New("response contains no bus tables")
-		}
-		kind = "bus"
-		payload = p
-	default:
-		if strings.TrimSpace(img.RichText) == "" {
-			return nil, 0, 0, errors.New("response rich text is empty")
-		}
-		p := r.buildRichRequest(img)
-		kind = "rich"
-		payload = p
+	kind, payload, err := r.buildRenderRequest(img)
+	if err != nil {
+		return nil, 0, 0, err
 	}
 
 	payloadJSON, err := json.Marshal(payload)
@@ -342,4 +314,47 @@ func parseImageDimensionHeader(h http.Header, name string, actual int) (int, err
 		return 0, fmt.Errorf("render sidecar %s header %d disagrees with PNG dimensions %d", name, parsed, actual)
 	}
 	return parsed, nil
+}
+
+// buildRenderRequest picks the card kind for an image and builds the sidecar
+// payload for it. It is the whole of rendering that does not need the
+// network, which is what lets ValidateImage run the real decision.
+func (r RemoteRenderer) buildRenderRequest(img *Image) (string, any, error) {
+	switch {
+	case img.Grid != nil:
+		payload := r.buildGridRequest(img)
+		if len(payload.Days) == 0 || len(payload.Periods) == 0 {
+			return "", nil, errors.New("response grid is empty")
+		}
+		return "grid", payload, nil
+	case img.Weather != nil:
+		payload, err := r.buildWeatherRequest(img)
+		if err != nil {
+			return "", nil, err
+		}
+		return "weather", payload, nil
+	case richDocumentIsBus(parseRichText(img.RichText)):
+		payload := r.buildBusRequest(img)
+		if len(payload.Tables) == 0 {
+			return "", nil, errors.New("response contains no bus tables")
+		}
+		return "bus", payload, nil
+	default:
+		if strings.TrimSpace(img.RichText) == "" {
+			return "", nil, errors.New("response rich text is empty")
+		}
+		return "rich", r.buildRichRequest(img), nil
+	}
+}
+
+// ValidateImage reports whether a card can be rendered, without contacting
+// the sidecar. It runs the same kind selection and payload build that
+// RenderPNGContext does, so a command test can check that the card it
+// produced is renderable rather than trusting that it looks right.
+func ValidateImage(img *Image) error {
+	if img == nil || strings.TrimSpace(img.AltText) == "" {
+		return errors.New("response image is empty")
+	}
+	_, _, err := RemoteRenderer{}.buildRenderRequest(img)
+	return err
 }
