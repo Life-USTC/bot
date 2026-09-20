@@ -108,15 +108,15 @@ func (r Renderer) RenderPNG(img *Image) ([]byte, int, int, error) {
 		return nil, 0, 0, errors.New("response image is empty")
 	}
 	if img.Grid != nil {
-		return r.renderScheduleGridPNG(img.Title, img.Grid)
+		return r.renderScheduleGridPNG(img.Title, img.Grid, img.Ref)
 	}
 	if img.Weather != nil {
-		return r.renderWeatherCardPNG(img.Weather)
+		return r.renderWeatherCardPNG(img.Weather, img.Ref)
 	}
 	if strings.TrimSpace(img.RichText) == "" {
 		return nil, 0, 0, errors.New("response rich text is empty")
 	}
-	return r.renderRichPNG(img.RichText)
+	return r.renderRichPNG(img.RichText, img.Ref)
 }
 
 type busRenderTable struct {

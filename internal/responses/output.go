@@ -70,11 +70,12 @@ func textCardTitle(kind string) string {
 
 // RenderTextAttachment renders one host-authored text card into an immutable
 // PNG attachment. Callers must inject the renderer used by their deployment.
-func RenderTextAttachment(ctx context.Context, renderer PNGRenderer, kind, text string) (*message.Attachment, error) {
+func RenderTextAttachment(ctx context.Context, renderer PNGRenderer, kind, text, ref string) (*message.Attachment, error) {
 	image := NewTextCardImage(kind, text)
 	if image == nil {
 		return nil, errors.New("host text is empty")
 	}
+	image.Ref = ref
 	return RenderImageAttachment(ctx, renderer, image)
 }
 

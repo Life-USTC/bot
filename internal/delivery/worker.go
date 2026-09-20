@@ -83,7 +83,7 @@ func (w *Worker) tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		outcome := w.Service.DeliverNow(ctx, record.Message)
+		outcome := w.Service.DeliverRecord(ctx, record)
 		maxAttempts := w.MaxAttempts
 		if maxAttempts <= 0 {
 			maxAttempts = defaultMaxAttempts

@@ -387,11 +387,29 @@ func measureRichDocument(doc richDocument, metrics richRenderMetrics) int {
 		width = max(width, measureRichBlockWidth(block, metrics))
 	}
 	// The timestamp and source footer are right-aligned on separate lines.
-	return max(width, richTextWidth("15:04 · 工作日", 9))
+	return max(width, richTextWidth("2026-01-02（周一）15:04", 9))
 }
 
-func richFooterLines(now time.Time) [2]string {
-	return [2]string{now.Format("15:04") + " · " + busDayType(now), "Life @ USTC"}
+// richFooterLines builds the two right-aligned caption lines every card ends
+// with: when the card was produced, and where it came from. The request
+// number identifies the outbound record, so a user reporting a bad card can
+// quote it and an operator can find that exact delivery.
+func richFooterLines(now time.Time, ref string) [2]string {
+	source := "Life @ USTC"
+	if ref = strings.TrimSpace(ref); ref != "" {
+		source = "#" + ref + " · " + source
+	}
+	return [2]string{footerStampLine(now), source}
+}
+
+func footerStampLine(now time.Time) string {
+	return now.Format("2006-01-02") + "（" + weekdayLabel(now) + "）" + now.Format("15:04")
+}
+
+var weekdayLabels = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+
+func weekdayLabel(now time.Time) string {
+	return weekdayLabels[int(now.Weekday())]
 }
 
 func measureRichTableColumnWidths(table busRenderTable, metrics richRenderMetrics) []int {
@@ -617,7 +635,7 @@ func (r Renderer) richFaces(scale int) (richFaces, error) {
 	}, nil
 }
 
-func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
+func (r Renderer) renderRichPNG(text, ref string) ([]byte, int, int, error) {
 	doc := parseRichText(text)
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
 	tables := []busRenderTable{}
@@ -700,7 +718,7 @@ func (r Renderer) renderRichPNG(text string) ([]byte, int, int, error) {
 	}
 	footerY := s(layout.FooterY)
 	right := s(layout.Space.Width - layout.Metrics.MarginX)
-	footerLines := richFooterLines(now)
+	footerLines := richFooterLines(now, ref)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY, footerLines[0], muted)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY+s(layout.Metrics.FooterLineGap), footerLines[1], muted)
 	var buf bytes.Buffer

@@ -150,7 +150,7 @@ func weatherLocationHeight(loc WeatherCardLocation, m weatherRenderMetrics) int 
 	return height
 }
 
-func (r Renderer) renderWeatherCardPNG(card *WeatherCard) ([]byte, int, int, error) {
+func (r Renderer) renderWeatherCardPNG(card *WeatherCard, ref string) ([]byte, int, int, error) {
 	m := defaultWeatherRenderMetrics()
 	height := m.TitleBaseline + 12
 	for _, loc := range card.Locations {
@@ -188,7 +188,7 @@ func (r Renderer) renderWeatherCardPNG(card *WeatherCard) ([]byte, int, int, err
 	if card.Meta != "" {
 		drawMixedText(canvas, faces.Meta, faces.MetaMono, s(left), footerY+s(6), card.Meta, weatherMuted)
 	}
-	footerLines := richFooterLines(now)
+	footerLines := richFooterLines(now, ref)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, s(right), footerY-s(6), footerLines[0], weatherMuted)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, s(right), footerY+s(10), footerLines[1], weatherMuted)
 

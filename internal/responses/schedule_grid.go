@@ -213,7 +213,7 @@ func normalizeScheduleGridCourseKey(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
-func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byte, int, int, error) {
+func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid, ref string) ([]byte, int, int, error) {
 	metrics := defaultScheduleGridMetrics(len(grid.Days), len(grid.Periods))
 	metrics.RowHeights = scheduleGridRoleRowHeights(grid, metrics)
 	space := metrics.space()
@@ -422,7 +422,7 @@ func (r Renderer) renderScheduleGridPNG(title string, grid *ScheduleGrid) ([]byt
 	}
 
 	footerY := s(metrics.gridBottom() + metrics.FooterGap)
-	footerLines := richFooterLines(now)
+	footerLines := richFooterLines(now, ref)
 	right := s(space.Width - metrics.MarginX)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY, footerLines[0], muted)
 	drawRightMixedText(canvas, faces.Meta, faces.MetaMono, right, footerY+s(14), footerLines[1], muted)
