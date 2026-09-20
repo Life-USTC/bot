@@ -35,15 +35,16 @@ func Encode(source, operation, status string, observedAt time.Time, data any, er
 	if err != nil {
 		r.Error = &Error{Code: status, Message: err.Error()}
 	}
-	marshal := json.Marshal
-	if source == "bot" {
-		marshal = func(v any) ([]byte, error) { return json.MarshalIndent(v, "", "  ") }
-	}
-	encoded, encodeErr := marshal(r)
+	// Encode compactly. Indentation is presentation, and this payload is only
+	// ever read by a model, but it is also persisted verbatim into conversation
+	// history: on a real bus result the two-space indent grew one message from
+	// 124,544 to 253,456 characters, so every later turn paid twice for
+	// whitespace.
+	encoded, encodeErr := json.Marshal(r)
 	if encodeErr != nil {
 		r.Status, r.Result = "failed", nil
 		r.Error = &Error{Code: "invalid_result", Message: "The operation result could not be encoded."}
-		encoded, _ = marshal(r)
+		encoded, _ = json.Marshal(r)
 	}
 	return string(encoded)
 }
