@@ -57,6 +57,15 @@ jobs:
           repository: Life-USTC/server
           ref: ${{ steps.server.outputs.sha }}
           path: .server
+          # Needed so the sync refuses to pin a commit that never landed on
+          # server main (a pull-request head stays fetchable by SHA forever).
+          fetch-depth: 0
+
+      - name: Fetch server main for the pin reachability check
+        run: |
+          git -C .server fetch --no-tags --quiet origin \
+            +refs/heads/main:refs/remotes/origin/main
+          git -C .server rev-parse --verify refs/remotes/origin/main >/dev/null
 
       - name: Detect and sync contract changes
         id: contract
@@ -72,6 +81,7 @@ jobs:
             make sync-openapi generate \
               OPENAPI_SOURCE=.server/public/openapi.generated.json \
               OPENAPI_SERVER_SHA="$SERVER_SHA"
+            make check-openapi-reachability OPENAPI_SERVER_DIR=.server
             make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -99,6 +109,7 @@ jobs:
           touch .env
           docker compose config --quiet
           make check-openapi-provenance
+          make check-openapi-reachability OPENAPI_SERVER_DIR=.server
           make check-openapi-source OPENAPI_SOURCE=.server/public/openapi.generated.json
 
       - name: Open or update contract PR
