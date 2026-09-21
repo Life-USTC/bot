@@ -2602,10 +2602,11 @@ func (h Handler) subscriptionCalendarLink(ctx context.Context, ident store.Ident
 		return h.commandError("订阅链接查不到：", err)
 	}
 	calendarURL := lifedata.NestedString(data, "subscription", "calendarUrl")
+	// The answer is the link itself. The rest of the current-subscription
+	// record is not part of it and is not forwarded to the model.
 	h.markData(map[string]any{
 		"operation":    "calendar_link",
 		"calendar_url": calendarURL,
-		"subscription": data,
 	})
 	if calendarURL == "" {
 		if hasCurrentScopes, scopeErr := h.Auth.HasCurrentScopes(ctx, ident); scopeErr == nil && !hasCurrentScopes {
@@ -2725,11 +2726,11 @@ func (h Handler) subscriptionList(ctx context.Context, ident store.Identity) str
 	if err != nil {
 		return h.commandError("日程查不到：", err)
 	}
+	sections := lifedata.SubscriptionSections(data)
 	h.markData(map[string]any{
 		"operation":    "list",
-		"subscription": data,
+		"subscription": compactCurrentSubscription(data),
 	})
-	sections := lifedata.SubscriptionSections(data)
 	if len(sections) == 0 {
 		return "还没有订阅课程。"
 	}
@@ -3420,8 +3421,15 @@ func (h Handler) hasSubscribedSections(ctx context.Context, ident store.Identity
 	if err != nil {
 		return false, err
 	}
-	h.markData(subscription)
-	return len(lifedata.SubscriptionSectionIDs(subscription)) > 0, nil
+	// Only the subscribed-section count is used here, and the caller replaces
+	// this data with its own schedule result; the bulk record never needs to
+	// reach the model through this probe.
+	sectionIDs := lifedata.SubscriptionSectionIDs(subscription)
+	h.markData(map[string]any{
+		"operation":                "subscribed_section_count",
+		"subscribed_section_count": len(sectionIDs),
+	})
+	return len(sectionIDs) > 0, nil
 }
 
 func formatScheduleDay(title string, schedules []map[string]any) []string {
@@ -4308,12 +4316,14 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 	if err != nil {
 		return h.commandError("考试查不到：", err)
 	}
-	h.markData(map[string]any{"operation": "exams", "subscription": data})
+	// Only the exams carried by the subscription are answered here, so the
+	// surrounding section records are projected away rather than forwarded.
 	exams := subscriptionExams(data)
+	sortSubscriptionExams(exams)
+	h.markData(map[string]any{"operation": "exams", "exams": compactSubscriptionExams(exams)})
 	if len(exams) == 0 {
 		return "没有订阅课程考试。"
 	}
-	sortSubscriptionExams(exams)
 	command := func(page int) string {
 		return fmt.Sprintf("考试 第%d页", page)
 	}
