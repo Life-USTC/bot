@@ -21,9 +21,15 @@ import (
 const (
 	// Every logical model request gets its own retry window. There is no
 	// aggregate retry budget for a complete tool loop.
+	//
+	// The base delay stays small so an isolated blip costs nothing noticeable.
+	// The ceiling is what makes the window outlast a provider that keeps
+	// closing connections for a stretch: capped at five seconds the whole
+	// sequence expired in well under a minute, which is shorter than one
+	// successful compaction call.
 	llmHTTPMaxAttempts = llmRequestMaxAttempts
 	llmRetryBaseDelay  = 200 * time.Millisecond
-	llmRetryMaxDelay   = 5 * time.Second
+	llmRetryMaxDelay   = 30 * time.Second
 )
 
 var errLLMTransportExhausted = errors.New("llm transport retries exhausted")
