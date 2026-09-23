@@ -97,6 +97,9 @@ func TestHandleGroupOnlyAllowsBusKeywords(t *testing.T) {
 	if !ok || data["operation"] != "bus" || data["network"] == nil {
 		t.Fatalf("bus Data = %#v", response.Data)
 	}
+	if network, _ := data["network"].(map[string]any); network == nil || network["trips"] != nil {
+		t.Fatalf("model payload still carries the full timetable: %#v", data["network"])
+	}
 
 	groupInput.Identity.ConversationType = " GROUP "
 	_, ok = handler.Handle(context.Background(), groupInput)
@@ -1330,5 +1333,29 @@ func TestBusQueryArgsTreatsAlAsAllAlias(t *testing.T) {
 	}
 	if !options.ShowAll {
 		t.Fatalf("ShowAll = false, want true for all alias")
+	}
+}
+
+func TestBusNetworkForModelDropsTheFullTimetable(t *testing.T) {
+	data := map[string]any{
+		"trips":    []any{map[string]any{"routeId": 1}},
+		"routes":   []any{map[string]any{"id": 1}},
+		"campuses": []any{map[string]any{"id": 1}},
+		"version":  map[string]any{"id": 7},
+	}
+	slim := busNetworkForModel(data)
+	if _, present := slim["trips"]; present {
+		t.Fatal("the full timetable must not reach the model payload")
+	}
+	if slim["routes"] == nil || slim["campuses"] == nil || slim["version"] == nil {
+		t.Fatalf("route, campus and version context must survive: %#v", slim)
+	}
+	// The same network value is still handed to the text and image formatters,
+	// so slimming the model payload must not reach back into the caller's map.
+	if data["trips"] == nil {
+		t.Fatal("the caller's network data was mutated")
+	}
+	if busNetworkForModel(nil) != nil {
+		t.Fatal("a nil network must stay nil")
 	}
 }
