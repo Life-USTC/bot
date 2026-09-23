@@ -7357,51 +7357,51 @@ type PaginatedTeacherResponseSchema struct {
 // PaginatedYoungEventResponseSchema defines model for paginatedYoungEventResponseSchema.
 type PaginatedYoungEventResponseSchema struct {
 	Data []struct {
-		ActivityLevel     *string    `json:"activityLevel"`
-		AppliedCount      *int       `json:"appliedCount"`
-		ApplyEndAt        *time.Time `json:"applyEndAt"`
-		ApplyStartAt      *time.Time `json:"applyStartAt"`
-		AuditedAt         *time.Time `json:"auditedAt"`
-		Capacity          *int       `json:"capacity"`
-		Category          *string    `json:"category"`
-		ContactName       *string    `json:"contactName"`
-		ContactTel        *string    `json:"contactTel"`
-		CreatedAt         *time.Time `json:"createdAt"`
-		CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
-		Department        *string    `json:"department"`
-		Duration          *float32   `json:"duration"`
-		EndAt             *time.Time `json:"endAt"`
-		FavCount          *int       `json:"favCount"`
-		Form              *string    `json:"form"`
-		Grades            *string    `json:"grades"`
-		Hours             *float32   `json:"hours"`
-		ImageUrl          *string    `json:"imageUrl"`
-		IsActive          bool       `json:"isActive"`
-		LastSeenAt        *time.Time `json:"lastSeenAt"`
-		LimitNum          *int       `json:"limitNum"`
-		Location          *string    `json:"location"`
-		Module            *string    `json:"module"`
-		Name              string     `json:"name"`
-		Organizer         *string    `json:"organizer"`
-		OrganizerId       *string    `json:"organizerId"`
-		PartakeNum        *int       `json:"partakeNum"`
-		Places            *[]struct {
+		ActivityLevel      *string    `json:"activityLevel"`
+		ActivityStatusCode *string    `json:"activityStatusCode"`
+		AppliedCount       *int       `json:"appliedCount"`
+		ApplyEndAt         *time.Time `json:"applyEndAt"`
+		ApplyStartAt       *time.Time `json:"applyStartAt"`
+		AuditedAt          *time.Time `json:"auditedAt"`
+		Capacity           *int       `json:"capacity"`
+		Category           *string    `json:"category"`
+		ContactName        *string    `json:"contactName"`
+		ContactTel         *string    `json:"contactTel"`
+		CreatedAt          *time.Time `json:"createdAt"`
+		CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
+		Department         *string    `json:"department"`
+		Duration           *float32   `json:"duration"`
+		EndAt              *time.Time `json:"endAt"`
+		FavCount           *int       `json:"favCount"`
+		Form               *string    `json:"form"`
+		Grades             *string    `json:"grades"`
+		Hours              *float32   `json:"hours"`
+		ImageUrl           *string    `json:"imageUrl"`
+		IsActive           bool       `json:"isActive"`
+		LastSeenAt         *time.Time `json:"lastSeenAt"`
+		LimitNum           *int       `json:"limitNum"`
+		Location           *string    `json:"location"`
+		Module             *string    `json:"module"`
+		Name               string     `json:"name"`
+		Organizer          *string    `json:"organizer"`
+		OrganizerId        *string    `json:"organizerId"`
+		PartakeNum         *int       `json:"partakeNum"`
+		Places             *[]struct {
 			PlaceEt   *string `json:"placeEt"`
 			PlaceInfo *string `json:"placeInfo"`
 			PlaceSt   *string `json:"placeSt"`
 		} `json:"places"`
-
-		// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
-		RegistrationStatus *string    `json:"registrationStatus"`
-		ServiceHour        *float32   `json:"serviceHour"`
-		SourceMissing      bool       `json:"sourceMissing"`
-		Sponsor            *string    `json:"sponsor"`
-		StartAt            *time.Time `json:"startAt"`
-		Status             *string    `json:"status"`
-		SumHours           *float32   `json:"sumHours"`
-		SumPersons         *int       `json:"sumPersons"`
-		UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
-		YoungId            string     `json:"youngId"`
+		RequiresSignup    *bool      `json:"requiresSignup"`
+		ServiceHour       *float32   `json:"serviceHour"`
+		SignupStatusCode  *string    `json:"signupStatusCode"`
+		SourceMissing     bool       `json:"sourceMissing"`
+		Sponsor           *string    `json:"sponsor"`
+		StartAt           *time.Time `json:"startAt"`
+		Status            *string    `json:"status"`
+		SumHours          *float32   `json:"sumHours"`
+		SumPersons        *int       `json:"sumPersons"`
+		UpdatedAtUpstream *time.Time `json:"updatedAtUpstream"`
+		YoungId           string     `json:"youngId"`
 	} `json:"data"`
 	Pagination struct {
 		Page       int `json:"page"`
@@ -8857,6 +8857,7 @@ type WorkspaceLinkPinResponseSchema struct {
 // YoungEventDetailSchema defines model for youngEventDetailSchema.
 type YoungEventDetailSchema struct {
 	ActivityLevel      *string    `json:"activityLevel"`
+	ActivityStatusCode *string    `json:"activityStatusCode"`
 	AppliedCount       *int       `json:"appliedCount"`
 	ApplyEndAt         *time.Time `json:"applyEndAt"`
 	ApplyStartAt       *time.Time `json:"applyStartAt"`
@@ -8891,19 +8892,18 @@ type YoungEventDetailSchema struct {
 		PlaceInfo *string `json:"placeInfo"`
 		PlaceSt   *string `json:"placeSt"`
 	} `json:"places"`
-	RawJson interface{} `json:"rawJson"`
-
-	// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
-	RegistrationStatus *string    `json:"registrationStatus"`
-	ServiceHour        *float32   `json:"serviceHour"`
-	SourceMissing      bool       `json:"sourceMissing"`
-	Sponsor            *string    `json:"sponsor"`
-	StartAt            *time.Time `json:"startAt"`
-	Status             *string    `json:"status"`
-	SumHours           *float32   `json:"sumHours"`
-	SumPersons         *int       `json:"sumPersons"`
-	UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
-	YoungId            string     `json:"youngId"`
+	RawJson           interface{} `json:"rawJson"`
+	RequiresSignup    *bool       `json:"requiresSignup"`
+	ServiceHour       *float32    `json:"serviceHour"`
+	SignupStatusCode  *string     `json:"signupStatusCode"`
+	SourceMissing     bool        `json:"sourceMissing"`
+	Sponsor           *string     `json:"sponsor"`
+	StartAt           *time.Time  `json:"startAt"`
+	Status            *string     `json:"status"`
+	SumHours          *float32    `json:"sumHours"`
+	SumPersons        *int        `json:"sumPersons"`
+	UpdatedAtUpstream *time.Time  `json:"updatedAtUpstream"`
+	YoungId           string      `json:"youngId"`
 }
 
 // YoungEventSubscriptionListSchema defines model for youngEventSubscriptionListSchema.
@@ -8911,51 +8911,51 @@ type YoungEventSubscriptionListSchema struct {
 	Data []struct {
 		CreatedAt time.Time `json:"createdAt"`
 		Event     struct {
-			ActivityLevel     *string    `json:"activityLevel"`
-			AppliedCount      *int       `json:"appliedCount"`
-			ApplyEndAt        *time.Time `json:"applyEndAt"`
-			ApplyStartAt      *time.Time `json:"applyStartAt"`
-			AuditedAt         *time.Time `json:"auditedAt"`
-			Capacity          *int       `json:"capacity"`
-			Category          *string    `json:"category"`
-			ContactName       *string    `json:"contactName"`
-			ContactTel        *string    `json:"contactTel"`
-			CreatedAt         *time.Time `json:"createdAt"`
-			CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
-			Department        *string    `json:"department"`
-			Duration          *float32   `json:"duration"`
-			EndAt             *time.Time `json:"endAt"`
-			FavCount          *int       `json:"favCount"`
-			Form              *string    `json:"form"`
-			Grades            *string    `json:"grades"`
-			Hours             *float32   `json:"hours"`
-			ImageUrl          *string    `json:"imageUrl"`
-			IsActive          bool       `json:"isActive"`
-			LastSeenAt        *time.Time `json:"lastSeenAt"`
-			LimitNum          *int       `json:"limitNum"`
-			Location          *string    `json:"location"`
-			Module            *string    `json:"module"`
-			Name              string     `json:"name"`
-			Organizer         *string    `json:"organizer"`
-			OrganizerId       *string    `json:"organizerId"`
-			PartakeNum        *int       `json:"partakeNum"`
-			Places            *[]struct {
+			ActivityLevel      *string    `json:"activityLevel"`
+			ActivityStatusCode *string    `json:"activityStatusCode"`
+			AppliedCount       *int       `json:"appliedCount"`
+			ApplyEndAt         *time.Time `json:"applyEndAt"`
+			ApplyStartAt       *time.Time `json:"applyStartAt"`
+			AuditedAt          *time.Time `json:"auditedAt"`
+			Capacity           *int       `json:"capacity"`
+			Category           *string    `json:"category"`
+			ContactName        *string    `json:"contactName"`
+			ContactTel         *string    `json:"contactTel"`
+			CreatedAt          *time.Time `json:"createdAt"`
+			CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
+			Department         *string    `json:"department"`
+			Duration           *float32   `json:"duration"`
+			EndAt              *time.Time `json:"endAt"`
+			FavCount           *int       `json:"favCount"`
+			Form               *string    `json:"form"`
+			Grades             *string    `json:"grades"`
+			Hours              *float32   `json:"hours"`
+			ImageUrl           *string    `json:"imageUrl"`
+			IsActive           bool       `json:"isActive"`
+			LastSeenAt         *time.Time `json:"lastSeenAt"`
+			LimitNum           *int       `json:"limitNum"`
+			Location           *string    `json:"location"`
+			Module             *string    `json:"module"`
+			Name               string     `json:"name"`
+			Organizer          *string    `json:"organizer"`
+			OrganizerId        *string    `json:"organizerId"`
+			PartakeNum         *int       `json:"partakeNum"`
+			Places             *[]struct {
 				PlaceEt   *string `json:"placeEt"`
 				PlaceInfo *string `json:"placeInfo"`
 				PlaceSt   *string `json:"placeSt"`
 			} `json:"places"`
-
-			// RegistrationStatus Deprecated: always null. Upstream never populates it; use status for the signup state.
-			RegistrationStatus *string    `json:"registrationStatus"`
-			ServiceHour        *float32   `json:"serviceHour"`
-			SourceMissing      bool       `json:"sourceMissing"`
-			Sponsor            *string    `json:"sponsor"`
-			StartAt            *time.Time `json:"startAt"`
-			Status             *string    `json:"status"`
-			SumHours           *float32   `json:"sumHours"`
-			SumPersons         *int       `json:"sumPersons"`
-			UpdatedAtUpstream  *time.Time `json:"updatedAtUpstream"`
-			YoungId            string     `json:"youngId"`
+			RequiresSignup    *bool      `json:"requiresSignup"`
+			ServiceHour       *float32   `json:"serviceHour"`
+			SignupStatusCode  *string    `json:"signupStatusCode"`
+			SourceMissing     bool       `json:"sourceMissing"`
+			Sponsor           *string    `json:"sponsor"`
+			StartAt           *time.Time `json:"startAt"`
+			Status            *string    `json:"status"`
+			SumHours          *float32   `json:"sumHours"`
+			SumPersons        *int       `json:"sumPersons"`
+			UpdatedAtUpstream *time.Time `json:"updatedAtUpstream"`
+			YoungId           string     `json:"youngId"`
 		} `json:"event"`
 		RemindDeadline bool   `json:"remindDeadline"`
 		RemindSignup   bool   `json:"remindSignup"`
