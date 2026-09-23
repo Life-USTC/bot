@@ -303,7 +303,7 @@ func TestNotificationHelpRendersAsImages(t *testing.T) {
 		{
 			text:  "通知 help",
 			title: "通知 帮助",
-			want:  []string{"通知 课表 开", "开启课前提醒"},
+			want:  []string{"通知 开", "通知 关", "通知 课表 开", "开启课前提醒"},
 			avoid: []string{"AI 工具", "工具调用"},
 		},
 		{
@@ -3302,6 +3302,58 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	reply, ok = handler.Handle(ctx, Input{Text: "通知", Identity: paddedIdent})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") {
 		t.Fatalf("padded private reply = %q, ok = %v", reply, ok)
+	}
+}
+
+func TestNotificationToggleAllPersistsEverySetting(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	path := t.TempDir() + "/bot.db"
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler{Store: s}
+	for _, tc := range []struct {
+		command string
+		enabled bool
+	}{
+		{"通知 关", false},
+		{"通知 开", true},
+	} {
+		inv, ok := handler.parse(tc.command)
+		if !ok || inv.Name != "notify" || len(inv.Args) != 1 || notifyPolicy(inv).Effect != EffectWrite {
+			t.Fatalf("%q parsed as %#v, ok=%v", tc.command, inv, ok)
+		}
+		reply, handled := handler.Handle(ctx, Input{Text: tc.command, Identity: ident})
+		if !handled {
+			t.Fatalf("%q not handled", tc.command)
+		}
+		want := "关"
+		if tc.enabled {
+			want = "开"
+		}
+		for _, label := range []string{"课前提醒：", "作业提醒：", "第二课堂提醒：", "待办提醒："} {
+			if !strings.Contains(reply, label+want) {
+				t.Fatalf("%q reply = %q, missing %q", tc.command, reply, label+want)
+			}
+		}
+		settings, err := s.NotificationSettings(ctx, ident)
+		if err != nil || settings.ClassesEnabled != tc.enabled || settings.HomeworkEnabled != tc.enabled || settings.YoungEnabled != tc.enabled || settings.TodosEnabled != tc.enabled {
+			t.Fatalf("%q stored settings = %#v, err=%v", tc.command, settings, err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+	settings, err := reopened.NotificationSettings(ctx, ident)
+	if err != nil || !settings.ClassesEnabled || !settings.HomeworkEnabled || !settings.YoungEnabled || !settings.TodosEnabled {
+		t.Fatalf("settings after restart = %#v, err=%v", settings, err)
 	}
 }
 
