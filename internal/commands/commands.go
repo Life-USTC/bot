@@ -2631,6 +2631,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return strings.Join([]string{
 			"通知用法：",
 			"通知：查看设置",
+			"通知 开 / 通知 关：切换全部提醒",
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
 			"通知 活动 开 / 通知 活动 关",
@@ -2655,29 +2656,36 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		})
 		return formatNotificationSettings(settings)
 	}
-	if len(args) < 2 {
+	if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
+		enabled := args[0] == "on"
+		settings.ClassesEnabled = enabled
+		settings.HomeworkEnabled = enabled
+		settings.YoungEnabled = enabled
+		settings.TodosEnabled = enabled
+	} else if len(args) < 2 {
 		switch args[0] {
 		case "classes", "homework", "young", "todos":
 			return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
 		default:
 			return h.invalidInput("支持：课表、作业、活动、待办。")
 		}
-	}
-	enabled := args[1] == "on"
-	if args[1] != "on" && args[1] != "off" {
-		return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
-	}
-	switch args[0] {
-	case "classes":
-		settings.ClassesEnabled = enabled
-	case "homework":
-		settings.HomeworkEnabled = enabled
-	case "young":
-		settings.YoungEnabled = enabled
-	case "todos":
-		settings.TodosEnabled = enabled
-	default:
-		return h.invalidInput("支持：课表、作业、活动、待办。")
+	} else {
+		enabled := args[1] == "on"
+		if args[1] != "on" && args[1] != "off" {
+			return h.invalidInput("想打开还是关闭？例如：通知 作业 开")
+		}
+		switch args[0] {
+		case "classes":
+			settings.ClassesEnabled = enabled
+		case "homework":
+			settings.HomeworkEnabled = enabled
+		case "young":
+			settings.YoungEnabled = enabled
+		case "todos":
+			settings.TodosEnabled = enabled
+		default:
+			return h.invalidInput("支持：课表、作业、活动、待办。")
+		}
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
 		return h.commandError("通知设置保存失败：", err)

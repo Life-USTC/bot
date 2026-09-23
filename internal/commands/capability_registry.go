@@ -342,7 +342,7 @@ func homeworkPolicy(inv Invocation) CapabilityPolicy {
 }
 
 func notifyPolicy(inv Invocation) CapabilityPolicy {
-	if len(inv.Args) >= 2 && firstArgIn(inv.Args[1:], "on", "off") {
+	if len(inv.Args) == 1 && firstArgIn(inv.Args, "on", "off") || len(inv.Args) >= 2 && firstArgIn(inv.Args[1:], "on", "off") {
 		return privateWritePolicy(inv, EffectWrite)
 	}
 	return readPolicy(inv, DataScopeUserPrivate)
@@ -477,7 +477,7 @@ func init() {
 		}, subscriptionPolicy, helpMeta("subscription", "订阅", "查看、添加、取消和管理教学班订阅", false, []HelpExample{example("订阅", "查看已订阅教学班"), example("订阅 添加 CONT5103P.01", "批量订阅教学班"), example("订阅 取消 CONT5103P.01", "按教学班代码取消订阅"), example("订阅 链接", "查看私有日历订阅链接"), example("订阅 身份 12345 助教", "按教学班 JW ID 修改已有订阅身份")}, []HelpExample{example("退订教学班 CONT5103P.01", "相当于“订阅 取消 CONT5103P.01”")})),
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
-		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业、第二课堂和待办提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 活动 开", "开启第二课堂提醒"), example("通知 待办 开", "开启待办提醒（仅提醒未来 24 小时内到期且未完成的待办）"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
+		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业、第二课堂和待办提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 开", "开启全部提醒"), example("通知 关", "关闭全部提醒"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 活动 开", "开启第二课堂提醒"), example("通知 待办 开", "开启待办提醒（仅提醒未来 24 小时内到期且未完成的待办）"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),

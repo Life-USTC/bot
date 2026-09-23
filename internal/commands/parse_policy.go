@@ -12,6 +12,9 @@ func notifyArgsAcceptable(args []string) bool {
 	if firstArgIn(args, "status", "help") {
 		return len(args) == 1
 	}
+	if firstArgIn(args, "on", "off") {
+		return len(args) == 1
+	}
 	if args[0] == "classes" || args[0] == "homework" || args[0] == "young" || args[0] == "todos" {
 		return len(args) == 1 || len(args) == 2 && (args[1] == "on" || args[1] == "off")
 	}
