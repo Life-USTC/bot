@@ -49,6 +49,7 @@ type Processor interface {
 // concrete SQLite store so job scheduling and execution can be tested apart.
 type JobRepository interface {
 	commands.CommandImageStore
+	SaveDirectUserDisplayName(context.Context, store.Identity, string, time.Time) error
 	EnqueueConversationJob(context.Context, store.ConversationJobEnqueue) (store.ConversationJob, bool, error)
 	ClaimConversationJobs(context.Context, time.Time, int) ([]store.ConversationJob, error)
 	CompleteConversationJob(context.Context, int64, string) (bool, error)
@@ -280,6 +281,15 @@ func (c *Coordinator) Enqueue(ctx context.Context, inbound message.Inbound) erro
 	sourceEventID := inboundSourceEventID(inbound.Source)
 	if sourceEventID == "" {
 		return errors.New("inbound source event id is empty")
+	}
+	if ident := identityForInbound(inbound); store.IsDirectConversation(ident) {
+		seenAt := inbound.SentAt
+		if seenAt.IsZero() {
+			seenAt = inbound.ReceivedAt
+		}
+		if err := c.jobs.SaveDirectUserDisplayName(ctx, ident, inbound.Actor.DisplayName, seenAt); err != nil {
+			return fmt.Errorf("save direct user display name: %w", err)
+		}
 	}
 	if decision, isDecision := userConfirmationDecision(inbound.Text); isDecision {
 		decision.SourceEventID = sourceEventID
