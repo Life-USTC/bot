@@ -31,7 +31,9 @@ type YoungEvent struct {
 	Organizer          string     `json:"organizer,omitempty"`
 	OrganizerID        string     `json:"organizerId,omitempty"`
 	OrganizerName      string     `json:"organizerName,omitempty"`
-	RegistrationStatus string     `json:"registrationStatus,omitempty"`
+	ActivityStatusCode string     `json:"activityStatusCode,omitempty"`
+	SignupStatusCode   string     `json:"signupStatusCode,omitempty"`
+	RequiresSignup     *bool      `json:"requiresSignup,omitempty"`
 	Status             string     `json:"status,omitempty"`
 	SourceMissing      bool       `json:"sourceMissing,omitempty"`
 	StartAt            *time.Time `json:"startAt"`
