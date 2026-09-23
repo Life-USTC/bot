@@ -156,7 +156,7 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after a successful startup migration.
-const CurrentSchemaVersion = 6
+const CurrentSchemaVersion = 7
 
 var requiredSchemaModels = []any{
 	&userRow{},
@@ -240,11 +240,13 @@ type Store struct {
 }
 
 type userRow struct {
-	ID             int64  `gorm:"primaryKey"`
-	Platform       string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
-	ExternalUserID string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                int64  `gorm:"primaryKey"`
+	Platform          string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
+	ExternalUserID    string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
+	DisplayName       string
+	DisplayNameSeenAt *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (userRow) TableName() string {
@@ -593,32 +595,13 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 		return fmt.Errorf("read schema version: %w", err)
 	}
 	switch version {
-	case 5:
-		// Enable every reminder once for existing users. A versioned transaction
-		// keeps later user opt-outs intact on subsequent deployments.
+	case 6:
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := verifySchemaShape(tx); err != nil {
+			if err := tx.AutoMigrate(&userRow{}); err != nil {
+				return fmt.Errorf("add user display name columns: %w", err)
+			}
+			if err := backfillDirectUserDisplayNames(tx); err != nil {
 				return err
-			}
-			now := nowUTC()
-			if err := tx.Exec(`UPDATE notification_settings SET
-				classes_enabled = 1, homework_enabled = 1, young_enabled = 1, todos_enabled = 1,
-				updated_at = ?`, now).Error; err != nil {
-				return fmt.Errorf("enable existing notification settings: %w", err)
-			}
-			if err := tx.Exec(`INSERT INTO notification_settings (
-				user_id, platform, external_user_id, conversation_type, conversation_id,
-				classes_enabled, homework_enabled, young_enabled, todos_enabled,
-				reauth_required, updated_at
-			) SELECT
-				u.id, u.platform, u.external_user_id, 'private', u.external_user_id,
-				1, 1, 1, 1, CASE WHEN c.user_id IS NULL THEN 1 ELSE 0 END, ?
-			FROM users u
-			LEFT JOIN credentials c ON c.user_id = u.id
-			WHERE NOT EXISTS (
-				SELECT 1 FROM notification_settings n WHERE n.user_id = u.id
-			)`, now).Error; err != nil {
-				return fmt.Errorf("create existing users' notification settings: %w", err)
 			}
 			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error
 		}); err != nil {
