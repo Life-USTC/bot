@@ -3238,7 +3238,7 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	handler := Handler{Store: s}
 
 	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
-	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：关") || !strings.Contains(response.Text, "作业提醒：关") || !strings.Contains(response.Text, "待办提醒：关") {
+	if !ok || response.Image != nil || !strings.Contains(response.Text, "课前提醒：开") || !strings.Contains(response.Text, "作业提醒：开") || !strings.Contains(response.Text, "第二课堂提醒：开") || !strings.Contains(response.Text, "待办提醒：开") || !strings.Contains(response.Text, "已暂停") {
 		t.Fatalf("reply = %q, ok = %v", response.Text, ok)
 	}
 	data, ok := response.Data.(map[string]any)
@@ -3252,9 +3252,13 @@ func TestNotificationSettingsCommand(t *testing.T) {
 	if _, ok := handler.parse("设置 通知"); ok {
 		t.Fatal("retired settings command was parsed")
 	}
-	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
-	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：关") || !strings.Contains(reply, "已暂停") || !strings.Contains(reply, "登录") {
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 关", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：关") || !strings.Contains(reply, "作业提醒：开") || !strings.Contains(reply, "已暂停") || !strings.Contains(reply, "登录") {
 		t.Fatalf("notification update reply = %q, ok = %v", reply, ok)
+	}
+	reply, ok = handler.Handle(ctx, Input{Text: "通知 课表 开", Identity: ident})
+	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {
+		t.Fatalf("notification re-enable reply = %q, ok = %v", reply, ok)
 	}
 	reply, ok = handler.Handle(ctx, Input{Text: "通知 作业呃开", Identity: ident})
 	if !ok || !strings.Contains(reply, "课前提醒：开") || !strings.Contains(reply, "作业提醒：开") {

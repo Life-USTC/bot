@@ -1579,7 +1579,7 @@ func TestNotificationSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled || settings.TodosEnabled {
+	if !settings.ClassesEnabled || !settings.HomeworkEnabled || !settings.YoungEnabled || !settings.TodosEnabled || !settings.ReauthRequired {
 		t.Fatalf("default settings = %#v", settings)
 	}
 
