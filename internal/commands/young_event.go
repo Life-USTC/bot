@@ -333,7 +333,7 @@ func youngEventLines(event life.YoungEvent, link, prefix string) []string {
 		}
 	}
 	if event.IsOnline != nil && *event.IsOnline {
-		lines = append(lines, "参与方式：线上活动")
+		lines = append(lines, "提供线上会议")
 	}
 	if prefix == "" {
 		if event.RequiresSignupInfo != nil && *event.RequiresSignupInfo {
