@@ -193,3 +193,18 @@ func TestYoungEventSearchPaginationKeepsSearch(t *testing.T) {
 		t.Fatalf("pagination lost search or navigation: %q", reply)
 	}
 }
+
+func TestYoungEventDetailShowsParticipationAndPreservesUnknownOccupancy(t *testing.T) {
+	yes := true
+	capacity := 20
+	event := life.YoungEvent{YoungID: "metadata", Name: "Metadata", RequiresSignup: &yes, RequiresSignupInfo: &yes, IsOnline: &yes, OnlineMeetingInfo: "800-414-186", AllowedAttachmentTypes: []string{"pdf", "docx"}, ExternalSponsor: "合作机构", Capacity: &capacity}
+	reply := strings.Join(youngEventLines(event, "https://example.test/event", ""), "\n")
+	for _, want := range []string{"需要报名", "报名时需填写补充信息", "800-414-186", "PDF, DOCX", "合作机构", "名额：20"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("missing %q: %s", want, reply)
+		}
+	}
+	if strings.Contains(reply, "已报名：0") {
+		t.Fatal("unknown occupancy rendered as zero")
+	}
+}

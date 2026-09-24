@@ -14,6 +14,30 @@ import (
 // The date fields are instants; callers should render them in the user's
 // intended local timezone.
 type YoungEvent struct {
+	CategoryCode           string   `json:"categoryCode,omitempty"`
+	ModuleCode             string   `json:"moduleCode,omitempty"`
+	FormCode               string   `json:"formCode,omitempty"`
+	ActivityLevelCode      string   `json:"activityLevelCode,omitempty"`
+	DepartmentId           string   `json:"departmentId,omitempty"`
+	UpstreamOrganizerIds   []string `json:"upstreamOrganizerIds,omitempty"`
+	UpstreamSponsorIds     []string `json:"upstreamSponsorIds,omitempty"`
+	TagIds                 []string `json:"tagIds,omitempty"`
+	SignupScopeCode        string   `json:"signupScopeCode,omitempty"`
+	SignupDepartmentIds    []string `json:"signupDepartmentIds,omitempty"`
+	RequiresSignupInfo     *bool    `json:"requiresSignupInfo,omitempty"`
+	AllowedAttachmentTypes []string `json:"allowedAttachmentTypes,omitempty"`
+	IsOnline               *bool    `json:"isOnline,omitempty"`
+	OnlineMeetingInfo      string   `json:"onlineMeetingInfo,omitempty"`
+	ExternalSponsor        string   `json:"externalSponsor,omitempty"`
+	ActivityLevel          string   `json:"activityLevel,omitempty"`
+	Module                 string   `json:"module,omitempty"`
+	Form                   string   `json:"form,omitempty"`
+	Grades                 string   `json:"grades,omitempty"`
+	Sponsor                string   `json:"sponsor,omitempty"`
+	ContactName            string   `json:"contactName,omitempty"`
+	ContactTel             string   `json:"contactTel,omitempty"`
+	ParticipationNotes     string   `json:"participationNotes,omitempty"`
+
 	ApplyEndAt         *time.Time `json:"applyEndAt"`
 	ApplyStartAt       *time.Time `json:"applyStartAt"`
 	Category           string     `json:"category,omitempty"`
