@@ -325,6 +325,50 @@ func youngEventLines(event life.YoungEvent, link, prefix string) []string {
 	if signupTime := youngEventTimeRange(event.ApplyStartAt, event.ApplyEndAt); signupTime != "" {
 		lines = append(lines, "报名时间："+signupTime)
 	}
+	if event.RequiresSignup != nil {
+		if *event.RequiresSignup {
+			lines = append(lines, "报名要求：需要报名")
+		} else {
+			lines = append(lines, "报名要求：无需报名")
+		}
+	}
+	if event.IsOnline != nil && *event.IsOnline {
+		lines = append(lines, "提供线上会议")
+	}
+	if prefix == "" {
+		if event.RequiresSignupInfo != nil && *event.RequiresSignupInfo {
+			lines = append(lines, "报名时需填写补充信息")
+		}
+		if event.Hours != nil {
+			lines = append(lines, fmt.Sprintf("学时：%g", *event.Hours))
+		}
+		if event.AppliedCount != nil {
+			lines = append(lines, fmt.Sprintf("已报名：%d", *event.AppliedCount))
+		}
+		if event.Capacity != nil {
+			lines = append(lines, fmt.Sprintf("名额：%d", *event.Capacity))
+		}
+		for _, field := range []struct{ label, value string }{
+			{"活动级别", event.ActivityLevel}, {"模块", event.Module}, {"参与形式", event.Form},
+			{"面向年级", event.Grades}, {"主办单位", event.Sponsor}, {"主办方", event.Organizer},
+			{"校外主办方", event.ExternalSponsor}, {"联系人", event.ContactName}, {"联系电话", event.ContactTel},
+		} {
+			if value := strings.TrimSpace(field.value); value != "" {
+				lines = append(lines, field.label+"："+value)
+			}
+		}
+		if event.IsOnline == nil || *event.IsOnline {
+			if event.OnlineMeetingInfo != "" {
+				lines = append(lines, "线上会议信息："+event.OnlineMeetingInfo)
+			}
+		}
+		if len(event.AllowedAttachmentTypes) > 0 {
+			lines = append(lines, "附件格式："+strings.ToUpper(strings.Join(event.AllowedAttachmentTypes, ", ")))
+		}
+		if event.SignupScopeCode != "" || len(event.SignupDepartmentIds) > 0 {
+			lines = append(lines, "报名资格与面向范围请以第二课堂平台为准。")
+		}
+	}
 	if link = strings.TrimSpace(link); link != "" {
 		lines = append(lines, "链接："+link)
 	}

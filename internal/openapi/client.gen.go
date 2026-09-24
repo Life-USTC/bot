@@ -7357,51 +7357,66 @@ type PaginatedTeacherResponseSchema struct {
 // PaginatedYoungEventResponseSchema defines model for paginatedYoungEventResponseSchema.
 type PaginatedYoungEventResponseSchema struct {
 	Data []struct {
-		ActivityLevel      *string    `json:"activityLevel"`
-		ActivityStatusCode *string    `json:"activityStatusCode"`
-		AppliedCount       *int       `json:"appliedCount"`
-		ApplyEndAt         *time.Time `json:"applyEndAt"`
-		ApplyStartAt       *time.Time `json:"applyStartAt"`
-		AuditedAt          *time.Time `json:"auditedAt"`
-		Capacity           *int       `json:"capacity"`
-		Category           *string    `json:"category"`
-		ContactName        *string    `json:"contactName"`
-		ContactTel         *string    `json:"contactTel"`
-		CreatedAt          *time.Time `json:"createdAt"`
-		CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
-		Department         *string    `json:"department"`
-		Duration           *float32   `json:"duration"`
-		EndAt              *time.Time `json:"endAt"`
-		FavCount           *int       `json:"favCount"`
-		Form               *string    `json:"form"`
-		Grades             *string    `json:"grades"`
-		Hours              *float32   `json:"hours"`
-		ImageUrl           *string    `json:"imageUrl"`
-		IsActive           bool       `json:"isActive"`
-		LastSeenAt         *time.Time `json:"lastSeenAt"`
-		LimitNum           *int       `json:"limitNum"`
-		Location           *string    `json:"location"`
-		Module             *string    `json:"module"`
-		Name               string     `json:"name"`
-		Organizer          *string    `json:"organizer"`
-		OrganizerId        *string    `json:"organizerId"`
-		PartakeNum         *int       `json:"partakeNum"`
-		Places             *[]struct {
+		ActivityLevel          *string    `json:"activityLevel"`
+		ActivityLevelCode      *string    `json:"activityLevelCode"`
+		ActivityStatusCode     *string    `json:"activityStatusCode"`
+		AllowedAttachmentTypes []string   `json:"allowedAttachmentTypes"`
+		AppliedCount           *int       `json:"appliedCount"`
+		ApplyEndAt             *time.Time `json:"applyEndAt"`
+		ApplyStartAt           *time.Time `json:"applyStartAt"`
+		AuditedAt              *time.Time `json:"auditedAt"`
+		Capacity               *int       `json:"capacity"`
+		Category               *string    `json:"category"`
+		CategoryCode           *string    `json:"categoryCode"`
+		ContactName            *string    `json:"contactName"`
+		ContactTel             *string    `json:"contactTel"`
+		CreatedAt              *time.Time `json:"createdAt"`
+		CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
+		Department             *string    `json:"department"`
+		DepartmentId           *string    `json:"departmentId"`
+		Duration               *float32   `json:"duration"`
+		EndAt                  *time.Time `json:"endAt"`
+		ExternalSponsor        *string    `json:"externalSponsor"`
+		FavCount               *int       `json:"favCount"`
+		Form                   *string    `json:"form"`
+		FormCode               *string    `json:"formCode"`
+		Grades                 *string    `json:"grades"`
+		Hours                  *float32   `json:"hours"`
+		ImageUrl               *string    `json:"imageUrl"`
+		IsActive               bool       `json:"isActive"`
+		IsOnline               *bool      `json:"isOnline"`
+		LastSeenAt             *time.Time `json:"lastSeenAt"`
+		LimitNum               *int       `json:"limitNum"`
+		Location               *string    `json:"location"`
+		Module                 *string    `json:"module"`
+		ModuleCode             *string    `json:"moduleCode"`
+		Name                   string     `json:"name"`
+		OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
+		Organizer              *string    `json:"organizer"`
+		OrganizerId            *string    `json:"organizerId"`
+		PartakeNum             *int       `json:"partakeNum"`
+		Places                 *[]struct {
 			PlaceEt   *string `json:"placeEt"`
 			PlaceInfo *string `json:"placeInfo"`
 			PlaceSt   *string `json:"placeSt"`
 		} `json:"places"`
-		RequiresSignup    *bool      `json:"requiresSignup"`
-		ServiceHour       *float32   `json:"serviceHour"`
-		SignupStatusCode  *string    `json:"signupStatusCode"`
-		SourceMissing     bool       `json:"sourceMissing"`
-		Sponsor           *string    `json:"sponsor"`
-		StartAt           *time.Time `json:"startAt"`
-		Status            *string    `json:"status"`
-		SumHours          *float32   `json:"sumHours"`
-		SumPersons        *int       `json:"sumPersons"`
-		UpdatedAtUpstream *time.Time `json:"updatedAtUpstream"`
-		YoungId           string     `json:"youngId"`
+		RequiresSignup       *bool      `json:"requiresSignup"`
+		RequiresSignupInfo   *bool      `json:"requiresSignupInfo"`
+		ServiceHour          *float32   `json:"serviceHour"`
+		SignupDepartmentIds  []string   `json:"signupDepartmentIds"`
+		SignupScopeCode      *string    `json:"signupScopeCode"`
+		SignupStatusCode     *string    `json:"signupStatusCode"`
+		SourceMissing        bool       `json:"sourceMissing"`
+		Sponsor              *string    `json:"sponsor"`
+		StartAt              *time.Time `json:"startAt"`
+		Status               *string    `json:"status"`
+		SumHours             *float32   `json:"sumHours"`
+		SumPersons           *int       `json:"sumPersons"`
+		TagIds               []string   `json:"tagIds"`
+		UpdatedAtUpstream    *time.Time `json:"updatedAtUpstream"`
+		UpstreamOrganizerIds []string   `json:"upstreamOrganizerIds"`
+		UpstreamSponsorIds   []string   `json:"upstreamSponsorIds"`
+		YoungId              string     `json:"youngId"`
 	} `json:"data"`
 	Pagination struct {
 		Page       int `json:"page"`
@@ -7476,25 +7491,37 @@ type PublicPublicationDetailSchema struct {
 		BodyText          *string `json:"bodyText"`
 		Category          *string `json:"category"`
 		ClassifierVersion *string `json:"classifierVersion"`
+		Editor            *string `json:"editor"`
 		ExtractionMethod  *string `json:"extractionMethod"`
 		Id                string  `json:"id"`
-		Objects           []struct {
+		Images            []struct {
+			AltText *string `json:"altText"`
+			Caption *string `json:"caption"`
+			Id      string  `json:"id"`
+			Title   *string `json:"title"`
+			Url     string  `json:"url"`
+		} `json:"images"`
+		Objects []struct {
 			AltText     *string                                            `json:"altText"`
 			ContentType string                                             `json:"contentType"`
+			Filename    *string                                            `json:"filename"`
 			Kind        PublicPublicationDetailSchemaRevisionObjectsKind   `json:"kind"`
 			Sha256      string                                             `json:"sha256"`
 			Size        int                                                `json:"size"`
 			SortOrder   *int                                               `json:"sortOrder"`
+			SourceUrl   *string                                            `json:"sourceUrl"`
 			Status      PublicPublicationDetailSchemaRevisionObjectsStatus `json:"status"`
 			Url         string                                             `json:"url"`
 		} `json:"objects"`
-		ObservedAt      time.Time  `json:"observedAt"`
-		PublishedAt     *time.Time `json:"publishedAt"`
-		RevisionHash    string     `json:"revisionHash"`
-		SourcePageUrl   *string    `json:"sourcePageUrl"`
-		Summary         *string    `json:"summary"`
-		Title           string     `json:"title"`
-		UpdatedAtSource *time.Time `json:"updatedAtSource"`
+		ObservedAt        time.Time  `json:"observedAt"`
+		OriginalPublisher *string    `json:"originalPublisher"`
+		PublishedAt       *time.Time `json:"publishedAt"`
+		Reporter          *string    `json:"reporter"`
+		RevisionHash      string     `json:"revisionHash"`
+		SourcePageUrl     *string    `json:"sourcePageUrl"`
+		Summary           *string    `json:"summary"`
+		Title             string     `json:"title"`
+		UpdatedAtSource   *time.Time `json:"updatedAtSource"`
 	} `json:"revision"`
 	Source struct {
 		Id   string `json:"id"`
@@ -7552,25 +7579,30 @@ type PublicPublicationsResponseSchema struct {
 		Objects []struct {
 			AltText     *string                                           `json:"altText"`
 			ContentType string                                            `json:"contentType"`
+			Filename    *string                                           `json:"filename"`
 			Kind        PublicPublicationsResponseSchemaDataObjectsKind   `json:"kind"`
 			Sha256      string                                            `json:"sha256"`
 			Size        int                                               `json:"size"`
 			SortOrder   *int                                              `json:"sortOrder"`
+			SourceUrl   *string                                           `json:"sourceUrl"`
 			Status      PublicPublicationsResponseSchemaDataObjectsStatus `json:"status"`
 			Url         string                                            `json:"url"`
 		} `json:"objects"`
 		PublicationType PublicPublicationsResponseSchemaDataPublicationType `json:"publicationType"`
 		Revision        struct {
-			Author          *string    `json:"author"`
-			Category        *string    `json:"category"`
-			Id              string     `json:"id"`
-			ObservedAt      time.Time  `json:"observedAt"`
-			PublishedAt     *time.Time `json:"publishedAt"`
-			RevisionHash    string     `json:"revisionHash"`
-			SourcePageUrl   *string    `json:"sourcePageUrl"`
-			Summary         *string    `json:"summary"`
-			Title           string     `json:"title"`
-			UpdatedAtSource *time.Time `json:"updatedAtSource"`
+			Author            *string    `json:"author"`
+			Category          *string    `json:"category"`
+			Editor            *string    `json:"editor"`
+			Id                string     `json:"id"`
+			ObservedAt        time.Time  `json:"observedAt"`
+			OriginalPublisher *string    `json:"originalPublisher"`
+			PublishedAt       *time.Time `json:"publishedAt"`
+			Reporter          *string    `json:"reporter"`
+			RevisionHash      string     `json:"revisionHash"`
+			SourcePageUrl     *string    `json:"sourcePageUrl"`
+			Summary           *string    `json:"summary"`
+			Title             string     `json:"title"`
+			UpdatedAtSource   *time.Time `json:"updatedAtSource"`
 		} `json:"revision"`
 		Source struct {
 			Id   string `json:"id"`
@@ -7643,32 +7675,42 @@ type PublicationIngestionBatchRequestSchema struct {
 
 // PublicationIngestionBatchRequestSchemaItems0 defines model for .
 type PublicationIngestionBatchRequestSchemaItems0 struct {
-	Author            *string           `json:"author,omitempty"`
-	BodyText          *string           `json:"bodyText,omitempty"`
-	CanonicalUrl      string            `json:"canonicalUrl"`
-	Category          *string           `json:"category,omitempty"`
-	ClassifierVersion *string           `json:"classifierVersion,omitempty"`
-	ExtractionMethod  *string           `json:"extractionMethod,omitempty"`
-	ImageSources      map[string]string `json:"imageSources"`
-	Objects           []struct {
+	Author            *string `json:"author,omitempty"`
+	BodyText          *string `json:"bodyText,omitempty"`
+	CanonicalUrl      string  `json:"canonicalUrl"`
+	Category          *string `json:"category,omitempty"`
+	ClassifierVersion *string `json:"classifierVersion,omitempty"`
+	Editor            *string `json:"editor,omitempty"`
+	ExtractionMethod  *string `json:"extractionMethod,omitempty"`
+	ImageMetadata     *map[string]struct {
+		AltText *string `json:"altText,omitempty"`
+		Caption *string `json:"caption,omitempty"`
+		Title   *string `json:"title,omitempty"`
+	} `json:"imageMetadata,omitempty"`
+	ImageSources map[string]string `json:"imageSources"`
+	Objects      []struct {
 		AltText     *string                                                 `json:"altText,omitempty"`
 		ContentType string                                                  `json:"contentType"`
+		Filename    *string                                                 `json:"filename,omitempty"`
 		Kind        PublicationIngestionBatchRequestSchemaItems0ObjectsKind `json:"kind"`
 		Sha256      string                                                  `json:"sha256"`
 		Size        int                                                     `json:"size"`
 		SortOrder   *int                                                    `json:"sortOrder,omitempty"`
+		SourceUrl   *string                                                 `json:"sourceUrl,omitempty"`
 	} `json:"objects"`
-	ObservedAt      string                                                      `json:"observedAt"`
-	PublicationType PublicationIngestionBatchRequestSchemaItems0PublicationType `json:"publicationType"`
-	PublishedAt     *string                                                     `json:"publishedAt,omitempty"`
-	RawMetadata     *map[string]interface{}                                     `json:"rawMetadata,omitempty"`
-	RevisionHash    string                                                      `json:"revisionHash"`
-	SourceId        string                                                      `json:"sourceId"`
-	SourcePageUrl   *string                                                     `json:"sourcePageUrl,omitempty"`
-	Summary         *string                                                     `json:"summary,omitempty"`
-	Title           string                                                      `json:"title"`
-	Tombstone       PublicationIngestionBatchRequestSchemaItems0Tombstone       `json:"tombstone"`
-	UpdatedAtSource *string                                                     `json:"updatedAtSource,omitempty"`
+	ObservedAt        string                                                      `json:"observedAt"`
+	OriginalPublisher *string                                                     `json:"originalPublisher,omitempty"`
+	PublicationType   PublicationIngestionBatchRequestSchemaItems0PublicationType `json:"publicationType"`
+	PublishedAt       *string                                                     `json:"publishedAt,omitempty"`
+	RawMetadata       *map[string]interface{}                                     `json:"rawMetadata,omitempty"`
+	Reporter          *string                                                     `json:"reporter,omitempty"`
+	RevisionHash      string                                                      `json:"revisionHash"`
+	SourceId          string                                                      `json:"sourceId"`
+	SourcePageUrl     *string                                                     `json:"sourcePageUrl,omitempty"`
+	Summary           *string                                                     `json:"summary,omitempty"`
+	Title             string                                                      `json:"title"`
+	Tombstone         PublicationIngestionBatchRequestSchemaItems0Tombstone       `json:"tombstone"`
+	UpdatedAtSource   *string                                                     `json:"updatedAtSource,omitempty"`
 }
 
 // PublicationIngestionBatchRequestSchemaItems0ObjectsKind defines model for PublicationIngestionBatchRequestSchema.Items.0.Objects.Kind.
@@ -8856,54 +8898,69 @@ type WorkspaceLinkPinResponseSchema struct {
 
 // YoungEventDetailSchema defines model for youngEventDetailSchema.
 type YoungEventDetailSchema struct {
-	ActivityLevel      *string    `json:"activityLevel"`
-	ActivityStatusCode *string    `json:"activityStatusCode"`
-	AppliedCount       *int       `json:"appliedCount"`
-	ApplyEndAt         *time.Time `json:"applyEndAt"`
-	ApplyStartAt       *time.Time `json:"applyStartAt"`
-	AuditedAt          *time.Time `json:"auditedAt"`
-	Capacity           *int       `json:"capacity"`
-	Category           *string    `json:"category"`
-	ContactName        *string    `json:"contactName"`
-	ContactTel         *string    `json:"contactTel"`
-	CreatedAt          *time.Time `json:"createdAt"`
-	CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
-	Department         *string    `json:"department"`
-	Description        *string    `json:"description"`
-	Duration           *float32   `json:"duration"`
-	EndAt              *time.Time `json:"endAt"`
-	FavCount           *int       `json:"favCount"`
-	Form               *string    `json:"form"`
-	Grades             *string    `json:"grades"`
-	Hours              *float32   `json:"hours"`
-	ImageUrl           *string    `json:"imageUrl"`
-	IsActive           bool       `json:"isActive"`
-	LastSeenAt         *time.Time `json:"lastSeenAt"`
-	LimitNum           *int       `json:"limitNum"`
-	Location           *string    `json:"location"`
-	Module             *string    `json:"module"`
-	Name               string     `json:"name"`
-	Organizer          *string    `json:"organizer"`
-	OrganizerId        *string    `json:"organizerId"`
-	PartakeNum         *int       `json:"partakeNum"`
-	ParticipationNotes *string    `json:"participationNotes"`
-	Places             *[]struct {
+	ActivityLevel          *string    `json:"activityLevel"`
+	ActivityLevelCode      *string    `json:"activityLevelCode"`
+	ActivityStatusCode     *string    `json:"activityStatusCode"`
+	AllowedAttachmentTypes []string   `json:"allowedAttachmentTypes"`
+	AppliedCount           *int       `json:"appliedCount"`
+	ApplyEndAt             *time.Time `json:"applyEndAt"`
+	ApplyStartAt           *time.Time `json:"applyStartAt"`
+	AuditedAt              *time.Time `json:"auditedAt"`
+	Capacity               *int       `json:"capacity"`
+	Category               *string    `json:"category"`
+	CategoryCode           *string    `json:"categoryCode"`
+	ContactName            *string    `json:"contactName"`
+	ContactTel             *string    `json:"contactTel"`
+	CreatedAt              *time.Time `json:"createdAt"`
+	CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
+	Department             *string    `json:"department"`
+	DepartmentId           *string    `json:"departmentId"`
+	Description            *string    `json:"description"`
+	Duration               *float32   `json:"duration"`
+	EndAt                  *time.Time `json:"endAt"`
+	ExternalSponsor        *string    `json:"externalSponsor"`
+	FavCount               *int       `json:"favCount"`
+	Form                   *string    `json:"form"`
+	FormCode               *string    `json:"formCode"`
+	Grades                 *string    `json:"grades"`
+	Hours                  *float32   `json:"hours"`
+	ImageUrl               *string    `json:"imageUrl"`
+	IsActive               bool       `json:"isActive"`
+	IsOnline               *bool      `json:"isOnline"`
+	LastSeenAt             *time.Time `json:"lastSeenAt"`
+	LimitNum               *int       `json:"limitNum"`
+	Location               *string    `json:"location"`
+	Module                 *string    `json:"module"`
+	ModuleCode             *string    `json:"moduleCode"`
+	Name                   string     `json:"name"`
+	OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
+	Organizer              *string    `json:"organizer"`
+	OrganizerId            *string    `json:"organizerId"`
+	PartakeNum             *int       `json:"partakeNum"`
+	ParticipationNotes     *string    `json:"participationNotes"`
+	Places                 *[]struct {
 		PlaceEt   *string `json:"placeEt"`
 		PlaceInfo *string `json:"placeInfo"`
 		PlaceSt   *string `json:"placeSt"`
 	} `json:"places"`
-	RawJson           interface{} `json:"rawJson"`
-	RequiresSignup    *bool       `json:"requiresSignup"`
-	ServiceHour       *float32    `json:"serviceHour"`
-	SignupStatusCode  *string     `json:"signupStatusCode"`
-	SourceMissing     bool        `json:"sourceMissing"`
-	Sponsor           *string     `json:"sponsor"`
-	StartAt           *time.Time  `json:"startAt"`
-	Status            *string     `json:"status"`
-	SumHours          *float32    `json:"sumHours"`
-	SumPersons        *int        `json:"sumPersons"`
-	UpdatedAtUpstream *time.Time  `json:"updatedAtUpstream"`
-	YoungId           string      `json:"youngId"`
+	RawJson              interface{} `json:"rawJson"`
+	RequiresSignup       *bool       `json:"requiresSignup"`
+	RequiresSignupInfo   *bool       `json:"requiresSignupInfo"`
+	ServiceHour          *float32    `json:"serviceHour"`
+	SignupDepartmentIds  []string    `json:"signupDepartmentIds"`
+	SignupScopeCode      *string     `json:"signupScopeCode"`
+	SignupStatusCode     *string     `json:"signupStatusCode"`
+	SourceMissing        bool        `json:"sourceMissing"`
+	Sponsor              *string     `json:"sponsor"`
+	StartAt              *time.Time  `json:"startAt"`
+	Status               *string     `json:"status"`
+	SumHours             *float32    `json:"sumHours"`
+	SumPersons           *int        `json:"sumPersons"`
+	TagIds               []string    `json:"tagIds"`
+	UpdatedAtUpstream    *time.Time  `json:"updatedAtUpstream"`
+	UpstreamOrganizerIds []string    `json:"upstreamOrganizerIds"`
+	UpstreamSponsorIds   []string    `json:"upstreamSponsorIds"`
+	YoungId              string      `json:"youngId"`
 }
 
 // YoungEventSubscriptionListSchema defines model for youngEventSubscriptionListSchema.
@@ -8911,51 +8968,66 @@ type YoungEventSubscriptionListSchema struct {
 	Data []struct {
 		CreatedAt time.Time `json:"createdAt"`
 		Event     struct {
-			ActivityLevel      *string    `json:"activityLevel"`
-			ActivityStatusCode *string    `json:"activityStatusCode"`
-			AppliedCount       *int       `json:"appliedCount"`
-			ApplyEndAt         *time.Time `json:"applyEndAt"`
-			ApplyStartAt       *time.Time `json:"applyStartAt"`
-			AuditedAt          *time.Time `json:"auditedAt"`
-			Capacity           *int       `json:"capacity"`
-			Category           *string    `json:"category"`
-			ContactName        *string    `json:"contactName"`
-			ContactTel         *string    `json:"contactTel"`
-			CreatedAt          *time.Time `json:"createdAt"`
-			CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
-			Department         *string    `json:"department"`
-			Duration           *float32   `json:"duration"`
-			EndAt              *time.Time `json:"endAt"`
-			FavCount           *int       `json:"favCount"`
-			Form               *string    `json:"form"`
-			Grades             *string    `json:"grades"`
-			Hours              *float32   `json:"hours"`
-			ImageUrl           *string    `json:"imageUrl"`
-			IsActive           bool       `json:"isActive"`
-			LastSeenAt         *time.Time `json:"lastSeenAt"`
-			LimitNum           *int       `json:"limitNum"`
-			Location           *string    `json:"location"`
-			Module             *string    `json:"module"`
-			Name               string     `json:"name"`
-			Organizer          *string    `json:"organizer"`
-			OrganizerId        *string    `json:"organizerId"`
-			PartakeNum         *int       `json:"partakeNum"`
-			Places             *[]struct {
+			ActivityLevel          *string    `json:"activityLevel"`
+			ActivityLevelCode      *string    `json:"activityLevelCode"`
+			ActivityStatusCode     *string    `json:"activityStatusCode"`
+			AllowedAttachmentTypes []string   `json:"allowedAttachmentTypes"`
+			AppliedCount           *int       `json:"appliedCount"`
+			ApplyEndAt             *time.Time `json:"applyEndAt"`
+			ApplyStartAt           *time.Time `json:"applyStartAt"`
+			AuditedAt              *time.Time `json:"auditedAt"`
+			Capacity               *int       `json:"capacity"`
+			Category               *string    `json:"category"`
+			CategoryCode           *string    `json:"categoryCode"`
+			ContactName            *string    `json:"contactName"`
+			ContactTel             *string    `json:"contactTel"`
+			CreatedAt              *time.Time `json:"createdAt"`
+			CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
+			Department             *string    `json:"department"`
+			DepartmentId           *string    `json:"departmentId"`
+			Duration               *float32   `json:"duration"`
+			EndAt                  *time.Time `json:"endAt"`
+			ExternalSponsor        *string    `json:"externalSponsor"`
+			FavCount               *int       `json:"favCount"`
+			Form                   *string    `json:"form"`
+			FormCode               *string    `json:"formCode"`
+			Grades                 *string    `json:"grades"`
+			Hours                  *float32   `json:"hours"`
+			ImageUrl               *string    `json:"imageUrl"`
+			IsActive               bool       `json:"isActive"`
+			IsOnline               *bool      `json:"isOnline"`
+			LastSeenAt             *time.Time `json:"lastSeenAt"`
+			LimitNum               *int       `json:"limitNum"`
+			Location               *string    `json:"location"`
+			Module                 *string    `json:"module"`
+			ModuleCode             *string    `json:"moduleCode"`
+			Name                   string     `json:"name"`
+			OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
+			Organizer              *string    `json:"organizer"`
+			OrganizerId            *string    `json:"organizerId"`
+			PartakeNum             *int       `json:"partakeNum"`
+			Places                 *[]struct {
 				PlaceEt   *string `json:"placeEt"`
 				PlaceInfo *string `json:"placeInfo"`
 				PlaceSt   *string `json:"placeSt"`
 			} `json:"places"`
-			RequiresSignup    *bool      `json:"requiresSignup"`
-			ServiceHour       *float32   `json:"serviceHour"`
-			SignupStatusCode  *string    `json:"signupStatusCode"`
-			SourceMissing     bool       `json:"sourceMissing"`
-			Sponsor           *string    `json:"sponsor"`
-			StartAt           *time.Time `json:"startAt"`
-			Status            *string    `json:"status"`
-			SumHours          *float32   `json:"sumHours"`
-			SumPersons        *int       `json:"sumPersons"`
-			UpdatedAtUpstream *time.Time `json:"updatedAtUpstream"`
-			YoungId           string     `json:"youngId"`
+			RequiresSignup       *bool      `json:"requiresSignup"`
+			RequiresSignupInfo   *bool      `json:"requiresSignupInfo"`
+			ServiceHour          *float32   `json:"serviceHour"`
+			SignupDepartmentIds  []string   `json:"signupDepartmentIds"`
+			SignupScopeCode      *string    `json:"signupScopeCode"`
+			SignupStatusCode     *string    `json:"signupStatusCode"`
+			SourceMissing        bool       `json:"sourceMissing"`
+			Sponsor              *string    `json:"sponsor"`
+			StartAt              *time.Time `json:"startAt"`
+			Status               *string    `json:"status"`
+			SumHours             *float32   `json:"sumHours"`
+			SumPersons           *int       `json:"sumPersons"`
+			TagIds               []string   `json:"tagIds"`
+			UpdatedAtUpstream    *time.Time `json:"updatedAtUpstream"`
+			UpstreamOrganizerIds []string   `json:"upstreamOrganizerIds"`
+			UpstreamSponsorIds   []string   `json:"upstreamSponsorIds"`
+			YoungId              string     `json:"youngId"`
 		} `json:"event"`
 		RemindDeadline bool   `json:"remindDeadline"`
 		RemindSignup   bool   `json:"remindSignup"`
