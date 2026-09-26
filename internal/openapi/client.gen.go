@@ -2725,6 +2725,42 @@ func (e GetApiPublicationsObjectsKindSha256ParamsKind) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceExamListParamsIncludeDateUnknown.
+const (
+	WorkspaceExamListParamsIncludeDateUnknownFalse WorkspaceExamListParamsIncludeDateUnknown = "false"
+	WorkspaceExamListParamsIncludeDateUnknownTrue  WorkspaceExamListParamsIncludeDateUnknown = "true"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceExamListParamsIncludeDateUnknown enum.
+func (e WorkspaceExamListParamsIncludeDateUnknown) Valid() bool {
+	switch e {
+	case WorkspaceExamListParamsIncludeDateUnknownFalse:
+		return true
+	case WorkspaceExamListParamsIncludeDateUnknownTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceExamListParamsLocale.
+const (
+	WorkspaceExamListParamsLocaleEnUs WorkspaceExamListParamsLocale = "en-us"
+	WorkspaceExamListParamsLocaleZhCn WorkspaceExamListParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceExamListParamsLocale enum.
+func (e WorkspaceExamListParamsLocale) Valid() bool {
+	switch e {
+	case WorkspaceExamListParamsLocaleEnUs:
+		return true
+	case WorkspaceExamListParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceOverviewGetParamsLocale.
 const (
 	WorkspaceOverviewGetParamsLocaleEnUs WorkspaceOverviewGetParamsLocale = "en-us"
@@ -2745,16 +2781,16 @@ func (e WorkspaceOverviewGetParamsLocale) Valid() bool {
 
 // Defines values for WorkspaceScheduleListParamsLocale.
 const (
-	WorkspaceScheduleListParamsLocaleEnUs WorkspaceScheduleListParamsLocale = "en-us"
-	WorkspaceScheduleListParamsLocaleZhCn WorkspaceScheduleListParamsLocale = "zh-cn"
+	EnUs WorkspaceScheduleListParamsLocale = "en-us"
+	ZhCn WorkspaceScheduleListParamsLocale = "zh-cn"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceScheduleListParamsLocale enum.
 func (e WorkspaceScheduleListParamsLocale) Valid() bool {
 	switch e {
-	case WorkspaceScheduleListParamsLocaleEnUs:
+	case EnUs:
 		return true
-	case WorkspaceScheduleListParamsLocaleZhCn:
+	case ZhCn:
 		return true
 	default:
 		return false
@@ -2838,16 +2874,16 @@ func (e GetApiWorkspaceYoungNotificationsParamsUnread) Valid() bool {
 
 // Defines values for GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread.
 const (
-	False GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "false"
-	True  GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "true"
+	GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnreadFalse GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "false"
+	GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnreadTrue  GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread = "true"
 )
 
 // Valid indicates whether the value is a known member of the GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread enum.
 func (e GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnread) Valid() bool {
 	switch e {
-	case False:
+	case GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnreadFalse:
 		return true
-	case True:
+	case GetApiWorkspaceYoungOrganizerSubscriptionsParamsUnreadTrue:
 		return true
 	default:
 		return false
@@ -3677,9 +3713,13 @@ type CalendarSubscriptionAppendResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
+			CampusId            *int `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				Category *struct {
 					Id            int     `json:"id"`
 					NameCn        string  `json:"nameCn"`
@@ -3764,6 +3804,7 @@ type CalendarSubscriptionAppendResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -3838,9 +3879,13 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -3924,6 +3969,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -3969,9 +4015,13 @@ type CalendarSubscriptionBatchResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
+			CampusId            *int `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				Category *struct {
 					Id            int     `json:"id"`
 					NameCn        string  `json:"nameCn"`
@@ -4056,6 +4106,7 @@ type CalendarSubscriptionBatchResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4112,9 +4163,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -4198,6 +4253,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4237,9 +4293,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -4323,6 +4383,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4363,9 +4424,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -4449,6 +4514,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4494,9 +4560,13 @@ type CalendarSubscriptionImportResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
+			CampusId            *int `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				Category *struct {
 					Id            int     `json:"id"`
 					NameCn        string  `json:"nameCn"`
@@ -4581,6 +4651,7 @@ type CalendarSubscriptionImportResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4650,9 +4721,13 @@ type CalendarSubscriptionQueryResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -4736,6 +4811,7 @@ type CalendarSubscriptionQueryResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -4794,9 +4870,13 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
+			CampusId            *int `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				Category *struct {
 					Id            int     `json:"id"`
 					NameCn        string  `json:"nameCn"`
@@ -4881,6 +4961,7 @@ type CalendarSubscriptionRemoveResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -5254,8 +5335,9 @@ type CompactOverviewResponseSchema struct {
 	} `json:"dueTodos"`
 	Exams struct {
 		Items []struct {
-			EndTime   *int `json:"endTime"`
-			ExamBatch *struct {
+			AdminClassNames *string `json:"adminClassNames"`
+			EndTime         *int    `json:"endTime"`
+			ExamBatch       *struct {
 				Id            int     `json:"id"`
 				JwId          int     `json:"jwId"`
 				NameCn        string  `json:"nameCn"`
@@ -5272,16 +5354,26 @@ type CompactOverviewResponseSchema struct {
 				Id     int    `json:"id"`
 				Room   string `json:"room"`
 			} `json:"examRooms"`
-			ExamTakeCount *int `json:"examTakeCount"`
-			ExamType      *int `json:"examType"`
-			Id            int  `json:"id"`
-			JwId          int  `json:"jwId"`
-			Section       struct {
-				ActualPeriods *float32 `json:"actualPeriods"`
-				BizTypeId     *int     `json:"bizTypeId"`
-				CampusId      *int     `json:"campusId"`
-				Code          string   `json:"code"`
-				Course        struct {
+			ExamTakeCount *int    `json:"examTakeCount"`
+			ExamType      *int    `json:"examType"`
+			Grades        *string `json:"grades"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			Monitors      *[]struct {
+				JwId   int     `json:"jwId"`
+				NameCn *string `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"monitors"`
+			Section struct {
+				ActualPeriods       *float32 `json:"actualPeriods"`
+				BizTypeId           *int     `json:"bizTypeId"`
+				CampusId            *int     `json:"campusId"`
+				CatalogAdminClasses *[]struct {
+					NameCn string  `json:"nameCn"`
+					NameEn *string `json:"nameEn"`
+				} `json:"catalogAdminClasses"`
+				Code   string `json:"code"`
+				Course struct {
 					CategoryId       *int    `json:"categoryId"`
 					ClassTypeId      *int    `json:"classTypeId"`
 					ClassifyId       *int    `json:"classifyId"`
@@ -5313,6 +5405,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RequiredWeeks           *int            `json:"requiredWeeks"`
 				RetiredAt               *time.Time      `json:"retiredAt"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -5374,11 +5467,15 @@ type CompactOverviewResponseSchema struct {
 			PublishedAt  *time.Time `json:"publishedAt"`
 			RequiresTeam bool       `json:"requiresTeam"`
 			Section      struct {
-				ActualPeriods *float32 `json:"actualPeriods"`
-				BizTypeId     *int     `json:"bizTypeId"`
-				CampusId      *int     `json:"campusId"`
-				Code          string   `json:"code"`
-				Course        struct {
+				ActualPeriods       *float32 `json:"actualPeriods"`
+				BizTypeId           *int     `json:"bizTypeId"`
+				CampusId            *int     `json:"campusId"`
+				CatalogAdminClasses *[]struct {
+					NameCn string  `json:"nameCn"`
+					NameEn *string `json:"nameEn"`
+				} `json:"catalogAdminClasses"`
+				Code   string `json:"code"`
+				Course struct {
 					CategoryId       *int    `json:"categoryId"`
 					ClassTypeId      *int    `json:"classTypeId"`
 					ClassifyId       *int    `json:"classifyId"`
@@ -5410,6 +5507,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RequiredWeeks           *int            `json:"requiredWeeks"`
 				RetiredAt               *time.Time      `json:"retiredAt"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -5509,11 +5607,15 @@ type CompactOverviewResponseSchema struct {
 			} `json:"scheduleGroup"`
 			ScheduleGroupId int `json:"scheduleGroupId"`
 			Section         struct {
-				ActualPeriods *float32 `json:"actualPeriods"`
-				BizTypeId     *int     `json:"bizTypeId"`
-				CampusId      *int     `json:"campusId"`
-				Code          string   `json:"code"`
-				Course        struct {
+				ActualPeriods       *float32 `json:"actualPeriods"`
+				BizTypeId           *int     `json:"bizTypeId"`
+				CampusId            *int     `json:"campusId"`
+				CatalogAdminClasses *[]struct {
+					NameCn string  `json:"nameCn"`
+					NameEn *string `json:"nameEn"`
+				} `json:"catalogAdminClasses"`
+				Code   string `json:"code"`
+				Course struct {
 					CategoryId       *int    `json:"categoryId"`
 					ClassTypeId      *int    `json:"classTypeId"`
 					ClassifyId       *int    `json:"classifyId"`
@@ -5545,6 +5647,7 @@ type CompactOverviewResponseSchema struct {
 				PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 				PracticePeriods         *float32        `json:"practicePeriods"`
 				Remark                  *string         `json:"remark"`
+				RequiredWeeks           *int            `json:"requiredWeeks"`
 				RetiredAt               *time.Time      `json:"retiredAt"`
 				RoomTypeId              *int            `json:"roomTypeId"`
 				ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -5561,10 +5664,33 @@ type CompactOverviewResponseSchema struct {
 				TheoryPeriods           *float32        `json:"theoryPeriods"`
 				TimesPerWeek            *int            `json:"timesPerWeek"`
 			} `json:"section"`
-			SectionId int    `json:"sectionId"`
-			StartTime string `json:"startTime"`
-			StartUnit int    `json:"startUnit"`
-			Teachers  []struct {
+			SectionId             int    `json:"sectionId"`
+			StartTime             string `json:"startTime"`
+			StartUnit             int    `json:"startUnit"`
+			TeacherParticipations []struct {
+				ExerciseClass *bool    `json:"exerciseClass"`
+				Periods       *float32 `json:"periods"`
+				Teacher       struct {
+					Code       *string `json:"code"`
+					Department *struct {
+						Code          string  `json:"code"`
+						Id            int     `json:"id"`
+						IsCollege     *bool   `json:"isCollege"`
+						NameCn        string  `json:"nameCn"`
+						NameEn        *string `json:"nameEn"`
+						NamePrimary   string  `json:"namePrimary"`
+						NameSecondary *string `json:"nameSecondary"`
+					} `json:"department"`
+					Id            int     `json:"id"`
+					JwId          int     `json:"jwId"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+					PersonId      *int    `json:"personId"`
+				} `json:"teacher"`
+			} `json:"teacherParticipations"`
+			Teachers []struct {
 				Code       *string `json:"code"`
 				Department *struct {
 					Code          string  `json:"code"`
@@ -5683,7 +5809,11 @@ type CourseDetailSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId                *int            `json:"campusId"`
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
 		Code                    string          `json:"code"`
 		CourseId                int             `json:"courseId"`
 		Credits                 *float32        `json:"credits"`
@@ -5702,6 +5832,7 @@ type CourseDetailSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -5759,9 +5890,13 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 				NamePrimary   string  `json:"namePrimary"`
 				NameSecondary *string `json:"nameSecondary"`
 			} `json:"campus"`
-			CampusId *int   `json:"campusId"`
-			Code     string `json:"code"`
-			Course   struct {
+			CampusId            *int `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				Category *struct {
 					Id            int     `json:"id"`
 					NameCn        string  `json:"nameCn"`
@@ -5846,6 +5981,7 @@ type CurrentCalendarSubscriptionResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -6279,11 +6415,15 @@ type HomeworkCreateResponseSchema struct {
 		PublishedAt  *time.Time `json:"publishedAt"`
 		RequiresTeam bool       `json:"requiresTeam"`
 		Section      struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -6315,6 +6455,7 @@ type HomeworkCreateResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -6403,11 +6544,15 @@ type HomeworkDetailResponseSchema struct {
 		PublishedAt  *time.Time `json:"publishedAt"`
 		RequiresTeam bool       `json:"requiresTeam"`
 		Section      struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -6439,6 +6584,7 @@ type HomeworkDetailResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -6558,11 +6704,15 @@ type HomeworkUpdateResponseSchema struct {
 		PublishedAt  *time.Time `json:"publishedAt"`
 		RequiresTeam bool       `json:"requiresTeam"`
 		Section      struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -6594,6 +6744,7 @@ type HomeworkUpdateResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -6712,9 +6863,13 @@ type MatchSectionCodesResponseSchema struct {
 			NamePrimary   string  `json:"namePrimary"`
 			NameSecondary *string `json:"nameSecondary"`
 		} `json:"campus"`
-		CampusId *int   `json:"campusId"`
-		Code     string `json:"code"`
-		Course   struct {
+		CampusId            *int `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -6798,6 +6953,7 @@ type MatchSectionCodesResponseSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -7154,11 +7310,15 @@ type PaginatedScheduleResponseSchema struct {
 		} `json:"scheduleGroup"`
 		ScheduleGroupId int `json:"scheduleGroupId"`
 		Section         struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -7190,6 +7350,7 @@ type PaginatedScheduleResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -7206,10 +7367,33 @@ type PaginatedScheduleResponseSchema struct {
 			TheoryPeriods           *float32        `json:"theoryPeriods"`
 			TimesPerWeek            *int            `json:"timesPerWeek"`
 		} `json:"section"`
-		SectionId int    `json:"sectionId"`
-		StartTime string `json:"startTime"`
-		StartUnit int    `json:"startUnit"`
-		Teachers  []struct {
+		SectionId             int    `json:"sectionId"`
+		StartTime             string `json:"startTime"`
+		StartUnit             int    `json:"startUnit"`
+		TeacherParticipations []struct {
+			ExerciseClass *bool    `json:"exerciseClass"`
+			Periods       *float32 `json:"periods"`
+			Teacher       struct {
+				Code       *string `json:"code"`
+				Department *struct {
+					Code          string  `json:"code"`
+					Id            int     `json:"id"`
+					IsCollege     *bool   `json:"isCollege"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"department"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+				PersonId      *int    `json:"personId"`
+			} `json:"teacher"`
+		} `json:"teacherParticipations"`
+		Teachers []struct {
 			Code       *string `json:"code"`
 			Department *struct {
 				Code          string  `json:"code"`
@@ -7854,9 +8038,13 @@ type SectionDetailSchema struct {
 		NamePrimary   string  `json:"namePrimary"`
 		NameSecondary *string `json:"nameSecondary"`
 	} `json:"campus"`
-	CampusId *int   `json:"campusId"`
-	Code     string `json:"code"`
-	Course   struct {
+	CampusId            *int `json:"campusId"`
+	CatalogAdminClasses *[]struct {
+		NameCn string  `json:"nameCn"`
+		NameEn *string `json:"nameEn"`
+	} `json:"catalogAdminClasses"`
+	Code   string `json:"code"`
+	Course struct {
 		Category *struct {
 			Id            int     `json:"id"`
 			NameCn        string  `json:"nameCn"`
@@ -7927,8 +8115,9 @@ type SectionDetailSchema struct {
 	} `json:"examMode"`
 	ExamModeId *int `json:"examModeId"`
 	Exams      []struct {
-		EndTime   *int `json:"endTime"`
-		ExamBatch *struct {
+		AdminClassNames *string `json:"adminClassNames"`
+		EndTime         *int    `json:"endTime"`
+		ExamBatch       *struct {
 			Id            int     `json:"id"`
 			JwId          int     `json:"jwId"`
 			NameCn        string  `json:"nameCn"`
@@ -7945,12 +8134,18 @@ type SectionDetailSchema struct {
 			Id     int    `json:"id"`
 			Room   string `json:"room"`
 		} `json:"examRooms"`
-		ExamTakeCount *int `json:"examTakeCount"`
-		ExamType      *int `json:"examType"`
-		Id            int  `json:"id"`
-		JwId          int  `json:"jwId"`
-		SectionId     int  `json:"sectionId"`
-		StartTime     *int `json:"startTime"`
+		ExamTakeCount *int    `json:"examTakeCount"`
+		ExamType      *int    `json:"examType"`
+		Grades        *string `json:"grades"`
+		Id            int     `json:"id"`
+		JwId          int     `json:"jwId"`
+		Monitors      *[]struct {
+			JwId   int     `json:"jwId"`
+			NameCn *string `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"monitors"`
+		SectionId int  `json:"sectionId"`
+		StartTime *int `json:"startTime"`
 	} `json:"exams"`
 	ExperimentPeriods       *float32 `json:"experimentPeriods"`
 	GraduateAndPostgraduate *bool    `json:"graduateAndPostgraduate"`
@@ -7973,6 +8168,7 @@ type SectionDetailSchema struct {
 	PeriodsPerWeek   *float32   `json:"periodsPerWeek"`
 	PracticePeriods  *float32   `json:"practicePeriods"`
 	Remark           *string    `json:"remark"`
+	RequiredWeeks    *int       `json:"requiredWeeks"`
 	RetiredAt        *time.Time `json:"retiredAt"`
 	RoomType         *struct {
 		Code          string  `json:"code"`
@@ -8103,6 +8299,107 @@ type SemesterSchema struct {
 	StartDate *time.Time `json:"startDate"`
 }
 
+// SubscribedExamsResponseSchema defines model for subscribedExamsResponseSchema.
+type SubscribedExamsResponseSchema struct {
+	Data []struct {
+		AdminClassNames *string `json:"adminClassNames"`
+		EndTime         *int    `json:"endTime"`
+		ExamBatch       *struct {
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+		} `json:"examBatch"`
+		ExamBatchId *int       `json:"examBatchId"`
+		ExamDate    *time.Time `json:"examDate"`
+		ExamMode    *string    `json:"examMode"`
+		ExamRooms   []struct {
+			Count  int    `json:"count"`
+			ExamId int    `json:"examId"`
+			Id     int    `json:"id"`
+			Room   string `json:"room"`
+		} `json:"examRooms"`
+		ExamTakeCount *int    `json:"examTakeCount"`
+		ExamType      *int    `json:"examType"`
+		Grades        *string `json:"grades"`
+		Id            int     `json:"id"`
+		JwId          int     `json:"jwId"`
+		Monitors      *[]struct {
+			JwId   int     `json:"jwId"`
+			NameCn *string `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"monitors"`
+		Section struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
+				CategoryId       *int    `json:"categoryId"`
+				ClassTypeId      *int    `json:"classTypeId"`
+				ClassifyId       *int    `json:"classifyId"`
+				Code             string  `json:"code"`
+				EducationLevelId *int    `json:"educationLevelId"`
+				GradationId      *int    `json:"gradationId"`
+				Id               int     `json:"id"`
+				JwId             int     `json:"jwId"`
+				NameCn           string  `json:"nameCn"`
+				NameEn           *string `json:"nameEn"`
+				NamePrimary      string  `json:"namePrimary"`
+				NameSecondary    *string `json:"nameSecondary"`
+				TypeId           *int    `json:"typeId"`
+			} `json:"course"`
+			CourseId                int             `json:"courseId"`
+			Credits                 *float32        `json:"credits"`
+			DateTimePlacePersonText interface{}     `json:"dateTimePlacePersonText"`
+			DateTimePlaceText       *string         `json:"dateTimePlaceText"`
+			DesignPeriods           *float32        `json:"designPeriods"`
+			ExamModeId              *int            `json:"examModeId"`
+			ExperimentPeriods       *float32        `json:"experimentPeriods"`
+			GraduateAndPostgraduate *bool           `json:"graduateAndPostgraduate"`
+			Id                      int             `json:"id"`
+			JwId                    int             `json:"jwId"`
+			LimitCount              *int            `json:"limitCount"`
+			MachinePeriods          *float32        `json:"machinePeriods"`
+			OpenDepartmentId        *int            `json:"openDepartmentId"`
+			Period                  *int            `json:"period"`
+			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
+			PracticePeriods         *float32        `json:"practicePeriods"`
+			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
+			RetiredAt               *time.Time      `json:"retiredAt"`
+			RoomTypeId              *int            `json:"roomTypeId"`
+			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
+			ScheduleRemark          *string         `json:"scheduleRemark"`
+			ScheduleState           *string         `json:"scheduleState"`
+			SelectedStdCount        *int            `json:"selectedStdCount"`
+			Semester                *SemesterSchema `json:"semester"`
+			SemesterId              *int            `json:"semesterId"`
+			StdCount                *int            `json:"stdCount"`
+			SuggestScheduleWeekInfo *string         `json:"suggestScheduleWeekInfo"`
+			SuggestScheduleWeeks    interface{}     `json:"suggestScheduleWeeks"`
+			TeachLanguageId         *int            `json:"teachLanguageId"`
+			TestPeriods             *float32        `json:"testPeriods"`
+			TheoryPeriods           *float32        `json:"theoryPeriods"`
+			TimesPerWeek            *int            `json:"timesPerWeek"`
+		} `json:"section"`
+		SectionId int  `json:"sectionId"`
+		StartTime *int `json:"startTime"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
 // SubscribedHomeworksResponseSchema defines model for subscribedHomeworksResponseSchema.
 type SubscribedHomeworksResponseSchema struct {
 	Data []struct {
@@ -8144,11 +8441,15 @@ type SubscribedHomeworksResponseSchema struct {
 		PublishedAt  *time.Time `json:"publishedAt"`
 		RequiresTeam bool       `json:"requiresTeam"`
 		Section      struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -8180,6 +8481,7 @@ type SubscribedHomeworksResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -8286,11 +8588,15 @@ type SubscribedSchedulesResponseSchema struct {
 		} `json:"scheduleGroup"`
 		ScheduleGroupId int `json:"scheduleGroupId"`
 		Section         struct {
-			ActualPeriods *float32 `json:"actualPeriods"`
-			BizTypeId     *int     `json:"bizTypeId"`
-			CampusId      *int     `json:"campusId"`
-			Code          string   `json:"code"`
-			Course        struct {
+			ActualPeriods       *float32 `json:"actualPeriods"`
+			BizTypeId           *int     `json:"bizTypeId"`
+			CampusId            *int     `json:"campusId"`
+			CatalogAdminClasses *[]struct {
+				NameCn string  `json:"nameCn"`
+				NameEn *string `json:"nameEn"`
+			} `json:"catalogAdminClasses"`
+			Code   string `json:"code"`
+			Course struct {
 				CategoryId       *int    `json:"categoryId"`
 				ClassTypeId      *int    `json:"classTypeId"`
 				ClassifyId       *int    `json:"classifyId"`
@@ -8322,6 +8628,7 @@ type SubscribedSchedulesResponseSchema struct {
 			PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 			PracticePeriods         *float32        `json:"practicePeriods"`
 			Remark                  *string         `json:"remark"`
+			RequiredWeeks           *int            `json:"requiredWeeks"`
 			RetiredAt               *time.Time      `json:"retiredAt"`
 			RoomTypeId              *int            `json:"roomTypeId"`
 			ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -8338,10 +8645,46 @@ type SubscribedSchedulesResponseSchema struct {
 			TheoryPeriods           *float32        `json:"theoryPeriods"`
 			TimesPerWeek            *int            `json:"timesPerWeek"`
 		} `json:"section"`
-		SectionId int    `json:"sectionId"`
-		StartTime string `json:"startTime"`
-		StartUnit int    `json:"startUnit"`
-		Teachers  []struct {
+		SectionId             int    `json:"sectionId"`
+		StartTime             string `json:"startTime"`
+		StartUnit             int    `json:"startUnit"`
+		TeacherParticipations []struct {
+			ExerciseClass *bool    `json:"exerciseClass"`
+			Periods       *float32 `json:"periods"`
+			Teacher       struct {
+				UnderscoreCount struct {
+					Sections int `json:"sections"`
+				} `json:"_count"`
+				Code       *string `json:"code"`
+				Department *struct {
+					Code          string  `json:"code"`
+					Id            int     `json:"id"`
+					IsCollege     *bool   `json:"isCollege"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"department"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+				PersonId      *int    `json:"personId"`
+				TeacherTitle  *struct {
+					Code          string  `json:"code"`
+					Enabled       *bool   `json:"enabled"`
+					Id            int     `json:"id"`
+					JwId          int     `json:"jwId"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"teacherTitle"`
+			} `json:"teacher"`
+		} `json:"teacherParticipations"`
+		Teachers []struct {
 			UnderscoreCount struct {
 				Sections int `json:"sections"`
 			} `json:"_count"`
@@ -8427,11 +8770,15 @@ type TeacherDetailSchema struct {
 	NameSecondary *string `json:"nameSecondary"`
 	PersonId      *int    `json:"personId"`
 	Sections      []struct {
-		ActualPeriods *float32 `json:"actualPeriods"`
-		BizTypeId     *int     `json:"bizTypeId"`
-		CampusId      *int     `json:"campusId"`
-		Code          string   `json:"code"`
-		Course        struct {
+		ActualPeriods       *float32 `json:"actualPeriods"`
+		BizTypeId           *int     `json:"bizTypeId"`
+		CampusId            *int     `json:"campusId"`
+		CatalogAdminClasses *[]struct {
+			NameCn string  `json:"nameCn"`
+			NameEn *string `json:"nameEn"`
+		} `json:"catalogAdminClasses"`
+		Code   string `json:"code"`
+		Course struct {
 			Category *struct {
 				Id            int     `json:"id"`
 				NameCn        string  `json:"nameCn"`
@@ -8505,6 +8852,7 @@ type TeacherDetailSchema struct {
 		PeriodsPerWeek          *float32        `json:"periodsPerWeek"`
 		PracticePeriods         *float32        `json:"practicePeriods"`
 		Remark                  *string         `json:"remark"`
+		RequiredWeeks           *int            `json:"requiredWeeks"`
 		RetiredAt               *time.Time      `json:"retiredAt"`
 		RoomTypeId              *int            `json:"roomTypeId"`
 		ScheduleJsonParams      interface{}     `json:"scheduleJsonParams"`
@@ -9584,6 +9932,23 @@ type GetApiWorkspaceCalendarEventsParams struct {
 	DateFrom *string `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
 	DateTo   *string `form:"dateTo,omitempty" json:"dateTo,omitempty"`
 }
+
+// WorkspaceExamListParams defines parameters for WorkspaceExamList.
+type WorkspaceExamListParams struct {
+	DateFrom           *string                                    `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
+	DateTo             *string                                    `form:"dateTo,omitempty" json:"dateTo,omitempty"`
+	IncludeDateUnknown *WorkspaceExamListParamsIncludeDateUnknown `form:"includeDateUnknown,omitempty" json:"includeDateUnknown,omitempty"`
+	SemesterId         *int64                                     `form:"semesterId,omitempty" json:"semesterId,omitempty"`
+	Page               *int64                                     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize           *int64                                     `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	Locale             *WorkspaceExamListParamsLocale             `form:"locale,omitempty" json:"locale,omitempty"`
+}
+
+// WorkspaceExamListParamsIncludeDateUnknown defines parameters for WorkspaceExamList.
+type WorkspaceExamListParamsIncludeDateUnknown string
+
+// WorkspaceExamListParamsLocale defines parameters for WorkspaceExamList.
+type WorkspaceExamListParamsLocale string
 
 // GetSubscribedHomeworksParams defines parameters for GetSubscribedHomeworks.
 type GetSubscribedHomeworksParams struct {
@@ -13040,6 +13405,9 @@ type ClientInterface interface {
 	// GetApiWorkspaceCalendarEvents request
 	GetApiWorkspaceCalendarEvents(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// WorkspaceExamList request
+	WorkspaceExamList(ctx context.Context, params *WorkspaceExamListParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSubscribedHomeworks request
 	GetSubscribedHomeworks(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -14677,6 +15045,18 @@ func (c *Client) WorkspaceBusPreferencesSet(ctx context.Context, body WorkspaceB
 
 func (c *Client) GetApiWorkspaceCalendarEvents(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiWorkspaceCalendarEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WorkspaceExamList(ctx context.Context, params *WorkspaceExamListParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWorkspaceExamListRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -20969,6 +21349,132 @@ func NewGetApiWorkspaceCalendarEventsRequest(server string, params *GetApiWorksp
 	return req, nil
 }
 
+// NewWorkspaceExamListRequest generates requests for WorkspaceExamList
+func NewWorkspaceExamListRequest(server string, params *WorkspaceExamListParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/exams")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.DateFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateFrom", *params.DateFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DateTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dateTo", *params.DateTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeDateUnknown != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeDateUnknown", *params.IncludeDateUnknown, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SemesterId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "semesterId", *params.SemesterId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSubscribedHomeworksRequest generates requests for GetSubscribedHomeworks
 func NewGetSubscribedHomeworksRequest(server string, params *GetSubscribedHomeworksParams) (*http.Request, error) {
 	var err error
@@ -23152,6 +23658,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetApiWorkspaceCalendarEventsWithResponse request
 	GetApiWorkspaceCalendarEventsWithResponse(ctx context.Context, params *GetApiWorkspaceCalendarEventsParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceCalendarEventsResponse, error)
+
+	// WorkspaceExamListWithResponse request
+	WorkspaceExamListWithResponse(ctx context.Context, params *WorkspaceExamListParams, reqEditors ...RequestEditorFn) (*WorkspaceExamListResponse, error)
 
 	// GetSubscribedHomeworksWithResponse request
 	GetSubscribedHomeworksWithResponse(ctx context.Context, params *GetSubscribedHomeworksParams, reqEditors ...RequestEditorFn) (*GetSubscribedHomeworksResponse, error)
@@ -26682,6 +27191,39 @@ func (r GetApiWorkspaceCalendarEventsResponse) ContentType() string {
 	return ""
 }
 
+type WorkspaceExamListResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SubscribedExamsResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+	JSON403      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r WorkspaceExamListResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WorkspaceExamListResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r WorkspaceExamListResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetSubscribedHomeworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -29001,6 +29543,15 @@ func (c *ClientWithResponses) GetApiWorkspaceCalendarEventsWithResponse(ctx cont
 		return nil, err
 	}
 	return ParseGetApiWorkspaceCalendarEventsResponse(rsp)
+}
+
+// WorkspaceExamListWithResponse request returning *WorkspaceExamListResponse
+func (c *ClientWithResponses) WorkspaceExamListWithResponse(ctx context.Context, params *WorkspaceExamListParams, reqEditors ...RequestEditorFn) (*WorkspaceExamListResponse, error) {
+	rsp, err := c.WorkspaceExamList(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWorkspaceExamListResponse(rsp)
 }
 
 // GetSubscribedHomeworksWithResponse request returning *GetSubscribedHomeworksResponse
@@ -33378,6 +33929,53 @@ func ParseGetApiWorkspaceCalendarEventsResponse(rsp *http.Response) (*GetApiWork
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWorkspaceExamListResponse parses an HTTP response from a WorkspaceExamListWithResponse call
+func ParseWorkspaceExamListResponse(rsp *http.Response) (*WorkspaceExamListResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WorkspaceExamListResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SubscribedExamsResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
