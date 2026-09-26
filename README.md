@@ -3,7 +3,7 @@
 在 QQ 里使用 Life@USTC 的聊天入口。连到
 [Life@USTC server](https://github.com/Life-USTC/server)，能力命名与 Web / CLI /
 MCP 对齐（见
-[interface hierarchy](https://github.com/Life-USTC/server/blob/main/docs/interface-hierarchy.md)）。
+[interface hierarchy](https://github.com/Life-USTC/server/blob/main/docs/policies/interface-hierarchy.yaml)）。
 
 ## 面向谁
 
