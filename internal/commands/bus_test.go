@@ -732,21 +732,21 @@ func TestHandleBusExplicitRouteSplitsRouteVariants(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/catalog/bus":
 			_, _ = w.Write([]byte(`{
 				"routes":[
-					{"id":"direct","stops":[
+					{"id":1,"stops":[
 						{"campus":{"nameCn":"东区"}},
 						{"campus":{"nameCn":"西区"}}
 					]},
-					{"id":"via-north","stops":[
+					{"id":2,"stops":[
 						{"campus":{"nameCn":"东区"}},
 						{"campus":{"nameCn":"北区"}},
 						{"campus":{"nameCn":"西区"}}
 					]}
 				],
 				"trips":[
-					{"routeId":"via-north","dayType":"weekday","departureTime":"09:20","departureMinutes":560,"arrivalTime":"09:35","stopTimes":[
+					{"routeId":2,"dayType":"weekday","departureTime":"09:20","departureMinutes":560,"arrivalTime":"09:35","stopTimes":[
 						{"campusName":"东区","time":"09:20"},{"campusName":"北区"},{"campusName":"西区","time":"09:35"}
 					]},
-					{"routeId":"direct","dayType":"weekday","departureTime":"09:30","departureMinutes":570,"arrivalTime":"09:40","stopTimes":[
+					{"routeId":1,"dayType":"weekday","departureTime":"09:30","departureMinutes":570,"arrivalTime":"09:40","stopTimes":[
 						{"campusName":"东区","time":"09:30"},{"campusName":"西区","time":"09:40"}
 					]}
 				]

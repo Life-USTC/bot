@@ -137,7 +137,7 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 		"search":    query.search,
 		"result":    page,
 	})
-	if len(page.Data) == 0 && page.UnknownDateCount == 0 {
+	if len(page.Data) == 0 && page.Meta.UnknownDateCount == 0 {
 		if query.search != "" {
 			return h.notFound("没找到相关第二课堂活动：" + query.search)
 		}
@@ -153,7 +153,7 @@ func youngEventIsNotFound(err error) bool {
 
 func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, eventURL func(string) string) string {
 	lines := []string{"第二课堂："}
-	if source := formatYoungSource(page.Source); source != "" {
+	if source := formatYoungSource(page.Meta.Source); source != "" {
 		lines = append(lines, source)
 	}
 	for i, event := range page.Data {
@@ -183,8 +183,8 @@ func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, event
 		}
 		lines = append(lines, textutil.MonospaceDigits(strings.Join(navigation, " · ")))
 	}
-	if page.UnknownDateCount > 0 {
-		lines = append(lines, fmt.Sprintf("日期未知总数：%d · 发送「第二课堂 列表 日期未知」查看。", page.UnknownDateCount))
+	if page.Meta.UnknownDateCount > 0 {
+		lines = append(lines, fmt.Sprintf("日期未知总数：%d · 发送「第二课堂 列表 日期未知」查看。", page.Meta.UnknownDateCount))
 	}
 	return strings.Join(lines, "\n")
 }

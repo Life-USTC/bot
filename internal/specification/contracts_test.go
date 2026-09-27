@@ -132,7 +132,7 @@ func TestSpecificationBindings(t *testing.T) {
 			t.Errorf("invalid or repeated requirement ID %q", requirement.ID)
 		}
 		ids[requirement.ID] = true
-		if requirement.Scope != "public" && requirement.Scope != "private" {
+		if requirement.Scope != "public" && requirement.Scope != "private" && requirement.Scope != "all" {
 			t.Errorf("invalid scope for %s", requirement.ID)
 		}
 		if strings.TrimSpace(requirement.Rule) == "" || strings.TrimSpace(acceptance.Given) == "" || strings.TrimSpace(acceptance.When) == "" || len(acceptance.Then) == 0 {

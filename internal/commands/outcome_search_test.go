@@ -287,7 +287,7 @@ func TestDescribeInvocationBuildsHostReceipt(t *testing.T) {
 			if r.URL.Query().Get("search") != "CODE1.01" || r.URL.Query().Get("semesterId") != "42" {
 				t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"data":[{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"},"teacher":{"namePrimary":"张老师"},"semester":{"namePrimary":"2026年秋季学期"}}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"code":"CODE1.01","id":12,"course":{"namePrimary":"线性代数"},"teachers":[{"namePrimary":"张老师"}],"semester":{"namePrimary":"2026年秋季学期"}}]}`))
 		default:
 			t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
