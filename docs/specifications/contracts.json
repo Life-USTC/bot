@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "owner": "Bot",
+  "requirements": [
+    {
+      "id": "bot.mcp-per-user-discovery",
+      "scope": "private",
+      "rule": "Authenticated MCP discovery preserves the current bearer session's tool names, schemas and annotations; cached catalogs are isolated between grants.",
+      "acceptance": {
+        "given": "Two users have different authenticated MCP catalogs.",
+        "when": "The real discovery path lists Alice, Bob and Alice again using one service.",
+        "then": [
+          "Each user sees only their own tool and exact schema/annotations."
+        ],
+        "test": {
+          "file": "internal/agent/spec_acceptance_test.go",
+          "name": "TestSpecMCPPerUserDiscovery/bot.mcp-per-user-discovery"
+        }
+      }
+    },
+    {
+      "id": "bot.mcp-server-authorization",
+      "scope": "private",
+      "rule": "Tool discovery does not grant access: every call uses the caller's server authorization and a server denial is returned as failure.",
+      "acceptance": {
+        "given": "A dynamically discovered read tool rejects the caller.",
+        "when": "The Bot calls that tool through its MCP session.",
+        "then": [
+          "The current bearer reaches the server.",
+          "The denial is not returned as success or retried."
+        ],
+        "test": {
+          "file": "internal/agent/spec_acceptance_test.go",
+          "name": "TestSpecMCPServerAuthorization/bot.mcp-server-authorization"
+        }
+      }
+    },
+    {
+      "id": "bot.shared-conversation-surface",
+      "scope": "public",
+      "rule": "Group and channel conversations expose public host commands and no MCP tools, resources or prompts.",
+      "acceptance": {
+        "given": "A service has an MCP client and receives group or channel input.",
+        "when": "The service builds the actual callable tool set.",
+        "then": [
+          "Public host command tools remain present.",
+          "No campus MCP tool or MCP session is exposed and no MCP request occurs."
+        ],
+        "test": {
+          "file": "internal/agent/spec_acceptance_test.go",
+          "name": "TestSpecSharedConversationSurface/bot.shared-conversation-surface"
+        }
+      }
+    },
+    {
+      "id": "bot.mutation-unknown-no-replay",
+      "scope": "private",
+      "rule": "After interruption, a started mutation with unknown outcome remains durably unknown and is never automatically replayed.",
+      "acceptance": {
+        "given": "A durable write started under an expired conversation attempt.",
+        "when": "A fresh session tries to recover the operation twice, offline.",
+        "then": [
+          "The durable result stays unknown.",
+          "Recovery needs no server connection and cannot cross jobs."
+        ],
+        "test": {
+          "file": "internal/agent/mcp_confirmation_flow_test.go",
+          "name": "TestSpecMCPInterruptedWriteRecoversOfflineWithoutReplay/bot.mutation-unknown-no-replay"
+        }
+      }
+    },
+    {
+      "id": "bot.destructive-mutation-confirmation",
+      "scope": "private",
+      "rule": "Destructive MCP writes wait for durable user approval; denial prevents execution and approval resumes the stored operation exactly once.",
+      "acceptance": {
+        "given": "A dynamically discovered destructive operation awaits user choice.",
+        "when": "The user approves or denies and a fresh service resumes.",
+        "then": [
+          "No remote write occurs before approval.",
+          "The stored result reflects approval, denial or an uncertain server response.",
+          "A repeated model call does not repeat the write."
+        ],
+        "test": {
+          "file": "internal/agent/mcp_confirmation_flow_test.go",
+          "name": "TestSpecMCPMutationRunsThroughDurableConfirmation/bot.destructive-mutation-confirmation"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-recognition",
+      "scope": "public",
+      "rule": "Explicit room queries and recognized bare room codes select the public map command.",
+      "acceptance": {
+        "given": "Supported room identifiers use ordinary, lowercase or fullwidth input.",
+        "when": "The actual command parser resolves the query.",
+        "then": [
+          "The room command and normalized code are selected with public scope."
+        ],
+        "test": {
+          "file": "internal/commands/room_test.go",
+          "name": "TestSpecRoomMapCommandAndNaturalQueryArePublic/room-map.bot-recognition"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-shared-image",
+      "scope": "public",
+      "rule": "A room map request in a shared conversation emits the available public map image without a generated caption.",
+      "acceptance": {
+        "given": "A shared group requests 5201 and the server returns a highlighted map.",
+        "when": "The real coordinator persists the outbound response.",
+        "then": [
+          "The outbox contains exactly the map attachment without caption text.",
+          "The durable tool result retains the room data and image reference."
+        ],
+        "test": {
+          "file": "internal/botapp/room_map_test.go",
+          "name": "TestSpecGroupRoom5201OutboxOnlyImageAndStructuredLLMResult/room-map.bot-shared-image"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-unavailable",
+      "scope": "public",
+      "rule": "An unavailable room map returns an explanatory message without an image.",
+      "acceptance": {
+        "given": "The server reports an unavailable room.",
+        "when": "The room response is built.",
+        "then": [
+          "The response explains that no map was found.",
+          "No image is attached."
+        ],
+        "test": {
+          "file": "internal/commands/room_test.go",
+          "name": "TestSpecRoomMapResponseDoesNotAttachImageForUnavailableRoom/room-map.bot-unavailable"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-overview",
+      "scope": "public",
+      "rule": "A floor overview uses the available public source image while retaining overview status.",
+      "acceptance": {
+        "given": "The server has a floor overview but no highlighted room.",
+        "when": "The room response is built.",
+        "then": [
+          "The source image is selected.",
+          "The structured result preserves overview status without a caption."
+        ],
+        "test": {
+          "file": "internal/commands/room_test.go",
+          "name": "TestSpecRoomMapOverviewPreservesStatusWithoutText/room-map.bot-overview"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-private-mcp-image",
+      "scope": "private",
+      "rule": "A private MCP room-map result delivers its available image without a synthetic caption.",
+      "acceptance": {
+        "given": "The private conversation receives a highlighted catalog_rooms_map result.",
+        "when": "The actual MCP presentation adapter delivers the result.",
+        "then": [
+          "The available image URL is delivered without caption text."
+        ],
+        "test": {
+          "file": "internal/agent/lazy_mcp_room_test.go",
+          "name": "TestSpecRoomMapMCPIsAllowedAndDeliversImageResponse/room-map.bot-private-mcp-image"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-avoid-false-positive",
+      "scope": "public",
+      "rule": "Unrelated messages and ambiguous multiple bare room codes must not be captured as single-room lookups.",
+      "acceptance": {
+        "given": "Messages contain dates, course identifiers, ordinary prose or multiple room codes.",
+        "when": "The command parser examines the message.",
+        "then": [
+          "The message does not become a single-room map command."
+        ],
+        "test": {
+          "file": "internal/commands/room_test.go",
+          "name": "TestSpecBareRoomLookupDoesNotCaptureOtherMessages/room-map.bot-avoid-false-positive"
+        }
+      }
+    },
+    {
+      "id": "bot.confirmation-bound-to-operation",
+      "scope": "private",
+      "rule": "Approval applies only to the persisted intended operation; another target requires its own confirmation.",
+      "acceptance": {
+        "given": "The user approved deletion of homework 1.",
+        "when": "The Bot completes it and attempts deletion of homework 2.",
+        "then": [
+          "Only the first target reaches the server.",
+          "The second operation durably awaits its own confirmation."
+        ],
+        "test": {
+          "file": "internal/agent/spec_acceptance_test.go",
+          "name": "TestSpecConfirmationBoundToOperation/bot.confirmation-bound-to-operation"
+        }
+      }
+    },
+    {
+      "id": "room-map.bot-no-unsolicited-attachments",
+      "scope": "private",
+      "rule": "Ordinary agenda replies display room text without automatically looking up or attaching individual room maps.",
+      "acceptance": {
+        "given": "A personal agenda contains a class in 3A101.",
+        "when": "The user requests the agenda rather than a room map.",
+        "then": [
+          "The room remains in the agenda text.",
+          "Only calendar data is requested and no room-map image is attached."
+        ],
+        "test": {
+          "file": "internal/commands/room_test.go",
+          "name": "TestSpecAgendaDoesNotAttachRoomMaps/room-map.bot-no-unsolicited-attachments"
+        }
+      }
+    }
+  ]
+}

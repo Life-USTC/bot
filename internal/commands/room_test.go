@@ -10,42 +10,46 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
-func TestRoomMapCommandAndNaturalQueryArePublic(t *testing.T) {
-	for _, test := range []struct {
-		input string
-		want  []string
-	}{
-		{input: "5201", want: []string{"5201"}},
-		{input: "３ａ２０４？", want: []string{"3A204"}},
-		{input: "gt-b110", want: []string{"GT-B110"}},
-		{input: "1101", want: []string{"1101"}},
-		{input: "2103", want: []string{"2103"}},
-		{input: "3C201", want: []string{"3C201"}},
-		{input: "GH-104", want: []string{"GH-104"}},
-		{input: "G2-B302", want: []string{"G2-B302"}},
-		{input: "GX-C1001", want: []string{"GX-C1001"}},
-		{input: "G3-101", want: []string{"G3-101"}},
-		{input: "Z101", want: []string{"Z101"}},
-		{input: "ARTS401", want: []string{"ARTS401"}},
-		{input: "教室 3A204", want: []string{"3A204"}},
-		{input: "教室 ３ａ２０４", want: []string{"3A204"}},
-		{input: "请帮我查一下 3a204 的地图", want: []string{"3A204"}},
-		{input: "3A204 在哪里？", want: []string{"3A204"}},
-		{input: "1101 在哪里？", want: []string{"1101"}},
-		{input: "where is 3A204?", want: []string{"3A204"}},
-		{input: "３ａ２０４ 在哪？", want: []string{"3A204"}},
-	} {
-		result := ParseCommand(test.input)
-		if !result.Valid() || result.Invocation.ID() != CapabilityRoomMap || strings.Join(result.Invocation.Args, " ") != strings.Join(test.want, " ") {
-			t.Errorf("ParseCommand(%q) = %#v, want room map %v", test.input, result, test.want)
-			continue
+func TestSpecRoomMapCommandAndNaturalQueryArePublic(t *testing.T) {
+	t.Run("room-map.bot-recognition", func(t *testing.T) {
+		for _, test := range []struct {
+			input string
+			want  []string
+		}{
+			{input: "5201", want: []string{"5201"}},
+			{input: "３ａ２０４？", want: []string{"3A204"}},
+			{input: "gt-b110", want: []string{"GT-B110"}},
+			{input: "1101", want: []string{"1101"}},
+			{input: "2103", want: []string{"2103"}},
+			{input: "3C201", want: []string{"3C201"}},
+			{input: "GH-104", want: []string{"GH-104"}},
+			{input: "G2-B302", want: []string{"G2-B302"}},
+			{input: "GX-C1001", want: []string{"GX-C1001"}},
+			{input: "G3-101", want: []string{"G3-101"}},
+			{input: "Z101", want: []string{"Z101"}},
+			{input: "ARTS401", want: []string{"ARTS401"}},
+			{input: "教室 3A204", want: []string{"3A204"}},
+			{input: "教室 ３ａ２０４", want: []string{"3A204"}},
+			{input: "请帮我查一下 3a204 的地图", want: []string{"3A204"}},
+			{input: "3A204 在哪里？", want: []string{"3A204"}},
+			{input: "1101 在哪里？", want: []string{"1101"}},
+			{input: "where is 3A204?", want: []string{"3A204"}},
+			{input: "３ａ２０４ 在哪？", want: []string{"3A204"}},
+		} {
+			result := ParseCommand(test.input)
+			if !result.Valid() || result.Invocation.ID() != CapabilityRoomMap || strings.Join(result.Invocation.Args, " ") != strings.Join(test.want, " ") {
+				t.Errorf("ParseCommand(%q) = %#v, want room map %v", test.input, result, test.want)
+				continue
+			}
+			if result.Invocation.Policy().DataScope != DataScopePublic {
+				t.Errorf("ParseCommand(%q) scope = %q, want public", test.input, result.Invocation.Policy().DataScope)
+			}
 		}
-		if result.Invocation.Policy().DataScope != DataScopePublic {
-			t.Errorf("ParseCommand(%q) scope = %q, want public", test.input, result.Invocation.Policy().DataScope)
-		}
-	}
+
+	})
 }
 
 func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
@@ -81,24 +85,30 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 	}
 }
 
-func TestRoomMapResponseDoesNotAttachImageForUnavailableRoom(t *testing.T) {
-	response := RoomMapResponse(life.RoomMap{Code: "GT-Z999", Status: "unavailable"})
-	if response.Text != "未找到 GT-Z999 的教室地图。" || response.Image != nil {
-		t.Fatalf("unavailable response = %#v", response)
-	}
+func TestSpecRoomMapResponseDoesNotAttachImageForUnavailableRoom(t *testing.T) {
+	t.Run("room-map.bot-unavailable", func(t *testing.T) {
+		response := RoomMapResponse(life.RoomMap{Code: "GT-Z999", Status: "unavailable"})
+		if response.Text != "未找到 GT-Z999 的教室地图。" || response.Image != nil {
+			t.Fatalf("unavailable response = %#v", response)
+		}
+
+	})
 }
 
-func TestRoomMapOverviewPreservesStatusWithoutText(t *testing.T) {
-	response := RoomMapResponse(life.RoomMap{
-		Code: "3A299", Building: "三教", Floor: "2", Status: "overview",
-		SourceImageURL: "https://static.example/floors/3-2.png",
+func TestSpecRoomMapOverviewPreservesStatusWithoutText(t *testing.T) {
+	t.Run("room-map.bot-overview", func(t *testing.T) {
+		response := RoomMapResponse(life.RoomMap{
+			Code: "3A299", Building: "三教", Floor: "2", Status: "overview",
+			SourceImageURL: "https://static.example/floors/3-2.png",
+		})
+		if response.Text != "" || response.Data.(map[string]any)["room"].(life.RoomMap).Status != "overview" {
+			t.Fatalf("overview response = %#v", response)
+		}
+		if response.Image == nil || response.Image.URL != "https://static.example/floors/3-2.png" {
+			t.Fatalf("overview image = %#v", response.Image)
+		}
+
 	})
-	if response.Text != "" || response.Data.(map[string]any)["room"].(life.RoomMap).Status != "overview" {
-		t.Fatalf("overview response = %#v", response)
-	}
-	if response.Image == nil || response.Image.URL != "https://static.example/floors/3-2.png" {
-		t.Fatalf("overview image = %#v", response.Image)
-	}
 }
 
 func TestRoomMapResponseMissingImageDoesNotFallBackToLocation(t *testing.T) {
@@ -120,11 +130,41 @@ func TestGenericCourseQueryDoesNotBecomeRoomLookup(t *testing.T) {
 	}
 }
 
-func TestBareRoomLookupDoesNotCaptureOtherMessages(t *testing.T) {
-	for _, input := range []string{"2026", "12345", "CS1001", "MATH1001", "520", "52010", "A5201", "5201A", "5 201", "G3-hello", "GX-news", "Zoom", "5201 5202", "明天在5201上课", "预约5201", "课程 5201"} {
-		result := ParseCommand(input)
-		if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
-			t.Errorf("non-room command routed as room: %q", input)
+func TestSpecBareRoomLookupDoesNotCaptureOtherMessages(t *testing.T) {
+	t.Run("room-map.bot-avoid-false-positive", func(t *testing.T) {
+		for _, input := range []string{"2026", "12345", "CS1001", "MATH1001", "520", "52010", "A5201", "5201A", "5 201", "G3-hello", "GX-news", "Zoom", "5201 5202", "明天在5201上课", "预约5201", "课程 5201"} {
+			result := ParseCommand(input)
+			if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
+				t.Errorf("non-room command routed as room: %q", input)
+			}
 		}
-	}
+
+	})
+}
+
+func TestSpecAgendaDoesNotAttachRoomMaps(t *testing.T) {
+	t.Run("room-map.bot-no-unsolicited-attachments", func(t *testing.T) {
+		withAgendaRand(t, 0.99)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/workspace/calendar/events" {
+				t.Errorf("unsolicited request: %s", r.URL.Path)
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":"s1","type":"schedule","at":"2026-09-18T09:50:00+08:00","endsAt":"2026-09-18T11:25:00+08:00","title":"课程","location":"3A101"}],"pagination":{"page":1,"pageSize":100,"total":1,"totalPages":1}}`))
+		}))
+		defer server.Close()
+		identity := testIdentity()
+		handler := testAuthedHandler(t, server, identity)
+		response, ok := handler.HandleResponse(t.Context(), Input{Text: "日程 2026-09-18", Identity: identity})
+		if !ok {
+			t.Fatal("agenda not handled")
+		}
+		if response.Image != nil && response.Image.Kind == "room-map" {
+			t.Fatal("agenda attached an unrequested room map")
+		}
+		if !strings.Contains(textutil.PlainMonospace(response.Text), "3A101") {
+			t.Fatalf("agenda omitted room text: %+v", response)
+		}
+	})
 }
