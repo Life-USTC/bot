@@ -1489,17 +1489,17 @@ func TestHandleTodoDoneByIndex(t *testing.T) {
 	}
 }
 
-func TestHandleTodoDoneUsesNumericID(t *testing.T) {
+func TestHandleTodoDoneUsesNumericLookingStringID(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	patched := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/todos" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"todos":[{"id":123,"title":"写报告"}]}`))
+			_, _ = w.Write([]byte(`{"todos":[{"id":"123","title":"写报告"}]}`))
 		case r.URL.Path == "/api/workspace/todos/123" && r.Method == http.MethodPatch:
 			patched = true
-			_, _ = w.Write([]byte(`{"id":123,"completed":true}`))
+			_, _ = w.Write([]byte(`{"id":"123","completed":true}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -2163,7 +2163,7 @@ func TestHandleHomeworkListAndDone(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completion":null}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completionRequired":true,"completion":null},{"id":"hw-2","title":"Old PS","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"}},"completionRequired":true,"completion":null}]}`))
 		case r.URL.Path == "/api/workspace/homeworks/hw-1/completion" && r.Method == http.MethodPut:
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -2204,8 +2204,8 @@ func TestHomeworkDisplayIndexesMatchActionsForUndatedItems(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
 			_ = json.NewEncoder(w).Encode(map[string]any{"pagination": map[string]any{"page": 1, "totalPages": 1}, "data": []any{
-				map[string]any{"id": "future", "title": "未来作业", "submissionDueAt": future, "completion": nil},
-				map[string]any{"id": "undated", "title": "未定日期作业", "completion": nil},
+				map[string]any{"id": "future", "title": "未来作业", "submissionDueAt": future, "completionRequired": true, "completion": nil},
+				map[string]any{"id": "undated", "title": "未定日期作业", "completionRequired": true, "completion": nil},
 			}})
 		case strings.HasPrefix(r.URL.Path, "/api/workspace/homeworks/") && r.Method == http.MethodPut:
 			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspace/homeworks/"), "/completion")
@@ -2240,8 +2240,8 @@ func TestHandleHomeworkListFiltersBySemesterID(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[
-				{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completion":null},
-				{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completion":null}
+				{"id":"hw-spring","title":"Spring HW","submissionDueAt":"2026-05-01T12:00:00+08:00","section":{"course":{"namePrimary":"组合数学"},"semester":{"id":2,"jwId":202501,"namePrimary":"2026春季"}},"completionRequired":true,"completion":null},
+				{"id":"hw-summer","title":"Summer HW","submissionDueAt":"2026-07-10T12:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"},"semester":{"id":3,"jwId":202502,"namePrimary":"2026夏季"}},"completionRequired":true,"completion":null}
 			]}`))
 		case strings.HasPrefix(r.URL.Path, "/api/workspace/homeworks/") && r.Method == http.MethodPut:
 			completedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspace/homeworks/"), "/completion")
@@ -2293,7 +2293,7 @@ func TestHandleHomeworkDoneBatchByCommaSeparatedIndexes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/workspace/homeworks" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completion":null}]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00","completionRequired":true,"completion":null},{"id":"hw-2","title":"Problem Set 2","submissionDueAt":"2026-06-04T12:00:00+08:00","completionRequired":true,"completion":null},{"id":"hw-3","title":"Problem Set 3","submissionDueAt":"2026-06-05T12:00:00+08:00","completionRequired":true,"completion":null}]}`))
 		case r.URL.Path == "/api/workspace/homeworks/completions" && r.Method == http.MethodPut:
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatal(err)
@@ -2420,10 +2420,10 @@ func TestHandleHomeworkListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 	due := time.Date(2026, 7, 1, 8, 0, 0, 0, lifedata.ChinaLocation())
 	for i := range homeworks {
 		homeworks[i] = map[string]any{
-			"id":              fmt.Sprintf("homework-%02d", i+1),
-			"title":           fmt.Sprintf("Homework %02d", i+1),
-			"submissionDueAt": due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
-			"completion":      nil,
+			"id":                 fmt.Sprintf("homework-%02d", i+1),
+			"title":              fmt.Sprintf("Homework %02d", i+1),
+			"submissionDueAt":    due.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+			"completionRequired": true, "completion": nil,
 		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2493,20 +2493,20 @@ func TestCompletedTeachingAssistantHomeworkIsNotPending(t *testing.T) {
 	}
 }
 
-func TestHandleExamListFromSubscriptionPayload(t *testing.T) {
+func TestHandleExamListFromWorkspacePayload(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access" {
 			t.Fatalf("authorization = %q", got)
 		}
-		if r.URL.Path != "/api/workspace/subscriptions/current" {
+		if r.URL.Path != "/api/workspace/exams" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"subscription":{"sections":[
-			{"code":"MATH1001.01","course":{"namePrimary":"数学分析"},"exams":[{"id":2,"examDate":"2026-06-20T00:00:00+08:00","startTime":1430,"endTime":1630,"examMode":"闭卷","examRooms":[{"room":"3A101"}]}]},
-			{"code":"CS1001.01","course":{"namePrimary":"计算机导论"},"exams":[{"id":1,"examDate":"2026-06-10T00:00:00+08:00","startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}]}
-		]}}`))
+		_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[
+{"id":2,"section":{"code":"MATH1001.01","course":{"namePrimary":"数学分析"}},"examDate":"2026-06-20T00:00:00+08:00","startTime":1430,"endTime":1630,"examMode":"闭卷","examRooms":[{"room":"3A101"}]},
+{"id":1,"section":{"code":"CS1001.01","course":{"namePrimary":"计算机导论"}},"examDate":"2026-06-10T00:00:00+08:00","startTime":900,"endTime":1100,"examRooms":[{"room":"GT-B112"}]}
+]}`))
 	}))
 	defer server.Close()
 
@@ -2541,18 +2541,19 @@ func TestHandleExamListPaginatesThirtyItemsWithGlobalIndexes(t *testing.T) {
 			"startTime": 900,
 			"endTime":   1100,
 			"examMode":  fmt.Sprintf("Exam %02d", i+1),
+			"section":   map[string]any{"code": "TEST1001.01", "course": map[string]any{"namePrimary": "测试课程"}},
 		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"subscription": map[string]any{
-				"sections": []any{map[string]any{
-					"code":   "TEST1001.01",
-					"course": map[string]any{"namePrimary": "测试课程"},
-					"exams":  exams,
-				}},
-			},
-		})
+		if r.URL.Path != "/api/workspace/exams" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		page := 1
+		if r.URL.Query().Get("page") == "2" {
+			page = 2
+		}
+		start := (page - 1) * 50
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": exams[start:min(start+50, len(exams))], "pagination": map[string]any{"page": page, "totalPages": 2}})
 	}))
 	defer server.Close()
 
@@ -2578,7 +2579,7 @@ func TestHandleExamListEmpty(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"subscription":{"sections":[{"code":"MATH1001.01","exams":[]}]}}`))
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"totalPages":1}}`))
 	}))
 	defer server.Close()
 
@@ -2984,7 +2985,7 @@ func TestCurriculumRendersMatchedSemesterWithTeachingWeeks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/catalog/semesters":
-			if got := r.URL.Query().Get("limit"); got != "100" {
+			if got := r.URL.Query().Get("pageSize"); got != "100" {
 				t.Fatalf("semester limit = %q", got)
 			}
 			_, _ = w.Write([]byte(`{"data":[
@@ -4038,7 +4039,7 @@ func TestHandleCourseSearchWithFilters(t *testing.T) {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("search") != "数学分析" || q.Get("educationLevelId") != "1" || q.Get("categoryId") != "2" || q.Get("classTypeId") != "3" || q.Get("limit") != "10" {
+		if q.Get("search") != "数学分析" || q.Get("educationLevelId") != "1" || q.Get("categoryId") != "2" || q.Get("classTypeId") != "3" || q.Get("pageSize") != "10" {
 			t.Fatalf("query = %s", q.Encode())
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1006","namePrimary":"数学分析"}]}`))
@@ -4058,7 +4059,7 @@ func TestHandleSectionSearchWithFilters(t *testing.T) {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("search") != "高等数学" || q.Get("courseId") != "11" || q.Get("teacherCode") != "T001" || q.Get("limit") != "20" {
+		if q.Get("search") != "高等数学" || q.Get("courseId") != "11" || q.Get("teacherCode") != "T001" || q.Get("pageSize") != "20" {
 			t.Fatalf("query = %s", q.Encode())
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001.01","course":{"namePrimary":"高等数学"}}]}`))
@@ -4078,7 +4079,7 @@ func TestHandleTeacherSearchWithFilters(t *testing.T) {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
-		if q.Get("search") != "张" || q.Get("departmentId") != "5" || q.Get("limit") != "8" {
+		if q.Get("search") != "张" || q.Get("departmentId") != "5" || q.Get("pageSize") != "8" {
 			t.Fatalf("query = %s", q.Encode())
 		}
 		_, _ = w.Write([]byte(`{"data":[{"id":12,"code":"T001","namePrimary":"张三","department":{"namePrimary":"数学科学学院"},"teacherTitle":{"namePrimary":"教授"}}]}`))
@@ -4145,10 +4146,10 @@ func TestHandleListSemesters(t *testing.T) {
 		if r.URL.Path != "/api/catalog/semesters" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
-		if r.URL.Query().Get("limit") != "20" {
-			t.Fatalf("limit = %q", r.URL.Query().Get("limit"))
+		if r.URL.Query().Get("pageSize") != "20" {
+			t.Fatalf("limit = %q", r.URL.Query().Get("pageSize"))
 		}
-		_, _ = w.Write([]byte(`{"data":[{"namePrimary":"2026春季","startDate":"2026-02-17T00:00:00+08:00","endDate":"2026-07-06T00:00:00+08:00"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":1,"nameCn":"2026春季","startDate":"2026-02-17T00:00:00+08:00","endDate":"2026-07-06T00:00:00+08:00"}]}`))
 	}))
 	defer server.Close()
 
@@ -4203,6 +4204,10 @@ func TestHandleSectionSchedules(t *testing.T) {
 	ctx := context.Background()
 	ident := testIdentity()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/catalog/sections/789" {
+			_, _ = w.Write([]byte(`{"jwId":789,"course":{"namePrimary":"数据库系统"}}`))
+			return
+		}
 		if r.URL.Path != "/api/catalog/sections/789/schedules" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
@@ -4210,7 +4215,7 @@ func TestHandleSectionSchedules(t *testing.T) {
 		if q.Get("dateFrom") != "2026-05-31T16:00:00Z" || q.Get("dateTo") != "2026-06-07T15:59:59Z" {
 			t.Fatalf("query = %s", q.Encode())
 		}
-		_, _ = w.Write([]byte(`[{"startTime":"09:50","endTime":"11:25","section":{"course":{"namePrimary":"数据库系统"}},"room":{"namePrimary":"西区 3A204"}}]`))
+		_, _ = w.Write([]byte(`[{"startTime":"09:50","endTime":"11:25","room":{"namePrimary":"西区 3A204"}}]`))
 	}))
 	defer server.Close()
 
@@ -4250,7 +4255,7 @@ func TestHandleSectionHomeworks(t *testing.T) {
 		if q.Get("sectionJwId") != "654" {
 			t.Fatalf("query = %s", q.Encode())
 		}
-		_, _ = w.Write([]byte(`{"homeworks":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-03T12:00:00+08:00"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"hw-1","title":"Problem Set 1","completionRequired":true,"submissionDueAt":"2026-06-03T12:00:00+08:00"}],"pagination":{"page":1,"totalPages":1}}`))
 	}))
 	defer server.Close()
 

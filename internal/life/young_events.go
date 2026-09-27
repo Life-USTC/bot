@@ -75,10 +75,14 @@ type YoungEventPagination struct {
 }
 
 type YoungEventPage struct {
-	Data             []YoungEvent         `json:"data"`
-	Pagination       YoungEventPagination `json:"pagination"`
-	UnknownDateCount int                  `json:"unknownDateCount,omitempty"`
-	Source           map[string]any       `json:"source,omitempty"`
+	Data       []YoungEvent         `json:"data"`
+	Pagination YoungEventPagination `json:"pagination"`
+	Meta       YoungEventMetadata   `json:"meta"`
+}
+
+type YoungEventMetadata struct {
+	UnknownDateCount int            `json:"unknownDateCount"`
+	Source           map[string]any `json:"source"`
 }
 
 // ListYoungEvents returns public second-classroom events. Life's API uses
@@ -100,7 +104,7 @@ func (c *Client) ListYoungEvents(ctx context.Context, page, pageSize int, search
 
 	var out YoungEventPage
 	resp, err := c.Typed(ctx, "").GetApiCatalogYoungEvents(ctx, &params)
-	if err := typedJSON(resp, err, "young events", &out); err != nil {
+	if err := typedJSON[openapi.PaginatedYoungEventResponseSchema](resp, err, "young events", &out); err != nil {
 		return YoungEventPage{}, err
 	}
 	return out, nil
@@ -115,7 +119,7 @@ func (c *Client) GetYoungEvent(ctx context.Context, youngID string) (YoungEvent,
 
 	var out YoungEvent
 	resp, err := c.Typed(ctx, "").GetApiCatalogYoungEventsYoungId(ctx, youngID)
-	if err := typedJSON(resp, err, "young event", &out); err != nil {
+	if err := typedJSON[openapi.YoungEventDetailSchema](resp, err, "young event", &out); err != nil {
 		return YoungEvent{}, err
 	}
 	return out, nil

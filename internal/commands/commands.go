@@ -2381,11 +2381,7 @@ func itemsNeedSubscriptionKinds(items []map[string]any) bool {
 			continue
 		}
 		section, _ := item["section"].(map[string]any)
-		if section != nil && (lifedata.FirstString(section, "id", "jwId", "code") != "" ||
-			lifedata.FirstString(item, "sectionId", "sectionJwId") != "") {
-			return true
-		}
-		if lifedata.FirstString(item, "sectionId", "sectionJwId") != "" {
+		if lifedata.FirstInt(section, "id") > 0 || lifedata.FirstInt(section, "jwId") > 0 || strings.TrimSpace(lifedata.FirstString(section, "code")) != "" || lifedata.FirstInt(item, "sectionId") > 0 || lifedata.FirstInt(item, "sectionJwId") > 0 {
 			return true
 		}
 	}
@@ -2801,7 +2797,7 @@ func (h Handler) bulkSubscribeSections(ctx context.Context, ident store.Identity
 	h.markData(compactSubscriptionMutationData("subscribe", codes, semesterID, matches))
 	sections := matchSections(matches)
 	added := lifedata.FirstInt(matches, "addedCount")
-	already := lifedata.FirstInt(matches, "alreadySubscribedCount")
+	already := lifedata.FirstInt(matches, "unchangedCount")
 	reply := formatBulkSubscriptionResult(matches, sections, nil, added, already)
 	if len(sections) == 0 {
 		h.markOutcome(CapabilityOutcomeNotFound)
@@ -4107,11 +4103,18 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	if !ok {
 		return h.loginRequired()
 	}
+	section, err := h.Life.GetSectionByJwID(ctx, jwId)
+	if err != nil {
+		return h.commandError("教学班查不到：", err)
+	}
 	schedules, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
 		return h.Life.ListSchedulesBySection(ctx, token, jwId, dateFrom, dateTo)
 	})
 	if err != nil {
 		return h.commandError("课表查不到：", err)
+	}
+	for _, schedule := range schedules {
+		schedule["section"] = section
 	}
 	h.markData(map[string]any{
 		"operation": "section_schedules",
@@ -4229,7 +4232,7 @@ func (h Handler) currentSemester(ctx context.Context) string {
 	}
 	h.markData(map[string]any{"operation": "current", "semester": semester})
 	name := lifedata.FirstString(semester, "name", "nameCn", "namePrimary")
-	if name == "" {
+	if name == "" && lifedata.FirstInt(semester, "id") > 0 {
 		name = lifedata.FirstString(semester, "id")
 	}
 	if name == "" {
@@ -4310,14 +4313,18 @@ func (h Handler) exams(ctx context.Context, ident store.Identity, args []string)
 	if !ok {
 		return h.loginRequired()
 	}
-	data, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) (map[string]any, error) {
-		return h.Life.CurrentSubscription(ctx, token)
+	rows, err := auth.WithRefresh(ctx, h.Auth, ident, token, func(token string) ([]map[string]any, error) {
+		return h.Life.SubscribedExams(ctx, token)
 	})
 	if err != nil {
 		return h.commandError("考试查不到：", err)
 	}
-	h.markData(map[string]any{"operation": "exams", "subscription": data})
-	exams := subscriptionExams(data)
+	h.markData(map[string]any{"operation": "exams", "exams": rows})
+	exams := make([]subscriptionExam, 0, len(rows))
+	for _, row := range rows {
+		section, _ := row["section"].(map[string]any)
+		exams = append(exams, subscriptionExam{exam: row, section: section})
+	}
 	if len(exams) == 0 {
 		return "没有订阅课程考试。"
 	}
@@ -4366,17 +4373,6 @@ func formatTeacher(teacher map[string]any) string {
 type subscriptionExam struct {
 	exam    map[string]any
 	section map[string]any
-}
-
-func subscriptionExams(data map[string]any) []subscriptionExam {
-	sections := lifedata.SubscriptionSections(data)
-	out := make([]subscriptionExam, 0, len(sections))
-	for _, section := range sections {
-		for _, exam := range lifedata.MapSlice(section["exams"]) {
-			out = append(out, subscriptionExam{exam: exam, section: section})
-		}
-	}
-	return out
 }
 
 func sortSubscriptionExams(exams []subscriptionExam) {

@@ -33,7 +33,7 @@ func TestSearchCourses(t *testing.T) {
 		if got := r.URL.Query().Get("search"); got != "math" {
 			t.Fatalf("search = %q", got)
 		}
-		if got := r.URL.Query().Get("limit"); got != "2" {
+		if got := r.URL.Query().Get("pageSize"); got != "2" {
 			t.Fatalf("limit = %q", got)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"MATH1001","namePrimary":"Calculus"}]}`))
@@ -58,7 +58,7 @@ func TestSearchTeachers(t *testing.T) {
 		if got := r.URL.Query().Get("search"); got != "张" {
 			t.Fatalf("search = %q", got)
 		}
-		if got := r.URL.Query().Get("limit"); got != "3" {
+		if got := r.URL.Query().Get("pageSize"); got != "3" {
 			t.Fatalf("limit = %q", got)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"code":"T001","namePrimary":"张三"}]}`))
@@ -645,7 +645,7 @@ func TestBulkSubscribeSectionsSendsCodes(t *testing.T) {
 	if gotBody["action"] != "add" {
 		t.Fatalf("action = %#v", gotBody["action"])
 	}
-	if out["addedCount"] != float64(0) || out["alreadySubscribedCount"] != float64(0) {
+	if out["addedCount"] != float64(0) || out["unchangedCount"] != float64(0) {
 		t.Fatalf("out = %#v", out)
 	}
 }
@@ -811,7 +811,7 @@ func TestGetReturnsHTTPErrorForErrorBodyReadFailure(t *testing.T) {
 	}
 }
 
-func TestGetTreatsWhitespaceBodyAsEmpty(t *testing.T) {
+func TestGetRejectsWhitespaceInsteadOfTypedJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/catalog/metadata" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -821,8 +821,8 @@ func TestGetTreatsWhitespaceBodyAsEmpty(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, server.Client())
-	if err := client.Health(context.Background()); err != nil {
-		t.Fatal(err)
+	if err := client.Health(context.Background()); err == nil {
+		t.Fatal("whitespace response passed as typed metadata")
 	}
 }
 
@@ -857,29 +857,19 @@ func TestTrimBodyTruncatesByRune(t *testing.T) {
 	}
 }
 
-func TestMeFallsBackToOAuthUserinfo(t *testing.T) {
+func TestMePreservesUnauthorizedWithoutProtocolFallback(t *testing.T) {
+	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer token" {
-			t.Fatalf("authorization = %q", got)
+		requests++
+		if r.URL.Path != "/api/account/profile" || r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
 		}
-		switch r.URL.Path {
-		case "/api/account/profile":
-			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-		case "/api/auth/oauth2/userinfo":
-			_, _ = w.Write([]byte(`{"sub":"user-1","preferred_username":"tiankai"}`))
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
+		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 	}))
 	defer server.Close()
-
-	client := NewClient(server.URL, server.Client())
-	me, err := client.Me(context.Background(), "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if me["preferred_username"] != "tiankai" {
-		t.Fatalf("me = %#v", me)
+	me, err := NewClient(server.URL, server.Client()).Me(context.Background(), "token")
+	if !IsUnauthorized(err) || me != nil || requests != 1 {
+		t.Fatalf("unauthorized response changed: %v, %v, %d requests", me, err, requests)
 	}
 }
 

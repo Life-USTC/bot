@@ -56,10 +56,9 @@ func TestListAllYoungEventsWithQueryPreservesFreshnessMetadata(t *testing.T) {
 			unknown = 1
 		}
 		_ = json.NewEncoder(w).Encode(YoungEventPage{
-			Data:             []YoungEvent{{YoungID: fmt.Sprintf("event-%d", page)}},
-			Pagination:       YoungEventPagination{Page: page, PageSize: 1, Total: 2, TotalPages: 2},
-			UnknownDateCount: unknown,
-			Source:           map[string]any{"status": "fresh", "lastSyncedAt": "2026-09-15T10:00:00+08:00"},
+			Data:       []YoungEvent{{YoungID: fmt.Sprintf("event-%d", page)}},
+			Pagination: YoungEventPagination{Page: page, PageSize: 1, Total: 2, TotalPages: 2},
+			Meta:       YoungEventMetadata{UnknownDateCount: unknown, Source: map[string]any{"status": "fresh", "lastSyncedAt": "2026-09-15T10:00:00+08:00"}},
 		})
 	}))
 	defer server.Close()
@@ -187,6 +186,9 @@ func TestYoungWorkspaceListsFollowAllPages(t *testing.T) {
 			items := make([]YoungNotification, 100)
 			if page == 2 {
 				items = []YoungNotification{{ID: "notification-100"}}
+			}
+			for i := range items {
+				items[i].CreatedAt = "2026-09-01T00:00:00Z"
 			}
 			data = YoungNotificationPage{Data: items, Pagination: YoungEventPagination{Page: page, PageSize: 100, Total: 101, TotalPages: 2}}
 		case "/api/community/comments":

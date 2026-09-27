@@ -2,14 +2,13 @@ package life
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/openapi"
 )
 
 // YoungOrganizer is the stable public organizer directory record. Event
@@ -56,37 +55,30 @@ func (c *Client) ListYoungEventsWithQuery(ctx context.Context, token string, que
 	if pageSize < 1 {
 		pageSize = 100
 	}
-	values := url.Values{}
-	values.Set("page", strconv.Itoa(page))
-	values.Set("pageSize", strconv.Itoa(pageSize))
-	if value := strings.TrimSpace(query.Search); value != "" {
-		values.Set("search", value)
-	}
-	if value := strings.TrimSpace(query.Category); value != "" {
-		values.Set("category", value)
+	params := openapi.GetApiCatalogYoungEventsParams{
+		Page: int64Ptr(int64(page)), PageSize: int64Ptr(int64(pageSize)),
+		Search: stringPtr(strings.TrimSpace(query.Search)), Category: stringPtr(strings.TrimSpace(query.Category)),
+		OrganizerId: stringPtr(strings.TrimSpace(query.OrganizerID)), DateFrom: stringPtr(strings.TrimSpace(query.DateFrom)), DateTo: stringPtr(strings.TrimSpace(query.DateTo)),
 	}
 	if query.Active != nil {
-		values.Set("active", strconv.FormatBool(*query.Active))
+		value := openapi.GetApiCatalogYoungEventsParamsActive(strconv.FormatBool(*query.Active))
+		params.Active = &value
 	}
 	if query.DateUnknown != nil {
-		values.Set("dateUnknown", strconv.FormatBool(*query.DateUnknown))
-	}
-	if value := strings.TrimSpace(query.OrganizerID); value != "" {
-		values.Set("organizerId", value)
-	}
-	if value := strings.TrimSpace(query.DateFrom); value != "" {
-		values.Set("dateFrom", value)
-	}
-	if value := strings.TrimSpace(query.DateTo); value != "" {
-		values.Set("dateTo", value)
+		value := openapi.GetApiCatalogYoungEventsParamsDateUnknown(strconv.FormatBool(*query.DateUnknown))
+		params.DateUnknown = &value
 	}
 	if value := strings.TrimSpace(query.TimeBasis); value != "" {
-		values.Set("timeBasis", value)
+		basis := openapi.GetApiCatalogYoungEventsParamsTimeBasis(value)
+		params.TimeBasis = &basis
 	}
 	var out YoungEventPage
-	if err := c.getAuth(ctx, "/api/catalog/young-events", values, token, &out); err != nil {
+	resp, err := c.Typed(ctx, token).GetApiCatalogYoungEvents(ctx, &params)
+	err = typedJSON[openapi.PaginatedYoungEventResponseSchema](resp, err, "GetApiCatalogYoungEvents", &out)
+	if err != nil {
 		return YoungEventPage{}, err
 	}
+
 	return out, nil
 }
 
@@ -123,11 +115,11 @@ func (c *Client) ListAllYoungEventsWithQueryMetadata(ctx context.Context, token 
 			return YoungEventCollection{}, err
 		}
 		result.Data = append(result.Data, page.Data...)
-		if page.UnknownDateCount > result.UnknownDateCount {
-			result.UnknownDateCount = page.UnknownDateCount
+		if page.Meta.UnknownDateCount > result.UnknownDateCount {
+			result.UnknownDateCount = page.Meta.UnknownDateCount
 		}
-		if result.Source == nil && page.Source != nil {
-			result.Source = page.Source
+		if result.Source == nil && page.Meta.Source != nil {
+			result.Source = page.Meta.Source
 		}
 		if page.Pagination.Total > result.Pagination.Total {
 			result.Pagination.Total = page.Pagination.Total
@@ -171,17 +163,11 @@ func youngPageHasNext(page int, pagination YoungEventPagination, dataLen, pageSi
 }
 
 func (c *Client) ListYoungOrganizers(ctx context.Context, page, pageSize int, search string) (YoungOrganizerPage, error) {
-	page = normalizedPage(page)
-	pageSize = normalizedPageSize(pageSize)
-	values := url.Values{"page": {strconv.Itoa(page)}, "pageSize": {strconv.Itoa(pageSize)}}
-	if search = strings.TrimSpace(search); search != "" {
-		values.Set("search", search)
-	}
+
 	var out YoungOrganizerPage
-	if err := c.getAuth(ctx, "/api/catalog/young-organizers", values, "", &out); err != nil {
-		return YoungOrganizerPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, "").GetApiCatalogYoungOrganizers(ctx, &openapi.GetApiCatalogYoungOrganizersParams{Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize))), Search: stringPtr(strings.TrimSpace(search))})
+	err = typedJSON[openapi.PaginatedYoungOrganizerResponseSchema](resp, err, "GetApiCatalogYoungOrganizers", &out)
+	return out, err
 }
 
 func (c *Client) GetYoungOrganizer(ctx context.Context, organizerID string) (YoungOrganizer, error) {
@@ -190,10 +176,9 @@ func (c *Client) GetYoungOrganizer(ctx context.Context, organizerID string) (You
 		return YoungOrganizer{}, errors.New("young organizer id is required")
 	}
 	var out YoungOrganizer
-	if err := c.getAuth(ctx, "/api/catalog/young-organizers/"+url.PathEscape(organizerID), nil, "", &out); err != nil {
-		return YoungOrganizer{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, "").GetApiCatalogYoungOrganizersOrganizerId(ctx, organizerID)
+	err = typedJSON[openapi.YoungOrganizerSummarySchema](resp, err, "GetApiCatalogYoungOrganizersOrganizerId", &out)
+	return out, err
 }
 
 // YoungOrganizerURL builds the public Life web link for an organizer.
@@ -221,11 +206,11 @@ type YoungEventSubscriptionPage struct {
 }
 
 func (c *Client) ListYoungEventSubscriptions(ctx context.Context, token string, page, pageSize int) (YoungEventSubscriptionPage, error) {
+
 	var out YoungEventSubscriptionPage
-	if err := c.getWorkspacePage(ctx, "/api/workspace/young-event-subscriptions", token, page, pageSize, nil, &out); err != nil {
-		return YoungEventSubscriptionPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceYoungEventSubscriptions(ctx, &openapi.GetApiWorkspaceYoungEventSubscriptionsParams{Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize)))})
+	err = typedJSON[openapi.YoungEventSubscriptionListSchema](resp, err, "GetApiWorkspaceYoungEventSubscriptions", &out)
+	return out, err
 }
 
 func (c *Client) ListAllYoungEventSubscriptions(ctx context.Context, token string) ([]YoungEventSubscription, error) {
@@ -245,7 +230,14 @@ func (c *Client) ListAllYoungEventSubscriptions(ctx context.Context, token strin
 }
 
 func (c *Client) GetYoungEventSubscription(ctx context.Context, token, youngID string) (YoungEventSubscription, error) {
-	return c.youngEventSubscriptionMutation(ctx, token, http.MethodGet, youngID, nil)
+	youngID = strings.TrimSpace(youngID)
+	if youngID == "" {
+		return YoungEventSubscription{}, errors.New("young event id is required")
+	}
+	var out YoungEventSubscription
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceYoungEventSubscriptionsYoungId(ctx, youngID)
+	err = typedJSON[openapi.YoungEventSubscriptionStateSchema](resp, err, "GetApiWorkspaceYoungEventSubscriptionsYoungId", &out)
+	return out, err
 }
 
 // SetYoungEventSubscriptionWithOptions leaves reminder fields out when their
@@ -253,33 +245,14 @@ func (c *Client) GetYoungEventSubscription(ctx context.Context, token, youngID s
 // newly enabled subscription while still allowing each reminder to be
 // changed independently.
 func (c *Client) SetYoungEventSubscriptionWithOptions(ctx context.Context, token, youngID string, subscribed bool, remindSignup, remindDeadline, remindStart *bool) (YoungEventSubscription, error) {
-	body := map[string]any{"subscribed": subscribed}
-	if remindSignup != nil {
-		body["remindSignup"] = *remindSignup
-	}
-	if remindDeadline != nil {
-		body["remindDeadline"] = *remindDeadline
-	}
-	if remindStart != nil {
-		body["remindStart"] = *remindStart
-	}
-	return c.youngEventSubscriptionMutation(ctx, token, http.MethodPut, youngID, body)
-}
-
-func (c *Client) youngEventSubscriptionMutation(ctx context.Context, token, method, youngID string, body any) (YoungEventSubscription, error) {
 	youngID = strings.TrimSpace(youngID)
 	if youngID == "" {
 		return YoungEventSubscription{}, errors.New("young event id is required")
 	}
 	var out YoungEventSubscription
-	encoded, err := marshalJSON(body)
-	if err != nil {
-		return YoungEventSubscription{}, err
-	}
-	if err := c.do(ctx, method, "/api/workspace/young-event-subscriptions/"+url.PathEscape(youngID), nil, token, encoded, &out); err != nil {
-		return YoungEventSubscription{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).PutApiWorkspaceYoungEventSubscriptionsYoungId(ctx, youngID, openapi.PutApiWorkspaceYoungEventSubscriptionsYoungIdJSONRequestBody{Subscribed: subscribed, RemindSignup: remindSignup, RemindDeadline: remindDeadline, RemindStart: remindStart})
+	err = typedJSON[openapi.YoungEventSubscriptionStateSchema](resp, err, "PutApiWorkspaceYoungEventSubscriptionsYoungId", &out)
+	return out, err
 }
 
 type YoungOrganizerSubscription struct {
@@ -295,11 +268,11 @@ type YoungOrganizerSubscriptionPage struct {
 }
 
 func (c *Client) ListYoungOrganizerSubscriptions(ctx context.Context, token string, page, pageSize int) (YoungOrganizerSubscriptionPage, error) {
+
 	var out YoungOrganizerSubscriptionPage
-	if err := c.getWorkspacePage(ctx, "/api/workspace/young-organizer-subscriptions", token, page, pageSize, nil, &out); err != nil {
-		return YoungOrganizerSubscriptionPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceYoungOrganizerSubscriptions(ctx, &openapi.GetApiWorkspaceYoungOrganizerSubscriptionsParams{Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize)))})
+	err = typedJSON[openapi.YoungOrganizerSubscriptionListSchema](resp, err, "GetApiWorkspaceYoungOrganizerSubscriptions", &out)
+	return out, err
 }
 
 func (c *Client) ListAllYoungOrganizerSubscriptions(ctx context.Context, token string) ([]YoungOrganizerSubscription, error) {
@@ -319,27 +292,25 @@ func (c *Client) ListAllYoungOrganizerSubscriptions(ctx context.Context, token s
 }
 
 func (c *Client) GetYoungOrganizerSubscription(ctx context.Context, token, organizerID string) (YoungOrganizerSubscription, error) {
-	return c.youngOrganizerSubscriptionMutation(ctx, token, http.MethodGet, organizerID, nil)
-}
-
-func (c *Client) SetYoungOrganizerSubscription(ctx context.Context, token, organizerID string, subscribed bool) (YoungOrganizerSubscription, error) {
-	return c.youngOrganizerSubscriptionMutation(ctx, token, http.MethodPut, organizerID, map[string]any{"subscribed": subscribed})
-}
-
-func (c *Client) youngOrganizerSubscriptionMutation(ctx context.Context, token, method, organizerID string, body any) (YoungOrganizerSubscription, error) {
 	organizerID = strings.TrimSpace(organizerID)
 	if organizerID == "" {
 		return YoungOrganizerSubscription{}, errors.New("young organizer id is required")
 	}
 	var out YoungOrganizerSubscription
-	encoded, err := marshalJSON(body)
-	if err != nil {
-		return YoungOrganizerSubscription{}, err
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx, organizerID)
+	err = typedJSON[openapi.YoungOrganizerSubscriptionStateSchema](resp, err, "GetApiWorkspaceYoungOrganizerSubscriptionsOrganizerId", &out)
+	return out, err
+}
+
+func (c *Client) SetYoungOrganizerSubscription(ctx context.Context, token, organizerID string, subscribed bool) (YoungOrganizerSubscription, error) {
+	organizerID = strings.TrimSpace(organizerID)
+	if organizerID == "" {
+		return YoungOrganizerSubscription{}, errors.New("young organizer id is required")
 	}
-	if err := c.do(ctx, method, "/api/workspace/young-organizer-subscriptions/"+url.PathEscape(organizerID), nil, token, encoded, &out); err != nil {
-		return YoungOrganizerSubscription{}, err
-	}
-	return out, nil
+	var out YoungOrganizerSubscription
+	resp, err := c.Typed(ctx, token).PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx, organizerID, openapi.PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody{Subscribed: subscribed})
+	err = typedJSON[openapi.YoungOrganizerSubscriptionStateSchema](resp, err, "PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId", &out)
+	return out, err
 }
 
 type YoungNotification struct {
@@ -360,15 +331,15 @@ type YoungNotificationPage struct {
 }
 
 func (c *Client) ListYoungNotifications(ctx context.Context, token string, page, pageSize int, unread *bool) (YoungNotificationPage, error) {
-	values := url.Values{}
+	params := openapi.GetApiWorkspaceYoungNotificationsParams{Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize)))}
 	if unread != nil {
-		values.Set("unread", strconv.FormatBool(*unread))
+		value := openapi.GetApiWorkspaceYoungNotificationsParamsUnread(strconv.FormatBool(*unread))
+		params.Unread = &value
 	}
 	var out YoungNotificationPage
-	if err := c.getWorkspacePage(ctx, "/api/workspace/young-notifications", token, page, pageSize, values, &out); err != nil {
-		return YoungNotificationPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceYoungNotifications(ctx, &params)
+	err = typedJSON[openapi.YoungNotificationListSchema](resp, err, "GetApiWorkspaceYoungNotifications", &out)
+	return out, err
 }
 
 func (c *Client) ListAllYoungNotifications(ctx context.Context, token string, unread *bool) ([]YoungNotification, error) {
@@ -393,7 +364,7 @@ func (c *Client) MarkYoungNotificationRead(ctx context.Context, token, id string
 	if id == "" {
 		return errors.New("young notification id is required")
 	}
-	return c.do(ctx, http.MethodPost, "/api/workspace/young-notifications/"+url.PathEscape(id)+"/read", nil, token, nil, nil)
+	return typedResponse[openapi.YoungNotificationReadSchema](c.Typed(ctx, token).PostApiWorkspaceYoungNotificationsIdRead(ctx, id))
 }
 
 type PersonalCalendarEvent struct {
@@ -413,18 +384,11 @@ type PersonalCalendarEventPage struct {
 }
 
 func (c *Client) ListPersonalCalendarEvents(ctx context.Context, token, dateFrom, dateTo string, page, pageSize int) (PersonalCalendarEventPage, error) {
-	values := url.Values{}
-	if dateFrom = strings.TrimSpace(dateFrom); dateFrom != "" {
-		values.Set("dateFrom", dateFrom)
-	}
-	if dateTo = strings.TrimSpace(dateTo); dateTo != "" {
-		values.Set("dateTo", dateTo)
-	}
+
 	var out PersonalCalendarEventPage
-	if err := c.getWorkspacePage(ctx, "/api/workspace/calendar/events", token, page, pageSize, values, &out); err != nil {
-		return PersonalCalendarEventPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).GetApiWorkspaceCalendarEvents(ctx, &openapi.GetApiWorkspaceCalendarEventsParams{Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize))), DateFrom: stringPtr(strings.TrimSpace(dateFrom)), DateTo: stringPtr(strings.TrimSpace(dateTo))})
+	err = typedJSON[openapi.PersonalCalendarPageSchema](resp, err, "GetApiWorkspaceCalendarEvents", &out)
+	return out, err
 }
 
 func (c *Client) ListAllPersonalCalendarEvents(ctx context.Context, token, dateFrom, dateTo string) ([]PersonalCalendarEvent, error) {
@@ -455,12 +419,10 @@ func (c *Client) ListYoungComments(ctx context.Context, token, youngID string, p
 	if youngID == "" {
 		return YoungCommentPage{}, errors.New("young event id is required")
 	}
-	values := url.Values{"targetType": {"young-event"}, "youngId": {youngID}}
 	var out YoungCommentPage
-	if err := c.getWorkspacePage(ctx, "/api/community/comments", token, page, pageSize, values, &out); err != nil {
-		return YoungCommentPage{}, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).ListComments(ctx, &openapi.ListCommentsParams{TargetType: "young-event", YoungId: &youngID, Page: int64Ptr(int64(normalizedPage(page))), PageSize: int64Ptr(int64(normalizedPageSize(pageSize)))})
+	err = typedJSON[openapi.CommentsListResponseSchema](resp, err, "ListComments", &out)
+	return out, err
 }
 
 func (c *Client) ListAllYoungComments(ctx context.Context, token, youngID string) ([]map[string]any, error) {
@@ -490,7 +452,9 @@ func (c *Client) ListAllYoungComments(ctx context.Context, token, youngID string
 				NextCursor string           `json:"nextCursor"`
 			}
 			id := lifedata.FirstString(root, "id")
-			if err := c.do(ctx, http.MethodGet, "/api/community/comments/"+url.PathEscape(id)+"/replies", url.Values{"cursor": {cursor}, "pageSize": {"20"}}, token, nil, &page); err != nil {
+			resp, err := c.Typed(ctx, token).GetApiCommunityCommentsIdReplies(ctx, id, &openapi.GetApiCommunityCommentsIdRepliesParams{Cursor: &cursor, PageSize: int64Ptr(20)})
+			err = typedJSON[openapi.CommentRepliesResponseSchema](resp, err, "GetApiCommunityCommentsIdReplies", &page)
+			if err != nil {
 				return nil, err
 			}
 			for _, node := range page.Thread {
@@ -529,27 +493,19 @@ func mergeYoungCommentNode(target, source map[string]any) {
 }
 
 func (c *Client) CreateYoungComment(ctx context.Context, token, youngID, body, parentID, visibility string, anonymous bool) (map[string]any, error) {
-	youngID = strings.TrimSpace(youngID)
-	body = strings.TrimSpace(body)
+	youngID, body = strings.TrimSpace(youngID), strings.TrimSpace(body)
 	if youngID == "" || body == "" {
 		return nil, errors.New("young event id and comment body are required")
 	}
-	payload := map[string]any{"targetType": "young-event", "youngId": youngID, "body": body, "isAnonymous": anonymous}
-	if value := strings.TrimSpace(parentID); value != "" {
-		payload["parentId"] = value
-	}
+	payload := openapi.CreateCommentJSONRequestBody{TargetType: "young-event", YoungId: &youngID, Body: body, IsAnonymous: &anonymous, ParentId: stringPtr(strings.TrimSpace(parentID))}
 	if value := strings.TrimSpace(visibility); value != "" {
-		payload["visibility"] = value
+		converted := openapi.CommentCreateRequestSchemaVisibility(value)
+		payload.Visibility = &converted
 	}
 	var out map[string]any
-	encoded, err := marshalJSON(payload)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.do(ctx, http.MethodPost, "/api/community/comments", nil, token, encoded, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).CreateComment(ctx, payload)
+	err = typedJSON[openapi.IdResponseSchema](resp, err, "CreateComment", &out)
+	return out, err
 }
 
 func (c *Client) UpdateYoungComment(ctx context.Context, token, id, body string) (map[string]any, error) {
@@ -558,14 +514,9 @@ func (c *Client) UpdateYoungComment(ctx context.Context, token, id, body string)
 		return nil, errors.New("comment id and body are required")
 	}
 	var out map[string]any
-	encoded, err := marshalJSON(map[string]any{"body": body})
-	if err != nil {
-		return nil, err
-	}
-	if err := c.do(ctx, http.MethodPatch, "/api/community/comments/"+url.PathEscape(id), nil, token, encoded, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	resp, err := c.Typed(ctx, token).UpdateComment(ctx, id, openapi.UpdateCommentJSONRequestBody{Body: body})
+	err = typedJSON[openapi.CommentUpdateResponseSchema](resp, err, "UpdateComment", &out)
+	return out, err
 }
 
 func (c *Client) DeleteYoungComment(ctx context.Context, token, id string) error {
@@ -573,7 +524,7 @@ func (c *Client) DeleteYoungComment(ctx context.Context, token, id string) error
 	if id == "" {
 		return errors.New("comment id is required")
 	}
-	return c.do(ctx, http.MethodDelete, "/api/community/comments/"+url.PathEscape(id), nil, token, nil, nil)
+	return typedResponse[openapi.SuccessResponseSchema](c.Typed(ctx, token).DeleteComment(ctx, id))
 }
 
 func (c *Client) ReactYoungComment(ctx context.Context, token, id, reaction string, remove bool) error {
@@ -581,25 +532,10 @@ func (c *Client) ReactYoungComment(ctx context.Context, token, id, reaction stri
 	if id == "" || reaction == "" {
 		return errors.New("comment id and reaction are required")
 	}
-	path := "/api/community/comments/" + url.PathEscape(id) + "/reactions"
 	if remove {
-		values := url.Values{"type": {reaction}}
-		return c.do(ctx, http.MethodDelete, path, values, token, nil, nil)
+		return typedResponse[openapi.SuccessResponseSchema](c.Typed(ctx, token).RemoveCommentReaction(ctx, id, &openapi.RemoveCommentReactionParams{Type: openapi.RemoveCommentReactionParamsType(reaction)}))
 	}
-	encoded, err := marshalJSON(map[string]any{"type": reaction})
-	if err != nil {
-		return err
-	}
-	return c.do(ctx, http.MethodPost, path, nil, token, encoded, nil)
-}
-
-func (c *Client) getWorkspacePage(ctx context.Context, path, token string, page, pageSize int, values url.Values, out any) error {
-	if values == nil {
-		values = url.Values{}
-	}
-	values.Set("page", strconv.Itoa(normalizedPage(page)))
-	values.Set("pageSize", strconv.Itoa(normalizedPageSize(pageSize)))
-	return c.getAuth(ctx, path, values, token, out)
+	return typedResponse[openapi.SuccessResponseSchema](c.Typed(ctx, token).AddCommentReaction(ctx, id, openapi.AddCommentReactionJSONRequestBody{Type: openapi.CommentReactionRequestSchemaType(reaction)}))
 }
 
 func normalizedPage(page int) int {
@@ -617,17 +553,4 @@ func normalizedPageSize(pageSize int) int {
 		return 100
 	}
 	return pageSize
-}
-
-func marshalJSON(value any) ([]byte, error) {
-	if value == nil {
-		return nil, nil
-	}
-	return jsonMarshal(value)
-}
-
-// Kept as a tiny variable to make request body encoding easy to replace in
-// tests without exposing Client internals.
-var jsonMarshal = func(value any) ([]byte, error) {
-	return json.Marshal(value)
 }

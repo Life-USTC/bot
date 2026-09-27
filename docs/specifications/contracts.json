@@ -219,6 +219,71 @@
           "name": "TestSpecAgendaDoesNotAttachRoomMaps/room-map.bot-no-unsolicited-attachments"
         }
       }
+    },
+    {
+      "id": "openapi.bot-generated-business-client",
+      "scope": "all",
+      "rule": "All Bot business HTTP operations use the generated OpenAPI request and matching generated success response model before projecting into command views. Malformed responses fail without partial success. OAuth and MCP protocol transports retain their own protocol clients.",
+      "acceptance": {
+        "given": "The checked-in generated operations and every production Life service method, plus a real catalog HTTP server.",
+        "when": "Inspect operation-to-decoder data flow and execute candidate search with valid and malformed typed responses.",
+        "then": [
+          "Every business operation has a matching generated response decoder and no handwritten HTTP request.",
+          "Generated filters reach HTTP; valid fields survive projection and malformed field types fail."
+        ],
+        "test": {
+          "file": "internal/life/generated_contract_test.go",
+          "name": "TestSpecGeneratedBusinessClients/openapi.bot-generated-business-client"
+        }
+      }
+    },
+    {
+      "id": "bot.workspace-exam-completeness",
+      "scope": "private",
+      "rule": "The personal exam command reads every page from the workspace exams endpoint, includes undated exams, and preserves each exam's own semester and course context.",
+      "acceptance": {
+        "given": "An HTTP server provides 101 pages with distinct academic records for the authenticated owner, including an undated exam.",
+        "when": "The production Life client reads the full collection.",
+        "then": [
+          "Every page is requested with owner authorization and undated inclusion; dated and undated results retain their own semester and course."
+        ],
+        "test": {
+          "file": "internal/life/workspace_academic_contract_test.go",
+          "name": "TestSpecWorkspaceExamsComplete/bot.workspace-exam-completeness"
+        }
+      }
+    },
+    {
+      "id": "bot.workspace-exam-page-failure",
+      "scope": "private",
+      "rule": "Failure or invalid pagination on any workspace exam page fails the whole operation without showing a partial list as complete.",
+      "acceptance": {
+        "given": "An HTTP server provides two pages with distinct academic records for the authenticated owner.",
+        "when": "The production Life client reads the collection, including invalid later-page responses where specified.",
+        "then": [
+          "Later HTTP errors, invalid field types, repeated page numbers, and unexpectedly empty intermediate pages all fail without partial rows."
+        ],
+        "test": {
+          "file": "internal/life/workspace_academic_contract_test.go",
+          "name": "TestSpecWorkspaceExamsFailure/bot.workspace-exam-page-failure"
+        }
+      }
+    },
+    {
+      "id": "bot.section-homework-collection",
+      "scope": "private",
+      "rule": "Section homework queries consume the data/pagination collection for the selected section and retain completion eligibility; later page failure does not return a partial list.",
+      "acceptance": {
+        "given": "An HTTP server provides two pages with distinct academic records for the authenticated owner.",
+        "when": "The production Life client reads the collection, including invalid later-page responses where specified.",
+        "then": [
+          "Both pages use the selected JW ID and owner token; eligibility survives projection and a later failure returns no partial rows."
+        ],
+        "test": {
+          "file": "internal/life/workspace_academic_contract_test.go",
+          "name": "TestSpecSectionHomeworkCollection/bot.section-homework-collection"
+        }
+      }
     }
   ]
 }
