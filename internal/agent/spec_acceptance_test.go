@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/auth"
@@ -20,6 +23,7 @@ import (
 
 func TestSpecMCPPerUserDiscovery(t *testing.T) {
 	t.Run("bot.mcp-per-user-discovery", func(t *testing.T) {
+		contract := specification.Begin(t)
 		db, err := store.Open(t.TempDir() + "/bot.db")
 		if err != nil {
 			t.Fatal(err)
@@ -46,7 +50,7 @@ func TestSpecMCPPerUserDiscovery(t *testing.T) {
 		}))
 		t.Cleanup(remote.Close)
 		svc := &Service{handler: commands.Handler{Store: db}, auth: &auth.Manager{Store: db}, mcpClient: botmcp.New(remote.URL, remote.Client()), campusCatalog: newCampusCatalogCache()}
-		for _, user := range []string{"alice", "bob", "alice"} {
+		for caseIndex, user := range []string{"alice", "bob", "alice"} {
 			identity := store.Identity{Platform: "napcat", UserID: user, ConversationType: "private", ConversationID: user}
 			if err := db.SaveCredential(t.Context(), identity, store.Credential{ClientID: "client", AccessToken: user, RefreshToken: "refresh-" + user, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 				t.Fatal(err)
@@ -71,15 +75,14 @@ func TestSpecMCPPerUserDiscovery(t *testing.T) {
 			var want, got any
 			_ = json.Unmarshal(schema, &want)
 			_ = json.Unmarshal(docs[0].InputSchema, &got)
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("input schema changed: %s", docs[0].InputSchema)
-			}
+			contract.Check([]string{"alice-first", "bob", "alice-cached"}[caseIndex], specification.Discovery{User: user, Tools: []string{docs[0].Name}, SchemaEqual: reflect.DeepEqual(got, want), AnnotationsEqual: reflect.DeepEqual(docs[0].Annotations, expected[user].Annotations)})
 		}
 	})
 }
 
 func TestSpecSharedConversationSurface(t *testing.T) {
 	t.Run("bot.shared-conversation-surface", func(t *testing.T) {
+		contract := specification.Begin(t)
 		db, err := store.Open(t.TempDir() + "/bot.db")
 		if err != nil {
 			t.Fatal(err)
@@ -112,9 +115,12 @@ func TestSpecSharedConversationSurface(t *testing.T) {
 					t.Fatalf("private MCP tool exposed: %s", info.Name)
 				}
 			}
-			if !names["run_bot_command"] || !names["search_bot_commands"] {
-				t.Fatalf("public host commands missing: %v", names)
+			toolNames := make([]string, 0, len(names))
+			for name := range names {
+				toolNames = append(toolNames, name)
 			}
+			sort.Strings(toolNames)
+			contract.Check(kind, specification.SharedSurface{Conversation: kind, Tools: toolNames, MCPSession: session != nil, MCPRequests: int(requests.Load())})
 		}
 		if requests.Load() != 0 {
 			t.Fatalf("shared conversations contacted MCP %d times", requests.Load())
@@ -124,6 +130,7 @@ func TestSpecSharedConversationSurface(t *testing.T) {
 
 func TestSpecMCPServerAuthorization(t *testing.T) {
 	t.Run("bot.mcp-server-authorization", func(t *testing.T) {
+		contract := specification.Begin(t)
 		db, err := store.Open(t.TempDir() + "/bot.db")
 		if err != nil {
 			t.Fatal(err)
@@ -134,6 +141,7 @@ func TestSpecMCPServerAuthorization(t *testing.T) {
 			t.Fatal(err)
 		}
 		var calls atomic.Int32
+		bearer := ""
 		server := mcpserver.NewMCPServer("authorization", "1")
 		server.AddTool(mcpgo.NewTool("future_private_read", mcpgo.WithReadOnlyHintAnnotation(true)), func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 			calls.Add(1)
@@ -141,7 +149,8 @@ func TestSpecMCPServerAuthorization(t *testing.T) {
 		})
 		handler := mcpserver.NewStreamableHTTPServer(server)
 		remote := newAgentTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Authorization") != "Bearer restricted" {
+			bearer = r.Header.Get("Authorization")
+			if bearer != "Bearer restricted" {
 				t.Error("wrong user's authorization")
 			}
 			handler.ServeHTTP(w, r)
@@ -155,14 +164,13 @@ func TestSpecMCPServerAuthorization(t *testing.T) {
 			t.Fatalf("dynamic discovery failed: %s %v", result, err)
 		}
 		result, err = session.call(t.Context(), campusToolCallInput{Name: "future_private_read"})
-		if err == nil || result != "" || calls.Load() != 1 {
-			t.Fatalf("server rejection ignored or retried: result=%q error=%v calls=%d", result, err, calls.Load())
-		}
+		contract.Check("denied", specification.Authorization{Bearer: bearer, Calls: int(calls.Load()), Error: err != nil, Result: result})
 	})
 }
 
 func TestSpecConfirmationBoundToOperation(t *testing.T) {
 	t.Run("bot.confirmation-bound-to-operation", func(t *testing.T) {
+		contract := specification.Begin(t)
 		ctx := t.Context()
 		db, err := store.Open(t.TempDir() + "/bot.db")
 		if err != nil {
@@ -217,8 +225,6 @@ func TestSpecConfirmationBoundToOperation(t *testing.T) {
 		if err != nil || len(executions) != 2 {
 			t.Fatalf("executions: %v %v", executions, err)
 		}
-		if executions[1].State != store.CapabilityExecutionAwaitingConfirmation || executions[1].ConfirmedAt != nil {
-			t.Fatalf("new target reused approval: %+v", executions[1])
-		}
+		contract.Check("different-target", specification.Confirmation{State: string(executions[1].State), RemoteCalls: int(calls["delete_my_homework"].Load()), DecisionRecorded: executions[1].ConfirmedAt != nil})
 	})
 }

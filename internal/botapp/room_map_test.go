@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 	"time"
 
 	"github.com/Life-USTC/Bot/internal/commands"
@@ -37,8 +39,14 @@ func TestRoomMapPresentationKeepsDurableImageIntent(t *testing.T) {
 
 func TestSpecGroupRoom5201OutboxOnlyImageAndStructuredLLMResult(t *testing.T) {
 	t.Run("room-map.bot-shared-image", func(t *testing.T) {
+		contract := specification.Begin(t)
+		wire := contract.Wire("catalog_rooms_map")
+		paths := []string{}
 		room := life.RoomMap{Code: "5201", Building: "五教", Floor: "2", Status: "highlighted", ImageURL: "https://static.example/5201.png"}
+		wire.Fixture(room)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wire.Request(r)
+			paths = append(paths, r.URL.Path)
 			if r.URL.Path != "/api/catalog/rooms/5201/map" {
 				t.Errorf("unexpected request: %s", r.URL.Path)
 				http.NotFound(w, r)
@@ -87,9 +95,11 @@ func TestSpecGroupRoom5201OutboxOnlyImageAndStructuredLLMResult(t *testing.T) {
 		if err := json.Unmarshal([]byte(executions[0].Result), &result); err != nil {
 			t.Fatal(err)
 		}
-		if result.Result.Room.Code != "5201" || result.Result.Room.Floor != "2" || len(result.Images) != 1 || result.Images[0].ID == "" {
-			t.Fatalf("LLM result = %s", executions[0].Result)
+		imageURL := ""
+		if len(content.Parts) > 0 && content.Parts[0].Attachment != nil {
+			imageURL = content.Parts[0].Attachment.URL
 		}
+		contract.Check("shared-outbox", specification.RoomPresentation{Text: content.TextContent(), ImageURL: imageURL, Code: result.Result.Room.Code, Floor: result.Result.Room.Floor, Status: result.Result.Room.Status, Images: len(result.Images), ImageReference: len(result.Images) > 0 && result.Images[0].ID != "", Requests: paths})
 
 	})
 }

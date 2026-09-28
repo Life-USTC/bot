@@ -1,0 +1,672 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "owner",
+    "requirements"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "owner": {
+      "const": "Bot"
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scope",
+          "rationale",
+          "acceptance",
+          "sources",
+          "expectations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "enum": [
+              "public",
+              "private",
+              "all"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "acceptance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "given",
+              "when",
+              "then",
+              "test"
+            ],
+            "properties": {
+              "given": {
+                "type": "string",
+                "minLength": 1
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1
+              },
+              "then": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "test": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "file",
+                  "name"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operationId",
+                "parameters",
+                "responseStatus",
+                "responseFields"
+              ],
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "parameters": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "responseStatus": {
+                  "const": "200"
+                },
+                "responseFields": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
+                }
+              }
+            }
+          },
+          "expectations": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "collection"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "requests",
+                            "rows",
+                            "undatedRows",
+                            "projectionMismatches",
+                            "error",
+                            "partialRows",
+                            "pages",
+                            "pageSizes",
+                            "bearers",
+                            "sectionJwIds"
+                          ],
+                          "properties": {
+                            "requests": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "rows": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "undatedRows": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "projectionMismatches": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "error": {
+                              "type": "boolean"
+                            },
+                            "partialRows": {
+                              "type": "boolean"
+                            },
+                            "pages": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer"
+                              }
+                            },
+                            "pageSizes": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer"
+                              }
+                            },
+                            "bearers": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "sectionJwIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "discovery"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "user",
+                            "tools",
+                            "schemaEqual",
+                            "annotationsEqual"
+                          ],
+                          "properties": {
+                            "user": {
+                              "type": "string"
+                            },
+                            "tools": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "schemaEqual": {
+                              "type": "boolean"
+                            },
+                            "annotationsEqual": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "authorization"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "bearer",
+                            "calls",
+                            "error",
+                            "result"
+                          ],
+                          "properties": {
+                            "bearer": {
+                              "type": "string"
+                            },
+                            "calls": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "error": {
+                              "type": "boolean"
+                            },
+                            "result": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "shared-surface"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "conversation",
+                            "tools",
+                            "mcpSession",
+                            "mcpRequests"
+                          ],
+                          "properties": {
+                            "conversation": {
+                              "type": "string"
+                            },
+                            "tools": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "mcpSession": {
+                              "type": "boolean"
+                            },
+                            "mcpRequests": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "confirmation"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "state",
+                            "remoteCalls",
+                            "callsBeforeApproval",
+                            "modelCalls",
+                            "decisionRecorded",
+                            "crossJobRejected"
+                          ],
+                          "properties": {
+                            "state": {
+                              "type": "string"
+                            },
+                            "remoteCalls": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "callsBeforeApproval": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "modelCalls": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "decisionRecorded": {
+                              "type": "boolean"
+                            },
+                            "crossJobRejected": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "room-input"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "input",
+                            "roomCommand",
+                            "code",
+                            "scope"
+                          ],
+                          "properties": {
+                            "input": {
+                              "type": "string"
+                            },
+                            "roomCommand": {
+                              "type": "boolean"
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "scope": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "room-presentation"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "text",
+                            "imageUrl",
+                            "status",
+                            "code",
+                            "floor",
+                            "images",
+                            "imageReference",
+                            "roomText",
+                            "requests"
+                          ],
+                          "properties": {
+                            "text": {
+                              "type": "string"
+                            },
+                            "imageUrl": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "floor": {
+                              "type": "string"
+                            },
+                            "images": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "imageReference": {
+                              "type": "boolean"
+                            },
+                            "roomText": {
+                              "type": "boolean"
+                            },
+                            "requests": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "architecture"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "operations",
+                            "requestPageSize",
+                            "rows",
+                            "code",
+                            "error"
+                          ],
+                          "properties": {
+                            "operations": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "requestPageSize": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "rows": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

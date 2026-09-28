@@ -1,57 +1,26 @@
 package specification
 
 import (
-	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-type contractDocument struct {
-	Version      int    `json:"version"`
-	Owner        string `json:"owner"`
-	Requirements []struct {
-		ID         string `json:"id"`
-		Scope      string `json:"scope"`
-		Rule       string `json:"rule"`
-		Acceptance struct {
-			Given string   `json:"given"`
-			When  string   `json:"when"`
-			Then  []string `json:"then"`
-			Test  struct {
-				File string `json:"file"`
-				Name string `json:"name"`
-			} `json:"test"`
-		} `json:"acceptance"`
-	} `json:"requirements"`
-}
-
 // Native Go names include the TestSpec function and its one literal requirement
 // subtest. This checks both directions; go test ./... executes the bound behavior.
 func TestSpecificationBindings(t *testing.T) {
 	root := filepath.Join("..", "..")
-	file, err := os.Open(filepath.Join(root, "docs/specifications/contracts.json"))
+	catalog, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = file.Close() }()
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	var document contractDocument
-	if err := decoder.Decode(&document); err != nil {
-		t.Fatal(err)
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		t.Fatal("expected one JSON document")
-	}
-	if document.Version != 1 || document.Owner == "" || len(document.Requirements) == 0 {
+	document := catalog.Document
+	if document.Version != 2 || document.Owner == "" || len(document.Requirements) == 0 {
 		t.Fatal("invalid specification header")
 	}
 	tests := map[string]string{}
@@ -135,7 +104,7 @@ func TestSpecificationBindings(t *testing.T) {
 		if requirement.Scope != "public" && requirement.Scope != "private" && requirement.Scope != "all" {
 			t.Errorf("invalid scope for %s", requirement.ID)
 		}
-		if strings.TrimSpace(requirement.Rule) == "" || strings.TrimSpace(acceptance.Given) == "" || strings.TrimSpace(acceptance.When) == "" || len(acceptance.Then) == 0 {
+		if strings.TrimSpace(requirement.Rationale) == "" || strings.TrimSpace(acceptance.Given) == "" || strings.TrimSpace(acceptance.When) == "" || len(acceptance.Then) == 0 {
 			t.Errorf("incomplete acceptance for %s", requirement.ID)
 		}
 		for _, outcome := range acceptance.Then {
