@@ -3,57 +3,64 @@ package life
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 )
 
 func TestSpecGeneratedBusinessClients(t *testing.T) {
 	t.Run("openapi.bot-generated-business-client", func(t *testing.T) {
-		assertGeneratedBusinessCalls(t)
+		contract := specification.Begin(t)
+		wire := contract.Wire("listSections")
+		operations := assertGeneratedBusinessCalls(t)
 		for _, invalid := range []bool{false, true} {
-			requests := 0
+			pageSize := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-				if r.URL.Path != "/api/catalog/sections" || r.URL.Query().Get("pageSize") != "100" || r.URL.Query().Get("semesterId") != "2" || r.URL.Query().Get("search") != "数学" {
-					t.Errorf("unexpected request %s", r.URL)
+				wire.Request(r)
+				if r.URL.Query().Get("semesterId") != "2" || r.URL.Query().Get("search") != "数学" {
+					t.Errorf("unexpected filters: %s", r.URL)
+				}
+				if r.URL.Query().Get("pageSize") == "100" {
+					pageSize = 100
+				}
+				body := wire.FixtureFile("sections.json")
+				if invalid {
+					body["pagination"].(map[string]any)["page"] = "wrong-type"
+					wire.InvalidFixture(body)
+				} else {
+					wire.Fixture(body)
 				}
 				w.Header().Set("Content-Type", "application/json")
-				if invalid {
-					_, _ = io.WriteString(w, `{"data":[],"pagination":{"page":"wrong-type"}}`)
-					return
-				}
-				_, _ = io.WriteString(w, `{"data":[{"id":4,"jwId":42,"code":"MATH.01","course":{"namePrimary":"数学"}}],"pagination":{"page":1,"totalPages":1}}`)
+				_ = json.NewEncoder(w).Encode(body)
 			}))
 			rows, err := NewClient(server.URL, server.Client()).SectionCandidates(context.Background(), "数学", 2)
 			server.Close()
-			if requests != 1 {
-				t.Fatalf("requests=%d", requests)
+			code := ""
+			if len(rows) > 0 {
+				code, _ = rows[0]["code"].(string)
 			}
+			name := "valid"
 			if invalid {
-				if err == nil || rows != nil {
-					t.Fatalf("malformed response returned success: %#v %v", rows, err)
-				}
-			} else {
-				if err != nil || len(rows) != 1 || rows[0]["code"] != "MATH.01" {
-					t.Fatalf("typed projection lost fields: %#v %v", rows, err)
-				}
+				name = "malformed"
 			}
+			contract.Check(name, specification.Architecture{Operations: operations, RequestPageSize: pageSize, Rows: len(rows), Code: code, Error: err != nil})
 		}
 	})
 }
 
 // Inspect all production commands, and match the response type at each actual
 // generated call to its generated operation, rather than merely checking imports.
-func assertGeneratedBusinessCalls(t *testing.T) {
+func assertGeneratedBusinessCalls(t *testing.T) int {
 	t.Helper()
 	root := filepath.Join("..", "..")
 	fset := token.NewFileSet()
@@ -162,6 +169,7 @@ func assertGeneratedBusinessCalls(t *testing.T) {
 	if calls == 0 {
 		t.Fatal("no generated business operations inspected")
 	}
+	return calls
 }
 
 func typeText(fset *token.FileSet, expr ast.Expr) string {

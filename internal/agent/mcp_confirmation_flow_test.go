@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -21,8 +23,9 @@ import (
 
 func TestSpecMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 	t.Run("bot.destructive-mutation-confirmation", func(t *testing.T) {
+		contract := specification.Begin(t)
 		for _, scenario := range []string{"approve", "deny", "unknown"} {
-			t.Run(scenario, func(t *testing.T) {
+			{
 				ctx := t.Context()
 				db, err := store.Open(t.TempDir() + "/bot.db")
 				if err != nil {
@@ -110,6 +113,7 @@ func TestSpecMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 				}
 				input := claimAgentInput(t, db, ident, Input{Text: "更新我的测试数据", Identity: ident, JobID: job.ID})
 				first := newService().Run(ctx, input)
+				callsBeforeApproval := int(remoteCalls.Load())
 				if first.State != RunStateInterrupted || remoteCalls.Load() != 0 {
 					t.Fatalf("before approval: state=%s calls=%d", first.State, remoteCalls.Load())
 				}
@@ -152,10 +156,8 @@ func TestSpecMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 				if !found {
 					t.Fatal("resumed MCP result persisted under the wrong tool name")
 				}
-				if modelCalls.Load() != 4 {
-					t.Fatalf("model calls=%d, want search/call/resume/repeat", modelCalls.Load())
-				}
-			})
+				contract.Check(scenario, specification.Confirmation{State: string(operations[1].State), RemoteCalls: int(remoteCalls.Load()), CallsBeforeApproval: callsBeforeApproval, ModelCalls: int(modelCalls.Load()), DecisionRecorded: operations[1].ConfirmedAt != nil})
+			}
 		}
 
 	})
@@ -163,6 +165,7 @@ func TestSpecMCPMutationRunsThroughDurableConfirmation(t *testing.T) {
 
 func TestSpecMCPInterruptedWriteRecoversOfflineWithoutReplay(t *testing.T) {
 	t.Run("bot.mutation-unknown-no-replay", func(t *testing.T) {
+		contract := specification.Begin(t)
 		ctx := t.Context()
 		db, err := store.Open(t.TempDir() + "/bot.db")
 		if err != nil {
@@ -217,9 +220,7 @@ func TestSpecMCPInterruptedWriteRecoversOfflineWithoutReplay(t *testing.T) {
 			t.Fatalf("stored=%#v found=%v err=%v", stored, found, err)
 		}
 		_, err = newLazyMCPSession(svc, ident, job.ID+1).resolveCampusExecution(ctx, capabilityInterruptState{ExecutionIDs: []string{execution.ID}, ToolCallID: callID}, false)
-		if err == nil || !strings.Contains(err.Error(), "checkpoint belongs to job") {
-			t.Fatalf("cross-job checkpoint accepted: %v", err)
-		}
+		contract.Check("offline-recovery", specification.Confirmation{State: string(stored.State), DecisionRecorded: stored.ConfirmedAt != nil, CrossJobRejected: err != nil && strings.Contains(err.Error(), "checkpoint belongs to job")})
 
 	})
 }

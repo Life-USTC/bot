@@ -3,10 +3,13 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/store"
@@ -15,7 +18,8 @@ import (
 
 func TestSpecRoomMapCommandAndNaturalQueryArePublic(t *testing.T) {
 	t.Run("room-map.bot-recognition", func(t *testing.T) {
-		for _, test := range []struct {
+		contract := specification.Begin(t)
+		for caseIndex, test := range []struct {
 			input string
 			want  []string
 		}{
@@ -44,9 +48,7 @@ func TestSpecRoomMapCommandAndNaturalQueryArePublic(t *testing.T) {
 				t.Errorf("ParseCommand(%q) = %#v, want room map %v", test.input, result, test.want)
 				continue
 			}
-			if result.Invocation.Policy().DataScope != DataScopePublic {
-				t.Errorf("ParseCommand(%q) scope = %q, want public", test.input, result.Invocation.Policy().DataScope)
-			}
+			contract.Check(fmt.Sprintf("input-%02d", caseIndex+1), specification.RoomInput{Input: test.input, RoomCommand: result.Valid() && result.Invocation.ID() == CapabilityRoomMap, Code: strings.Join(result.Invocation.Args, " "), Scope: string(result.Invocation.Policy().DataScope)})
 		}
 
 	})
@@ -87,16 +89,23 @@ func TestRoomMapCommandDeliversHighlightedImageInGroup(t *testing.T) {
 
 func TestSpecRoomMapResponseDoesNotAttachImageForUnavailableRoom(t *testing.T) {
 	t.Run("room-map.bot-unavailable", func(t *testing.T) {
+		contract := specification.Begin(t)
 		response := RoomMapResponse(life.RoomMap{Code: "GT-Z999", Status: "unavailable"})
-		if response.Text != "未找到 GT-Z999 的教室地图。" || response.Image != nil {
-			t.Fatalf("unavailable response = %#v", response)
+		room := response.Data.(map[string]any)["room"].(life.RoomMap)
+		images := 0
+		imageURL := ""
+		if response.Image != nil {
+			images = 1
+			imageURL = response.Image.URL
 		}
+		contract.Check("unavailable", specification.RoomPresentation{Text: response.Text, Code: room.Code, Status: room.Status, Images: images, ImageURL: imageURL, Requests: []string{}})
 
 	})
 }
 
 func TestSpecRoomMapOverviewPreservesStatusWithoutText(t *testing.T) {
 	t.Run("room-map.bot-overview", func(t *testing.T) {
+		contract := specification.Begin(t)
 		response := RoomMapResponse(life.RoomMap{
 			Code: "3A299", Building: "三教", Floor: "2", Status: "overview",
 			SourceImageURL: "https://static.example/floors/3-2.png",
@@ -104,9 +113,14 @@ func TestSpecRoomMapOverviewPreservesStatusWithoutText(t *testing.T) {
 		if response.Text != "" || response.Data.(map[string]any)["room"].(life.RoomMap).Status != "overview" {
 			t.Fatalf("overview response = %#v", response)
 		}
-		if response.Image == nil || response.Image.URL != "https://static.example/floors/3-2.png" {
-			t.Fatalf("overview image = %#v", response.Image)
+		room := response.Data.(map[string]any)["room"].(life.RoomMap)
+		images := 0
+		imageURL := ""
+		if response.Image != nil {
+			images = 1
+			imageURL = response.Image.URL
 		}
+		contract.Check("overview", specification.RoomPresentation{Text: response.Text, Code: room.Code, Floor: room.Floor, Status: room.Status, Images: images, ImageURL: imageURL, Requests: []string{}})
 
 	})
 }
@@ -132,11 +146,10 @@ func TestGenericCourseQueryDoesNotBecomeRoomLookup(t *testing.T) {
 
 func TestSpecBareRoomLookupDoesNotCaptureOtherMessages(t *testing.T) {
 	t.Run("room-map.bot-avoid-false-positive", func(t *testing.T) {
-		for _, input := range []string{"2026", "12345", "CS1001", "MATH1001", "520", "52010", "A5201", "5201A", "5 201", "G3-hello", "GX-news", "Zoom", "5201 5202", "明天在5201上课", "预约5201", "课程 5201"} {
+		contract := specification.Begin(t)
+		for caseIndex, input := range []string{"2026", "12345", "CS1001", "MATH1001", "520", "52010", "A5201", "5201A", "5 201", "G3-hello", "GX-news", "Zoom", "5201 5202", "明天在5201上课", "预约5201", "课程 5201"} {
 			result := ParseCommand(input)
-			if result.Valid() && result.Invocation.ID() == CapabilityRoomMap {
-				t.Errorf("non-room command routed as room: %q", input)
-			}
+			contract.Check(fmt.Sprintf("input-%02d", caseIndex+1), specification.RoomInput{Input: input, RoomCommand: result.Valid() && result.Invocation.ID() == CapabilityRoomMap})
 		}
 
 	})
@@ -144,14 +157,21 @@ func TestSpecBareRoomLookupDoesNotCaptureOtherMessages(t *testing.T) {
 
 func TestSpecAgendaDoesNotAttachRoomMaps(t *testing.T) {
 	t.Run("room-map.bot-no-unsolicited-attachments", func(t *testing.T) {
+		contract := specification.Begin(t)
 		withAgendaRand(t, 0.99)
+		paths := []string{}
+		wire := contract.Wire("get-api-workspace-calendar-events")
+		fixture := wire.FixtureFile("calendar.json")
+		wire.Fixture(fixture)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			wire.Request(r)
 			if r.URL.Path != "/api/workspace/calendar/events" {
 				t.Errorf("unsolicited request: %s", r.URL.Path)
 				http.NotFound(w, r)
 				return
 			}
-			_, _ = w.Write([]byte(`{"data":[{"id":"s1","type":"schedule","at":"2026-09-18T09:50:00+08:00","endsAt":"2026-09-18T11:25:00+08:00","title":"课程","location":"3A101"}],"pagination":{"page":1,"pageSize":100,"total":1,"totalPages":1}}`))
+			_ = json.NewEncoder(w).Encode(fixture)
 		}))
 		defer server.Close()
 		identity := testIdentity()
@@ -163,8 +183,10 @@ func TestSpecAgendaDoesNotAttachRoomMaps(t *testing.T) {
 		if response.Image != nil && response.Image.Kind == "room-map" {
 			t.Fatal("agenda attached an unrequested room map")
 		}
-		if !strings.Contains(textutil.PlainMonospace(response.Text), "3A101") {
-			t.Fatalf("agenda omitted room text: %+v", response)
+		images := 0
+		if response.Image != nil && response.Image.Kind == "room-map" {
+			images = 1
 		}
+		contract.Check("agenda", specification.RoomPresentation{RoomText: strings.Contains(textutil.PlainMonospace(response.Text), "3A101"), Images: images, Requests: paths})
 	})
 }

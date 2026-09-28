@@ -68,8 +68,21 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test with race detector
-        run: go test -race ./...
+      - name: Test with race detector and native semantic evidence
+        run: |
+          set -o pipefail
+          go test -race -json -count=1 ./... | tee "$RUNNER_TEMP/bot-native-tests.jsonl"
+          go run ./cmd/spec-evidence -input "$RUNNER_TEMP/bot-native-tests.jsonl" -output "$RUNNER_TEMP/bot-semantic-evidence.json"
+
+      - name: Save native semantic evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bot-semantic-evidence
+          path: |
+            ${{ runner.temp }}/bot-native-tests.jsonl
+            ${{ runner.temp }}/bot-semantic-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Validate Compose definition
         run: |

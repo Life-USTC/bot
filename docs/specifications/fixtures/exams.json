@@ -1,0 +1,95 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "jwId": 1,
+      "examType": null,
+      "startTime": null,
+      "endTime": null,
+      "examDate": "2026-06-01T00:00:00Z",
+      "examTakeCount": null,
+      "examMode": null,
+      "grades": null,
+      "adminClassNames": null,
+      "monitors": [
+        {
+          "jwId": 1001,
+          "nameCn": "Public monitor",
+          "nameEn": null
+        }
+      ],
+      "examBatchId": null,
+      "sectionId": 1,
+      "examBatch": null,
+      "examRooms": [],
+      "section": {
+        "id": 1,
+        "jwId": 1,
+        "retiredAt": null,
+        "code": "fixture",
+        "bizTypeId": null,
+        "credits": null,
+        "period": null,
+        "requiredWeeks": null,
+        "catalogAdminClasses": null,
+        "periodsPerWeek": null,
+        "timesPerWeek": null,
+        "stdCount": null,
+        "limitCount": null,
+        "graduateAndPostgraduate": null,
+        "dateTimePlaceText": null,
+        "dateTimePlacePersonText": null,
+        "actualPeriods": null,
+        "theoryPeriods": null,
+        "practicePeriods": null,
+        "experimentPeriods": null,
+        "machinePeriods": null,
+        "designPeriods": null,
+        "testPeriods": null,
+        "scheduleState": null,
+        "suggestScheduleWeeks": null,
+        "suggestScheduleWeekInfo": null,
+        "scheduleJsonParams": null,
+        "selectedStdCount": null,
+        "remark": null,
+        "scheduleRemark": null,
+        "courseId": 1,
+        "semesterId": null,
+        "campusId": null,
+        "examModeId": null,
+        "openDepartmentId": null,
+        "teachLanguageId": null,
+        "roomTypeId": null,
+        "course": {
+          "id": 1,
+          "jwId": 1,
+          "code": "fixture",
+          "nameCn": "fixture",
+          "nameEn": null,
+          "categoryId": null,
+          "classTypeId": null,
+          "classifyId": null,
+          "educationLevelId": null,
+          "gradationId": null,
+          "typeId": null,
+          "namePrimary": "Course 1",
+          "nameSecondary": null
+        },
+        "semester": {
+          "id": 1,
+          "jwId": 1,
+          "nameCn": "fixture",
+          "code": "fixture",
+          "startDate": null,
+          "endDate": null
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 50,
+    "total": 1,
+    "totalPages": 1
+  }
+}

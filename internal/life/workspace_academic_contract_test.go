@@ -3,110 +3,187 @@ package life
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sort"
 	"strconv"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/specification"
 )
 
 func TestSpecWorkspaceExamsComplete(t *testing.T) {
 	t.Run("bot.workspace-exam-completeness", func(t *testing.T) {
-		const totalPages = 101
-		calls := 0
+		contract := specification.Begin(t)
+		wire := contract.Wire("workspace_exam_list")
+		trace := collectionTrace{}
+		var fixtures []map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			if r.URL.Path != "/api/workspace/exams" || r.URL.Query().Get("includeDateUnknown") != "true" || r.URL.Query().Get("pageSize") != "50" || r.Header.Get("Authorization") != "Bearer owner" {
-				t.Errorf("unexpected request %s", r.URL)
-			}
+			wire.Request(r)
+			trace.record(r)
 			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-			date := any("2026-06-01T00:00:00Z")
-			if page == 2 {
-				date = nil
+			if r.URL.Query().Get("includeDateUnknown") != "true" {
+				t.Error("undated inclusion missing")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": page, "examDate": date, "monitors": []any{map[string]any{"jwId": page + 1000, "nameCn": "Public monitor"}}, "section": map[string]any{"jwId": page + 40, "semester": map[string]any{"id": page, "namePrimary": "Semester " + strconv.Itoa(page)}, "course": map[string]any{"namePrimary": "Course " + strconv.Itoa(page)}}}}, "pagination": map[string]any{"page": page, "totalPages": totalPages}})
+			body, rows := academicFixture(t, wire, "exams.json", page, 5001, 50)
+			fixtures = append(fixtures, rows...)
+			wire.Fixture(body)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(body)
 		}))
 		defer server.Close()
 		rows, err := NewClient(server.URL, server.Client()).SubscribedExams(context.Background(), "owner")
-		if err != nil || calls != totalPages || len(rows) != totalPages {
-			t.Fatalf("rows=%#v calls=%d err=%v", rows, calls, err)
-		}
-		if rows[1]["examDate"] != nil {
-			t.Fatal("undated exam was lost")
-		}
-		for i, row := range rows {
-			monitors := row["monitors"].([]any)
-			if len(monitors) != 1 || monitors[0].(map[string]any)["jwId"] != float64(i+1001) {
-				t.Fatalf("lost public monitor campus identifier: %#v", row)
-			}
-			section := row["section"].(map[string]any)
-			if section["semester"].(map[string]any)["id"] != float64(i+1) || section["course"].(map[string]any)["namePrimary"] != "Course "+strconv.Itoa(i+1) {
-				t.Fatalf("lost semester/course context: %#v", row)
+		undated := 0
+		for _, row := range rows {
+			if row["examDate"] == nil {
+				undated++
 			}
 		}
+		contract.Check("complete", trace.observation(rows, err, wire.Projection(fixtures, rows), undated))
 	})
 }
-
 func TestSpecWorkspaceExamsFailure(t *testing.T) {
 	t.Run("bot.workspace-exam-page-failure", func(t *testing.T) {
+		contract := specification.Begin(t)
+		wire := contract.Wire("workspace_exam_list")
 		for _, failure := range []string{"server", "malformed", "wrong-page", "empty-page"} {
-			calls := 0
+			trace := collectionTrace{}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				if r.URL.Query().Get("page") == "1" {
-					_, _ = io.WriteString(w, `{"data":[{"id":1}],"pagination":{"page":1,"totalPages":3}}`)
-					return
+				wire.Request(r)
+				trace.record(r)
+				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+				body, _ := academicFixture(t, wire, "exams.json", page, 101, 50)
+				if page == 2 {
+					switch failure {
+					case "server":
+						http.Error(w, "unavailable", http.StatusServiceUnavailable)
+						return
+					case "malformed":
+						body["data"].([]any)[0].(map[string]any)["id"] = "invalid"
+					case "wrong-page":
+						body["pagination"].(map[string]any)["page"] = 1
+					case "empty-page":
+						body["data"] = []any{}
+					}
 				}
-				switch failure {
-				case "server":
-					http.Error(w, "unavailable", http.StatusServiceUnavailable)
-				case "malformed":
-					_, _ = io.WriteString(w, `{"data":[{"id":"invalid"}],"pagination":{"page":2,"totalPages":3}}`)
-				case "wrong-page":
-					_, _ = io.WriteString(w, `{"data":[{"id":2}],"pagination":{"page":1,"totalPages":3}}`)
-				case "empty-page":
-					_, _ = io.WriteString(w, `{"data":[],"pagination":{"page":2,"totalPages":3}}`)
+				if page == 2 && failure == "malformed" {
+					wire.InvalidFixture(body)
+				} else {
+					wire.Fixture(body)
 				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(body)
 			}))
 			rows, err := NewClient(server.URL, server.Client()).SubscribedExams(context.Background(), "owner")
 			server.Close()
-			if err == nil || rows != nil || calls != 2 {
-				t.Fatalf("%s returned partial success: rows=%#v err=%v calls=%d", failure, rows, err, calls)
-			}
+			contract.Check(failure, trace.observation(rows, err, []string{}, 0))
 		}
 	})
 }
-
 func TestSpecSectionHomeworkCollection(t *testing.T) {
 	t.Run("bot.section-homework-collection", func(t *testing.T) {
+		contract := specification.Begin(t)
+		wire := contract.Wire("community_section_homework_list")
 		for _, fail := range []bool{false, true} {
-			calls := 0
+			trace := collectionTrace{}
+			var fixtures []map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				if r.URL.Path != "/api/community/section-homeworks" || r.URL.Query().Get("sectionJwId") != "654" || r.URL.Query().Get("pageSize") != "50" || r.Header.Get("Authorization") != "Bearer owner" {
-					t.Errorf("unexpected request %s", r.URL)
-				}
+				wire.Request(r)
+				trace.record(r)
 				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 				if fail && page == 2 {
 					http.Error(w, "unavailable", http.StatusServiceUnavailable)
 					return
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "hw-" + strconv.Itoa(page), "title": "Assignment", "completionRequired": page == 1}}, "pagination": map[string]any{"page": page, "totalPages": 2}})
+				body, rows := academicFixture(t, wire, "section-homeworks.json", page, 51, 50)
+				fixtures = append(fixtures, rows...)
+				wire.Fixture(body)
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(body)
 			}))
 			rows, err := NewClient(server.URL, server.Client()).ListHomeworksBySection(context.Background(), "owner", 654)
 			server.Close()
-			if calls != 2 {
-				t.Fatalf("calls=%d", calls)
-			}
+			name := "complete"
+			mismatches := []string{}
 			if fail {
-				if err == nil || rows != nil {
-					t.Fatalf("partial success: %#v %v", rows, err)
-				}
-				continue
+				name = "later-failure"
+			} else {
+				mismatches = wire.Projection(fixtures, rows)
 			}
-			if err != nil || len(rows) != 2 || rows[0]["id"] != "hw-1" || rows[1]["id"] != "hw-2" || rows[0]["completionRequired"] != true || rows[1]["completionRequired"] != false {
-				t.Fatalf("bad projection: %#v %v", rows, err)
-			}
+			contract.Check(name, trace.observation(rows, err, mismatches, 0))
 		}
 	})
+}
+
+// Fixtures use real required fields and coherent page/size/total arithmetic.
+// The data are explicit synthetic records; every served success is validated
+// against the pinned operation before the production client receives it.
+func academicFixture(t *testing.T, wire *specification.Wire, file string, page, total, pageSize int) (map[string]any, []map[string]any) {
+	t.Helper()
+	body := wire.FixtureFile(file)
+	prototype := body["data"].([]any)[0]
+	encoded, err := json.Marshal(prototype)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []any{}
+	rows := []map[string]any{}
+	for index := (page - 1) * pageSize; index < min(page*pageSize, total); index++ {
+		var row map[string]any
+		if err := json.Unmarshal(encoded, &row); err != nil {
+			t.Fatal(err)
+		}
+		if file == "exams.json" {
+			row["id"] = float64(index + 1)
+			if index == total-1 {
+				row["examDate"] = nil
+			}
+			section := row["section"].(map[string]any)
+			section["semester"].(map[string]any)["id"] = float64(index + 1)
+			section["course"].(map[string]any)["namePrimary"] = "Course " + strconv.Itoa(index+1)
+			row["monitors"].([]any)[0].(map[string]any)["jwId"] = float64(index + 1001)
+		} else {
+			row["id"] = "hw-" + strconv.Itoa(index+1)
+			row["completionRequired"] = index%2 == 0
+		}
+		data = append(data, row)
+		rows = append(rows, row)
+	}
+	body["data"] = data
+	body["pagination"] = map[string]any{"page": page, "pageSize": pageSize, "total": total, "totalPages": (total + pageSize - 1) / pageSize}
+	return body, rows
+}
+
+type collectionTrace struct {
+	pages      []int
+	pageSizes  []int
+	bearers    []string
+	sectionIDs []string
+}
+
+func (trace *collectionTrace) record(r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	trace.pages = append(trace.pages, page)
+	if !slices.Contains(trace.pageSizes, pageSize) {
+		trace.pageSizes = append(trace.pageSizes, pageSize)
+	}
+	bearer := r.Header.Get("Authorization")
+	if !slices.Contains(trace.bearers, bearer) {
+		trace.bearers = append(trace.bearers, bearer)
+	}
+	section := r.URL.Query().Get("sectionJwId")
+	if section != "" && !slices.Contains(trace.sectionIDs, section) {
+		trace.sectionIDs = append(trace.sectionIDs, section)
+	}
+}
+func (trace collectionTrace) observation(rows []map[string]any, err error, mismatches []string, undated int) specification.Collection {
+	sort.Ints(trace.pageSizes)
+	sort.Strings(trace.bearers)
+	sort.Strings(trace.sectionIDs)
+	if trace.sectionIDs == nil {
+		trace.sectionIDs = []string{}
+	}
+	return specification.Collection{Requests: len(trace.pages), Pages: trace.pages, PageSizes: trace.pageSizes, Rows: len(rows), UndatedRows: undated, ProjectionMismatches: mismatches, Error: err != nil, PartialRows: err != nil && rows != nil, Bearers: trace.bearers, SectionJwIDs: trace.sectionIDs}
 }

@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "s1",
+      "type": "schedule",
+      "at": "2026-09-18T09:50:00+08:00",
+      "endsAt": "2026-09-18T11:25:00+08:00",
+      "title": "课程",
+      "location": "3A101",
+      "url": "fixture",
+      "youngId": null
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 50,
+    "total": 1,
+    "totalPages": 1
+  }
+}

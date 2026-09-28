@@ -1,0 +1,34 @@
+{
+  "data": [
+    {
+      "id": 4,
+      "jwId": 42,
+      "code": "MATH.01",
+      "credits": null,
+      "stdCount": null,
+      "limitCount": null,
+      "courseId": 1,
+      "semesterId": null,
+      "campusId": null,
+      "openDepartmentId": null,
+      "course": {
+        "id": 1,
+        "jwId": 1,
+        "code": "fixture",
+        "nameCn": "fixture",
+        "nameEn": null,
+        "namePrimary": "数学",
+        "nameSecondary": null
+      },
+      "semester": null,
+      "campus": null,
+      "teachers": []
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 100,
+    "total": 1,
+    "totalPages": 1
+  }
+}
