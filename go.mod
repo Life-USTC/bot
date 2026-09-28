@@ -9,7 +9,7 @@ require (
 	github.com/getkin/kin-openapi v0.144.0
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/gorilla/websocket v1.5.3
-	github.com/mark3labs/mcp-go v1.1.0
+	github.com/mark3labs/mcp-go v1.1.1
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
