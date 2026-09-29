@@ -2,7 +2,6 @@ package agent
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +27,8 @@ func TestTargetPreflightRequestsLoginBeforePreparingMutation(t *testing.T) {
 	ctx := store.WithConversationJobLease(t.Context(), job.ID, claimed.LeaseToken)
 	svc := &Service{handler: commands.Handler{Store: db}}
 	result, err := svc.invokeHostCapability(ctx, hostCapabilityInput{Capability: "todo", Arguments: []string{"delete", "1"}}, ident, job.ID, nil)
-	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status": "auth_required"`) {
+	var decoded struct{ Status string }
+	if err != nil || json.Unmarshal([]byte(result), &decoded) != nil || decoded.Status != "auth_required" {
 		t.Fatalf("result=%s err=%v", result, err)
 	}
 	executions, err := db.CapabilityExecutionsForJob(ctx, job.ID)

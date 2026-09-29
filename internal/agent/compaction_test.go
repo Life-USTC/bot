@@ -136,8 +136,10 @@ func TestCompactionPreservesLiveTailAndReusesPersistedSummary(t *testing.T) {
 	}
 
 	// A later compaction must carry the existing summary forward, rather than
-	// rereading and resummarizing already-covered raw events.
-	seedCompactionHistory(t, db, ident, 4, 18_000)
+	// rereading and resummarizing already-covered raw events. A pass now drains
+	// every complete turn, so the follow-up history has to cross the trigger on
+	// its own for a second compaction to happen at all.
+	seedCompactionHistory(t, db, ident, 6, 18_000)
 	replay, err = svc.messagesFor(t.Context(), Input{Identity: ident, Text: "继续处理"})
 	if err != nil {
 		t.Fatal(err)
@@ -233,21 +235,58 @@ func TestCompactionAdvancesPastOversizedFirstTurn(t *testing.T) {
 		t.Fatalf("compaction ran %d times for one oversized prefix", calls)
 	}
 	saved, found, err := db.ConversationCompaction(t.Context(), ident)
-	if err != nil || !found || saved.CoveredEventID != events[3].ID {
-		t.Fatalf("compaction did not cover the oversized first turn: %#v %v", saved, err)
+	if err != nil || !found || saved.CoveredEventID < events[3].ID {
+		t.Fatalf("compaction did not advance past the oversized first turn: %#v %v", saved, err)
 	}
 	if after.Messages[0].Role != schema.Assistant || messageCursor(after.Messages[0], conversationSummaryIDKey) != saved.CoveredEventID {
 		t.Fatal("rewritten state lost the summary cursor")
 	}
+	// One pass covers every complete turn and keeps the current one, so the
+	// surviving tail starts at the last user boundary.
 	tail := -1
 	for i, m := range messages {
-		if messageCursor(m, conversationEventIDKey) == events[4].ID {
+		if m.Role == schema.User {
 			tail = i
-			break
 		}
 	}
 	if tail < 0 || !reflect.DeepEqual(after.Messages[1:], messages[tail:]) {
-		t.Fatal("compaction replaced more than the oversized first turn")
+		t.Fatal("a single pass must keep exactly the current turn verbatim")
+	}
+}
+
+// The previous loop re-entered only until the total fell back under the very
+// threshold that triggered it, so it stopped at the first value below the line.
+// A pass must now land near the floor instead of just under the ceiling.
+func TestCompactionLandsFarBelowTheTrigger(t *testing.T) {
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "test", ConversationType: "private", ConversationID: "low-water", UserID: "one"}
+	events := seedCompactionHistory(t, db, ident, 12, 8_000)
+	messages := conversationEventMessages(events)
+	before := estimateMessagesTokens(messages)
+	if before < conversationHistoryTokenLimit {
+		t.Fatalf("history did not cross the trigger: %d", before)
+	}
+	calls := 0
+	mw := &conversationCompactionMiddleware{store: db, identity: ident, model: summaryModelFunc(func(_ context.Context, _ []*schema.Message) (*schema.Message, error) {
+		calls++
+		return schema.AssistantMessage("历史已概括。", nil), nil
+	})}
+	_, after, err := mw.BeforeModelRewriteState(t.Context(), &adk.ChatModelAgentState{Messages: messages}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("one trigger must produce one summary request, got %d", calls)
+	}
+	got := estimateMessagesTokens(after.Messages)
+	// Measured on this fixture: 97,776 tokens of history settle at about 8,200,
+	// roughly a tenth of the trigger. The loop this replaced settled at ~24,500.
+	if limit := conversationHistoryTokenLimit / 8; got >= limit {
+		t.Fatalf("compaction settled at %d tokens, want below %d (from %d)", got, limit, before)
 	}
 }
 

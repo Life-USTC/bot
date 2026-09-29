@@ -57,8 +57,8 @@ func TestModelSelectsCommandImageInFinalAnswer(t *testing.T) {
 								t.Errorf("tool result=%s", text)
 								continue
 							}
-							if !strings.Contains(text, "\n  \"result\":") {
-								t.Errorf("not formatted JSON: %s", text)
+							if strings.Contains(text, "\n") {
+								t.Errorf("tool result JSON must stay compact: %s", text)
 							}
 							imageID = result.Images[0].ID
 						}

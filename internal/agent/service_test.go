@@ -2943,7 +2943,8 @@ func claimAgentInput(t *testing.T, db *store.Store, ident store.Identity, input 
 func TestRunBotCommandRejectsMultipleCommandsBeforeExecution(t *testing.T) {
 	svc := &Service{}
 	result, err := svc.runBotCommand(context.Background(), botCommandInput{Command: "天气 高新区\n登出"}, store.Identity{}, 0, nil)
-	if err != nil || !json.Valid([]byte(result)) || !strings.Contains(result, `"status": "invalid_input"`) {
+	var decoded struct{ Status string }
+	if err != nil || json.Unmarshal([]byte(result), &decoded) != nil || decoded.Status != "invalid_input" {
 		t.Fatalf("result = %s, err = %v", result, err)
 	}
 }

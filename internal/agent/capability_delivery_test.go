@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -63,7 +62,10 @@ func TestCommandImagesRemainSavedUntilModelSelectsThem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var result struct{ Images []struct{ ID string } }
+			var result struct {
+				Status string
+				Images []struct{ ID string }
+			}
 			if err := json.Unmarshal([]byte(execution.Result), &result); err != nil || len(result.Images) != 1 {
 				t.Fatalf("missing image reference: %s, %v", execution.Result, err)
 			}
@@ -71,7 +73,10 @@ func TestCommandImagesRemainSavedUntilModelSelectsThem(t *testing.T) {
 			if err != nil || !found || image.Kind != "help" {
 				t.Fatalf("saved image=%#v found=%v err=%v", image, found, err)
 			}
-			if execution.State != store.CapabilityExecutionSucceeded || !strings.Contains(execution.Result, `"status": "succeeded"`) {
+			// Assert the decoded status rather than its spelling: the encoder is
+			// free to change whitespace, but the business outcome must survive a
+			// presentation failure.
+			if execution.State != store.CapabilityExecutionSucceeded || result.Status != "succeeded" {
 				t.Fatalf("business result changed by presentation failure: %#v", execution)
 			}
 		})
