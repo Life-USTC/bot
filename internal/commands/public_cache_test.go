@@ -2,7 +2,7 @@ package commands
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -158,7 +158,14 @@ func TestPublicCommandCacheRetainsDomainDataAcrossInstances(t *testing.T) {
 		return FailedOutcome(Response{})
 	})
 	encoded := got.Response.ModelResult("weather", string(got.Status), time.Now())
-	if got.Response.Text != "天气卡片" || !strings.Contains(encoded, `"campus": "ustc-gaoxin"`) || !strings.Contains(encoded, `"temperature": 27`) {
+	var decoded struct {
+		Result struct {
+			Campus      string `json:"campus"`
+			Temperature int    `json:"temperature"`
+		} `json:"result"`
+	}
+	if got.Response.Text != "天气卡片" || json.Unmarshal([]byte(encoded), &decoded) != nil ||
+		decoded.Result.Campus != "ustc-gaoxin" || decoded.Result.Temperature != 27 {
 		t.Fatalf("cached result = %s", encoded)
 	}
 }

@@ -298,6 +298,28 @@ func busExecutor(h Handler, ctx context.Context, ident store.Identity, inv Invoc
 	return outcomeFromResponse(h, h.busResponse(ctx, ident, inv.Args))
 }
 
+// busNetworkForModel drops the full timetable from the network payload handed
+// to the model. The model answers from items, which is the already-filtered
+// view of the very same trips, so shipping both sent the same data twice. On a
+// real query trips was 91,086 of the network's 98,268 characters, and the whole
+// result is persisted verbatim into conversation history, where a single bus
+// query then consumed most of the compaction budget by itself. Routes, campuses
+// and version metadata stay: they are small and give the model the vocabulary
+// it needs to follow up.
+func busNetworkForModel(data map[string]any) map[string]any {
+	if data == nil {
+		return nil
+	}
+	slim := make(map[string]any, len(data))
+	for key, value := range data {
+		if key == "trips" {
+			continue
+		}
+		slim[key] = value
+	}
+	return slim
+}
+
 func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args []string, now time.Time) Response {
 	if firstArgIs(args, "help") {
 		return Response{Text: busHelp(), Kind: "bus"}
@@ -308,7 +330,7 @@ func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args [
 	}
 	h.markData(map[string]any{
 		"operation": "bus",
-		"network":   data,
+		"network":   busNetworkForModel(data),
 	})
 	if busPreferenceArgs(args) {
 		return Response{Text: h.busPreferences(ctx, ident, data, args), Kind: "bus"}
@@ -370,7 +392,7 @@ func (h Handler) busResponseAt(ctx context.Context, ident store.Identity, args [
 	}
 	resultData := map[string]any{
 		"operation":     "bus",
-		"network":       data,
+		"network":       busNetworkForModel(data),
 		"route":         routeArgs,
 		"schedule":      options.Schedules,
 		"show_departed": options.ShowDeparted,
@@ -599,7 +621,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	if !shouldSave && !shouldSaveBusSettings {
 		h.markData(map[string]any{
 			"operation":   "preferences",
-			"network":     data,
+			"network":     busNetworkForModel(data),
 			"preferences": preferences,
 			"settings":    busSettings,
 		})
@@ -620,7 +642,7 @@ func (h Handler) busPreferences(ctx context.Context, ident store.Identity, data 
 	}
 	h.markData(map[string]any{
 		"operation":   "preferences",
-		"network":     data,
+		"network":     busNetworkForModel(data),
 		"preferences": preferences,
 		"settings":    busSettings,
 	})
