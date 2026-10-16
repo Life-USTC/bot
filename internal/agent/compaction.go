@@ -22,8 +22,15 @@ import (
 const (
 	conversationEventIDKey         = "bot_conversation_event_id"
 	conversationSummaryIDKey       = "bot_summary_covered_event_id"
-	conversationRecentTokens       = 32_000
-	conversationSummaryInputTokens = 80_000
+	// conversationSummaryInputTokens bounds one summary request. It must exceed
+	// the trigger: a single pass has to carry every complete turn the trigger
+	// admits, or it would leave a remainder behind and the context would settle
+	// above its floor. The headroom absorbs the turn that crossed the trigger.
+	// It stays a bound rather than becoming unlimited because an oversized
+	// summary request is what took a whole turn down in production, and a
+	// history that has already overshot by more than this is better served by
+	// bounded progress than by one request too large to complete.
+	conversationSummaryInputTokens = conversationHistoryTokenLimit + 32_000
 	conversationSummaryMaxTokens   = 4_096
 	// A compaction claim is a liveness lease for the summary operation. It is
 	// independent of the lifetime of any one agent run and is renewed by the
@@ -69,27 +76,36 @@ func (m *conversationCompactionMiddleware) BeforeModelRewriteState(ctx context.C
 	if err != nil {
 		return ctx, nil, err
 	}
-	for estimateMessagesTokens(state.Messages)+toolTokens >= conversationHistoryTokenLimit {
-		next, err := observeRunStageValue(ctx, "history_compaction", func() (*adk.ChatModelAgentState, error) {
-			return m.compact(ctx, state, mc)
-		})
-		if err != nil {
-			return ctx, nil, fmt.Errorf("%w: %w", errConversationCompaction, err)
-		}
-		if next == state {
-			// No complete durable prefix can be replaced (for example, a large
-			// in-flight turn). Keep it intact and let the provider report a real
-			// context-capacity error instead of spinning on the trigger.
-			return ctx, state, nil
-		}
-		state = next
+	// One trigger, one summary request. The previous loop re-entered until the
+	// total fell back under the same threshold that had triggered it, so it
+	// stopped at the first value below the line and left the context parked just
+	// under the ceiling; the next sizeable turn then paid for another summary.
+	// A single pass now covers every complete persisted turn that one bounded
+	// request can carry, which for an ordinary trigger crossing is all of them,
+	// so the context lands near its floor rather than just under the line. Only
+	// the system messages, the summary and the in-flight turn survive.
+	if estimateMessagesTokens(state.Messages)+toolTokens < conversationHistoryTokenLimit {
+		return ctx, state, nil
 	}
-	return ctx, state, nil
+	next, err := observeRunStageValue(ctx, "history_compaction", func() (*adk.ChatModelAgentState, error) {
+		return m.compact(ctx, state, mc)
+	})
+	if err != nil {
+		return ctx, nil, fmt.Errorf("%w: %w", errConversationCompaction, err)
+	}
+	// No complete durable prefix could be replaced (for example, a single
+	// oversized in-flight turn). Keep the exact state and let the provider
+	// report a real context-capacity error rather than inventing a local limit.
+	return ctx, next, nil
 }
 
-// Choose a bounded prefix of complete, persisted old user turns. A current
-// turn may grow while the runner emits events asynchronously: never replace
-// it with a database snapshot or claim its unpersisted messages as covered.
+// Choose the prefix of complete, persisted user turns to summarize: every such
+// turn, up to the one summary request's input bound. The prefix deliberately no
+// longer stops once some fixed amount of recent history survives, so a single
+// pass drains the history instead of trimming the minimum needed to clear the
+// trigger. A current turn may grow while the runner emits events
+// asynchronously: never replace it with a database snapshot or claim its
+// unpersisted messages as covered.
 func compactionPrefix(messages []*schema.Message) (start, end int, expectedID, coveredID int64, err error) {
 	for start < len(messages) && messages[start].Role == schema.System {
 		start++
@@ -113,9 +129,6 @@ func compactionPrefix(messages []*schema.Message) (start, end int, expectedID, c
 				break
 			}
 			end, coveredID = i, previousID
-			if estimateMessagesTokens(messages[i:]) <= conversationRecentTokens {
-				break
-			}
 		}
 		id := messageCursor(messages[i], conversationEventIDKey)
 		if id <= previousID {
