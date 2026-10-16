@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderTextAttachmentRequiresInjectedRenderer(t *testing.T) {
-	if _, err := RenderTextAttachment(context.Background(), nil, "error", "宿主错误"); err == nil {
+	if _, err := RenderTextAttachment(context.Background(), nil, "error", "宿主错误", ""); err == nil {
 		t.Fatal("expected missing renderer error")
 	}
 }

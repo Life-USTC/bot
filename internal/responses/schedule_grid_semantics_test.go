@@ -1,0 +1,116 @@
+package responses
+
+import (
+	"fmt"
+	"image/color"
+	"strconv"
+	"testing"
+	"time"
+)
+
+func TestScheduleGridFindsTodayColumn(t *testing.T) {
+	grid := testScheduleGrid()
+	location := time.FixedZone("CST", 8*60*60)
+	if got := scheduleGridTodayIndex(grid, time.Date(2026, 7, 17, 12, 0, 0, 0, location)); got != 5 {
+		t.Fatalf("today index = %d, want 5", got)
+	}
+	if got := scheduleGridTodayIndex(grid, time.Date(2026, 7, 20, 12, 0, 0, 0, location)); got != -1 {
+		t.Fatalf("outside week today index = %d, want -1", got)
+	}
+}
+
+func TestScheduleGridCourseColorUsesStableNormalizedKey(t *testing.T) {
+	base := scheduleGridCourseColor(ScheduleGridItem{
+		Day:         0,
+		StartPeriod: 1,
+		EndPeriod:   2,
+		Course:      "Computer Networks",
+	})
+	tests := []struct {
+		name string
+		item ScheduleGridItem
+	}{
+		{
+			name: "different date and periods",
+			item: ScheduleGridItem{Day: 6, StartPeriod: 11, EndPeriod: 13, Course: "Computer Networks"},
+		},
+		{
+			name: "normalized whitespace and case",
+			item: ScheduleGridItem{Day: 3, StartPeriod: 4, EndPeriod: 5, Course: "  computer\t networks  "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scheduleGridCourseColor(tt.item); got != base {
+				t.Fatalf("course color = %v, want %v", got, base)
+			}
+		})
+	}
+}
+
+func TestScheduleGridCourseColorPrefersSectionKey(t *testing.T) {
+	want := scheduleGridCourseColor(ScheduleGridItem{SectionKey: " section-42 ", Course: "数据库系统"})
+	got := scheduleGridCourseColor(ScheduleGridItem{SectionKey: "SECTION-42", Course: "Database Systems"})
+	if got != want {
+		t.Fatalf("same section key colors differ: got %v, want %v", got, want)
+	}
+}
+
+func TestGeneratedSectionColorsAvoidSmallPaletteCollisions(t *testing.T) {
+	colors := make(map[color.RGBA]struct{})
+	for i := 0; i < 20; i++ {
+		colors[generateSectionColor(fmt.Sprintf("section-%d", i))] = struct{}{}
+	}
+	if len(colors) < 18 {
+		t.Fatalf("generated only %d distinct colors for 20 sections", len(colors))
+	}
+}
+
+func TestGeneratedSectionColorHasNeutralFallback(t *testing.T) {
+	if got, want := generateSectionColor(""), (color.RGBA{226, 232, 240, 255}); got != want {
+		t.Fatalf("empty section color = %v, want %v", got, want)
+	}
+}
+
+func TestScheduleGridCourseColorsDoNotDependOnItemOrder(t *testing.T) {
+	items := []ScheduleGridItem{
+		{Course: "数据库系统"},
+		{Course: "Computer Networks"},
+		{Course: "线性代数"},
+	}
+	want := make(map[string]color.RGBA, len(items))
+	for _, item := range items {
+		want[item.Course] = scheduleGridCourseColor(item)
+	}
+
+	reordered := []ScheduleGridItem{items[2], items[0], items[1]}
+	for _, item := range reordered {
+		if got := scheduleGridCourseColor(item); got != want[item.Course] {
+			t.Fatalf("course %q color after reorder = %v, want %v", item.Course, got, want[item.Course])
+		}
+	}
+}
+
+func testScheduleGrid() *ScheduleGrid {
+	days := []ScheduleGridDay{
+		{Label: "周日", Date: "07-12"},
+		{Label: "周一", Date: "07-13"},
+		{Label: "周二", Date: "07-14"},
+		{Label: "周三", Date: "07-15"},
+		{Label: "周四", Date: "07-16"},
+		{Label: "周五", Date: "07-17"},
+		{Label: "周六", Date: "07-18"},
+	}
+	periods := make([]ScheduleGridPeriod, 13)
+	for i := range periods {
+		periods[i] = ScheduleGridPeriod{Label: "第 " + strconv.Itoa(i+1) + " 节", Time: "09:00–09:45"}
+	}
+	return &ScheduleGrid{
+		Days:    days,
+		Periods: periods,
+		Items: []ScheduleGridItem{
+			{Day: 0, StartPeriod: 3, EndPeriod: 4, Course: "数据库系统", Location: "高新区 · GT-B112"},
+			{Day: 1, StartPeriod: 6, EndPeriod: 7, Course: "Computer Networks", Location: "西区 · 3A204"},
+		},
+	}
+}

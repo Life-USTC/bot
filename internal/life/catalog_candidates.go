@@ -11,7 +11,7 @@ import (
 // Candidate searches consume every page: uniqueness cannot be decided from
 // just the first page of a catalog response.
 func (c *Client) SectionCandidates(ctx context.Context, query string, semesterID int64) ([]map[string]any, error) {
-	return catalogCandidates(func(page int64) (*http.Response, error) {
+	return catalogCandidates[openapi.PaginatedSectionResponseSchema](func(page int64) (*http.Response, error) {
 		return c.Typed(ctx, "").ListSections(ctx, &openapi.ListSectionsParams{
 			Search: &query, SemesterId: &semesterID, Page: &page, PageSize: int64Ptr(100),
 		})
@@ -19,14 +19,14 @@ func (c *Client) SectionCandidates(ctx context.Context, query string, semesterID
 }
 
 func (c *Client) CourseCandidates(ctx context.Context, query string) ([]map[string]any, error) {
-	return catalogCandidates(func(page int64) (*http.Response, error) {
+	return catalogCandidates[openapi.PaginatedCourseResponseSchema](func(page int64) (*http.Response, error) {
 		return c.Typed(ctx, "").ListCourses(ctx, &openapi.ListCoursesParams{
 			Search: &query, Page: &page, PageSize: int64Ptr(100),
 		})
 	})
 }
 
-func catalogCandidates(fetch func(int64) (*http.Response, error)) ([]map[string]any, error) {
+func catalogCandidates[T any](fetch func(int64) (*http.Response, error)) ([]map[string]any, error) {
 	var result []map[string]any
 	for page := int64(1); ; page++ {
 		var body struct {
@@ -37,7 +37,7 @@ func catalogCandidates(fetch func(int64) (*http.Response, error)) ([]map[string]
 			}
 		}
 		response, err := fetch(page)
-		if err := typedJSON(response, err, "catalog candidates", &body); err != nil {
+		if err := typedJSON[T](response, err, "catalog candidates", &body); err != nil {
 			return nil, err
 		}
 		if body.Pagination.Page != page || body.Pagination.TotalPages < page {

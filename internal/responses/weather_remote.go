@@ -27,7 +27,7 @@ func (r RemoteRenderer) buildWeatherRequest(img *Image) (remoteWeatherPayload, e
 		return remoteWeatherPayload{}, errors.New("response weather card has no locations")
 	}
 	now := r.now().In(time.FixedZone("CST", 8*60*60))
-	footer := richFooterLines(now)
+	footer := richFooterLines(now, img.Ref)
 	return remoteWeatherPayload{
 		// The legacy weather renderer always uses the fixed card title,
 		// regardless of the caller-provided image title.

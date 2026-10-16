@@ -64,7 +64,7 @@ func (r RemoteRenderer) buildGridRequest(img *Image) remoteGridPayload {
 		Week:      strings.TrimSpace(grid.Week),
 		DateRange: strings.TrimSpace(grid.DateRange),
 		Footer: func() []string {
-			footer := richFooterLines(now)
+			footer := richFooterLines(now, img.Ref)
 			return []string{footer[0], footer[1]}
 		}(),
 	}

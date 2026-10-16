@@ -11,6 +11,13 @@ type Image struct {
 	URL      string
 	Grid     *ScheduleGrid
 	Weather  *WeatherCard
+	// Ref is the request number printed in the card footer. It is stamped at
+	// the durable delivery boundary rather than by the command that built the
+	// card, so every card carries the identifier of the outbound record a user
+	// can quote and an operator can look up. It is deliberately not part of
+	// the persisted render intent: a retry re-renders the same record and
+	// therefore prints the same number.
+	Ref string `json:"-"`
 }
 
 type ScheduleGrid struct {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,12 +47,8 @@ type campusCatalog struct {
 	fetchedAt time.Time
 }
 
-// campusCatalogCache is shared process-wide on the Service, so every
-// lazyMCPSession created for any turn or inventory lookup consults the same
-// entries. Anonymous and authenticated listings are cached separately because
-// the server filters the catalog by the caller's scopes: a shared conversation
-// has no user token and legitimately sees only the public tools, so its
-// catalog must never be served to, or from, an authenticated caller.
+// campusCatalogCache reuses listings only for the same bearer authorization.
+// Different users or grants can have different tool schemas and annotations.
 type campusCatalogCache struct {
 	mu      sync.Mutex
 	entries map[string]campusCatalog
@@ -81,25 +78,24 @@ func (c *campusCatalogCache) put(key string, tools []mcpgo.Tool) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[key] = campusCatalog{tools: append([]mcpgo.Tool(nil), tools...), fetchedAt: c.now()}
+	now := c.now()
+	// Per-grant entries expire; remove them on insertion to bound retained data
+	// to grants used during the cache window.
+	for entryKey, entry := range c.entries {
+		if now.Sub(entry.fetchedAt) > campusCatalogTTL {
+			delete(c.entries, entryKey)
+		}
+	}
+	c.entries[key] = campusCatalog{tools: append([]mcpgo.Tool(nil), tools...), fetchedAt: now}
 }
 
-// campusCatalogCacheKey partitions the cache by authorization class. This Bot
-// requests one fixed scope set, so every caller holding a token sees the same
-// authenticated catalog and every tokenless caller sees the same public one.
-//
-// The key is derived from the token actually obtained, never from the shape of
-// the identity: a caller can carry a full Platform/UserID identity and still be
-// logged out, in which case MCPAccessToken returns ErrNotLoggedIn, the session
-// opens anonymously, and the server returns only the public catalog. Keying on
-// the identity would file that public catalog under "authenticated" — starving
-// real logged-in callers of their tools, and in the other direction serving a
-// logged-out caller the authenticated catalog a logged-in caller had warmed.
+// Hash the bearer token so cache keys neither expose credentials nor combine
+// users/grants with different scopes. Rotating a token invalidates its listing.
 func campusCatalogCacheKey(token string) string {
-	if token != "" {
-		return "authenticated"
+	if token == "" {
+		return "anonymous"
 	}
-	return "anonymous"
+	return fmt.Sprintf("authenticated:%x", sha256.Sum256([]byte(token)))
 }
 
 type campusToolSearchInput struct {

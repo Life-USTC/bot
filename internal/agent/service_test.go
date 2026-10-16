@@ -2208,7 +2208,7 @@ func TestRunDiscoversCodeBasedUnsubscribeAndExecutesOnlyAfterConfirmation(t *tes
 			}
 			_, _ = w.Write([]byte(`{"data":[{
 				"id":12,"code":"COMP6212P.02","course":{"namePrimary":"编译原理"},
-				"teacher":{"namePrimary":"程老师"},"semester":{"nameCn":"2026年秋季学期"}
+				"teachers":[{"namePrimary":"程老师"}],"semester":{"nameCn":"2026年秋季学期"}
 			}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/workspace/subscriptions/batch":
 			removeCalls.Add(1)

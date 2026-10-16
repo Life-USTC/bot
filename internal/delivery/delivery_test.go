@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -232,5 +233,93 @@ func TestServiceRejectsReminderThatExpiredAfterClaim(t *testing.T) {
 	})
 	if outcome.State != OutcomeRejected || outcome.Code != "expired" || adapter.got.Content.HasContent() || renderer.calls != 0 {
 		t.Fatalf("outcome=%#v adapter=%#v renderer calls=%d", outcome, adapter.got, renderer.calls)
+	}
+}
+
+// refRecordingRenderer keeps the request number each render saw, so a test can
+// check what the card would print rather than the bytes it returned.
+type refRecordingRenderer struct {
+	refs []string
+}
+
+func (r *refRecordingRenderer) RenderPNGContext(_ context.Context, img *responses.Image) ([]byte, int, int, error) {
+	r.refs = append(r.refs, img.Ref)
+	return []byte("png"), 1, 1, nil
+}
+
+func TestDeliverRecordStampsTheRecordIDOnEveryCard(t *testing.T) {
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
+	renderer := &refRecordingRenderer{}
+	service, err := New(nil, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetRenderer(renderer); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := responses.EncodeImageIntent(responses.NewRichTextImage("todo", "# 待办\n\n写完文献综述初稿", "待办"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := Record{ID: 4471, Message: message.Outbound{
+		Kind: "notification.todo", TextPolicy: message.TextPolicyImageOnly,
+		Target: message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content: message.Content{Parts: []message.ContentPart{
+			{Text: "宿主文本"},
+			{Attachment: &message.Attachment{MIMEType: "image/png", AltText: "待办", RenderPayload: payload}},
+		}},
+	}}
+	if outcome := service.DeliverRecord(context.Background(), record); outcome.State != OutcomeAccepted {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	// Both the host text card and the structured card carry the same number:
+	// it names the outbound record, not the individual attachment.
+	if want := []string{"4471", "4471"}; !slices.Equal(renderer.refs, want) {
+		t.Fatalf("rendered refs = %#v, want %#v", renderer.refs, want)
+	}
+}
+
+// A retry renders the same record again and must not renumber the card.
+func TestDeliverRecordRepeatsTheSameNumberOnRetry(t *testing.T) {
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
+	renderer := &refRecordingRenderer{}
+	service, err := New(nil, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetRenderer(renderer); err != nil {
+		t.Fatal(err)
+	}
+	record := Record{ID: 7, Attempts: 3, Message: message.Outbound{
+		Kind: "error", TextPolicy: message.TextPolicyImageOnly,
+		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "失败详情"}}},
+	}}
+	service.DeliverRecord(context.Background(), record)
+	service.DeliverRecord(context.Background(), record)
+	if want := []string{"7", "7"}; !slices.Equal(renderer.refs, want) {
+		t.Fatalf("rendered refs = %#v, want %#v", renderer.refs, want)
+	}
+}
+
+// DeliverNow has no outbox row to name, so its cards print no number rather
+// than an invented one.
+func TestDeliverNowRendersWithoutARequestNumber(t *testing.T) {
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
+	renderer := &refRecordingRenderer{}
+	service, err := New(nil, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetRenderer(renderer); err != nil {
+		t.Fatal(err)
+	}
+	service.DeliverNow(context.Background(), message.Outbound{
+		Kind: "error", TextPolicy: message.TextPolicyImageOnly,
+		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "失败详情"}}},
+	})
+	if want := []string{""}; !slices.Equal(renderer.refs, want) {
+		t.Fatalf("rendered refs = %#v, want %#v", renderer.refs, want)
 	}
 }

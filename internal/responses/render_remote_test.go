@@ -267,6 +267,7 @@ func TestRemoteRendererRichPayload(t *testing.T) {
 	if img == nil {
 		t.Skip("nil image")
 	}
+	img.Ref = "4471"
 	if _, _, _, err := renderer.RenderPNG(img); err != nil {
 		t.Fatalf("RenderPNG: %v", err)
 	}
@@ -301,7 +302,8 @@ func TestRemoteRendererRichPayload(t *testing.T) {
 	if got := table.Rows[0].Cells; len(got) != 2 || got[0] != "提交数据库实验报告" || got[1] != "07-10" {
 		t.Fatalf("first row cells = %#v", got)
 	}
-	if len(gotPayload.Footer) != 2 || gotPayload.Footer[0] != "13:00 · 工作日" || gotPayload.Footer[1] != "Life @ USTC" {
+	if len(gotPayload.Footer) != 2 || gotPayload.Footer[0] != "2026-09-02（周三）13:00" ||
+		gotPayload.Footer[1] != "#4471 · Life @ USTC" {
 		t.Fatalf("footer = %#v", gotPayload.Footer)
 	}
 	if raw := string(gotRequest.Payload); strings.Contains(raw, "content_width") || strings.Contains(raw, "column_widths") || strings.Contains(raw, "wrapped") {

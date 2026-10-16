@@ -64,7 +64,7 @@ func TestAcademicQueriesPreferUniqueCurrentSubscription(t *testing.T) {
 					}
 					_ = json.NewEncoder(w).Encode([]any{})
 				case "/api/community/section-homeworks":
-					_ = json.NewEncoder(w).Encode(map[string]any{"homeworks": []any{}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}, "pagination": map[string]any{"page": 1, "totalPages": 1}})
 				case "/api/catalog/sections", "/api/catalog/courses":
 					publicSearch.Add(1)
 					t.Error("unique personal match should not use public search")

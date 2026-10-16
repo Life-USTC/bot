@@ -71,7 +71,8 @@ func TestRemoteRendererWeatherPayload(t *testing.T) {
 	if payload.Title != "天气" || payload.Meta != card.Meta {
 		t.Fatalf("title/meta = %q/%q", payload.Title, payload.Meta)
 	}
-	if len(payload.Footer) != 2 || payload.Footer[0] != "15:04 · 工作日" || payload.Footer[1] != "Life @ USTC" {
+	if len(payload.Footer) != 2 || payload.Footer[0] != "2026-09-02（周三）15:04" ||
+		payload.Footer[1] != "Life @ USTC" {
 		t.Fatalf("footer = %#v", payload.Footer)
 	}
 	if len(payload.Locations) != 1 {

@@ -142,10 +142,10 @@ func TestYoungCalendarFetchesAllPagesAndDisplaysMetadata(t *testing.T) {
 		}
 		page := r.URL.Query().Get("page")
 		if page == "1" {
-			_, _ = w.Write([]byte(`{"data":[{"youngId":"event-1","name":"周一活动","startAt":"2026-09-14T10:00:00+08:00","endAt":null,"applyStartAt":null,"applyEndAt":null,"dateUnknown":false}],"pagination":{"page":1,"pageSize":100,"total":2,"totalPages":2},"unknownDateCount":1,"source":{"status":"fresh","lastSyncedAt":"2026-09-14T08:00:00+08:00"}}`))
+			_, _ = w.Write([]byte(`{"data":[{"youngId":"event-1","name":"周一活动","startAt":"2026-09-14T10:00:00+08:00","endAt":null,"applyStartAt":null,"applyEndAt":null,"dateUnknown":false}],"pagination":{"page":1,"pageSize":100,"total":2,"totalPages":2},"meta":{"unknownDateCount":1,"source":{"status":"fresh","lastSyncedAt":"2026-09-14T08:00:00+08:00"}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":[{"youngId":"event-2","name":"周二活动","startAt":"2026-09-15T10:00:00+08:00","endAt":null,"applyStartAt":null,"applyEndAt":null,"dateUnknown":false}],"pagination":{"page":2,"pageSize":100,"total":2,"totalPages":2},"unknownDateCount":1,"source":{"status":"fresh","lastSyncedAt":"2026-09-14T08:00:00+08:00"}}`))
+		_, _ = w.Write([]byte(`{"data":[{"youngId":"event-2","name":"周二活动","startAt":"2026-09-15T10:00:00+08:00","endAt":null,"applyStartAt":null,"applyEndAt":null,"dateUnknown":false}],"pagination":{"page":2,"pageSize":100,"total":2,"totalPages":2},"meta":{"unknownDateCount":1,"source":{"status":"fresh","lastSyncedAt":"2026-09-14T08:00:00+08:00"}}}`))
 	}))
 	defer server.Close()
 	handler := Handler{Life: life.NewClient(server.URL, server.Client())}
