@@ -14,6 +14,30 @@ import (
 // The date fields are instants; callers should render them in the user's
 // intended local timezone.
 type YoungEvent struct {
+	CategoryCode           string   `json:"categoryCode,omitempty"`
+	ModuleCode             string   `json:"moduleCode,omitempty"`
+	FormCode               string   `json:"formCode,omitempty"`
+	ActivityLevelCode      string   `json:"activityLevelCode,omitempty"`
+	DepartmentId           string   `json:"departmentId,omitempty"`
+	UpstreamOrganizerIds   []string `json:"upstreamOrganizerIds,omitempty"`
+	UpstreamSponsorIds     []string `json:"upstreamSponsorIds,omitempty"`
+	TagIds                 []string `json:"tagIds,omitempty"`
+	SignupScopeCode        string   `json:"signupScopeCode,omitempty"`
+	SignupDepartmentIds    []string `json:"signupDepartmentIds,omitempty"`
+	RequiresSignupInfo     *bool    `json:"requiresSignupInfo,omitempty"`
+	AllowedAttachmentTypes []string `json:"allowedAttachmentTypes,omitempty"`
+	IsOnline               *bool    `json:"isOnline,omitempty"`
+	OnlineMeetingInfo      string   `json:"onlineMeetingInfo,omitempty"`
+	ExternalSponsor        string   `json:"externalSponsor,omitempty"`
+	ActivityLevel          string   `json:"activityLevel,omitempty"`
+	Module                 string   `json:"module,omitempty"`
+	Form                   string   `json:"form,omitempty"`
+	Grades                 string   `json:"grades,omitempty"`
+	Sponsor                string   `json:"sponsor,omitempty"`
+	ContactName            string   `json:"contactName,omitempty"`
+	ContactTel             string   `json:"contactTel,omitempty"`
+	ParticipationNotes     string   `json:"participationNotes,omitempty"`
+
 	ApplyEndAt         *time.Time `json:"applyEndAt"`
 	ApplyStartAt       *time.Time `json:"applyStartAt"`
 	Category           string     `json:"category,omitempty"`
@@ -31,7 +55,9 @@ type YoungEvent struct {
 	Organizer          string     `json:"organizer,omitempty"`
 	OrganizerID        string     `json:"organizerId,omitempty"`
 	OrganizerName      string     `json:"organizerName,omitempty"`
-	RegistrationStatus string     `json:"registrationStatus,omitempty"`
+	ActivityStatusCode string     `json:"activityStatusCode,omitempty"`
+	SignupStatusCode   string     `json:"signupStatusCode,omitempty"`
+	RequiresSignup     *bool      `json:"requiresSignup,omitempty"`
 	Status             string     `json:"status,omitempty"`
 	SourceMissing      bool       `json:"sourceMissing,omitempty"`
 	StartAt            *time.Time `json:"startAt"`
@@ -49,10 +75,14 @@ type YoungEventPagination struct {
 }
 
 type YoungEventPage struct {
-	Data             []YoungEvent         `json:"data"`
-	Pagination       YoungEventPagination `json:"pagination"`
-	UnknownDateCount int                  `json:"unknownDateCount,omitempty"`
-	Source           map[string]any       `json:"source,omitempty"`
+	Data       []YoungEvent         `json:"data"`
+	Pagination YoungEventPagination `json:"pagination"`
+	Meta       YoungEventMetadata   `json:"meta"`
+}
+
+type YoungEventMetadata struct {
+	UnknownDateCount int            `json:"unknownDateCount"`
+	Source           map[string]any `json:"source"`
 }
 
 // ListYoungEvents returns public second-classroom events. Life's API uses
@@ -74,7 +104,7 @@ func (c *Client) ListYoungEvents(ctx context.Context, page, pageSize int, search
 
 	var out YoungEventPage
 	resp, err := c.Typed(ctx, "").GetApiCatalogYoungEvents(ctx, &params)
-	if err := typedJSON(resp, err, "young events", &out); err != nil {
+	if err := typedJSON[openapi.PaginatedYoungEventResponseSchema](resp, err, "young events", &out); err != nil {
 		return YoungEventPage{}, err
 	}
 	return out, nil
@@ -89,7 +119,7 @@ func (c *Client) GetYoungEvent(ctx context.Context, youngID string) (YoungEvent,
 
 	var out YoungEvent
 	resp, err := c.Typed(ctx, "").GetApiCatalogYoungEventsYoungId(ctx, youngID)
-	if err := typedJSON(resp, err, "young event", &out); err != nil {
+	if err := typedJSON[openapi.YoungEventDetailSchema](resp, err, "young event", &out); err != nil {
 		return YoungEvent{}, err
 	}
 	return out, nil

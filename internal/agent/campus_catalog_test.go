@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -179,8 +180,9 @@ func TestCampusCatalogCacheKeepsAnonymousAndAuthenticatedCatalogsApart(t *testin
 	if got := campusCatalogCacheKey(""); got != "anonymous" {
 		t.Fatalf("tokenless key = %q, want anonymous", got)
 	}
-	if got := campusCatalogCacheKey("mcp-access-token"); got != "authenticated" {
-		t.Fatalf("token-bearing key = %q, want authenticated", got)
+	first, second := campusCatalogCacheKey("mcp-access-token"), campusCatalogCacheKey("another-token")
+	if first == second || first == "anonymous" || strings.Contains(first, "mcp-access-token") {
+		t.Fatalf("bearer cache keys must be private and distinct: %q / %q", first, second)
 	}
 }
 
@@ -335,7 +337,7 @@ func TestLoggedOutCallerCatalogIsCachedSeparatelyFromAuthenticated(t *testing.T)
 	if err := session.ensure(ctx); err != nil {
 		t.Fatalf("a logged-out caller must still reach the public catalog: %v", err)
 	}
-	if _, found := svc.campusCatalog.get("authenticated"); found {
+	if _, found := svc.campusCatalog.get(campusCatalogCacheKey("access")); found {
 		t.Fatal("a logged-out caller's request must not populate the authenticated cache entry")
 	}
 	if _, found := svc.campusCatalog.get("anonymous"); !found {

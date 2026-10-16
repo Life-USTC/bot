@@ -87,6 +87,16 @@ type outputCommitFaultStore struct {
 	failures int
 }
 
+type profileRecordingStore struct {
+	*store.Store
+	names []string
+}
+
+func (s *profileRecordingStore) SaveDirectUserDisplayName(ctx context.Context, ident store.Identity, name string, seenAt time.Time) error {
+	s.names = append(s.names, name)
+	return s.Store.SaveDirectUserDisplayName(ctx, ident, name, seenAt)
+}
+
 func (s *outputCommitFaultStore) CommitConversationJobOutput(ctx context.Context, commit store.ConversationJobOutputCommit) ([]store.ConversationJobCommittedOutput, error) {
 	s.mu.Lock()
 	inject := s.failures > 0
@@ -340,6 +350,35 @@ func TestCoordinatorFiltersAmbientGroupTextBeforePersistence(t *testing.T) {
 	claimed := claimOnlyConversationJob(t, db)
 	if claimed.Invocation.Name != string(commands.CapabilityBus) || claimed.Invocation.Command != "bus 西区 高新区" {
 		t.Fatalf("public group invocation = %#v", claimed.Invocation)
+	}
+}
+
+func TestCoordinatorStoresDirectDisplayNameButNotGroupCard(t *testing.T) {
+	db := newCoordinatorStore(t)
+	profiles := &profileRecordingStore{Store: db}
+	coordinator, err := NewCoordinator(CoordinatorConfig{
+		Jobs: profiles,
+		Commands: commandFunc(func(context.Context, commands.Input) (commands.Response, bool) {
+			return commands.Response{}, false
+		}),
+		Outputs: db,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct := jobInbound("private-name", "hello")
+	direct.Actor.DisplayName = "Alice"
+	direct.SentAt = time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	if err := coordinator.Enqueue(t.Context(), direct); err != nil {
+		t.Fatal(err)
+	}
+	group := groupJobInbound("ambient-name", "42", "ordinary group text")
+	group.Actor.DisplayName = "Group card"
+	if err := coordinator.Enqueue(t.Context(), group); err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles.names) != 1 || profiles.names[0] != "Alice" {
+		t.Fatalf("recorded direct names = %#v", profiles.names)
 	}
 }
 

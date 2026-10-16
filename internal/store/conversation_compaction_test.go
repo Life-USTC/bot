@@ -140,7 +140,7 @@ func TestConversationCompactionIsolatedByConversationAndSurvivesRestart(t *testi
 	}
 }
 
-func TestSchemaMaintenanceAddsCompactionTableToCurrentDatabase(t *testing.T) {
+func TestSchemaMaintenanceRejectsMissingCompactionTable(t *testing.T) {
 	ctx := context.Background()
 	path := t.TempDir() + "/bot.db"
 	s, err := Open(path)
@@ -170,13 +170,9 @@ func TestSchemaMaintenanceAddsCompactionTableToCurrentDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := maintenance.PrepareSchemaForMaintenance(ctx); err != nil {
+	if err := maintenance.PrepareSchemaForMaintenance(ctx); err == nil {
 		_ = maintenance.Close()
-		t.Fatal(err)
-	}
-	if err := maintenance.PrepareSchemaForMaintenance(ctx); err != nil {
-		_ = maintenance.Close()
-		t.Fatalf("repeated schema maintenance: %v", err)
+		t.Fatal("maintenance silently repaired a malformed current database")
 	}
 	events, err := maintenance.ConversationEventsAfter(ctx, ident, 0, 10)
 	if err != nil || len(events) != 1 || events[0].ID != event.ID || events[0].Content != event.Content {
@@ -186,15 +182,6 @@ func TestSchemaMaintenanceAddsCompactionTableToCurrentDatabase(t *testing.T) {
 	if err := maintenance.Close(); err != nil {
 		t.Fatal(err)
 	}
-	verified, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := verified.VerifySchema(); err != nil {
-		_ = verified.Close()
-		t.Fatal(err)
-	}
-	_ = verified.Close()
 }
 
 func TestConversationEventsAfterUsesStableConversationCursor(t *testing.T) {

@@ -21,7 +21,7 @@ func TestYoungNotificationReadFollowsDurableOutboxAndDedupes(t *testing.T) {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		readRequests++
-		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"n-1","success":true}`))
 	}))
 	defer server.Close()
 
@@ -75,7 +75,7 @@ func TestYoungNotificationReadFailureRetriesWithoutDuplicateEnqueue(t *testing.T
 			http.Error(w, "temporary", http.StatusServiceUnavailable)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"n-1","success":true}`))
 	}))
 	defer server.Close()
 

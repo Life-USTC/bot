@@ -4,28 +4,38 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Life-USTC/Bot/internal/specification"
+
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Life-USTC/Bot/internal/commands"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
-func TestRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
-	var delivered commands.Response
-	lazy := &lazyMCPSession{
-		service:  &Service{handler: commands.Handler{}},
-		identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "private", ConversationID: "7"},
-		sendResponse: func(_ context.Context, _ store.Identity, response commands.Response) error {
-			delivered = response
-			return nil
-		},
-	}
-	if err := lazy.deliverRoomMapResponse(t.Context(), `{"code":"3A204","building":"三教","floor":"2","status":"highlighted","imageUrl":"https://static.example/3A204.png","sourceImageUrl":"https://static.example/floor-2.png"}`); err != nil {
-		t.Fatal(err)
-	}
-	if delivered.Text != "" || delivered.Image == nil || delivered.Image.URL != "https://static.example/3A204.png" {
-		t.Fatalf("delivered = %#v", delivered)
-	}
+func TestSpecRoomMapMCPIsAllowedAndDeliversImageResponse(t *testing.T) {
+	t.Run("room-map.bot-private-mcp-image", func(t *testing.T) {
+		contract := specification.Begin(t)
+		var delivered commands.Response
+		lazy := &lazyMCPSession{
+			service:  &Service{handler: commands.Handler{}},
+			identity: store.Identity{Platform: "napcat", UserID: "7", ConversationType: "private", ConversationID: "7"},
+			sendResponse: func(_ context.Context, _ store.Identity, response commands.Response) error {
+				delivered = response
+				return nil
+			},
+		}
+		if err := lazy.deliverRoomMapResponse(t.Context(), `{"code":"3A204","building":"三教","floor":"2","status":"highlighted","imageUrl":"https://static.example/3A204.png","sourceImageUrl":"https://static.example/floor-2.png"}`); err != nil {
+			t.Fatal(err)
+		}
+		imageURL := ""
+		images := 0
+		if delivered.Image != nil {
+			imageURL = delivered.Image.URL
+			images = 1
+		}
+		contract.Check("private-image", specification.RoomPresentation{Text: delivered.Text, ImageURL: imageURL, Images: images, Requests: []string{}})
+
+	})
 }
 
 func TestCampusToolEffectUsesMCPAnnotations(t *testing.T) {

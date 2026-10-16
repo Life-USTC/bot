@@ -14,6 +14,6 @@ func (c *Client) SetSubscriptionKind(ctx context.Context, token string, jwID int
 	}
 	var out map[string]any
 	resp, err := c.Typed(ctx, token).PatchApiWorkspaceSubscriptionsJwId(ctx, jwID, openapi.SubscriptionKindUpdateRequestSchema{Kind: value})
-	err = typedJSON(resp, err, "update subscription kind", &out)
+	err = typedJSON[openapi.SubscriptionKindUpdateResponseSchema](resp, err, "update subscription kind", &out)
 	return out, err
 }

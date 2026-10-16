@@ -15,7 +15,13 @@ const (
 	// Each logical model request may retry its network operation independently.
 	// This is deliberately per request; it is not a budget for the complete
 	// conversation or tool loop.
-	llmRequestMaxAttempts = 5
+	//
+	// The budget is sized against the slowest legitimate request rather than a
+	// typical one. History compaction sends a large prefix in a single call and
+	// routinely runs for one to four minutes, so a window that expires in
+	// seconds gives up while the provider is merely slow or briefly refusing
+	// connections, and discards the user's turn with it.
+	llmRequestMaxAttempts = 8
 )
 
 var (

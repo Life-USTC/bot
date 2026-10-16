@@ -156,7 +156,7 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after a successful startup migration.
-const CurrentSchemaVersion = 5
+const CurrentSchemaVersion = 7
 
 var requiredSchemaModels = []any{
 	&userRow{},
@@ -240,11 +240,13 @@ type Store struct {
 }
 
 type userRow struct {
-	ID             int64  `gorm:"primaryKey"`
-	Platform       string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
-	ExternalUserID string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                int64  `gorm:"primaryKey"`
+	Platform          string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
+	ExternalUserID    string `gorm:"not null;uniqueIndex:idx_users_platform_external_user"`
+	DisplayName       string
+	DisplayNameSeenAt *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (userRow) TableName() string {
@@ -339,8 +341,8 @@ type notificationSettingRow struct {
 	ConversationID   string
 	ClassesEnabled   bool `gorm:"not null"`
 	HomeworkEnabled  bool `gorm:"not null"`
-	YoungEnabled     bool `gorm:"not null;default:false"`
-	TodosEnabled     bool `gorm:"not null;default:false"`
+	YoungEnabled     bool `gorm:"not null"`
+	TodosEnabled     bool `gorm:"not null"`
 	ReauthRequired   bool `gorm:"not null;default:false"`
 	UpdatedAt        time.Time
 }
@@ -579,8 +581,8 @@ func (s *Store) migrateSchema() error {
 }
 
 // PrepareSchemaForMaintenance applies the explicitly requested schema setup
-// and verifies the complete schema. The v4 to v5 step adds the todo opt-in;
-// normal startup only verifies existing databases and never alters them.
+// and verifies the complete schema. Normal startup only verifies existing
+// databases and never alters them.
 func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return errors.New("store is unavailable")
@@ -593,37 +595,21 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 		return fmt.Errorf("read schema version: %w", err)
 	}
 	switch version {
-	case 4, CurrentSchemaVersion:
-		// Apply only the explicitly supported additions, then verify the entire
-		// existing schema in the same transaction. Malformed databases roll back.
+	case 6:
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if !tx.Migrator().HasTable(&notificationSettingRow{}) {
-				return errors.New("sqlite schema is missing required table notification_settings")
+			if err := tx.AutoMigrate(&userRow{}); err != nil {
+				return fmt.Errorf("add user display name columns: %w", err)
 			}
-			if !tx.Migrator().HasColumn(&notificationSettingRow{}, "YoungEnabled") {
-				if err := tx.Migrator().AddColumn(&notificationSettingRow{}, "YoungEnabled"); err != nil {
-					return fmt.Errorf("add Young notification opt-in: %w", err)
-				}
-			}
-			if version == 4 && !tx.Migrator().HasColumn(&notificationSettingRow{}, "TodosEnabled") {
-				if err := tx.Migrator().AddColumn(&notificationSettingRow{}, "TodosEnabled"); err != nil {
-					return fmt.Errorf("add todo notification opt-in: %w", err)
-				}
-			}
-			if err := verifySchemaShapeWithoutConversationCompaction(tx); err != nil {
-				return err
-			}
-			maintenance := &Store{db: tx}
-			if err := maintenance.EnsureConversationCompactionSchema(ctx); err != nil {
-				return err
-			}
-			if err := verifySchemaShape(tx); err != nil {
+			if err := backfillDirectUserDisplayNames(tx); err != nil {
 				return err
 			}
 			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error
 		}); err != nil {
 			return err
 		}
+	case CurrentSchemaVersion:
+		// Repeated maintenance must not override a user's later choice.
+		return s.VerifySchema()
 	case 0:
 		empty, err := sqliteSchemaIsEmpty(s.db)
 		if err != nil {
@@ -666,17 +652,6 @@ func sqliteSchemaIsEmpty(db *gorm.DB) (bool, error) {
 
 func verifySchemaShape(db *gorm.DB) error {
 	return verifySchemaShapeWithModels(db, requiredSchemaModels)
-}
-
-func verifySchemaShapeWithoutConversationCompaction(db *gorm.DB) error {
-	models := make([]any, 0, len(requiredSchemaModels)-1)
-	for _, model := range requiredSchemaModels {
-		if _, ok := model.(*conversationCompactionRow); ok {
-			continue
-		}
-		models = append(models, model)
-	}
-	return verifySchemaShapeWithModels(db, models)
 }
 
 func verifySchemaShapeWithModels(db *gorm.DB, models []any) error {
@@ -992,11 +967,11 @@ func (s *Store) SaveCredential(ctx context.Context, ident Identity, cred Credent
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return saveCredentialWithDB(tx, userID, cred, nowUTC())
+		return saveCredentialWithDB(tx, userID, ident, cred, nowUTC())
 	})
 }
 
-func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.Time) error {
+func saveCredentialWithDB(db *gorm.DB, userID int64, ident Identity, cred Credential, now time.Time) error {
 	row := credentialRow{
 		UserID: userID, ClientID: cred.ClientID, AccessToken: cred.AccessToken,
 		RefreshToken: cred.RefreshToken, TokenType: cred.TokenType,
@@ -1016,6 +991,16 @@ func saveCredentialWithDB(db *gorm.DB, userID int64, cred Credential, now time.T
 			"updated_at",
 		}),
 	}).Create(&row).Error; err != nil {
+		return err
+	}
+	ident = normalizeIdentity(ident)
+	defaults := notificationSettingRow{
+		UserID: userID, Platform: ident.Platform, ExternalUserID: ident.UserID,
+		ConversationType: "private", ConversationID: ident.UserID,
+		ClassesEnabled: true, HomeworkEnabled: true, YoungEnabled: true, TodosEnabled: true,
+		UpdatedAt: now,
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		return err
 	}
 	return db.Model(&notificationSettingRow{}).
@@ -1274,7 +1259,7 @@ func (s *Store) TransitionLoginSession(
 		}
 		transitioned = true
 		if transition.Credential != nil {
-			if err := saveCredentialWithDB(tx, userID, credential, now); err != nil {
+			if err := saveCredentialWithDB(tx, userID, ident, credential, now); err != nil {
 				return err
 			}
 		}
@@ -1978,7 +1963,14 @@ func (s *Store) NotificationSettings(ctx context.Context, ident Identity) (Notif
 		Where("users.platform = ? AND users.external_user_id = ?", ident.Platform, ident.UserID).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return NotificationSettings{Identity: ident}, nil
+		credential, err := s.Credential(ctx, ident)
+		if err != nil {
+			return NotificationSettings{}, err
+		}
+		return NotificationSettings{
+			Identity: ident, ClassesEnabled: true, HomeworkEnabled: true,
+			YoungEnabled: true, TodosEnabled: true, ReauthRequired: credential == nil,
+		}, nil
 	}
 	if err != nil {
 		return NotificationSettings{}, err
