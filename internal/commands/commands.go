@@ -3002,7 +3002,7 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 	h.markData(map[string]any{
 		"operation": "day",
 		"date":      day.Format("2006-01-02"),
-		"schedules": schedules,
+		"schedules": compactSchedules(schedules),
 	})
 	if len(schedules) == 0 {
 		hasSubscriptions, subscriptionErr := h.hasSubscribedSections(ctx, ident, token)
@@ -3050,7 +3050,7 @@ func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, 
 	if err != nil {
 		return time.Time{}, nil, err
 	}
-	h.markData(semester)
+	h.markData(compactScheduleSemester(semester))
 	start, ok := lifedata.ParseAPITime(lifedata.FirstString(semester, "startDate"))
 	if !ok {
 		return time.Time{}, nil, errors.New("当前学期缺少开始日期")
@@ -3073,8 +3073,8 @@ func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start
 		"operation": "week",
 		"start":     start.Format("2006-01-02"),
 		"end":       end.Format("2006-01-02"),
-		"semester":  semester,
-		"schedules": schedules,
+		"semester":  compactScheduleSemester(semester),
+		"schedules": compactSchedules(schedules),
 	})
 	lines := []string{start.Format("01-02") + " 至 " + end.Format("01-02") + " 课表："}
 	if metadata := h.scheduleGridWeekMetadata(ctx, start, end, semester); formatScheduleGridMetadata(metadata) != "" {
@@ -3136,6 +3136,9 @@ type semesterScheduleEntry struct {
 	course    string
 	place     string
 	weeks     map[int]bool
+	// section is the projected identity of the section the entry belongs to;
+	// it is model-facing data only and never printed.
+	section map[string]any
 }
 
 func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, target string) string {
@@ -3159,14 +3162,17 @@ func (h Handler) curriculumSemester(ctx context.Context, ident store.Identity, t
 	if err != nil {
 		return h.commandError("课表查不到：", err)
 	}
+	entries := aggregateSemesterSchedules(schedules, start, end)
+	// The semester answer prints one line per weekly slot with its teaching
+	// weeks, not one per lesson, so the model receives those same entries
+	// rather than every dated lesson of the semester.
 	h.markData(map[string]any{
 		"operation": "semester",
-		"semester":  semester,
+		"semester":  compactScheduleSemester(semester),
 		"start":     start.Format("2006-01-02"),
 		"end":       end.Format("2006-01-02"),
-		"schedules": schedules,
+		"entries":   compactSemesterScheduleEntries(entries),
 	})
-	entries := aggregateSemesterSchedules(schedules, start, end)
 	name := lifedata.FirstString(semester, "nameCn", "namePrimary", "name", "code")
 	if name == "" {
 		name = scheduleSemesterTargetLabel(target)
@@ -3338,10 +3344,14 @@ func aggregateSemesterSchedules(schedules []map[string]any, semesterStart, semes
 		if !exists {
 			index = len(entries)
 			indexByKey[key] = index
-			entries = append(entries, semesterScheduleEntry{
+			entry := semesterScheduleEntry{
 				day: day, startTime: startTime, endTime: endTime,
 				course: course, place: place, weeks: make(map[int]bool),
-			})
+			}
+			if section, ok := schedule["section"].(map[string]any); ok {
+				entry.section = compactScheduleSection(section)
+			}
+			entries = append(entries, entry)
 		}
 		week := lifedata.FirstInt(schedule, "weekIndex")
 		if week <= 0 && hasDate {
@@ -3479,7 +3489,7 @@ func (h Handler) nextClassAt(ctx context.Context, ident store.Identity, now time
 			h.markData(map[string]any{
 				"operation": "next_class",
 				"date":      day.Format("2006-01-02"),
-				"schedule":  schedule,
+				"schedule":  compactSchedule(schedule),
 			})
 			return prefix + "\n" + formatSchedule(schedule)
 		}
@@ -3500,7 +3510,7 @@ func (h Handler) schedulesForDay(ctx context.Context, ident store.Identity, toke
 		all = lifedata.FilterSchedulesForDay(all, day)
 		lifedata.SortSchedulesByStart(all)
 		token = h.annotatePersonalKinds(ctx, ident, token, all)
-		h.markData(all)
+		h.markData(compactSchedules(all))
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3524,7 +3534,7 @@ func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, to
 	}
 	if err == nil {
 		token = h.annotatePersonalKinds(ctx, ident, token, all)
-		h.markData(all)
+		h.markData(compactSchedules(all))
 		return all, token, nil
 	}
 	if !subscribedSchedulesFallbackError(err) {
@@ -3539,7 +3549,7 @@ func (h Handler) schedulesForRange(ctx context.Context, ident store.Identity, to
 		}
 		all = append(all, daySchedules...)
 	}
-	h.markData(all)
+	h.markData(compactSchedules(all))
 	return all, token, nil
 }
 
@@ -3576,7 +3586,7 @@ func (h Handler) schedulesForDayBySections(ctx context.Context, ident store.Iden
 	lifedata.ApplySubscriptionKinds(sub, all)
 	all = lifedata.FilterSchedulesForDay(all, day)
 	lifedata.SortSchedulesByStart(all)
-	h.markData(all)
+	h.markData(compactSchedules(all))
 	return all, token, nil
 }
 
@@ -4124,12 +4134,17 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	for _, schedule := range schedules {
 		schedule["section"] = section
 	}
+	// Each row now carries the complete section detail, which itself lists
+	// every lesson of the section. The model gets the section identity once
+	// and the projected lessons without it, in display order.
+	lifedata.SortSchedulesByStart(schedules)
 	h.markData(map[string]any{
 		"operation": "section_schedules",
 		"jw_id":     jwId,
 		"date_from": dateFrom,
 		"date_to":   dateTo,
-		"schedules": schedules,
+		"section":   compactScheduleSection(section),
+		"schedules": compactSectionSchedules(schedules),
 	})
 	startDate, _ := lifedata.ParseAPITime(dateFrom)
 	endDate, _ := lifedata.ParseAPITime(dateTo)
@@ -4137,7 +4152,6 @@ func (h Handler) sectionSchedules(ctx context.Context, ident store.Identity, arg
 	if len(schedules) == 0 {
 		return "该时间段没有课（" + dateLabel + "）。"
 	}
-	lifedata.SortSchedulesByStart(schedules)
 	lines := []string{"教学班课表（" + dateLabel + "）："}
 	for _, schedule := range schedules {
 		lines = append(lines, formatSchedule(schedule))
