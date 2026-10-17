@@ -20,6 +20,7 @@ import (
 	botfeedback "github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/notify"
 	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
@@ -4426,5 +4427,51 @@ func TestNextClassEmptyResultRetainsSearchContext(t *testing.T) {
 	data, ok := handler.execution.data.(map[string]any)
 	if !ok || data["operation"] != "next_class" || data["days_checked"] != 8 || data["schedule"] != nil || handler.execution.status != CapabilityOutcomeNotFound {
 		t.Fatalf("empty next class data = %#v, status = %s", data, handler.execution.status)
+	}
+}
+
+func TestNotificationSettingsMarksSourcesMissingScope(t *testing.T) {
+	ctx := context.Background()
+	ident := testIdentity()
+	s, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	// A grant issued before the young-notification scope existed: every other
+	// reminder line stays unmarked, the stale one tells the user how to fix it.
+	if err := s.SaveCredential(ctx, ident, store.Credential{
+		ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour),
+		Scope: "openid workspace.schedule:read workspace.homework:read workspace.todo:read",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler{Store: s}
+	response, ok := handler.HandleResponse(ctx, Input{Text: "通知", Identity: ident})
+	if !ok {
+		t.Fatalf("response = %#v, ok = %v", response, ok)
+	}
+	if !strings.Contains(response.Text, "第二课堂提醒：开（缺少授权，发送“登录”重新授权后恢复）") {
+		t.Fatalf("reply missing scope marker: %q", response.Text)
+	}
+	for _, line := range []string{"课前提醒：开\n", "作业提醒：开\n", "待办提醒：开"} {
+		if !strings.Contains(response.Text+"\n", line) {
+			t.Fatalf("healthy source marked: %q", response.Text)
+		}
+	}
+	if strings.Contains(response.Text, "已暂停") {
+		t.Fatalf("scope gap must not trigger the global pause line: %q", response.Text)
+	}
+	data, ok := response.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("Data = %#v", response.Data)
+	}
+	kinds, ok := data["missing_scope_sources"].([]string)
+	if !ok || len(kinds) != 1 || kinds[0] != notify.KindYoung {
+		t.Fatalf("missing_scope_sources = %#v", data["missing_scope_sources"])
+	}
+	reply, ok := handler.Handle(ctx, Input{Text: "通知 活动 关", Identity: ident})
+	if !ok || !strings.Contains(reply, "第二课堂提醒：关") || strings.Contains(reply, "缺少授权") {
+		t.Fatalf("disabled source still marked: %q", reply)
 	}
 }

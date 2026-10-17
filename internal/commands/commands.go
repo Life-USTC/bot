@@ -19,6 +19,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/feedback"
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
+	"github.com/Life-USTC/Bot/internal/notify"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
@@ -2646,12 +2647,14 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return h.commandError("通知设置查不到：", err)
 	}
 	settings.Identity = ident
+	missingScopes := h.missingNotificationScopes(ctx, ident)
 	if !hasArgs(args) || firstArgIs(args, "status") {
 		h.markData(map[string]any{
-			"operation": "notification_settings",
-			"settings":  settings,
+			"operation":             "notification_settings",
+			"settings":              settings,
+			"missing_scope_sources": missingScopeKinds(missingScopes),
 		})
-		return formatNotificationSettings(settings)
+		return formatNotificationSettings(settings, missingScopes)
 	}
 	if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 		enabled := args[0] == "on"
@@ -2692,19 +2695,61 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return h.commandError("通知设置查不到：", err)
 	}
 	h.markData(map[string]any{
-		"operation": "notification_settings",
-		"settings":  settings,
+		"operation":             "notification_settings",
+		"settings":              settings,
+		"missing_scope_sources": missingScopeKinds(missingScopes),
 	})
-	return formatNotificationSettings(settings)
+	return formatNotificationSettings(settings, missingScopes)
 }
 
-func formatNotificationSettings(settings store.NotificationSettings) string {
-	lines := []string{
-		"通知设置：",
-		"课前提醒：" + onOffText(settings.ClassesEnabled),
-		"作业提醒：" + onOffText(settings.HomeworkEnabled),
-		"第二课堂提醒：" + onOffText(settings.YoungEnabled),
-		"待办提醒：" + onOffText(settings.TodosEnabled),
+// missingNotificationScopes reports which reminder sources the stored OAuth
+// grant cannot poll. Only a logged-in user can have a scope gap; an absent or
+// unreadable credential returns nothing because the reauth pause flow already
+// covers that state.
+func (h Handler) missingNotificationScopes(ctx context.Context, ident store.Identity) map[string]bool {
+	credential, err := h.Store.Credential(ctx, ident)
+	if err != nil || credential == nil {
+		return nil
+	}
+	kinds := notify.MissingSourceScopes(credential.Scope)
+	if len(kinds) == 0 {
+		return nil
+	}
+	missing := make(map[string]bool, len(kinds))
+	for _, kind := range kinds {
+		missing[kind] = true
+	}
+	return missing
+}
+
+func missingScopeKinds(missing map[string]bool) []string {
+	kinds := make([]string, 0, len(missing))
+	for _, kind := range []string{notify.KindClass, notify.KindHomework, notify.KindYoung, notify.KindTodo} {
+		if missing[kind] {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
+
+func formatNotificationSettings(settings store.NotificationSettings, missingScopes map[string]bool) string {
+	sources := []struct {
+		kind    string
+		label   string
+		enabled bool
+	}{
+		{notify.KindClass, "课前提醒", settings.ClassesEnabled},
+		{notify.KindHomework, "作业提醒", settings.HomeworkEnabled},
+		{notify.KindYoung, "第二课堂提醒", settings.YoungEnabled},
+		{notify.KindTodo, "待办提醒", settings.TodosEnabled},
+	}
+	lines := []string{"通知设置："}
+	for _, source := range sources {
+		line := source.label + "：" + onOffText(source.enabled)
+		if source.enabled && missingScopes[source.kind] {
+			line += "（缺少授权，发送“登录”重新授权后恢复）"
+		}
+		lines = append(lines, line)
 	}
 	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled || settings.TodosEnabled) {
 		lines = append(lines, "状态：已暂停，请发送“登录”；登录成功后会自动恢复。")
