@@ -63,24 +63,12 @@ func RoomMapResponse(room life.RoomMap) Response {
 		Data: map[string]any{"operation": "room_map", "room": room},
 		Kind: "room_map",
 	}
-	imageURL := strings.TrimSpace(room.ImageURL)
-	if imageURL == "" {
-		imageURL = strings.TrimSpace(room.SourceImageURL)
-	}
-	status := strings.ToLower(strings.TrimSpace(room.Status))
-	if (status != "highlighted" && status != "overview") || imageURL == "" {
+	image := responses.NewRoomMapImage(code, room.Status, room.ImageURL, room.SourceImageURL)
+	if image == nil {
 		response.Text = "未找到 " + code + " 的教室地图。"
 		return response
 	}
-	title := "教室 " + code
-	if status == "overview" {
-		title += "（楼层/建筑概览，未确认该房间位置）"
-	}
-	response.Image = &responses.Image{
-		Kind:  "room-map",
-		Title: title,
-		URL:   imageURL,
-	}
+	response.Image = image
 	return response
 }
 
