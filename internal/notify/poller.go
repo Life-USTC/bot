@@ -19,14 +19,65 @@ import (
 	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
+// Notification source kinds. Exported so the 通知 command can mark sources the
+// stored OAuth grant cannot poll.
 const (
-	classKind            = "class"
-	homeworkKind         = "homework"
-	todoKind             = "todo"
-	youngKind            = "young"
+	KindClass    = "class"
+	KindHomework = "homework"
+	KindTodo     = "todo"
+	KindYoung    = "young"
+)
+
+const (
 	pollFailureBaseDelay = 5 * time.Minute
 	pollFailureMaxDelay  = time.Hour
 )
+
+// sourceScopes maps each notification source to the OAuth scope its poll reads
+// with. A grant issued before a scope existed stays valid for every other
+// source, so the poller skips just the missing source instead of pausing the
+// user's notifications or burning requests on guaranteed 401s.
+var sourceScopes = map[string]string{
+	KindClass:    "workspace.schedule:read",
+	KindHomework: "workspace.homework:read",
+	KindTodo:     "workspace.todo:read",
+	KindYoung:    "workspace.young-notification:read",
+}
+
+var sourceLabels = map[string]string{
+	KindClass:    "课前提醒",
+	KindHomework: "作业提醒",
+	KindTodo:     "待办提醒",
+	KindYoung:    "第二课堂提醒",
+}
+
+// grantIncludesScope reports whether the space-separated OAuth grant includes
+// scope. An empty grant is treated as unknown and passes: legacy credential
+// rows predate the scope column, and failing open keeps their reminders
+// running — a real gap then surfaces as a 401 under the usual backoff.
+func grantIncludesScope(grant, scope string) bool {
+	if strings.TrimSpace(grant) == "" {
+		return true
+	}
+	for _, granted := range strings.Fields(grant) {
+		if granted == scope {
+			return true
+		}
+	}
+	return false
+}
+
+// MissingSourceScopes lists the notification sources whose required OAuth
+// scope is absent from grant, in display order.
+func MissingSourceScopes(grant string) []string {
+	var kinds []string
+	for _, kind := range []string{KindClass, KindHomework, KindYoung, KindTodo} {
+		if !grantIncludesScope(grant, sourceScopes[kind]) {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
 
 type Publisher interface {
 	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
@@ -102,7 +153,7 @@ func (p *Poller) tick(ctx context.Context) {
 				continue
 			}
 			p.clearPollFailure(setting.Identity)
-			for _, kind := range []string{classKind, homeworkKind, todoKind, youngKind} {
+			for _, kind := range []string{KindClass, KindHomework, KindTodo, KindYoung} {
 				p.clearPollFailureKey(notificationIdentityKey(setting.Identity) + "|" + kind)
 			}
 		case pollTransientFailure:
@@ -125,7 +176,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		enabled bool
 		run     func(string) error
 	}{
-		{classKind, settings.ClassesEnabled, func(token string) error {
+		{KindClass, settings.ClassesEnabled, func(token string) error {
 			dateFrom, _ := lifedata.DayRFC3339Range(now)
 			_, dateTo := lifedata.DayRFC3339Range(now.Add(30 * time.Minute))
 			schedules, err := p.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
@@ -134,14 +185,14 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			}
 			return p.notifyClasses(ctx, settings.Identity, schedules, now)
 		}},
-		{homeworkKind, settings.HomeworkEnabled, func(token string) error {
+		{KindHomework, settings.HomeworkEnabled, func(token string) error {
 			homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
 			if err != nil {
 				return err
 			}
 			return p.notifyHomeworks(ctx, settings.Identity, homeworks, now)
 		}},
-		{todoKind, settings.TodosEnabled, func(token string) error {
+		{KindTodo, settings.TodosEnabled, func(token string) error {
 			todos, err := p.Life.TodosWithOptions(ctx, token, life.TodoListOptions{
 				Completed: "false", DueAfter: now.Format(time.RFC3339), DueBefore: now.Add(24 * time.Hour).Format(time.RFC3339),
 			})
@@ -150,7 +201,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			}
 			return p.notifyTodos(ctx, settings.Identity, todos, now)
 		}},
-		{youngKind, settings.YoungEnabled, func(token string) error {
+		{KindYoung, settings.YoungEnabled, func(token string) error {
 			unread := true
 			notifications, err := p.Life.ListAllYoungNotifications(ctx, token, &unread)
 			if err != nil {
@@ -159,11 +210,22 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			return p.notifyYoungNotifications(ctx, settings.Identity, token, notifications, now)
 		}},
 	}
+	grant := p.grantedScopes(ctx, settings.Identity)
 	for _, poll := range polls {
+		if !poll.enabled {
+			continue
+		}
+		// A grant issued before this source's scope existed can never poll it;
+		// skip the request and tell the user once instead of 401-ing forever.
+		// The other sources keep running on the same credential.
+		if !grantIncludesScope(grant, sourceScopes[poll.kind]) {
+			p.noteMissingScope(ctx, settings.Identity, poll.kind)
+			continue
+		}
 		// Back off each source independently: an unavailable activity API must
 		// not suppress an imminent class or deadline reminder.
 		key := notificationIdentityKey(settings.Identity) + "|" + poll.kind
-		if !poll.enabled || !p.shouldPollKey(key) {
+		if !p.shouldPollKey(key) {
 			continue
 		}
 		err := auth.WithRefreshVoid(ctx, p.Auth, settings.Identity, token, func(current string) error {
@@ -200,6 +262,30 @@ func (p *Poller) resultForAuthError(ctx context.Context, ident store.Identity, e
 
 func (p *Poller) shouldPoll(ident store.Identity) bool {
 	return p.shouldPollKey(notificationIdentityKey(ident))
+}
+
+// grantedScopes returns the stored grant's scope list, or "" (unknown) when
+// the credential cannot be read — AccessToken already succeeded, so failing
+// open here only risks a 401 that the per-source backoff absorbs.
+func (p *Poller) grantedScopes(ctx context.Context, ident store.Identity) string {
+	credential, err := p.Store.Credential(ctx, ident)
+	if err != nil {
+		p.logf("load notification credential scopes failed: %v", err)
+		return ""
+	}
+	if credential == nil {
+		return ""
+	}
+	return credential.Scope
+}
+
+// noteMissingScope tells the user, once, that one reminder source is paused
+// until they reauthorize. The outbox dedupe key is durable, so later ticks and
+// restarts never repeat the card. The toggle stays on and the source resumes
+// as soon as a re-login stores a grant that includes the scope.
+func (p *Poller) noteMissingScope(ctx context.Context, ident store.Identity, kind string) {
+	text := sourceLabels[kind] + "已暂停：当前登录缺少新版本需要的权限。发送“登录”重新授权后自动恢复，其他提醒不受影响。"
+	_, _ = p.enqueueNotification(ctx, ident, kind, "reauth-scope|"+sourceScopes[kind], text, nil, p.now().Add(7*24*time.Hour))
 }
 
 func (p *Poller) shouldPollKey(key string) bool {
@@ -255,10 +341,10 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		if start.IsZero() || start.Before(now) || start.After(now.Add(30*time.Minute)) {
 			continue
 		}
-		key := notificationKey(classKind, scheduleKey(schedule, start))
+		key := notificationKey(KindClass, scheduleKey(schedule, start))
 		message := "课前提醒：\n" + formatSchedule(schedule)
 		image := classReminderImage(schedule, message)
-		if _, err := p.enqueueNotification(ctx, ident, classKind, key, message, image, start.Add(15*time.Minute)); err != nil {
+		if _, err := p.enqueueNotification(ctx, ident, KindClass, key, message, image, start.Add(15*time.Minute)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -276,10 +362,10 @@ func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, home
 		if !ok || !due.After(now) || due.After(now.Add(24*time.Hour)) {
 			continue
 		}
-		key := notificationKey(homeworkKind, textutil.JoinNonEmpty("|", textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title")), due.UTC().Format(time.RFC3339)))
+		key := notificationKey(KindHomework, textutil.JoinNonEmpty("|", textutil.FirstNonEmpty(lifedata.FirstString(homework, "id"), lifedata.FirstString(homework, "title")), due.UTC().Format(time.RFC3339)))
 		message := "作业提醒：\n" + formatHomework(homework)
 		image := homeworkReminderImage(homework, message)
-		if _, err := p.enqueueNotification(ctx, ident, homeworkKind, key, message, image, due); err != nil {
+		if _, err := p.enqueueNotification(ctx, ident, KindHomework, key, message, image, due); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -316,7 +402,7 @@ func (p *Poller) notifyYoungNotifications(ctx context.Context, ident store.Ident
 			}
 		}
 		text := "第二课堂提醒：\n" + strings.Join(textutil.NonEmpty(parts...), "\n")
-		_, err := p.enqueueNotification(ctx, ident, youngKind, notification.ID, text, nil, expiresAt)
+		_, err := p.enqueueNotification(ctx, ident, KindYoung, notification.ID, text, nil, expiresAt)
 		if err != nil {
 			return err
 		}

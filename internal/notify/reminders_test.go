@@ -178,3 +178,105 @@ func TestReminderDedupeSurvivesRestart(t *testing.T) {
 		}
 	}
 }
+
+func TestPollerSkipsSourceMissingScopeAndNotifiesOnce(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 18, 9, 0, 0, 0, lifedata.ChinaLocation())
+	requests := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		switch r.URL.Path {
+		case "/api/workspace/schedules":
+			_, _ = fmt.Fprint(w, `{"schedules":[]}`)
+		case "/api/workspace/homeworks":
+			_, _ = fmt.Fprint(w, `{"data":[],"pagination":{"page":1,"pageSize":50,"total":0,"totalPages":1}}`)
+		case "/api/workspace/todos":
+			_, _ = fmt.Fprint(w, `{"todos":[]}`)
+		case "/api/workspace/young-notifications":
+			_, _ = fmt.Fprint(w, `{"data":[],"pagination":{}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	db, err := store.Open(t.TempDir() + "/bot.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	staleScope := "openid workspace.schedule:read workspace.homework:read workspace.todo:read"
+	credential := store.Credential{ClientID: "client", AccessToken: "access", ExpiresAt: time.Now().Add(time.Hour), Resource: server.URL, Scope: staleScope}
+	if err := db.SaveCredential(ctx, ident, credential); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveNotificationSettings(ctx, store.NotificationSettings{Identity: ident, ClassesEnabled: true, HomeworkEnabled: true, TodosEnabled: true, YoungEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	publisher := &fakePublisher{}
+	poller := &Poller{Life: life.NewClient(server.URL, server.Client()), Auth: &auth.Manager{Server: server.URL, HTTPClient: server.Client(), Store: db}, Store: db, Publisher: publisher, Now: func() time.Time { return now }}
+	poller.tick(ctx)
+	poller.tick(ctx)
+	if requests["/api/workspace/young-notifications"] != 0 {
+		t.Errorf("young requests = %d, want the stale grant to skip the source", requests["/api/workspace/young-notifications"])
+	}
+	for _, path := range []string{"/api/workspace/schedules", "/api/workspace/homeworks", "/api/workspace/todos"} {
+		if requests[path] != 2 {
+			t.Errorf("%s requests = %d, want 2", path, requests[path])
+		}
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("messages = %#v, want one reauth notice", publisher.messages)
+	}
+	notice := publisher.messages[0]
+	text := notice.Content.TextContent()
+	if !strings.Contains(text, "第二课堂提醒") || !strings.Contains(text, "登录") || !strings.Contains(text, "其他提醒不受影响") {
+		t.Fatalf("notice text = %q", text)
+	}
+	if !strings.Contains(notice.DedupeKey, "reauth-scope|workspace.young-notification:read") {
+		t.Fatalf("notice dedupe key = %q", notice.DedupeKey)
+	}
+	// A re-login that stores the current scope set resumes the source with no
+	// manual reset and no repeated notice.
+	credential.Scope = staleScope + " workspace.young-notification:read"
+	if err := db.SaveCredential(ctx, ident, credential); err != nil {
+		t.Fatal(err)
+	}
+	poller.tick(ctx)
+	if requests["/api/workspace/young-notifications"] != 1 {
+		t.Errorf("young requests after re-login = %d, want 1", requests["/api/workspace/young-notifications"])
+	}
+	if len(publisher.messages) != 1 {
+		t.Errorf("messages after re-login = %d, want the notice not repeated", len(publisher.messages))
+	}
+}
+
+func TestGrantIncludesScope(t *testing.T) {
+	cases := []struct {
+		grant, scope string
+		want         bool
+	}{
+		{"", "workspace.young-notification:read", true},
+		{"  ", "workspace.young-notification:read", true},
+		{"openid workspace.young-notification:read", "workspace.young-notification:read", true},
+		{"openid workspace.young-notification:write", "workspace.young-notification:read", false},
+		{"workspace.young-notification:readx", "workspace.young-notification:read", false},
+	}
+	for _, c := range cases {
+		if got := grantIncludesScope(c.grant, c.scope); got != c.want {
+			t.Errorf("grantIncludesScope(%q, %q) = %v, want %v", c.grant, c.scope, got, c.want)
+		}
+	}
+}
+
+func TestMissingSourceScopes(t *testing.T) {
+	if got := MissingSourceScopes(""); got != nil {
+		t.Errorf("unknown grant missing = %v, want none", got)
+	}
+	grant := "openid workspace.schedule:read workspace.homework:read workspace.todo:read"
+	got := MissingSourceScopes(grant)
+	if len(got) != 1 || got[0] != KindYoung {
+		t.Errorf("missing = %v, want [%s]", got, KindYoung)
+	}
+}
