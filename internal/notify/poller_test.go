@@ -16,6 +16,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/life"
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/message"
+	"github.com/Life-USTC/Bot/internal/responses"
 	"github.com/Life-USTC/Bot/internal/store"
 )
 
@@ -23,10 +24,11 @@ type fakePublisher struct {
 	messages  []message.Outbound
 	dedupe    map[string]struct{}
 	failCount int
+	failKind  string
 }
 
 func (p *fakePublisher) Enqueue(_ context.Context, outbound message.Outbound) (delivery.Record, bool, error) {
-	if p.failCount > 0 {
+	if p.failCount > 0 && (p.failKind == "" || p.failKind == outbound.Kind) {
 		p.failCount--
 		return delivery.Record{}, false, fmt.Errorf("enqueue failed")
 	}
@@ -118,6 +120,8 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 		case "/api/workspace/homeworks":
 			homeworkRequests++
 			_, _ = w.Write([]byte(`{"pagination":{"page":1,"totalPages":1},"data":[{"id":"hw-1","title":"Problem Set 1","submissionDueAt":"2026-06-08T10:00:00+08:00","section":{"course":{"namePrimary":"数据库系统"}},"completion":null}]}`))
+		case "/api/catalog/rooms/3A204/map":
+			_, _ = w.Write([]byte(`{"code":"3A204","status":"unavailable"}`))
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -176,6 +180,121 @@ func TestPollerSendsClassAndHomeworkOnce(t *testing.T) {
 	}
 	if !publisher.messages[0].ExpiresAt.Equal(now.Add(35*time.Minute)) || !publisher.messages[1].ExpiresAt.Equal(time.Date(2026, 6, 8, 10, 0, 0, 0, lifedata.ChinaLocation())) {
 		t.Fatalf("expiry = %v, %v", publisher.messages[0].ExpiresAt, publisher.messages[1].ExpiresAt)
+	}
+}
+
+func TestClassReminderAddsAvailableRoomMap(t *testing.T) {
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	schedule := map[string]any{
+		"date": "2026-06-07T08:00:00+08:00", "startTime": "14:20", "endTime": "15:55",
+		"section": map[string]any{"id": "101", "course": map[string]any{"namePrimary": "数据库系统"}},
+		"room":    map[string]any{"namePrimary": "西区 3A204"},
+	}
+	if got := scheduleRoomCode(schedule); got != "3A204" {
+		t.Fatalf("schedule room code = %q", got)
+	}
+	for _, tc := range []struct {
+		name       string
+		status     string
+		imageURL   string
+		sourceURL  string
+		wantURL    string
+		wantCount  int
+		failLookup bool
+	}{
+		{"highlighted", "highlighted", "https://maps.example/room.png", "https://maps.example/floor.png", "https://maps.example/room.png", 2, false},
+		{"overview", "overview", "", "https://maps.example/floor.png", "https://maps.example/floor.png", 2, false},
+		{"unavailable", "unavailable", "", "", "", 1, false},
+		{"lookup failure", "", "", "", "", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/catalog/rooms/3A204/map" {
+					t.Errorf("unexpected map lookup: %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				if tc.failLookup {
+					http.Error(w, "unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"code":"3A204","status":%q,"imageUrl":%q,"sourceImageUrl":%q}`, tc.status, tc.imageURL, tc.sourceURL)
+			}))
+			defer server.Close()
+			if !tc.failLookup {
+				room, err := life.NewClient(server.URL, server.Client()).RoomMap(context.Background(), "3A204")
+				if err != nil || room.Status != tc.status || room.ImageURL != tc.imageURL || room.SourceImageURL != tc.sourceURL {
+					t.Fatalf("room map = %#v, err=%v", room, err)
+				}
+			}
+			publisher := &fakePublisher{}
+			var logs bytes.Buffer
+			poller := &Poller{Life: life.NewClient(server.URL, server.Client()), Publisher: publisher, Logger: log.New(&logs, "", 0)}
+			for range 2 {
+				if err := poller.notifyClasses(context.Background(), ident, []map[string]any{schedule}, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(publisher.messages) != tc.wantCount {
+				t.Fatalf("messages = %#v, want %d, logs=%s", publisher.messages, tc.wantCount, logs.String())
+			}
+			classImage, err := responses.DecodeImageIntent(publisher.messages[0].Content.Parts[0].Attachment.RenderPayload)
+			if err != nil || !strings.Contains(classImage.RichText, "西区 3A204") {
+				t.Fatalf("class location missing: %#v, err=%v", publisher.messages[0], err)
+			}
+			if tc.wantURL != "" {
+				mapMessage := publisher.messages[1]
+				if mapMessage.Kind != "notification.class_map" || mapMessage.Target.Type != "private" || mapMessage.DedupeKey == publisher.messages[0].DedupeKey {
+					t.Fatalf("map notification = %#v", mapMessage)
+				}
+				image, err := responses.DecodeImageIntent(mapMessage.Content.Parts[0].Attachment.RenderPayload)
+				if err != nil || image.URL != tc.wantURL {
+					t.Fatalf("map image = %#v, err=%v", image, err)
+				}
+			}
+		})
+	}
+}
+
+func TestClassMapDeliveryRetryDoesNotRepeatClassCard(t *testing.T) {
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	schedule := map[string]any{
+		"date": "2026-06-07T08:00:00+08:00", "startTime": "14:20",
+		"room": map[string]any{"namePrimary": "西区 3A204"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":"3A204","status":"highlighted","imageUrl":"https://maps.example/room.png"}`))
+	}))
+	defer server.Close()
+	publisher := &fakePublisher{failKind: "notification.class_map", failCount: 1}
+	poller := &Poller{Life: life.NewClient(server.URL, server.Client()), Publisher: publisher}
+	if err := poller.notifyClasses(context.Background(), ident, []map[string]any{schedule}, now); err == nil || len(publisher.messages) != 1 {
+		t.Fatalf("first enqueue: err=%v messages=%#v", err, publisher.messages)
+	}
+	if err := poller.notifyClasses(context.Background(), ident, []map[string]any{schedule}, now); err != nil || len(publisher.messages) != 2 {
+		t.Fatalf("retry: err=%v messages=%#v", err, publisher.messages)
+	}
+}
+
+func TestClassReminderSkipsMapForCustomPlaceOrGroup(t *testing.T) {
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	schedule := map[string]any{
+		"date": "2026-06-07T08:00:00+08:00", "startTime": "14:20",
+		"room": map[string]any{"namePrimary": "西区 3A204"}, "customPlace": "线上",
+	}
+	publisher := &fakePublisher{}
+	poller := &Poller{Publisher: publisher}
+	private := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := poller.notifyClasses(context.Background(), private, []map[string]any{schedule}, now); err != nil || len(publisher.messages) != 1 {
+		t.Fatalf("custom place: err=%v messages=%#v", err, publisher.messages)
+	}
+	group := private
+	group.ConversationType = "group"
+	group.ConversationID = "group-1"
+	if err := poller.notifyClasses(context.Background(), group, []map[string]any{schedule}, now); err != nil || len(publisher.messages) != 1 {
+		t.Fatalf("group: err=%v messages=%#v", err, publisher.messages)
 	}
 }
 

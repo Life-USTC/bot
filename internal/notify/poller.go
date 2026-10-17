@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 // stored OAuth grant cannot poll.
 const (
 	KindClass    = "class"
+	KindClassMap = "class_map"
 	KindHomework = "homework"
 	KindTodo     = "todo"
 	KindYoung    = "young"
@@ -78,6 +80,8 @@ func MissingSourceScopes(grant string) []string {
 	}
 	return kinds
 }
+
+var roomCodeToken = regexp.MustCompile(`^[A-Z0-9]+(?:-[A-Z0-9]+)*$`)
 
 type Publisher interface {
 	Enqueue(context.Context, message.Outbound) (delivery.Record, bool, error)
@@ -330,6 +334,9 @@ func notificationIdentityKey(ident store.Identity) string {
 }
 
 func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedules []map[string]any, now time.Time) error {
+	if !store.IsDirectConversation(ident) {
+		return nil
+	}
 	var errs []error
 	lifedata.SortSchedulesByStart(schedules)
 	for _, schedule := range schedules {
@@ -346,9 +353,50 @@ func (p *Poller) notifyClasses(ctx context.Context, ident store.Identity, schedu
 		image := classReminderImage(schedule, message)
 		if _, err := p.enqueueNotification(ctx, ident, KindClass, key, message, image, start.Add(15*time.Minute)); err != nil {
 			errs = append(errs, err)
+			continue
+		}
+		if err := p.enqueueClassMap(ctx, ident, schedule, notificationKey(KindClassMap, scheduleKey(schedule, start)), start.Add(15*time.Minute)); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (p *Poller) enqueueClassMap(ctx context.Context, ident store.Identity, schedule map[string]any, key string, expiresAt time.Time) error {
+	code := scheduleRoomCode(schedule)
+	if code == "" || p.Life == nil {
+		return nil
+	}
+	room, err := p.Life.RoomMap(ctx, code)
+	if err != nil {
+		p.logf("class room map lookup failed: %v", err)
+		return nil // The class card is already queued; retry the map on the next poll.
+	}
+	image := responses.NewRoomMapImage(code, room.Status, room.ImageURL, room.SourceImageURL)
+	if image == nil {
+		return nil
+	}
+	_, err = p.enqueueNotification(ctx, ident, KindClassMap, key, image.AltText, image, expiresAt)
+	return err
+}
+
+func scheduleRoomCode(schedule map[string]any) string {
+	if lifedata.FirstString(schedule, "customPlace") != "" {
+		return ""
+	}
+	for _, candidate := range []string{
+		lifedata.NestedString(schedule, "room", "code"),
+		lifedata.NestedString(schedule, "room", "namePrimary", "nameCn", "name"),
+	} {
+		fields := strings.Fields(life.NormalizeRoomCode(candidate))
+		for i := len(fields) - 1; i >= 0; i-- {
+			code := fields[i]
+			if len(code) >= 3 && len(code) <= 12 && strings.ContainsAny(code, "0123456789") && roomCodeToken.MatchString(code) {
+				return code
+			}
+		}
+	}
+	return ""
 }
 
 func (p *Poller) notifyHomeworks(ctx context.Context, ident store.Identity, homeworks []map[string]any, now time.Time) error {
