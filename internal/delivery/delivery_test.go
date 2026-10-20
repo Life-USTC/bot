@@ -18,13 +18,17 @@ type testAdapter struct {
 }
 
 type testRenderer struct {
-	data  []byte
-	err   error
-	calls int
+	beforeReturn func()
+	data         []byte
+	err          error
+	calls        int
 }
 
 func (r *testRenderer) RenderPNGContext(_ context.Context, _ *responses.Image) ([]byte, int, int, error) {
 	r.calls++
+	if r.beforeReturn != nil {
+		r.beforeReturn()
+	}
 	return append([]byte(nil), r.data...), 1, 1, r.err
 }
 
@@ -326,12 +330,12 @@ func TestDeliverNowRendersWithoutARequestNumber(t *testing.T) {
 
 func TestDeliverRecordRejectsSupersededReminderAfterRendering(t *testing.T) {
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
-	repository := &workerRepository{blocked: true}
+	repository := &workerRepository{}
 	service, err := New(repository, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	renderer := &testRenderer{data: []byte("png")}
+	renderer := &testRenderer{data: []byte("png"), beforeReturn: func() { repository.blocked = true }}
 	if err := service.SetRenderer(renderer); err != nil {
 		t.Fatal(err)
 	}
