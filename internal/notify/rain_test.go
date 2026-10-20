@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -25,6 +26,8 @@ func TestRainObservationUsesOnlyFreshActualConditions(t *testing.T) {
 		{"stop", func(s map[string]any) { s["current"].(map[string]any)["condition"].(map[string]any)["text"] = "阴" }, true, false},
 		{"unknown", func(s map[string]any) { s["current"].(map[string]any)["condition"].(map[string]any)["text"] = "未知" }, false, false},
 		{"missing-time", func(s map[string]any) { delete(s["current"].(map[string]any), "observedAt") }, false, false},
+		{"date-only", func(s map[string]any) { s["current"].(map[string]any)["observedAt"] = now.Format("2006-01-02") }, false, false},
+		{"observed-after-fetch", func(s map[string]any) { s["fetchedAt"] = now.Add(-time.Minute).Format(time.RFC3339) }, false, false},
 		{"stale-observation", func(s map[string]any) {
 			s["current"].(map[string]any)["observedAt"] = now.Add(-time.Hour).Format(time.RFC3339)
 		}, false, false},
@@ -100,5 +103,36 @@ func TestRainPollerUsesPublicWeatherAndBaselinesRecovery(t *testing.T) {
 	}
 	if calls != 4 {
 		t.Fatalf("weather calls=%d", calls)
+	}
+}
+
+func TestRainPollerMeasuresFreshnessAfterTheWeatherRequest(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/rain.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	if err := s.SaveRainSettings(t.Context(), store.RainSettings{Identity: ident, Enabled: true, Campus: "ustc-main"}); err != nil {
+		t.Fatal(err)
+	}
+	var clock atomic.Int64
+	clock.Store(time.Now().UTC().Unix())
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		now := time.Unix(clock.Add(1), 0).UTC()
+		condition := "阴"
+		if calls.Add(1) > 1 {
+			condition = "小雨"
+		}
+		_ = json.NewEncoder(w).Encode(rainSnapshot(now, condition))
+	}))
+	defer server.Close()
+	p := &Poller{Store: s, Life: life.NewClient(server.URL, server.Client()), Now: func() time.Time { return time.Unix(clock.Load(), 0).UTC() }}
+	p.tick(t.Context())
+	p.tick(t.Context())
+	records, err := s.ClaimDue(t.Context(), p.now(), 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("freshly fetched observations rejected: %+v %v", records, err)
 	}
 }
