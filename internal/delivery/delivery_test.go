@@ -250,7 +250,7 @@ func (r *refRecordingRenderer) RenderPNGContext(_ context.Context, img *response
 func TestDeliverRecordStampsTheRecordIDOnEveryCard(t *testing.T) {
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
 	renderer := &refRecordingRenderer{}
-	service, err := New(nil, adapter)
+	service, err := New(&workerRepository{}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestDeliverRecordStampsTheRecordIDOnEveryCard(t *testing.T) {
 func TestDeliverRecordRepeatsTheSameNumberOnRetry(t *testing.T) {
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
 	renderer := &refRecordingRenderer{}
-	service, err := New(nil, adapter)
+	service, err := New(&workerRepository{}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestDeliverRecordRepeatsTheSameNumberOnRetry(t *testing.T) {
 func TestDeliverNowRendersWithoutARequestNumber(t *testing.T) {
 	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
 	renderer := &refRecordingRenderer{}
-	service, err := New(nil, adapter)
+	service, err := New(&workerRepository{}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,5 +321,26 @@ func TestDeliverNowRendersWithoutARequestNumber(t *testing.T) {
 	})
 	if want := []string{""}; !slices.Equal(renderer.refs, want) {
 		t.Fatalf("rendered refs = %#v, want %#v", renderer.refs, want)
+	}
+}
+
+func TestDeliverRecordRejectsSupersededReminderAfterRendering(t *testing.T) {
+	adapter := &testAdapter{platform: "qqbot", outcome: Outcome{State: OutcomeAccepted}}
+	repository := &workerRepository{blocked: true}
+	service, err := New(repository, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer := &testRenderer{data: []byte("png")}
+	if err := service.SetRenderer(renderer); err != nil {
+		t.Fatal(err)
+	}
+	outcome := service.DeliverRecord(t.Context(), Record{ID: 1, Message: message.Outbound{
+		Kind: "notification.rain", TextPolicy: message.TextPolicyImageOnly,
+		Target:  message.Conversation{Platform: "qqbot", Type: "private", ID: "42"},
+		Content: message.Content{Parts: []message.ContentPart{{Text: "开始下雨"}}},
+	}})
+	if outcome.State != OutcomeRejected || outcome.Code != "superseded" || adapter.got.Content.HasContent() {
+		t.Fatalf("outcome=%+v adapter=%+v", outcome, adapter.got)
 	}
 }

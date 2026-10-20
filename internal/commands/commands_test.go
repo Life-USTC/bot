@@ -267,7 +267,7 @@ func TestHelpReplyOnlyShowsPrimaryCommands(t *testing.T) {
 		"待办（td）\t查看和管理待办",
 		"作业（hw）\t查看和管理作业",
 		"校车（xc）\t按日期、服务日或路线查询班次并设置偏好",
-		"通知\t查看和管理课表、作业、第二课堂和待办提醒",
+		"通知\t查看和管理课表、作业、第二课堂、待办和降雨提醒",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply missing %q: %q", want, reply)
@@ -971,7 +971,7 @@ func TestHandleResponseKeepsHandleTextCompatibility(t *testing.T) {
 		"| 课表 | 周课表、单日课表与下一节课 |",
 		"| 待办（td） | 查看和管理待办 |",
 		"| 校车（xc） | 按日期、服务日或路线查询班次并设置偏好 |",
-		"| 通知 | 查看和管理课表、作业、第二课堂和待办提醒 |",
+		"| 通知 | 查看和管理课表、作业、第二课堂、待办和降雨提醒 |",
 	} {
 		if !strings.Contains(response.Image.RichText, want) {
 			t.Fatalf("help rich text missing %q: %q", want, response.Image.RichText)

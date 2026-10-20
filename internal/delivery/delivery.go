@@ -61,6 +61,7 @@ type Record struct {
 
 type Repository interface {
 	Enqueue(context.Context, message.Outbound) (Record, bool, error)
+	CanDeliver(context.Context, int64) (bool, error)
 	ClaimDue(context.Context, time.Time, int) ([]Record, error)
 	Complete(context.Context, int64, Outcome, time.Time) error
 	ExpireDue(context.Context, time.Time) error
@@ -130,11 +131,11 @@ func (s *Service) Enqueue(ctx context.Context, outbound message.Outbound) (Recor
 // a user reads in a footer names the durable row an operator can look up. A
 // retry of the same record renders the same number.
 func (s *Service) DeliverRecord(ctx context.Context, record Record) Outcome {
-	return s.deliver(ctx, record.Message, formatRef(record.ID))
+	return s.deliver(ctx, record.Message, record.ID)
 }
 
 func (s *Service) DeliverNow(ctx context.Context, outbound message.Outbound) Outcome {
-	return s.deliver(ctx, outbound, "")
+	return s.deliver(ctx, outbound, 0)
 }
 
 func formatRef(id int64) string {
@@ -144,7 +145,7 @@ func formatRef(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
-func (s *Service) deliver(ctx context.Context, outbound message.Outbound, ref string) Outcome {
+func (s *Service) deliver(ctx context.Context, outbound message.Outbound, recordID int64) Outcome {
 	if s == nil {
 		return Outcome{State: OutcomeRejected, Code: "delivery_unavailable", Err: errors.New("delivery service is unavailable")}
 	}
@@ -155,7 +156,7 @@ func (s *Service) deliver(ctx context.Context, outbound message.Outbound, ref st
 	if !outbound.ExpiresAt.IsZero() && !outbound.ExpiresAt.After(time.Now()) {
 		return Outcome{State: OutcomeRejected, Code: "expired", Err: errors.New("message expired before delivery")}
 	}
-	rendered, err := s.renderOutbound(ctx, outbound, ref)
+	rendered, err := s.renderOutbound(ctx, outbound, formatRef(recordID))
 	if err != nil {
 		return Outcome{State: OutcomeRetryable, Code: "render_failed", Err: err}
 	}
@@ -163,6 +164,18 @@ func (s *Service) deliver(ctx context.Context, outbound message.Outbound, ref st
 	// Rendering can outlast a reminder's deadline even after a valid claim.
 	if !outbound.ExpiresAt.IsZero() && !outbound.ExpiresAt.After(time.Now()) {
 		return Outcome{State: OutcomeRejected, Code: "expired", Err: errors.New("message expired while rendering")}
+	}
+	if recordID > 0 {
+		if s.repository == nil {
+			return Outcome{State: OutcomeRejected, Code: "delivery_unavailable", Err: errors.New("delivery repository is unavailable")}
+		}
+		allowed, err := s.repository.CanDeliver(ctx, recordID)
+		if err != nil {
+			return Outcome{State: OutcomeRetryable, Code: "delivery_state_failed", Err: err}
+		}
+		if !allowed {
+			return Outcome{State: OutcomeRejected, Code: "superseded", Err: errors.New("message expired or was superseded before delivery")}
+		}
 	}
 	adapter := s.adapters[outbound.Target.Platform]
 	if adapter == nil {

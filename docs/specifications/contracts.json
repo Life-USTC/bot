@@ -1265,6 +1265,84 @@
           }
         ]
       }
+    },
+    {
+      "id": "bot.rain-transitions",
+      "scope": "private",
+      "rationale": "Rain reminders are explicitly enabled per campus. Amap observations younger than one hour with snapshots younger than fifteen minutes establish state; modeled, unknown, stale or failed data cannot imply rain. First reads, recovery, restarts and campus switches baseline silently. State and outbox writes are atomic; repeated snapshots do not duplicate transitions and superseded reminders cannot be retried. Settings survive restart.",
+      "acceptance": {
+        "given": "A private user opts into campus rain reminders with fresh timestamped observations.",
+        "when": "Dry, rain start, repeated rain, rain stop, recovery and disabled settings are persisted.",
+        "then": [
+          "First observations establish a baseline without notification.",
+          "Each valid transition creates one durable record; repeated observations do not add records.",
+          "Recovery baselines silently and disabling cancels queued notices."
+        ],
+        "test": {
+          "file": "internal/store/rain_test.go",
+          "name": "TestSpecRainTransitions/bot.rain-transitions"
+        }
+      },
+      "sources": [],
+      "expectations": {
+        "kind": "rain-transition",
+        "cases": [
+          {
+            "id": "baseline",
+            "expected": {
+              "queued": 0,
+              "pending": 0,
+              "enabled": true,
+              "campus": "ustc-main"
+            }
+          },
+          {
+            "id": "start",
+            "expected": {
+              "queued": 1,
+              "pending": 1,
+              "enabled": true,
+              "campus": "ustc-main"
+            }
+          },
+          {
+            "id": "same-snapshot",
+            "expected": {
+              "queued": 1,
+              "pending": 1,
+              "enabled": true,
+              "campus": "ustc-main"
+            }
+          },
+          {
+            "id": "stop",
+            "expected": {
+              "queued": 2,
+              "pending": 1,
+              "enabled": true,
+              "campus": "ustc-main"
+            }
+          },
+          {
+            "id": "recovery",
+            "expected": {
+              "queued": 2,
+              "pending": 0,
+              "enabled": true,
+              "campus": "ustc-main"
+            }
+          },
+          {
+            "id": "disabled",
+            "expected": {
+              "queued": 2,
+              "pending": 0,
+              "enabled": false,
+              "campus": "ustc-main"
+            }
+          }
+        ]
+      }
     }
   ]
 }

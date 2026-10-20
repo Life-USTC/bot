@@ -1021,6 +1021,8 @@ func NormalizeNotificationKind(value string) (string, bool) {
 	switch normToken(value) {
 	case "class", "classes", "section", "sections", "schedule", "curriculum", "kb", "课表", "课程", "上课":
 		return "classes", true
+	case "rain", "降雨", "下雨", "天气提醒":
+		return "rain", true
 	case "homework", "hw", "作业":
 		return "homework", true
 	case "activity", "activities", "young", "young-event", "二课", "第二课堂", "活动":
@@ -2629,7 +2631,9 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return strings.Join([]string{
 			"通知用法：",
 			"通知：查看设置",
-			"通知 开 / 通知 关：切换全部提醒",
+			"通知 开：开启课表、作业、活动和待办提醒；通知 关：关闭全部提醒",
+			"通知 降雨 开 本部 / 通知 降雨 开 高新：单独开启降雨提醒并选择校区",
+			"通知 降雨 关：关闭降雨提醒",
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
 			"通知 活动 开 / 通知 活动 关",
@@ -2647,14 +2651,23 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 		return h.commandError("通知设置查不到：", err)
 	}
 	settings.Identity = ident
+	rain, err := h.rainSettings(ctx, ident, args)
+	if err != nil {
+		return h.commandError("降雨设置保存失败：", err)
+	}
 	missingScopes := h.missingNotificationScopes(ctx, ident)
 	if !hasArgs(args) || firstArgIs(args, "status") {
 		h.markData(map[string]any{
 			"operation":             "notification_settings",
 			"settings":              settings,
+			"rain":                  rain,
 			"missing_scope_sources": missingScopeKinds(missingScopes),
 		})
-		return formatNotificationSettings(settings, missingScopes)
+		return formatNotificationSettings(settings, missingScopes) + "\n" + formatRainSettings(rain)
+	}
+	if len(args) >= 2 && args[0] == "rain" {
+		h.markData(map[string]any{"operation": "rain_settings", "settings": rain})
+		return formatNotificationSettings(settings, missingScopes) + "\n" + formatRainSettings(rain)
 	}
 	if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 		enabled := args[0] == "on"
@@ -2697,9 +2710,10 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	h.markData(map[string]any{
 		"operation":             "notification_settings",
 		"settings":              settings,
+		"rain":                  rain,
 		"missing_scope_sources": missingScopeKinds(missingScopes),
 	})
-	return formatNotificationSettings(settings, missingScopes)
+	return formatNotificationSettings(settings, missingScopes) + "\n" + formatRainSettings(rain)
 }
 
 // missingNotificationScopes reports which reminder sources the stored OAuth
@@ -2752,7 +2766,7 @@ func formatNotificationSettings(settings store.NotificationSettings, missingScop
 		lines = append(lines, line)
 	}
 	if settings.ReauthRequired && (settings.ClassesEnabled || settings.HomeworkEnabled || settings.YoungEnabled || settings.TodosEnabled) {
-		lines = append(lines, "状态：已暂停，请发送“登录”；登录成功后会自动恢复。")
+		lines = append(lines, "课表、作业、活动和待办提醒已暂停，请发送“登录”；登录成功后会自动恢复。")
 	}
 	return strings.Join(lines, "\n")
 }

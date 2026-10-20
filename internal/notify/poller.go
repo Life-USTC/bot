@@ -109,8 +109,9 @@ type Poller struct {
 	Now       func() time.Time
 	Logger    *log.Logger
 
-	failureMu sync.Mutex
-	failures  map[string]pollFailure
+	rainSession string
+	failureMu   sync.Mutex
+	failures    map[string]pollFailure
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -132,6 +133,7 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) tick(ctx context.Context) {
+	p.pollRain(ctx)
 	if p.Life == nil || p.Auth == nil || p.Auth.Store == nil || p.Store == nil || p.Publisher == nil {
 		return
 	}

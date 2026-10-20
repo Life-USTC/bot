@@ -15,6 +15,16 @@ func notifyArgsAcceptable(args []string) bool {
 	if firstArgIn(args, "on", "off") {
 		return len(args) == 1
 	}
+	if args[0] == "rain" {
+		if len(args) < 2 || len(args) > 3 || (args[1] != "on" && args[1] != "off") {
+			return false
+		}
+		if len(args) == 3 {
+			_, ok := weatherLocationFilter(args[2:])
+			return ok
+		}
+		return true
+	}
 	if args[0] == "classes" || args[0] == "homework" || args[0] == "young" || args[0] == "todos" {
 		return len(args) == 1 || len(args) == 2 && (args[1] == "on" || args[1] == "off")
 	}
