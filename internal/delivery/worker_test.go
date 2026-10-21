@@ -9,6 +9,8 @@ import (
 )
 
 type workerRepository struct {
+	blocked bool
+
 	records      []Record
 	completed    []Outcome
 	nextAttempts []time.Time
@@ -16,6 +18,8 @@ type workerRepository struct {
 	prunedAt     time.Time
 	expiredAt    time.Time
 }
+
+func (r *workerRepository) CanDeliver(context.Context, int64) (bool, error) { return !r.blocked, nil }
 
 func (r *workerRepository) Enqueue(context.Context, message.Outbound) (Record, bool, error) {
 	return Record{}, false, nil

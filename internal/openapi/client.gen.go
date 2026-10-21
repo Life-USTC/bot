@@ -2116,6 +2116,24 @@ func (e TodosListResponseSchemaTodosPriority) Valid() bool {
 	}
 }
 
+// Defines values for WeatherSnapshotResponseSchemaCurrentSource.
+const (
+	WeatherSnapshotResponseSchemaCurrentSourceAmap      WeatherSnapshotResponseSchemaCurrentSource = "amap"
+	WeatherSnapshotResponseSchemaCurrentSourceOpenMeteo WeatherSnapshotResponseSchemaCurrentSource = "open-meteo"
+)
+
+// Valid indicates whether the value is a known member of the WeatherSnapshotResponseSchemaCurrentSource enum.
+func (e WeatherSnapshotResponseSchemaCurrentSource) Valid() bool {
+	switch e {
+	case WeatherSnapshotResponseSchemaCurrentSourceAmap:
+		return true
+	case WeatherSnapshotResponseSchemaCurrentSourceOpenMeteo:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WeatherSnapshotResponseSchemaLocationKey.
 const (
 	WeatherSnapshotResponseSchemaLocationKeyUstcGaoxin WeatherSnapshotResponseSchemaLocationKey = "ustc-gaoxin"
@@ -2136,16 +2154,16 @@ func (e WeatherSnapshotResponseSchemaLocationKey) Valid() bool {
 
 // Defines values for WeatherSnapshotResponseSchemaProviders.
 const (
-	Amap      WeatherSnapshotResponseSchemaProviders = "amap"
-	OpenMeteo WeatherSnapshotResponseSchemaProviders = "open-meteo"
+	WeatherSnapshotResponseSchemaProvidersAmap      WeatherSnapshotResponseSchemaProviders = "amap"
+	WeatherSnapshotResponseSchemaProvidersOpenMeteo WeatherSnapshotResponseSchemaProviders = "open-meteo"
 )
 
 // Valid indicates whether the value is a known member of the WeatherSnapshotResponseSchemaProviders enum.
 func (e WeatherSnapshotResponseSchemaProviders) Valid() bool {
 	switch e {
-	case Amap:
+	case WeatherSnapshotResponseSchemaProvidersAmap:
 		return true
-	case OpenMeteo:
+	case WeatherSnapshotResponseSchemaProvidersOpenMeteo:
 		return true
 	default:
 		return false
@@ -9622,13 +9640,15 @@ type WeatherSnapshotResponseSchema struct {
 			Icon string `json:"icon"`
 			Text string `json:"text"`
 		} `json:"condition"`
-		FeelsLike     *float32 `json:"feelsLike,omitempty"`
-		Humidity      *float32 `json:"humidity,omitempty"`
-		Pressure      *float32 `json:"pressure,omitempty"`
-		Temperature   *float32 `json:"temperature"`
-		Visibility    *float32 `json:"visibility,omitempty"`
-		WindDirection *string  `json:"windDirection,omitempty"`
-		WindSpeed     *float32 `json:"windSpeed,omitempty"`
+		FeelsLike     *float32                                    `json:"feelsLike,omitempty"`
+		Humidity      *float32                                    `json:"humidity,omitempty"`
+		ObservedAt    *time.Time                                  `json:"observedAt,omitempty"`
+		Pressure      *float32                                    `json:"pressure,omitempty"`
+		Source        *WeatherSnapshotResponseSchemaCurrentSource `json:"source,omitempty"`
+		Temperature   *float32                                    `json:"temperature"`
+		Visibility    *float32                                    `json:"visibility,omitempty"`
+		WindDirection *string                                     `json:"windDirection,omitempty"`
+		WindSpeed     *float32                                    `json:"windSpeed,omitempty"`
 	} `json:"current"`
 	Daily []struct {
 		Condition *struct {
@@ -9661,6 +9681,9 @@ type WeatherSnapshotResponseSchema struct {
 	} `json:"location"`
 	Providers []WeatherSnapshotResponseSchemaProviders `json:"providers"`
 }
+
+// WeatherSnapshotResponseSchemaCurrentSource defines model for WeatherSnapshotResponseSchema.Current.Source.
+type WeatherSnapshotResponseSchemaCurrentSource string
 
 // WeatherSnapshotResponseSchemaLocationKey defines model for WeatherSnapshotResponseSchema.Location.Key.
 type WeatherSnapshotResponseSchemaLocationKey string

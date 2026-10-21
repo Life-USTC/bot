@@ -662,6 +662,66 @@
                     }
                   }
                 }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "rain-transition"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "queued",
+                            "pending",
+                            "enabled",
+                            "campus"
+                          ],
+                          "properties": {
+                            "queued": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pending": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "campus": {
+                              "enum": [
+                                "ustc-main",
+                                "ustc-gaoxin"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             ]
           }

@@ -120,8 +120,17 @@ type Architecture struct {
 	Error           bool   `json:"error"`
 }
 
+type RainTransition struct {
+	Queued  int    `json:"queued"`
+	Pending int    `json:"pending"`
+	Enabled bool   `json:"enabled"`
+	Campus  string `json:"campus"`
+}
+
 func observation(kind string) any {
 	switch kind {
+	case "rain-transition":
+		return new(RainTransition)
 	case "collection":
 		return new(Collection)
 	case "discovery":

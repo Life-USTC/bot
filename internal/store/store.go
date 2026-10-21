@@ -155,8 +155,8 @@ type AgentRun struct {
 const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
-// after a successful startup migration.
-const CurrentSchemaVersion = 7
+// after initializing an empty database.
+const CurrentSchemaVersion = 8
 
 var requiredSchemaModels = []any{
 	&userRow{},
@@ -165,6 +165,7 @@ var requiredSchemaModels = []any{
 	&conversationStateRow{},
 	&interactionRow{},
 	&notificationSettingRow{},
+	&rainSettingRow{},
 	&busSettingRow{},
 	&agentRunRow{},
 	&feedbackRecordRow{},
@@ -465,13 +466,16 @@ func Open(path string) (*Store, error) {
 		_ = s.Close()
 		return nil, err
 	}
+	if err := s.resetRainAfterStartup(); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
 // OpenForSchemaMaintenance opens the database without running any schema
-// changes. The migrate command uses this entry point so a production v2
-// database can be explicitly prepared before the bot starts; normal startup
-// continues to verify the complete schema and never repairs it implicitly.
+// changes. Only an empty database can be initialized; existing schemas must
+// already match the current version. Normal startup never repairs them.
 func OpenForSchemaMaintenance(path string) (*Store, error) {
 	return openStore(path)
 }
@@ -595,18 +599,6 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 		return fmt.Errorf("read schema version: %w", err)
 	}
 	switch version {
-	case 6:
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.AutoMigrate(&userRow{}); err != nil {
-				return fmt.Errorf("add user display name columns: %w", err)
-			}
-			if err := backfillDirectUserDisplayNames(tx); err != nil {
-				return err
-			}
-			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error
-		}); err != nil {
-			return err
-		}
 	case CurrentSchemaVersion:
 		// Repeated maintenance must not override a user's later choice.
 		return s.VerifySchema()
@@ -2137,4 +2129,12 @@ func busSettingsFromRow(row busSettingRow, fallback Identity) BusSettings {
 		Identity:        ident,
 		ShowSouthCampus: row.ShowSouthCampus,
 	}
+}
+
+// CanDeliver rechecks a claimed row after potentially slow rendering. Producers
+// may expire pending or claimed reminders when their underlying state changes.
+func (s *Store) CanDeliver(ctx context.Context, id int64) (bool, error) {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).Where("id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)", id, string(delivery.StatusDelivering), nowUTC()).Count(&count).Error
+	return count == 1, err
 }
