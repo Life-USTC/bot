@@ -864,10 +864,7 @@ func napcatAcceptance(response napcatActionResponse) (store.MessageAcceptance, e
 }
 
 func napcatActionError(response napcatActionResponse) error {
-	if response.Status != "" && response.Status != "ok" {
-		return napcatActionRejectedError{message: napcatResultText(response.Message, response.Wording, response.Status)}
-	}
-	if response.RetCode != 0 {
+	if (response.Status != "" && response.Status != "ok") || response.RetCode != 0 {
 		return napcatActionRejectedError{retCode: response.RetCode, message: napcatResultText(response.Message, response.Wording, response.Status)}
 	}
 	return nil
