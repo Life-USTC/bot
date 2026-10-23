@@ -1343,6 +1343,148 @@
           }
         ]
       }
+    },
+    {
+      "id": "bot.recurring-reminders",
+      "scope": "private",
+      "rationale": "Personal daily and weekly reminders use a local IANA clock without OAuth or campus fetches. Persisted rules and the durable outbox advance together. Restarts retain a current occurrence younger than five minutes even when an older watermark is stale; repeated polls cannot duplicate it. Edits, pauses and deletes cancel superseded messages. Notification off pauses opt-in rules; notification on does not resume them.",
+      "acceptance": {
+        "given": "A private user creates a daily or weekly rule with the default Shanghai timezone and an optional inclusive end date.",
+        "when": "The store is reopened, due rules are polled twice, and rules are edited, paused, resumed, deleted or disabled through the notification command.",
+        "then": [
+          "A fresh occurrence creates exactly one image-only message containing its scheduled local time; an occurrence exactly five minutes old is not queued.",
+          "The next occurrence advances independently of old missed dates and becomes absent after the inclusive end date.",
+          "Mutations cancel queued old messages. Paused rules remain saved; resume schedules a future occurrence, while notification on leaves paused rules untouched."
+        ],
+        "test": {
+          "file": "internal/notify/recurring_spec_test.go",
+          "name": "TestSpecRecurringReminders/bot.recurring-reminders"
+        }
+      },
+      "sources": [],
+      "expectations": {
+        "kind": "recurring-reminder",
+        "cases": [
+          {
+            "id": "created",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-10-22T01:00:00Z"
+              ],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "restart-fresh",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-10-24T01:00:00Z"
+              ],
+              "texts": [
+                "周期提醒：\n喝水\n2026-10-23 09:00 · Asia/Shanghai"
+              ],
+              "imageOnly": 1
+            }
+          },
+          {
+            "id": "expired-window",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-10-24T01:00:00Z"
+              ],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "weekly-restart",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-11-02T01:00:00Z"
+              ],
+              "texts": [
+                "周期提醒：\n周报\n2026-10-26 09:00 · Asia/Shanghai"
+              ],
+              "imageOnly": 1
+            }
+          },
+          {
+            "id": "inclusive-end",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [],
+              "texts": [
+                "周期提醒：\n喝水\n2026-10-23 09:00 · Asia/Shanghai"
+              ],
+              "imageOnly": 1
+            }
+          },
+          {
+            "id": "edit-cancels",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-10-23T02:00:00Z"
+              ],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "pause-cancels",
+            "expected": {
+              "rules": 1,
+              "paused": 1,
+              "nextAt": [],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "resume-future",
+            "expected": {
+              "rules": 1,
+              "paused": 0,
+              "nextAt": [
+                "2026-10-24T01:00:00Z"
+              ],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "notification-off-on",
+            "expected": {
+              "rules": 1,
+              "paused": 1,
+              "nextAt": [],
+              "texts": [],
+              "imageOnly": 0
+            }
+          },
+          {
+            "id": "delete-cancels",
+            "expected": {
+              "rules": 0,
+              "paused": 0,
+              "nextAt": [],
+              "texts": [],
+              "imageOnly": 0
+            }
+          }
+        ]
+      }
     }
   ]
 }

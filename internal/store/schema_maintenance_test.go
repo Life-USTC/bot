@@ -27,7 +27,7 @@ func TestSchemaMaintenanceUpgradesV7WithoutChangingExistingData(t *testing.T) {
 	if err := s.PrepareSchemaForMaintenance(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	assertSchemaVersion(t, s, 8)
+	assertSchemaVersion(t, s, 9)
 	if err := s.VerifySchema(); err != nil {
 		t.Fatal(err)
 	}
@@ -37,6 +37,17 @@ func TestSchemaMaintenanceUpgradesV7WithoutChangingExistingData(t *testing.T) {
 	}
 	delete(after.Schema, "rain_settings")
 	delete(after.Tables, "rain_settings")
+	if _, ok := after.Schema["recurring_reminders"]; !ok || len(after.Tables["recurring_reminders"]) != 0 {
+		t.Fatal("upgrade did not add an empty recurring reminders table")
+	}
+	delete(after.Schema, "recurring_reminders")
+	delete(after.Tables, "recurring_reminders")
+	for _, index := range []string{"idx_recurring_reminders_due", "idx_recurring_reminders_owner"} {
+		if _, ok := after.Schema[index]; !ok {
+			t.Fatalf("upgrade did not add %s", index)
+		}
+		delete(after.Schema, index)
+	}
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("upgrade changed existing tables, indexes, sequences, or data")
 	}
@@ -90,7 +101,7 @@ func TestSchemaMaintenanceV7FailureRollsBackTableAndVersion(t *testing.T) {
 }
 
 func TestSchemaMaintenanceRejectsUnsupportedVersionsWithoutMutation(t *testing.T) {
-	for _, version := range []int{0, 1, 6, 9} {
+	for _, version := range []int{0, 1, 6, 10} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			s, _ := schemaV7Fixture(t)
 			if err := s.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", version)).Error; err != nil {
@@ -105,6 +116,55 @@ func TestSchemaMaintenanceRejectsUnsupportedVersionsWithoutMutation(t *testing.T
 				t.Fatal("rejected maintenance changed the database")
 			}
 		})
+	}
+}
+
+func TestSchemaMaintenanceUpgradesV8WithoutChangingExistingData(t *testing.T) {
+	s, path := schemaV7Fixture(t)
+	if err := s.db.Migrator().CreateTable(&rainSettingRow{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Exec("PRAGMA user_version = 8").Error; err != nil {
+		t.Fatal(err)
+	}
+	ident := Identity{Platform: "napcat", UserID: "legacy-user", ConversationType: "private", ConversationID: "legacy-user"}
+	if err := s.SaveRainSettings(t.Context(), RainSettings{Identity: ident, Enabled: true, Campus: "ustc-gaoxin"}); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotSchemaDatabase(t, s)
+	if opened, err := Open(path); err == nil {
+		_ = opened.Close()
+		t.Fatal("normal startup implicitly upgraded v8")
+	}
+	assertSchemaVersion(t, s, 8)
+	if after := snapshotSchemaDatabase(t, s); !reflect.DeepEqual(before, after) {
+		t.Fatal("rejected startup changed v8 data")
+	}
+	if err := s.PrepareSchemaForMaintenance(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	assertSchemaVersion(t, s, 9)
+	after := snapshotSchemaDatabase(t, s)
+	if _, ok := after.Schema["recurring_reminders"]; !ok || len(after.Tables["recurring_reminders"]) != 0 {
+		t.Fatal("upgrade did not add an empty recurring reminders table")
+	}
+	delete(after.Schema, "recurring_reminders")
+	delete(after.Tables, "recurring_reminders")
+	for _, index := range []string{"idx_recurring_reminders_due", "idx_recurring_reminders_owner"} {
+		if _, ok := after.Schema[index]; !ok {
+			t.Fatalf("upgrade did not add %s", index)
+		}
+		delete(after.Schema, index)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("upgrade changed existing tables, indexes, sequences, or data")
+	}
+	beforeRepeat := snapshotSchemaDatabase(t, s)
+	if err := s.PrepareSchemaForMaintenance(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if afterRepeat := snapshotSchemaDatabase(t, s); !reflect.DeepEqual(beforeRepeat, afterRepeat) {
+		t.Fatal("repeated v9 maintenance changed data")
 	}
 }
 

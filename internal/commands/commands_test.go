@@ -463,6 +463,7 @@ func TestHelpOverviewAndDetailsCoverEveryCapability(t *testing.T) {
 		"bus": true, "weather": true, "room": true, "young_event": true,
 		"course": true, "section": true, "teacher": true, "semester": true,
 		"subscription": true, "account": true, "notifications": true, "feedback": true,
+		"reminder": true,
 	}
 	if len(overviewCount) != len(visibleTopics) {
 		t.Errorf("overview has %d topics, want %d", len(overviewCount), len(visibleTopics))

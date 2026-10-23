@@ -156,7 +156,7 @@ const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
 // after initializing or explicitly upgrading a database.
-const CurrentSchemaVersion = 8
+const CurrentSchemaVersion = 9
 
 var requiredSchemaModels = []any{
 	&userRow{},
@@ -166,6 +166,7 @@ var requiredSchemaModels = []any{
 	&interactionRow{},
 	&notificationSettingRow{},
 	&rainSettingRow{},
+	&recurringReminderRow{},
 	&busSettingRow{},
 	&agentRunRow{},
 	&feedbackRecordRow{},
@@ -602,10 +603,15 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	case CurrentSchemaVersion:
 		// Repeated maintenance must not override a user's later choice.
 		return s.VerifySchema()
-	case 7:
+	case 7, 8:
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Migrator().CreateTable(&rainSettingRow{}); err != nil {
-				return fmt.Errorf("add rain settings table: %w", err)
+			if version == 7 {
+				if err := tx.Migrator().CreateTable(&rainSettingRow{}); err != nil {
+					return fmt.Errorf("add rain settings table: %w", err)
+				}
+			}
+			if err := tx.Migrator().CreateTable(&recurringReminderRow{}); err != nil {
+				return fmt.Errorf("add recurring reminders table: %w", err)
 			}
 			if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
 				return fmt.Errorf("write schema version: %w", err)

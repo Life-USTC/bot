@@ -22,6 +22,7 @@ const (
 	CapabilityCalendar             CapabilityID = "calendar"
 	CapabilitySubscription         CapabilityID = "subscription"
 	CapabilityNotify               CapabilityID = "notify"
+	CapabilityReminder             CapabilityID = "reminder"
 	CapabilitySettings             CapabilityID = "settings"
 	CapabilityFeedback             CapabilityID = "feedback"
 	CapabilityPing                 CapabilityID = "ping"
@@ -478,6 +479,20 @@ func init() {
 		descriptor(CapabilityNotify, []string{"notify", "通知", "提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, notifyArgsAcceptable, normalizeNotifyArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.notify(ctx, ident, args)
 		}, notifyPolicy, helpMeta("notifications", "通知", "查看和管理课表、作业、第二课堂、待办和降雨提醒", true, []HelpExample{example("通知", "查看通知设置"), example("通知 开", "开启课表、作业、活动和待办提醒"), example("通知 降雨 开 高新", "单独开启高新校区降雨提醒"), example("通知 降雨 关", "关闭降雨提醒"), example("通知 关", "关闭全部提醒"), example("通知 课表 开", "开启课前提醒"), example("通知 作业 开", "开启作业提醒"), example("通知 活动 开", "开启第二课堂提醒"), example("通知 待办 开", "开启待办提醒（仅提醒未来 24 小时内到期且未完成的待办）"), example("通知 作业 关", "关闭作业提醒")}, []HelpExample{example("提醒", "相当于“通知”")})),
+		descriptor(CapabilityReminder, []string{"reminder", "周期提醒"}, CapabilityRequirements{Store: true, DataScope: DataScopeUserPrivate}, EffectRead, ExposureModel, func(args []string) bool {
+			_, err := parseRecurringReminderArgs(args)
+			return err == nil
+		}, normalizeRecurringReminderArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
+			return h.recurringReminder(ctx, ident, args)
+		}, recurringReminderPolicy, helpMeta("reminder", "周期提醒", "私聊管理每日或每周定时提醒；通知关会暂停，通知开不会自动恢复", true, []HelpExample{
+			example("周期提醒", "列出提醒及下次时间"),
+			example("周期提醒 添加 每天 09:00 喝水", "每天按北京时间提醒"),
+			example("周期提醒 添加 每周 周一 09:00 写周报 时区=Asia/Shanghai 截止=2099-12-31", "每周固定时刻提醒，截止日期包含当天"),
+			example("周期提醒 修改 1 每天 10:00 休息", "修改时间和内容；省略时区或截止会保留原值"),
+			example("周期提醒 暂停 1", "暂停并取消尚未发出的提醒"),
+			example("周期提醒 恢复 1", "恢复未来的提醒"),
+			example("周期提醒 删除 1", "删除提醒规则"),
+		}, nil)),
 		descriptor(CapabilityFeedback, []string{"feedback", "反馈"}, CapabilityRequirements{DataScope: DataScopePublic}, EffectWrite, ExposureModel, allowArgs, nil, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.feedback(ctx, ident, args)
 		}, feedbackPolicy, helpMeta("feedback", "反馈", "向管理员提交反馈", true, []HelpExample{exampleFor(CapabilityFeedback, "反馈 <你的建议>", "向管理员提交反馈", "请增加这个功能")}, nil)),

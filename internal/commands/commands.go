@@ -2634,6 +2634,7 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 			"通知 开：开启课表、作业、活动和待办提醒；通知 关：关闭全部提醒",
 			"通知 降雨 开 本部 / 通知 降雨 开 高新：单独开启降雨提醒并选择校区",
 			"通知 降雨 关：关闭降雨提醒",
+			"周期提醒单独创建和恢复；通知 关会暂停全部周期提醒，通知 开不会自动恢复",
 			"通知 课表 开 / 通知 课表 关",
 			"通知 作业 开 / 通知 作业 关",
 			"通知 活动 开 / 通知 活动 关",
@@ -2702,6 +2703,11 @@ func (h Handler) notify(ctx context.Context, ident store.Identity, args []string
 	}
 	if err := h.Store.SaveNotificationSettings(ctx, settings); err != nil {
 		return h.commandError("通知设置保存失败：", err)
+	}
+	if len(args) == 1 && args[0] == "off" {
+		if err := h.Store.PauseAllRecurringReminders(ctx, ident); err != nil {
+			return h.commandError("周期提醒暂停失败：", err)
+		}
 	}
 	settings, err = h.Store.NotificationSettings(ctx, ident)
 	if err != nil {

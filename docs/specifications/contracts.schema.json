@@ -722,6 +722,75 @@
                     }
                   }
                 }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "cases"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "recurring-reminder"
+                  },
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "expected"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*$"
+                        },
+                        "expected": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "rules",
+                            "paused",
+                            "nextAt",
+                            "texts",
+                            "imageOnly"
+                          ],
+                          "properties": {
+                            "rules": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "paused": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "nextAt": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "texts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "imageOnly": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             ]
           }

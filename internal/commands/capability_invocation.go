@@ -55,6 +55,26 @@ func (h Handler) DescribeInvocation(ctx context.Context, input Input, id Capabil
 	if store.IsSharedConversation(input.Identity) && !sharedCommandAllowed(invocation) {
 		return description, errCapabilityForbidden
 	}
+	if invocation.ID() == CapabilityReminder && invocation.Policy().Effect != EffectRead && !firstArgIs(invocation.Args, "add") {
+		if h.Store == nil {
+			return description, errCapabilityReceiptUnavailable
+		}
+		query, err := parseRecurringReminderArgs(invocation.Args)
+		if err != nil {
+			return description, err
+		}
+		rule, err := h.Store.RecurringReminder(ctx, input.Identity, query.ID)
+		if errors.Is(err, store.ErrRecurringReminderNotFound) {
+			return description, errCapabilityPersonalTarget
+		}
+		if err != nil {
+			return description, err
+		}
+		receipt := ReceiptForInvocation(invocation)
+		receipt.Subject = fmt.Sprintf("#%d %s", rule.ID, rule.Text)
+		description.Receipt = &receipt
+		return description, nil
+	}
 	if personalMutationNeedsTarget(invocation) {
 		resolved, receipt, err := h.resolvePersonalMutation(ctx, input.Identity, invocation)
 		return CapabilityInvocationDescription{Invocation: resolved, Receipt: receipt}, err
@@ -415,6 +435,17 @@ func ReceiptForInvocation(invocation Invocation) store.CapabilityReceipt {
 			target += "：" + state
 		}
 		return store.CapabilityReceipt{Action: "设置", Resource: "提醒", Subject: target}
+	case CapabilityReminder:
+		if invocation.Policy().Effect == EffectRead {
+			return query("周期提醒")
+		}
+		action := map[string]string{"add": "添加", "edit": "修改", "pause": "暂停", "resume": "恢复", "delete": "删除"}[invocation.Args[0]]
+		if firstArgIs(invocation.Args, "add") {
+			if parsed, err := parseRecurringReminderArgs(invocation.Args); err == nil {
+				return store.CapabilityReceipt{Action: action, Resource: "周期提醒", Subject: parsed.Spec.Text}
+			}
+		}
+		return mutation(action, "周期提醒", 1)
 	case CapabilityFeedback:
 		if invocation.Policy().Effect == EffectRead {
 			return store.CapabilityReceipt{}

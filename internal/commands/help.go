@@ -60,7 +60,7 @@ func overviewCapability(id CapabilityID) bool {
 		CapabilityCourse, CapabilitySection, CapabilityTeacher, CapabilityBus,
 		CapabilityCalendar, CapabilityTodo, CapabilityHomework, CapabilitySchedule,
 		CapabilityExam, CapabilitySubscription, CapabilityLogin, CapabilityNotify,
-		CapabilityFeedback:
+		CapabilityFeedback, CapabilityReminder:
 		return true
 	default:
 		return false
@@ -72,7 +72,7 @@ func overviewSectionIndex(id CapabilityID) int {
 	case CapabilitySemester, CapabilityWeather, CapabilityRoomMap, CapabilityYoungEvent,
 		CapabilityCourse, CapabilitySection, CapabilityTeacher, CapabilityBus:
 		return 0
-	case CapabilityLogin, CapabilityNotify, CapabilityFeedback:
+	case CapabilityLogin, CapabilityNotify, CapabilityFeedback, CapabilityReminder:
 		return 2
 	default:
 		return 1
@@ -304,6 +304,8 @@ var helpTopicAliases = map[string]string{
 	"通知":           "notifications",
 	"提醒":           "notifications",
 	"notify":       "notifications",
+	"周期提醒":         "reminder",
+	"reminder":     "reminder",
 	"校车":           "bus",
 	"bus":          "bus",
 	"天气":           "weather",
@@ -361,6 +363,7 @@ var helpTopicTitles = map[string]string{
 	"semester":      "学期",
 	"subscription":  "订阅",
 	"notifications": "通知",
+	"reminder":      "周期提醒",
 	"bus":           "校车",
 	"weather":       "天气",
 	"room":          "教室",
