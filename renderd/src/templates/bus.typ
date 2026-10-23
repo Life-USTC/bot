@@ -17,20 +17,10 @@
       text(size: 11pt, fill: accent, data.next_wait))
   })
   v(18pt)
-  // Each column flows independently. Measure actual wrapped content instead
-  // of aligning every short table to the bottom of its taller neighbour.
-  context {
-    let columns = ((),) * route-columns
-    let heights = (0pt,) * route-columns
-    for t in data.tables {
-      let column = if route-columns == 1 or heights.at(0) <= heights.at(1) { 0 } else { 1 }
-      let body = route-table(t)
-      columns.at(column).push(body)
-      heights.at(column) += measure(body, width: column-width).height + gap
-    }
-    grid(columns: (column-width,) * route-columns, column-gutter: gap, align: top,
-      ..columns.map(items => stack(dir: ttb, spacing: gap, ..items)))
-  }
+  // Preserve reading order and start each pair of route tables together.
+  // Separate tables keep their own trips; rows do not imply matched journeys.
+  grid(columns: (column-width,) * route-columns, gutter: gap, align: top,
+    ..data.tables.map(route-table))
   if data.tables.any(t => t.rows.any(row => row.cells.any(cell => cell == ""))) {
     v(12pt)
     caption-text("— 即停")

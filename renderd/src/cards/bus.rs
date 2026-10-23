@@ -344,29 +344,51 @@ mod tests {
     }
 
     #[test]
-    fn uneven_timetables_pack_without_reserving_empty_grid_rows() {
-        let table = |rows: usize| {
-            serde_json::json!({
-                "header": ["东区", "西区", "先研院", "高新区"],
-                "rows": (0..rows).map(|_| serde_json::json!({
-                    "cells": ["08:00", "08:10", "", "09:00"]
-                })).collect::<Vec<_>>()
+    fn unequal_and_empty_routes_keep_a_stable_row_order() {
+        use typst::layout::{Frame, FrameItem, PagedDocument, Point};
+
+        fn text_position(frame: &Frame, target: &str, origin: Point) -> Option<Point> {
+            frame.items().find_map(|(position, item)| match item {
+                FrameItem::Group(group) => text_position(&group.frame, target, origin + *position),
+                FrameItem::Text(text) if text.text == target => Some(origin + *position),
+                _ => None,
             })
-        };
-        let payload = |tables| serde_json::json!({"title": "校车", "tables": tables});
-        let (_, pair_width, pair_height) =
-            render(&payload(vec![table(16), table(16)]), 1.0).unwrap();
-        let (_, mixed_width, mixed_height) = render(
-            &payload(vec![table(16), table(2), table(2), table(16)]),
-            1.0,
-        )
+        }
+
+        let tables = [("OutboundA", 16), ("ReturnA", 2), ("OutboundB", 2), ("ReturnB", 16), ("Empty", 0)]
+            .into_iter()
+            .map(|(label, rows)| serde_json::json!({
+                "label": label,
+                "header": ["Origin", "Destination"],
+                "rows": (0..rows).map(|_| serde_json::json!({"cells": ["08:00", "08:10"]})).collect::<Vec<_>>()
+            }))
+            .collect::<Vec<_>>();
+        let payload: BusPayload = serde_json::from_value(serde_json::json!({
+            "title": "Bus", "tables": tables
+        }))
         .unwrap();
-        assert_eq!(mixed_width, pair_width);
-        // Four extra trips and two headers should add only their own space,
-        // not another complete 16-trip row of the taller neighbouring table.
+        let world = crate::world::SandboxWorld::new(build_source(&payload));
+        let document = typst::compile::<PagedDocument>(&world).output.unwrap();
+        assert_eq!(document.pages.len(), 1);
+        let frame = &document.pages[0].frame;
+        let position =
+            |label| text_position(frame, label, Point::zero()).expect("route heading is rendered");
+        let [outbound_a, return_a, outbound_b, return_b, empty] =
+            ["OutboundA", "ReturnA", "OutboundB", "ReturnB", "Empty"].map(position);
+
+        assert!((outbound_a.y - return_a.y).to_pt().abs() < 0.5);
         assert!(
-            mixed_height * 10 < pair_height * 16,
-            "uneven tables reserve too much whitespace: pair={pair_height}, mixed={mixed_height}"
+            (outbound_b.y - return_b.y).to_pt().abs() < 0.5,
+            "later route headings must align even when earlier timetables have different lengths"
         );
+        assert!(outbound_b.y > outbound_a.y);
+        assert!(
+            empty.y > return_b.y,
+            "an empty route remains in the input order"
+        );
+        assert_eq!(outbound_a.x, outbound_b.x);
+        assert_eq!(outbound_a.x, empty.x);
+        assert!(return_a.x > outbound_a.x);
+        assert_eq!(return_a.x, return_b.x);
     }
 }
