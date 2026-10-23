@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -529,6 +530,9 @@ func retryRead[T any](ctx context.Context, read func() (T, error)) (T, error) {
 		if err == nil {
 			return value, nil
 		}
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
 		if !retryableReadError(err) || attempt == attempts-1 {
 			return zero, err
 		}
@@ -540,7 +544,7 @@ func retryRead[T any](ctx context.Context, read func() (T, error)) (T, error) {
 }
 
 func retryableReadError(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) {
 		return false
 	}
 	var httpErr HTTPError
@@ -548,6 +552,12 @@ func retryableReadError(err error) bool {
 		return httpErr.StatusCode == http.StatusRequestTimeout ||
 			httpErr.StatusCode == http.StatusTooManyRequests ||
 			httpErr.StatusCode >= http.StatusInternalServerError
+	}
+	// http.Client.Timeout can wrap DeadlineExceeded even though the caller's
+	// context is still active. Only retryRead's caller-context check ends it.
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return true
 	}
 	var urlErr *url.Error
 	return errors.As(err, &urlErr) || errors.Is(err, io.ErrUnexpectedEOF)
