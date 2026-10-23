@@ -205,21 +205,11 @@ func TestRainRestartPreservesPreferencesButInvalidatesPending(t *testing.T) {
 		t.Fatal("restart notified stale rain end")
 	}
 }
-func TestRainRejectsGroupAndOldDatabaseWithoutMutation(t *testing.T) {
+func TestRainRejectsGroupReminders(t *testing.T) {
 	s, setting, _ := rainFixture(t)
 	setting.Identity.ConversationType = "group"
 	if err := s.SaveRainSettings(t.Context(), setting); err == nil {
 		t.Fatal("group reminders accepted")
-	}
-	if err := s.db.Exec("PRAGMA user_version = 7").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PrepareSchemaForMaintenance(t.Context()); err == nil {
-		t.Fatal("previous schema migrated implicitly")
-	}
-	var version int
-	if err := s.db.Raw("PRAGMA user_version").Scan(&version).Error; err != nil || version != 7 {
-		t.Fatalf("version=%v err=%v", version, err)
 	}
 }
 

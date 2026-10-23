@@ -155,7 +155,7 @@ type AgentRun struct {
 const SpendingCurrencyCNY = "CNY"
 
 // CurrentSchemaVersion is the schema version written to SQLite user_version
-// after initializing an empty database.
+// after initializing or explicitly upgrading a database.
 const CurrentSchemaVersion = 8
 
 var requiredSchemaModels = []any{
@@ -474,8 +474,8 @@ func Open(path string) (*Store, error) {
 }
 
 // OpenForSchemaMaintenance opens the database without running any schema
-// changes. Only an empty database can be initialized; existing schemas must
-// already match the current version. Normal startup never repairs them.
+// changes. The migrate command explicitly initializes empty databases or
+// upgrades supported versions. Normal startup never repairs existing schemas.
 func OpenForSchemaMaintenance(path string) (*Store, error) {
 	return openStore(path)
 }
@@ -602,6 +602,16 @@ func (s *Store) PrepareSchemaForMaintenance(ctx context.Context) error {
 	case CurrentSchemaVersion:
 		// Repeated maintenance must not override a user's later choice.
 		return s.VerifySchema()
+	case 7:
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Migrator().CreateTable(&rainSettingRow{}); err != nil {
+				return fmt.Errorf("add rain settings table: %w", err)
+			}
+			if err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", CurrentSchemaVersion)).Error; err != nil {
+				return fmt.Errorf("write schema version: %w", err)
+			}
+			return (&Store{db: tx}).VerifySchema()
+		})
 	case 0:
 		empty, err := sqliteSchemaIsEmpty(s.db)
 		if err != nil {
