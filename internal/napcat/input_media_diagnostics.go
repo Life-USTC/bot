@@ -34,7 +34,7 @@ func (b *Bridge) logUnknownMessageMedia(value any, source string, depth int, rem
 		case "forward", "node":
 			nested := firstPresent(data["content"], data["message"], segment["content"], segment["message"])
 			b.logUnknownForwardMedia(nested, source+".forward", depth+1, remaining)
-		case "text", "image", "mface", "face", "file", "record", "video":
+		case "text", "reply", "image", "mface", "face", "file", "record", "video":
 			continue
 		default:
 			media := inputMediaFromNapCatSegment(typ, data)

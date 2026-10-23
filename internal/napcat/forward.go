@@ -709,6 +709,8 @@ func inputPartsFromValue(value any, depth int) []message.InputPart {
 			if text := stringField(data, "text"); text != "" {
 				parts = append(parts, message.InputPart{Type: "text", Text: text})
 			}
+		case "reply":
+			parts = append(parts, message.InputPart{Type: "reply", Text: "[回复]"})
 		case "image", "mface", "face", "file", "record", "video":
 			media := inputMediaFromNapCatSegment(typ, data)
 			parts = append(parts, message.InputPart{Type: string(media.Kind), Media: &media})
