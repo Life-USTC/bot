@@ -66,7 +66,7 @@ func helpImageTopic(cmd Invocation) (string, bool) {
 	}
 	// Root commands whose empty-arg reply is the topic help card.
 	switch cmd.Name {
-	case "account", "feedback", "subscription":
+	case "feedback", "subscription":
 		if !hasArgs(cmd.Args) {
 			if topic := helpTopicCommand([]string{cmd.Name}); topic != "" {
 				return topic, true
@@ -113,6 +113,8 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 		}
 	}
 	switch cmd.Name {
+	case "account":
+		return richTextImage("account", "账户信息", text)
 	case "schedule":
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "课表")
