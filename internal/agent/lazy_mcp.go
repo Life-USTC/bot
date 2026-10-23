@@ -99,7 +99,7 @@ func campusCatalogCacheKey(token string) string {
 }
 
 type campusToolSearchInput struct {
-	Query string `json:"query" jsonschema_description:"Words describing the campus data lookup you need"`
+	Query string `json:"query" jsonschema_description:"Words describing the campus task or action you need"`
 }
 
 type campusToolCallInput struct {
@@ -364,26 +364,34 @@ func (s *lazyMCPSession) search(ctx context.Context, input campusToolSearchInput
 	tokens := strings.Fields(query)
 	listAll := query == "*"
 	type match struct {
-		name  string
-		score int
+		name          string
+		identityScore int
+		score         int
 	}
 	matches := make([]match, 0, len(s.tools))
 	for name, candidate := range s.tools {
 		schemaData, _ := json.Marshal(candidate)
-		haystack := strings.ToLower(name + " " + candidate.Title + " " + candidate.Description + " " + string(schemaData) + " " + campusToolSearchAliases(name))
+		identity := strings.ToLower(name + " " + candidate.Title + " " + campusToolSearchAliases(name))
+		haystack := identity + " " + strings.ToLower(candidate.Description+" "+string(schemaData))
+		identityScore := 0
 		score := 0
 		if listAll {
 			score = 1
 		} else {
 			for _, token := range tokens {
+				identityScore += textutil.MeaningfulSearchTokenMatches(token, identity)
 				score += textutil.MeaningfulSearchTokenMatches(token, haystack)
 			}
 		}
 		if score > 0 {
-			matches = append(matches, match{name: name, score: score})
+			matches = append(matches, match{name: name, identityScore: identityScore, score: score})
 		}
 	}
 	sort.Slice(matches, func(i, j int) bool {
+		// A nested output field describes a response, not the tool's action.
+		if matches[i].identityScore != matches[j].identityScore {
+			return matches[i].identityScore > matches[j].identityScore
+		}
 		if matches[i].score != matches[j].score {
 			return matches[i].score > matches[j].score
 		}
