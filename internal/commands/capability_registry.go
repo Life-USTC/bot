@@ -484,7 +484,7 @@ func init() {
 			return err == nil
 		}, normalizeRecurringReminderArgs, func(h Handler, ctx context.Context, ident store.Identity, args []string) string {
 			return h.recurringReminder(ctx, ident, args)
-		}, recurringReminderPolicy, helpMeta("recurring_reminders", "周期提醒", "私聊管理每日或每周定时提醒；通知关会暂停，通知开不会自动恢复", true, []HelpExample{
+		}, recurringReminderPolicy, helpMeta("reminder", "周期提醒", "私聊管理每日或每周定时提醒；通知关会暂停，通知开不会自动恢复", true, []HelpExample{
 			example("周期提醒", "列出提醒及下次时间"),
 			example("周期提醒 添加 每天 09:00 喝水", "每天按北京时间提醒"),
 			example("周期提醒 添加 每周 周一 09:00 写周报 时区=Asia/Shanghai 截止=2099-12-31", "每周固定时刻提醒，截止日期包含当天"),

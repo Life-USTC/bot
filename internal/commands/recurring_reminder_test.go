@@ -35,6 +35,17 @@ func TestRecurringReminderResponseKeepsStructuredDataAndSelectableImage(t *testi
 	}
 }
 
+func TestRecurringReminderHelpFormsExposeCommands(t *testing.T) {
+	for _, command := range []string{"帮助 周期提醒", "周期提醒 帮助", "reminder help"} {
+		t.Run(command, func(t *testing.T) {
+			response, handled := (Handler{}).HandleResponse(t.Context(), Input{Identity: testIdentity(), Text: command})
+			if !handled || response.Image == nil || response.Image.Kind != "help" || !strings.Contains(response.Image.RichText, "周期提醒 添加 每天 09:00") || !strings.Contains(response.Image.RichText, "周期提醒 暂停 1") {
+				t.Fatalf("help=%#v handled=%v", response, handled)
+			}
+		})
+	}
+}
+
 func TestRecurringReminderPreflightDescribesOwnedContent(t *testing.T) {
 	s, err := store.Open(t.TempDir() + "/reminders.db")
 	if err != nil {
