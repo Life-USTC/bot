@@ -115,6 +115,8 @@ func (h Handler) imageResponseForText(cmd Invocation, text string) *responses.Im
 	switch cmd.Name {
 	case "account":
 		return richTextImage("account", "账户信息", text)
+	case "reminder":
+		return richTextImage("reminder", "周期提醒", text)
 	case "schedule":
 		plainText := textutil.PlainMonospace(text)
 		title := imageTitle(plainText, "课表")

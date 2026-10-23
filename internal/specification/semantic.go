@@ -127,8 +127,18 @@ type RainTransition struct {
 	Campus  string `json:"campus"`
 }
 
+type RecurringReminder struct {
+	Rules     int      `json:"rules"`
+	Paused    int      `json:"paused"`
+	NextAt    []string `json:"nextAt"`
+	Texts     []string `json:"texts"`
+	ImageOnly int      `json:"imageOnly"`
+}
+
 func observation(kind string) any {
 	switch kind {
+	case "recurring-reminder":
+		return new(RecurringReminder)
 	case "rain-transition":
 		return new(RainTransition)
 	case "collection":

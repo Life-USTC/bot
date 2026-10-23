@@ -304,6 +304,8 @@ var helpTopicAliases = map[string]string{
 	"通知":           "notifications",
 	"提醒":           "notifications",
 	"notify":       "notifications",
+	"周期提醒":         "recurring_reminders",
+	"reminder":     "recurring_reminders",
 	"校车":           "bus",
 	"bus":          "bus",
 	"天气":           "weather",

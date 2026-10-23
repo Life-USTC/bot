@@ -253,6 +253,9 @@ func main() {
 		}
 		go notificationPoller.Run(ctx)
 		logger.Printf("Notification poller started")
+		recurringPoller := &notify.RecurringPoller{Store: stateStore, Logger: logger}
+		go recurringPoller.Run(ctx)
+		logger.Printf("Recurring reminder poller started")
 	}
 
 	<-ctx.Done()
