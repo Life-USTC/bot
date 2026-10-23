@@ -3,6 +3,7 @@ package napcat
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -129,6 +130,25 @@ func classifyNapCatDeliveryError(err error) delivery.Outcome {
 	}
 	var actionErr napcatActionRejectedError
 	if errors.As(err, &actionErr) {
+		// NapCat's sendMsg event checker rejects a nonzero kernel result.
+		// A listener timeout instead leaves acceptance unknown. Match that
+		// envelope, not an arbitrary occurrence of the media error wording.
+		const sendEvent = "NTEvent serviceAndMethod:NodeIKernelMsgService/sendMsg ListenerName:NodeIKernelMsgListener/onMsgInfoListUpdate EventRet:"
+		if strings.HasPrefix(actionErr.message, "Timeout: "+sendEvent) {
+			return delivery.Outcome{State: delivery.OutcomeUnknown, Code: "send_uncertain", Err: fmt.Errorf("napcat send timed out: retcode=%d", actionErr.retCode)}
+		}
+		if raw, ok := strings.CutPrefix(actionErr.message, "EventChecker Failed: "+sendEvent); ok {
+			var result struct {
+				Code    *int   `json:"result"`
+				Message string `json:"errMsg"`
+			}
+			if json.Unmarshal([]byte(raw), &result) == nil && result.Code != nil && *result.Code != 0 && result.Message == "rich media transfer failed" {
+				return delivery.Outcome{
+					State: delivery.OutcomeRetryable, Code: "media_transfer_failed",
+					Err: fmt.Errorf("napcat media transfer failed: retcode=%d result=%d", actionErr.retCode, *result.Code),
+				}
+			}
+		}
 		return napcatRejected("platform_rejected", err)
 	}
 	if strings.Contains(err.Error(), "not configured") {
