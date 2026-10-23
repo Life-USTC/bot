@@ -1,4 +1,6 @@
 cloud.google.com/go/compute/metadata v0.3.0/go.mod h1:zFmK7XCadkQkj6TtorcaGlCW1hT1fIilQDwofLpJ20k=
+github.com/Life-USTC/client-core v0.1.0 h1:kAtPq/m/W7SEMiR9KG/m2F0ZRyBXnzkNbfoKa4mMDmc=
+github.com/Life-USTC/client-core v0.1.0/go.mod h1:2SgYKZ3hbEFEigNGPdbfFS2m149evVw2t/mEjA/S/LM=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/airbrake/gobrake v3.6.1+incompatible/go.mod h1:wM4gu3Cn0W0K7GUuVWnlXZU11AGBXMILnrdOU8Kn00o=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
