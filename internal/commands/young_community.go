@@ -14,6 +14,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	clientcalendar "github.com/Life-USTC/client-core/calendar"
 )
 
 const youngWorkspacePageSize = 100
@@ -178,21 +179,9 @@ func parseYoungCalendarQuery(args []string, now time.Time) (youngCalendarQuery, 
 }
 
 func youngCalendarBounds(query youngCalendarQuery) (string, string) {
-	date := query.Date.In(lifedata.ChinaLocation())
-	switch query.Period {
-	case "week":
-		mondayOffset := (int(date.Weekday()) + 6) % 7
-		start := date.AddDate(0, 0, -mondayOffset)
-		end := start.AddDate(0, 0, 6)
-		return start.Format("2006-01-02"), end.Format("2006-01-02")
-	case "month":
-		start := time.Date(date.Year(), date.Month(), 1, 0, 0, 0, 0, lifedata.ChinaLocation())
-		end := start.AddDate(0, 1, -1)
-		return start.Format("2006-01-02"), end.Format("2006-01-02")
-	default:
-		value := date.Format("2006-01-02")
-		return value, value
-	}
+	// The command parser restricts Period to day, week, or month.
+	bounds, _ := clientcalendar.Bounds(clientcalendar.Period(query.Period), query.Date, time.Monday)
+	return bounds.From, bounds.To
 }
 
 func (h Handler) youngCalendar(ctx context.Context, args []string) string {

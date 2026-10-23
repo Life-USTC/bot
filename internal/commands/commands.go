@@ -22,6 +22,7 @@ import (
 	"github.com/Life-USTC/Bot/internal/notify"
 	"github.com/Life-USTC/Bot/internal/store"
 	"github.com/Life-USTC/Bot/internal/textutil"
+	clientcalendar "github.com/Life-USTC/client-core/calendar"
 )
 
 type Handler struct {
@@ -3105,9 +3106,9 @@ func (h Handler) curriculumAt(ctx context.Context, ident store.Identity, args []
 }
 
 func weekStartSunday(day time.Time) time.Time {
-	day = day.In(lifedata.ChinaLocation())
-	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
-	return start.AddDate(0, 0, -int(start.Weekday()))
+	bounds, _ := clientcalendar.Bounds(clientcalendar.Week, day, time.Sunday)
+	start, _ := clientcalendar.ParseDate(bounds.From)
+	return start
 }
 
 func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, map[string]any, error) {
