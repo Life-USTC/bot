@@ -110,6 +110,10 @@ NapCat 与 Bot 同机运行，OneBot 反向 WebSocket 连接 `ws://127.0.0.1:228
 `NAPCAT_REVERSE_ADDR` 使用 `127.0.0.1:2280`。图片在 Mac 下载或渲染后，通过 OneBot Base64
 或官方 QQ 分片上传发送，不再启动公共图片 HTTP 服务。
 
+未识别的 NapCat 附件会记录 `napcat input media observation`，区分消息、内联转发和转发响应的归一化来源。
+记录仅包含受限的 segment 类型、允许字段的数据类型和空值状态，不包含正文、文件名、URL 或文件 ID；每条消息或转发响应最多记录 8 个附件。
+这些记录用于复现实际收到的 envelope，不能据此把未确认的历史故障归因于文件大小解码或其他平台适配器。
+
 Bot 的 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 放在远端 `config.json` 中；生产出口应使用
 Mac 本地代理。当前 `http://127.0.0.1:17890` 是 Clash Verge 的专用 mixed listener，
 实际出站由 Clash 的 merge profile 和当前规则决定，不能根据监听端口认定为 `DIRECT`；

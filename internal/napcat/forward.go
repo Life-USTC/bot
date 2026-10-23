@@ -302,6 +302,8 @@ func (b *Bridge) enrichMessageEvent(ctx context.Context, event *messageEvent) {
 	if event == nil {
 		return
 	}
+	remainingObservations := 8
+	b.logUnknownMessageMedia(event.Message, "message", 0, &remainingObservations)
 	normalizeMessageText(event)
 	if event.sourceText == nil {
 		raw := event.RawMessage
@@ -371,6 +373,13 @@ func (b *Bridge) fetchForwardAtDepth(ctx context.Context, id string, seen map[st
 	response, err := b.callNapCatAction(ctx, "get_forward_msg", map[string]any{"message_id": id})
 	if err != nil {
 		return forwardExpansion{}, err
+	}
+	if b.Logger != nil {
+		var payload any
+		if json.Unmarshal(response.Data, &payload) == nil {
+			remainingObservations := 8
+			b.logUnknownForwardMedia(payload, "forward-response", depth, &remainingObservations)
+		}
 	}
 	expansion := parseForwardMessageData(response.Data)
 	b.resolveForwardReferences(ctx, expansion.forwarded, seen, depth)
