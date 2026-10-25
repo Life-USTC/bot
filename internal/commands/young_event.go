@@ -28,6 +28,14 @@ type youngEventQuery struct {
 	dateUnknown *bool
 }
 
+func (query youngEventQuery) catalogQuery() life.YoungEventQuery {
+	return life.YoungEventQuery{
+		Page: query.page, PageSize: youngEventPageSize, Search: query.search,
+		OrganizerID: query.organizerID, DateFrom: query.dateFrom, DateTo: query.dateTo,
+		TimeBasis: query.timeBasis, DateUnknown: query.dateUnknown,
+	}
+}
+
 func youngEventArgsAcceptable(args []string) bool {
 	if !hasArgs(args) || firstArgIsHelp(args) {
 		return len(args) <= 1
@@ -118,16 +126,7 @@ func (h Handler) youngEvents(ctx context.Context, args []string) string {
 		return strings.Join(youngEventLines(event, h.Life.YoungEventURL(event.YoungID), ""), "\n")
 	}
 
-	page, err := h.Life.ListYoungEventsWithQuery(ctx, "", life.YoungEventQuery{
-		Page:        query.page,
-		PageSize:    youngEventPageSize,
-		Search:      query.search,
-		OrganizerID: query.organizerID,
-		DateFrom:    query.dateFrom,
-		DateTo:      query.dateTo,
-		TimeBasis:   query.timeBasis,
-		DateUnknown: query.dateUnknown,
-	})
+	page, err := h.Life.ListYoungEventsWithQuery(ctx, "", query.catalogQuery())
 	if err != nil {
 		return h.commandError("第二课堂查不到：", err)
 	}
@@ -173,18 +172,19 @@ func formatYoungEventPage(page life.YoungEventPage, query youngEventQuery, event
 		totalPages = (page.Pagination.Total + youngEventPageSize - 1) / youngEventPageSize
 	}
 	if totalPages > 1 {
-		command := youngEventListCommand(query)
-		navigation := []string{fmt.Sprintf("第 %d/%d 页", pageNumber, totalPages)}
+		command := youngEventListCommand(query.catalogQuery())
+		navigation := []string{textutil.MonospaceDigits(fmt.Sprintf("第 %d/%d 页", pageNumber, totalPages))}
 		if pageNumber > 1 {
 			navigation = append(navigation, "上一页：发送「"+command+" 第"+strconv.Itoa(pageNumber-1)+"页」")
 		}
 		if pageNumber < totalPages {
 			navigation = append(navigation, "下一页：发送「"+command+" 第"+strconv.Itoa(pageNumber+1)+"页」")
 		}
-		lines = append(lines, textutil.MonospaceDigits(strings.Join(navigation, " · ")))
+		lines = append(lines, strings.Join(navigation, " · "))
 	}
 	if page.Meta.UnknownDateCount > 0 {
-		lines = append(lines, fmt.Sprintf("日期未知总数：%d · 发送「第二课堂 列表 日期未知」查看。", page.Meta.UnknownDateCount))
+		command := youngEventListCommand(query.catalogQuery().ForUnknownDates())
+		lines = append(lines, fmt.Sprintf("日期未知总数：%d · 发送「%s」查看。", page.Meta.UnknownDateCount, command))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -206,6 +206,13 @@ func parseYoungEventFilters(query *youngEventQuery, args []string) error {
 				continue
 			}
 			switch normToken(field) {
+			case "搜索", "search":
+				query.search = strings.TrimSpace(joinedArgs(args[i+1:]))
+				if query.search == "" {
+					return errors.New("想搜索什么活动？例如：第二课堂 列表 日期未知 搜索 志愿")
+				}
+				i = len(args)
+				continue
 			case "活动", "活动时间", "activity":
 				query.timeBasis = "activity"
 				i++
@@ -274,29 +281,36 @@ func youngEventDateFilter(value string) bool {
 	return err == nil
 }
 
-func youngEventListCommand(query youngEventQuery) string {
+func youngEventListCommand(query life.YoungEventQuery) string {
 	command := "第二课堂 列表"
-	if query.search != "" {
-		command = "第二课堂 搜索 " + query.search
-	}
 	filters := make([]string, 0, 5)
-	if query.organizerID != "" {
-		filters = append(filters, "organizerId="+query.organizerID)
+	if query.DateUnknown != nil {
+		if *query.DateUnknown {
+			filters = append(filters, "日期未知")
+		} else {
+			filters = append(filters, "dateUnknown=false")
+		}
 	}
-	if query.dateFrom != "" {
-		filters = append(filters, "dateFrom="+query.dateFrom)
+	if query.OrganizerID != "" {
+		filters = append(filters, "organizerId="+query.OrganizerID)
 	}
-	if query.dateTo != "" {
-		filters = append(filters, "dateTo="+query.dateTo)
+	if query.DateFrom != "" {
+		filters = append(filters, "dateFrom="+query.DateFrom)
 	}
-	if query.timeBasis != "" {
-		filters = append(filters, "timeBasis="+query.timeBasis)
+	if query.DateTo != "" {
+		filters = append(filters, "dateTo="+query.DateTo)
 	}
-	if query.dateUnknown != nil && *query.dateUnknown {
-		filters = append(filters, "dateUnknown=true")
+	if query.TimeBasis != "" {
+		filters = append(filters, "timeBasis="+query.TimeBasis)
 	}
 	if len(filters) > 0 {
 		command += " " + strings.Join(filters, " ")
+	}
+	if query.Search != "" {
+		if len(filters) == 0 {
+			return "第二课堂 搜索 " + query.Search
+		}
+		command += " 搜索 " + query.Search
 	}
 	return command
 }

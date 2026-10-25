@@ -528,6 +528,7 @@ func init() {
 			example("第二课堂", "查看第二课堂活动，第 1 页，每页 10 条"),
 			example("第二课堂 列表 2", "查看第二课堂活动第 2 页"),
 			example("第二课堂 搜索 志愿", "按名称搜索第二课堂活动"),
+			example("第二课堂 列表 日期未知 搜索 志愿 服务", "筛选后在末尾追加搜索关键词"),
 			example("第二课堂 查看 <youngId>", "查看指定第二课堂活动详情"),
 		}, []HelpExample{example("二课", "相当于“第二课堂”")})),
 		descriptor(CapabilityYoungOrganizer, []string{"young_organizer", "主办方", "第二课堂主办方"}, CapabilityRequirements{Life: true, DataScope: DataScopePublic, PublicCache: true}, EffectRead, ExposureModel, youngOrganizerArgsAcceptable, nil, func(h Handler, ctx context.Context, _ store.Identity, args []string) string {

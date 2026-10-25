@@ -233,7 +233,8 @@ func formatYoungCalendar(collection life.YoungEventCollection, dateFrom, dateTo,
 		unknownCount = len(unknown)
 	}
 	if unknownCount > 0 {
-		lines = append(lines, "", fmt.Sprintf("日期待核实（%d）：发送「第二课堂 列表 日期未知」查看。", unknownCount))
+		query := life.YoungEventQuery{DateFrom: dateFrom, DateTo: dateTo, TimeBasis: basis}.ForUnknownDates()
+		lines = append(lines, "", fmt.Sprintf("日期待核实（%d）：发送「%s」查看。", unknownCount, youngEventListCommand(query)))
 		for i, event := range unknown {
 			link := ""
 			if eventURL != nil {
