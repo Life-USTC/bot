@@ -3121,7 +3121,12 @@ func (h Handler) academicWeekContext(ctx context.Context, week int) (time.Time, 
 	if !ok {
 		return time.Time{}, nil, errors.New("当前学期缺少开始日期")
 	}
-	return weekStartSunday(start).AddDate(0, 0, (week-1)*7), semester, nil
+	bounds, err := clientcalendar.TeachingWeekBounds(clientcalendar.ShanghaiDate(start), week, time.Sunday)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	weekStart, err := clientcalendar.ParseDate(bounds.From)
+	return weekStart, semester, err
 }
 
 func (h Handler) curriculumWeek(ctx context.Context, ident store.Identity, start time.Time, semester map[string]any) string {
@@ -3187,10 +3192,9 @@ func (h Handler) scheduleGridWeekMetadata(ctx context.Context, start, end time.T
 		return metadata
 	}
 	metadata.semester = name
-	weekOneStart := weekStartSunday(semesterStart)
-	days := int(selectedStart.Sub(weekOneStart).Hours() / 24)
-	if days >= 0 && days%7 == 0 {
-		metadata.week = fmt.Sprintf("第 %d 周", days/7+1)
+	week, _ := clientcalendar.TeachingWeekNumber(clientcalendar.ShanghaiDate(semesterStart), clientcalendar.ShanghaiDate(selectedStart), time.Sunday)
+	if week > 0 {
+		metadata.week = fmt.Sprintf("第 %d 周", week)
 	}
 	return metadata
 }
@@ -3375,7 +3379,6 @@ func aggregateSemesterSchedules(schedules []map[string]any, semesterStart, semes
 	semesterEnd = semesterEnd.In(loc)
 	semesterStartDate := semesterStart.Format("2006-01-02")
 	semesterEndDate := semesterEnd.Format("2006-01-02")
-	weekOneStart := weekStartSunday(semesterStart)
 	entries := make([]semesterScheduleEntry, 0)
 	indexByKey := make(map[string]int)
 	for _, schedule := range schedules {
@@ -3421,7 +3424,7 @@ func aggregateSemesterSchedules(schedules []map[string]any, semesterStart, semes
 		}
 		week := lifedata.FirstInt(schedule, "weekIndex")
 		if week <= 0 && hasDate {
-			week = int(date.Sub(weekOneStart).Hours()/24)/7 + 1
+			week, _ = clientcalendar.TeachingWeekNumber(semesterStartDate, dateValue, time.Sunday)
 		}
 		if week > 0 {
 			entries[index].weeks[week] = true
