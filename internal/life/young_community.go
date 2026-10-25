@@ -9,6 +9,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/openapi"
+	clientpagination "github.com/Life-USTC/client-core/pagination"
 	clientyoung "github.com/Life-USTC/client-core/young"
 )
 
@@ -124,10 +125,11 @@ func (c *Client) ListAllYoungEventsWithQuery(ctx context.Context, token string, 
 // ListAllYoungEventsWithQueryMetadata is the metadata-preserving form of
 // ListAllYoungEventsWithQuery used by calendar and organizer views.
 func (c *Client) ListAllYoungEventsWithQueryMetadata(ctx context.Context, token string, query YoungEventQuery) (YoungEventCollection, error) {
-	query.Page = 1
 	query.PageSize = normalizedPageSize(query.PageSize)
 	result := YoungEventCollection{}
-	for {
+	progress := clientpagination.NewProgress(1)
+	for progress.NextPage() != 0 {
+		query.Page = progress.NextPage()
 		page, err := c.ListYoungEventsWithQuery(ctx, token, query)
 		if err != nil {
 			return YoungEventCollection{}, err
@@ -151,18 +153,15 @@ func (c *Client) ListAllYoungEventsWithQueryMetadata(ctx context.Context, token 
 				result.Pagination.TotalPages = expectedPages
 			}
 		}
-		if !youngPageHasNext(query.Page, page.Pagination, len(page.Data), query.PageSize) {
-			break
-		}
-		query.Page++
+		progress = progress.AfterPage(len(page.Data), youngPageHasNext(query.Page, page.Pagination, len(page.Data), query.PageSize))
 	}
 	result.Pagination.Page = 1
 	result.Pagination.PageSize = query.PageSize
-	if result.Pagination.Total < len(result.Data) {
-		result.Pagination.Total = len(result.Data)
+	if result.Pagination.Total < progress.ReceivedCount() {
+		result.Pagination.Total = progress.ReceivedCount()
 	}
-	if result.Pagination.TotalPages == 0 && len(result.Data) > 0 {
-		result.Pagination.TotalPages = (len(result.Data) + query.PageSize - 1) / query.PageSize
+	if result.Pagination.TotalPages == 0 && progress.ReceivedCount() > 0 {
+		result.Pagination.TotalPages = (progress.ReceivedCount() + query.PageSize - 1) / query.PageSize
 	}
 	return result, nil
 }
