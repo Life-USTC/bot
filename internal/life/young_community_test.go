@@ -6,10 +6,59 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestListYoungEventsQueryPreservesPresenceAndNativePagination(t *testing.T) {
+	no, yes := false, true
+	tests := []struct {
+		name  string
+		query YoungEventQuery
+		want  url.Values
+	}{
+		{
+			name: "absent filters and native defaults",
+			want: url.Values{"page": {"1"}, "pageSize": {"100"}},
+		},
+		{
+			name:  "explicit false and single bound",
+			query: YoungEventQuery{Page: -1, PageSize: -1, Active: &no, DateUnknown: &no, DateFrom: " 2026-09-14 ", TimeBasis: " registration "},
+			want:  url.Values{"page": {"1"}, "pageSize": {"100"}, "active": {"false"}, "dateUnknown": {"false"}, "dateFrom": {"2026-09-14"}, "timeBasis": {"registration"}},
+		},
+		{
+			name:  "explicit true reserved text and uncapped direct request",
+			query: YoungEventQuery{Page: 2, PageSize: 250, Search: " 志愿 & 服务+ ", Category: " 类别 ", Active: &yes, DateUnknown: &yes, OrganizerID: " org/一+& ", TimeBasis: "activity"},
+			want:  url.Values{"page": {"2"}, "pageSize": {"250"}, "search": {"志愿 & 服务+"}, "category": {"类别"}, "active": {"true"}, "dateUnknown": {"true"}, "organizerId": {"org/一+&"}, "timeBasis": {"activity"}},
+		},
+		{
+			name: "unknown dates retain every supported filter",
+			query: (YoungEventQuery{Page: 3, PageSize: 7, Search: "志愿 服务", Category: "类别", Active: &no, DateUnknown: &no,
+				OrganizerID: "org-1", DateFrom: "2026-09-14", DateTo: "2026-09-20", TimeBasis: "registration"}).ForUnknownDates(),
+			want: url.Values{"page": {"3"}, "pageSize": {"7"}, "search": {"志愿 服务"}, "category": {"类别"}, "active": {"false"}, "dateUnknown": {"true"}, "organizerId": {"org-1"}, "timeBasis": {"registration"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requests := make(chan url.Values, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.URL.Query()
+				_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"pageSize":100,"total":0,"totalPages":0},"meta":{"unknownDateCount":0,"source":{"status":"unknown","lastSyncedAt":null}}}`))
+			}))
+			defer server.Close()
+			_, err := NewClient(server.URL, server.Client()).ListYoungEventsWithQuery(context.Background(), "", test.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := <-requests; !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("request = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
 
 func TestListAllYoungEventsWithQueryFollowsCompletePagination(t *testing.T) {
 	requests := 0

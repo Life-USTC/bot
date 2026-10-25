@@ -2,8 +2,12 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,6 +66,7 @@ func TestYoungEventHelpListsPublicForms(t *testing.T) {
 		"第二课堂\t查看第二课堂活动",
 		"第二课堂 列表 2\t查看第二课堂活动第 2 页",
 		"第二课堂 搜索 志愿\t按名称搜索第二课堂活动",
+		"第二课堂 列表 日期未知 搜索 志愿 服务\t筛选后在末尾追加搜索关键词",
 		"第二课堂 查看 <youngId>\t查看指定第二课堂活动详情",
 	} {
 		if !strings.Contains(reply, want) {
@@ -191,6 +196,117 @@ func TestYoungEventSearchPaginationKeepsSearch(t *testing.T) {
 	}, query, nil)
 	if !strings.Contains(reply, "第二课堂 搜索 志愿 服务") || !strings.Contains(reply, "上一页") || !strings.Contains(reply, "下一页") {
 		t.Fatalf("pagination lost search or navigation: %q", reply)
+	}
+}
+
+func TestYoungUnknownDateHintsPreserveFilters(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		initial url.Values
+		unknown url.Values
+	}{
+		{
+			name:    "list organizer registration and date range",
+			command: "第二课堂 列表 organizerId=org-1 dateFrom=2026-09-14 dateTo=2026-09-20 timeBasis=registration dateUnknown=false 第2页",
+			initial: url.Values{"page": {"2"}, "pageSize": {"10"}, "organizerId": {"org-1"}, "dateFrom": {"2026-09-14"}, "dateTo": {"2026-09-20"}, "timeBasis": {"registration"}, "dateUnknown": {"false"}},
+			unknown: url.Values{"page": {"1"}, "pageSize": {"10"}, "organizerId": {"org-1"}, "timeBasis": {"registration"}, "dateUnknown": {"true"}},
+		},
+		{
+			name:    "multiword search",
+			command: "第二课堂 搜索 志愿 服务 第2页",
+			initial: url.Values{"page": {"2"}, "pageSize": {"10"}, "search": {"志愿 服务"}},
+			unknown: url.Values{"page": {"1"}, "pageSize": {"10"}, "search": {"志愿 服务"}, "dateUnknown": {"true"}},
+		},
+		{
+			name:    "search containing punctuation and filter-like keywords",
+			command: "第二课堂 搜索 O'Reilly & 志愿+服务 organizerId=literal",
+			initial: url.Values{"page": {"1"}, "pageSize": {"10"}, "search": {"O'Reilly & 志愿+服务 organizerId=literal"}},
+			unknown: url.Values{"page": {"1"}, "pageSize": {"10"}, "search": {"O'Reilly & 志愿+服务 organizerId=literal"}, "dateUnknown": {"true"}},
+		},
+		{
+			name:    "registration calendar",
+			command: "第二课堂 日历 周 2026-09-14 报名",
+			initial: url.Values{"page": {"1"}, "pageSize": {"100"}, "dateFrom": {"2026-09-14"}, "dateTo": {"2026-09-20"}, "timeBasis": {"registration"}},
+			unknown: url.Values{"page": {"1"}, "pageSize": {"10"}, "timeBasis": {"registration"}, "dateUnknown": {"true"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requests := make(chan url.Values, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/catalog/young-events" || r.Header.Get("Authorization") != "" {
+					t.Errorf("unexpected public request: %s %s auth=%q", r.Method, r.URL, r.Header.Get("Authorization"))
+				}
+				query := r.URL.Query()
+				requests <- query
+				page, _ := strconv.Atoi(query.Get("page"))
+				pageSize, _ := strconv.Atoi(query.Get("pageSize"))
+				_ = json.NewEncoder(w).Encode(life.YoungEventPage{
+					Data:       []life.YoungEvent{},
+					Pagination: life.YoungEventPagination{Page: page, PageSize: pageSize},
+					Meta:       life.YoungEventMetadata{UnknownDateCount: 3, Source: map[string]any{"status": "unknown", "lastSyncedAt": nil}},
+				})
+			}))
+			defer server.Close()
+			handler := Handler{Life: life.NewClient(server.URL, server.Client())}
+			identity := store.Identity{Platform: "test", UserID: "u", ConversationType: "group", ConversationID: "g"}
+			reply, ok := handler.Handle(context.Background(), Input{Text: test.command, Identity: identity})
+			if !ok || len(requests) != 1 {
+				t.Fatalf("initial command not executed: handled=%v reply=%q requests=%d", ok, reply, len(requests))
+			}
+			if got := <-requests; !reflect.DeepEqual(got, test.initial) {
+				t.Fatalf("initial request = %v, want %v", got, test.initial)
+			}
+			_, hintAndSuffix, found := strings.Cut(reply, "发送「")
+			hint, _, closed := strings.Cut(hintAndSuffix, "」")
+			if !found || !closed {
+				t.Fatalf("no executable unknown-date hint: %q", reply)
+			}
+			reply, ok = handler.Handle(context.Background(), Input{Text: hint, Identity: identity})
+			if !ok || len(requests) != 1 {
+				t.Fatalf("hint %q not executed: handled=%v reply=%q requests=%d", hint, ok, reply, len(requests))
+			}
+			if got := <-requests; !reflect.DeepEqual(got, test.unknown) {
+				t.Fatalf("hint %q request = %v, want %v", hint, got, test.unknown)
+			}
+		})
+	}
+}
+
+func TestYoungFilteredSearchPaginationPreservesQuery(t *testing.T) {
+	query, err := parseYoungEventQuery([]string{"列表", "organizerId=org-1/一+&", "dateUnknown=false", "dateFrom=2026-09-14", "timeBasis=registration", "搜索", "志愿2026", "organizerId=literal", "第2页"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := formatYoungEventPage(life.YoungEventPage{
+		Pagination: life.YoungEventPagination{Page: 2, PageSize: 10, Total: 30, TotalPages: 3},
+	}, query, nil)
+	for _, direction := range []struct {
+		label string
+		page  int
+	}{{"上一页", 1}, {"下一页", 3}} {
+		_, tail, found := strings.Cut(reply, direction.label+"：发送「")
+		command, _, closed := strings.Cut(tail, "」")
+		parsed := ParseCommand(command)
+		if !found || !closed || !parsed.Valid() {
+			t.Fatalf("invalid navigation command %q in %q", command, reply)
+		}
+		got, err := parseYoungEventQuery(parsed.Invocation.Args)
+		want := query
+		want.page = direction.page
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("navigation %q = %#v, err=%v, want %#v", command, got, err, want)
+		}
+	}
+	for _, command := range []string{
+		"第二课堂 列表 日期未知 搜索",
+		"第二课堂 列表 dateFrom=2026-09-14 日期未知 搜索 志愿",
+		"第二课堂 列表 dateFrom=2026-09-20 dateTo=2026-09-14 search 志愿",
+	} {
+		if parsed := ParseCommand(command); parsed.Valid() {
+			t.Errorf("invalid filtered search accepted: %q", command)
+		}
 	}
 }
 

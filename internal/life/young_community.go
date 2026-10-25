@@ -9,6 +9,7 @@ import (
 
 	"github.com/Life-USTC/Bot/internal/lifedata"
 	"github.com/Life-USTC/Bot/internal/openapi"
+	clientyoung "github.com/Life-USTC/client-core/young"
 )
 
 // YoungOrganizer is the stable public organizer directory record. Event
@@ -43,6 +44,22 @@ type YoungEventQuery struct {
 	TimeBasis   string
 }
 
+func (query YoungEventQuery) eventQuery() clientyoung.EventQuery {
+	return clientyoung.EventQuery{
+		Search: query.Search, Category: query.Category, Active: query.Active,
+		DateUnknown: query.DateUnknown, OrganizerID: query.OrganizerID,
+		DateFrom: query.DateFrom, DateTo: query.DateTo, TimeBasis: clientyoung.TimeBasis(query.TimeBasis),
+	}
+}
+
+// ForUnknownDates retains the current filters while replacing the date range.
+func (query YoungEventQuery) ForUnknownDates() YoungEventQuery {
+	unknown := query.eventQuery().ForUnknownDates()
+	query.DateUnknown = unknown.DateUnknown
+	query.DateFrom, query.DateTo = unknown.DateFrom, unknown.DateTo
+	return query
+}
+
 // YoungEventList returns a public page with the final catalog filters. The
 // token is accepted for callers that already have one, but public catalog
 // commands pass an empty token and do not require OAuth.
@@ -55,20 +72,21 @@ func (c *Client) ListYoungEventsWithQuery(ctx context.Context, token string, que
 	if pageSize < 1 {
 		pageSize = 100
 	}
+	filters := query.eventQuery().Parameters(nil, nil)
 	params := openapi.GetApiCatalogYoungEventsParams{
 		Page: int64Ptr(int64(page)), PageSize: int64Ptr(int64(pageSize)),
-		Search: stringPtr(strings.TrimSpace(query.Search)), Category: stringPtr(strings.TrimSpace(query.Category)),
-		OrganizerId: stringPtr(strings.TrimSpace(query.OrganizerID)), DateFrom: stringPtr(strings.TrimSpace(query.DateFrom)), DateTo: stringPtr(strings.TrimSpace(query.DateTo)),
+		Search: stringPtr(filters.Get("search")), Category: stringPtr(filters.Get("category")),
+		OrganizerId: stringPtr(filters.Get("organizerId")), DateFrom: stringPtr(filters.Get("dateFrom")), DateTo: stringPtr(filters.Get("dateTo")),
 	}
-	if query.Active != nil {
-		value := openapi.GetApiCatalogYoungEventsParamsActive(strconv.FormatBool(*query.Active))
-		params.Active = &value
+	if value := filters.Get("active"); value != "" {
+		active := openapi.GetApiCatalogYoungEventsParamsActive(value)
+		params.Active = &active
 	}
-	if query.DateUnknown != nil {
-		value := openapi.GetApiCatalogYoungEventsParamsDateUnknown(strconv.FormatBool(*query.DateUnknown))
-		params.DateUnknown = &value
+	if value := filters.Get("dateUnknown"); value != "" {
+		unknown := openapi.GetApiCatalogYoungEventsParamsDateUnknown(value)
+		params.DateUnknown = &unknown
 	}
-	if value := strings.TrimSpace(query.TimeBasis); value != "" {
+	if value := filters.Get("timeBasis"); value != "" {
 		basis := openapi.GetApiCatalogYoungEventsParamsTimeBasis(value)
 		params.TimeBasis = &basis
 	}
