@@ -7,7 +7,7 @@ require (
 	github.com/cloudwego/eino v0.9.21
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/eino-contrib/jsonschema v1.0.3
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v1.3.0
