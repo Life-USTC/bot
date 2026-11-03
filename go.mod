@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/Life-USTC/client-core v0.4.0
-	github.com/cloudwego/eino v0.9.21
+	github.com/cloudwego/eino v0.9.22
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/getkin/kin-openapi v0.151.0
