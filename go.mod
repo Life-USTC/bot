@@ -4,15 +4,15 @@ go 1.26.0
 
 require (
 	github.com/Life-USTC/client-core v0.4.0
-	github.com/cloudwego/eino v0.9.21
+	github.com/cloudwego/eino v0.9.22
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/eino-contrib/jsonschema v1.0.3
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v1.3.0
 	github.com/mattn/go-sqlite3 v1.14.52
-	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oapi-codegen/runtime v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/image v0.47.0
