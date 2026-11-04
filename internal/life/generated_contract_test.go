@@ -89,6 +89,16 @@ func assertGeneratedBusinessCalls(t *testing.T) int {
 		}
 		return true
 	})
+	// Generated anyOf/oneOf wrappers hold raw JSON. A concrete branch declared
+	// by their generated As method retains stronger field decoding than the wrapper.
+	branches := generatedUnionBranches(fset, generated)
+	for _, allowed := range models {
+		for model := range allowed {
+			for branch := range branches[model] {
+				allowed[branch] = true
+			}
+		}
+	}
 	calls := 0
 	err = filepath.WalkDir(filepath.Join(root, "internal/life"), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -170,6 +180,65 @@ func assertGeneratedBusinessCalls(t *testing.T) int {
 		t.Fatal("no generated business operations inspected")
 	}
 	return calls
+}
+
+func generatedUnionBranches(fset *token.FileSet, file *ast.File) map[string]map[string]bool {
+	unions := map[string]map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		spec, ok := node.(*ast.TypeSpec)
+		if !ok {
+			return true
+		}
+		st, ok := spec.Type.(*ast.StructType)
+		if ok && len(st.Fields.List) == 1 {
+			field := st.Fields.List[0]
+			if len(field.Names) == 1 && field.Names[0].Name == "union" && typeText(fset, field.Type) == "json.RawMessage" {
+				unions[spec.Name.Name] = map[string]bool{}
+			}
+		}
+		return true
+	})
+	for _, declaration := range file.Decls {
+		method, ok := declaration.(*ast.FuncDecl)
+		if !ok || method.Recv == nil || len(method.Recv.List) != 1 || method.Type.Results == nil || len(method.Type.Results.List) != 2 || len(method.Type.Params.List) != 0 {
+			continue
+		}
+		branches := unions[typeText(fset, method.Recv.List[0].Type)]
+		if branches == nil {
+			continue
+		}
+		branch := typeText(fset, method.Type.Results.List[0].Type)
+		if method.Name.Name == "As"+branch && typeText(fset, method.Type.Results.List[1].Type) == "error" {
+			branches[branch] = true
+		}
+	}
+	return unions
+}
+
+func TestGeneratedUnionBranchesRequireDeclaredConversion(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "generated.go", `package generated
+import "encoding/json"
+type ResponseUnion struct { union json.RawMessage }
+type OtherUnion struct { union json.RawMessage }
+type Plain struct { Data string }
+type Branch struct { ID int }
+func (ResponseUnion) AsBranch() (Branch, error) { return Branch{}, nil }
+func (OtherUnion) AsOtherBranch() (OtherBranch, error) { return OtherBranch{}, nil }
+func (Plain) AsUnrelated() (Unrelated, error) { return Unrelated{}, nil }
+func (ResponseUnion) NotAConversion() (Unrelated, error) { return Unrelated{}, nil }
+func (ResponseUnion) AsWrongResult() (WrongResult, bool) { return WrongResult{}, false }
+`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branches := generatedUnionBranches(fset, file)
+	if len(branches["ResponseUnion"]) != 1 || !branches["ResponseUnion"]["Branch"] || branches["Plain"] != nil {
+		t.Fatalf("unexpected response branches: %#v", branches)
+	}
+	if len(branches["OtherUnion"]) != 1 || !branches["OtherUnion"]["OtherBranch"] {
+		t.Fatalf("unrelated union branches mixed: %#v", branches)
+	}
 }
 
 func typeText(fset *token.FileSet, expr ast.Expr) string {
