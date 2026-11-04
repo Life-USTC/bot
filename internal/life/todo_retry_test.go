@@ -79,6 +79,8 @@ func TestTodosDoesNotRetryAuthorizationOrInvalidResponse(t *testing.T) {
 		{"forbidden", http.StatusForbidden, `{"error":"forbidden"}`},
 		{"malformed-json", http.StatusOK, `{"todos":[`},
 		{"wrong-field-type", http.StatusOK, `{"todos":"invalid"}`},
+		{"wrong-completed-type", http.StatusOK, `{"todos":[{"id":"one","completed":"false"}]}`},
+		{"invalid-due-date", http.StatusOK, `{"todos":[{"id":"one","dueAt":"not-a-date"}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int32

@@ -290,7 +290,8 @@ func (c *Client) ListSchedulesBySection(ctx context.Context, token string, secti
 	}
 	var out []map[string]any
 	resp, err := c.Typed(ctx, token).GetSectionSchedules(ctx, sectionJwId, &params)
-	if err := typedJSON[openapi.SectionSchedulesResponseSchema](resp, err, "section schedules", &out); err != nil {
+	// The limit query selects the legacy array branch of the response union.
+	if err := typedJSON[openapi.SectionSchedulesReadResponseSchema0](resp, err, "section schedules", &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -514,7 +515,8 @@ func (c *Client) TodosWithOptions(ctx context.Context, token string, opts TodoLi
 			Todos []map[string]any `json:"todos"`
 		}
 		resp, err := c.Typed(ctx, token).ListTodos(ctx, &params)
-		if err := typedJSON[openapi.TodosListResponseSchema](resp, err, "todos", &out); err != nil {
+		// Keep typed decoding for the legacy limit mode, rather than the raw union.
+		if err := typedJSON[openapi.TodosListResponseSchema0](resp, err, "todos", &out); err != nil {
 			return nil, err
 		}
 		return out.Todos, nil

@@ -199,6 +199,603 @@ func (e AccountClientActivityResponseSchemaItemsOutcome) Valid() bool {
 	}
 }
 
+// Defines values for ActionableOverviewResponseSchemaDeadlinesAllPendingPriority.
+const (
+	ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityHigh   ActionableOverviewResponseSchemaDeadlinesAllPendingPriority = "high"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityLow    ActionableOverviewResponseSchemaDeadlinesAllPendingPriority = "low"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityMedium ActionableOverviewResponseSchemaDeadlinesAllPendingPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesAllPendingPriority enum.
+func (e ActionableOverviewResponseSchemaDeadlinesAllPendingPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindAuditor           ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindRegular           ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindExam       ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind = "exam"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindHomework   ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind = "homework"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindSection    ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind = "section"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindTodo       ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind = "todo"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindYoungEvent ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesAllPendingType.
+const (
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTypeExam        ActionableOverviewResponseSchemaDeadlinesAllPendingType = "exam"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTypeHomeworkDue ActionableOverviewResponseSchemaDeadlinesAllPendingType = "homework_due"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTypeSchedule    ActionableOverviewResponseSchemaDeadlinesAllPendingType = "schedule"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTypeTodoDue     ActionableOverviewResponseSchemaDeadlinesAllPendingType = "todo_due"
+	ActionableOverviewResponseSchemaDeadlinesAllPendingTypeYoungEvent  ActionableOverviewResponseSchemaDeadlinesAllPendingType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesAllPendingType enum.
+func (e ActionableOverviewResponseSchemaDeadlinesAllPendingType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesAllPendingTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority.
+const (
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityHigh   ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority = "high"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityLow    ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority = "low"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityMedium ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority enum.
+func (e ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindAuditor           ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindRegular           ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindExam       ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind = "exam"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindHomework   ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind = "homework"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindSection    ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind = "section"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindTodo       ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind = "todo"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindYoungEvent ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType.
+const (
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeExam        ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType = "exam"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeHomeworkDue ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType = "homework_due"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeSchedule    ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType = "schedule"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeTodoDue     ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType = "todo_due"
+	ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeYoungEvent  ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType enum.
+func (e ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesTodayPriority.
+const (
+	ActionableOverviewResponseSchemaDeadlinesTodayPriorityHigh   ActionableOverviewResponseSchemaDeadlinesTodayPriority = "high"
+	ActionableOverviewResponseSchemaDeadlinesTodayPriorityLow    ActionableOverviewResponseSchemaDeadlinesTodayPriority = "low"
+	ActionableOverviewResponseSchemaDeadlinesTodayPriorityMedium ActionableOverviewResponseSchemaDeadlinesTodayPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesTodayPriority enum.
+func (e ActionableOverviewResponseSchemaDeadlinesTodayPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesTodayPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindAuditor           ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindRegular           ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesTodayTargetKind.
+const (
+	ActionableOverviewResponseSchemaDeadlinesTodayTargetKindExam       ActionableOverviewResponseSchemaDeadlinesTodayTargetKind = "exam"
+	ActionableOverviewResponseSchemaDeadlinesTodayTargetKindHomework   ActionableOverviewResponseSchemaDeadlinesTodayTargetKind = "homework"
+	ActionableOverviewResponseSchemaDeadlinesTodayTargetKindSection    ActionableOverviewResponseSchemaDeadlinesTodayTargetKind = "section"
+	ActionableOverviewResponseSchemaDeadlinesTodayTargetKindTodo       ActionableOverviewResponseSchemaDeadlinesTodayTargetKind = "todo"
+	ActionableOverviewResponseSchemaDeadlinesTodayTargetKindYoungEvent ActionableOverviewResponseSchemaDeadlinesTodayTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesTodayTargetKind enum.
+func (e ActionableOverviewResponseSchemaDeadlinesTodayTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesTodayTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaDeadlinesTodayType.
+const (
+	ActionableOverviewResponseSchemaDeadlinesTodayTypeExam        ActionableOverviewResponseSchemaDeadlinesTodayType = "exam"
+	ActionableOverviewResponseSchemaDeadlinesTodayTypeHomeworkDue ActionableOverviewResponseSchemaDeadlinesTodayType = "homework_due"
+	ActionableOverviewResponseSchemaDeadlinesTodayTypeSchedule    ActionableOverviewResponseSchemaDeadlinesTodayType = "schedule"
+	ActionableOverviewResponseSchemaDeadlinesTodayTypeTodoDue     ActionableOverviewResponseSchemaDeadlinesTodayType = "todo_due"
+	ActionableOverviewResponseSchemaDeadlinesTodayTypeYoungEvent  ActionableOverviewResponseSchemaDeadlinesTodayType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaDeadlinesTodayType enum.
+func (e ActionableOverviewResponseSchemaDeadlinesTodayType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaDeadlinesTodayTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaDeadlinesTodayTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaFocusPriority.
+const (
+	ActionableOverviewResponseSchemaFocusPriorityHigh   ActionableOverviewResponseSchemaFocusPriority = "high"
+	ActionableOverviewResponseSchemaFocusPriorityLow    ActionableOverviewResponseSchemaFocusPriority = "low"
+	ActionableOverviewResponseSchemaFocusPriorityMedium ActionableOverviewResponseSchemaFocusPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaFocusPriority enum.
+func (e ActionableOverviewResponseSchemaFocusPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaFocusPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaFocusPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaFocusPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaFocusStatus.
+const (
+	Next   ActionableOverviewResponseSchemaFocusStatus = "next"
+	Now    ActionableOverviewResponseSchemaFocusStatus = "now"
+	Urgent ActionableOverviewResponseSchemaFocusStatus = "urgent"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaFocusStatus enum.
+func (e ActionableOverviewResponseSchemaFocusStatus) Valid() bool {
+	switch e {
+	case Next:
+		return true
+	case Now:
+		return true
+	case Urgent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaFocusSubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaFocusSubscriptionKindAuditor           ActionableOverviewResponseSchemaFocusSubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaFocusSubscriptionKindRegular           ActionableOverviewResponseSchemaFocusSubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaFocusSubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaFocusSubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaFocusSubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaFocusSubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaFocusSubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaFocusSubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaFocusSubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaFocusTargetKind.
+const (
+	ActionableOverviewResponseSchemaFocusTargetKindExam       ActionableOverviewResponseSchemaFocusTargetKind = "exam"
+	ActionableOverviewResponseSchemaFocusTargetKindHomework   ActionableOverviewResponseSchemaFocusTargetKind = "homework"
+	ActionableOverviewResponseSchemaFocusTargetKindSection    ActionableOverviewResponseSchemaFocusTargetKind = "section"
+	ActionableOverviewResponseSchemaFocusTargetKindTodo       ActionableOverviewResponseSchemaFocusTargetKind = "todo"
+	ActionableOverviewResponseSchemaFocusTargetKindYoungEvent ActionableOverviewResponseSchemaFocusTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaFocusTargetKind enum.
+func (e ActionableOverviewResponseSchemaFocusTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaFocusTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaFocusTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaFocusTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaFocusTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaFocusTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaFocusType.
+const (
+	ActionableOverviewResponseSchemaFocusTypeExam        ActionableOverviewResponseSchemaFocusType = "exam"
+	ActionableOverviewResponseSchemaFocusTypeHomeworkDue ActionableOverviewResponseSchemaFocusType = "homework_due"
+	ActionableOverviewResponseSchemaFocusTypeSchedule    ActionableOverviewResponseSchemaFocusType = "schedule"
+	ActionableOverviewResponseSchemaFocusTypeTodoDue     ActionableOverviewResponseSchemaFocusType = "todo_due"
+	ActionableOverviewResponseSchemaFocusTypeYoungEvent  ActionableOverviewResponseSchemaFocusType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaFocusType enum.
+func (e ActionableOverviewResponseSchemaFocusType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaFocusTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaFocusTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaFocusTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaFocusTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaFocusTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUpcomingPriority.
+const (
+	ActionableOverviewResponseSchemaUpcomingPriorityHigh   ActionableOverviewResponseSchemaUpcomingPriority = "high"
+	ActionableOverviewResponseSchemaUpcomingPriorityLow    ActionableOverviewResponseSchemaUpcomingPriority = "low"
+	ActionableOverviewResponseSchemaUpcomingPriorityMedium ActionableOverviewResponseSchemaUpcomingPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUpcomingPriority enum.
+func (e ActionableOverviewResponseSchemaUpcomingPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUpcomingPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUpcomingSubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaUpcomingSubscriptionKindAuditor           ActionableOverviewResponseSchemaUpcomingSubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaUpcomingSubscriptionKindRegular           ActionableOverviewResponseSchemaUpcomingSubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaUpcomingSubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaUpcomingSubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUpcomingSubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaUpcomingSubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUpcomingSubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingSubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingSubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUpcomingTargetKind.
+const (
+	ActionableOverviewResponseSchemaUpcomingTargetKindExam       ActionableOverviewResponseSchemaUpcomingTargetKind = "exam"
+	ActionableOverviewResponseSchemaUpcomingTargetKindHomework   ActionableOverviewResponseSchemaUpcomingTargetKind = "homework"
+	ActionableOverviewResponseSchemaUpcomingTargetKindSection    ActionableOverviewResponseSchemaUpcomingTargetKind = "section"
+	ActionableOverviewResponseSchemaUpcomingTargetKindTodo       ActionableOverviewResponseSchemaUpcomingTargetKind = "todo"
+	ActionableOverviewResponseSchemaUpcomingTargetKindYoungEvent ActionableOverviewResponseSchemaUpcomingTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUpcomingTargetKind enum.
+func (e ActionableOverviewResponseSchemaUpcomingTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUpcomingTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUpcomingType.
+const (
+	ActionableOverviewResponseSchemaUpcomingTypeExam        ActionableOverviewResponseSchemaUpcomingType = "exam"
+	ActionableOverviewResponseSchemaUpcomingTypeHomeworkDue ActionableOverviewResponseSchemaUpcomingType = "homework_due"
+	ActionableOverviewResponseSchemaUpcomingTypeSchedule    ActionableOverviewResponseSchemaUpcomingType = "schedule"
+	ActionableOverviewResponseSchemaUpcomingTypeTodoDue     ActionableOverviewResponseSchemaUpcomingType = "todo_due"
+	ActionableOverviewResponseSchemaUpcomingTypeYoungEvent  ActionableOverviewResponseSchemaUpcomingType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUpcomingType enum.
+func (e ActionableOverviewResponseSchemaUpcomingType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUpcomingTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaUpcomingTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUrgencyPriority.
+const (
+	ActionableOverviewResponseSchemaUrgencyPriorityHigh   ActionableOverviewResponseSchemaUrgencyPriority = "high"
+	ActionableOverviewResponseSchemaUrgencyPriorityLow    ActionableOverviewResponseSchemaUrgencyPriority = "low"
+	ActionableOverviewResponseSchemaUrgencyPriorityMedium ActionableOverviewResponseSchemaUrgencyPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUrgencyPriority enum.
+func (e ActionableOverviewResponseSchemaUrgencyPriority) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUrgencyPriorityHigh:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyPriorityLow:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUrgencySubscriptionKind.
+const (
+	ActionableOverviewResponseSchemaUrgencySubscriptionKindAuditor           ActionableOverviewResponseSchemaUrgencySubscriptionKind = "auditor"
+	ActionableOverviewResponseSchemaUrgencySubscriptionKindRegular           ActionableOverviewResponseSchemaUrgencySubscriptionKind = "regular"
+	ActionableOverviewResponseSchemaUrgencySubscriptionKindTeachingAssistant ActionableOverviewResponseSchemaUrgencySubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUrgencySubscriptionKind enum.
+func (e ActionableOverviewResponseSchemaUrgencySubscriptionKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUrgencySubscriptionKindAuditor:
+		return true
+	case ActionableOverviewResponseSchemaUrgencySubscriptionKindRegular:
+		return true
+	case ActionableOverviewResponseSchemaUrgencySubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUrgencyTargetKind.
+const (
+	ActionableOverviewResponseSchemaUrgencyTargetKindExam       ActionableOverviewResponseSchemaUrgencyTargetKind = "exam"
+	ActionableOverviewResponseSchemaUrgencyTargetKindHomework   ActionableOverviewResponseSchemaUrgencyTargetKind = "homework"
+	ActionableOverviewResponseSchemaUrgencyTargetKindSection    ActionableOverviewResponseSchemaUrgencyTargetKind = "section"
+	ActionableOverviewResponseSchemaUrgencyTargetKindTodo       ActionableOverviewResponseSchemaUrgencyTargetKind = "todo"
+	ActionableOverviewResponseSchemaUrgencyTargetKindYoungEvent ActionableOverviewResponseSchemaUrgencyTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUrgencyTargetKind enum.
+func (e ActionableOverviewResponseSchemaUrgencyTargetKind) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUrgencyTargetKindExam:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTargetKindHomework:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTargetKindSection:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTargetKindTodo:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTargetKindYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionableOverviewResponseSchemaUrgencyType.
+const (
+	ActionableOverviewResponseSchemaUrgencyTypeExam        ActionableOverviewResponseSchemaUrgencyType = "exam"
+	ActionableOverviewResponseSchemaUrgencyTypeHomeworkDue ActionableOverviewResponseSchemaUrgencyType = "homework_due"
+	ActionableOverviewResponseSchemaUrgencyTypeSchedule    ActionableOverviewResponseSchemaUrgencyType = "schedule"
+	ActionableOverviewResponseSchemaUrgencyTypeTodoDue     ActionableOverviewResponseSchemaUrgencyType = "todo_due"
+	ActionableOverviewResponseSchemaUrgencyTypeYoungEvent  ActionableOverviewResponseSchemaUrgencyType = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the ActionableOverviewResponseSchemaUrgencyType enum.
+func (e ActionableOverviewResponseSchemaUrgencyType) Valid() bool {
+	switch e {
+	case ActionableOverviewResponseSchemaUrgencyTypeExam:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTypeHomeworkDue:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTypeSchedule:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTypeTodoDue:
+		return true
+	case ActionableOverviewResponseSchemaUrgencyTypeYoungEvent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminCommentsResponseSchemaDataStatus.
 const (
 	AdminCommentsResponseSchemaDataStatusActive     AdminCommentsResponseSchemaDataStatus = "active"
@@ -1023,13 +1620,13 @@ func (e DescriptionUpsertRequestSchema3TargetType) Valid() bool {
 
 // Defines values for DescriptionUpsertRequestSchema4TargetType.
 const (
-	Homework DescriptionUpsertRequestSchema4TargetType = "homework"
+	DescriptionUpsertRequestSchema4TargetTypeHomework DescriptionUpsertRequestSchema4TargetType = "homework"
 )
 
 // Valid indicates whether the value is a known member of the DescriptionUpsertRequestSchema4TargetType enum.
 func (e DescriptionUpsertRequestSchema4TargetType) Valid() bool {
 	switch e {
-	case Homework:
+	case DescriptionUpsertRequestSchema4TargetTypeHomework:
 		return true
 	default:
 		return false
@@ -1309,6 +1906,75 @@ func (e PaginatedYoungEventResponseSchemaMetaSourceStatus) Valid() bool {
 	case PaginatedYoungEventResponseSchemaMetaSourceStatusStale:
 		return true
 	case PaginatedYoungEventResponseSchemaMetaSourceStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalCalendarPageSchemaDataPriority.
+const (
+	PersonalCalendarPageSchemaDataPriorityHigh   PersonalCalendarPageSchemaDataPriority = "high"
+	PersonalCalendarPageSchemaDataPriorityLow    PersonalCalendarPageSchemaDataPriority = "low"
+	PersonalCalendarPageSchemaDataPriorityMedium PersonalCalendarPageSchemaDataPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the PersonalCalendarPageSchemaDataPriority enum.
+func (e PersonalCalendarPageSchemaDataPriority) Valid() bool {
+	switch e {
+	case PersonalCalendarPageSchemaDataPriorityHigh:
+		return true
+	case PersonalCalendarPageSchemaDataPriorityLow:
+		return true
+	case PersonalCalendarPageSchemaDataPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalCalendarPageSchemaDataSubscriptionKind.
+const (
+	PersonalCalendarPageSchemaDataSubscriptionKindAuditor           PersonalCalendarPageSchemaDataSubscriptionKind = "auditor"
+	PersonalCalendarPageSchemaDataSubscriptionKindRegular           PersonalCalendarPageSchemaDataSubscriptionKind = "regular"
+	PersonalCalendarPageSchemaDataSubscriptionKindTeachingAssistant PersonalCalendarPageSchemaDataSubscriptionKind = "teaching_assistant"
+)
+
+// Valid indicates whether the value is a known member of the PersonalCalendarPageSchemaDataSubscriptionKind enum.
+func (e PersonalCalendarPageSchemaDataSubscriptionKind) Valid() bool {
+	switch e {
+	case PersonalCalendarPageSchemaDataSubscriptionKindAuditor:
+		return true
+	case PersonalCalendarPageSchemaDataSubscriptionKindRegular:
+		return true
+	case PersonalCalendarPageSchemaDataSubscriptionKindTeachingAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalCalendarPageSchemaDataTargetKind.
+const (
+	PersonalCalendarPageSchemaDataTargetKindExam       PersonalCalendarPageSchemaDataTargetKind = "exam"
+	PersonalCalendarPageSchemaDataTargetKindHomework   PersonalCalendarPageSchemaDataTargetKind = "homework"
+	PersonalCalendarPageSchemaDataTargetKindSection    PersonalCalendarPageSchemaDataTargetKind = "section"
+	PersonalCalendarPageSchemaDataTargetKindTodo       PersonalCalendarPageSchemaDataTargetKind = "todo"
+	PersonalCalendarPageSchemaDataTargetKindYoungEvent PersonalCalendarPageSchemaDataTargetKind = "young_event"
+)
+
+// Valid indicates whether the value is a known member of the PersonalCalendarPageSchemaDataTargetKind enum.
+func (e PersonalCalendarPageSchemaDataTargetKind) Valid() bool {
+	switch e {
+	case PersonalCalendarPageSchemaDataTargetKindExam:
+		return true
+	case PersonalCalendarPageSchemaDataTargetKindHomework:
+		return true
+	case PersonalCalendarPageSchemaDataTargetKindSection:
+		return true
+	case PersonalCalendarPageSchemaDataTargetKindTodo:
+		return true
+	case PersonalCalendarPageSchemaDataTargetKindYoungEvent:
 		return true
 	default:
 		return false
@@ -1866,19 +2532,19 @@ func (e SubscriptionKindUpdateRequestSchemaKind) Valid() bool {
 
 // Defines values for SubscriptionKindUpdateResponseSchemaKind.
 const (
-	Auditor           SubscriptionKindUpdateResponseSchemaKind = "auditor"
-	Regular           SubscriptionKindUpdateResponseSchemaKind = "regular"
-	TeachingAssistant SubscriptionKindUpdateResponseSchemaKind = "teaching_assistant"
+	SubscriptionKindUpdateResponseSchemaKindAuditor           SubscriptionKindUpdateResponseSchemaKind = "auditor"
+	SubscriptionKindUpdateResponseSchemaKindRegular           SubscriptionKindUpdateResponseSchemaKind = "regular"
+	SubscriptionKindUpdateResponseSchemaKindTeachingAssistant SubscriptionKindUpdateResponseSchemaKind = "teaching_assistant"
 )
 
 // Valid indicates whether the value is a known member of the SubscriptionKindUpdateResponseSchemaKind enum.
 func (e SubscriptionKindUpdateResponseSchemaKind) Valid() bool {
 	switch e {
-	case Auditor:
+	case SubscriptionKindUpdateResponseSchemaKindAuditor:
 		return true
-	case Regular:
+	case SubscriptionKindUpdateResponseSchemaKindRegular:
 		return true
-	case TeachingAssistant:
+	case SubscriptionKindUpdateResponseSchemaKindTeachingAssistant:
 		return true
 	default:
 		return false
@@ -2095,21 +2761,42 @@ func (e TodoUpdateResponseSchemaTodoPriority) Valid() bool {
 	}
 }
 
-// Defines values for TodosListResponseSchemaTodosPriority.
+// Defines values for TodosListResponseSchema0TodosPriority.
 const (
-	TodosListResponseSchemaTodosPriorityHigh   TodosListResponseSchemaTodosPriority = "high"
-	TodosListResponseSchemaTodosPriorityLow    TodosListResponseSchemaTodosPriority = "low"
-	TodosListResponseSchemaTodosPriorityMedium TodosListResponseSchemaTodosPriority = "medium"
+	TodosListResponseSchema0TodosPriorityHigh   TodosListResponseSchema0TodosPriority = "high"
+	TodosListResponseSchema0TodosPriorityLow    TodosListResponseSchema0TodosPriority = "low"
+	TodosListResponseSchema0TodosPriorityMedium TodosListResponseSchema0TodosPriority = "medium"
 )
 
-// Valid indicates whether the value is a known member of the TodosListResponseSchemaTodosPriority enum.
-func (e TodosListResponseSchemaTodosPriority) Valid() bool {
+// Valid indicates whether the value is a known member of the TodosListResponseSchema0TodosPriority enum.
+func (e TodosListResponseSchema0TodosPriority) Valid() bool {
 	switch e {
-	case TodosListResponseSchemaTodosPriorityHigh:
+	case TodosListResponseSchema0TodosPriorityHigh:
 		return true
-	case TodosListResponseSchemaTodosPriorityLow:
+	case TodosListResponseSchema0TodosPriorityLow:
 		return true
-	case TodosListResponseSchemaTodosPriorityMedium:
+	case TodosListResponseSchema0TodosPriorityMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodosListResponseSchema1DataPriority.
+const (
+	TodosListResponseSchema1DataPriorityHigh   TodosListResponseSchema1DataPriority = "high"
+	TodosListResponseSchema1DataPriorityLow    TodosListResponseSchema1DataPriority = "low"
+	TodosListResponseSchema1DataPriorityMedium TodosListResponseSchema1DataPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the TodosListResponseSchema1DataPriority enum.
+func (e TodosListResponseSchema1DataPriority) Valid() bool {
+	switch e {
+	case TodosListResponseSchema1DataPriorityHigh:
+		return true
+	case TodosListResponseSchema1DataPriorityLow:
+		return true
+	case TodosListResponseSchema1DataPriorityMedium:
 		return true
 	default:
 		return false
@@ -2416,6 +3103,24 @@ func (e GetCourseParamsLocale) Valid() bool {
 	}
 }
 
+// Defines values for GetApiCatalogCoursesJwIdSectionsParamsLocale.
+const (
+	GetApiCatalogCoursesJwIdSectionsParamsLocaleEnUs GetApiCatalogCoursesJwIdSectionsParamsLocale = "en-us"
+	GetApiCatalogCoursesJwIdSectionsParamsLocaleZhCn GetApiCatalogCoursesJwIdSectionsParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the GetApiCatalogCoursesJwIdSectionsParamsLocale enum.
+func (e GetApiCatalogCoursesJwIdSectionsParamsLocale) Valid() bool {
+	switch e {
+	case GetApiCatalogCoursesJwIdSectionsParamsLocaleEnUs:
+		return true
+	case GetApiCatalogCoursesJwIdSectionsParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListSchedulesParamsLocale.
 const (
 	ListSchedulesParamsLocaleEnUs ListSchedulesParamsLocale = "en-us"
@@ -2590,6 +3295,24 @@ func (e GetTeacherParamsLocale) Valid() bool {
 	case GetTeacherParamsLocaleEnUs:
 		return true
 	case GetTeacherParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetApiCatalogTeachersIdSectionsParamsLocale.
+const (
+	GetApiCatalogTeachersIdSectionsParamsLocaleEnUs GetApiCatalogTeachersIdSectionsParamsLocale = "en-us"
+	GetApiCatalogTeachersIdSectionsParamsLocaleZhCn GetApiCatalogTeachersIdSectionsParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the GetApiCatalogTeachersIdSectionsParamsLocale enum.
+func (e GetApiCatalogTeachersIdSectionsParamsLocale) Valid() bool {
+	switch e {
+	case GetApiCatalogTeachersIdSectionsParamsLocaleEnUs:
+		return true
+	case GetApiCatalogTeachersIdSectionsParamsLocaleZhCn:
 		return true
 	default:
 		return false
@@ -2917,18 +3640,36 @@ func (e WorkspaceOverviewGetParamsLocale) Valid() bool {
 	}
 }
 
+// Defines values for GetApiWorkspaceOverviewActionableParamsLocale.
+const (
+	GetApiWorkspaceOverviewActionableParamsLocaleEnUs GetApiWorkspaceOverviewActionableParamsLocale = "en-us"
+	GetApiWorkspaceOverviewActionableParamsLocaleZhCn GetApiWorkspaceOverviewActionableParamsLocale = "zh-cn"
+)
+
+// Valid indicates whether the value is a known member of the GetApiWorkspaceOverviewActionableParamsLocale enum.
+func (e GetApiWorkspaceOverviewActionableParamsLocale) Valid() bool {
+	switch e {
+	case GetApiWorkspaceOverviewActionableParamsLocaleEnUs:
+		return true
+	case GetApiWorkspaceOverviewActionableParamsLocaleZhCn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceScheduleListParamsLocale.
 const (
-	EnUs WorkspaceScheduleListParamsLocale = "en-us"
-	ZhCn WorkspaceScheduleListParamsLocale = "zh-cn"
+	WorkspaceScheduleListParamsLocaleEnUs WorkspaceScheduleListParamsLocale = "en-us"
+	WorkspaceScheduleListParamsLocaleZhCn WorkspaceScheduleListParamsLocale = "zh-cn"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceScheduleListParamsLocale enum.
 func (e WorkspaceScheduleListParamsLocale) Valid() bool {
 	switch e {
-	case EnUs:
+	case WorkspaceScheduleListParamsLocaleEnUs:
 		return true
-	case ZhCn:
+	case WorkspaceScheduleListParamsLocaleZhCn:
 		return true
 	default:
 		return false
@@ -3320,6 +4061,265 @@ type AccountClientActivityResponseSchemaItemsChannel string
 
 // AccountClientActivityResponseSchemaItemsOutcome defines model for AccountClientActivityResponseSchema.Items.Outcome.
 type AccountClientActivityResponseSchemaItemsOutcome string
+
+// ActionableOverviewResponseSchema defines model for actionableOverviewResponseSchema.
+type ActionableOverviewResponseSchema struct {
+	Anchor struct {
+		AtTime   time.Time `json:"atTime"`
+		DateFrom time.Time `json:"dateFrom"`
+		DateTo   time.Time `json:"dateTo"`
+	} `json:"anchor"`
+	Deadlines struct {
+		AllPending []struct {
+			At                 *time.Time `json:"at"`
+			CompletionRequired *bool      `json:"completionRequired,omitempty"`
+			ConflictIntervals  *[]struct {
+				EndAt   time.Time `json:"endAt"`
+				StartAt time.Time `json:"startAt"`
+			} `json:"conflictIntervals,omitempty"`
+			Content          *string                                                              `json:"content,omitempty"`
+			EndsAt           *time.Time                                                           `json:"endsAt"`
+			ExamMode         *string                                                              `json:"examMode,omitempty"`
+			HasTime          *bool                                                                `json:"hasTime,omitempty"`
+			Id               string                                                               `json:"id"`
+			Location         *string                                                              `json:"location"`
+			Priority         *ActionableOverviewResponseSchemaDeadlinesAllPendingPriority         `json:"priority,omitempty"`
+			SectionCode      *string                                                              `json:"sectionCode,omitempty"`
+			SectionJwId      *int                                                                 `json:"sectionJwId,omitempty"`
+			SubscriptionKind *ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind `json:"subscriptionKind,omitempty"`
+			Target           *struct {
+				Id   string                                                        `json:"id"`
+				Kind ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind `json:"kind"`
+			} `json:"target,omitempty"`
+			Teachers *[]string                                               `json:"teachers,omitempty"`
+			Title    string                                                  `json:"title"`
+			Type     ActionableOverviewResponseSchemaDeadlinesAllPendingType `json:"type"`
+			Url      string                                                  `json:"url"`
+			YoungId  *string                                                 `json:"youngId"`
+		} `json:"allPending"`
+		NextThreeDays []struct {
+			At                 *time.Time `json:"at"`
+			CompletionRequired *bool      `json:"completionRequired,omitempty"`
+			ConflictIntervals  *[]struct {
+				EndAt   time.Time `json:"endAt"`
+				StartAt time.Time `json:"startAt"`
+			} `json:"conflictIntervals,omitempty"`
+			Content          *string                                                                 `json:"content,omitempty"`
+			EndsAt           *time.Time                                                              `json:"endsAt"`
+			ExamMode         *string                                                                 `json:"examMode,omitempty"`
+			HasTime          *bool                                                                   `json:"hasTime,omitempty"`
+			Id               string                                                                  `json:"id"`
+			Location         *string                                                                 `json:"location"`
+			Priority         *ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority         `json:"priority,omitempty"`
+			SectionCode      *string                                                                 `json:"sectionCode,omitempty"`
+			SectionJwId      *int                                                                    `json:"sectionJwId,omitempty"`
+			SubscriptionKind *ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind `json:"subscriptionKind,omitempty"`
+			Target           *struct {
+				Id   string                                                           `json:"id"`
+				Kind ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind `json:"kind"`
+			} `json:"target,omitempty"`
+			Teachers *[]string                                                  `json:"teachers,omitempty"`
+			Title    string                                                     `json:"title"`
+			Type     ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType `json:"type"`
+			Url      string                                                     `json:"url"`
+			YoungId  *string                                                    `json:"youngId"`
+		} `json:"nextThreeDays"`
+		Today []struct {
+			At                 *time.Time `json:"at"`
+			CompletionRequired *bool      `json:"completionRequired,omitempty"`
+			ConflictIntervals  *[]struct {
+				EndAt   time.Time `json:"endAt"`
+				StartAt time.Time `json:"startAt"`
+			} `json:"conflictIntervals,omitempty"`
+			Content          *string                                                         `json:"content,omitempty"`
+			EndsAt           *time.Time                                                      `json:"endsAt"`
+			ExamMode         *string                                                         `json:"examMode,omitempty"`
+			HasTime          *bool                                                           `json:"hasTime,omitempty"`
+			Id               string                                                          `json:"id"`
+			Location         *string                                                         `json:"location"`
+			Priority         *ActionableOverviewResponseSchemaDeadlinesTodayPriority         `json:"priority,omitempty"`
+			SectionCode      *string                                                         `json:"sectionCode,omitempty"`
+			SectionJwId      *int                                                            `json:"sectionJwId,omitempty"`
+			SubscriptionKind *ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind `json:"subscriptionKind,omitempty"`
+			Target           *struct {
+				Id   string                                                   `json:"id"`
+				Kind ActionableOverviewResponseSchemaDeadlinesTodayTargetKind `json:"kind"`
+			} `json:"target,omitempty"`
+			Teachers *[]string                                          `json:"teachers,omitempty"`
+			Title    string                                             `json:"title"`
+			Type     ActionableOverviewResponseSchemaDeadlinesTodayType `json:"type"`
+			Url      string                                             `json:"url"`
+			YoungId  *string                                            `json:"youngId"`
+		} `json:"today"`
+	} `json:"deadlines"`
+	Focus *struct {
+		At                 *time.Time `json:"at"`
+		CompletionRequired *bool      `json:"completionRequired,omitempty"`
+		ConflictIntervals  *[]struct {
+			EndAt   time.Time `json:"endAt"`
+			StartAt time.Time `json:"startAt"`
+		} `json:"conflictIntervals,omitempty"`
+		Content          *string                                                `json:"content,omitempty"`
+		EndsAt           *time.Time                                             `json:"endsAt"`
+		ExamMode         *string                                                `json:"examMode,omitempty"`
+		HasTime          *bool                                                  `json:"hasTime,omitempty"`
+		Id               string                                                 `json:"id"`
+		Location         *string                                                `json:"location"`
+		Priority         *ActionableOverviewResponseSchemaFocusPriority         `json:"priority,omitempty"`
+		SectionCode      *string                                                `json:"sectionCode,omitempty"`
+		SectionJwId      *int                                                   `json:"sectionJwId,omitempty"`
+		Status           ActionableOverviewResponseSchemaFocusStatus            `json:"status"`
+		SubscriptionKind *ActionableOverviewResponseSchemaFocusSubscriptionKind `json:"subscriptionKind,omitempty"`
+		Target           *struct {
+			Id   string                                          `json:"id"`
+			Kind ActionableOverviewResponseSchemaFocusTargetKind `json:"kind"`
+		} `json:"target,omitempty"`
+		Teachers *[]string                                 `json:"teachers,omitempty"`
+		Title    string                                    `json:"title"`
+		Type     ActionableOverviewResponseSchemaFocusType `json:"type"`
+		Url      string                                    `json:"url"`
+		YoungId  *string                                   `json:"youngId"`
+	} `json:"focus"`
+	Subscriptions struct {
+		CurrentSemester *struct {
+			EndDate   time.Time `json:"endDate"`
+			Id        int       `json:"id"`
+			NameCn    string    `json:"nameCn"`
+			StartDate time.Time `json:"startDate"`
+		} `json:"currentSemester"`
+		CurrentSemesterCount int `json:"currentSemesterCount"`
+		TotalCount           int `json:"totalCount"`
+	} `json:"subscriptions"`
+	Upcoming []struct {
+		At                 *time.Time `json:"at"`
+		CompletionRequired *bool      `json:"completionRequired,omitempty"`
+		ConflictIntervals  *[]struct {
+			EndAt   time.Time `json:"endAt"`
+			StartAt time.Time `json:"startAt"`
+		} `json:"conflictIntervals,omitempty"`
+		Content          *string                                                   `json:"content,omitempty"`
+		EndsAt           *time.Time                                                `json:"endsAt"`
+		ExamMode         *string                                                   `json:"examMode,omitempty"`
+		HasTime          *bool                                                     `json:"hasTime,omitempty"`
+		Id               string                                                    `json:"id"`
+		Location         *string                                                   `json:"location"`
+		Priority         *ActionableOverviewResponseSchemaUpcomingPriority         `json:"priority,omitempty"`
+		SectionCode      *string                                                   `json:"sectionCode,omitempty"`
+		SectionJwId      *int                                                      `json:"sectionJwId,omitempty"`
+		SubscriptionKind *ActionableOverviewResponseSchemaUpcomingSubscriptionKind `json:"subscriptionKind,omitempty"`
+		Target           *struct {
+			Id   string                                             `json:"id"`
+			Kind ActionableOverviewResponseSchemaUpcomingTargetKind `json:"kind"`
+		} `json:"target,omitempty"`
+		Teachers *[]string                                    `json:"teachers,omitempty"`
+		Title    string                                       `json:"title"`
+		Type     ActionableOverviewResponseSchemaUpcomingType `json:"type"`
+		Url      string                                       `json:"url"`
+		YoungId  *string                                      `json:"youngId"`
+	} `json:"upcoming"`
+	Urgency []struct {
+		At                 *time.Time `json:"at"`
+		CompletionRequired *bool      `json:"completionRequired,omitempty"`
+		ConflictIntervals  *[]struct {
+			EndAt   time.Time `json:"endAt"`
+			StartAt time.Time `json:"startAt"`
+		} `json:"conflictIntervals,omitempty"`
+		Content          *string                                                  `json:"content,omitempty"`
+		EndsAt           *time.Time                                               `json:"endsAt"`
+		ExamMode         *string                                                  `json:"examMode,omitempty"`
+		HasTime          *bool                                                    `json:"hasTime,omitempty"`
+		Id               string                                                   `json:"id"`
+		Location         *string                                                  `json:"location"`
+		Priority         *ActionableOverviewResponseSchemaUrgencyPriority         `json:"priority,omitempty"`
+		SectionCode      *string                                                  `json:"sectionCode,omitempty"`
+		SectionJwId      *int                                                     `json:"sectionJwId,omitempty"`
+		SubscriptionKind *ActionableOverviewResponseSchemaUrgencySubscriptionKind `json:"subscriptionKind,omitempty"`
+		Target           *struct {
+			Id   string                                            `json:"id"`
+			Kind ActionableOverviewResponseSchemaUrgencyTargetKind `json:"kind"`
+		} `json:"target,omitempty"`
+		Teachers *[]string                                   `json:"teachers,omitempty"`
+		Title    string                                      `json:"title"`
+		Type     ActionableOverviewResponseSchemaUrgencyType `json:"type"`
+		Url      string                                      `json:"url"`
+		YoungId  *string                                     `json:"youngId"`
+	} `json:"urgency"`
+}
+
+// ActionableOverviewResponseSchemaDeadlinesAllPendingPriority defines model for ActionableOverviewResponseSchema.Deadlines.AllPending.Priority.
+type ActionableOverviewResponseSchemaDeadlinesAllPendingPriority string
+
+// ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind defines model for ActionableOverviewResponseSchema.Deadlines.AllPending.SubscriptionKind.
+type ActionableOverviewResponseSchemaDeadlinesAllPendingSubscriptionKind string
+
+// ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind defines model for ActionableOverviewResponseSchema.Deadlines.AllPending.Target.Kind.
+type ActionableOverviewResponseSchemaDeadlinesAllPendingTargetKind string
+
+// ActionableOverviewResponseSchemaDeadlinesAllPendingType defines model for ActionableOverviewResponseSchema.Deadlines.AllPending.Type.
+type ActionableOverviewResponseSchemaDeadlinesAllPendingType string
+
+// ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority defines model for ActionableOverviewResponseSchema.Deadlines.NextThreeDays.Priority.
+type ActionableOverviewResponseSchemaDeadlinesNextThreeDaysPriority string
+
+// ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind defines model for ActionableOverviewResponseSchema.Deadlines.NextThreeDays.SubscriptionKind.
+type ActionableOverviewResponseSchemaDeadlinesNextThreeDaysSubscriptionKind string
+
+// ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind defines model for ActionableOverviewResponseSchema.Deadlines.NextThreeDays.Target.Kind.
+type ActionableOverviewResponseSchemaDeadlinesNextThreeDaysTargetKind string
+
+// ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType defines model for ActionableOverviewResponseSchema.Deadlines.NextThreeDays.Type.
+type ActionableOverviewResponseSchemaDeadlinesNextThreeDaysType string
+
+// ActionableOverviewResponseSchemaDeadlinesTodayPriority defines model for ActionableOverviewResponseSchema.Deadlines.Today.Priority.
+type ActionableOverviewResponseSchemaDeadlinesTodayPriority string
+
+// ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind defines model for ActionableOverviewResponseSchema.Deadlines.Today.SubscriptionKind.
+type ActionableOverviewResponseSchemaDeadlinesTodaySubscriptionKind string
+
+// ActionableOverviewResponseSchemaDeadlinesTodayTargetKind defines model for ActionableOverviewResponseSchema.Deadlines.Today.Target.Kind.
+type ActionableOverviewResponseSchemaDeadlinesTodayTargetKind string
+
+// ActionableOverviewResponseSchemaDeadlinesTodayType defines model for ActionableOverviewResponseSchema.Deadlines.Today.Type.
+type ActionableOverviewResponseSchemaDeadlinesTodayType string
+
+// ActionableOverviewResponseSchemaFocusPriority defines model for ActionableOverviewResponseSchema.Focus.Priority.
+type ActionableOverviewResponseSchemaFocusPriority string
+
+// ActionableOverviewResponseSchemaFocusStatus defines model for ActionableOverviewResponseSchema.Focus.Status.
+type ActionableOverviewResponseSchemaFocusStatus string
+
+// ActionableOverviewResponseSchemaFocusSubscriptionKind defines model for ActionableOverviewResponseSchema.Focus.SubscriptionKind.
+type ActionableOverviewResponseSchemaFocusSubscriptionKind string
+
+// ActionableOverviewResponseSchemaFocusTargetKind defines model for ActionableOverviewResponseSchema.Focus.Target.Kind.
+type ActionableOverviewResponseSchemaFocusTargetKind string
+
+// ActionableOverviewResponseSchemaFocusType defines model for ActionableOverviewResponseSchema.Focus.Type.
+type ActionableOverviewResponseSchemaFocusType string
+
+// ActionableOverviewResponseSchemaUpcomingPriority defines model for ActionableOverviewResponseSchema.Upcoming.Priority.
+type ActionableOverviewResponseSchemaUpcomingPriority string
+
+// ActionableOverviewResponseSchemaUpcomingSubscriptionKind defines model for ActionableOverviewResponseSchema.Upcoming.SubscriptionKind.
+type ActionableOverviewResponseSchemaUpcomingSubscriptionKind string
+
+// ActionableOverviewResponseSchemaUpcomingTargetKind defines model for ActionableOverviewResponseSchema.Upcoming.Target.Kind.
+type ActionableOverviewResponseSchemaUpcomingTargetKind string
+
+// ActionableOverviewResponseSchemaUpcomingType defines model for ActionableOverviewResponseSchema.Upcoming.Type.
+type ActionableOverviewResponseSchemaUpcomingType string
+
+// ActionableOverviewResponseSchemaUrgencyPriority defines model for ActionableOverviewResponseSchema.Urgency.Priority.
+type ActionableOverviewResponseSchemaUrgencyPriority string
+
+// ActionableOverviewResponseSchemaUrgencySubscriptionKind defines model for ActionableOverviewResponseSchema.Urgency.SubscriptionKind.
+type ActionableOverviewResponseSchemaUrgencySubscriptionKind string
+
+// ActionableOverviewResponseSchemaUrgencyTargetKind defines model for ActionableOverviewResponseSchema.Urgency.Target.Kind.
+type ActionableOverviewResponseSchemaUrgencyTargetKind string
+
+// ActionableOverviewResponseSchemaUrgencyType defines model for ActionableOverviewResponseSchema.Urgency.Type.
+type ActionableOverviewResponseSchemaUrgencyType string
 
 // AdminCommentsResponseSchema defines model for adminCommentsResponseSchema.
 type AdminCommentsResponseSchema struct {
@@ -3726,6 +4726,22 @@ type AdminUsersResponseSchema struct {
 		Total      int `json:"total"`
 		TotalPages int `json:"totalPages"`
 	} `json:"pagination"`
+}
+
+// AppleAppSiteAssociationResponseSchema defines model for appleAppSiteAssociationResponseSchema.
+type AppleAppSiteAssociationResponseSchema struct {
+	Applinks struct {
+		Details []struct {
+			AppIDs     []string `json:"appIDs"`
+			Components []struct {
+				string  `json:"/"`
+				Exclude *bool `json:"exclude,omitempty"`
+			} `json:"components"`
+		} `json:"details"`
+	} `json:"applinks"`
+	Webcredentials struct {
+		Apps []string `json:"apps"`
+	} `json:"webcredentials"`
 }
 
 // BusNextDeparturesResponseSchema defines model for busNextDeparturesResponseSchema.
@@ -7747,6 +8763,63 @@ type PaginatedScheduleResponseSchema struct {
 	} `json:"pagination"`
 }
 
+// PaginatedSectionHistoryResponseSchema defines model for paginatedSectionHistoryResponseSchema.
+type PaginatedSectionHistoryResponseSchema struct {
+	Data []struct {
+		Campus *struct {
+			Code          *string `json:"code"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+		} `json:"campus"`
+		CampusId *int   `json:"campusId"`
+		Code     string `json:"code"`
+		Course   struct {
+			Code          string  `json:"code"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+		} `json:"course"`
+		CourseId         int        `json:"courseId"`
+		Credits          *float32   `json:"credits"`
+		Id               int        `json:"id"`
+		JwId             int        `json:"jwId"`
+		LimitCount       *int       `json:"limitCount"`
+		OpenDepartmentId *int       `json:"openDepartmentId"`
+		RetiredAt        *time.Time `json:"retiredAt"`
+		Semester         *struct {
+			Code   string `json:"code"`
+			Id     int    `json:"id"`
+			JwId   int    `json:"jwId"`
+			NameCn string `json:"nameCn"`
+		} `json:"semester"`
+		SemesterId *int `json:"semesterId"`
+		StdCount   *int `json:"stdCount"`
+		Teachers   []struct {
+			Code          *string `json:"code"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+			PersonId      *int    `json:"personId"`
+		} `json:"teachers"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
+}
+
 // PaginatedSectionResponseSchema defines model for paginatedSectionResponseSchema.
 type PaginatedSectionResponseSchema struct {
 	Data []struct {
@@ -7876,34 +8949,40 @@ type PaginatedYoungEventResponseSchema struct {
 		Capacity               *int       `json:"capacity"`
 		Category               *string    `json:"category"`
 		CategoryCode           *string    `json:"categoryCode"`
-		ContactName            *string    `json:"contactName"`
-		ContactTel             *string    `json:"contactTel"`
-		CreatedAt              *time.Time `json:"createdAt"`
-		CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
-		Department             *string    `json:"department"`
-		DepartmentId           *string    `json:"departmentId"`
-		Duration               *float32   `json:"duration"`
-		EndAt                  *time.Time `json:"endAt"`
-		ExternalSponsor        *string    `json:"externalSponsor"`
-		FavCount               *int       `json:"favCount"`
-		Form                   *string    `json:"form"`
-		FormCode               *string    `json:"formCode"`
-		Grades                 *string    `json:"grades"`
-		Hours                  *float32   `json:"hours"`
-		ImageUrl               *string    `json:"imageUrl"`
-		IsActive               bool       `json:"isActive"`
-		IsOnline               *bool      `json:"isOnline"`
-		LastSeenAt             *time.Time `json:"lastSeenAt"`
-		LimitNum               *int       `json:"limitNum"`
-		Location               *string    `json:"location"`
-		Module                 *string    `json:"module"`
-		ModuleCode             *string    `json:"moduleCode"`
-		Name                   string     `json:"name"`
-		OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
-		Organizer              *string    `json:"organizer"`
-		OrganizerId            *string    `json:"organizerId"`
-		PartakeNum             *int       `json:"partakeNum"`
-		Places                 *[]struct {
+
+		// ConflictIntervals Known occupied intervals; an absent or empty array does not establish availability.
+		ConflictIntervals *[]struct {
+			EndAt   time.Time `json:"endAt"`
+			StartAt time.Time `json:"startAt"`
+		} `json:"conflictIntervals,omitempty"`
+		ContactName       *string    `json:"contactName"`
+		ContactTel        *string    `json:"contactTel"`
+		CreatedAt         *time.Time `json:"createdAt"`
+		CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
+		Department        *string    `json:"department"`
+		DepartmentId      *string    `json:"departmentId"`
+		Duration          *float32   `json:"duration"`
+		EndAt             *time.Time `json:"endAt"`
+		ExternalSponsor   *string    `json:"externalSponsor"`
+		FavCount          *int       `json:"favCount"`
+		Form              *string    `json:"form"`
+		FormCode          *string    `json:"formCode"`
+		Grades            *string    `json:"grades"`
+		Hours             *float32   `json:"hours"`
+		ImageUrl          *string    `json:"imageUrl"`
+		IsActive          bool       `json:"isActive"`
+		IsOnline          *bool      `json:"isOnline"`
+		LastSeenAt        *time.Time `json:"lastSeenAt"`
+		LimitNum          *int       `json:"limitNum"`
+		Location          *string    `json:"location"`
+		Module            *string    `json:"module"`
+		ModuleCode        *string    `json:"moduleCode"`
+		Name              string     `json:"name"`
+		OnlineMeetingInfo *string    `json:"onlineMeetingInfo"`
+		Organizer         *string    `json:"organizer"`
+		OrganizerId       *string    `json:"organizerId"`
+		PartakeNum        *int       `json:"partakeNum"`
+		Places            *[]struct {
 			PlaceEt   *string `json:"placeEt"`
 			PlaceInfo *string `json:"placeInfo"`
 			PlaceSt   *string `json:"placeSt"`
@@ -7958,10 +9037,27 @@ type PaginatedYoungOrganizerResponseSchema struct {
 // PersonalCalendarPageSchema defines model for personalCalendarPageSchema.
 type PersonalCalendarPageSchema struct {
 	Data []struct {
-		At       *time.Time                         `json:"at"`
-		EndsAt   *time.Time                         `json:"endsAt"`
-		Id       string                             `json:"id"`
-		Location *string                            `json:"location"`
+		At                 *time.Time `json:"at"`
+		CompletionRequired *bool      `json:"completionRequired,omitempty"`
+		ConflictIntervals  *[]struct {
+			EndAt   time.Time `json:"endAt"`
+			StartAt time.Time `json:"startAt"`
+		} `json:"conflictIntervals,omitempty"`
+		Content          *string                                         `json:"content,omitempty"`
+		EndsAt           *time.Time                                      `json:"endsAt"`
+		ExamMode         *string                                         `json:"examMode,omitempty"`
+		HasTime          *bool                                           `json:"hasTime,omitempty"`
+		Id               string                                          `json:"id"`
+		Location         *string                                         `json:"location"`
+		Priority         *PersonalCalendarPageSchemaDataPriority         `json:"priority,omitempty"`
+		SectionCode      *string                                         `json:"sectionCode,omitempty"`
+		SectionJwId      *int                                            `json:"sectionJwId,omitempty"`
+		SubscriptionKind *PersonalCalendarPageSchemaDataSubscriptionKind `json:"subscriptionKind,omitempty"`
+		Target           *struct {
+			Id   string                                   `json:"id"`
+			Kind PersonalCalendarPageSchemaDataTargetKind `json:"kind"`
+		} `json:"target,omitempty"`
+		Teachers *[]string                          `json:"teachers,omitempty"`
 		Title    string                             `json:"title"`
 		Type     PersonalCalendarPageSchemaDataType `json:"type"`
 		Url      string                             `json:"url"`
@@ -7974,6 +9070,15 @@ type PersonalCalendarPageSchema struct {
 		TotalPages int `json:"totalPages"`
 	} `json:"pagination"`
 }
+
+// PersonalCalendarPageSchemaDataPriority defines model for PersonalCalendarPageSchema.Data.Priority.
+type PersonalCalendarPageSchemaDataPriority string
+
+// PersonalCalendarPageSchemaDataSubscriptionKind defines model for PersonalCalendarPageSchema.Data.SubscriptionKind.
+type PersonalCalendarPageSchemaDataSubscriptionKind string
+
+// PersonalCalendarPageSchemaDataTargetKind defines model for PersonalCalendarPageSchema.Data.Target.Kind.
+type PersonalCalendarPageSchemaDataTargetKind string
 
 // PersonalCalendarPageSchemaDataType defines model for PersonalCalendarPageSchema.Data.Type.
 type PersonalCalendarPageSchemaDataType string
@@ -7995,7 +9100,10 @@ type PublicPublicationDetailSchema struct {
 	CanonicalUrl    string                                       `json:"canonicalUrl"`
 	Id              string                                       `json:"id"`
 	PublicationType PublicPublicationDetailSchemaPublicationType `json:"publicationType"`
-	Revision        struct {
+
+	// RenderedBodyHtml Sanitized Markdown HTML with revision image metadata and plain-text captions in source order. Empty when bodyMarkdown is unavailable.
+	RenderedBodyHtml string `json:"renderedBodyHtml"`
+	Revision         struct {
 		Author            *string `json:"author"`
 		BodyMarkdown      *string `json:"bodyMarkdown"`
 		BodyText          *string `json:"bodyText"`
@@ -8643,8 +9751,13 @@ type SectionDetailSchema struct {
 	TimesPerWeek  *int     `json:"timesPerWeek"`
 }
 
-// SectionSchedulesResponseSchema defines model for sectionSchedulesResponseSchema.
-type SectionSchedulesResponseSchema = []struct {
+// SectionSchedulesReadResponseSchema defines model for sectionSchedulesReadResponseSchema.
+type SectionSchedulesReadResponseSchema struct {
+	union json.RawMessage
+}
+
+// SectionSchedulesReadResponseSchema0 defines model for .
+type SectionSchedulesReadResponseSchema0 = []struct {
 	CustomPlace   *string    `json:"customPlace"`
 	Date          *time.Time `json:"date"`
 	EndTime       string     `json:"endTime"`
@@ -8757,6 +9870,130 @@ type SectionSchedulesResponseSchema = []struct {
 	} `json:"teachers"`
 	WeekIndex int `json:"weekIndex"`
 	Weekday   int `json:"weekday"`
+}
+
+// SectionSchedulesReadResponseSchema1 defines model for .
+type SectionSchedulesReadResponseSchema1 struct {
+	Data []struct {
+		CustomPlace   *string    `json:"customPlace"`
+		Date          *time.Time `json:"date"`
+		EndTime       string     `json:"endTime"`
+		EndUnit       int        `json:"endUnit"`
+		ExerciseClass *bool      `json:"exerciseClass"`
+		Experiment    *string    `json:"experiment"`
+		Id            int        `json:"id"`
+		LessonType    *string    `json:"lessonType"`
+		Periods       float32    `json:"periods"`
+		Room          *struct {
+			Building *struct {
+				Campus *struct {
+					Code          *string `json:"code"`
+					Id            int     `json:"id"`
+					JwId          int     `json:"jwId"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"campus"`
+				CampusId      *int    `json:"campusId"`
+				Code          string  `json:"code"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+			} `json:"building"`
+			BuildingId    *int    `json:"buildingId"`
+			Code          string  `json:"code"`
+			Floor         *int    `json:"floor"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+			Remark        *string `json:"remark"`
+			RoomType      *struct {
+				Code          string  `json:"code"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+			} `json:"roomType"`
+			RoomTypeId      *int `json:"roomTypeId"`
+			Seats           int  `json:"seats"`
+			SeatsForSection int  `json:"seatsForSection"`
+			Virtual         bool `json:"virtual"`
+		} `json:"room"`
+		RoomId        *int `json:"roomId"`
+		ScheduleGroup struct {
+			ActualPeriods float32 `json:"actualPeriods"`
+			Id            int     `json:"id"`
+			IsDefault     bool    `json:"isDefault"`
+			JwId          int     `json:"jwId"`
+			LimitCount    int     `json:"limitCount"`
+			No            int     `json:"no"`
+			SectionId     int     `json:"sectionId"`
+			StdCount      int     `json:"stdCount"`
+		} `json:"scheduleGroup"`
+		ScheduleGroupId       int    `json:"scheduleGroupId"`
+		SectionId             int    `json:"sectionId"`
+		StartTime             string `json:"startTime"`
+		StartUnit             int    `json:"startUnit"`
+		TeacherParticipations []struct {
+			ExerciseClass *bool    `json:"exerciseClass"`
+			Periods       *float32 `json:"periods"`
+			Teacher       struct {
+				Code       *string `json:"code"`
+				Department *struct {
+					Code          string  `json:"code"`
+					Id            int     `json:"id"`
+					IsCollege     *bool   `json:"isCollege"`
+					NameCn        string  `json:"nameCn"`
+					NameEn        *string `json:"nameEn"`
+					NamePrimary   string  `json:"namePrimary"`
+					NameSecondary *string `json:"nameSecondary"`
+				} `json:"department"`
+				Id            int     `json:"id"`
+				JwId          int     `json:"jwId"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+				PersonId      *int    `json:"personId"`
+			} `json:"teacher"`
+		} `json:"teacherParticipations"`
+		Teachers []struct {
+			Code       *string `json:"code"`
+			Department *struct {
+				Code          string  `json:"code"`
+				Id            int     `json:"id"`
+				IsCollege     *bool   `json:"isCollege"`
+				NameCn        string  `json:"nameCn"`
+				NameEn        *string `json:"nameEn"`
+				NamePrimary   string  `json:"namePrimary"`
+				NameSecondary *string `json:"nameSecondary"`
+			} `json:"department"`
+			Id            int     `json:"id"`
+			JwId          int     `json:"jwId"`
+			NameCn        string  `json:"nameCn"`
+			NameEn        *string `json:"nameEn"`
+			NamePrimary   string  `json:"namePrimary"`
+			NameSecondary *string `json:"nameSecondary"`
+			PersonId      *int    `json:"personId"`
+		} `json:"teachers"`
+		WeekIndex int `json:"weekIndex"`
+		Weekday   int `json:"weekday"`
+	} `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
 // SemesterSchema defines model for semesterSchema.
@@ -9516,25 +10753,60 @@ type TodoUpdateResponseSchemaTodoPriority string
 
 // TodosListResponseSchema defines model for todosListResponseSchema.
 type TodosListResponseSchema struct {
+	union json.RawMessage
+}
+
+// TodosListResponseSchema0 defines model for .
+type TodosListResponseSchema0 struct {
 	Counts struct {
 		Completed  int `json:"completed"`
 		Incomplete int `json:"incomplete"`
 		Overdue    int `json:"overdue"`
 	} `json:"counts"`
 	Todos []struct {
+		Completed bool                                  `json:"completed"`
+		Content   *string                               `json:"content"`
+		CreatedAt time.Time                             `json:"createdAt"`
+		DueAt     *time.Time                            `json:"dueAt"`
+		Id        string                                `json:"id"`
+		Priority  TodosListResponseSchema0TodosPriority `json:"priority"`
+		Title     string                                `json:"title"`
+		UpdatedAt time.Time                             `json:"updatedAt"`
+	} `json:"todos"`
+}
+
+// TodosListResponseSchema0TodosPriority defines model for TodosListResponseSchema.0.Todos.Priority.
+type TodosListResponseSchema0TodosPriority string
+
+// TodosListResponseSchema1 defines model for .
+type TodosListResponseSchema1 struct {
+	Data []struct {
 		Completed bool                                 `json:"completed"`
 		Content   *string                              `json:"content"`
 		CreatedAt time.Time                            `json:"createdAt"`
 		DueAt     *time.Time                           `json:"dueAt"`
 		Id        string                               `json:"id"`
-		Priority  TodosListResponseSchemaTodosPriority `json:"priority"`
+		Priority  TodosListResponseSchema1DataPriority `json:"priority"`
 		Title     string                               `json:"title"`
 		UpdatedAt time.Time                            `json:"updatedAt"`
-	} `json:"todos"`
+	} `json:"data"`
+	Meta struct {
+		Counts struct {
+			Completed  int `json:"completed"`
+			Incomplete int `json:"incomplete"`
+			Overdue    int `json:"overdue"`
+		} `json:"counts"`
+	} `json:"meta"`
+	Pagination struct {
+		Page       int `json:"page"`
+		PageSize   int `json:"pageSize"`
+		Total      int `json:"total"`
+		TotalPages int `json:"totalPages"`
+	} `json:"pagination"`
 }
 
-// TodosListResponseSchemaTodosPriority defines model for TodosListResponseSchema.Todos.Priority.
-type TodosListResponseSchemaTodosPriority string
+// TodosListResponseSchema1DataPriority defines model for TodosListResponseSchema.1.Data.Priority.
+type TodosListResponseSchema1DataPriority string
 
 // UploadCompleteRequestSchema defines model for uploadCompleteRequestSchema.
 type UploadCompleteRequestSchema struct {
@@ -9732,36 +11004,42 @@ type YoungEventDetailSchema struct {
 	Capacity               *int       `json:"capacity"`
 	Category               *string    `json:"category"`
 	CategoryCode           *string    `json:"categoryCode"`
-	ContactName            *string    `json:"contactName"`
-	ContactTel             *string    `json:"contactTel"`
-	CreatedAt              *time.Time `json:"createdAt"`
-	CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
-	Department             *string    `json:"department"`
-	DepartmentId           *string    `json:"departmentId"`
-	Description            *string    `json:"description"`
-	Duration               *float32   `json:"duration"`
-	EndAt                  *time.Time `json:"endAt"`
-	ExternalSponsor        *string    `json:"externalSponsor"`
-	FavCount               *int       `json:"favCount"`
-	Form                   *string    `json:"form"`
-	FormCode               *string    `json:"formCode"`
-	Grades                 *string    `json:"grades"`
-	Hours                  *float32   `json:"hours"`
-	ImageUrl               *string    `json:"imageUrl"`
-	IsActive               bool       `json:"isActive"`
-	IsOnline               *bool      `json:"isOnline"`
-	LastSeenAt             *time.Time `json:"lastSeenAt"`
-	LimitNum               *int       `json:"limitNum"`
-	Location               *string    `json:"location"`
-	Module                 *string    `json:"module"`
-	ModuleCode             *string    `json:"moduleCode"`
-	Name                   string     `json:"name"`
-	OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
-	Organizer              *string    `json:"organizer"`
-	OrganizerId            *string    `json:"organizerId"`
-	PartakeNum             *int       `json:"partakeNum"`
-	ParticipationNotes     *string    `json:"participationNotes"`
-	Places                 *[]struct {
+
+	// ConflictIntervals Known occupied intervals; an absent or empty array does not establish availability.
+	ConflictIntervals *[]struct {
+		EndAt   time.Time `json:"endAt"`
+		StartAt time.Time `json:"startAt"`
+	} `json:"conflictIntervals,omitempty"`
+	ContactName        *string    `json:"contactName"`
+	ContactTel         *string    `json:"contactTel"`
+	CreatedAt          *time.Time `json:"createdAt"`
+	CreatedAtUpstream  *time.Time `json:"createdAtUpstream"`
+	Department         *string    `json:"department"`
+	DepartmentId       *string    `json:"departmentId"`
+	Description        *string    `json:"description"`
+	Duration           *float32   `json:"duration"`
+	EndAt              *time.Time `json:"endAt"`
+	ExternalSponsor    *string    `json:"externalSponsor"`
+	FavCount           *int       `json:"favCount"`
+	Form               *string    `json:"form"`
+	FormCode           *string    `json:"formCode"`
+	Grades             *string    `json:"grades"`
+	Hours              *float32   `json:"hours"`
+	ImageUrl           *string    `json:"imageUrl"`
+	IsActive           bool       `json:"isActive"`
+	IsOnline           *bool      `json:"isOnline"`
+	LastSeenAt         *time.Time `json:"lastSeenAt"`
+	LimitNum           *int       `json:"limitNum"`
+	Location           *string    `json:"location"`
+	Module             *string    `json:"module"`
+	ModuleCode         *string    `json:"moduleCode"`
+	Name               string     `json:"name"`
+	OnlineMeetingInfo  *string    `json:"onlineMeetingInfo"`
+	Organizer          *string    `json:"organizer"`
+	OrganizerId        *string    `json:"organizerId"`
+	PartakeNum         *int       `json:"partakeNum"`
+	ParticipationNotes *string    `json:"participationNotes"`
+	Places             *[]struct {
 		PlaceEt   *string `json:"placeEt"`
 		PlaceInfo *string `json:"placeInfo"`
 		PlaceSt   *string `json:"placeSt"`
@@ -9802,34 +11080,40 @@ type YoungEventSubscriptionListSchema struct {
 			Capacity               *int       `json:"capacity"`
 			Category               *string    `json:"category"`
 			CategoryCode           *string    `json:"categoryCode"`
-			ContactName            *string    `json:"contactName"`
-			ContactTel             *string    `json:"contactTel"`
-			CreatedAt              *time.Time `json:"createdAt"`
-			CreatedAtUpstream      *time.Time `json:"createdAtUpstream"`
-			Department             *string    `json:"department"`
-			DepartmentId           *string    `json:"departmentId"`
-			Duration               *float32   `json:"duration"`
-			EndAt                  *time.Time `json:"endAt"`
-			ExternalSponsor        *string    `json:"externalSponsor"`
-			FavCount               *int       `json:"favCount"`
-			Form                   *string    `json:"form"`
-			FormCode               *string    `json:"formCode"`
-			Grades                 *string    `json:"grades"`
-			Hours                  *float32   `json:"hours"`
-			ImageUrl               *string    `json:"imageUrl"`
-			IsActive               bool       `json:"isActive"`
-			IsOnline               *bool      `json:"isOnline"`
-			LastSeenAt             *time.Time `json:"lastSeenAt"`
-			LimitNum               *int       `json:"limitNum"`
-			Location               *string    `json:"location"`
-			Module                 *string    `json:"module"`
-			ModuleCode             *string    `json:"moduleCode"`
-			Name                   string     `json:"name"`
-			OnlineMeetingInfo      *string    `json:"onlineMeetingInfo"`
-			Organizer              *string    `json:"organizer"`
-			OrganizerId            *string    `json:"organizerId"`
-			PartakeNum             *int       `json:"partakeNum"`
-			Places                 *[]struct {
+
+			// ConflictIntervals Known occupied intervals; an absent or empty array does not establish availability.
+			ConflictIntervals *[]struct {
+				EndAt   time.Time `json:"endAt"`
+				StartAt time.Time `json:"startAt"`
+			} `json:"conflictIntervals,omitempty"`
+			ContactName       *string    `json:"contactName"`
+			ContactTel        *string    `json:"contactTel"`
+			CreatedAt         *time.Time `json:"createdAt"`
+			CreatedAtUpstream *time.Time `json:"createdAtUpstream"`
+			Department        *string    `json:"department"`
+			DepartmentId      *string    `json:"departmentId"`
+			Duration          *float32   `json:"duration"`
+			EndAt             *time.Time `json:"endAt"`
+			ExternalSponsor   *string    `json:"externalSponsor"`
+			FavCount          *int       `json:"favCount"`
+			Form              *string    `json:"form"`
+			FormCode          *string    `json:"formCode"`
+			Grades            *string    `json:"grades"`
+			Hours             *float32   `json:"hours"`
+			ImageUrl          *string    `json:"imageUrl"`
+			IsActive          bool       `json:"isActive"`
+			IsOnline          *bool      `json:"isOnline"`
+			LastSeenAt        *time.Time `json:"lastSeenAt"`
+			LimitNum          *int       `json:"limitNum"`
+			Location          *string    `json:"location"`
+			Module            *string    `json:"module"`
+			ModuleCode        *string    `json:"moduleCode"`
+			Name              string     `json:"name"`
+			OnlineMeetingInfo *string    `json:"onlineMeetingInfo"`
+			Organizer         *string    `json:"organizer"`
+			OrganizerId       *string    `json:"organizerId"`
+			PartakeNum        *int       `json:"partakeNum"`
+			Places            *[]struct {
 				PlaceEt   *string `json:"placeEt"`
 				PlaceInfo *string `json:"placeInfo"`
 				PlaceSt   *string `json:"placeSt"`
@@ -10082,6 +11366,18 @@ type GetCourseParams struct {
 // GetCourseParamsLocale defines parameters for GetCourse.
 type GetCourseParamsLocale string
 
+// GetApiCatalogCoursesJwIdSectionsParams defines parameters for GetApiCatalogCoursesJwIdSections.
+type GetApiCatalogCoursesJwIdSectionsParams struct {
+	Locale *GetApiCatalogCoursesJwIdSectionsParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+	Page   *int64                                        `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// GetApiCatalogCoursesJwIdSectionsParamsLocale defines parameters for GetApiCatalogCoursesJwIdSections.
+type GetApiCatalogCoursesJwIdSectionsParamsLocale string
+
 // CatalogLinkResolveParams defines parameters for CatalogLinkResolve.
 type CatalogLinkResolveParams struct {
 	Slug string `form:"slug" json:"slug"`
@@ -10171,7 +11467,11 @@ type GetSectionSchedulesParams struct {
 	Locale   *GetSectionSchedulesParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
 	DateFrom *string                          `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
 	DateTo   *string                          `form:"dateTo,omitempty" json:"dateTo,omitempty"`
-	Limit    *int64                           `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Limit Legacy array mode only; defaults to 200 when page and pageSize are omitted.
+	Limit    *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+	Page     *int64 `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
 // GetSectionSchedulesParamsLocale defines parameters for GetSectionSchedules.
@@ -10206,6 +11506,18 @@ type GetTeacherParams struct {
 
 // GetTeacherParamsLocale defines parameters for GetTeacher.
 type GetTeacherParamsLocale string
+
+// GetApiCatalogTeachersIdSectionsParams defines parameters for GetApiCatalogTeachersIdSections.
+type GetApiCatalogTeachersIdSectionsParams struct {
+	Locale *GetApiCatalogTeachersIdSectionsParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+	Page   *int64                                       `form:"page,omitempty" json:"page,omitempty"`
+
+	// PageSize Number of items per page.
+	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// GetApiCatalogTeachersIdSectionsParamsLocale defines parameters for GetApiCatalogTeachersIdSections.
+type GetApiCatalogTeachersIdSectionsParamsLocale string
 
 // CatalogWeatherGetParams defines parameters for CatalogWeatherGet.
 type CatalogWeatherGetParams struct {
@@ -10408,6 +11720,15 @@ type WorkspaceOverviewGetParams struct {
 // WorkspaceOverviewGetParamsLocale defines parameters for WorkspaceOverviewGet.
 type WorkspaceOverviewGetParamsLocale string
 
+// GetApiWorkspaceOverviewActionableParams defines parameters for GetApiWorkspaceOverviewActionable.
+type GetApiWorkspaceOverviewActionableParams struct {
+	AtTime *string                                        `form:"atTime,omitempty" json:"atTime,omitempty"`
+	Locale *GetApiWorkspaceOverviewActionableParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+}
+
+// GetApiWorkspaceOverviewActionableParamsLocale defines parameters for GetApiWorkspaceOverviewActionable.
+type GetApiWorkspaceOverviewActionableParamsLocale string
+
 // WorkspaceScheduleListParams defines parameters for WorkspaceScheduleList.
 type WorkspaceScheduleListParams struct {
 	DateFrom *string                            `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
@@ -10427,6 +11748,8 @@ type ListTodosParams struct {
 	DueBefore *string                   `form:"dueBefore,omitempty" json:"dueBefore,omitempty"`
 	DueAfter  *string                   `form:"dueAfter,omitempty" json:"dueAfter,omitempty"`
 	Limit     *int64                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Page      *int64                    `form:"page,omitempty" json:"page,omitempty"`
+	PageSize  *int64                    `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
 // ListTodosParamsCompleted defines parameters for ListTodos.
@@ -14429,6 +15752,68 @@ func (t *PublicationIngestionBatchRequestSchema_Items_Item) UnmarshalJSON(b []by
 	return err
 }
 
+// AsSectionSchedulesReadResponseSchema0 returns the union data inside the SectionSchedulesReadResponseSchema as a SectionSchedulesReadResponseSchema0
+func (t SectionSchedulesReadResponseSchema) AsSectionSchedulesReadResponseSchema0() (SectionSchedulesReadResponseSchema0, error) {
+	var body SectionSchedulesReadResponseSchema0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSectionSchedulesReadResponseSchema0 overwrites any union data inside the SectionSchedulesReadResponseSchema as the provided SectionSchedulesReadResponseSchema0
+func (t *SectionSchedulesReadResponseSchema) FromSectionSchedulesReadResponseSchema0(v SectionSchedulesReadResponseSchema0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSectionSchedulesReadResponseSchema0 performs a merge with any union data inside the SectionSchedulesReadResponseSchema, using the provided SectionSchedulesReadResponseSchema0
+func (t *SectionSchedulesReadResponseSchema) MergeSectionSchedulesReadResponseSchema0(v SectionSchedulesReadResponseSchema0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSectionSchedulesReadResponseSchema1 returns the union data inside the SectionSchedulesReadResponseSchema as a SectionSchedulesReadResponseSchema1
+func (t SectionSchedulesReadResponseSchema) AsSectionSchedulesReadResponseSchema1() (SectionSchedulesReadResponseSchema1, error) {
+	var body SectionSchedulesReadResponseSchema1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSectionSchedulesReadResponseSchema1 overwrites any union data inside the SectionSchedulesReadResponseSchema as the provided SectionSchedulesReadResponseSchema1
+func (t *SectionSchedulesReadResponseSchema) FromSectionSchedulesReadResponseSchema1(v SectionSchedulesReadResponseSchema1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSectionSchedulesReadResponseSchema1 performs a merge with any union data inside the SectionSchedulesReadResponseSchema, using the provided SectionSchedulesReadResponseSchema1
+func (t *SectionSchedulesReadResponseSchema) MergeSectionSchedulesReadResponseSchema1(v SectionSchedulesReadResponseSchema1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t SectionSchedulesReadResponseSchema) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *SectionSchedulesReadResponseSchema) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsTodoBatchDeleteResponseSchemaResults0 returns the union data inside the TodoBatchDeleteResponseSchema_Results_Item as a TodoBatchDeleteResponseSchemaResults0
 func (t TodoBatchDeleteResponseSchema_Results_Item) AsTodoBatchDeleteResponseSchemaResults0() (TodoBatchDeleteResponseSchemaResults0, error) {
 	var body TodoBatchDeleteResponseSchemaResults0
@@ -14677,6 +16062,68 @@ func (t *TodoUpdateRequestSchema_DueAt) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsTodosListResponseSchema0 returns the union data inside the TodosListResponseSchema as a TodosListResponseSchema0
+func (t TodosListResponseSchema) AsTodosListResponseSchema0() (TodosListResponseSchema0, error) {
+	var body TodosListResponseSchema0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodosListResponseSchema0 overwrites any union data inside the TodosListResponseSchema as the provided TodosListResponseSchema0
+func (t *TodosListResponseSchema) FromTodosListResponseSchema0(v TodosListResponseSchema0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodosListResponseSchema0 performs a merge with any union data inside the TodosListResponseSchema, using the provided TodosListResponseSchema0
+func (t *TodosListResponseSchema) MergeTodosListResponseSchema0(v TodosListResponseSchema0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTodosListResponseSchema1 returns the union data inside the TodosListResponseSchema as a TodosListResponseSchema1
+func (t TodosListResponseSchema) AsTodosListResponseSchema1() (TodosListResponseSchema1, error) {
+	var body TodosListResponseSchema1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTodosListResponseSchema1 overwrites any union data inside the TodosListResponseSchema as the provided TodosListResponseSchema1
+func (t *TodosListResponseSchema) FromTodosListResponseSchema1(v TodosListResponseSchema1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTodosListResponseSchema1 performs a merge with any union data inside the TodosListResponseSchema, using the provided TodosListResponseSchema1
+func (t *TodosListResponseSchema) MergeTodosListResponseSchema1(v TodosListResponseSchema1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t TodosListResponseSchema) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *TodosListResponseSchema) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsUploadCreateRequestSchemaSize0 returns the union data inside the UploadCreateRequestSchema_Size as a UploadCreateRequestSchemaSize0
 func (t UploadCreateRequestSchema_Size) AsUploadCreateRequestSchemaSize0() (UploadCreateRequestSchemaSize0, error) {
 	var body UploadCreateRequestSchemaSize0
@@ -14812,6 +16259,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// GetWellKnownAppleAppSiteAssociation request
+	GetWellKnownAppleAppSiteAssociation(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWellKnownOauthAuthorizationServerApiAuth request
 	GetWellKnownOauthAuthorizationServerApiAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -14928,6 +16378,9 @@ type ClientInterface interface {
 	// GetCourse request
 	GetCourse(ctx context.Context, jwId int64, params *GetCourseParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCatalogCoursesJwIdSections request
+	GetApiCatalogCoursesJwIdSections(ctx context.Context, jwId int64, params *GetApiCatalogCoursesJwIdSectionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CatalogLinkList request
 	CatalogLinkList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -14977,6 +16430,9 @@ type ClientInterface interface {
 
 	// GetTeacher request
 	GetTeacher(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiCatalogTeachersIdSections request
+	GetApiCatalogTeachersIdSections(ctx context.Context, id string, params *GetApiCatalogTeachersIdSectionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CatalogWeatherGet request
 	CatalogWeatherGet(ctx context.Context, params *CatalogWeatherGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -15159,6 +16615,9 @@ type ClientInterface interface {
 	// WorkspaceOverviewGet request
 	WorkspaceOverviewGet(ctx context.Context, params *WorkspaceOverviewGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiWorkspaceOverviewActionable request
+	GetApiWorkspaceOverviewActionable(ctx context.Context, params *GetApiWorkspaceOverviewActionableParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// WorkspaceScheduleList request
 	WorkspaceScheduleList(ctx context.Context, params *WorkspaceScheduleListParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -15275,6 +16734,18 @@ type ClientInterface interface {
 	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBody(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) GetWellKnownAppleAppSiteAssociation(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWellKnownAppleAppSiteAssociationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetWellKnownOauthAuthorizationServerApiAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -15769,6 +17240,18 @@ func (c *Client) GetCourse(ctx context.Context, jwId int64, params *GetCoursePar
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiCatalogCoursesJwIdSections(ctx context.Context, jwId int64, params *GetApiCatalogCoursesJwIdSectionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogCoursesJwIdSectionsRequest(c.Server, jwId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CatalogLinkList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCatalogLinkListRequest(c.Server)
 	if err != nil {
@@ -15963,6 +17446,18 @@ func (c *Client) ListTeachers(ctx context.Context, params *ListTeachersParams, r
 
 func (c *Client) GetTeacher(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetTeacherRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogTeachersIdSections(ctx context.Context, id string, params *GetApiCatalogTeachersIdSectionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogTeachersIdSectionsRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -16753,6 +18248,18 @@ func (c *Client) WorkspaceOverviewGet(ctx context.Context, params *WorkspaceOver
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetApiWorkspaceOverviewActionable(ctx context.Context, params *GetApiWorkspaceOverviewActionableParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiWorkspaceOverviewActionableRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) WorkspaceScheduleList(ctx context.Context, params *WorkspaceScheduleListParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWorkspaceScheduleListRequest(c.Server, params)
 	if err != nil {
@@ -17279,6 +18786,33 @@ func (c *Client) PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerId(ctx conte
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewGetWellKnownAppleAppSiteAssociationRequest generates requests for GetWellKnownAppleAppSiteAssociation
+func NewGetWellKnownAppleAppSiteAssociationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/apple-app-site-association")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetWellKnownOauthAuthorizationServerApiAuthRequest generates requests for GetWellKnownOauthAuthorizationServerApiAuth
@@ -18937,6 +20471,91 @@ func NewGetCourseRequest(server string, jwId int64, params *GetCourseParams) (*h
 	return req, nil
 }
 
+// NewGetApiCatalogCoursesJwIdSectionsRequest generates requests for GetApiCatalogCoursesJwIdSections
+func NewGetApiCatalogCoursesJwIdSectionsRequest(server string, jwId int64, params *GetApiCatalogCoursesJwIdSectionsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "jwId", jwId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/courses/%s/sections", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCatalogLinkListRequest generates requests for CatalogLinkList
 func NewCatalogLinkListRequest(server string) (*http.Request, error) {
 	var err error
@@ -19848,6 +21467,30 @@ func NewGetSectionSchedulesRequest(server string, jwId int64, params *GetSection
 
 		}
 
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -20095,6 +21738,91 @@ func NewGetTeacherRequest(server string, id int64, params *GetTeacherParams) (*h
 		if params.Locale != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogTeachersIdSectionsRequest generates requests for GetApiCatalogTeachersIdSections
+func NewGetApiCatalogTeachersIdSectionsRequest(server string, id string, params *GetApiCatalogTeachersIdSectionsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/teachers/%s/sections", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -22857,6 +24585,72 @@ func NewWorkspaceOverviewGetRequest(server string, params *WorkspaceOverviewGetP
 	return req, nil
 }
 
+// NewGetApiWorkspaceOverviewActionableRequest generates requests for GetApiWorkspaceOverviewActionable
+func NewGetApiWorkspaceOverviewActionableRequest(server string, params *GetApiWorkspaceOverviewActionableParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/workspace/overview/actionable")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.AtTime != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "atTime", *params.AtTime, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Locale != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "locale", *params.Locale, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewWorkspaceScheduleListRequest generates requests for WorkspaceScheduleList
 func NewWorkspaceScheduleListRequest(server string, params *WorkspaceScheduleListParams) (*http.Request, error) {
 	var err error
@@ -23312,6 +25106,30 @@ func NewListTodosRequest(server string, params *ListTodosParams) (*http.Request,
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pageSize", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -24322,6 +26140,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// GetWellKnownAppleAppSiteAssociationWithResponse request
+	GetWellKnownAppleAppSiteAssociationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownAppleAppSiteAssociationResponse, error)
+
 	// GetWellKnownOauthAuthorizationServerApiAuthWithResponse request
 	GetWellKnownOauthAuthorizationServerApiAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthAuthorizationServerApiAuthResponse, error)
 
@@ -24438,6 +26259,9 @@ type ClientWithResponsesInterface interface {
 	// GetCourseWithResponse request
 	GetCourseWithResponse(ctx context.Context, jwId int64, params *GetCourseParams, reqEditors ...RequestEditorFn) (*GetCourseResponse, error)
 
+	// GetApiCatalogCoursesJwIdSectionsWithResponse request
+	GetApiCatalogCoursesJwIdSectionsWithResponse(ctx context.Context, jwId int64, params *GetApiCatalogCoursesJwIdSectionsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogCoursesJwIdSectionsResponse, error)
+
 	// CatalogLinkListWithResponse request
 	CatalogLinkListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CatalogLinkListResponse, error)
 
@@ -24487,6 +26311,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetTeacherWithResponse request
 	GetTeacherWithResponse(ctx context.Context, id int64, params *GetTeacherParams, reqEditors ...RequestEditorFn) (*GetTeacherResponse, error)
+
+	// GetApiCatalogTeachersIdSectionsWithResponse request
+	GetApiCatalogTeachersIdSectionsWithResponse(ctx context.Context, id string, params *GetApiCatalogTeachersIdSectionsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogTeachersIdSectionsResponse, error)
 
 	// CatalogWeatherGetWithResponse request
 	CatalogWeatherGetWithResponse(ctx context.Context, params *CatalogWeatherGetParams, reqEditors ...RequestEditorFn) (*CatalogWeatherGetResponse, error)
@@ -24669,6 +26496,9 @@ type ClientWithResponsesInterface interface {
 	// WorkspaceOverviewGetWithResponse request
 	WorkspaceOverviewGetWithResponse(ctx context.Context, params *WorkspaceOverviewGetParams, reqEditors ...RequestEditorFn) (*WorkspaceOverviewGetResponse, error)
 
+	// GetApiWorkspaceOverviewActionableWithResponse request
+	GetApiWorkspaceOverviewActionableWithResponse(ctx context.Context, params *GetApiWorkspaceOverviewActionableParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceOverviewActionableResponse, error)
+
 	// WorkspaceScheduleListWithResponse request
 	WorkspaceScheduleListWithResponse(ctx context.Context, params *WorkspaceScheduleListParams, reqEditors ...RequestEditorFn) (*WorkspaceScheduleListResponse, error)
 
@@ -24785,6 +26615,36 @@ type ClientWithResponsesInterface interface {
 	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithBodyWithResponse(ctx context.Context, organizerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error)
 
 	PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdWithResponse(ctx context.Context, organizerId string, body PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse, error)
+}
+
+type GetWellKnownAppleAppSiteAssociationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AppleAppSiteAssociationResponseSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWellKnownAppleAppSiteAssociationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWellKnownAppleAppSiteAssociationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWellKnownAppleAppSiteAssociationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type GetWellKnownOauthAuthorizationServerApiAuthResponse struct {
@@ -25858,6 +27718,38 @@ func (r GetCourseResponse) ContentType() string {
 	return ""
 }
 
+type GetApiCatalogCoursesJwIdSectionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PaginatedSectionHistoryResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogCoursesJwIdSectionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogCoursesJwIdSectionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogCoursesJwIdSectionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type CatalogLinkListResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -26199,7 +28091,7 @@ func (r GetSectionScheduleGroupsResponse) ContentType() string {
 type GetSectionSchedulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SectionSchedulesResponseSchema
+	JSON200      *SectionSchedulesReadResponseSchema
 	JSON400      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
@@ -26347,6 +28239,38 @@ func (r GetTeacherResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetTeacherResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogTeachersIdSectionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PaginatedSectionHistoryResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogTeachersIdSectionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogTeachersIdSectionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogTeachersIdSectionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -26579,6 +28503,7 @@ type ListCommentsResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *CommentsListResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
 
@@ -26716,6 +28641,7 @@ type GetCommentResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *CommentThreadResponseSchema
+	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
@@ -26856,6 +28782,7 @@ type GetApiCommunityCommentsIdRepliesResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *CommentRepliesResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
 	JSON403      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
@@ -26889,6 +28816,7 @@ type GetDescriptionResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *DescriptionsResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
 
@@ -26957,6 +28885,7 @@ type CommunitySectionHomeworkListResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *HomeworksListResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
 
@@ -27092,6 +29021,7 @@ type GetApiCommunitySectionHomeworksIdResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *HomeworkDetailResponseSchema
 	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
 	JSON404      *OpenApiErrorSchema
 }
 
@@ -28022,6 +29952,38 @@ func (r WorkspaceOverviewGetResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r WorkspaceOverviewGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiWorkspaceOverviewActionableResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ActionableOverviewResponseSchema
+	JSON400      *OpenApiErrorSchema
+	JSON401      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiWorkspaceOverviewActionableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiWorkspaceOverviewActionableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiWorkspaceOverviewActionableResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -29008,6 +30970,15 @@ func (r PutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse) ContentTy
 	return ""
 }
 
+// GetWellKnownAppleAppSiteAssociationWithResponse request returning *GetWellKnownAppleAppSiteAssociationResponse
+func (c *ClientWithResponses) GetWellKnownAppleAppSiteAssociationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownAppleAppSiteAssociationResponse, error) {
+	rsp, err := c.GetWellKnownAppleAppSiteAssociation(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWellKnownAppleAppSiteAssociationResponse(rsp)
+}
+
 // GetWellKnownOauthAuthorizationServerApiAuthWithResponse request returning *GetWellKnownOauthAuthorizationServerApiAuthResponse
 func (c *ClientWithResponses) GetWellKnownOauthAuthorizationServerApiAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWellKnownOauthAuthorizationServerApiAuthResponse, error) {
 	rsp, err := c.GetWellKnownOauthAuthorizationServerApiAuth(ctx, reqEditors...)
@@ -29370,6 +31341,15 @@ func (c *ClientWithResponses) GetCourseWithResponse(ctx context.Context, jwId in
 	return ParseGetCourseResponse(rsp)
 }
 
+// GetApiCatalogCoursesJwIdSectionsWithResponse request returning *GetApiCatalogCoursesJwIdSectionsResponse
+func (c *ClientWithResponses) GetApiCatalogCoursesJwIdSectionsWithResponse(ctx context.Context, jwId int64, params *GetApiCatalogCoursesJwIdSectionsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogCoursesJwIdSectionsResponse, error) {
+	rsp, err := c.GetApiCatalogCoursesJwIdSections(ctx, jwId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogCoursesJwIdSectionsResponse(rsp)
+}
+
 // CatalogLinkListWithResponse request returning *CatalogLinkListResponse
 func (c *ClientWithResponses) CatalogLinkListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CatalogLinkListResponse, error) {
 	rsp, err := c.CatalogLinkList(ctx, reqEditors...)
@@ -29520,6 +31500,15 @@ func (c *ClientWithResponses) GetTeacherWithResponse(ctx context.Context, id int
 		return nil, err
 	}
 	return ParseGetTeacherResponse(rsp)
+}
+
+// GetApiCatalogTeachersIdSectionsWithResponse request returning *GetApiCatalogTeachersIdSectionsResponse
+func (c *ClientWithResponses) GetApiCatalogTeachersIdSectionsWithResponse(ctx context.Context, id string, params *GetApiCatalogTeachersIdSectionsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogTeachersIdSectionsResponse, error) {
+	rsp, err := c.GetApiCatalogTeachersIdSections(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogTeachersIdSectionsResponse(rsp)
 }
 
 // CatalogWeatherGetWithResponse request returning *CatalogWeatherGetResponse
@@ -30093,6 +32082,15 @@ func (c *ClientWithResponses) WorkspaceOverviewGetWithResponse(ctx context.Conte
 	return ParseWorkspaceOverviewGetResponse(rsp)
 }
 
+// GetApiWorkspaceOverviewActionableWithResponse request returning *GetApiWorkspaceOverviewActionableResponse
+func (c *ClientWithResponses) GetApiWorkspaceOverviewActionableWithResponse(ctx context.Context, params *GetApiWorkspaceOverviewActionableParams, reqEditors ...RequestEditorFn) (*GetApiWorkspaceOverviewActionableResponse, error) {
+	rsp, err := c.GetApiWorkspaceOverviewActionable(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiWorkspaceOverviewActionableResponse(rsp)
+}
+
 // WorkspaceScheduleListWithResponse request returning *WorkspaceScheduleListResponse
 func (c *ClientWithResponses) WorkspaceScheduleListWithResponse(ctx context.Context, params *WorkspaceScheduleListParams, reqEditors ...RequestEditorFn) (*WorkspaceScheduleListResponse, error) {
 	rsp, err := c.WorkspaceScheduleList(ctx, params, reqEditors...)
@@ -30472,6 +32470,32 @@ func (c *ClientWithResponses) PutApiWorkspaceYoungOrganizerSubscriptionsOrganize
 		return nil, err
 	}
 	return ParsePutApiWorkspaceYoungOrganizerSubscriptionsOrganizerIdResponse(rsp)
+}
+
+// ParseGetWellKnownAppleAppSiteAssociationResponse parses an HTTP response from a GetWellKnownAppleAppSiteAssociationWithResponse call
+func ParseGetWellKnownAppleAppSiteAssociationResponse(rsp *http.Response) (*GetWellKnownAppleAppSiteAssociationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWellKnownAppleAppSiteAssociationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AppleAppSiteAssociationResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetWellKnownOauthAuthorizationServerApiAuthResponse parses an HTTP response from a GetWellKnownOauthAuthorizationServerApiAuthWithResponse call
@@ -31682,6 +33706,46 @@ func ParseGetCourseResponse(rsp *http.Response) (*GetCourseResponse, error) {
 	return response, nil
 }
 
+// ParseGetApiCatalogCoursesJwIdSectionsResponse parses an HTTP response from a GetApiCatalogCoursesJwIdSectionsWithResponse call
+func ParseGetApiCatalogCoursesJwIdSectionsResponse(rsp *http.Response) (*GetApiCatalogCoursesJwIdSectionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogCoursesJwIdSectionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedSectionHistoryResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCatalogLinkListResponse parses an HTTP response from a CatalogLinkListWithResponse call
 func ParseCatalogLinkListResponse(rsp *http.Response) (*CatalogLinkListResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -32036,7 +34100,7 @@ func ParseGetSectionSchedulesResponse(rsp *http.Response) (*GetSectionSchedulesR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SectionSchedulesResponseSchema
+		var dest SectionSchedulesReadResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -32176,6 +34240,46 @@ func ParseGetTeacherResponse(rsp *http.Response) (*GetTeacherResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest TeacherDetailSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogTeachersIdSectionsResponse parses an HTTP response from a GetApiCatalogTeachersIdSectionsWithResponse call
+func ParseGetApiCatalogTeachersIdSectionsResponse(rsp *http.Response) (*GetApiCatalogTeachersIdSectionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogTeachersIdSectionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PaginatedSectionHistoryResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -32487,6 +34591,13 @@ func ParseListCommentsResponse(rsp *http.Response) (*ListCommentsResponse, error
 		}
 		response.JSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -32709,6 +34820,13 @@ func ParseGetCommentResponse(rsp *http.Response) (*GetCommentResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
 		var dest OpenApiErrorSchema
@@ -32954,6 +35072,13 @@ func ParseGetApiCommunityCommentsIdRepliesResponse(rsp *http.Response) (*GetApiC
 		}
 		response.JSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
 		var dest OpenApiErrorSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -33000,6 +35125,13 @@ func ParseGetDescriptionResponse(rsp *http.Response) (*GetDescriptionResponse, e
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -33108,6 +35240,13 @@ func ParseCommunitySectionHomeworkListResponse(rsp *http.Response) (*CommunitySe
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -33317,6 +35456,13 @@ func ParseGetApiCommunitySectionHomeworksIdResponse(rsp *http.Response) (*GetApi
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest OpenApiErrorSchema
@@ -34514,6 +36660,46 @@ func ParseWorkspaceOverviewGetResponse(rsp *http.Response) (*WorkspaceOverviewGe
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest CompactOverviewResponseSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiWorkspaceOverviewActionableResponse parses an HTTP response from a GetApiWorkspaceOverviewActionableWithResponse call
+func ParseGetApiWorkspaceOverviewActionableResponse(rsp *http.Response) (*GetApiWorkspaceOverviewActionableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiWorkspaceOverviewActionableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionableOverviewResponseSchema
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
