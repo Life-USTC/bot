@@ -1,10 +1,15 @@
 package napcat
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/Life-USTC/Bot/internal/textutil"
 )
 
 func fileEvent(fileID string) *messageEvent {
@@ -97,5 +102,36 @@ func TestResolveEventMediaFailureKeepsURLEmpty(t *testing.T) {
 	bridge.resolveEventMedia(t.Context(), event)
 	if len(event.resolvedMedia) != 1 || event.resolvedMedia[0].URL != "" {
 		t.Fatalf("media=%#v", event.resolvedMedia)
+	}
+}
+
+func TestResolveEventMediaFailureDiagnosticsHideFileReferences(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, outcome string
+	}{
+		{"action failure", `{"status":"failed","retcode":1404,"message":"private-file-reference https://private.example/file?token=private-token"}`, "action-failed"},
+		{"invalid data", `{"status":"ok","retcode":0,"data":{"url":{"private-field":"private-value"}}}`, "invalid-data"},
+		{"unusable location", `{"status":"ok","retcode":0,"data":{"file":"/private/report.docx","url":"/private/report.docx"}}`, "no-usable-location"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/get_file" {
+					t.Errorf("unexpected action: %s", r.URL.Path)
+				}
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			t.Cleanup(server.Close)
+			var logs bytes.Buffer
+			bridge := &Bridge{APIURL: server.URL, HTTPClient: server.Client(), Logger: log.New(textutil.RedactingLogWriter(&logs), "", 0)}
+			event := fileEvent("private-file-reference")
+			bridge.resolveEventMedia(t.Context(), event)
+			if len(event.resolvedMedia) != 1 || event.resolvedMedia[0].URL != "" || event.resolvedMedia[0].FileID != "private-file-reference" {
+				t.Fatalf("failed resolution changed original reference: %#v", event.resolvedMedia)
+			}
+			want := "napcat input file resolve: operation=get_file outcome=" + tc.outcome + "\n"
+			if logs.String() != want || strings.Contains(logs.String(), "private") {
+				t.Fatalf("diagnostics=%q, want %q", logs.String(), want)
+			}
+		})
 	}
 }

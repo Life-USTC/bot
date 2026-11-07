@@ -23,7 +23,7 @@ func (b *Bridge) resolveEventMedia(ctx context.Context, event *messageEvent) {
 		}
 		response, err := b.callNapCatAction(ctx, "get_file", map[string]any{"file_id": item.FileID})
 		if err != nil {
-			b.logf("input file resolve failed: file_id=%q: %v", item.FileID, err)
+			b.logf("napcat input file resolve: operation=get_file outcome=action-failed")
 			continue
 		}
 		var result struct {
@@ -33,7 +33,7 @@ func (b *Bridge) resolveEventMedia(ctx context.Context, event *messageEvent) {
 			Size string `json:"file_size"`
 		}
 		if err := json.Unmarshal(response.Data, &result); err != nil {
-			b.logf("input file resolve returned invalid data: file_id=%q: %v", item.FileID, err)
+			b.logf("napcat input file resolve: operation=get_file outcome=invalid-data")
 			continue
 		}
 		switch url, file := strings.TrimSpace(result.URL), strings.TrimSpace(result.File); {
@@ -42,7 +42,7 @@ func (b *Bridge) resolveEventMedia(ctx context.Context, event *messageEvent) {
 		case b.AllowLocalMediaPaths && strings.HasPrefix(file, "/"):
 			media[index].URL = file
 		default:
-			b.logf("input file resolve returned no usable URL: file_id=%q", item.FileID)
+			b.logf("napcat input file resolve: operation=get_file outcome=no-usable-location")
 			continue
 		}
 		if media[index].Name == "" {
