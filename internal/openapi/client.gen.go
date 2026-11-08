@@ -16390,6 +16390,9 @@ type ClientInterface interface {
 	// GetMetadata request
 	GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCatalogRoomsImagesNameSvg request
+	GetApiCatalogRoomsImagesNameSvg(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CatalogRoomsMap request
 	CatalogRoomsMap(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -17281,6 +17284,18 @@ func (c *Client) CatalogLinkResolve(ctx context.Context, params *CatalogLinkReso
 
 func (c *Client) GetMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMetadataRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogRoomsImagesNameSvg(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogRoomsImagesNameSvgRequest(c.Server, name)
 	if err != nil {
 		return nil, err
 	}
@@ -20658,6 +20673,40 @@ func NewGetMetadataRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/api/catalog/metadata")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiCatalogRoomsImagesNameSvgRequest generates requests for GetApiCatalogRoomsImagesNameSvg
+func NewGetApiCatalogRoomsImagesNameSvgRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/rooms/images/%s.svg", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -26320,6 +26369,9 @@ type ClientWithResponsesInterface interface {
 	// GetMetadataWithResponse request
 	GetMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetadataResponse, error)
 
+	// GetApiCatalogRoomsImagesNameSvgWithResponse request
+	GetApiCatalogRoomsImagesNameSvgWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetApiCatalogRoomsImagesNameSvgResponse, error)
+
 	// CatalogRoomsMapWithResponse request
 	CatalogRoomsMapWithResponse(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*CatalogRoomsMapResponse, error)
 
@@ -27886,6 +27938,37 @@ func (r GetMetadataResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMetadataResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogRoomsImagesNameSvgResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogRoomsImagesNameSvgResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogRoomsImagesNameSvgResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogRoomsImagesNameSvgResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -31460,6 +31543,15 @@ func (c *ClientWithResponses) GetMetadataWithResponse(ctx context.Context, reqEd
 	return ParseGetMetadataResponse(rsp)
 }
 
+// GetApiCatalogRoomsImagesNameSvgWithResponse request returning *GetApiCatalogRoomsImagesNameSvgResponse
+func (c *ClientWithResponses) GetApiCatalogRoomsImagesNameSvgWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetApiCatalogRoomsImagesNameSvgResponse, error) {
+	rsp, err := c.GetApiCatalogRoomsImagesNameSvg(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogRoomsImagesNameSvgResponse(rsp)
+}
+
 // CatalogRoomsMapWithResponse request returning *CatalogRoomsMapResponse
 func (c *ClientWithResponses) CatalogRoomsMapWithResponse(ctx context.Context, code string, reqEditors ...RequestEditorFn) (*CatalogRoomsMapResponse, error) {
 	rsp, err := c.CatalogRoomsMap(ctx, code, reqEditors...)
@@ -33907,6 +33999,39 @@ func ParseGetMetadataResponse(rsp *http.Response) (*GetMetadataResponse, error) 
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogRoomsImagesNameSvgResponse parses an HTTP response from a GetApiCatalogRoomsImagesNameSvgWithResponse call
+func ParseGetApiCatalogRoomsImagesNameSvgResponse(rsp *http.Response) (*GetApiCatalogRoomsImagesNameSvgResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogRoomsImagesNameSvgResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
