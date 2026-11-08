@@ -16440,6 +16440,9 @@ type ClientInterface interface {
 	// GetApiCatalogYoungEvents request
 	GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApiCatalogYoungEventsByIdYoungIdImage request
+	GetApiCatalogYoungEventsByIdYoungIdImage(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApiCatalogYoungEventsImagesPath request
 	GetApiCatalogYoungEventsImagesPath(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -17482,6 +17485,18 @@ func (c *Client) CatalogWeatherGet(ctx context.Context, params *CatalogWeatherGe
 
 func (c *Client) GetApiCatalogYoungEvents(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApiCatalogYoungEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiCatalogYoungEventsByIdYoungIdImage(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiCatalogYoungEventsByIdYoungIdImageRequest(c.Server, youngId)
 	if err != nil {
 		return nil, err
 	}
@@ -22086,6 +22101,40 @@ func NewGetApiCatalogYoungEventsRequest(server string, params *GetApiCatalogYoun
 	return req, nil
 }
 
+// NewGetApiCatalogYoungEventsByIdYoungIdImageRequest generates requests for GetApiCatalogYoungEventsByIdYoungIdImage
+func NewGetApiCatalogYoungEventsByIdYoungIdImageRequest(server string, youngId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "youngId", youngId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/catalog/young-events/by-id/%s/image", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetApiCatalogYoungEventsImagesPathRequest generates requests for GetApiCatalogYoungEventsImagesPath
 func NewGetApiCatalogYoungEventsImagesPathRequest(server string, path string) (*http.Request, error) {
 	var err error
@@ -26321,6 +26370,9 @@ type ClientWithResponsesInterface interface {
 	// GetApiCatalogYoungEventsWithResponse request
 	GetApiCatalogYoungEventsWithResponse(ctx context.Context, params *GetApiCatalogYoungEventsParams, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsResponse, error)
 
+	// GetApiCatalogYoungEventsByIdYoungIdImageWithResponse request
+	GetApiCatalogYoungEventsByIdYoungIdImageWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsByIdYoungIdImageResponse, error)
+
 	// GetApiCatalogYoungEventsImagesPathWithResponse request
 	GetApiCatalogYoungEventsImagesPathWithResponse(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsImagesPathResponse, error)
 
@@ -28334,6 +28386,37 @@ func (r GetApiCatalogYoungEventsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetApiCatalogYoungEventsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiCatalogYoungEventsByIdYoungIdImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *OpenApiErrorSchema
+	JSON404      *OpenApiErrorSchema
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiCatalogYoungEventsByIdYoungIdImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiCatalogYoungEventsByIdYoungIdImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiCatalogYoungEventsByIdYoungIdImageResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -31529,6 +31612,15 @@ func (c *ClientWithResponses) GetApiCatalogYoungEventsWithResponse(ctx context.C
 	return ParseGetApiCatalogYoungEventsResponse(rsp)
 }
 
+// GetApiCatalogYoungEventsByIdYoungIdImageWithResponse request returning *GetApiCatalogYoungEventsByIdYoungIdImageResponse
+func (c *ClientWithResponses) GetApiCatalogYoungEventsByIdYoungIdImageWithResponse(ctx context.Context, youngId string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsByIdYoungIdImageResponse, error) {
+	rsp, err := c.GetApiCatalogYoungEventsByIdYoungIdImage(ctx, youngId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiCatalogYoungEventsByIdYoungIdImageResponse(rsp)
+}
+
 // GetApiCatalogYoungEventsImagesPathWithResponse request returning *GetApiCatalogYoungEventsImagesPathResponse
 func (c *ClientWithResponses) GetApiCatalogYoungEventsImagesPathWithResponse(ctx context.Context, path string, reqEditors ...RequestEditorFn) (*GetApiCatalogYoungEventsImagesPathResponse, error) {
 	rsp, err := c.GetApiCatalogYoungEventsImagesPath(ctx, path, reqEditors...)
@@ -34371,6 +34463,39 @@ func ParseGetApiCatalogYoungEventsResponse(rsp *http.Response) (*GetApiCatalogYo
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiCatalogYoungEventsByIdYoungIdImageResponse parses an HTTP response from a GetApiCatalogYoungEventsByIdYoungIdImageWithResponse call
+func ParseGetApiCatalogYoungEventsByIdYoungIdImageResponse(rsp *http.Response) (*GetApiCatalogYoungEventsByIdYoungIdImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiCatalogYoungEventsByIdYoungIdImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest OpenApiErrorSchema
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
