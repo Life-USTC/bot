@@ -1632,6 +1632,8 @@ func (h Handler) todos(ctx context.Context, ident store.Identity, token string, 
 	})
 	if err == nil {
 		h.markData(todos)
+	} else {
+		h.logTodoReadFailure(err)
 	}
 	return todos, err
 }
