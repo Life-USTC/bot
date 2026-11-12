@@ -8,16 +8,16 @@ require (
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/getkin/kin-openapi v0.152.0
-	github.com/go-jose/go-jose/v4 v4.1.7
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v1.5.0
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.42.0
-	golang.org/x/oauth2 v0.37.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.43.0
 	gorm.io/driver/sqlite v1.6.0
