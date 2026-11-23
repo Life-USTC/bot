@@ -192,7 +192,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			return p.notifyClasses(ctx, settings.Identity, schedules, now)
 		}},
 		{KindHomework, settings.HomeworkEnabled, func(token string) error {
-			homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
+			homeworks, err := p.Life.SubscribedHomeworksDueBetween(ctx, token, now, now.Add(24*time.Hour))
 			if err != nil {
 				return err
 			}
