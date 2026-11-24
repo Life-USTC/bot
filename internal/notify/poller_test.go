@@ -257,6 +257,44 @@ func TestClassReminderAddsAvailableRoomMap(t *testing.T) {
 	}
 }
 
+func TestClassMapPollReusesDurableEnqueueAcrossRestart(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
+	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
+	schedule := map[string]any{
+		"date": "2026-06-07T08:00:00+08:00", "startTime": "14:30",
+		"room": map[string]any{"namePrimary": "西区 3A204"},
+	}
+	lookups := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups++
+		if lookups == 1 {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(w, `{"code":"3A204","status":"highlighted","imageUrl":"https://maps.example/room.png"}`)
+	}))
+	defer server.Close()
+	path := t.TempDir() + "/bot.db"
+	for i := range 7 {
+		db, err := store.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		poller := &Poller{Store: db, Life: life.NewClient(server.URL, server.Client()), Publisher: db}
+		err = poller.notifyClasses(ctx, ident, []map[string]any{schedule}, now.Add(time.Duration(i)*5*time.Minute))
+		if closeErr := db.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if lookups != 2 {
+		t.Fatalf("room map lookups = %d, want one failure and one successful retry", lookups)
+	}
+}
+
 func TestClassMapDeliveryRetryDoesNotRepeatClassCard(t *testing.T) {
 	now := time.Date(2026, 6, 7, 14, 0, 0, 0, lifedata.ChinaLocation())
 	ident := store.Identity{Platform: "napcat", UserID: "42", ConversationType: "private", ConversationID: "42"}
