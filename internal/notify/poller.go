@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -168,6 +170,24 @@ func (p *Poller) tick(ctx context.Context) {
 	}
 }
 
+// classReminderQuery keeps the full two-day read when the reminder window crosses midnight.
+func classReminderQuery(now time.Time) url.Values {
+	end := now.Add(30 * time.Minute)
+	fromDate, _ := lifedata.DayRFC3339Range(now)
+	_, toDate := lifedata.DayRFC3339Range(end)
+	query := life.SubscribedScheduleQuery(fromDate, toDate)
+	if now.YearDay() != end.YearDay() {
+		return query
+	}
+	first := now.Hour()*60 + now.Minute()
+	if now.Second() != 0 || now.Nanosecond() != 0 {
+		first++
+	}
+	query.Set("startMinuteFrom", strconv.Itoa(first))
+	query.Set("startMinuteTo", strconv.Itoa(end.Hour()*60+end.Minute()))
+	return query
+}
+
 func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSettings) notificationPollResult {
 	if !settings.ClassesEnabled && !settings.HomeworkEnabled && !settings.TodosEnabled && !settings.YoungEnabled {
 		return pollSucceeded
@@ -183,9 +203,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 		run     func(string) error
 	}{
 		{KindClass, settings.ClassesEnabled, func(token string) error {
-			dateFrom, _ := lifedata.DayRFC3339Range(now)
-			_, dateTo := lifedata.DayRFC3339Range(now.Add(30 * time.Minute))
-			schedules, err := p.Life.SubscribedSchedules(ctx, token, life.SubscribedScheduleQuery(dateFrom, dateTo))
+			schedules, err := p.Life.SubscribedSchedules(ctx, token, classReminderQuery(now))
 			if err != nil {
 				return err
 			}
