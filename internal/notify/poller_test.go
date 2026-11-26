@@ -272,7 +272,7 @@ func TestClassMapPollReusesDurableEnqueueAcrossRestart(t *testing.T) {
 			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		fmt.Fprint(w, `{"code":"3A204","status":"highlighted","imageUrl":"https://maps.example/room.png"}`)
+		_, _ = fmt.Fprint(w, `{"code":"3A204","status":"highlighted","imageUrl":"https://maps.example/room.png"}`)
 	}))
 	defer server.Close()
 	path := t.TempDir() + "/bot.db"
