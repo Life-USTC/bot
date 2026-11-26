@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestSubscribedHomeworksReadsEveryWorkspacePage(t *testing.T) {
@@ -24,6 +25,25 @@ func TestSubscribedHomeworksReadsEveryWorkspacePage(t *testing.T) {
 	}
 	if requests != 2 || len(homeworks) != 2 || homeworks[1]["id"] != "hw-2" {
 		t.Fatalf("requests=%d homeworks=%#v", requests, homeworks)
+	}
+}
+
+func TestReminderDeadlineWindowPersistsAcrossPages(t *testing.T) {
+	from := time.Date(2026, 11, 23, 13, 15, 0, 123456789, time.UTC)
+	to := from.Add(24 * time.Hour)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		q := r.URL.Query()
+		if q.Get("dueAtFrom") != "2026-11-23T13:15:00.123Z" || q.Get("dueAtTo") != "2026-11-24T13:15:00.123Z" || q.Get("page") != fmt.Sprint(requests) {
+			t.Errorf("unexpected reminder window or page: %v", q)
+		}
+		_, _ = fmt.Fprintf(w, `{"data":[{"id":"hw-%d"}],"pagination":{"page":%d,"pageSize":50,"total":51,"totalPages":2}}`, requests, requests)
+	}))
+	defer server.Close()
+	items, err := NewClient(server.URL, server.Client()).SubscribedHomeworksDueBetween(context.Background(), "token", from, to)
+	if err != nil || requests != 2 || len(items) != 2 {
+		t.Fatalf("requests=%d items=%d err=%v", requests, len(items), err)
 	}
 }
 
