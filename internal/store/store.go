@@ -1634,6 +1634,14 @@ func (s *Store) Enqueue(ctx context.Context, outbound message.Outbound) (deliver
 	return enqueueWithDB(s.db.WithContext(ctx), outbound, nowUTC())
 }
 
+// HasOutgoingMessage checks the same unique key used by Enqueue without
+// loading the attachment payload.
+func (s *Store) HasOutgoingMessage(ctx context.Context, dedupeKey string) (bool, error) {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&outgoingMessageRow{}).Where("dedupe_key = ?", dedupeKey).Count(&count).Error
+	return count > 0, err
+}
+
 // ResolveResponseContext verifies that a referenced platform message is an
 // accepted Bot output in the same conversation. A non-nil empty context still
 // means the user replied to Presto; public invocations additionally carry the
