@@ -16,7 +16,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/image v0.48.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
