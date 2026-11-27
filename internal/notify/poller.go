@@ -210,7 +210,7 @@ func (p *Poller) notifyUser(ctx context.Context, settings store.NotificationSett
 			return p.notifyClasses(ctx, settings.Identity, schedules, now)
 		}},
 		{KindHomework, settings.HomeworkEnabled, func(token string) error {
-			homeworks, err := p.Life.SubscribedHomeworks(ctx, token)
+			homeworks, err := p.Life.SubscribedHomeworksDueBetween(ctx, token, now, now.Add(24*time.Hour))
 			if err != nil {
 				return err
 			}
@@ -387,6 +387,15 @@ func (p *Poller) enqueueClassMap(ctx context.Context, ident store.Identity, sche
 	if code == "" || p.Life == nil {
 		return nil
 	}
+	if p.Store != nil {
+		queued, err := p.Store.HasOutgoingMessage(ctx, notificationDedupeKey(ident, key))
+		if err != nil {
+			return err
+		}
+		if queued {
+			return nil
+		}
+	}
 	room, err := p.Life.RoomMap(ctx, code)
 	if err != nil {
 		p.logf("class room map lookup failed: %v", err)
@@ -507,7 +516,7 @@ func (p *Poller) enqueueNotification(ctx context.Context, ident store.Identity, 
 	_, _, err := p.Publisher.Enqueue(ctx, message.Outbound{
 		Kind: "notification." + kind, TextPolicy: message.TextPolicyImageOnly,
 		Target: target, Content: content,
-		DedupeKey: strings.Join([]string{"notification", target.Platform, target.Type, target.ID, key}, ":"),
+		DedupeKey: notificationDedupeKey(ident, key),
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
@@ -527,6 +536,10 @@ func (p *Poller) logf(format string, args ...any) {
 	if p.Logger != nil {
 		p.Logger.Printf(format, args...)
 	}
+}
+
+func notificationDedupeKey(ident store.Identity, key string) string {
+	return strings.Join([]string{"notification", ident.Platform, ident.ConversationType, ident.ConversationID, key}, ":")
 }
 
 func notificationKey(kind, item string) string {

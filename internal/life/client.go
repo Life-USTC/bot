@@ -665,6 +665,21 @@ func (c *Client) DeleteTodo(ctx context.Context, token, id string) error {
 // SubscribedHomeworks reads the complete paginated workspace collection.
 // The workspace endpoint returns data/pagination, not the section homework envelope.
 func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[string]any, error) {
+	return c.subscribedHomeworkPages(ctx, token)
+}
+
+func (c *Client) SubscribedHomeworksDueBetween(ctx context.Context, token string, from, to time.Time) ([]map[string]any, error) {
+	return c.subscribedHomeworkPages(ctx, token, func(_ context.Context, req *http.Request) error {
+		q := req.URL.Query()
+		// The API accepts fractional seconds up to millisecond precision.
+		q.Set("dueAtFrom", from.Truncate(time.Millisecond).Format(time.RFC3339Nano))
+		q.Set("dueAtTo", to.Truncate(time.Millisecond).Format(time.RFC3339Nano))
+		req.URL.RawQuery = q.Encode()
+		return nil
+	})
+}
+
+func (c *Client) subscribedHomeworkPages(ctx context.Context, token string, editors ...openapi.RequestEditorFn) ([]map[string]any, error) {
 	const pageSize = int64(50)
 	var homeworks []map[string]any
 	for page := int64(1); ; page++ {
@@ -675,7 +690,7 @@ func (c *Client) SubscribedHomeworks(ctx context.Context, token string) ([]map[s
 				TotalPages int64 `json:"totalPages"`
 			} `json:"pagination"`
 		}
-		resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx, &openapi.GetSubscribedHomeworksParams{Page: &page, PageSize: int64Ptr(pageSize)})
+		resp, err := c.Typed(ctx, token).GetSubscribedHomeworks(ctx, &openapi.GetSubscribedHomeworksParams{Page: &page, PageSize: int64Ptr(pageSize)}, editors...)
 		if err := typedJSON[openapi.SubscribedHomeworksResponseSchema](resp, err, "subscribed homeworks", &out); err != nil {
 			return nil, err
 		}

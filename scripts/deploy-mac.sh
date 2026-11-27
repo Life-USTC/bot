@@ -6,9 +6,9 @@ set -euo pipefail
 # target machine.  The remote transaction keeps its stage under build/ so a
 # failed update can be inspected without changing the live tree.
 
-REMOTE_HOST="${REMOTE_HOST:-tkm-mac-mini}"
-REMOTE_USER="${REMOTE_USER:-tiankaima}"
-REMOTE_ROOT="${REMOTE_ROOT:-/Users/tiankaima/Services/life-ustc-bot}"
+REMOTE_HOST="${REMOTE_HOST:-}"
+REMOTE_USER="${REMOTE_USER:-}"
+REMOTE_ROOT="${REMOTE_ROOT:-}"
 DRY_RUN="${DEPLOY_DRY_RUN:-0}"
 HEALTH_TIMEOUT="${DEPLOY_HEALTH_TIMEOUT:-180}"
 
@@ -38,6 +38,9 @@ validate_remote_path() {
 	done
 }
 
+[[ -n "$REMOTE_HOST" ]] || die "REMOTE_HOST must be set explicitly"
+[[ -n "$REMOTE_USER" ]] || die "REMOTE_USER must be set explicitly"
+[[ -n "$REMOTE_ROOT" ]] || die "REMOTE_ROOT must be set explicitly"
 validate_remote_path "$REMOTE_ROOT"
 [[ "$REMOTE_HOST" =~ ^[A-Za-z0-9._-]+$ ]] || die "REMOTE_HOST contains unsupported characters"
 [[ "$REMOTE_USER" =~ ^[A-Za-z0-9._-]+$ ]] || die "REMOTE_USER contains unsupported characters"

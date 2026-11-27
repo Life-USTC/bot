@@ -2323,6 +2323,21 @@ func (e PublicationIngestionBatchRequestSchemaProtocolVersion) Valid() bool {
 	}
 }
 
+// Defines values for PublicationIngestionBatchRequestSchemaRevisionPolicy.
+const (
+	MissingOnly PublicationIngestionBatchRequestSchemaRevisionPolicy = "missingOnly"
+)
+
+// Valid indicates whether the value is a known member of the PublicationIngestionBatchRequestSchemaRevisionPolicy enum.
+func (e PublicationIngestionBatchRequestSchemaRevisionPolicy) Valid() bool {
+	switch e {
+	case MissingOnly:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind.
 const (
 	PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKindAsset        PublicationIngestionBatchResponseSchemaResultsObjectsNeedingUploadKind = "asset"
@@ -9276,6 +9291,7 @@ type PublicationIngestionBatchRequestSchema struct {
 	ObservedAt      string                                                `json:"observedAt"`
 	ProducerVersion string                                                `json:"producerVersion"`
 	ProtocolVersion PublicationIngestionBatchRequestSchemaProtocolVersion `json:"protocolVersion"`
+	RevisionPolicy  *PublicationIngestionBatchRequestSchemaRevisionPolicy `json:"revisionPolicy,omitempty"`
 	Sources         []struct {
 		Aliases           *[]string `json:"aliases,omitempty"`
 		AllowedHosts      *[]string `json:"allowedHosts,omitempty"`
@@ -9357,6 +9373,9 @@ type PublicationIngestionBatchRequestSchema_Items_Item struct {
 
 // PublicationIngestionBatchRequestSchemaProtocolVersion defines model for PublicationIngestionBatchRequestSchema.ProtocolVersion.
 type PublicationIngestionBatchRequestSchemaProtocolVersion string
+
+// PublicationIngestionBatchRequestSchemaRevisionPolicy defines model for PublicationIngestionBatchRequestSchema.RevisionPolicy.
+type PublicationIngestionBatchRequestSchemaRevisionPolicy string
 
 // PublicationIngestionBatchResponseSchema defines model for publicationIngestionBatchResponseSchema.
 type PublicationIngestionBatchResponseSchema struct {
@@ -11703,7 +11722,9 @@ type WorkspaceExamListParamsLocale string
 
 // GetSubscribedHomeworksParams defines parameters for GetSubscribedHomeworks.
 type GetSubscribedHomeworksParams struct {
-	Page *int64 `form:"page,omitempty" json:"page,omitempty"`
+	DueAtFrom *string `form:"dueAtFrom,omitempty" json:"dueAtFrom,omitempty"`
+	DueAtTo   *string `form:"dueAtTo,omitempty" json:"dueAtTo,omitempty"`
+	Page      *int64  `form:"page,omitempty" json:"page,omitempty"`
 
 	// PageSize Number of items per page.
 	PageSize *int64 `form:"pageSize,omitempty" json:"pageSize,omitempty"`
@@ -24360,6 +24381,30 @@ func NewGetSubscribedHomeworksRequest(server string, params *GetSubscribedHomewo
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.DueAtFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dueAtFrom", *params.DueAtFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.DueAtTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dueAtTo", *params.DueAtTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.Page != nil {
 
