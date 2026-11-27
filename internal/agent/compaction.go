@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	conversationEventIDKey         = "bot_conversation_event_id"
-	conversationSummaryIDKey       = "bot_summary_covered_event_id"
+	conversationEventIDKey   = "bot_conversation_event_id"
+	conversationSummaryIDKey = "bot_summary_covered_event_id"
 	// conversationSummaryInputTokens bounds one summary request. It must exceed
 	// the trigger: a single pass has to carry every complete turn the trigger
 	// admits, or it would leave a remainder behind and the context would settle
