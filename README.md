@@ -87,31 +87,20 @@ AI 对话保留消息时间和说话人元数据，但普通回复不会自动�
 
 ### macOS 原生部署
 
-生产 Bot 与渲染服务运行在 `tkm-mac-mini`，由系统级 launchd 自动启动。更新入口是 `scripts/deploy-mac.sh`。脚本默认通过
-`tiankaima@tkm-mac-mini` 更新 `/Users/tiankaima/Services/life-ustc-bot`，只接受干净的已提交
-版本：它用该提交创建临时源码归档，在本地临时副本中生成 Go vendor 目录，把归档传到远端，
-再在 Darwin arm64 上使用 CGO 编译 Bot 和 Rust `renderd`。远端工具查找顺序是
-`ROOT/toolchain/go/bin`（与 `go.mod` 对齐的 Go）、`ROOT/toolchain/bin`、`/opt/homebrew/bin`、`/usr/local/bin` 和 `/usr/bin`；Rust 构建使用
-锁定的 `Cargo.lock` 和离线缓存，因此更新时需要预先准备好 Go vendor 所需的本地模块缓存以及
-远端 Cargo registry 缓存。
+`scripts/deploy-mac.sh` 在显式指定的 macOS 目标上构建并更新 Bot 和 `renderd`。部署目标必须通过
+`REMOTE_HOST`、`REMOTE_USER` 和 `REMOTE_ROOT` 提供，仓库不保存真实目标、账号或目录。
+脚本只接受干净的已提交版本，使用提交归档和锁定的依赖构建，并在更新前检查远端工具链和离线缓存。
 
-远端的 `config.json` 是私有的 JSON 对象，键是 Bot 环境变量名。脚本只在远端用
-`/opt/homebrew/bin/python3` 读取它并写入 Bot 的 launchd plist，不会 shell-source 或打印值。
-`BOT_DB_PATH`、`BOT_RENDER_ENDPOINT`、`BOT_BUILD_VERSION` 以及本地健康地址由部署固定。部署使用
-`runtime-fonts/` 下的扁平字体目录（思源黑体 Regular/Bold TTC 和 Fira Code TTF），不要把凭据或
-完整字体树放入源码归档。
+远端的 `config.json` 是私有 JSON 对象，键是 Bot 环境变量名。脚本用 JSON 解析器读取配置并生成
+服务配置，不会 shell-source 或打印值。部署使用 `runtime-fonts/` 下的扁平字体目录（思源黑体
+Regular/Bold TTC 和 Fira Code TTF），不要把凭据或完整字体树放入源码归档。
 
-部署前远端应已有 `bin/`、`data/`、`logs/`、`build/`、`runtime-fonts/`、`config.json` 和现有
-SQLite 数据库；此版本要求 schema v9。部署脚本在停机备份后显式运行 `migrate`，将 v7 或 v8
-升级为 v9：在同一事务中补齐 `rain_settings` 和 `recurring_reminders` 表、更新版本并校验
-完整数据库，保留原有表和数据，不替用户开启降雨或创建周期提醒。其他旧版本会安全拒绝升级，
-正常启动也不自动迁移或清空数据库。
-代码合并不代表服务已上线。脚本会在 `build/<deployment-id>/` 保留源码、
-构建产物、旧二进制、数据库备份和日志。它先停 Bot，再备份并校验 SQLite，随后原子替换二进制和
-`/Library/LaunchDaemons/dev.life-ustc.{bot,renderd}.plist`；plist 为 root 所有、权限 600，两个
-服务均设置 `UserName` 为部署用户（默认 `tiankaima`）、`RunAtLoad`、`KeepAlive`、工作目录和标准输出/错误日志。它
-先启动并检查 `dev.life-ustc.renderd`，再启动并检查 Bot；失败时恢复二进制、数据库和 plist，并
-重新加载部署前已加载的服务。部署锁和 launchd label 可避免同一 Bot 出现重复实例。
+部署前远端应已有运行目录、私有配置、字体和现有 SQLite 数据库；此版本要求 schema v9。
+部署脚本在停机备份后显式运行 `migrate`，将 v7 或 v8 升级为 v9：在同一事务中补齐
+`rain_settings` 和 `recurring_reminders` 表、更新版本并校验完整数据库，保留原有表和数据，
+不替用户开启降雨或创建周期提醒。其他旧版本会安全拒绝升级，正常启动也不自动迁移或清空数据库。
+更新过程保留构建产物和数据库备份，原子切换二进制与服务配置，依次检查 `renderd` 和 Bot
+健康状态；失败时恢复更新前版本，部署锁避免重复实例。
 
 历史压缩使用独立的 `conversation_compactions` 表保存摘要和已覆盖的事件位置，
 原始 `conversation_events` 不删除。私聊消息会更新用户的最近显示名称和观察时间，群名片不会覆盖全局名称。
@@ -120,30 +109,26 @@ SQLite 数据库；此版本要求 schema v9。部署脚本在停机备份后显
 仅在上下文接近容量时再次压缩；摘要请求也计入 AI 用量。正常 LLM 任务没有整轮耗时、
 工具次数或累计用量上限，运行期间通过心跳续租，摘要完成后继续处理原请求。
 
-NapCat 与 Bot 同机运行，OneBot 反向 WebSocket 连接 `ws://127.0.0.1:2280/ws`，
-`NAPCAT_REVERSE_ADDR` 使用 `127.0.0.1:2280`。图片在 Mac 下载或渲染后，通过 OneBot Base64
-或官方 QQ 分片上传发送，不再启动公共图片 HTTP 服务。
+使用 NapCat 时，OneBot 反向 WebSocket 默认连接 `ws://127.0.0.1:2280/ws`，
+`NAPCAT_REVERSE_ADDR` 使用 `127.0.0.1:2280`。图片通过 OneBot Base64 或官方 QQ
+分片上传发送，不启动公共图片 HTTP 服务。
 
 未识别的 NapCat 附件会记录 `napcat input media observation`，区分消息、内联转发和转发响应的归一化来源。
 记录仅包含受限的 segment 类型、允许字段的数据类型和空值状态，不包含正文、文件名、URL 或文件 ID；每条消息或转发响应最多记录 8 个附件。
 这些记录用于复现实际收到的 envelope，不能据此把未确认的历史故障归因于文件大小解码或其他平台适配器。
 
-Bot 的 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 放在远端 `config.json` 中；生产出口应使用
-Mac 本地代理。当前 `http://127.0.0.1:17890` 是 Clash Verge 的专用 mixed listener，
-实际出站由 Clash 的 merge profile 和当前规则决定，不能根据监听端口认定为 `DIRECT`；
-排查连接故障时应核对目标域名对应的代理日志、策略组和上游节点。模型调用中的 EOF
-可能来自代理连接超时，不能据此认定服务端 RLS 或 MCP 失败。该监听不依赖 cn 的 SSH 隧道。
-切换出口前，必须在 QQ 开放平台的接口 IP 白名单中加入 Mac 的公网出口 IP，否则 QQ API 返回 `11298`。
-官方 QQ 的公网入站反代通过 Tailscale 转发到 Mac 的 Webhook 监听地址；
+Bot 的 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 可通过远端私有 `config.json` 配置。
 是否启动 Gateway 和 Webhook，分别由 `BOT_ENABLE_QQ_BOT_GATEWAY`、`BOT_ENABLE_QQ_BOT_WEBHOOK` 控制。
 
 ```sh
+REMOTE_HOST=bot.example.test \
+REMOTE_USER=deployer \
+REMOTE_ROOT=/srv/life-ustc-bot \
 ./scripts/deploy-mac.sh
 ```
 
-只检查当前提交和目标信息而不执行 SSH、构建或远端改动时，设置 `DEPLOY_DRY_RUN=1`。若使用不同
-主机或路径，可覆盖 `REMOTE_HOST`、`REMOTE_USER`、`REMOTE_ROOT`；健康检查等待时间可用
-`DEPLOY_HEALTH_TIMEOUT`（1–3600 秒）覆盖。
+只检查当前提交和目标信息而不执行 SSH、构建或远端改动时，设置 `DEPLOY_DRY_RUN=1`。
+健康检查等待时间可用 `DEPLOY_HEALTH_TIMEOUT`（1–3600 秒）覆盖。
 
 图卡由 Typst `renderd` 服务渲染，延续迁移前的简洁排版：近白画布、细横线、
 18pt 标题、13pt 正文、9pt 页脚，数字与代码使用 Fira Code，中文及课程名称使用思源黑体 / Noto CJK。
