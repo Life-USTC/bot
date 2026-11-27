@@ -44,7 +44,7 @@ bash -n "$remote_script"
 # sourced as shell code, and a dry run must not contact SSH or print values.
 test_phase="dry-run and config-source checks"
 ! grep -E '(^|[[:space:]])(source|\.)[[:space:]].*config\.json' "$root/scripts/deploy-mac.sh" >/dev/null
-dry_run_output="$(DEPLOY_DRY_RUN=1 REMOTE_HOST=tkm-mac-mini "$root/scripts/deploy-mac.sh" 2>&1)"
+dry_run_output="$(DEPLOY_DRY_RUN=1 REMOTE_HOST=bot.example.test REMOTE_USER=deployer REMOTE_ROOT=/srv/life-ustc-bot "$root/scripts/deploy-mac.sh" 2>&1)"
 grep -F 'dry-run would deploy revision ' <<<"$dry_run_output" >/dev/null
 grep -F 'performs no SSH, source, binary, database, or launchd changes' <<<"$dry_run_output" >/dev/null
 
