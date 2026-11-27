@@ -697,3 +697,21 @@ func TestPollerSkipsAuthWithoutStore(t *testing.T) {
 		t.Fatalf("messages = %#v", publisher.messages)
 	}
 }
+
+func TestClassReminderQueryMinutes(t *testing.T) {
+	for _, tc := range []struct{ clock, from, to string }{
+		{"09:00:00", "540", "570"},
+		{"09:00:00.001", "541", "570"},
+		{"23:29:59", "1410", "1439"},
+		{"23:30:00", "", ""},
+	} {
+		now, err := time.ParseInLocation("15:04:05", tc.clock, lifedata.ChinaLocation())
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := classReminderQuery(now)
+		if q.Get("startMinuteFrom") != tc.from || q.Get("startMinuteTo") != tc.to {
+			t.Errorf("clock %s: bounds %v", tc.clock, q)
+		}
+	}
+}
