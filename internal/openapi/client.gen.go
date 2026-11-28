@@ -7143,14 +7143,49 @@ type CourseDetailSchema struct {
 		NamePrimary   string  `json:"namePrimary"`
 		NameSecondary *string `json:"nameSecondary"`
 	} `json:"gradation"`
-	GradationId   *int    `json:"gradationId"`
-	Id            int     `json:"id"`
-	JwId          int     `json:"jwId"`
-	NameCn        string  `json:"nameCn"`
-	NameEn        *string `json:"nameEn"`
-	NamePrimary   string  `json:"namePrimary"`
-	NameSecondary *string `json:"nameSecondary"`
-	Sections      []struct {
+	GradationId     *int    `json:"gradationId"`
+	Id              int     `json:"id"`
+	JwId            int     `json:"jwId"`
+	NameCn          string  `json:"nameCn"`
+	NameEn          *string `json:"nameEn"`
+	NamePrimary     string  `json:"namePrimary"`
+	NameSecondary   *string `json:"nameSecondary"`
+	OfficialProfile *struct {
+		Assessment  *string  `json:"assessment"`
+		Credits     *float32 `json:"credits"`
+		Department  *string  `json:"department"`
+		Description struct {
+			En *string `json:"en"`
+			Zh *string `json:"zh"`
+		} `json:"description"`
+		Grading       *string  `json:"grading"`
+		Hours         *float32 `json:"hours"`
+		Language      *string  `json:"language"`
+		Prerequisites *string  `json:"prerequisites"`
+		References    *string  `json:"references"`
+		Syllabus      struct {
+			En []struct {
+				Content string  `json:"content"`
+				Title   *string `json:"title"`
+			} `json:"en"`
+			Topics []struct {
+				Hours *float32 `json:"hours"`
+				Name  string   `json:"name"`
+			} `json:"topics"`
+			Zh []struct {
+				Content string  `json:"content"`
+				Title   *string `json:"title"`
+			} `json:"zh"`
+		} `json:"syllabus"`
+		Textbook  *string `json:"textbook"`
+		Textbooks []struct {
+			Author *string `json:"author"`
+			Isbn   *string `json:"isbn"`
+			NameEn *string `json:"nameEn"`
+			NameZh *string `json:"nameZh"`
+		} `json:"textbooks"`
+	} `json:"officialProfile,omitempty"`
+	Sections []struct {
 		ActualPeriods *float32 `json:"actualPeriods"`
 		BizTypeId     *int     `json:"bizTypeId"`
 		Campus        *struct {
@@ -9634,7 +9669,42 @@ type SectionDetailSchema struct {
 	JwId                    int      `json:"jwId"`
 	LimitCount              *int     `json:"limitCount"`
 	MachinePeriods          *float32 `json:"machinePeriods"`
-	OpenDepartment          *struct {
+	OfficialProfile         *struct {
+		Assessment  *string  `json:"assessment"`
+		Credits     *float32 `json:"credits"`
+		Department  *string  `json:"department"`
+		Description struct {
+			En *string `json:"en"`
+			Zh *string `json:"zh"`
+		} `json:"description"`
+		Grading       *string  `json:"grading"`
+		Hours         *float32 `json:"hours"`
+		Language      *string  `json:"language"`
+		Prerequisites *string  `json:"prerequisites"`
+		References    *string  `json:"references"`
+		Syllabus      struct {
+			En []struct {
+				Content string  `json:"content"`
+				Title   *string `json:"title"`
+			} `json:"en"`
+			Topics []struct {
+				Hours *float32 `json:"hours"`
+				Name  string   `json:"name"`
+			} `json:"topics"`
+			Zh []struct {
+				Content string  `json:"content"`
+				Title   *string `json:"title"`
+			} `json:"zh"`
+		} `json:"syllabus"`
+		Textbook  *string `json:"textbook"`
+		Textbooks []struct {
+			Author *string `json:"author"`
+			Isbn   *string `json:"isbn"`
+			NameEn *string `json:"nameEn"`
+			NameZh *string `json:"nameZh"`
+		} `json:"textbooks"`
+	} `json:"officialProfile,omitempty"`
+	OpenDepartment *struct {
 		Code          string  `json:"code"`
 		Id            int     `json:"id"`
 		IsCollege     *bool   `json:"isCollege"`
@@ -11752,11 +11822,13 @@ type GetApiWorkspaceOverviewActionableParamsLocale string
 
 // WorkspaceScheduleListParams defines parameters for WorkspaceScheduleList.
 type WorkspaceScheduleListParams struct {
-	DateFrom *string                            `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
-	DateTo   *string                            `form:"dateTo,omitempty" json:"dateTo,omitempty"`
-	Weekday  *int64                             `form:"weekday,omitempty" json:"weekday,omitempty"`
-	Limit    *int64                             `form:"limit,omitempty" json:"limit,omitempty"`
-	Locale   *WorkspaceScheduleListParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
+	DateFrom        *string                            `form:"dateFrom,omitempty" json:"dateFrom,omitempty"`
+	DateTo          *string                            `form:"dateTo,omitempty" json:"dateTo,omitempty"`
+	Weekday         *int64                             `form:"weekday,omitempty" json:"weekday,omitempty"`
+	StartMinuteFrom *int64                             `form:"startMinuteFrom,omitempty" json:"startMinuteFrom,omitempty"`
+	StartMinuteTo   *int64                             `form:"startMinuteTo,omitempty" json:"startMinuteTo,omitempty"`
+	Limit           *int64                             `form:"limit,omitempty" json:"limit,omitempty"`
+	Locale          *WorkspaceScheduleListParamsLocale `form:"locale,omitempty" json:"locale,omitempty"`
 }
 
 // WorkspaceScheduleListParamsLocale defines parameters for WorkspaceScheduleList.
@@ -24849,6 +24921,30 @@ func NewWorkspaceScheduleListRequest(server string, params *WorkspaceScheduleLis
 		if params.Weekday != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "weekday", *params.Weekday, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.StartMinuteFrom != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "startMinuteFrom", *params.StartMinuteFrom, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.StartMinuteTo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "startMinuteTo", *params.StartMinuteTo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
